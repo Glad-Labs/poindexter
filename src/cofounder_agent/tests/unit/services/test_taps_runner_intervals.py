@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from services.taps.runner import (
+from poindexter.services.taps.runner import (
     TapStats,
     is_tap_due,
     is_zero_yield,
@@ -185,10 +185,10 @@ class TestRealTapIntervals:
     @pytest.mark.parametrize(
         ("module", "cls_name", "expected"),
         [
-            ("services.taps.github_issues", "GitHubIssuesTap", 21600),
-            ("services.taps.claude_code_sessions", "ClaudeCodeSessionsTap", 7200),
-            ("services.taps.memory", "MemoryFilesTap", 3600),
-            ("services.taps.audit", "AuditTap", 1800),
+            ("poindexter.services.taps.github_issues", "GitHubIssuesTap", 21600),
+            ("poindexter.services.taps.claude_code_sessions", "ClaudeCodeSessionsTap", 7200),
+            ("poindexter.services.taps.memory", "MemoryFilesTap", 3600),
+            ("poindexter.services.taps.audit", "AuditTap", 1800),
         ],
     )
     def test_declared_intervals_resolve(self, module: str, cls_name: str, expected: int):

@@ -147,7 +147,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         logger.info("[qa.numeric_fidelity] no research_context — rail skipped")
         return {}
 
-    from services.numeric_fidelity import (
+    from poindexter.services.numeric_fidelity import (
         DEFAULT_ATTRIBUTION_MARKERS,
         DEFAULT_UNITS,
         verify,

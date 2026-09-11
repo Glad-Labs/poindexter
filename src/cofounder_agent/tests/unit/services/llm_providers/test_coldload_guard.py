@@ -22,8 +22,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.llm_providers import coldload_guard
-from services.llm_providers.coldload_guard import maybe_reclaim_before_coldload
+from poindexter.services.llm_providers import coldload_guard
+from poindexter.services.llm_providers.coldload_guard import maybe_reclaim_before_coldload
 
 _LOCAL_BASE = "http://host.docker.internal:11434"
 
@@ -87,7 +87,7 @@ def _patch_client(fake: _FakeAsyncClient):
 def _patch_gpu() -> tuple[object, SimpleNamespace]:
     reclaim = AsyncMock()
     return (
-        patch("services.gpu_scheduler.gpu", new=SimpleNamespace(
+        patch("poindexter.services.gpu_scheduler.gpu", new=SimpleNamespace(
             reclaim_render_vram=reclaim,
         )),
         reclaim,
@@ -242,7 +242,7 @@ async def test_reclaim_failure_is_swallowed():
     fake = _FakeAsyncClient(tags=_BIG_TAGS)
     reclaim = AsyncMock(side_effect=RuntimeError("ladder exploded"))
     gpu_patch = patch(
-        "services.gpu_scheduler.gpu",
+        "poindexter.services.gpu_scheduler.gpu",
         new=SimpleNamespace(reclaim_render_vram=reclaim),
     )
     with _patch_client(fake), gpu_patch:

@@ -35,7 +35,7 @@ _GATE_ID = "e2438d09-10d0-47ba-8d92-a7075fe977fe"
 
 async def up(pool) -> None:
     """Insert the self_claim qa_gates row + re-seed canonical_blog (v10)."""
-    from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+    from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
 
     raw = json.dumps(CANONICAL_BLOG_GRAPH_DEF)
     async with pool.acquire() as conn:

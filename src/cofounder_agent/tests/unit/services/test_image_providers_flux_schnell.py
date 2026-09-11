@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.image_provider import ImageProvider, ImageResult
-from services.image_providers.flux_schnell import (
+from poindexter.services.image_providers.flux_schnell import (
     FluxSchnellProvider,
     _resolve_negative,
     _resolve_server_url,
@@ -92,7 +92,7 @@ def _mock_httpx_post(response):
     else:
         client.post = AsyncMock(return_value=response)
     with patch(
-        "services.image_providers.flux_schnell.httpx.AsyncClient",
+        "poindexter.services.image_providers.flux_schnell.httpx.AsyncClient",
         return_value=client,
     ):
         yield client
@@ -129,7 +129,7 @@ class TestFluxSchnellProviderMetadata:
         without a commercial license from Black Forest Labs would
         violate the non-commercial license. Explicit guard so a future
         contributor copy-pasting this file gets a clear test failure."""
-        from services import image_providers
+        from poindexter.services import image_providers
         assert not hasattr(image_providers, "flux_dev"), (
             "flux_dev is non-commercial and intentionally not shipped — "
             "see GH#123"
@@ -284,7 +284,7 @@ class TestFluxSchnellProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.image_providers.flux_schnell.httpx.AsyncClient",
+            "poindexter.services.image_providers.flux_schnell.httpx.AsyncClient",
             return_value=client,
         ):
             await FluxSchnellProvider().fetch(
@@ -316,7 +316,7 @@ class TestFluxSchnellProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.image_providers.flux_schnell.httpx.AsyncClient",
+            "poindexter.services.image_providers.flux_schnell.httpx.AsyncClient",
             return_value=client,
         ):
             await FluxSchnellProvider().fetch(
@@ -339,7 +339,7 @@ class TestFluxSchnellProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.image_providers.flux_schnell.httpx.AsyncClient",
+            "poindexter.services.image_providers.flux_schnell.httpx.AsyncClient",
             return_value=client,
         ):
             await FluxSchnellProvider().fetch(
@@ -365,7 +365,7 @@ class TestFluxSchnellProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.image_providers.flux_schnell.httpx.AsyncClient",
+            "poindexter.services.image_providers.flux_schnell.httpx.AsyncClient",
             return_value=client,
         ):
             await FluxSchnellProvider().fetch(
@@ -380,7 +380,7 @@ class TestFluxSchnellProviderFetch:
 
     async def test_upload_to_cloudinary_triggers_upload(self, tmp_path):
         with _mock_httpx_post(_image_response(content=b"\x89PNG")), patch(
-            "services.cloudinary_upload_service.upload_to_cloudinary",
+            "poindexter.services.cloudinary_upload_service.upload_to_cloudinary",
             new=AsyncMock(return_value="https://cdn.cloudinary/x.png"),
         ) as up:
             results = await FluxSchnellProvider().fetch(
@@ -396,7 +396,7 @@ class TestFluxSchnellProviderFetch:
 
     async def test_upload_to_r2_triggers_upload(self, tmp_path):
         with _mock_httpx_post(_image_response(content=b"\x89PNG")), patch(
-            "services.image_providers.flux_schnell._upload_to_r2",
+            "poindexter.services.image_providers.flux_schnell._upload_to_r2",
             new=AsyncMock(return_value="https://cdn.r2/x.png"),
         ) as up:
             results = await FluxSchnellProvider().fetch(
@@ -415,7 +415,7 @@ class TestFluxSchnellProviderFetch:
     ):
         output_path = str(tmp_path / "o.png")
         with _mock_httpx_post(_image_response(content=b"\x89PNG")), patch(
-            "services.cloudinary_upload_service.upload_to_cloudinary",
+            "poindexter.services.cloudinary_upload_service.upload_to_cloudinary",
             new=AsyncMock(side_effect=RuntimeError("auth failed")),
         ):
             results = await FluxSchnellProvider().fetch(

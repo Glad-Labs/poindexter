@@ -37,7 +37,7 @@ import pytest
 from modules.content.internal_link_coherence import get_tag_slugs_for_post
 from plugins.llm_providers.gemini import GeminiProvider
 from plugins.scheduler import PluginScheduler
-from services import (
+from poindexter.services import (
     content_revisions_logger,
     experiment_runner,
     profiling,
@@ -45,11 +45,11 @@ from services import (
     research_context,
     task_failure_alerts,
 )
-from services import tasks_db as tasks_db_module
-from services.integrations import operator_notify
-from services.jobs import run_dev_diary_post
-from services.self_consistency_rail import _sample_summaries
-from services.web_research import WebResearcher
+from poindexter.services import tasks_db as tasks_db_module
+from poindexter.services.integrations import operator_notify
+from poindexter.services.jobs import run_dev_diary_post
+from poindexter.services.self_consistency_rail import _sample_summaries
+from poindexter.services.web_research import WebResearcher
 from utils import startup_manager as startup_manager_module
 
 pytestmark = pytest.mark.unit
@@ -124,7 +124,7 @@ async def test_cost_guard_check_emits_finding_on_import_failure(monkeypatch):
     from routes.triage_routes import _cost_guard_check
 
     calls = _capture(monkeypatch)
-    monkeypatch.setitem(sys.modules, "services.cost_guard", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.cost_guard", None)
     site_config = SimpleNamespace(get=lambda k, d=None: d)
     await _cost_guard_check(site_config)
     assert len(calls) == 1
@@ -164,7 +164,7 @@ def test_resolve_site_config_emits_finding_when_get_site_config_raises(monkeypat
         side_effect=RuntimeError("no lifespan bound"),
     )
     monkeypatch.setitem(
-        sys.modules, "services.integrations.shared_context", fake_shared_context,
+        sys.modules, "poindexter.services.integrations.shared_context", fake_shared_context,
     )
     result = operator_notify._resolve_site_config()
     assert result is None
@@ -187,15 +187,15 @@ async def test_get_last_run_date_emits_finding_on_pool_error(monkeypatch):
 async def test_podcast_record_episode_asset_emits_finding_on_import_failure(
     monkeypatch,
 ):
-    from services.podcast_service import EpisodeResult, PodcastService
+    from poindexter.services.podcast_service import EpisodeResult, PodcastService
 
     calls = _capture(monkeypatch)
     # `from services import media_asset_recorder` resolves via the parent
     # package's cached attribute once ANY earlier test has imported it —
     # sys.modules alone isn't enough once that's happened, so strip both.
-    import services as services_pkg
+    import poindexter.services as services_pkg
     monkeypatch.delattr(services_pkg, "media_asset_recorder", raising=False)
-    monkeypatch.setitem(sys.modules, "services.media_asset_recorder", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.media_asset_recorder", None)
     # One module, two names since poindexter#1046 step 2 -- poison the canonical too.
     monkeypatch.setitem(sys.modules, "poindexter.services.media_asset_recorder", None)
     svc = PodcastService.__new__(PodcastService)
@@ -215,7 +215,7 @@ def test_setup_pyroscope_emits_finding_on_site_config_import_failure(monkeypatch
     calls: list[dict] = []
     import utils.findings as findings_module
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
-    monkeypatch.setitem(sys.modules, "services.site_config", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.site_config", None)
     profiling.setup_pyroscope("test-service", site_config=None)
     assert len(calls) == 1
     assert calls[0]["kind"] == "pyroscope_site_config_import_failed"
@@ -288,12 +288,12 @@ async def test_sample_summaries_aggregates_failures_into_one_finding(monkeypatch
         SimpleNamespace(text="a valid summary"),
     ])
     with patch(
-        "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+        "poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
     ), patch(
         # Satellite phases resolve via resolve_local_writer_model (the
         # cloud-writer-leak fix) — patch it out so this test exercises only the
         # sample-failure aggregation, not model resolution.
-        "services.llm_text.resolve_local_writer_model", return_value="test-model",
+        "poindexter.services.llm_text.resolve_local_writer_model", return_value="test-model",
     ):
         result = await _sample_summaries(
             topic="some topic", content="some content", n=3,
@@ -346,7 +346,7 @@ async def test_validate_ollama_model_settings_aggregates_template_failures(
     monkeypatch,
 ):
     calls = _capture(monkeypatch)
-    import services.integrations.operator_notify as operator_notify_module
+    import poindexter.services.integrations.operator_notify as operator_notify_module
 
     mgr = startup_manager_module.StartupManager.__new__(
         startup_manager_module.StartupManager,

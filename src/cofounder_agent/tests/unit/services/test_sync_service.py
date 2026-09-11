@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.sync_service import SyncService
+from poindexter.services.sync_service import SyncService
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -397,7 +397,7 @@ class TestConnect:
         # Each call to create_pool returns a different awaitable result
         create_pool = AsyncMock(side_effect=[cloud_pool_obj, local_pool_obj])
 
-        with patch("services.sync_service.asyncpg.create_pool", create_pool):
+        with patch("poindexter.services.sync_service.asyncpg.create_pool", create_pool):
             await svc.connect()
 
         assert svc._cloud_pool is cloud_pool_obj
@@ -413,7 +413,7 @@ class TestConnect:
         # First call (cloud) raises, second (local) succeeds
         create_pool = AsyncMock(side_effect=[RuntimeError("cloud unreachable"), local_pool_obj])
 
-        with patch("services.sync_service.asyncpg.create_pool", create_pool):
+        with patch("poindexter.services.sync_service.asyncpg.create_pool", create_pool):
             await svc.connect()  # should not raise
 
         assert svc._cloud_pool is None

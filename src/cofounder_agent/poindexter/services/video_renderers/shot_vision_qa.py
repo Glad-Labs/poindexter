@@ -150,7 +150,7 @@ async def score_shot_frame(
         logger.warning("[SHOT_QA] frame read failed for %s: %s", image_path, exc)
         return ShotQAResult(score=None, reason="frame read failed")
 
-    from services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
 
     prompt = get_prompt_manager().get_prompt(
         "qa.video_shot_quality",
@@ -159,7 +159,7 @@ async def score_shot_frame(
         source=shot.source,
     )
 
-    from services.llm_providers.dispatcher import dispatch_complete
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
     # OpenAI-multimodal message; LiteLLM translates image_url data URIs into
     # Ollama's native images array. Frames are PNG (image_gen still, or an

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import pytest
 
-import services.pipeline_architect as pa
+import poindexter.services.pipeline_architect as pa
 from plugins.atom import AtomMeta
 
 

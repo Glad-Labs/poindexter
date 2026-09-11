@@ -129,7 +129,7 @@ class BackfillMediaScriptsJob:
             )
 
         from modules.content.media_regen import regen_video_scripts
-        from services.di_wiring import build_platform_for_subprocess
+        from poindexter.services.di_wiring import build_platform_for_subprocess
 
         platform = build_platform_for_subprocess(pool, site_config)
         if platform is None:

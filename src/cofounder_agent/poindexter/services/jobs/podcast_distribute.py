@@ -25,8 +25,8 @@ import os
 from typing import Any
 
 from plugins.job import JobResult
-from services.jobs.dispatch_handles import claim_media_dispatch
-from services.media_approval_service import record_dispatched, record_pending
+from poindexter.services.jobs.dispatch_handles import claim_media_dispatch
+from poindexter.services.media_approval_service import record_dispatched, record_pending
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -137,7 +137,7 @@ async def _deliver_podcast(pool: Any, site_config: Any, row: dict[str, Any]) -> 
     cdn_ver = site_config.get("podcast_cdn_version", "v2")
     key = f"podcast/{cdn_ver}/{post_id}.mp3"
     try:
-        from services.r2_upload_service import R2UploadService
+        from poindexter.services.r2_upload_service import R2UploadService
 
         r2_svc = R2UploadService(site_config=site_config)
         url = await r2_svc.upload_to_r2(storage_path, key, "audio/mpeg")
@@ -164,7 +164,7 @@ async def _rebuild_feed(site_config: Any) -> None:
     seam ``media_approval_service.decide`` uses to rebuild on approval — so
     there's one rebuild implementation, not two copies.
     """
-    from services.media_feed_rebuild import rebuild_podcast_feed
+    from poindexter.services.media_feed_rebuild import rebuild_podcast_feed
 
     await rebuild_podcast_feed(site_config)
 

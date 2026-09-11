@@ -15,10 +15,10 @@ from unittest.mock import patch
 
 import pytest
 
-from services.chat_prompts import CHAT_SYSTEM_KEY, resolve_chat_prompt
-from services.prompt_manager import UnifiedPromptManager
+from poindexter.services.chat_prompts import CHAT_SYSTEM_KEY, resolve_chat_prompt
+from poindexter.services.prompt_manager import UnifiedPromptManager
 
-_PATCH_TARGET = "services.prompt_manager.get_prompt_manager"
+_PATCH_TARGET = "poindexter.services.prompt_manager.get_prompt_manager"
 _KW = {"persona_name": "Poindexter", "tool_names": "list_tasks, create_post"}
 
 

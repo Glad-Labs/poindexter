@@ -43,13 +43,13 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from services.approval_service import (
+from poindexter.services.approval_service import (
     is_gate_enabled,
     pause_at_gate,
 )
-from services.audit_log import audit_log_bg
-from services.logger_config import get_logger
-from services.topic_sanity import (
+from poindexter.services.audit_log import audit_log_bg
+from poindexter.services.logger_config import get_logger
+from poindexter.services.topic_sanity import (
     TopicSanityError,
     evaluate_topic_sanity,
     resolve_min_alpha_words,
@@ -241,7 +241,7 @@ async def propose_topic(
     # is None so the manual / URL-seed paths stop flattening to a single
     # length. The picker is DB-configurable via app_settings.
     if target_length is None:
-        from services.topic_length import pick_target_length
+        from poindexter.services.topic_length import pick_target_length
         target_length = pick_target_length(site_config)
 
     topic_clean = topic.strip()
@@ -309,7 +309,7 @@ async def propose_topic(
     # then fails loud if that's also empty. Per
     # feedback_no_silent_defaults — content_router_service fails
     # the task downstream on a missing slug, so populate it here.
-    from services.template_slug_resolver import resolve_template_slug
+    from poindexter.services.template_slug_resolver import resolve_template_slug
     template_slug = await resolve_template_slug(pool, niche_slug=None)
 
     try:

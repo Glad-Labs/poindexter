@@ -9,7 +9,7 @@ This module provides route/service-level error handling helpers:
 
 For domain exception classes (AppError, DatabaseError, ServiceError, etc.),
 circuit breaker, retry logic, and error codes, import from:
-    from services.error_handler import AppError, DatabaseError, ...
+    from poindexter.services.error_handler import AppError, DatabaseError, ...
 
 Import guide:
     - Routes importing error helpers: from utils.error_handler import handle_route_error
@@ -22,8 +22,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from services.error_handler import handle_error
-from services.logger_config import StructuredLogger, get_logger
+from poindexter.services.error_handler import handle_error
+from poindexter.services.logger_config import StructuredLogger, get_logger
 
 logger = get_logger(__name__)
 

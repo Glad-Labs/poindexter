@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from plugins.topic_source import TopicSource
-from services.topic_sources.rss import RssSource
+from poindexter.services.topic_sources.rss import RssSource
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 

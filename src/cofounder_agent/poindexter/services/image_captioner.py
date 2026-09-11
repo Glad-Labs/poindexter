@@ -27,9 +27,9 @@ import re
 
 import httpx
 
-from services.alt_text import sanitize_alt_text
-from services.llm_providers.dispatcher import dispatch_complete
-from services.llm_providers.thinking_models import strip_think_blocks
+from poindexter.services.alt_text import sanitize_alt_text
+from poindexter.services.llm_providers.dispatcher import dispatch_complete
+from poindexter.services.llm_providers.thinking_models import strip_think_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def _prompt(budget: int) -> str:
     per ``feedback_prompts_must_be_db_configurable``.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         return get_prompt_manager().get_prompt(_CAPTION_PROMPT_KEY, budget=budget)
     except Exception as exc:  # noqa: BLE001
@@ -170,7 +170,7 @@ async def caption_image(
     ]
 
     # GPU coordination — qwen3-vl is ~19.6 GB; serialize against image-gen/writer.
-    from services.gpu_scheduler import gpu
+    from poindexter.services.gpu_scheduler import gpu
 
     try:
         async with gpu.lock(

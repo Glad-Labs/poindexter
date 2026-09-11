@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.audit_log import (
+from poindexter.services.audit_log import (
     AuditLogger,
     _handle_audit_task_exception,
     _is_loud,
@@ -255,7 +255,7 @@ class TestAuditLoggerQuery:
 @pytest.mark.unit
 class TestGlobalAuditLogger:
     def test_get_audit_logger_returns_none_before_init(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
         try:
             mod._global_audit_logger = None
@@ -264,7 +264,7 @@ class TestGlobalAuditLogger:
             mod._global_audit_logger = original
 
     def test_init_sets_global(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
         try:
             pool = _make_pool()
@@ -275,7 +275,7 @@ class TestGlobalAuditLogger:
             mod._global_audit_logger = original
 
     def test_audit_log_bg_drops_when_no_logger(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
         try:
             mod._global_audit_logger = None
@@ -286,7 +286,7 @@ class TestGlobalAuditLogger:
 
     @pytest.mark.asyncio
     async def test_audit_log_bg_schedules_task(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
 
         pool = _make_pool()
@@ -303,7 +303,7 @@ class TestGlobalAuditLogger:
     def test_init_quiet_logs_at_debug_not_info(self, caplog):
         import logging
 
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
         try:
             with caplog.at_level(logging.DEBUG, logger="poindexter.services.audit_log"):
@@ -314,7 +314,7 @@ class TestGlobalAuditLogger:
             mod._global_audit_logger = original
 
     def test_reset_clears_matching_pool(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
         try:
             pool = _make_pool()
@@ -327,7 +327,7 @@ class TestGlobalAuditLogger:
     def test_reset_leaves_non_matching_pool(self):
         """A teardown seam (close_cli_pool) must not clobber a logger some
         other context re-initialised with its own pool."""
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
         try:
             owner_pool = _make_pool()
@@ -338,7 +338,7 @@ class TestGlobalAuditLogger:
             mod._global_audit_logger = original
 
     def test_reset_none_is_unconditional(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
         try:
             init_global_audit_logger(_make_pool())
@@ -403,7 +403,7 @@ class TestLoudOnDroppedFindings:
         audit = AuditLogger(pool)
 
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(),
         ) as notify:
             await audit.log(
@@ -421,7 +421,7 @@ class TestLoudOnDroppedFindings:
         audit = AuditLogger(pool)
 
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(),
         ) as notify:
             await audit.log("finding", "src", {"k": "v"}, severity="warn")
@@ -435,7 +435,7 @@ class TestLoudOnDroppedFindings:
         audit = AuditLogger(pool)
 
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(),
         ) as notify:
             await audit.log("evt", "src", {"k": "v"}, severity="info")
@@ -449,14 +449,14 @@ class TestLoudOnDroppedFindings:
         audit = AuditLogger(pool)
 
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(side_effect=RuntimeError("telegram down too")),
         ):
             # Both the audit write AND the out-of-band page fail — must not raise.
             await audit.log("finding", "src", {"title": "x"}, severity="critical")
 
     def test_audit_log_bg_loud_when_dropped_with_no_logger(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
         try:
             mod._global_audit_logger = None
@@ -467,7 +467,7 @@ class TestLoudOnDroppedFindings:
             mod._global_audit_logger = original
 
     def test_audit_log_bg_quiet_when_info_dropped_with_no_logger(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
         original = mod._global_audit_logger
         try:
             mod._global_audit_logger = None
@@ -494,7 +494,7 @@ class TestLoudOnDroppedFindings:
 class TestDrainPendingWrites:
     @pytest.mark.asyncio
     async def test_audit_log_bg_registers_then_discards_task(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
 
         original = mod._global_audit_logger
         pool = _make_pool()
@@ -516,7 +516,7 @@ class TestDrainPendingWrites:
 
     @pytest.mark.asyncio
     async def test_drain_awaits_inflight_write_before_returning(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
 
         original = mod._global_audit_logger
         ran: list = []
@@ -548,7 +548,7 @@ class TestDrainPendingWrites:
 
     @pytest.mark.asyncio
     async def test_drain_is_noop_when_nothing_pending(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
 
         mod._pending_writes.clear()
         # Must return promptly and never raise when there is nothing to flush.
@@ -556,7 +556,7 @@ class TestDrainPendingWrites:
 
     @pytest.mark.asyncio
     async def test_drain_is_bounded_by_timeout(self):
-        import services.audit_log as mod
+        import poindexter.services.audit_log as mod
 
         original = mod._global_audit_logger
 

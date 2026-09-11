@@ -73,7 +73,7 @@ from plugins.media_compositor import (
     CompositionResult,
     CompositionScene,
 )
-from services.cost_guard import CostGuard
+from poindexter.services.cost_guard import CostGuard
 
 logger = logging.getLogger(__name__)
 

@@ -34,7 +34,7 @@ def _patch_validator(urls, results):
         extract_urls=lambda _c: urls,
         validate_urls=AsyncMock(return_value=results),
     )
-    return patch("services.url_validator.URLValidator", return_value=v)
+    return patch("poindexter.services.url_validator.URLValidator", return_value=v)
 
 
 @pytest.mark.asyncio
@@ -81,7 +81,7 @@ class TestExecute:
             extract_urls=lambda _c: ["https://x.example"],
             validate_urls=AsyncMock(side_effect=RuntimeError("network down")),
         )
-        with patch("services.url_validator.URLValidator", return_value=broken_v):
+        with patch("poindexter.services.url_validator.URLValidator", return_value=broken_v):
             result = await UrlValidationStage().execute(ctx, {})
         # ok=False but halts_on_failure=False → runner continues
         assert result.ok is False

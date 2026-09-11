@@ -25,7 +25,7 @@ from unittest import mock
 import pytest
 
 from plugins import Tap
-from services.taps.memory import MemoryFilesTap, _build_source_id, _discover_memory_dirs
+from poindexter.services.taps.memory import MemoryFilesTap, _build_source_id, _discover_memory_dirs
 
 
 class TestDiscoverMemoryDirs:

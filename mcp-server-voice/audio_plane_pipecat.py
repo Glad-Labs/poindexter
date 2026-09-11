@@ -87,7 +87,7 @@ async def _resolve_livekit_creds_db_first() -> tuple[str, str, str]:
     import os
 
     _ensure_services_on_path()
-    from services.voice_pipecat import (  # noqa: PLC0415 -- path set above
+    from poindexter.services.voice_pipecat import (  # noqa: PLC0415 -- path set above
         resolve_livekit_creds,
         resolve_livekit_creds_async,
     )
@@ -102,7 +102,7 @@ async def _resolve_livekit_creds_db_first() -> tuple[str, str, str]:
             raise RuntimeError("no DATABASE_URL (env or bootstrap.toml)")
 
         import asyncpg
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         pool = await asyncpg.create_pool(dsn, min_size=1, max_size=1)
         try:
@@ -267,7 +267,7 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
             SpeechTimeoutUserTurnStopStrategy,
         )
         from pipecat.turns.user_turn_strategies import UserTurnStrategies
-        from services.voice_pipecat import (
+        from poindexter.services.voice_pipecat import (
             build_kokoro_tts,
             build_livekit_bridge_transport,
             build_whisper_stt,

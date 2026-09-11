@@ -47,7 +47,7 @@ def test_number_inline_markers_caps_and_strips_extras():
 @pytest.mark.asyncio
 async def test_plan_image_markers_surfaces_hero_and_uses_writer_markers():
     from modules.content.atoms import content_plan_image_markers
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={"writer_max_inline_images": "3"})
     state = {
@@ -103,7 +103,7 @@ def test_split_screenshot_target_roundtrip():
 @pytest.mark.asyncio
 async def test_plan_image_markers_surfaces_screenshot_target():
     from modules.content.atoms import content_plan_image_markers
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={"writer_max_inline_images": "3"})
     state = {
@@ -133,7 +133,7 @@ async def test_plan_image_markers_surfaces_screenshot_target():
 @pytest.mark.asyncio
 async def test_screenshot_marker_survives_plan_through_inject():
     from modules.content.atoms import content_inject_images, content_plan_image_markers
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={"writer_max_inline_images": "3"})
     planned = await content_plan_image_markers.run({

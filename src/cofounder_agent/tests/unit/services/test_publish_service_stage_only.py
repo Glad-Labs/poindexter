@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2g: publish_post_from_task requires an injected site_config.
 _TEST_SC = SiteConfig(initial_config={"site_url": "https://www.test-site.example.com"})
@@ -105,7 +105,7 @@ async def test_stage_only_creates_post_at_status_approved() -> None:
     """The created posts row must have status='approved' (not 'published',
     not 'draft', not 'awaiting_gates'). This is the seam schedule_batch
     queries — any other status and the post is invisible to scheduling."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     captured: dict[str, Any] = {}
@@ -118,8 +118,8 @@ async def test_stage_only_creates_post_at_status_approved() -> None:
 
     # Patch the internal_link_coherence import so we don't pull in the
     # full pipeline. Stub stages that publish_post_from_task calls.
-    with patch("services.publish_service._spawn_background"), \
-         patch("services.publish_service._should_run_post_publish_hooks", return_value=False):
+    with patch("poindexter.services.publish_service._spawn_background"), \
+         patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False):
         result = await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",
             publisher="operator-test",
@@ -146,7 +146,7 @@ async def test_stage_only_skips_distributed_at_stamp() -> None:
     """Staged posts must NOT be marked distributed — the RSS feed and
     static export gate on distributed_at. A staged post is invisible
     until scheduled_publisher promotes it."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     captured: dict[str, Any] = {}
@@ -157,8 +157,8 @@ async def test_stage_only_skips_distributed_at_stamp() -> None:
 
     db.create_post = _record_create_post
 
-    with patch("services.publish_service._spawn_background"), \
-         patch("services.publish_service._should_run_post_publish_hooks", return_value=False):
+    with patch("poindexter.services.publish_service._spawn_background"), \
+         patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False):
         await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",
             publisher="operator-test",
@@ -181,7 +181,7 @@ async def test_stage_only_leaves_task_at_status_approved_not_published() -> None
     approve_task handler put it in). Flipping to 'published' would
     confuse downstream consumers + break the schedule_batch flow that
     expects the task to still be in the approval-staged pool."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     captured_status_updates: list[tuple[str, str]] = []
@@ -191,8 +191,8 @@ async def test_stage_only_leaves_task_at_status_approved_not_published() -> None
 
     db.update_task_status = _record_status_update
 
-    with patch("services.publish_service._spawn_background"), \
-         patch("services.publish_service._should_run_post_publish_hooks", return_value=False):
+    with patch("poindexter.services.publish_service._spawn_background"), \
+         patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False):
         await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",
             publisher="operator-test",
@@ -218,7 +218,7 @@ async def test_stage_only_and_draft_mode_are_mutually_exclusive() -> None:
     """Both flags flip status away from the default — combining them
     is ambiguous. Caller error should surface loudly per
     feedback_no_silent_defaults."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
 
@@ -244,7 +244,7 @@ async def test_publish_promotes_existing_approved_post_to_published() -> None:
     Caught manually 2026-05-27 on task 677cc2df: CLI returned HTTP 200
     with ``status=approved`` and Matt's blog post never went live.
     """
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     # Existing post already staged at status='approved' (what
@@ -309,8 +309,8 @@ async def test_publish_promote_fires_newsletter_when_hooks_on(monkeypatch) -> No
     announce."""
     import asyncio as _asyncio
 
-    from services import publish_service
-    from services.publish_service import publish_post_from_task
+    from poindexter.services import publish_service
+    from poindexter.services.publish_service import publish_post_from_task
 
     monkeypatch.setenv("DEPLOYMENT_MODE", "worker")
 
@@ -356,7 +356,7 @@ async def test_publish_skips_when_post_already_published() -> None:
     duplicate post creation). Without this, retries from the CLI or
     a stuck scheduled_publisher cycle would double-stamp published_at
     and re-fire revalidation needlessly."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     existing = {
@@ -396,7 +396,7 @@ async def test_stage_only_does_not_promote_existing_approved() -> None:
     itself stage_only (e.g. operator approves the same task twice).
     The existing approved row stays at 'approved', no published_at,
     no UPDATE."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     existing = {
@@ -434,7 +434,7 @@ async def test_publish_result_exposes_staged_field() -> None:
     the approve handler can't tell the difference without re-fetching
     the row, and downstream consumers (operator notify, social queue)
     would treat both as published."""
-    from services.publish_service import PublishResult
+    from poindexter.services.publish_service import PublishResult
 
     live = PublishResult(success=True, post_id="x", post_slug="y", published_url="/posts/y")
     staged = PublishResult(success=True, post_id="x", post_slug="y", published_url="/posts/y", staged=True)
@@ -455,7 +455,7 @@ def test_parse_json_field_returns_dict_for_valid_json_string() -> None:
     JSONB) or strings (some legacy code paths fetchrow's raw text).
     The helper must accept both so publish_post_from_task doesn't have
     to branch on type at every call site."""
-    from services.publish_service import _parse_json_field
+    from poindexter.services.publish_service import _parse_json_field
 
     parsed = _parse_json_field('{"content": "body", "seo_keywords": ["a"]}', "task_metadata")
     assert parsed == {"content": "body", "seo_keywords": ["a"]}
@@ -466,7 +466,7 @@ def test_parse_json_field_swallows_invalid_json_to_empty_dict() -> None:
     a corrupt metadata column as 'no metadata' and proceeds with the
     fallbacks. Raising here would 500 the whole publish for one bad row
     instead of degrading gracefully."""
-    from services.publish_service import _parse_json_field
+    from poindexter.services.publish_service import _parse_json_field
 
     assert _parse_json_field("not-json{", "task_metadata", "task-id") == {}
     assert _parse_json_field("", "task_metadata") == {}
@@ -477,7 +477,7 @@ def test_parse_json_field_none_and_non_dict_return_empty() -> None:
     both collapse to {}. Lists in particular would crash the downstream
     `.get("content")` calls in the publish path — this helper is the
     defensive shim that keeps that from happening."""
-    from services.publish_service import _parse_json_field
+    from poindexter.services.publish_service import _parse_json_field
 
     assert _parse_json_field(None) == {}
     assert _parse_json_field(42) == {}
@@ -488,7 +488,7 @@ def test_parse_json_field_passes_through_dict_unchanged() -> None:
     """asyncpg already deserialises JSONB to dict — re-parsing would
     waste cycles AND lose any non-JSON-roundtrippable types the column
     might carry. The dict branch must be the identity transform."""
-    from services.publish_service import _parse_json_field
+    from poindexter.services.publish_service import _parse_json_field
 
     original = {"content": "x", "nested": {"k": "v"}}
     assert _parse_json_field(original) is original
@@ -499,7 +499,7 @@ def test_should_run_post_publish_hooks_worker_mode(monkeypatch) -> None:
     hooks (podcast / video / R2 / RSS / YouTube / newsletter). Anything
     else and the hooks no-op — this is the seam that decides whether
     distribution actually happens on a publish."""
-    from services import publish_service
+    from poindexter.services import publish_service
 
     monkeypatch.setenv("DEPLOYMENT_MODE", "worker")
     assert publish_service._should_run_post_publish_hooks() is True
@@ -511,7 +511,7 @@ def test_should_run_post_publish_hooks_case_insensitive(monkeypatch) -> None:
     don't enforce case. The .lower() in the helper must keep this
     working; a regression to a case-sensitive compare would silently
     disable distribution on those hosts."""
-    from services import publish_service
+    from poindexter.services import publish_service
 
     monkeypatch.setenv("DEPLOYMENT_MODE", "WORKER")
     assert publish_service._should_run_post_publish_hooks() is True
@@ -522,7 +522,7 @@ def test_should_run_post_publish_hooks_unset_defaults_off(monkeypatch) -> None:
     False. Coordinator hosts (future cloud read-path) must NOT run the
     distribution hooks; they don't own the local pipeline + GPU + FS.
     This pins the safer default."""
-    from services import publish_service
+    from poindexter.services import publish_service
 
     monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
     assert publish_service._should_run_post_publish_hooks() is False
@@ -534,7 +534,7 @@ def test_publish_result_to_dict_carries_failure_payload() -> None:
     the operator sees the actual cause — not a generic 'publish failed'.
     Pins the full set of fields (a missing key in to_dict() would
     silently drop the diagnostic)."""
-    from services.publish_service import PublishResult
+    from poindexter.services.publish_service import PublishResult
 
     failure = PublishResult(success=False, error="boom: schema mismatch on insert")
     payload = failure.to_dict()
@@ -557,7 +557,7 @@ async def test_publish_promote_triggers_r2_export() -> None:
     reconciliation probe sees DB ahead of R2 and fires a drift alert
     on every operator publish (Matt 2026-05-27 incident — DB=80 vs
     R2=79 after dev_diary publish)."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     existing = {
@@ -576,7 +576,7 @@ async def test_publish_promote_triggers_r2_export() -> None:
         return True
 
     with patch(
-        "services.static_export_service.export_post",
+        "poindexter.services.static_export_service.export_post",
         side_effect=fake_export_post,
     ):
         result = await publish_post_from_task(

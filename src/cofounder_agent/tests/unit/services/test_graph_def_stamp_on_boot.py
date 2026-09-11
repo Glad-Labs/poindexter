@@ -28,7 +28,7 @@ import json
 
 import pytest
 
-import services.pipeline_architect as pa
+import poindexter.services.pipeline_architect as pa
 from plugins.atom import AtomMeta
 
 
@@ -126,7 +126,7 @@ class _FakePool:
 @pytest.mark.asyncio
 class TestEnsureActiveStamped:
     async def test_stamps_fully_unstamped_row(self, registry, monkeypatch):
-        monkeypatch.setattr("services.atom_registry.discover", lambda: None)
+        monkeypatch.setattr("poindexter.services.atom_registry.discover", lambda: None)
         pool = _FakePool([{"slug": "canonical_blog", "graph_def": _unstamped_spec()}])
 
         count = await pa.ensure_active_graph_defs_stamped(pool)
@@ -139,7 +139,7 @@ class TestEnsureActiveStamped:
         assert all(n["_contract_fp"] for n in written["nodes"])
 
     async def test_leaves_already_stamped_row_alone(self, registry, monkeypatch):
-        monkeypatch.setattr("services.atom_registry.discover", lambda: None)
+        monkeypatch.setattr("poindexter.services.atom_registry.discover", lambda: None)
         stamped = pa.stamp_graph_def(_unstamped_spec())
         pool = _FakePool([{"slug": "canonical_blog", "graph_def": stamped}])
 
@@ -151,7 +151,7 @@ class TestEnsureActiveStamped:
         assert pool.conn.executed == []
 
     async def test_handles_graph_def_stored_as_json_string(self, registry, monkeypatch):
-        monkeypatch.setattr("services.atom_registry.discover", lambda: None)
+        monkeypatch.setattr("poindexter.services.atom_registry.discover", lambda: None)
         pool = _FakePool(
             [{"slug": "canonical_blog", "graph_def": json.dumps(_unstamped_spec())}]
         )
@@ -165,7 +165,7 @@ class TestEnsureActiveStamped:
         def _boom():
             raise RuntimeError("no atom registry in this environment")
 
-        monkeypatch.setattr("services.atom_registry.discover", _boom)
+        monkeypatch.setattr("poindexter.services.atom_registry.discover", _boom)
         pool = _FakePool([{"slug": "canonical_blog", "graph_def": _unstamped_spec()}])
 
         count = await pa.ensure_active_graph_defs_stamped(pool)
@@ -174,7 +174,7 @@ class TestEnsureActiveStamped:
         assert pool.conn.executed == []
 
     async def test_mixed_rows_only_unstamped_updated(self, registry, monkeypatch):
-        monkeypatch.setattr("services.atom_registry.discover", lambda: None)
+        monkeypatch.setattr("poindexter.services.atom_registry.discover", lambda: None)
         stamped = pa.stamp_graph_def(_unstamped_spec())
         pool = _FakePool(
             [

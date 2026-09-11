@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from plugins.tts_provider import TTSProvider, TTSResult
-from services.tts_providers import kokoro as kokoro_mod
-from services.tts_providers.kokoro import KokoroTTSProvider
+from poindexter.services.tts_providers import kokoro as kokoro_mod
+from poindexter.services.tts_providers.kokoro import KokoroTTSProvider
 
 
 @pytest.fixture(autouse=True)

@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from services.pipeline_templates import load_active_graph_def
+from poindexter.services.pipeline_templates import load_active_graph_def
 
 
 class _Conn:

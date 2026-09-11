@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 from langgraph.graph import END, StateGraph
 
-from services.template_runner import PipelineState
+from poindexter.services.template_runner import PipelineState
 
 
 @pytest.mark.unit

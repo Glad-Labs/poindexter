@@ -38,9 +38,9 @@ from typing import Any
 
 import httpx
 
-from services.logger_config import get_logger
-from services.prompt_manager import get_prompt_manager
-from services.rag_excerpt import excerpt_around_query
+from poindexter.services.logger_config import get_logger
+from poindexter.services.prompt_manager import get_prompt_manager
+from poindexter.services.rag_excerpt import excerpt_around_query
 
 # Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
 # shim + ``_resolve_module_site_config`` helper were removed.
@@ -62,7 +62,7 @@ def _describe_chart_targets(site_config: Any) -> str:
     catalogued key, so the prompt must enumerate them or the model invents
     plausible ones that each resolve to an empty slot.
     """
-    from services.chart_catalog import describe_for_prompt
+    from poindexter.services.chart_catalog import describe_for_prompt
 
     try:
         return describe_for_prompt(site_config)
@@ -83,7 +83,7 @@ def _describe_screenshot_targets(site_config: Any) -> str:
     configured targets gets an explicit "none", which the prompt reads as
     "don't place screenshot markers".
     """
-    from services.image_providers.screenshot import parse_targets
+    from poindexter.services.image_providers.screenshot import parse_targets
 
     if site_config is None:
         return "none configured — do not use [SCREENSHOT: …] markers"
@@ -809,7 +809,7 @@ class AIContentGenerator:
 
         # Calculate max tokens for refinement pass — extra headroom for thinking models.
         # Token multipliers are tunable via app_settings (#198).
-        from services.llm_providers.thinking_models import (
+        from poindexter.services.llm_providers.thinking_models import (
             is_thinking_model,
             resolve_thinking_substrings,
         )
@@ -1061,10 +1061,10 @@ class AIContentGenerator:
             )
             return None
 
-        from services.llm_providers.thinking_models import (
+        from poindexter.services.llm_providers.thinking_models import (
             is_thinking_model as _is_thinking_model,
         )
-        from services.llm_providers.thinking_models import (
+        from poindexter.services.llm_providers.thinking_models import (
             resolve_thinking_substrings as _resolve_thinking_substrings,
         )
 
@@ -1535,7 +1535,7 @@ async def _resolve_rag_writer_model(
     pending the future ``is_thinking_model`` registry tracked in the
     Lane B inventory.
     """
-    from services.integrations.operator_notify import notify_operator
+    from poindexter.services.integrations.operator_notify import notify_operator
 
     _sc = site_config
 
@@ -1632,7 +1632,7 @@ async def generate_with_context(
     caller (including test fakes that stub this function out entirely) is
     unaffected. ``None`` (the default) is a no-op.
     """
-    from services.llm_text import ollama_chat_text
+    from poindexter.services.llm_text import ollama_chat_text
 
     _sc = site_config
     snippet_max_chars = _sc.get_int(

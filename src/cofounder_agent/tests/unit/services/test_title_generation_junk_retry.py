@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.title_generation import generate_canonical_title
+from poindexter.services.title_generation import generate_canonical_title
 
 _JUNK_TITLE = (
     "Focuses on specific metrics (TPS) rather than high-level conceptual "
@@ -59,7 +59,7 @@ def _site_config(junk_retries: int = 1) -> MagicMock:
 async def _run(provider: MagicMock, junk_retries: int = 1) -> Any:
     with patch(
         "plugins.registry.get_all_llm_providers", return_value=[provider]
-    ), patch("services.prompt_manager.get_prompt_manager") as pm:
+    ), patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         return await generate_canonical_title(
             topic="RTX 5090 vs RTX 4090",

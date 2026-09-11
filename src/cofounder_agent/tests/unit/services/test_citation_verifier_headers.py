@@ -17,17 +17,17 @@ without network I/O.
 
 import pytest
 
-from services.citation_verifier import (
+from poindexter.services.citation_verifier import (
     CitationIssue,
     CitationReport,
     append_sources_section,
     extract_urls,
     verdict_from_report,
 )
-from services.citation_verifier import (
+from poindexter.services.citation_verifier import (
     _build_citation_headers as _real_build_citation_headers,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # 2026-05-29 (SiteConfig DI migration #272 leaf batch 2): the module-level
 # ``site_config`` singleton + ``set_site_config`` setter were removed, and
@@ -456,19 +456,19 @@ class TestCitationVerifierClass:
     """``CitationVerifier`` is the constructor-DI surface over verify_citations."""
 
     def test_constructs_with_site_config_kwarg(self):
-        from services.citation_verifier import CitationVerifier
+        from poindexter.services.citation_verifier import CitationVerifier
 
         cv = CitationVerifier(site_config=SiteConfig())
         assert cv is not None
 
     def test_site_config_is_required(self):
-        from services.citation_verifier import CitationVerifier
+        from poindexter.services.citation_verifier import CitationVerifier
 
         with pytest.raises(TypeError):
             CitationVerifier()  # type: ignore[call-arg]
 
     def test_build_headers_uses_injected_site_config(self):
-        from services.citation_verifier import CitationVerifier
+        from poindexter.services.citation_verifier import CitationVerifier
 
         cv = CitationVerifier(site_config=SiteConfig(initial_config={
             "crawler_contact_url": "https://example.net/abuse",
@@ -478,7 +478,7 @@ class TestCitationVerifierClass:
 
     @pytest.mark.asyncio
     async def test_verify_citations_no_urls_returns_empty_report(self):
-        from services.citation_verifier import CitationVerifier
+        from poindexter.services.citation_verifier import CitationVerifier
 
         cv = CitationVerifier(site_config=SiteConfig())
         report = await cv.verify_citations("no links here")
@@ -493,8 +493,8 @@ class TestAppContainerWiring:
     def test_app_container_exposes_citation_verifier(self):
         from unittest.mock import MagicMock
 
-        from services.citation_verifier import CitationVerifier
-        from services.container import AppContainer
+        from poindexter.services.citation_verifier import CitationVerifier
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         cv = container.citation_verifier
@@ -503,7 +503,7 @@ class TestAppContainerWiring:
     def test_cached_property_memoises(self):
         from unittest.mock import MagicMock
 
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         assert container.citation_verifier is container.citation_verifier

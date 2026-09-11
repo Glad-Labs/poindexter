@@ -6,7 +6,7 @@ import base64
 import httpx
 import pytest
 
-from services.traces_read import LangfuseNotConfigured, map_trace, read_traces
+from poindexter.services.traces_read import LangfuseNotConfigured, map_trace, read_traces
 
 _TRACE = {
     "id": "abc123",

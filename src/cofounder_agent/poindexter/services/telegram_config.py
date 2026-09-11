@@ -32,7 +32,7 @@ would hit ``AttributeError`` at import time, which is the right
 failure mode per ``feedback_no_silent_defaults``.
 """
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 class TelegramConfig:

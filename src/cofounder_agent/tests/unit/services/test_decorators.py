@@ -18,7 +18,7 @@ import pytest
 # Ensure monitoring is enabled for all tests (override env before import)
 os.environ.setdefault("ENABLE_QUERY_MONITORING", "true")
 
-from services.decorators import log_query_performance
+from poindexter.services.decorators import log_query_performance
 
 # ---------------------------------------------------------------------------
 # log_query_performance
@@ -97,7 +97,7 @@ class TestLogQueryPerformance:
         # from site_config. Patch the helper directly — previously this
         # patched a module-level constant that was captured at import
         # time (the bug fixed in this file).
-        monkeypatch.setattr("services.decorators._enable_query_monitoring", lambda: False)
+        monkeypatch.setattr("poindexter.services.decorators._enable_query_monitoring", lambda: False)
 
         @log_query_performance(operation="disabled_op", category="test")
         async def fast_query():
@@ -146,7 +146,7 @@ class TestLogQueryPerformanceLogging:
         from unittest.mock import MagicMock
 
         mock_logger = MagicMock()
-        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        monkeypatch.setattr("poindexter.services.decorators.logger", mock_logger)
 
         # slow_threshold_ms=0 guarantees every call is "slow"
         @log_query_performance(operation="forced_slow", category="test", slow_threshold_ms=0)
@@ -169,7 +169,7 @@ class TestLogQueryPerformanceLogging:
         from unittest.mock import MagicMock
 
         mock_logger = MagicMock()
-        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        monkeypatch.setattr("poindexter.services.decorators.logger", mock_logger)
 
         sentinel = RuntimeError("boom")
 
@@ -196,8 +196,8 @@ class TestLogQueryPerformanceLogging:
         from unittest.mock import MagicMock
 
         mock_logger = MagicMock()
-        monkeypatch.setattr("services.decorators.logger", mock_logger)
-        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+        monkeypatch.setattr("poindexter.services.decorators.logger", mock_logger)
+        monkeypatch.setattr("poindexter.services.decorators._log_all_queries", lambda: True)
 
         @log_query_performance(operation="chatty_op", category="test")
         async def fast():
@@ -216,8 +216,8 @@ class TestLogQueryPerformanceLogging:
         from unittest.mock import MagicMock
 
         mock_logger = MagicMock()
-        monkeypatch.setattr("services.decorators.logger", mock_logger)
-        monkeypatch.setattr("services.decorators._log_all_queries", lambda: False)
+        monkeypatch.setattr("poindexter.services.decorators.logger", mock_logger)
+        monkeypatch.setattr("poindexter.services.decorators._log_all_queries", lambda: False)
 
         @log_query_performance(operation="quiet_op", category="test")
         async def fast():
@@ -237,9 +237,9 @@ class TestLogQueryPerformanceLogging:
         from unittest.mock import MagicMock
 
         mock_logger = MagicMock()
-        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        monkeypatch.setattr("poindexter.services.decorators.logger", mock_logger)
         # Force the info branch so kwargs make it into `extra`
-        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+        monkeypatch.setattr("poindexter.services.decorators._log_all_queries", lambda: True)
 
         @log_query_performance(operation="sensitive", category="test")
         async def safe_call(**kwargs):
@@ -259,8 +259,8 @@ class TestLogQueryPerformanceLogging:
         from unittest.mock import MagicMock
 
         mock_logger = MagicMock()
-        monkeypatch.setattr("services.decorators.logger", mock_logger)
-        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+        monkeypatch.setattr("poindexter.services.decorators.logger", mock_logger)
+        monkeypatch.setattr("poindexter.services.decorators._log_all_queries", lambda: True)
 
         @log_query_performance(operation="empty_list", category="test")
         async def no_rows():
@@ -278,8 +278,8 @@ class TestLogQueryPerformanceLogging:
         from unittest.mock import MagicMock
 
         mock_logger = MagicMock()
-        monkeypatch.setattr("services.decorators.logger", mock_logger)
-        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+        monkeypatch.setattr("poindexter.services.decorators.logger", mock_logger)
+        monkeypatch.setattr("poindexter.services.decorators._log_all_queries", lambda: True)
 
         @log_query_performance(operation="weird_dict", category="test")
         async def weird():
@@ -297,8 +297,8 @@ class TestLogQueryPerformanceLogging:
         from unittest.mock import MagicMock
 
         mock_logger = MagicMock()
-        monkeypatch.setattr("services.decorators.logger", mock_logger)
-        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+        monkeypatch.setattr("poindexter.services.decorators.logger", mock_logger)
+        monkeypatch.setattr("poindexter.services.decorators._log_all_queries", lambda: True)
 
         @log_query_performance(operation="positional_only", category="test")
         async def pos(a, b):
@@ -316,10 +316,10 @@ class TestLogQueryPerformanceLogging:
         from unittest.mock import MagicMock
 
         mock_logger = MagicMock()
-        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        monkeypatch.setattr("poindexter.services.decorators.logger", mock_logger)
         # site_config would report 999999 (never slow), but the decorator
         # override is 0 (always slow) — override must win.
-        monkeypatch.setattr("services.decorators._slow_query_threshold_ms", lambda: 999_999)
+        monkeypatch.setattr("poindexter.services.decorators._slow_query_threshold_ms", lambda: 999_999)
 
         @log_query_performance(operation="override_wins", category="test", slow_threshold_ms=0)
         async def fn():
@@ -338,9 +338,9 @@ class TestLogQueryPerformanceLogging:
 
         Regression guard for the SiteConfig DI migration PR 6 facade
         (replaces the post-#330 ``set_site_config`` seam)."""
-        from services import decorators as dec_mod
-        from services.decorators import Decorators, set_default_decorators
-        from services.site_config import SiteConfig
+        from poindexter.services import decorators as dec_mod
+        from poindexter.services.decorators import Decorators, set_default_decorators
+        from poindexter.services.site_config import SiteConfig
 
         original = dec_mod._default_decorators
         try:
@@ -361,7 +361,7 @@ class TestLogQueryPerformanceLogging:
 
         Fail-loud invariant from the SiteConfig DI migration: no silent
         empty-SiteConfig fallback at the class boundary."""
-        from services.decorators import Decorators
+        from poindexter.services.decorators import Decorators
 
         with pytest.raises(TypeError, match="SiteConfig"):
             Decorators(site_config=None)  # type: ignore[arg-type]
@@ -370,8 +370,8 @@ class TestLogQueryPerformanceLogging:
         """The method form ``Decorators(...).log_query_performance(...)``
         must read settings from the instance's own SiteConfig, not the
         module-level facade — confirms Option A is still wired."""
-        from services.decorators import Decorators
-        from services.site_config import SiteConfig
+        from poindexter.services.decorators import Decorators
+        from poindexter.services.site_config import SiteConfig
 
         cfg = SiteConfig(initial_config={"enable_query_monitoring": "false"})
         dec = Decorators(site_config=cfg)

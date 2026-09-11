@@ -17,8 +17,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.site_config import SiteConfig
-from services.youtube_metadata_sync import SyncOutcome, sync_youtube_metadata
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.youtube_metadata_sync import SyncOutcome, sync_youtube_metadata
 
 ROW = {
     "video_id": "dZxk7FuodZo",
@@ -68,7 +68,7 @@ def _sc(**extra):
 async def test_dry_run_is_the_default_and_sends_nothing(monkeypatch):
     """This writes to a public channel — a mistake must cost a printed diff,
     not 12 rewritten videos."""
-    import services.publish_adapters.youtube as yt
+    import poindexter.services.publish_adapters.youtube as yt
 
     def _boom(*a, **k):  # pragma: no cover - must never run
         raise AssertionError("adapter constructed during a dry run")
@@ -93,7 +93,7 @@ async def test_dry_run_reports_the_new_composition_not_the_old():
 
 @pytest.mark.asyncio
 async def test_apply_pushes_recomposed_metadata_through_the_adapter(monkeypatch):
-    import services.publish_adapters.youtube as yt
+    import poindexter.services.publish_adapters.youtube as yt
 
     seen = {}
 
@@ -123,7 +123,7 @@ async def test_apply_pushes_recomposed_metadata_through_the_adapter(monkeypatch)
 async def test_failure_is_reported_per_video_not_swallowed(monkeypatch):
     """A partial result is the useful one — a scope refusal that stopped the
     run must not read as 'nothing needed changing'."""
-    import services.publish_adapters.youtube as yt
+    import poindexter.services.publish_adapters.youtube as yt
 
     class _Adapter:
         def __init__(self, site_config=None):
@@ -167,7 +167,7 @@ async def test_resync_preserves_the_shorts_title_suffix(monkeypatch):
     without carrying the asset type through, --apply would helpfully undo the
     suffix and re-collide the pair it exists to separate.
     """
-    import services.publish_adapters.youtube as yt
+    import poindexter.services.publish_adapters.youtube as yt
 
     seen = {}
 
@@ -187,7 +187,7 @@ async def test_resync_preserves_the_shorts_title_suffix(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resync_leaves_long_form_titles_alone(monkeypatch):
-    import services.publish_adapters.youtube as yt
+    import poindexter.services.publish_adapters.youtube as yt
 
     seen = {}
 
@@ -214,7 +214,7 @@ async def test_resync_leaves_long_form_titles_alone(monkeypatch):
 
 def _not_found_adapter(monkeypatch, calls=None):
     """Adapter stand-in for a video the API says is not on this channel."""
-    import services.publish_adapters.youtube as yt
+    import poindexter.services.publish_adapters.youtube as yt
 
     class _Adapter:
         def __init__(self, site_config=None):
@@ -238,7 +238,7 @@ async def test_vanished_upload_is_demoted_to_deleted(monkeypatch):
     forever: it inflated the published count and failed every --apply. The
     platform's own 'not found' is the authority, so the row is demoted."""
     monkeypatch.setattr(
-        "services.youtube_metadata_sync.emit_finding", lambda **_kw: None
+        "poindexter.services.youtube_metadata_sync.emit_finding", lambda **_kw: None
     )
     _not_found_adapter(monkeypatch)
     pool = _FakePool([ROW])
@@ -256,7 +256,7 @@ async def test_demotion_is_keyed_on_the_handle_not_the_task(monkeypatch):
     """Only the render that actually vanished may be demoted — its twin under
     the same task_id is a different upload and stays published."""
     sql = __import__(
-        "services.youtube_metadata_sync", fromlist=["_MARK_DELETED_SQL"]
+        "poindexter.services.youtube_metadata_sync", fromlist=["_MARK_DELETED_SQL"]
     )._MARK_DELETED_SQL
     assert "external_id = $1" in sql
     assert "task_id" not in sql
@@ -268,7 +268,7 @@ async def test_vanished_upload_raises_a_finding(monkeypatch):
     away, so the reconcile has to say so rather than just tidying the row."""
     seen: list[dict] = []
     monkeypatch.setattr(
-        "services.youtube_metadata_sync.emit_finding",
+        "poindexter.services.youtube_metadata_sync.emit_finding",
         lambda **kw: seen.append(kw),
     )
     _not_found_adapter(monkeypatch)
@@ -286,9 +286,9 @@ async def test_ordinary_failure_is_not_demoted(monkeypatch):
     structural not_found marker may demote a row — string-matching the message
     would eventually mark a live video deleted."""
     monkeypatch.setattr(
-        "services.youtube_metadata_sync.emit_finding", lambda **_kw: None
+        "poindexter.services.youtube_metadata_sync.emit_finding", lambda **_kw: None
     )
-    import services.publish_adapters.youtube as yt
+    import poindexter.services.publish_adapters.youtube as yt
 
     class _Adapter:
         def __init__(self, site_config=None):
@@ -313,7 +313,7 @@ async def test_dry_run_never_demotes(monkeypatch):
     """A dry run makes no API call, so it has no evidence — and this writes to
     a durable row, which is exactly what dry run exists to withhold."""
     monkeypatch.setattr(
-        "services.youtube_metadata_sync.emit_finding", lambda **_kw: None
+        "poindexter.services.youtube_metadata_sync.emit_finding", lambda **_kw: None
     )
     pool = _FakePool([ROW])
     out = await sync_youtube_metadata(pool, _sc())
@@ -324,7 +324,7 @@ async def test_dry_run_never_demotes(monkeypatch):
 @pytest.mark.asyncio
 async def test_demoted_rows_drop_out_of_the_target_set():
     """The demotion only pays off if the next run stops offering the row."""
-    from services.youtube_metadata_sync import _TARGETS_SQL
+    from poindexter.services.youtube_metadata_sync import _TARGETS_SQL
 
     assert "pd.status = 'published'" in _TARGETS_SQL
 
@@ -335,7 +335,7 @@ async def test_medium_comes_from_the_distribution_row_not_a_subquery():
     correlated subquery into media_assets because pipeline_distributions had no
     medium column — the same missing column that let a Short's row be
     overwritten in the first place (migration 20260901_173133)."""
-    from services.youtube_metadata_sync import _TARGETS_SQL
+    from poindexter.services.youtube_metadata_sync import _TARGETS_SQL
 
     assert "pd.medium" in _TARGETS_SQL
     assert "platform_video_ids" not in _TARGETS_SQL
@@ -374,7 +374,7 @@ async def test_cross_check_finds_handles_with_no_distribution_row():
     """The sync reads pipeline_distributions, so a handle that only exists in
     media_assets is a video it cannot see. That is precisely how five Shorts
     went unreachable — silently, with the sync reporting success."""
-    from services.youtube_metadata_sync import find_unrecorded_uploads
+    from poindexter.services.youtube_metadata_sync import find_unrecorded_uploads
 
     pool = _TwoSourcePool(
         [ROW],
@@ -387,7 +387,7 @@ async def test_cross_check_finds_handles_with_no_distribution_row():
 
 @pytest.mark.asyncio
 async def test_cross_check_is_clean_when_the_two_records_agree():
-    from services.youtube_metadata_sync import find_unrecorded_uploads
+    from poindexter.services.youtube_metadata_sync import find_unrecorded_uploads
 
     assert await find_unrecorded_uploads(_TwoSourcePool([ROW], [])) == []
 
@@ -396,7 +396,7 @@ async def test_cross_check_is_clean_when_the_two_records_agree():
 async def test_cross_check_failure_never_breaks_the_sync():
     """It is a check on the answer, not the answer. A broken cross-check must
     degrade to 'no discrepancy reported', never take the sync down with it."""
-    from services.youtube_metadata_sync import find_unrecorded_uploads
+    from poindexter.services.youtube_metadata_sync import find_unrecorded_uploads
 
     class _Boom:
         def acquire(self):
@@ -409,7 +409,7 @@ def test_cross_check_reads_the_source_that_did_not_lose_data():
     """media_assets stores one handle per asset row, so it structurally could
     not collide the way (task_id, target) did — which is why it is the right
     thing to check the distribution table against."""
-    from services.youtube_metadata_sync import _ORPHAN_HANDLES_SQL
+    from poindexter.services.youtube_metadata_sync import _ORPHAN_HANDLES_SQL
 
     assert "media_assets" in _ORPHAN_HANDLES_SQL
     assert "platform_video_ids->>'youtube'" in _ORPHAN_HANDLES_SQL

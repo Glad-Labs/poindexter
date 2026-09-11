@@ -33,9 +33,9 @@ import pytest
 
 @pytest.mark.unit
 def test_image_caption_resolver_uses_prompt_manager():
-    from services import image_captioner
+    from poindexter.services import image_captioner
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm:
         mock_pm.return_value.get_prompt.return_value = "PM caption prompt"
         result = image_captioner._prompt(budget=125)
     assert result == "PM caption prompt"
@@ -46,10 +46,10 @@ def test_image_caption_resolver_uses_prompt_manager():
 
 @pytest.mark.unit
 def test_image_caption_resolver_falls_back_on_pm_failure():
-    from services import image_captioner
+    from poindexter.services import image_captioner
 
     with patch(
-        "services.prompt_manager.get_prompt_manager",
+        "poindexter.services.prompt_manager.get_prompt_manager",
         side_effect=RuntimeError("pm broken"),
     ):
         result = image_captioner._prompt(budget=97)
@@ -64,9 +64,9 @@ def test_image_caption_resolver_falls_back_on_pm_failure():
 
 @pytest.mark.unit
 def test_g_eval_criterion_resolver_uses_prompt_manager():
-    from services import deepeval_rails
+    from poindexter.services import deepeval_rails
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm:
         mock_pm.return_value.get_prompt.return_value = "PM criterion\n"
         result = deepeval_rails._resolve_g_eval_criterion()
     # The loader's trailing newline is stripped — the criterion is a bare
@@ -77,10 +77,10 @@ def test_g_eval_criterion_resolver_uses_prompt_manager():
 
 @pytest.mark.unit
 def test_g_eval_criterion_resolver_falls_back_on_pm_failure():
-    from services import deepeval_rails
+    from poindexter.services import deepeval_rails
 
     with patch(
-        "services.prompt_manager.get_prompt_manager",
+        "poindexter.services.prompt_manager.get_prompt_manager",
         side_effect=RuntimeError("pm broken"),
     ):
         result = deepeval_rails._resolve_g_eval_criterion()
@@ -93,7 +93,7 @@ def test_g_eval_fallback_matches_seeded_app_setting_shape():
     """The inline fallback must stay newline-free: it mirrors the seeded
     ``app_settings.deepeval_g_eval_criterion`` value, so all three sources
     (constant, seed, stripped SKILL.md body) grade against the same rubric."""
-    from services import deepeval_rails
+    from poindexter.services import deepeval_rails
 
     assert deepeval_rails._DEFAULT_G_EVAL_CRITERION == (
         deepeval_rails._DEFAULT_G_EVAL_CRITERION.strip()
@@ -125,7 +125,7 @@ async def test_evaluate_g_eval_explicit_criterion_wins(monkeypatch):
     """An explicit criterion (the multi_model_qa app_settings override)
     must reach the metric untouched — the catalog resolver only fires
     when no criterion is passed."""
-    from services import deepeval_rails
+    from poindexter.services import deepeval_rails
 
     captured: dict[str, object] = {}
 
@@ -135,7 +135,7 @@ async def test_evaluate_g_eval_explicit_criterion_wins(monkeypatch):
 
     monkeypatch.setattr("deepeval.metrics.GEval", factory)
     with patch(
-        "services.deepeval_rails._resolve_g_eval_criterion",
+        "poindexter.services.deepeval_rails._resolve_g_eval_criterion",
     ) as resolver:
         passed, score, _reason = await deepeval_rails.evaluate_g_eval(
             "body", "topic",
@@ -153,7 +153,7 @@ async def test_evaluate_g_eval_explicit_criterion_wins(monkeypatch):
 async def test_evaluate_g_eval_resolves_criterion_when_none(monkeypatch):
     """criterion=None (the multi_model_qa default when the app_setting is
     unset) routes through the SKILL.md catalog resolver."""
-    from services import deepeval_rails
+    from poindexter.services import deepeval_rails
 
     captured: dict[str, object] = {}
 
@@ -163,7 +163,7 @@ async def test_evaluate_g_eval_resolves_criterion_when_none(monkeypatch):
 
     monkeypatch.setattr("deepeval.metrics.GEval", factory)
     with patch(
-        "services.deepeval_rails._resolve_g_eval_criterion",
+        "poindexter.services.deepeval_rails._resolve_g_eval_criterion",
         return_value="Catalog rubric",
     ) as resolver:
         await deepeval_rails.evaluate_g_eval(
@@ -186,9 +186,9 @@ def test_collapse_resolver_returns_raw_template_from_prompt_manager():
     through the gated ``_resolve_template_with_meta`` seam (poindexter#825;
     same shape as the #2103 fix in retention_summarize_to_table), never
     ``_fetch_from_langfuse``."""
-    from services.integrations.handlers import retention_embeddings_collapse
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm:
         mock_pm.return_value._resolve_template_with_meta.return_value = (
             "PM RAW: {n}/{source_table}/{joined}",
             "yaml",
@@ -209,8 +209,8 @@ def test_collapse_resolver_default_path_never_consults_langfuse():
     template without ever touching Langfuse."""
     from unittest.mock import MagicMock
 
-    from services import prompt_manager as pm_mod
-    from services.integrations.handlers import retention_embeddings_collapse
+    from poindexter.services import prompt_manager as pm_mod
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse
 
     pm = pm_mod.UnifiedPromptManager()
     with patch.object(
@@ -224,10 +224,10 @@ def test_collapse_resolver_default_path_never_consults_langfuse():
 
 @pytest.mark.unit
 def test_collapse_resolver_falls_back_on_pm_failure():
-    from services.integrations.handlers import retention_embeddings_collapse
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse
 
     with patch(
-        "services.prompt_manager.get_prompt_manager",
+        "poindexter.services.prompt_manager.get_prompt_manager",
         side_effect=RuntimeError("pm broken"),
     ):
         result = retention_embeddings_collapse._resolve_summary_prompt_template()
@@ -241,14 +241,14 @@ async def test_collapse_llm_summary_prefers_explicit_prompt_template():
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from services.integrations.handlers import retention_embeddings_collapse as mod
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse as mod
 
     # poindexter#827: the summarizer routes through dispatch_complete now,
     # so mock the dispatcher (not OllamaClient) and read the prompt off the
     # captured messages payload.
     dispatch_mock = AsyncMock(return_value=SimpleNamespace(text="a summary"))
     with patch(
-        "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+        "poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
     ), patch.object(
         mod, "_resolve_summary_prompt_template",
     ) as resolver:
@@ -271,11 +271,11 @@ async def test_collapse_llm_summary_uses_catalog_template_when_config_unset():
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from services.integrations.handlers import retention_embeddings_collapse as mod
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse as mod
 
     dispatch_mock = AsyncMock(return_value=SimpleNamespace(text="a summary"))
     with patch(
-        "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+        "poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
     ), patch.object(
         mod, "_resolve_summary_prompt_template",
         return_value="CATALOG: {n} {source_table} {joined}",

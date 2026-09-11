@@ -58,8 +58,8 @@ import shutil
 import tempfile
 from typing import Any
 
-from services.caption_providers import get_caption_provider
-from services.llm_providers.dispatcher import dispatch_complete
+from poindexter.services.caption_providers import get_caption_provider
+from poindexter.services.llm_providers.dispatcher import dispatch_complete
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -819,7 +819,7 @@ async def _notify_if_pending(db: Any, post_id: str, medium: str) -> None:
     by the helper itself, so callers don't need a defensive wrapper.
     """
     try:
-        from services import media_approval_service
+        from poindexter.services import media_approval_service
 
         await media_approval_service.notify_pending_for_review(
             db, post_id, medium,

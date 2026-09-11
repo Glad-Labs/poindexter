@@ -8,7 +8,7 @@ No DB or LLM calls — all functions are stateless heuristics.
 
 import pytest
 
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     check_keywords,
     count_syllables,
     detect_truncation,
@@ -23,7 +23,7 @@ from services.quality_scorers import (
     score_relevance,
     score_seo,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # Default config for testing (avoids DB calls)
 _CFG = {
@@ -425,7 +425,7 @@ class TestGenerateSuggestions:
 @pytest.mark.unit
 class TestQaCfg:
     def test_returns_dict_with_expected_keys(self):
-        from services.quality_scorers import qa_cfg
+        from poindexter.services.quality_scorers import qa_cfg
         cfg = qa_cfg(site_config=_SC)
         assert isinstance(cfg, dict)
         # Spot check keys
@@ -439,13 +439,13 @@ class TestQaCfg:
             assert key in cfg
 
     def test_threshold_values_are_numeric(self):
-        from services.quality_scorers import qa_cfg
+        from poindexter.services.quality_scorers import qa_cfg
         cfg = qa_cfg(site_config=_SC)
         for k, v in cfg.items():
             assert isinstance(v, (int, float)), f"{k} should be numeric, got {type(v).__name__}"
 
     def test_clarity_ranges_have_sensible_ordering(self):
-        from services.quality_scorers import qa_cfg
+        from poindexter.services.quality_scorers import qa_cfg
         cfg = qa_cfg(site_config=_SC)
         assert cfg["clarity_ideal_min"] < cfg["clarity_ideal_max"]
         assert cfg["clarity_good_min"] <= cfg["clarity_ideal_min"]

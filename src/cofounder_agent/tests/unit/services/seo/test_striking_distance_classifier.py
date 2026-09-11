@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from services.seo.striking_distance import (
+from poindexter.services.seo.striking_distance import (
     DEFAULT_THRESHOLDS,
     classify_opportunity,
     compute_gap_score,

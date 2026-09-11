@@ -23,23 +23,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.category_resolver import (
+from poindexter.services.category_resolver import (
     select_category_for_topic as _select_category_for_topic,
 )
-from services.content_task_store import ContentTaskStore
-from services.default_author import (
+from poindexter.services.content_task_store import ContentTaskStore
+from poindexter.services.default_author import (
     get_or_create_default_author as _get_or_create_default_author,
 )
-from services.model_preferences import (
+from poindexter.services.model_preferences import (
     parse_model_preferences as _parse_model_preferences,
 )
-from services.text_utils import (
+from poindexter.services.text_utils import (
     normalize_text as _normalize_text,
 )
-from services.text_utils import (
+from poindexter.services.text_utils import (
     scrub_fabricated_links as _scrub_fabricated_links,
 )
-from services.title_generation import (
+from poindexter.services.title_generation import (
     check_title_originality as _check_title_originality,
 )
 
@@ -371,25 +371,25 @@ class TestScrubFabricatedLinks:
     """Tests for link scrubbing that removes hallucinated URLs."""
 
     def test_keeps_trusted_markdown_links(self):
-        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        from poindexter.services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "Check out [this repo](https://github.com/user/project) for details."
         assert "github.com/user/project" in _scrub_fabricated_links(content)
 
     def test_removes_fabricated_markdown_links(self):
-        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        from poindexter.services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "See [definition](https://www.dictionary.com/browse/example) for more."
         result = _scrub_fabricated_links(content)
         assert "dictionary.com" not in result
         assert "definition" in result  # Link text preserved
 
     def test_removes_bare_fabricated_urls(self):
-        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        from poindexter.services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "Visit https://www.randomsite.com/fake-article for info."
         result = _scrub_fabricated_links(content)
         assert "randomsite.com" not in result
 
     def test_keeps_bare_trusted_urls(self):
-        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        from poindexter.services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "See https://arxiv.org/abs/2301.12345 for the paper."
         result = _scrub_fabricated_links(content)
         assert "arxiv.org" in result
@@ -397,23 +397,23 @@ class TestScrubFabricatedLinks:
     def test_keeps_own_domain_links(self):
         # Use the conftest-seeded shared SiteConfig (post-#330 sweep —
         # text_utils takes ``site_config`` as a function arg, no module attr).
-        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        from poindexter.services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         from tests.unit.conftest import site_config as sc
         domain = sc.get("site_domain", "test-site.example.com")
         content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
         assert domain in _scrub_fabricated_links(content, site_config=sc)
 
     def test_empty_content_returns_empty(self):
-        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        from poindexter.services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         assert _scrub_fabricated_links("") == ""
 
     def test_no_links_returns_unchanged(self):
-        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        from poindexter.services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "This is plain text with no links at all."
         assert _scrub_fabricated_links(content) == content
 
     def test_multiple_fabricated_links_all_removed(self):
-        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        from poindexter.services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = (
             "See [tools](https://www.techtools.io/list) and "
             "[guide](https://www.fakesite.com/guide) for more."
@@ -534,7 +534,7 @@ class TestCheckTitleOriginality:
         mock_cfg = MagicMock()
         mock_cfg.get_float.return_value = 0.6
         mock_cfg.get_bool.return_value = True
-        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=mock_researcher):
             result = await _check_title_originality(
                 "A Completely Unique Title Nobody Has Written",
                 site_config=mock_cfg,
@@ -555,7 +555,7 @@ class TestCheckTitleOriginality:
         mock_cfg = MagicMock()
         mock_cfg.get_float.return_value = 0.6
         mock_cfg.get_bool.return_value = True
-        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=mock_researcher):
             result = await _check_title_originality(
                 "How AI Is Changing Healthcare in 2026",
                 site_config=mock_cfg,
@@ -584,7 +584,7 @@ class TestCheckTitleOriginality:
         mock_cfg = MagicMock()
         mock_cfg.get_float.return_value = 0.6
         mock_cfg.get_bool.return_value = True
-        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=mock_researcher):
             result = await _check_title_originality("Test Title", site_config=mock_cfg)
 
         assert result["is_original"] is True
@@ -600,7 +600,7 @@ class TestCheckTitleOriginality:
         mock_cfg = MagicMock()
         mock_cfg.get_float.return_value = 0.6
         mock_cfg.get_bool.return_value = True
-        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=mock_researcher):
             result = await _check_title_originality(
                 "Understanding GPU Architecture for ML Workloads",
                 site_config=mock_cfg,
@@ -814,52 +814,72 @@ class TestSanitizeGeneratedTitle:
     """
 
     def test_returns_clean_title_unchanged(self):
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         assert _sanitize_generated_title("Why Local LLMs Beat the Cloud") \
             == "Why Local LLMs Beat the Cloud"
 
     def test_strips_quotes_and_bold(self):
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         assert _sanitize_generated_title('"**Running Stable Diffusion Locally**"') \
             == "Running Stable Diffusion Locally"
 
     def test_strips_leading_list_marker(self):
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         assert _sanitize_generated_title("* Top 10 FastAPI Patterns") \
             == "Top 10 FastAPI Patterns"
 
     def test_strips_heading_hash(self):
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         assert _sanitize_generated_title("# The AI Agents Handbook") \
             == "The AI Agents Handbook"
 
     def test_strips_think_block(self):
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         raw = "<think>Let me consider the audience.</think>\nPostgres Sharding for Beginners"
         assert _sanitize_generated_title(raw) == "Postgres Sharding for Beginners"
 
     def test_rejects_deliberation_trace(self):
         """This is the exact bug that shipped #8b13ff52 to awaiting_approval."""
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         raw = "*   Let's go with the **Question**. It is the most unique structure in this set."
         assert _sanitize_generated_title(raw) is None
 
     def test_walks_back_to_final_line_when_reasoning_precedes(self):
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         raw = "Let me think about this.\nOptions:\n1. One\n2. Two\n\nThe GPU Memory Bottleneck"
         assert _sanitize_generated_title(raw) == "The GPU Memory Bottleneck"
 
     def test_rejects_empty(self):
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         assert _sanitize_generated_title("") is None
         assert _sanitize_generated_title("   \n\n  ") is None
 
     def test_rejects_too_short(self):
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         assert _sanitize_generated_title("hi") is None
 
     def test_truncates_too_long(self):
-        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
+        from poindexter.services.title_generation import (
+            sanitize_generated_title as _sanitize_generated_title,
+        )
         out = _sanitize_generated_title("x" * 200)
         assert out is not None
         assert len(out) <= 100

@@ -18,8 +18,8 @@ exposes it as the task_metadata column). post_id is nested inside task_metadata
 
 import pytest
 
-from services.atom_registry import discover
-from services.pipeline_architect import _validate_spec
+from poindexter.services.atom_registry import discover
+from poindexter.services.pipeline_architect import _validate_spec
 
 
 @pytest.fixture(autouse=True)

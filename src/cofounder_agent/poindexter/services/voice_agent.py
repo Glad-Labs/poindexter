@@ -113,7 +113,7 @@ from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import (
 )
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
-from services.voice_prompts import (
+from poindexter.services.voice_prompts import (
     CLAUDE_BRIDGE_TTS_KEY,
     EMMA_SYSTEM_KEY,
     resolve_voice_prompt,
@@ -603,7 +603,7 @@ async def run_local(
     )
 
     if brain == "claude-code":
-        from services.voice_agent_claude_code import ClaudeCodeBridgeLLMService
+        from poindexter.services.voice_agent_claude_code import ClaudeCodeBridgeLLMService
 
         extra = os.environ.get("CLAUDE_BOT_EXTRA_ARGS", "").split()
         sess = os.environ.get("CLAUDE_BOT_SESSION_ID", "").strip() or None
@@ -649,7 +649,7 @@ async def _bootstrap_and_run(brain: str, project_dir: str | None) -> None:
     import asyncpg
 
     from brain.bootstrap import require_database_url
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     dsn = require_database_url(source="voice_agent")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)

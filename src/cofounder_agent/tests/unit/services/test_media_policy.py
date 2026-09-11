@@ -8,7 +8,7 @@ shared real-Postgres ``db_pool`` fixture (tests/unit/conftest.py).
 
 import pytest
 
-from services.media_policy import resolve_media_to_generate
+from poindexter.services.media_policy import resolve_media_to_generate
 
 # asyncpg connections are loop-bound; the shared db_pool fixture is
 # session-scoped, so tests must run on the session loop or asyncpg raises

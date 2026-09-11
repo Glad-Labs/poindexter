@@ -21,8 +21,8 @@ import pytest
 
 from modules.content.atoms import social_generate_drafts
 from modules.content.atoms.social_generate_drafts import run as drafts_run
-from services.site_config import SiteConfig
-from services.social_poster import SocialPost
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.social_poster import SocialPost
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ async def test_drafts_predict_publish_slug_when_post_slug_missing(
     # precedence inversion even though the two sides still agreed — the
     # drift it exists to catch is between the atom and publish, not between
     # the atom and a hardcoded string.
-    from services.publish_service import derive_publish_identity
+    from poindexter.services.publish_service import derive_publish_identity
 
     _t, _c, expected_slug = derive_publish_identity(
         state["content"], state["title"], state["topic"], state["task_id"],

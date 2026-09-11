@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ class TestGatesGroupConsolidation:
             "poindexter.cli.approval._resolve_task_id_prefix",
             new=AsyncMock(return_value="t-1"),
         ), patch(
-            "services.approval_service.approve",
+            "poindexter.services.approval_service.approve",
             new=AsyncMock(return_value={"ok": True, "task_id": "t-1", "gate_name": "g"}),
         ) as mock_svc:
             result = runner.invoke(gates_group, ["approve", "t-1", "--feedback", "ok"])
@@ -72,7 +72,7 @@ class TestGatesGroupConsolidation:
             "poindexter.cli.approval._make_pool",
             new=AsyncMock(return_value=MagicMock(close=AsyncMock())),
         ), patch(
-            "services.approval_service.list_pending",
+            "poindexter.services.approval_service.list_pending",
             new=AsyncMock(return_value=[]),
         ):
             result = runner.invoke(gates_group, ["pending"])
@@ -94,7 +94,7 @@ class TestGatesGroupConsolidation:
             "poindexter.cli.approval._resolve_task_id_prefix",
             new=AsyncMock(return_value="t-1"),
         ), patch(
-            "services.approval_service.show_pending",
+            "poindexter.services.approval_service.show_pending",
             new=AsyncMock(return_value=payload),
         ):
             result = runner.invoke(gates_group, ["show", "t-1", "--json"])
@@ -118,7 +118,7 @@ class TestApprovalFlatAliases:
             "poindexter.cli.approval._make_pool",
             new=AsyncMock(return_value=MagicMock(close=AsyncMock())),
         ), patch(
-            "services.approval_service.list_pending",
+            "poindexter.services.approval_service.list_pending",
             new=AsyncMock(return_value=[]),
         ):
             result = CliRunner().invoke(alias, [])
@@ -178,7 +178,7 @@ class TestScheduleGroupConsolidation:
             "poindexter.cli.publish_approval._resolve_post_id",
             new=AsyncMock(return_value="p-1"),
         ), patch(
-            "services.posts_approval_service.approve_publish",
+            "poindexter.services.posts_approval_service.approve_publish",
             new=AsyncMock(return_value={"gate_name": "final_publish_approval"}),
         ) as mock_svc:
             result = runner.invoke(schedule_group, ["approve", "p-1", "--feedback", "ship"])
@@ -202,7 +202,7 @@ class TestScheduleGroupConsolidation:
             "poindexter.cli.publish_approval._resolve_post_id",
             new=AsyncMock(return_value="p-1"),
         ), patch(
-            "services.posts_approval_service.show_pending_publish",
+            "poindexter.services.posts_approval_service.show_pending_publish",
             new=AsyncMock(return_value=payload),
         ):
             result = runner.invoke(schedule_group, ["show-pending", "p-1"])
@@ -224,7 +224,7 @@ class TestScheduleGroupConsolidation:
             "poindexter.cli.schedule.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
         ), patch(
-            "services.scheduling_service.assign_slot",
+            "poindexter.services.scheduling_service.assign_slot",
             new=AsyncMock(return_value=_sched_result()),
         ) as mock_assign:
             result = runner.invoke(schedule_group, ["at", "6bf91cc3", "now"])
@@ -265,7 +265,7 @@ class TestScheduleFlatAliases:
             "poindexter.cli.publish_approval._resolve_post_id",
             new=AsyncMock(return_value="p-1"),
         ), patch(
-            "services.posts_approval_service.approve_publish",
+            "poindexter.services.posts_approval_service.approve_publish",
             new=AsyncMock(return_value={"gate_name": "final_publish_approval"}),
         ):
             result = CliRunner().invoke(alias, ["p-1"])
@@ -290,7 +290,7 @@ class TestScheduleFlatAliases:
             "poindexter.cli.schedule.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
         ), patch(
-            "services.scheduling_service.assign_slot",
+            "poindexter.services.scheduling_service.assign_slot",
             new=AsyncMock(return_value=_sched_result()),
         ):
             result = CliRunner().invoke(alias, ["6bf91cc3", "now"])

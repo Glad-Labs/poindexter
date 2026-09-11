@@ -147,7 +147,7 @@ class CodebaseSource:
         # seeds the SiteConfig instance into ``config["_site_config"]``; bare
         # SiteConfig fallback keeps unit tests that build a vanilla config dict
         # working without DI plumbing.
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
         site_config = config.get("_site_config") or SiteConfig()
         seed_queries_cfg = config.get("seed_queries")
         seed_queries = (
@@ -175,7 +175,7 @@ class CodebaseSource:
                 # retires the direct POST to Ollama's DEPRECATED
                 # /api/embeddings endpoint; the embed now honors the
                 # configured provider + base-url overrides and traces.
-                from services.llm_providers.dispatcher import dispatch_embed
+                from poindexter.services.llm_providers.dispatcher import dispatch_embed
 
                 embedding = await dispatch_embed(pool, query, embed_model)
             except Exception as e:  # noqa: BLE001 — advisory source; fail-soft per query

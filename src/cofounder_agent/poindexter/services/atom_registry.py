@@ -25,7 +25,7 @@ from collections.abc import Callable
 from typing import Any
 
 from plugins.atom import AtomMeta
-from services.module_paths import resolve_module_path
+from poindexter.services.module_paths import resolve_module_path
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,7 @@ def _surface_stages_as_atoms() -> None:
     # The shared_context module already holds the process-wide DatabaseService.
     fallback_pool = None
     try:
-        from services.integrations.shared_context import get_database_service
+        from poindexter.services.integrations.shared_context import get_database_service
         _db = get_database_service()
         fallback_pool = getattr(_db, "pool", None) if _db else None
     except Exception:  # noqa: BLE001
@@ -316,7 +316,7 @@ def _make_stage_runner(
     """
 
     async def runner(state: dict[str, Any]) -> dict[str, Any]:
-        from services.template_runner import make_stage_node
+        from poindexter.services.template_runner import make_stage_node
 
         db = state.get("database_service")
         pool = getattr(db, "pool", None) if db else None

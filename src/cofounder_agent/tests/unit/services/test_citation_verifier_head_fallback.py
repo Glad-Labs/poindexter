@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.citation_verifier import (
+from poindexter.services.citation_verifier import (
     CitationReport,
     _head_one,
     verdict_from_report,
@@ -83,7 +83,7 @@ async def test_401_is_dead_not_blocked():
 @pytest.mark.asyncio
 async def test_blocked_links_do_not_reject_the_draft():
     """1 alive + 1 blocked must NOT trip a 30% dead-ratio veto."""
-    from services.citation_verifier import CitationIssue
+    from poindexter.services.citation_verifier import CitationIssue
 
     report = CitationReport(
         total_urls=2, unique_urls=2,
@@ -102,15 +102,15 @@ async def test_blocked_links_do_not_reject_the_draft():
 @pytest.mark.asyncio
 async def test_dead_ratio_excludes_blocked_from_denominator():
     """1 dead + 1 blocked = 100% of the VERIFIABLE links dead, not 50%."""
-    import services.citation_verifier as cvmod
-    from services.citation_verifier import CitationVerifier
-    from services.site_config import SiteConfig
+    import poindexter.services.citation_verifier as cvmod
+    from poindexter.services.citation_verifier import CitationVerifier
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={})
     cv = CitationVerifier(site_config=sc)
 
     async def fake_head_one(client, url, timeout_s, headers):
-        from services.citation_verifier import CitationIssue
+        from poindexter.services.citation_verifier import CitationIssue
         if "blockedhost" in url:
             return (url, CitationIssue(url=url, reason="blocked", detail="HTTP 403", status_code=403))
         return (url, CitationIssue(url=url, reason="bad_status", detail="HTTP 404", status_code=404))

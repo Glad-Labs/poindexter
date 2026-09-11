@@ -20,13 +20,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services import settings_read_sink
-from services.integrations.handlers.retention_summarize_to_table import (
+from poindexter.services import settings_read_sink
+from poindexter.services.integrations.handlers.retention_summarize_to_table import (
     _get_setting as retention_get_setting,
 )
-from services.jobs.check_memory_staleness import _get_setting as check_memory_get_setting
-from services.jobs.reap_stale_topic_batches import _read_setting as reap_read_setting
-from services.jobs.topic_auto_resolve import _read_setting as topic_read_setting
+from poindexter.services.jobs.check_memory_staleness import _get_setting as check_memory_get_setting
+from poindexter.services.jobs.reap_stale_topic_batches import _read_setting as reap_read_setting
+from poindexter.services.jobs.topic_auto_resolve import _read_setting as topic_read_setting
 
 # Every reusable helper shares the shape ``async def (pool, key, default)`` and
 # reads via ``pool.fetchrow``.
@@ -75,7 +75,7 @@ async def test_raw_helper_records_read_even_when_key_absent(helper):
 async def test_expire_stale_approvals_records_legacy_key():
     """The job's legacy back-compat read of ``approval_ttl_days`` records the
     read so the key stops surfacing as a zero-reader orphan."""
-    from services.jobs.expire_stale_approvals import ExpireStaleApprovalsJob
+    from poindexter.services.jobs.expire_stale_approvals import ExpireStaleApprovalsJob
 
     settings_read_sink.drain_read_keys()
 

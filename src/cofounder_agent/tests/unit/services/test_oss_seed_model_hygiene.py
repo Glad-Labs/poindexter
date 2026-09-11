@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from services import settings_defaults
+from poindexter.services import settings_defaults
 
 # Operator-private / custom model tags that are NOT on the public Ollama
 # registry, so a fresh install cannot pull them.
@@ -131,7 +131,7 @@ def test_baseline_seeds_have_no_brand_value_defaults() -> None:
     assert not offenders, (
         "0000_baseline.seeds.sql seeds the operator brand as a default value: "
         f"{offenders}. Seed '' / a generic default and put the brand in "
-        "services.operator_overrides."
+        "poindexter.services.operator_overrides."
     )
 
 
@@ -147,7 +147,7 @@ def test_settings_defaults_have_no_brand_value_defaults() -> None:
     assert not offenders, (
         "settings_defaults.DEFAULTS ships the operator brand as a default "
         f"value: {offenders}. Use a generic default and put the brand in "
-        "services.operator_overrides."
+        "poindexter.services.operator_overrides."
     )
 
 

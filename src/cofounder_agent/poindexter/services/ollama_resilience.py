@@ -60,8 +60,8 @@ from plugins.llm_resilience import (
 from plugins.llm_resilience import (
     compute_backoff as _compute_backoff,
 )
-from services.audit_log import audit_log_bg as _audit_log_bg  # noqa: F401
-from services.logger_config import get_logger
+from poindexter.services.audit_log import audit_log_bg as _audit_log_bg  # noqa: F401
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

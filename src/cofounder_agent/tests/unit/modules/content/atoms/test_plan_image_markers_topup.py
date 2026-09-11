@@ -27,9 +27,9 @@ from modules.content.atoms._writer_markers import (
     number_inline_markers,
     renumber_placeholders,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
-_UNLOAD = "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen"
+_UNLOAD = "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen"
 _PLAN = "modules.content.atoms._image_helpers.plan_and_inject_placeholders"
 
 
@@ -130,7 +130,7 @@ async def test_injector_numbers_from_start_num_and_skips_illustrated_sections():
     )
     plan = _Plan([_Img("Alpha", "a1"), _Img("Beta", "b1"), _Img("Gamma", "g1")])
     with patch(
-        "services.image_decision_agent.plan_images", new=AsyncMock(return_value=plan),
+        "poindexter.services.image_decision_agent.plan_images", new=AsyncMock(return_value=plan),
     ) as pi:
         out, info = await _plan_and_inject_placeholders(
             body, "topic", "technology", site_config=_sc(), max_images=2, start_num=2,
@@ -147,7 +147,7 @@ async def test_injector_numbers_from_start_num_and_skips_illustrated_sections():
 
 @pytest.mark.asyncio
 async def test_injector_with_no_slots_left_never_calls_the_agent():
-    with patch("services.image_decision_agent.plan_images", new=AsyncMock()) as pi:
+    with patch("poindexter.services.image_decision_agent.plan_images", new=AsyncMock()) as pi:
         out, info = await _plan_and_inject_placeholders(
             "## A\n\ntext", "t", "c", site_config=_sc(), max_images=0,
         )

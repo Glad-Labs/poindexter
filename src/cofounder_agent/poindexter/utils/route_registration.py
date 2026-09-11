@@ -27,8 +27,8 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from services.logger_config import get_logger
-from services.module_paths import resolve_module_path
+from poindexter.services.logger_config import get_logger
+from poindexter.services.module_paths import resolve_module_path
 
 logger = get_logger(__name__)
 

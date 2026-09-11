@@ -27,8 +27,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
 from routes.task_routes import router
-from services.enhanced_status_change_service import EnhancedStatusChangeService
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
 from utils.route_utils import get_database_dependency
 
@@ -414,7 +414,7 @@ class TestGetTaskStatusHistory:
             ]
         )
 
-        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+        with patch("poindexter.services.tasks_db.TasksDatabase", return_value=mock_task_db):
             resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200
@@ -431,7 +431,7 @@ class TestGetTaskStatusHistory:
         mock_task_db = AsyncMock()
         mock_task_db.get_status_history = AsyncMock(return_value=[])
 
-        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+        with patch("poindexter.services.tasks_db.TasksDatabase", return_value=mock_task_db):
             resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200
@@ -447,7 +447,7 @@ class TestGetTaskStatusHistory:
         mock_task_db = AsyncMock()
         mock_task_db.get_status_history = AsyncMock(return_value=None)
 
-        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+        with patch("poindexter.services.tasks_db.TasksDatabase", return_value=mock_task_db):
             resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200
@@ -481,7 +481,7 @@ class TestGetTaskStatusHistory:
         mock_task_db = AsyncMock()
         mock_task_db.get_status_history = AsyncMock(return_value=[])
 
-        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+        with patch("poindexter.services.tasks_db.TasksDatabase", return_value=mock_task_db):
             resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history?limit=10")
 
         assert resp.status_code == 200
@@ -497,7 +497,7 @@ class TestGetTaskStatusHistory:
         mock_task_db = AsyncMock()
         mock_task_db.get_status_history = AsyncMock(return_value=[])
 
-        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+        with patch("poindexter.services.tasks_db.TasksDatabase", return_value=mock_task_db):
             resp = _make_client(mock_db).get(
                 f"/api/tasks/{VALID_TASK_ID}/status-history?limit=10&offset=20"
             )
@@ -514,7 +514,7 @@ class TestGetTaskStatusHistory:
         mock_task_db = AsyncMock()
         mock_task_db.get_status_history = AsyncMock(return_value=[])
 
-        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+        with patch("poindexter.services.tasks_db.TasksDatabase", return_value=mock_task_db):
             resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200
@@ -528,7 +528,7 @@ class TestGetTaskStatusHistory:
         mock_task_db = AsyncMock()
         mock_task_db.get_status_history = AsyncMock(side_effect=RuntimeError("DB error"))
 
-        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+        with patch("poindexter.services.tasks_db.TasksDatabase", return_value=mock_task_db):
             resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 500
@@ -541,7 +541,7 @@ class TestGetTaskStatusHistory:
         mock_task_db = AsyncMock()
         mock_task_db.get_status_history = AsyncMock(return_value=[])
 
-        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+        with patch("poindexter.services.tasks_db.TasksDatabase", return_value=mock_task_db):
             resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200

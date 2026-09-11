@@ -22,9 +22,9 @@ import uuid as uuid_lib
 from datetime import datetime, timezone
 from typing import Any
 
+from poindexter.services.logger_config import get_logger
+from poindexter.services.topic_length import pick_target_length
 from schemas.task_schemas import UnifiedTaskRequest
-from services.logger_config import get_logger
-from services.topic_length import pick_target_length
 
 logger = get_logger(__name__)
 
@@ -42,7 +42,7 @@ async def resolve_niche_for_topics(pool: Any, niche_slug: str | None) -> Any:
     """Resolve which niche a topic operation targets — explicit slug wins,
     a single active niche is unambiguous, anything else fails loud
     (``feedback_no_silent_defaults``: never guess between niches)."""
-    from services.niche_service import NicheService
+    from poindexter.services.niche_service import NicheService
 
     nsvc = NicheService(pool)
     if niche_slug:
@@ -113,7 +113,7 @@ async def create_blog_post_task(
     # path (no human is present to pass force=true).
     is_auto_topic = resolved_topic.lower() == "auto"
     if is_auto_topic:
-        from services.topic_pool import claim_best_pooled_topic
+        from poindexter.services.topic_pool import claim_best_pooled_topic
 
         pool = db_service.pool if db_service else None
         if pool is None:
@@ -175,7 +175,7 @@ async def create_blog_post_task(
     # checked here against already-published posts and refused (409) when too
     # similar, unless the caller passes force=true. See topic_dedup_guard.py.
     if not is_auto_topic:
-        from services.topic_dedup_guard import (
+        from poindexter.services.topic_dedup_guard import (
             DuplicateTopicError,
             assert_topic_not_duplicate,
         )
@@ -229,7 +229,7 @@ async def create_blog_post_task(
     queue_position = 0
     queue_limit = 0
     try:
-        from services.pipeline_throttle import is_queue_full
+        from poindexter.services.pipeline_throttle import is_queue_full
 
         queue_full, queue_position, queue_limit = await is_queue_full(
             db_service.pool if db_service else None,

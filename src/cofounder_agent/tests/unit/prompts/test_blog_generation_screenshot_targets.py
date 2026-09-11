@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.prompt_manager import UnifiedPromptManager
+from poindexter.services.prompt_manager import UnifiedPromptManager
 
 # The exact kwarg set modules/content/ai_content_generator.py passes.
 _CALL_SITE_KWARGS = {
@@ -66,7 +66,7 @@ def test_initial_draft_mentions_the_screenshot_marker():
 
 def test_describe_screenshot_targets_renders_allowlist():
     from modules.content.ai_content_generator import _describe_screenshot_targets
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={
         "plugin.image_provider.screenshot.targets":
@@ -89,7 +89,7 @@ def test_describe_screenshot_targets_tells_writer_to_skip_when_unusable(targets)
     fills in with guesses.
     """
     from modules.content.ai_content_generator import _describe_screenshot_targets
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = None if targets is None else SiteConfig(
         initial_config={"plugin.image_provider.screenshot.targets": targets},
@@ -107,7 +107,7 @@ def test_two_pass_writer_prompt_also_offers_the_chart_marker():
     ever been produced and 0 of 199 recent drafts contain the marker. A chart
     marker wired the same way would have been dormant on arrival.
     """
-    from services.prompt_manager import UnifiedPromptManager
+    from poindexter.services.prompt_manager import UnifiedPromptManager
 
     rendered = UnifiedPromptManager().get_prompt(
         "atoms.two_pass_writer.generate_with_context",
@@ -129,7 +129,7 @@ def test_two_pass_prompt_offers_the_screenshot_marker():
     ``image.screenshot`` media assets EVER, and 0 of 199 recent drafts carried
     the marker — despite a ``qa-rails`` target being configured the whole time.
     """
-    from services.prompt_manager import UnifiedPromptManager
+    from poindexter.services.prompt_manager import UnifiedPromptManager
 
     rendered = UnifiedPromptManager().get_prompt(
         "atoms.two_pass_writer.generate_with_context",
@@ -150,7 +150,7 @@ def test_two_pass_prompt_opens_only_the_two_evidence_markers():
     is illustrated, which is a different decision."""
     from pathlib import Path
 
-    import services  # noqa: F401 — locate the package root
+    from poindexter import services  # noqa: F401 — locate the package root
 
     skill = (
         Path(services.__file__).resolve().parents[2]  # src/cofounder_agent (services/ sits under poindexter/)
@@ -176,7 +176,7 @@ _TARGETS = '{"qa-rails": {"url": "http://g/d/qa", "alt": "The QA Rails board"}}'
 
 
 def _gate_sc(**overrides):
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     cfg = {"plugin.image_provider.screenshot.targets": _TARGETS}
     cfg.update(overrides)
@@ -257,7 +257,7 @@ def test_no_site_config_is_never_about_this_system():
 
 def test_gate_passes_but_no_targets_configured_still_says_none_configured():
     from modules.content.ai_content_generator import screenshot_targets_for_post
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={"plugin.image_provider.screenshot.targets": ""})
     out = screenshot_targets_for_post(sc, topic_kind="internal")
@@ -284,7 +284,7 @@ def test_two_pass_generate_with_context_threads_topic_kind_to_the_gate(monkeypat
 
     monkeypatch.setattr(acg, "screenshot_targets_for_post", fake_gate)
     monkeypatch.setattr(acg, "_resolve_rag_writer_model", fake_model)
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_chat)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_chat)
     sc = _gate_sc(writer_rag_context_snippet_max_chars="500")
 
     import asyncio

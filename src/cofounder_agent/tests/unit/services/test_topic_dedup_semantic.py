@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from services.topic_dedup_semantic import (
+from poindexter.services.topic_dedup_semantic import (
     SemanticDeduplicator,
     get_deduplicator,
 )
@@ -66,7 +66,7 @@ def _stub_embeddings(mapping: dict[str, list[float]]):
 @pytest.mark.unit
 class TestEngineSelector:
     def test_default_returns_word_overlap_engine(self):
-        from services.topic_dedup import TopicDeduplicator
+        from poindexter.services.topic_dedup import TopicDeduplicator
         sc = _site_config()  # no setting
         engine = get_deduplicator(pool=None, site_config=sc)
         assert isinstance(engine, TopicDeduplicator)
@@ -82,7 +82,7 @@ class TestEngineSelector:
         assert isinstance(engine, SemanticDeduplicator)
 
     def test_unknown_value_falls_back_to_word_overlap(self):
-        from services.topic_dedup import TopicDeduplicator
+        from poindexter.services.topic_dedup import TopicDeduplicator
         sc = _site_config({"topic_dedup_engine": "made-up-engine"})
         engine = get_deduplicator(pool=None, site_config=sc)
         assert isinstance(engine, TopicDeduplicator)
@@ -106,7 +106,7 @@ class TestSemanticIntraBatch:
         dedup = _make_dedup()
         topics = [_Topic(k) for k in mapping]
         with patch(
-            "services.topic_dedup_semantic._get_model",
+            "poindexter.services.topic_dedup_semantic._get_model",
             return_value=_stub_embeddings(mapping),
         ):
             await dedup.mark_intra_batch(topics)
@@ -125,7 +125,7 @@ class TestSemanticIntraBatch:
         dedup = _make_dedup()
         topics = [_Topic(k) for k in mapping]
         with patch(
-            "services.topic_dedup_semantic._get_model",
+            "poindexter.services.topic_dedup_semantic._get_model",
             return_value=_stub_embeddings(mapping),
         ):
             await dedup.mark_intra_batch(topics)
@@ -142,7 +142,7 @@ class TestSemanticIntraBatch:
         dedup = _make_dedup({"topic_dedup_intra_batch_threshold_semantic": 0.4})
         topics = [_Topic(k) for k in mapping]
         with patch(
-            "services.topic_dedup_semantic._get_model",
+            "poindexter.services.topic_dedup_semantic._get_model",
             return_value=_stub_embeddings(mapping),
         ):
             await dedup.mark_intra_batch(topics)
@@ -189,7 +189,7 @@ class TestSemanticVsExisting:
         pool = _FakePool([existing], [])
         dedup.pool = pool
         with patch(
-            "services.topic_dedup_semantic._get_model",
+            "poindexter.services.topic_dedup_semantic._get_model",
             return_value=_stub_embeddings(mapping),
         ):
             await dedup.mark_against_existing(topics)
@@ -208,7 +208,7 @@ class TestSemanticVsExisting:
         pool = _FakePool([existing], [])
         dedup.pool = pool
         with patch(
-            "services.topic_dedup_semantic._get_model",
+            "poindexter.services.topic_dedup_semantic._get_model",
             return_value=_stub_embeddings(mapping),
         ):
             await dedup.mark_against_existing(topics)
@@ -234,7 +234,7 @@ class TestCpuPin:
     def test_get_model_passes_device_to_sentence_transformer(self):
         import sys
 
-        import services.topic_dedup_semantic as mod
+        import poindexter.services.topic_dedup_semantic as mod
         mod._model_cache.clear()
         # _get_model does a function-local `from sentence_transformers import
         # SentenceTransformer`. Inject a fake module into sys.modules so that

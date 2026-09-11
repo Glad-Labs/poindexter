@@ -37,7 +37,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.pipeline_experiment_hook import (
+from poindexter.services.pipeline_experiment_hook import (
     assign_pipeline_variant,
     record_pipeline_outcome,
 )

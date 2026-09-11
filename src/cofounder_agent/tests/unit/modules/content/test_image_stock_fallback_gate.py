@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**overrides):

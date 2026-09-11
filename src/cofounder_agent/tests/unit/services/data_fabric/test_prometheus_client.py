@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from services.data_fabric.errors import DataFabricError
-from services.data_fabric.prometheus import DEFAULT_URL, PrometheusClient
+from poindexter.services.data_fabric.errors import DataFabricError
+from poindexter.services.data_fabric.prometheus import DEFAULT_URL, PrometheusClient
 
 
 def _make_response(payload: dict, status_code: int = 200) -> httpx.Response:

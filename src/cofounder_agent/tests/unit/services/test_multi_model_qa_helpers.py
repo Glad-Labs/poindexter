@@ -427,7 +427,7 @@ class TestCriticModelCollision:
 
     def _qa(self, **settings):
         from modules.content.multi_model_qa import MultiModelQA
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         return MultiModelQA(
             site_config=SiteConfig(initial_config=dict(settings)),

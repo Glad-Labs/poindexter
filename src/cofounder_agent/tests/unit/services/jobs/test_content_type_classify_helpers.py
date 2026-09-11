@@ -1,7 +1,7 @@
 """Unit tests for the pure content-type classify helpers (no I/O)."""
 from __future__ import annotations
 
-from services.jobs._content_type_classify import parse_labels_csv, validate_labels
+from poindexter.services.jobs._content_type_classify import parse_labels_csv, validate_labels
 
 
 class TestParseLabelsCsv:

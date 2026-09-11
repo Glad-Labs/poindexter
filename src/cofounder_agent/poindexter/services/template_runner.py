@@ -57,9 +57,9 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import Command
 from prometheus_client import Histogram
 
-from services import live_activity
-from services.live_activity_content import content_step_pct
-from services.site_config import SiteConfig
+from poindexter.services import live_activity
+from poindexter.services.live_activity_content import content_step_pct
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 # SiteConfig is now injected exclusively via constructor DI (#272
@@ -353,7 +353,7 @@ async def _emit_progress(
         return
     _sc = site_config
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         stream_on = bool(
             _sc.get_bool(
                 "template_runner_progress_streaming", True,
@@ -963,7 +963,7 @@ def make_stage_node(
         # node-execution time). _emit_record routes every stage record through
         # the incremental-persist notify when the sink is a _RecordingSink, so
         # stage.* nodes join the live + partial-on-kill trace alongside atoms.
-        from services.pipeline_architect import (
+        from poindexter.services.pipeline_architect import (
             _emit_record,
             _preview,
             _preview_max_bytes,
@@ -1221,7 +1221,7 @@ async def _record_capability_outcomes(
     rather than a debug log the prod level never ships.
     """
     try:
-        from services.capability_outcomes import record_run as _record_run
+        from poindexter.services.capability_outcomes import record_run as _record_run
         interim = TemplateRunSummary(
             ok=ok,
             template_slug=template_slug,
@@ -1266,7 +1266,7 @@ async def _capture_atom_runs(
     silent failure leaves the composition-capture blind, so surface it.
     """
     try:
-        from services.atom_runs import persist_atom_runs
+        from poindexter.services.atom_runs import persist_atom_runs
         n_atom_runs = await persist_atom_runs(
             pool,
             run_id=run_id,
@@ -1438,7 +1438,7 @@ async def _pipeline_task_heartbeat_loop(
     it went dark. This re-wires it as a sidecar alongside the pre-existing
     ``live_activity`` heartbeat, torn down the same way.
     """
-    from services.tasks_db import TasksDatabase
+    from poindexter.services.tasks_db import TasksDatabase
 
     db = TasksDatabase(pool)
     while True:
@@ -1618,7 +1618,7 @@ class TemplateRunner:
         # run so every LLM dispatch inside it — however deep, whether or not
         # the call site threads task_id — attributes to this task (Langfuse
         # session grouping + cost_logs rows, poindexter#902).
-        from services.task_context import bind_task_id, reset_task_id
+        from poindexter.services.task_context import bind_task_id, reset_task_id
 
         token = bind_task_id((initial_state or {}).get("task_id"))
         try:
@@ -1648,8 +1648,8 @@ class TemplateRunner:
         # Lazy import to avoid module-load cycle: pipeline_templates.__init__
         # imports adapters from here, here imports from there → cycle if
         # done at top level.
-        from services.pipeline_architect import _RecordingSink
-        from services.pipeline_templates import TEMPLATES, load_active_graph_def
+        from poindexter.services.pipeline_architect import _RecordingSink
+        from poindexter.services.pipeline_templates import TEMPLATES, load_active_graph_def
 
         # A _RecordingSink is a drop-in list that also fires an async
         # on_record(seq, record) per append (via append_and_notify, which the
@@ -1674,7 +1674,7 @@ class TemplateRunner:
         if self._site_config.get_bool("pipeline_use_graph_def", False):
             graph_def = await load_active_graph_def(self._pool, template_slug)
             if graph_def:
-                from services.pipeline_architect import (
+                from poindexter.services.pipeline_architect import (
                     GraphContractError,
                     assert_graph_def_current,
                     build_graph_from_spec,
@@ -1772,7 +1772,7 @@ class TemplateRunner:
                 await live_activity.update(
                     self._pool, _content_aid, step=_step, pct=_pct
                 )
-                from services.atom_runs import persist_one_atom_run
+                from poindexter.services.atom_runs import persist_one_atom_run
 
                 await persist_one_atom_run(
                     self._pool,

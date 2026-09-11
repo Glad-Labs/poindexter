@@ -70,7 +70,7 @@ class TestPersistQaReject:
             async def upsert_version(self, task_id, fields):
                 captured["upsert"] = (task_id, fields)
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
 
         await persist_qa_reject(
             db, task_id="t1", reason="bad", final_score=55.0,
@@ -101,7 +101,7 @@ class TestPersistQaReject:
             def __init__(self, pool): ...
             async def upsert_version(self, task_id, fields): ...
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         # Must not raise — update_task still happened.
         await persist_qa_reject(
             db, task_id="t1", reason="bad", final_score=55.0,
@@ -125,7 +125,7 @@ class TestPersistQaReject:
             async def upsert_version(self, task_id, fields):
                 raise RuntimeError("pipeline_versions table gone")
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
 
         calls: list[dict] = []
         monkeypatch.setattr(
@@ -154,7 +154,7 @@ class TestPersistQaReject:
 
             async def upsert_version(self, task_id, fields): ...
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         calls: list[dict] = []
         monkeypatch.setattr(
             "modules.content.atoms._qa_persist.emit_finding",
@@ -187,7 +187,7 @@ class TestKeepBestGuard:
             async def upsert_version(self, task_id, fields):
                 upserts.append((task_id, fields))
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
 
         outcome = await persist_qa_reject(
             db, task_id="t1", reason="worse re-run", final_score=59.0,
@@ -213,7 +213,7 @@ class TestKeepBestGuard:
             def __init__(self, pool): ...
             async def upsert_version(self, task_id, fields): ...
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         outcome = await persist_qa_reject(
             db, task_id="t1", reason="bad", final_score=55.0,
             content="b", title="t", qa_feedback="fb", models_used_by_phase={},
@@ -233,7 +233,7 @@ class TestKeepBestGuard:
             def __init__(self, pool): ...
             async def upsert_version(self, task_id, fields): ...
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         outcome = await persist_qa_reject(
             db, task_id="t1", reason="bad", final_score=55.0,
             content="b", title="t", qa_feedback="fb", models_used_by_phase={},
@@ -248,7 +248,7 @@ class TestKeepBestGuard:
             def __init__(self, pool): ...
             async def upsert_version(self, task_id, fields): ...
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         calls: list[dict] = []
         monkeypatch.setattr(
             "modules.content.atoms._qa_persist.emit_finding",
@@ -279,7 +279,7 @@ class TestPersistQaApprovedSnapshot:
             async def upsert_version(self, task_id, fields):
                 captured["upsert"] = (task_id, fields)
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         await persist_qa_approved_snapshot(
             db, task_id="t1", title="A Title", content="approved body",
             final_score=86.0, qa_feedback="fb",
@@ -314,7 +314,7 @@ class TestPersistQaApprovedSnapshot:
             async def upsert_version(self, task_id, fields):
                 raise RuntimeError("db down")
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         calls: list[dict] = []
         monkeypatch.setattr(
             "modules.content.atoms._qa_persist.emit_finding",

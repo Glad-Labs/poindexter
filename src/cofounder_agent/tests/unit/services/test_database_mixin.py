@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from services.database_mixin import DatabaseServiceMixin
+from poindexter.services.database_mixin import DatabaseServiceMixin
 
 # ---------------------------------------------------------------------------
 # Helpers

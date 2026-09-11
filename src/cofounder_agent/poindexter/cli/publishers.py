@@ -17,7 +17,7 @@ import sys
 import click
 
 from poindexter.cli._dataplane import dump_row, fmt_age, render_table, run_service
-from services import declarative_config_service as dcs
+from poindexter.services import declarative_config_service as dcs
 
 _SURFACE = "publishers"
 
@@ -179,10 +179,10 @@ def publishers_fire(name: str, text: str, url: str) -> None:
     through the registry with a run-bound SiteConfig, prints the return dict.
     """
     async def _impl(pool):
-        from services.integrations import registry
-        from services.integrations.handlers import load_all
-        from services.publishing_adapters_db import PublishingAdapterRow
-        from services.site_config import SiteConfig
+        from poindexter.services.integrations import registry
+        from poindexter.services.integrations.handlers import load_all
+        from poindexter.services.publishing_adapters_db import PublishingAdapterRow
+        from poindexter.services.site_config import SiteConfig
 
         load_all()  # idempotent — registry refuses duplicate registrations
         # SiteConfig DI (#272): build a run-bound instance from the pool so the

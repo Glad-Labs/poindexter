@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from services import grafana_alert_builder as ab
+from poindexter.services import grafana_alert_builder as ab
 
 
 class _FakePool:

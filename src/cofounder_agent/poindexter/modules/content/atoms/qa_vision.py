@@ -44,7 +44,7 @@ from typing import Any
 from modules.content.atoms._pool import resolve_pool
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 from plugins.atom import AtomMeta, FieldSpec
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -217,7 +217,7 @@ async def _emit_deliberate_pass(
     if page_msg:
         logger.warning("[qa.vision] %s", page_msg)
         try:
-            from services.integrations.operator_notify import notify_operator
+            from poindexter.services.integrations.operator_notify import notify_operator
 
             await notify_operator(page_msg, critical=False, site_config=site_config)
         except Exception as exc:  # noqa: BLE001

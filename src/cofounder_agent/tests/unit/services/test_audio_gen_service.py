@@ -13,7 +13,7 @@ import pytest
 
 from plugins.audio_gen_provider import AudioGenResult
 from plugins.registry import clear_registry_cache
-from services import audio_gen_service
+from poindexter.services import audio_gen_service
 
 
 def _stub_site_config(mapping: dict | None = None) -> MagicMock:
@@ -115,7 +115,7 @@ class TestGenerateAudio:
         )
 
         with patch(
-            "services.audio_gen_service.resolve_audio_gen_provider",
+            "poindexter.services.audio_gen_service.resolve_audio_gen_provider",
         ) as resolver:
             mock_provider = MagicMock()
             mock_provider.name = "stable-audio-open-1.0"
@@ -148,7 +148,7 @@ class TestGenerateAudio:
         """
         sc = _stub_site_config({"audio_gen_engine": "stable-audio-open-1.0"})
         with patch(
-            "services.audio_gen_service.resolve_audio_gen_provider",
+            "poindexter.services.audio_gen_service.resolve_audio_gen_provider",
         ) as resolver:
             mock_provider = MagicMock()
             mock_provider.name = "stable-audio-open-1.0"

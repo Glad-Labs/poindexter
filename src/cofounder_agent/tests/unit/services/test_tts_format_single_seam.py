@@ -20,7 +20,7 @@ the actual invariant: there is one resolver, and both callers use it, so they
 
 from __future__ import annotations
 
-from services import tts_service
+from poindexter.services import tts_service
 
 
 class _Cfg:

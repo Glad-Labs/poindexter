@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.llm_providers.litellm_provider import (
+from poindexter.services.llm_providers.litellm_provider import (
     _CLOUD_API_KEY_ENV_MAP,
     configure_cloud_api_keys,
 )

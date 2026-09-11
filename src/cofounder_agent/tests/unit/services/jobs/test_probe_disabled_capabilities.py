@@ -20,13 +20,13 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from services.jobs.probe_disabled_capabilities import (
+from poindexter.services.jobs.probe_disabled_capabilities import (
     _WATCHED_CAPABILITIES,
     ProbeDisabledCapabilitiesJob,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
-_MODULE = "services.jobs.probe_disabled_capabilities"
+_MODULE = "poindexter.services.jobs.probe_disabled_capabilities"
 
 
 class TestProbeDisabledCapabilitiesJob:
@@ -51,7 +51,7 @@ class TestProbeDisabledCapabilitiesJob:
         # An 'info' severity here would make this finding permanently
         # unroutable no matter how findings.disabled_capabilities.* is
         # configured — see findings-delivery-needs-warn-severity memory.
-        from services.jobs.findings_alert_router import _ROUTABLE_SEVERITIES
+        from poindexter.services.jobs.findings_alert_router import _ROUTABLE_SEVERITIES
 
         sc = SiteConfig()
         with patch(f"{_MODULE}.emit_finding") as mock_emit:

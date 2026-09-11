@@ -14,9 +14,9 @@ lookup ships OFF, and the superseded probe flag is not re-seeded.
 from __future__ import annotations
 
 from plugins.registry import get_core_samples
-from services.jobs.findings_alert_router import _delivery_for
-from services.jobs.sync_prompt_catalog_to_langfuse import _FINDING_KIND
-from services.settings_defaults import DEFAULTS
+from poindexter.services.jobs.findings_alert_router import _delivery_for
+from poindexter.services.jobs.sync_prompt_catalog_to_langfuse import _FINDING_KIND
+from poindexter.services.settings_defaults import DEFAULTS
 
 _NEW_KEYS = {
     "findings.prompt_catalog_drift.delivery": "discord",

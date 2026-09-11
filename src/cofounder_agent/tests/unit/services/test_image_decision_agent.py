@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.image_decision_agent import (
+from poindexter.services.image_decision_agent import (
     ImagePlan,
     ImagePlanResult,
     plan_images,
@@ -182,7 +182,7 @@ class TestPlanImagesShortCircuits:
         }
 
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
         ) as mock_dispatch:
             result = await plan_images(
@@ -247,7 +247,7 @@ class TestPlanImagesHappyPath:
 
         mock_site = _patched_site_config()
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
         ):
             result = await plan_images(SAMPLE_CONTENT, "Test Topic", category="technology", site_config=mock_site)
@@ -274,7 +274,7 @@ class TestPlanImagesHappyPath:
 
         mock_site = _patched_site_config()
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
         ):
             result = await plan_images(SAMPLE_CONTENT, "Test", max_images=3, site_config=mock_site)
@@ -290,7 +290,7 @@ class TestPlanImagesHappyPath:
         }
         mock_site = _patched_site_config()
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
         ) as mock_dispatch:
             await plan_images(SAMPLE_CONTENT, "Test", site_config=mock_site)
@@ -320,7 +320,7 @@ class TestPlanImagesThinkingModel:
 
         mock_site = _patched_site_config(model_role="qwen3:8b")
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(thinking_output)),
         ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
@@ -339,7 +339,7 @@ class TestPlanImagesThinkingModel:
 
         mock_site = _patched_site_config(model_role="qwen3:8b")
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(wrapped)),
         ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
@@ -360,7 +360,7 @@ class TestPlanImagesErrorPaths:
         """Any exception from dispatch_complete is caught; empty result returned."""
         mock_site = _patched_site_config()
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(side_effect=RuntimeError("provider offline")),
         ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
@@ -373,7 +373,7 @@ class TestPlanImagesErrorPaths:
     async def test_malformed_json_returns_empty_with_raw(self):
         mock_site = _patched_site_config()
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion("not json at all, just words")),
         ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
@@ -386,7 +386,7 @@ class TestPlanImagesErrorPaths:
     async def test_empty_response_returns_empty(self):
         mock_site = _patched_site_config()
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion("")),
         ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
@@ -418,7 +418,7 @@ class TestPlanImagesModelPinResolution:
         mock_site._pool = _FakePool("ollama/unused")
 
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
         ) as mock_dispatch:
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
@@ -440,7 +440,7 @@ class TestPlanImagesModelPinResolution:
         mock_site._pool = _FakePool(None)
 
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
         ) as mock_dispatch:
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
@@ -457,7 +457,7 @@ class TestPlanImagesModelPinResolution:
 
         notify = AsyncMock()
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=notify,
         ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)

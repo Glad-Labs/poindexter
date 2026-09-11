@@ -26,9 +26,9 @@ from plugins.llm_providers.gemini import (
     GeminiProvider,
     GeminiProviderError,
 )
-from services.cost_guard import CostGuard
-from services.cost_ledger import SpendBreakdown
-from services.site_config import SiteConfig
+from poindexter.services.cost_guard import CostGuard
+from poindexter.services.cost_ledger import SpendBreakdown
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers

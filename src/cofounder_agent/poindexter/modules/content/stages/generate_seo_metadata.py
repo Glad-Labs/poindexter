@@ -40,7 +40,7 @@ class GenerateSeoMetadataStage:
         config: dict[str, Any],
     ) -> StageResult:
         from modules.content.ai_content_generator import get_content_generator
-        from services.seo_content_generator import get_seo_content_generator
+        from poindexter.services.seo_content_generator import get_seo_content_generator
 
         topic = context.get("topic", "")
         tags = context.get("tags") or []

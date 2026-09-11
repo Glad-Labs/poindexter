@@ -19,7 +19,7 @@ import inspect
 from litellm.llms.ollama.chat.transformation import OllamaChatConfig
 from litellm.llms.ollama.completion.transformation import OllamaConfig
 
-from services.llm_providers.ollama_timings import (
+from poindexter.services.llm_providers.ollama_timings import (
     HIDDEN_PARAMS_KEY,
     _stash_timings,
     _wrap,

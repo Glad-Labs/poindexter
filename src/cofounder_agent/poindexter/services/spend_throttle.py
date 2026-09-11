@@ -60,7 +60,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from services import cost_ledger
+from poindexter.services import cost_ledger
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)

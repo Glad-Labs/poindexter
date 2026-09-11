@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from services.audit_log import query_summary
+from poindexter.services.audit_log import query_summary
 
 
 def _pool(rows=None):

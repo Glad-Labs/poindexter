@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from services import content_router_service as crs
+from poindexter.services import content_router_service as crs
 
 
 def _meta(*, requires=(), produces=(), inputs=()):

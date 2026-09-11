@@ -14,10 +14,10 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.jobs.probe_decode_split_coverage import ProbeDecodeSplitCoverageJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs.probe_decode_split_coverage import ProbeDecodeSplitCoverageJob
+from poindexter.services.site_config import SiteConfig
 
-_MODULE = "services.jobs.probe_decode_split_coverage"
+_MODULE = "poindexter.services.jobs.probe_decode_split_coverage"
 
 
 def _make_pool(rows: list[dict] | None = None) -> Any:
@@ -132,7 +132,7 @@ class TestProbeDecodeSplitCoverageJob:
 
     async def test_query_normalizes_the_ollama_prefix(self):
         """One engine logs under several spellings — the GROUP BY must fold them."""
-        from services.jobs.probe_decode_split_coverage import _COVERAGE_QUERY
+        from poindexter.services.jobs.probe_decode_split_coverage import _COVERAGE_QUERY
 
         assert "regexp_replace(model, '^ollama(_chat)?/', '')" in _COVERAGE_QUERY
 
@@ -160,7 +160,7 @@ class TestProbeDecodeSplitCoverageJob:
 
     async def test_failed_and_zero_output_rows_are_excluded(self):
         """A GPU-lock timeout decodes nothing — its NULL is correct, not a miss."""
-        from services.jobs.probe_decode_split_coverage import _COVERAGE_QUERY
+        from poindexter.services.jobs.probe_decode_split_coverage import _COVERAGE_QUERY
 
         assert "c.success = true" in _COVERAGE_QUERY
         assert "c.output_tokens > 0" in _COVERAGE_QUERY

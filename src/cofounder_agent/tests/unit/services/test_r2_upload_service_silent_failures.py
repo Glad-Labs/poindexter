@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from services.r2_upload_service import R2UploadService
+from poindexter.services.r2_upload_service import R2UploadService
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 

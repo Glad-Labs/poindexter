@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from poindexter.cli._lifecycle import container_for_cli
-from services.container import AppContainer
+from poindexter.services.container import AppContainer
 
 
 class TestContainerForCli:

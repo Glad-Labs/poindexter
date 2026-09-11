@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.title_avoidance import (
+from poindexter.services.title_avoidance import (
     DEFAULT_PATTERN_THRESHOLD,
     TitleCorpusProfile,
     analyze_title_patterns,
@@ -450,7 +450,7 @@ class TestFetchRecentTitles:
 # Internal-corpus similarity (stack#3213)
 # ---------------------------------------------------------------------------
 
-from services.title_avoidance import (  # noqa: E402
+from poindexter.services.title_avoidance import (  # noqa: E402
     DEFAULT_INTERNAL_SIMILARITY_THRESHOLD,
     InternalSimilarityReport,
     check_internal_similarity,

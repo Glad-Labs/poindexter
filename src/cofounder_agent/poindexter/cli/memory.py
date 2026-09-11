@@ -304,10 +304,10 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
 
     async def _backfill() -> None:
 
-        from services.embedding_service import EmbeddingService
-        from services.embeddings_db import EmbeddingsDatabase
-        from services.llm_providers.ollama_native import OllamaNativeProvider
-        from services.ollama_client import OllamaClient
+        from poindexter.services.embedding_service import EmbeddingService
+        from poindexter.services.embeddings_db import EmbeddingsDatabase
+        from poindexter.services.llm_providers.ollama_native import OllamaNativeProvider
+        from poindexter.services.ollama_client import OllamaClient
 
         # We need a DB pool, Ollama, and the embeddings_db + service.
         # We're standalone (outside the worker process) so we build them

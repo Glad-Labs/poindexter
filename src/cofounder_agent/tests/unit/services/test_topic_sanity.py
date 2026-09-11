@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.topic_sanity import (
+from poindexter.services.topic_sanity import (
     DEFAULT_MIN_ALPHA_WORDS,
     MIN_ALPHA_WORDS_KEY,
     REASON_CONTROL_TOKEN,

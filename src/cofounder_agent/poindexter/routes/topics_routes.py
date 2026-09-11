@@ -15,13 +15,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_batch_service import OpenBatch, TopicBatchService
+from poindexter.services.topic_length import pick_target_length
+from poindexter.services.url_scraper import URLScrapeError, URLScraper
 from schemas.topics_schemas import TopicProposalListResponse
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
-from services.topic_batch_service import OpenBatch, TopicBatchService
-from services.topic_length import pick_target_length
-from services.url_scraper import URLScrapeError, URLScraper
 from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 

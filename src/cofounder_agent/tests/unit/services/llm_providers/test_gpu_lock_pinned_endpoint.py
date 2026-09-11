@@ -31,9 +31,9 @@ from unittest.mock import patch
 
 import pytest
 
-from services.llm_providers.dispatcher import _gpu_serialize_local_dispatch
-from services.llm_providers.litellm_provider import pinned_api_base_for
-from services.site_config import SiteConfig
+from poindexter.services.llm_providers.dispatcher import _gpu_serialize_local_dispatch
+from poindexter.services.llm_providers.litellm_provider import pinned_api_base_for
+from poindexter.services.site_config import SiteConfig
 
 _DEFAULT_BASE = "http://host.docker.internal:11434"
 _VISION_BASE = "http://host.docker.internal:11435"
@@ -108,7 +108,7 @@ def test_pinned_api_base_for_tolerates_garbage_map():
 @pytest.mark.unit
 def test_pinned_model_skips_the_shared_gpu_lock():
     with patch(
-        "services.container_registry.get_container", return_value=_container(),
+        "poindexter.services.container_registry.get_container", return_value=_container(),
     ):
         assert _gpu_serialize_local_dispatch(
             "ollama/qwen3-vl:30b",
@@ -119,7 +119,7 @@ def test_pinned_model_skips_the_shared_gpu_lock():
 @pytest.mark.unit
 def test_default_endpoint_model_still_serializes():
     with patch(
-        "services.container_registry.get_container", return_value=_container(),
+        "poindexter.services.container_registry.get_container", return_value=_container(),
     ):
         assert _gpu_serialize_local_dispatch(
             "ollama/gemma-4-31B-it-qat:latest",
@@ -130,7 +130,7 @@ def test_default_endpoint_model_still_serializes():
 @pytest.mark.unit
 def test_bare_pinned_model_name_skips_the_lock():
     with patch(
-        "services.container_registry.get_container", return_value=_container(),
+        "poindexter.services.container_registry.get_container", return_value=_container(),
     ):
         assert _gpu_serialize_local_dispatch(
             "qwen3-vl:30b", _config({"ollama/qwen3-vl:30b": _VISION_BASE}),
@@ -142,7 +142,7 @@ def test_kill_switch_forces_pinned_model_to_serialize():
     # Escape hatch for an operator whose second instance shares ONE card
     # (two Ollama servers on the same GPU DO contend) — they set this false.
     with patch(
-        "services.container_registry.get_container",
+        "poindexter.services.container_registry.get_container",
         return_value=_container(gpu_pinned_endpoint_skips_lock="false"),
     ):
         assert _gpu_serialize_local_dispatch(
@@ -156,7 +156,7 @@ def test_pinned_model_skips_even_without_a_container():
     # CLI early paths / tests bootstrap no container. Serializing is only
     # "the safe default" for models that actually share the default GPU;
     # a pinned model never does.
-    with patch("services.container_registry.get_container", return_value=None):
+    with patch("poindexter.services.container_registry.get_container", return_value=None):
         assert _gpu_serialize_local_dispatch(
             "ollama/qwen3-vl:30b",
             _config({"ollama/qwen3-vl:30b": _VISION_BASE}),
@@ -165,7 +165,7 @@ def test_pinned_model_skips_even_without_a_container():
 
 @pytest.mark.unit
 def test_unpinned_model_still_serializes_without_a_container():
-    with patch("services.container_registry.get_container", return_value=None):
+    with patch("poindexter.services.container_registry.get_container", return_value=None):
         assert _gpu_serialize_local_dispatch(
             "ollama/gemma3:27b", _config(),
         ) is True
@@ -174,7 +174,7 @@ def test_unpinned_model_still_serializes_without_a_container():
 @pytest.mark.unit
 def test_global_serialize_opt_out_still_wins():
     with patch(
-        "services.container_registry.get_container",
+        "poindexter.services.container_registry.get_container",
         return_value=_container(gpu_serialize_llm_dispatch="false"),
     ):
         assert _gpu_serialize_local_dispatch("ollama/gemma3:27b", _config()) is False
@@ -184,7 +184,7 @@ def test_global_serialize_opt_out_still_wins():
 def test_paid_call_never_serializes():
     # Pre-existing contract — a cloud call uses no local GPU.
     with patch(
-        "services.container_registry.get_container", return_value=_container(),
+        "poindexter.services.container_registry.get_container", return_value=_container(),
     ):
         assert _gpu_serialize_local_dispatch(
             "anthropic/claude-sonnet-5", _config(),

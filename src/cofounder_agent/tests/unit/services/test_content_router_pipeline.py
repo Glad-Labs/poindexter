@@ -106,11 +106,11 @@ def _patch_externals(template_summary=None, template_raises=None):
     site_config_mod.SiteConfig = MagicMock(return_value=site_config_obj)
 
     sys_modules_overrides = {
-        "services.image_service": image_svc_mod,
-        "services.image_style_rotation": img_style_mod,
-        "services.container": container_mod,
-        "services.pipeline_experiment_hook": exp_mod,
-        "services.template_runner": tmpl_runner_mod,
+        "poindexter.services.image_service": image_svc_mod,
+        "poindexter.services.image_style_rotation": img_style_mod,
+        "poindexter.services.container": container_mod,
+        "poindexter.services.pipeline_experiment_hook": exp_mod,
+        "poindexter.services.template_runner": tmpl_runner_mod,
     }
     return sys_modules_overrides, tmpl_runner_instance, site_config_obj
 
@@ -130,7 +130,7 @@ class _ImportPatchContext:
             sys.modules[name] = mod
 
         # Patch already-bound names on the content_router_service module.
-        from services import content_router_service as crs
+        from poindexter.services import content_router_service as crs
         audit_mock = MagicMock()
         webhook_mock = AsyncMock()
         self._audit_mock = audit_mock
@@ -144,7 +144,7 @@ class _ImportPatchContext:
             patch.object(crs, "emit_webhook_event", webhook_mock),
             patch.object(
                 crs, "get_image_service",
-                self._overrides["services.image_service"].get_image_service,
+                self._overrides["poindexter.services.image_service"].get_image_service,
             ),
         ]
         for p in self._router_patches:
@@ -172,7 +172,7 @@ class _ImportPatchContext:
 async def test_happy_path_dispatches_to_template_runner_and_returns_final_state():
     """With a non-NULL ``template_slug`` on the row, the dispatcher calls
     TemplateRunner.run and merges its final_state into the result dict."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db(template_slug="canonical_blog")
     summary = _make_template_summary(
@@ -219,7 +219,7 @@ async def test_happy_path_dispatches_to_template_runner_and_returns_final_state(
 @pytest.mark.asyncio
 async def test_task_id_auto_generated_when_missing():
     """task_id defaults to a fresh UUID when caller omits it."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, _runner, site_config_obj = _patch_externals()
@@ -238,7 +238,7 @@ async def test_task_id_auto_generated_when_missing():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_custom_category_propagated_to_result():
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, _runner, site_config_obj = _patch_externals()
@@ -256,7 +256,7 @@ async def test_custom_category_propagated_to_result():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_default_category_is_technology_when_none():
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, _runner, site_config_obj = _patch_externals()
@@ -281,7 +281,7 @@ async def test_default_category_is_technology_when_none():
 async def test_raises_when_database_service_is_none():
     """The dispatcher can't persist or look up template_slug without a
     DatabaseService — raise hard."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     overrides, _runner, site_config_obj = _patch_externals()
     with _ImportPatchContext(overrides, site_config_obj):
@@ -306,7 +306,7 @@ async def test_missing_template_slug_fails_loudly():
     not a fallback. Per feedback_no_silent_defaults, mark the task
     failed with a diagnostic instead of silently dispatching to an
     undefined pipeline."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db(template_slug=None)
     overrides, tmpl_runner, site_config_obj = _patch_externals()
@@ -342,7 +342,7 @@ async def test_missing_template_slug_fails_loudly():
 @pytest.mark.asyncio
 async def test_empty_string_template_slug_treated_as_missing():
     """Whitespace-only or empty slug is the same as NULL — fail loud."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db(template_slug="   ")
     overrides, tmpl_runner, site_config_obj = _patch_externals()
@@ -368,7 +368,7 @@ async def test_empty_string_template_slug_treated_as_missing():
 async def test_template_runner_exception_marks_task_failed_and_emits_webhook():
     """Any exception out of TemplateRunner.run lands in the error handler:
     audit 'error', update_task(status='failed'), webhook task.failed."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, _runner, site_config_obj = _patch_externals(
@@ -397,7 +397,7 @@ async def test_template_runner_exception_marks_task_failed_and_emits_webhook():
 async def test_update_task_failure_during_error_path_does_not_raise():
     """Even if the cleanup update_task itself errors, the dispatcher
     swallows the secondary failure and still returns the failed-state dict."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     db.update_task = AsyncMock(side_effect=RuntimeError("DB also down"))
@@ -439,7 +439,7 @@ async def test_media_channels_seeded_in_initial_state():
     with empty defaults alongside ``stages: {}``.  This test pins those seeds
     so a future refactor can't accidentally remove them.
     """
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, tmpl_runner, site_config_obj = _patch_externals()
@@ -495,7 +495,7 @@ async def test_dry_run_halt_logs_at_info_severity_not_error():
     audit_log entry should be severity='info' (event='dry_run_halt'),
     NOT severity='error'. Prevents dry-run noise from drowning real
     error counts on dashboards."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, _runner, site_config_obj = _patch_externals(
@@ -537,7 +537,7 @@ async def test_image_rebuild_target_moved_on_cancels_instead_of_failing():
     status='cancelled' with an 'info'-severity finding, NOT 'failed' with
     an 'error' — this race can never succeed on retry, so 'failed' would
     misrepresent it as something needing investigation."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, _runner, site_config_obj = _patch_externals(
@@ -585,11 +585,11 @@ async def test_image_rebuild_target_moved_on_cancels_instead_of_failing():
 async def test_experiment_assignment_failure_is_swallowed():
     """If assign_pipeline_variant raises, the dispatcher continues with
     a no-op assignment dict — never raises."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, _runner, site_config_obj = _patch_externals()
-    overrides["services.pipeline_experiment_hook"].assign_pipeline_variant = AsyncMock(
+    overrides["poindexter.services.pipeline_experiment_hook"].assign_pipeline_variant = AsyncMock(
         side_effect=RuntimeError("experiment table missing"),
     )
 
@@ -615,7 +615,7 @@ async def test_experiment_assignment_failure_is_swallowed():
 async def test_models_by_phase_and_tags_seeded_in_context():
     """models_by_phase + tags both end up on the result dict that gets
     handed to TemplateRunner (and round-tripped back through final_state)."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, tmpl_runner, site_config_obj = _patch_externals()
@@ -653,8 +653,8 @@ async def test_settings_service_built_from_pool_when_container_lookup_raises():
     None — a None settings_service silently disabled qa.vision's
     image-relevance leg (it read qa_vision_check_enabled as false and passed
     open on 100% of posts since the Prefect cutover)."""
-    from services.content_router_service import process_content_generation_task
-    from services.settings_service import SettingsService
+    from poindexter.services.content_router_service import process_content_generation_task
+    from poindexter.services.settings_service import SettingsService
 
     db = _make_db()
     overrides, tmpl_runner, site_config_obj = _patch_externals()
@@ -675,12 +675,12 @@ async def test_settings_service_built_from_pool_when_container_lookup_raises():
 async def test_settings_service_built_from_pool_when_container_returns_none():
     """get_service('settings') returns None (not raises) when the key was
     never registered — the prod Prefect-subprocess shape. Same fallback."""
-    from services.content_router_service import process_content_generation_task
-    from services.settings_service import SettingsService
+    from poindexter.services.content_router_service import process_content_generation_task
+    from poindexter.services.settings_service import SettingsService
 
     db = _make_db()
     overrides, tmpl_runner, site_config_obj = _patch_externals()
-    overrides["services.container"].get_service = MagicMock(return_value=None)
+    overrides["poindexter.services.container"].get_service = MagicMock(return_value=None)
 
     with _ImportPatchContext(overrides, site_config_obj):
         await process_content_generation_task(
@@ -697,12 +697,12 @@ async def test_settings_service_built_from_pool_when_container_returns_none():
 async def test_registered_settings_service_is_not_replaced():
     """When the lifespan DID register a settings service (FastAPI worker
     path), the dispatcher threads it through untouched."""
-    from services.content_router_service import process_content_generation_task
+    from poindexter.services.content_router_service import process_content_generation_task
 
     db = _make_db()
     overrides, tmpl_runner, site_config_obj = _patch_externals()
     sentinel = MagicMock(name="lifespan-settings-service")
-    overrides["services.container"].get_service = MagicMock(return_value=sentinel)
+    overrides["poindexter.services.container"].get_service = MagicMock(return_value=sentinel)
 
     with _ImportPatchContext(overrides, site_config_obj):
         await process_content_generation_task(

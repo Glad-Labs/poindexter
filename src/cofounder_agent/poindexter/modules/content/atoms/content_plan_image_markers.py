@@ -190,7 +190,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # VRAM guard: unload the local writer/planner LLM before image-gen (the
     # next node) may load. Deliberately AFTER the decision agent — see above.
     try:
-        from services.llm_providers.ollama_unload import maybe_unload_writer_before_image_gen
+        from poindexter.services.llm_providers.ollama_unload import (
+            maybe_unload_writer_before_image_gen,
+        )
         await maybe_unload_writer_before_image_gen(
             site_config=site_config,
             stage_label="content.plan_image_markers",

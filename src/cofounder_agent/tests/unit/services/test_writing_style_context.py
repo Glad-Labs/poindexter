@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.writing_style_context import build_writing_style_context
+from poindexter.services.writing_style_context import build_writing_style_context
 
 
 @pytest.mark.unit

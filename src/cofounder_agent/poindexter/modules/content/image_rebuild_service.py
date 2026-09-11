@@ -45,7 +45,7 @@ async def enqueue_image_rebuild(
         )
     topic = await pool.fetchval(_TOPIC_SQL, str(task_id)) or ""
 
-    from services.tasks_db import TasksDatabase
+    from poindexter.services.tasks_db import TasksDatabase
 
     rebuild_task_id = await TasksDatabase(pool).add_task(
         {

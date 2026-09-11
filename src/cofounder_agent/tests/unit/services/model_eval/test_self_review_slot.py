@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import pytest
 
-from services.model_eval.golden_sets.self_review import (
+from poindexter.services.model_eval.golden_sets.self_review import (
     build_self_review_golden_set,
     inject_contradiction,
 )
-from services.model_eval.scorers.self_review import SelfReviewScorer
-from services.model_eval.types import GoldenCase, GoldenSet
+from poindexter.services.model_eval.scorers.self_review import SelfReviewScorer
+from poindexter.services.model_eval.types import GoldenCase, GoldenSet
 
 
 class _SC:

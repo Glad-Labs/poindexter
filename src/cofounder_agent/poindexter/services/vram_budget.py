@@ -51,7 +51,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 if TYPE_CHECKING:
     import httpx

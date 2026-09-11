@@ -56,8 +56,8 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from services.gpu_scheduler import GPUScheduler
-from services.site_config import SiteConfig
+from poindexter.services.gpu_scheduler import GPUScheduler
+from poindexter.services.site_config import SiteConfig
 
 _WAN_URL = os.environ.get("WAN_SERVER_URL", "http://localhost:9840")
 
@@ -120,8 +120,8 @@ def gpu_site_config() -> Iterator[None]:
     URL through that same function — so the rung under test provably hits
     the server this test is probing.
     """
-    from services.container import AppContainer
-    from services.container_registry import get_container, set_container
+    from poindexter.services.container import AppContainer
+    from poindexter.services.container_registry import get_container, set_container
 
     previous = get_container()
     set_container(

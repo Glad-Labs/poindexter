@@ -14,8 +14,8 @@ import json
 
 import pytest
 
-from services import gpu_scheduler as gs
-from services.site_config import SiteConfig
+from poindexter.services import gpu_scheduler as gs
+from poindexter.services.site_config import SiteConfig
 
 #: Pinned in every fixture so these tests never depend on whether the RUNNER
 #: is containerised. Without it `gpu_lock_node_id()` falls back to ambient

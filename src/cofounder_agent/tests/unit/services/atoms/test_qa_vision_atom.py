@@ -166,7 +166,7 @@ class TestQaVisionAtom:
             notified["message"] = message
 
         monkeypatch.setattr(
-            "services.integrations.operator_notify.notify_operator", fake_notify,
+            "poindexter.services.integrations.operator_notify.notify_operator", fake_notify,
         )
 
         # No images + preview enabled + no preview_url/token.
@@ -197,7 +197,7 @@ class TestQaVisionAtom:
         async def fake_notify(message, *, critical=False, site_config=None):
             notified["message"] = message
         monkeypatch.setattr(
-            "services.integrations.operator_notify.notify_operator", fake_notify,
+            "poindexter.services.integrations.operator_notify.notify_operator", fake_notify,
         )
 
         out = await qa_vision.run(_state(settings_service=_Settings()))
@@ -239,7 +239,7 @@ class TestQaVisionAtom:
         async def fake_notify(message, *, critical=False, site_config=None):
             notified["message"] = message
         monkeypatch.setattr(
-            "services.integrations.operator_notify.notify_operator", fake_notify,
+            "poindexter.services.integrations.operator_notify.notify_operator", fake_notify,
         )
 
         findings = []
@@ -328,7 +328,7 @@ class TestQaVisionAtom:
         async def fake_notify(message, *, critical=False, site_config=None):
             notified["message"] = message
         monkeypatch.setattr(
-            "services.integrations.operator_notify.notify_operator", fake_notify,
+            "poindexter.services.integrations.operator_notify.notify_operator", fake_notify,
         )
         monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: None)
 

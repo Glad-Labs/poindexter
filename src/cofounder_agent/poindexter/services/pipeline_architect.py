@@ -49,7 +49,7 @@ from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, StateGraph
 
 from plugins.tracing import get_tracer
-from services.atom_registry import (
+from poindexter.services.atom_registry import (
     AtomRegistryUnavailableError,
     get_atom_callable,
     get_atom_meta,
@@ -57,8 +57,8 @@ from services.atom_registry import (
     registry_is_empty,
     to_catalog_text,
 )
-from services.site_config import SiteConfig
-from services.template_runner import (
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.template_runner import (
     PipelineState,
     make_stage_node,
 )
@@ -154,7 +154,7 @@ def _resolve_system_prompt(site_config: SiteConfig | None) -> str:
     site_name = (site_config.get("site_name") if site_config else "") or ""
     site_url = (site_config.get("site_url") if site_config else "") or ""
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(
             _PROMPT_KEY, site_name=site_name, site_url=site_url,
         )
@@ -329,7 +329,7 @@ async def compose(
     if architect_override:
         model = architect_override.removeprefix("ollama/")
     else:
-        from services.llm_text import resolve_local_writer_model
+        from poindexter.services.llm_text import resolve_local_writer_model
         model = resolve_local_writer_model(site_config=_sc)
 
     # The migrated prompt carries the operator persona as a {site_name}
@@ -439,7 +439,7 @@ def _parse_json_spec(raw: str) -> tuple[dict[str, Any], list[str]]:
     # (live failure: `invalid JSON … char 1` on the first chat plan turn).
     # compose() requests think=False, but the strip stays as defense in
     # depth for providers that ignore the field.
-    from services.llm_providers.thinking_models import strip_think_blocks
+    from poindexter.services.llm_providers.thinking_models import strip_think_blocks
 
     raw = strip_think_blocks(raw)
 
@@ -447,7 +447,7 @@ def _parse_json_spec(raw: str) -> tuple[dict[str, Any], list[str]]:
     # helper; the outermost-{...} scan below is robust to a fence tagged
     # something other than json/jsonc/json5 that the helper declines to
     # strip, since fence markers never contain { or }).
-    from services.llm_text import strip_markdown_fence
+    from poindexter.services.llm_text import strip_markdown_fence
 
     raw = strip_markdown_fence(raw)
 
@@ -707,7 +707,7 @@ def _validate_spec(
     if not errors:
         if seed_keys is None:
             # Lazy import dodges the template_runner <-> pipeline_architect cycle.
-            from services.template_runner import PipelineState
+            from poindexter.services.template_runner import PipelineState
             seed_keys = set(PipelineState.__annotations__)
 
         indeg = dict.fromkeys(seen_ids, 0)
@@ -794,7 +794,7 @@ def _get_pipeline_state_keys() -> frozenset[str]:
     the result is deterministic for a process lifetime so callers may
     cache it, but it is cheap enough to call inline.
     """
-    from services.template_runner import PipelineState
+    from poindexter.services.template_runner import PipelineState
     return frozenset(PipelineState.__annotations__)
 
 
@@ -1237,9 +1237,9 @@ def _wrap_atom(
     failures are swallowed (``_safe_on_event``) — they never break the run.
     """
 
-    from services.atom_runs import digest_keys
-    from services.template_runner import NODE_DURATION_SECONDS as _node_duration
-    from services.template_runner import (
+    from poindexter.services.atom_runs import digest_keys
+    from poindexter.services.template_runner import NODE_DURATION_SECONDS as _node_duration
+    from poindexter.services.template_runner import (
         TemplateRunRecord,
         _mark_stage_column,
         _safe_on_event,
@@ -1460,7 +1460,7 @@ def _wrap_atom(
 # ``plugin.llm_provider.primary.standard='litellm'`` like the rest of
 # the writer paths. The module-level alias keeps test patches at the
 # historical name working.
-from services.llm_text import ollama_chat_text as _ollama_chat_text  # noqa: E402
+from poindexter.services.llm_text import ollama_chat_text as _ollama_chat_text  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Contract handshake: stamp atom fingerprints, gate drift at load (poindexter#755)
@@ -1670,7 +1670,7 @@ async def ensure_active_graph_defs_stamped(pool: Any) -> int:
     block startup.
     """
     try:
-        from services.atom_registry import discover  # noqa: PLC0415
+        from poindexter.services.atom_registry import discover  # noqa: PLC0415
 
         discover()
     except Exception as exc:  # noqa: BLE001 — no registry ⇒ nothing to stamp

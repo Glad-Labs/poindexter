@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from services import cost_ledger
+from poindexter.services import cost_ledger
 
 # Resolve source via the installed module path (not __file__ walking) so this
 # runs identically in-container and on-host.

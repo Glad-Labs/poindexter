@@ -11,7 +11,7 @@ Sources (in priority order):
 3. Existing published posts (internal linking)
 
 Usage:
-    from services.research_service import ResearchService
+    from poindexter.services.research_service import ResearchService
     research = ResearchService(pool)
     context = await research.build_context("FastAPI and PostgreSQL")
     # context is a formatted string ready for the generation prompt
@@ -19,8 +19,8 @@ Usage:
 
 import re
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
@@ -410,7 +410,7 @@ class ResearchService:
         latency or bandwidth is a concern.
         """
         try:
-            from services.web_research import WebResearcher
+            from poindexter.services.web_research import WebResearcher
             researcher = WebResearcher(site_config=self._site_config)
             try:
                 extract = self._site_config.get_bool(

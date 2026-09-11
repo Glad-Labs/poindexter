@@ -16,8 +16,8 @@ import httpx
 import pytest
 
 from plugins.job import Job, JobResult
-from services.jobs import render_alertmanager_config as job_module
-from services.jobs.render_alertmanager_config import (
+from poindexter.services.jobs import render_alertmanager_config as job_module
+from poindexter.services.jobs.render_alertmanager_config import (
     CHAT_ID_PLACEHOLDER,
     RenderAlertmanagerConfigJob,
     _reload_alertmanager,
@@ -97,7 +97,7 @@ class TestRun:
             return True, "alertmanager reloaded"
 
         monkeypatch.setattr(
-            "services.jobs.render_alertmanager_config._reload_alertmanager",
+            "poindexter.services.jobs.render_alertmanager_config._reload_alertmanager",
             fake_reload,
         )
 
@@ -131,7 +131,7 @@ class TestRun:
             return False, "reload returned 400 (config NOT live)"
 
         monkeypatch.setattr(
-            "services.jobs.render_alertmanager_config._reload_alertmanager",
+            "poindexter.services.jobs.render_alertmanager_config._reload_alertmanager",
             fake_reload,
         )
 
@@ -180,7 +180,7 @@ class TestRun:
             raise AssertionError("reload should not run when content unchanged")
 
         monkeypatch.setattr(
-            "services.jobs.render_alertmanager_config._reload_alertmanager",
+            "poindexter.services.jobs.render_alertmanager_config._reload_alertmanager",
             boom_reload,
         )
 
@@ -221,7 +221,7 @@ class TestRun:
             raise AssertionError("reload should be skipped")
 
         monkeypatch.setattr(
-            "services.jobs.render_alertmanager_config._reload_alertmanager",
+            "poindexter.services.jobs.render_alertmanager_config._reload_alertmanager",
             boom_reload,
         )
 
@@ -310,7 +310,7 @@ class TestReloadAlertmanager:
 def test_default_template_path_is_under_the_directory_mount():
     """poindexter#831: the default must point INTO the directory mount, never at
     the single-file bind mount whose inode `git reset --hard` orphans."""
-    from services.jobs import render_alertmanager_config as mod
+    from poindexter.services.jobs import render_alertmanager_config as mod
 
     assert mod.DEFAULT_TEMPLATE_PATH == "/etc/alertmanager/template-src/alertmanager.yml.tmpl"
     assert mod.LEGACY_TEMPLATE_PATH == "/etc/alertmanager/alertmanager.yml.tmpl"
@@ -321,7 +321,7 @@ def test_default_template_path_is_under_the_directory_mount():
 async def test_legacy_configured_path_migrates_to_the_directory_mount(tmp_path, monkeypatch):
     """A stored config naming the retired single-file path must not go dark
     once the compose mounts the directory instead (poindexter#831)."""
-    from services.jobs import render_alertmanager_config as mod
+    from poindexter.services.jobs import render_alertmanager_config as mod
 
     new_dir = tmp_path / "template-src"
     new_dir.mkdir()

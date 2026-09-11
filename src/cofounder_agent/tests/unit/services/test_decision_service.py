@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-from services.decision_service import (
+from poindexter.services.decision_service import (
     get_decision_stats,
     get_past_decisions,
     log_decision,

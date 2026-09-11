@@ -114,7 +114,7 @@ class TestRunMigrationsEmptyDb:
         run_migrations_stub = AsyncMock(return_value=True)
 
         with patch(
-            "services.migrations.run_migrations", run_migrations_stub,
+            "poindexter.services.migrations.run_migrations", run_migrations_stub,
         ):
             ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
 
@@ -135,7 +135,7 @@ class TestRunMigrationsEmptyDb:
         stub_create_pool.return_value = pool
 
         with patch(
-            "services.migrations.run_migrations",
+            "poindexter.services.migrations.run_migrations",
             AsyncMock(return_value=True),
         ):
             ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
@@ -154,7 +154,7 @@ class TestRunMigrationsIdempotent:
 
         run_migrations_stub = AsyncMock(return_value=True)
         with patch(
-            "services.migrations.run_migrations", run_migrations_stub,
+            "poindexter.services.migrations.run_migrations", run_migrations_stub,
         ):
             ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
 
@@ -179,7 +179,7 @@ class TestRunMigrationsFailure:
         stub_create_pool.return_value = pool
 
         with patch(
-            "services.migrations.run_migrations",
+            "poindexter.services.migrations.run_migrations",
             AsyncMock(return_value=False),
         ):
             ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
@@ -197,7 +197,7 @@ class TestRunMigrationsFailure:
         stub_create_pool.return_value = pool
 
         with patch(
-            "services.migrations.run_migrations",
+            "poindexter.services.migrations.run_migrations",
             AsyncMock(side_effect=RuntimeError("connection lost mid-migration")),
         ):
             ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
@@ -228,10 +228,10 @@ class TestRunMigrationsSeedsDefaults:
 
         seed_stub = AsyncMock(return_value=42)
         with patch(
-            "services.migrations.run_migrations",
+            "poindexter.services.migrations.run_migrations",
             AsyncMock(return_value=True),
         ), patch(
-            "services.settings_defaults.seed_all_defaults", seed_stub,
+            "poindexter.services.settings_defaults.seed_all_defaults", seed_stub,
         ):
             ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
 
@@ -254,10 +254,10 @@ class TestRunMigrationsSeedsDefaults:
 
         seed_stub = AsyncMock(return_value=7)
         with patch(
-            "services.migrations.run_migrations",
+            "poindexter.services.migrations.run_migrations",
             AsyncMock(return_value=True),
         ), patch(
-            "services.settings_defaults.seed_all_defaults", seed_stub,
+            "poindexter.services.settings_defaults.seed_all_defaults", seed_stub,
         ):
             ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
 
@@ -272,10 +272,10 @@ class TestRunMigrationsSeedsDefaults:
         stub_create_pool.return_value = pool
 
         with patch(
-            "services.migrations.run_migrations",
+            "poindexter.services.migrations.run_migrations",
             AsyncMock(return_value=True),
         ), patch(
-            "services.settings_defaults.seed_all_defaults",
+            "poindexter.services.settings_defaults.seed_all_defaults",
             AsyncMock(return_value=0),
         ):
             ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
@@ -295,10 +295,10 @@ class TestRunMigrationsSeedsDefaults:
         stub_create_pool.return_value = pool
 
         with patch(
-            "services.migrations.run_migrations",
+            "poindexter.services.migrations.run_migrations",
             AsyncMock(return_value=True),
         ), patch(
-            "services.settings_defaults.seed_all_defaults",
+            "poindexter.services.settings_defaults.seed_all_defaults",
             AsyncMock(side_effect=RuntimeError("seed exploded")),
         ):
             ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))

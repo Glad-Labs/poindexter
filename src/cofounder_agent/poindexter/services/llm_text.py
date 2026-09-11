@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 # the Langfuse UI at http://localhost:3010. This is the HIGHER-LEVEL
 # intent span; ``dispatch_complete`` emits its own lower-level
 # transport span via OpenTelemetry. Both are useful — keep both.
-from services.langfuse_shim import langfuse_context, observe
+from poindexter.services.langfuse_shim import langfuse_context, observe
 
 
 def resolve_writer_model(model: str | None = None, *, site_config: Any = None) -> str:
@@ -164,7 +164,7 @@ def resolve_local_writer_model(
     # pin — reuse pipeline_writer_model, but ONLY when it is itself local.
     writer = (site_config.get("pipeline_writer_model", "") or "").strip()
     if writer:
-        from services.llm_providers.dispatcher import _is_paid_llm_call
+        from poindexter.services.llm_providers.dispatcher import _is_paid_llm_call
 
         if not _is_paid_llm_call(writer, None):
             return writer.removeprefix("ollama/")
@@ -313,8 +313,8 @@ async def ollama_chat_text(
         # transient httpx hiccup that warrants a silent fallback), so
         # let the exception propagate. Per ``feedback_no_silent_defaults``:
         # missing-pool / missing-config should fail loud in production.
-        from services.llm_providers.dispatcher import dispatch_complete
-        from services.ollama_client import resolve_num_ctx
+        from poindexter.services.llm_providers.dispatcher import dispatch_complete
+        from poindexter.services.ollama_client import resolve_num_ctx
 
         timeout = (
             site_config.get_float(timeout_setting, timeout_default)
@@ -393,7 +393,7 @@ async def ollama_chat_text(
     # httpx test/bootstrap fallback above and any non-dispatcher caller. Local
     # import keeps module load light for bootstrap/migration paths (mirrors the
     # dispatch_complete import idiom).
-    from services.llm_providers.thinking_models import strip_reasoning_artifacts
+    from poindexter.services.llm_providers.thinking_models import strip_reasoning_artifacts
 
     output = maybe_unwrap_json(strip_reasoning_artifacts(raw))
     # Stamp output + token counts so the trace surfaces tokens in the

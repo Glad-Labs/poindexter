@@ -59,14 +59,14 @@ async def main() -> int:
 
     # Build a minimal SiteConfig from the live DB so configure_langfuse_callback
     # can read the four rows it needs.
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     site_config = SiteConfig(pool=pool)
     loaded = await site_config.load(pool)
     print(f"[smoke] loaded {loaded} settings from app_settings")
 
     # Wire up the callback.
-    from services.llm_providers.litellm_provider import (
+    from poindexter.services.llm_providers.litellm_provider import (
         LiteLLMProvider,
         configure_langfuse_callback,
     )

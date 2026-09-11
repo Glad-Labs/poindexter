@@ -25,10 +25,10 @@ from typing import Any
 import asyncpg
 
 from config import get_config
+from poindexter.services.logger_config import get_logger
+from poindexter.services.module_paths import resolve_module_path
+from poindexter.services.site_config import SiteConfig
 from schemas.typed_records import PaginatedTasksResult, TaskRecord
-from services.logger_config import get_logger
-from services.module_paths import resolve_module_path
-from services.site_config import SiteConfig
 
 from .admin_db import AdminDatabase
 from .audit_log import AuditLogger, drain_pending_writes, init_global_audit_logger
@@ -337,7 +337,7 @@ class DatabaseService:
         # was never imported, nothing was spawned.
         # Key resolved through the module-path seam: after the poindexter.*
         # move this module is registered under the new name (poindexter#1046).
-        publish_service = sys.modules.get(resolve_module_path("services.publish_service"))
+        publish_service = sys.modules.get(resolve_module_path("poindexter.services.publish_service"))
         if publish_service is not None:
             try:
                 await publish_service.drain_background_tasks()

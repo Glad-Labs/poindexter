@@ -22,7 +22,7 @@ otel_fastapi = pytest.importorskip(
     reason="opentelemetry instrumentation is an optional dependency",
 )
 
-from services.telemetry import _patch_otel_fastapi_partial_match_crash  # noqa: E402
+from poindexter.services.telemetry import _patch_otel_fastapi_partial_match_crash  # noqa: E402
 
 
 def _pristine_original():

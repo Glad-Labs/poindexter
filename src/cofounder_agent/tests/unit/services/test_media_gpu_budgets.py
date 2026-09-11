@@ -34,7 +34,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 try:  # pragma: no cover - import shape differs only under partial installs
     from unittest.mock import patch
@@ -54,7 +54,7 @@ _MEDIA_STAGE_FILES = (
 def _with_settings(**cfg):
     """Register a SiteConfig on the process container gpu_scheduler reads."""
     return patch(
-        "services.gpu_scheduler._sc",
+        "poindexter.services.gpu_scheduler._sc",
         return_value=SiteConfig(initial_config=cfg),
     )
 
@@ -74,7 +74,7 @@ def test_budget_defaults_between_llm_and_render_holds():
     105.3s must be waitable; qa_rewrite 210.5s, featured_image 228.7s,
     inline_image_batch 240.0s and media_render 383.5s must be skippable.
     """
-    from services.gpu_scheduler import media_wait_budget_s
+    from poindexter.services.gpu_scheduler import media_wait_budget_s
 
     with _with_settings():
         budget = media_wait_budget_s()
@@ -88,7 +88,7 @@ def test_budget_defaults_between_llm_and_render_holds():
 
 @pytest.mark.unit
 def test_budget_is_operator_tunable():
-    from services.gpu_scheduler import media_wait_budget_s
+    from poindexter.services.gpu_scheduler import media_wait_budget_s
 
     with _with_settings(gpu_sched_media_max_wait_s="240"):
         assert media_wait_budget_s() == 240.0
@@ -97,7 +97,7 @@ def test_budget_is_operator_tunable():
 @pytest.mark.unit
 def test_zero_restores_legacy_unbounded_contract():
     """The escape hatch: 0 means None, which is the un-migrated behaviour."""
-    from services.gpu_scheduler import media_wait_budget_s
+    from poindexter.services.gpu_scheduler import media_wait_budget_s
 
     with _with_settings(gpu_sched_media_max_wait_s="0"):
         assert media_wait_budget_s() is None
@@ -107,7 +107,7 @@ def test_zero_restores_legacy_unbounded_contract():
 def test_media_budget_exceeds_qa_rail_budget():
     """Media does real generation work where a rail does a judge call, so its
     budget must not silently inherit the rails' much tighter 45s."""
-    from services.gpu_scheduler import media_wait_budget_s, qa_rail_wait_budget_s
+    from poindexter.services.gpu_scheduler import media_wait_budget_s, qa_rail_wait_budget_s
 
     with _with_settings():
         assert media_wait_budget_s() > qa_rail_wait_budget_s()
@@ -309,7 +309,7 @@ def test_skip_finding_tolerates_a_busy_error_without_eta():
 def test_skip_finding_is_log_only_by_default():
     """A bounded skip under load is the design working; routing it would page
     on ordinary render pressure."""
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["findings.media_gpu_busy_skip.delivery"] == "log_only"
     assert DEFAULTS["findings.media_gpu_busy_skip.min_severity"] == "info"
@@ -317,7 +317,7 @@ def test_skip_finding_is_log_only_by_default():
 
 @pytest.mark.unit
 def test_budget_default_is_seeded():
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["gpu_sched_media_max_wait_s"] == "120"
 

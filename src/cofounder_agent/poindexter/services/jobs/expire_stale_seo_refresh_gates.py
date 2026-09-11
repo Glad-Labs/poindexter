@@ -34,7 +34,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.approval_service import reject as reject_gate
+from poindexter.services.approval_service import reject as reject_gate
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 

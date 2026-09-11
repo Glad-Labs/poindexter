@@ -48,7 +48,7 @@ _SERVICE = (
 # is what suppresses regeneration of its (task, platform, subreddit) key. Read
 # from the service so the two can't drift: a status added to the live-key set
 # is automatically covered by the prune-safety test below.
-from services.social_drafts import _KEY_HELD_STATUSES as _KEY_HOLDING_STATUSES
+from poindexter.services.social_drafts import _KEY_HELD_STATUSES as _KEY_HOLDING_STATUSES
 
 
 def _policy_line() -> str:

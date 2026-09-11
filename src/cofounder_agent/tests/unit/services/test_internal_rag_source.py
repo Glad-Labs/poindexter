@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.internal_rag_source import (
+from poindexter.services.internal_rag_source import (
     VALID_SOURCE_KINDS,
     InternalCandidate,
     InternalRagSource,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -300,9 +300,9 @@ async def test_distill_returns_none_on_empty_response(monkeypatch):
     # The exact 2026-05-28 failure: a reasoning model returns "" under
     # json mode. _distill_topic_angle must return None, not crash on
     # json.loads("").
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
     monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
@@ -315,9 +315,9 @@ async def test_distill_returns_none_on_empty_response(monkeypatch):
 
 
 async def test_distill_returns_none_on_invalid_json(monkeypatch):
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
     monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
@@ -330,9 +330,9 @@ async def test_distill_returns_none_on_invalid_json(monkeypatch):
 
 
 async def test_distill_parses_valid_json(monkeypatch):
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
     monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
@@ -362,9 +362,9 @@ async def test_distill_returns_none_on_empty_topic(monkeypatch, raw):
     # all the way to a published junk task. An empty topic means the
     # model failed to distill — skip the candidate, same as empty /
     # unparseable responses.
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
     monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
@@ -381,9 +381,9 @@ async def test_distill_skips_not_storyworthy_verdict(monkeypatch):
     # {"storyworthy": false} for routine ops status — treated as a skip,
     # same as empty/unparseable responses. Old prompt templates never emit
     # the key, so this is opt-in via the prompt.
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
     monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
@@ -403,9 +403,9 @@ async def test_distill_rejects_leaked_reasoning_in_angle(monkeypatch):
     # distiller's own task narration leaked into distilled_angle instead
     # of real content, truncated mid-word. strip_reasoning_artifacts alone
     # can't fix this — detect_leaked_reasoning rejects the whole candidate.
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     leaked_angle = (
         "How conflicting own pull requests can silently stop workflows from "
@@ -438,9 +438,9 @@ async def test_distill_rejects_original_reported_leaked_token_in_angle(monkeypat
     # row from test_distill_rejects_leaked_reasoning_in_angle's (5b662b41) —
     # locks in the specific string from the original report against
     # detect_leaked_reasoning's REASON_CONTROL_TOKEN path.
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     leaked_angle = (
         "Moving from generic monitoring tools like Grafana to a "
@@ -467,9 +467,9 @@ async def test_distill_rejects_original_reported_leaked_token_in_angle(monkeypat
 async def test_distill_rejects_leaked_reasoning_in_topic(monkeypatch):
     # Same guard, but the leak lands in the topic field instead of angle —
     # both fields go through detect_leaked_reasoning.
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     leaked_topic = "1. Topic: Understanding container health checks in Kubernetes"
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
@@ -491,9 +491,9 @@ async def test_distill_passes_clean_first_person_angle(monkeypatch):
     # dev_diary is intentionally founder-voice/first-person
     # (feedback_content_voice) — confirm the guard doesn't false-reject
     # genuine first-person content that never mentions the extraction task.
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     clean_angle = "Why I need to rethink our flaky CI before it rots the whole pipeline"
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
@@ -512,9 +512,9 @@ async def test_distill_passes_clean_first_person_angle(monkeypatch):
 
 
 async def test_distill_passes_niche_context_to_prompt(monkeypatch):
-    import services.llm_text as llm_text
-    import services.prompt_manager as pm
-    import services.topic_ranking as tr
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
 
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
     monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")

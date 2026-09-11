@@ -30,15 +30,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from services import live_activity
-from services.image_providers._image_models import (
+from poindexter.services import live_activity
+from poindexter.services.image_providers._image_models import (
     IMAGE_MODEL_REGISTRY,
     ImageModel,
     ImageModelConfig,  # noqa: F401 — re-exported for back-compat (callers/tests import from here)
     get_default_image_model,
 )
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 if TYPE_CHECKING:
     import httpx
@@ -636,7 +636,7 @@ class ImageService:
         of ``(topic, site_config)`` masquerading as a method. Kept as a
         method here for existing callers/tests.
         """
-        from services.image_providers.pexels import build_semantic_pexels_query
+        from poindexter.services.image_providers.pexels import build_semantic_pexels_query
 
         return await build_semantic_pexels_query(topic, site_config=self._site_config)
 
@@ -967,8 +967,8 @@ class ImageService:
         single blocking render exposes no mid-progress, so we never fabricate
         a pct (``feedback_no_dummy_data``).
         """
-        from services.gpu_admission import GpuBusyError
-        from services.gpu_scheduler import (
+        from poindexter.services.gpu_admission import GpuBusyError
+        from poindexter.services.gpu_scheduler import (
             GpuLockTimeoutError,
             gpu,
             operator_image_wait_budget_s,
@@ -1057,7 +1057,7 @@ class ImageService:
         # request never traverses the flaky host-published-port proxy).
         _sc = self._site_config
         image_gen_server_url = _sc.get("image_gen_server_url", "http://image-gen-server:9836")
-        from services.settings_defaults import default_int
+        from poindexter.services.settings_defaults import default_int
 
         render_timeout = _sc.get_int(
             "image_render_timeout_seconds",
@@ -1231,7 +1231,7 @@ class ImageService:
 
             # Mark progress as complete if tracking
             if task_id:
-                from services.progress_service import get_progress_service
+                from poindexter.services.progress_service import get_progress_service
 
                 progress_service = get_progress_service()
                 progress_service.mark_complete(task_id, "Image generation complete")
@@ -1243,7 +1243,7 @@ class ImageService:
 
             # Mark progress as failed if tracking
             if task_id:
-                from services.progress_service import get_progress_service
+                from poindexter.services.progress_service import get_progress_service
 
                 progress_service = get_progress_service()
                 progress_service.mark_failed(task_id, str(e))
@@ -1276,7 +1276,7 @@ class ImageService:
         # Initialize progress tracking if task_id provided
         progress_service = None
         if task_id:
-            from services.progress_service import get_progress_service
+            from poindexter.services.progress_service import get_progress_service
 
             progress_service = get_progress_service()
             progress_service.create_progress(task_id, num_inference_steps)

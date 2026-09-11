@@ -46,7 +46,6 @@ async def _gather() -> dict:
     a bound later came from somewhere less trusted than a module constant.
     """
     import asyncpg
-
     from brain.bootstrap import resolve_database_url
 
     now = _dt.datetime.now(_dt.UTC)

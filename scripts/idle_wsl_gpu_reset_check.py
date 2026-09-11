@@ -267,7 +267,7 @@ async def notify(text: str) -> None:
     + a direct POST) without the two layers of lifespan-only indirection.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
-    from services.site_config import SiteConfig  # type: ignore
+    from poindexter.services.site_config import SiteConfig  # type: ignore
 
     pool = await asyncpg.create_pool(_resolve_db_url(), min_size=1, max_size=2)
     try:

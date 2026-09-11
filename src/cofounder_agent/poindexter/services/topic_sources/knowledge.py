@@ -33,7 +33,7 @@ import logging
 from typing import Any
 
 from plugins.topic_source import DiscoveredTopic
-from services.topic_sources._filters import classify_category, rewrite_as_blog_topic
+from poindexter.services.topic_sources._filters import classify_category, rewrite_as_blog_topic
 
 logger = logging.getLogger(__name__)
 

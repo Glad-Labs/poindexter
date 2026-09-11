@@ -15,7 +15,7 @@ import sys
 import click
 
 from poindexter.cli._dataplane import dump_row, fmt_age, render_table, run_service
-from services import declarative_config_service as dcs
+from poindexter.services import declarative_config_service as dcs
 
 _SURFACE = "retention"
 
@@ -138,8 +138,8 @@ def retention_run(name: str | None, dry_run: bool) -> None:
     this invocation only (set → run → revert). The flag is NOT persisted.
     """
     async def _impl(pool):
-        from services.integrations import retention_runner
-        from services.integrations.handlers import load_all
+        from poindexter.services.integrations import retention_runner
+        from poindexter.services.integrations.handlers import load_all
 
         load_all()  # idempotent — registry refuses duplicate registrations
 

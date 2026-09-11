@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services.quality_models import (
+from poindexter.services.quality_models import (
     EvaluationMethod,
     QualityAssessment,
     QualityDimensions,
@@ -16,7 +16,7 @@ from services.quality_models import (
     RefinementType,
     ensure_quality_assessment,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 def _sample_assessment() -> QualityAssessment:

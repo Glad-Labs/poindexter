@@ -42,7 +42,7 @@ from typing import Any
 import httpx
 
 from plugins.llm_provider import Completion, Token
-from services.cost_guard import is_local_base_url
+from poindexter.services.cost_guard import is_local_base_url
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.detect_duplicate_posts import DetectDuplicatePostsJob
+from poindexter.services.jobs.detect_duplicate_posts import DetectDuplicatePostsJob
 
 
 def _make_pool(rows: list[dict] | None = None, raises: BaseException | None = None) -> Any:
@@ -82,7 +82,7 @@ class TestRun:
         job = DetectDuplicatePostsJob()
 
         with patch(
-            "services.jobs.detect_duplicate_posts.emit_finding",
+            "poindexter.services.jobs.detect_duplicate_posts.emit_finding",
             new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {"overlap_threshold": 0.7})
@@ -135,7 +135,7 @@ class TestRun:
         job = DetectDuplicatePostsJob()
         mock_gitea = AsyncMock(return_value=True)
         with patch(
-            "services.jobs.detect_duplicate_posts.emit_finding",
+            "poindexter.services.jobs.detect_duplicate_posts.emit_finding",
             new=mock_gitea,
         ):
             result = await job.run(
@@ -157,7 +157,7 @@ class TestRun:
         job = DetectDuplicatePostsJob()
         mock_gitea = MagicMock()
         with patch(
-            "services.jobs.detect_duplicate_posts.emit_finding",
+            "poindexter.services.jobs.detect_duplicate_posts.emit_finding",
             new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})

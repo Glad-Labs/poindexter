@@ -1,7 +1,7 @@
 """graph_def contract stamping + drift gate (poindexter#755)."""
 import pytest
 
-import services.pipeline_architect as pa
+import poindexter.services.pipeline_architect as pa
 from plugins.atom import AtomMeta, FieldSpec
 
 
@@ -97,7 +97,7 @@ class TestAssertCurrentEmptyRegistry:
     so the flow can release the task for retry instead of failing it."""
 
     def test_empty_registry_raises_unavailable_not_drift(self, registry, monkeypatch):
-        from services.atom_registry import AtomRegistryUnavailableError
+        from poindexter.services.atom_registry import AtomRegistryUnavailableError
 
         stamped = pa.stamp_graph_def(_spec())
         monkeypatch.setattr(pa, "registry_is_empty", lambda: True)
@@ -105,7 +105,7 @@ class TestAssertCurrentEmptyRegistry:
             pa.assert_graph_def_current(stamped)
 
     def test_unavailable_is_not_a_contract_error(self):
-        from services.atom_registry import AtomRegistryUnavailableError
+        from poindexter.services.atom_registry import AtomRegistryUnavailableError
 
         assert not issubclass(AtomRegistryUnavailableError, pa.GraphContractError)
 

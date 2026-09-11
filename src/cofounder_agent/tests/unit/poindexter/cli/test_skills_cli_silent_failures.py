@@ -50,7 +50,7 @@ def test_import_warns_that_skill_is_not_cataloged(no_db, monkeypatch):
     """Same half-completed-mutation shape as remove: the file lands on disk
     but the catalog upsert is skipped, and license validation silently uses
     the built-in allow-list instead of the operator's configured one."""
-    import services.skill_importer as importer
+    import poindexter.services.skill_importer as importer
 
     async def _import(source, *, pack=None, pool=None, site_config=None, force=False,
                       **_kw):
@@ -73,7 +73,7 @@ def test_import_warns_that_skill_is_not_cataloged(no_db, monkeypatch):
 
 
 def test_list_warns_when_falling_back_to_disk_scan(no_db, monkeypatch):
-    import services.skill_importer as importer
+    import poindexter.services.skill_importer as importer
 
     async def _list(*, pool=None):
         assert pool is None, "precondition: the swallowed pool leaves None"
@@ -94,7 +94,7 @@ def test_list_warns_when_falling_back_to_disk_scan(no_db, monkeypatch):
 
 
 def test_remove_warns_that_catalog_row_was_not_deleted(no_db, monkeypatch):
-    import services.skill_importer as importer
+    import poindexter.services.skill_importer as importer
 
     async def _remove(name, *, pool=None):
         assert pool is None, "precondition: the swallowed pool leaves None"

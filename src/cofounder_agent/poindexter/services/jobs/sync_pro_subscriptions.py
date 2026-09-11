@@ -22,7 +22,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -51,7 +51,7 @@ class SyncProSubscriptionsJob:
         ):
             return JobResult(ok=True, detail="pro_delivery_enabled=false — no-op")
 
-        from services.pro_delivery import ProDeliveryConfigError, run_sync
+        from poindexter.services.pro_delivery import ProDeliveryConfigError, run_sync
 
         try:
             outcome = await run_sync(pool, site_config)

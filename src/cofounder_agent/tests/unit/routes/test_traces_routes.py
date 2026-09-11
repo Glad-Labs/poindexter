@@ -8,8 +8,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.traces_read import LangfuseNotConfigured
 from routes.traces_routes import router
-from services.traces_read import LangfuseNotConfigured
 from utils.route_utils import get_site_config_dependency
 
 SAMPLE = {

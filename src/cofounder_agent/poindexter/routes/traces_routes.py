@@ -10,8 +10,8 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from middleware.api_token_auth import verify_api_token
-from services.logger_config import get_logger
-from services.traces_read import LangfuseNotConfigured, read_traces
+from poindexter.services.logger_config import get_logger
+from poindexter.services.traces_read import LangfuseNotConfigured, read_traces
 from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)

@@ -14,7 +14,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from services.ollama_resilience import (
+from poindexter.services.ollama_resilience import (
     CircuitBreaker,
     OllamaCircuitOpenError,
     OllamaEmptyResponseError,
@@ -22,7 +22,7 @@ from services.ollama_resilience import (
     compute_backoff,
     is_retryable,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -426,7 +426,7 @@ class TestAuditLog:
                 raise httpx.ReadTimeout("slow")
             return {"text": "ok"}
 
-        with patch("services.ollama_resilience.audit_log_bg") as mock_audit:
+        with patch("poindexter.services.ollama_resilience.audit_log_bg") as mock_audit:
             await manager.run(op, op_name="generate")
 
         # Should have logged the failure + the backoff + the retry success
@@ -444,7 +444,7 @@ class TestAuditLog:
         async def fail():
             raise httpx.ConnectError("down")
 
-        with patch("services.ollama_resilience.audit_log_bg") as mock_audit:
+        with patch("poindexter.services.ollama_resilience.audit_log_bg") as mock_audit:
             for _ in range(2):
                 with pytest.raises(httpx.ConnectError):
                     await mgr.run(fail, op_name="generate")

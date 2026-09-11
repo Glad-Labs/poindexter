@@ -14,9 +14,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 
 from middleware.api_token_auth import verify_api_token
-from services.database_service import DatabaseService
-from services.findings_read import get_findings_trend, read_findings
-from services.logger_config import get_logger
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.findings_read import get_findings_trend, read_findings
+from poindexter.services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)

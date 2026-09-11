@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import modules.content.atoms.approval_gate as ag
-from services.approval_service import count_trailing_clean_approvals
+from poindexter.services.approval_service import count_trailing_clean_approvals
 from tests.unit.services._gate_fakes import FakeConn, FakePool, executed_sql
 
 pytestmark = pytest.mark.unit
@@ -147,7 +147,7 @@ class TestGraduationBranch:
     async def test_streak_met_auto_approves_without_pausing(self):
         conn = FakeConn(fetch_result=[_row("a", "approved"), _row("b", "approved")])
         pause = AsyncMock()
-        with patch("services.approval_service.pause_at_gate", pause):
+        with patch("poindexter.services.approval_service.pause_at_gate", pause):
             out = await ag.run(_state(conn, threshold="2"))
 
         assert out == {}
@@ -163,7 +163,7 @@ class TestGraduationBranch:
         conn = FakeConn(fetch_result=[_row("a", "approved")])
         pause = AsyncMock()
         with (
-            patch("services.approval_service.pause_at_gate", pause),
+            patch("poindexter.services.approval_service.pause_at_gate", pause),
             patch.object(ag, "_notify_critical", AsyncMock()),
             patch.object(ag, "interrupt", return_value="resumed"),
         ):
@@ -183,7 +183,7 @@ class TestGraduationBranch:
         state = _state(conn)
         state.pop("graduation_setting")
         with (
-            patch("services.approval_service.pause_at_gate", pause),
+            patch("poindexter.services.approval_service.pause_at_gate", pause),
             patch.object(ag, "_notify_critical", AsyncMock()),
             patch.object(ag, "interrupt", return_value="resumed"),
         ):
@@ -197,7 +197,7 @@ class TestGraduationBranch:
         conn = FakeConn(fetch_result=[_row("a", "approved"), _row("b", "approved")])
         pause = AsyncMock()
         with (
-            patch("services.approval_service.pause_at_gate", pause),
+            patch("poindexter.services.approval_service.pause_at_gate", pause),
             patch.object(ag, "_notify_critical", AsyncMock()),
             patch.object(ag, "interrupt", return_value="resumed"),
         ):
@@ -212,7 +212,7 @@ class TestGraduationBranch:
         conn = FakeConn(fetch_result=[_row("a", "approved"), _row("b", "approved")])
         pause = AsyncMock()
         with (
-            patch("services.approval_service.pause_at_gate", pause),
+            patch("poindexter.services.approval_service.pause_at_gate", pause),
             patch.object(ag, "_notify_critical", AsyncMock()),
             patch.object(ag, "interrupt", return_value="resumed"),
         ):
@@ -226,10 +226,10 @@ class TestGraduationBranch:
         pause = AsyncMock()
         with (
             patch(
-                "services.approval_service.count_trailing_clean_approvals",
+                "poindexter.services.approval_service.count_trailing_clean_approvals",
                 AsyncMock(side_effect=RuntimeError("db gone")),
             ),
-            patch("services.approval_service.pause_at_gate", pause),
+            patch("poindexter.services.approval_service.pause_at_gate", pause),
             patch.object(ag, "_notify_critical", AsyncMock()),
             patch.object(ag, "interrupt", return_value="resumed"),
         ):
@@ -248,7 +248,7 @@ class TestGraduationBranch:
             patch.object(
                 ag, "_record_graduated_pass", AsyncMock(return_value=False)
             ),
-            patch("services.approval_service.pause_at_gate", pause),
+            patch("poindexter.services.approval_service.pause_at_gate", pause),
             patch.object(ag, "_notify_critical", AsyncMock()),
             patch.object(ag, "interrupt", return_value="resumed"),
         ):

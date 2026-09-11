@@ -122,7 +122,7 @@ async def test_export_affiliate_referrals_runs_against_real_schema(test_pool, mo
     query against the real schema can. Reproduced live 2026-07-12 via a real
     `poindexter affiliate import-csv` run: the export logged "column
     \"keyword\" does not exist" and silently produced no referrals.json."""
-    import services.static_export_service as ses
+    import poindexter.services.static_export_service as ses
 
     uploaded: dict = {}
 
@@ -162,7 +162,7 @@ async def test_export_affiliate_referrals_runs_against_real_schema(test_pool, mo
                     kw_only_id, "SecondKeyword",
                 )
 
-                from services.site_config import SiteConfig
+                from poindexter.services.site_config import SiteConfig
 
                 await ses._export_affiliate_referrals(
                     conn, site_config=SiteConfig(initial_config={})

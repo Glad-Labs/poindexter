@@ -96,7 +96,7 @@ async def _run_migrations(dsn: str) -> tuple[bool, str]:
     ``oauth_clients`` for step 4 OAuth provisioning).
     """
     try:
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
     except Exception as e:
         return False, f"could not import migration runner: {e}"
 
@@ -144,7 +144,7 @@ async def _run_migrations(dsn: str) -> tuple[bool, str]:
         # SKIP for keys that have a real default in code.
         seeded = 0
         try:
-            from services.settings_defaults import seed_all_defaults
+            from poindexter.services.settings_defaults import seed_all_defaults
 
             seeded = await seed_all_defaults(pool)
         except Exception as e:  # noqa: BLE001
@@ -204,7 +204,7 @@ async def _check_migrations_status(dsn: str) -> tuple[bool, str]:
         # Discover on-disk migration files via the same path the runner
         # uses, so the count matches.
         try:
-            from services import migrations as _migrations_pkg
+            from poindexter.services import migrations as _migrations_pkg
 
             migrations_dir = Path(_migrations_pkg.__file__).resolve().parent
             on_disk = sorted(
@@ -789,11 +789,11 @@ async def _provision_initial_oauth_client(dsn: str) -> tuple[str, str]:
     from pydantic import AnyUrl
 
     from plugins.secrets import set_secret
-    from services.auth.oauth_issuer import (
+    from poindexter.services.auth.oauth_issuer import (
         generate_client_id,
         generate_client_secret,
     )
-    from services.auth.oauth_provider import PoindexterOAuthProvider
+    from poindexter.services.auth.oauth_provider import PoindexterOAuthProvider
 
     client_id = generate_client_id()
     client_secret = generate_client_secret()

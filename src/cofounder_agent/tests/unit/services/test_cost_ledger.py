@@ -5,7 +5,7 @@ Stubs route by SQL fragment: COUNT(*) → measured-sample count, SUM(electricity
 """
 import pytest
 
-from services import cost_ledger
+from poindexter.services import cost_ledger
 
 
 class _FakeConfig:

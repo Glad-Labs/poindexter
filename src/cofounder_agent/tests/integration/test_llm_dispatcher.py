@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncpg
 import pytest
 
-from services.llm_providers.dispatcher import (
+from poindexter.services.llm_providers.dispatcher import (
     get_provider,
     get_provider_config,
     get_provider_name,

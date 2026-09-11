@@ -14,9 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
 from schemas.task_schemas import PostApprovalListResponse
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -51,7 +51,7 @@ async def list_pending_publish(
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> PostApprovalListResponse:
     """Return every post currently paused at any publish gate (or one gate)."""
-    from services.posts_approval_service import list_pending_publish as _list_pending
+    from poindexter.services.posts_approval_service import list_pending_publish as _list_pending
 
     posts = await _list_pending(pool=db_service.pool, gate_name=gate_name, limit=limit)
     # Canonical offset envelope (poindexter#745): `posts` → `items`. The list is
@@ -77,12 +77,12 @@ async def show_pending_publish(
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict[str, Any]:
     """Return the gate state and artifact for a single paused post."""
-    from services.posts_approval_service import (
+    from poindexter.services.posts_approval_service import (
         PostGateMismatchError,
         PostNotFoundError,
         PostNotPausedError,
     )
-    from services.posts_approval_service import (
+    from poindexter.services.posts_approval_service import (
         show_pending_publish as _show_pending,
     )
 
@@ -110,12 +110,12 @@ async def approve_publish(
     site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Approve the publish gate on a post so the scheduler can publish it."""
-    from services.posts_approval_service import (
+    from poindexter.services.posts_approval_service import (
         PostGateMismatchError,
         PostNotFoundError,
         PostNotPausedError,
     )
-    from services.posts_approval_service import (
+    from poindexter.services.posts_approval_service import (
         approve_publish as _approve,
     )
 
@@ -149,12 +149,12 @@ async def reject_publish(
     site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Reject the publish gate on a post."""
-    from services.posts_approval_service import (
+    from poindexter.services.posts_approval_service import (
         PostGateMismatchError,
         PostNotFoundError,
         PostNotPausedError,
     )
-    from services.posts_approval_service import (
+    from poindexter.services.posts_approval_service import (
         reject_publish as _reject,
     )
 

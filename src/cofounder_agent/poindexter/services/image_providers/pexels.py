@@ -29,7 +29,7 @@ from typing import Any
 import httpx
 
 from plugins.image_provider import ImageResult
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +183,7 @@ async def build_semantic_pexels_query(topic: str, *, site_config: SiteConfig) ->
     # and return None so the caller falls back to the raw topic.
     _model = (_sc.get("image_search_query_model") or "").removeprefix("ollama/")
     if not _model:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         await notify_operator(
             "image_service: image_search_query_model is empty — semantic "
             "Pexels query skipped (falling back to raw topic)",
@@ -243,7 +243,7 @@ async def build_semantic_pexels_query(topic: str, *, site_config: SiteConfig) ->
             # cost_guard-gated); a local one stays local + free. The old
             # hardcoded ollama_native call POSTed a cloud model name to
             # local Ollama and 404'd (the #2199 class).
-            from services.llm_providers.dispatcher import dispatch_complete
+            from poindexter.services.llm_providers.dispatcher import dispatch_complete
             completion = await asyncio.wait_for(
                 dispatch_complete(
                     _pool,
@@ -296,7 +296,7 @@ async def _load_pexels_api_key_from_settings() -> str:
     string when the container isn't populated (e.g. unit tests that
     construct the provider directly without an app lifespan).
     """
-    from services.container import get_service
+    from poindexter.services.container import get_service
     db = get_service("database")
     if db is None or not getattr(db, "pool", None):
         return ""

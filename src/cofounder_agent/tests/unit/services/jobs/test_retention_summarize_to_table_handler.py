@@ -30,7 +30,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.integrations.handlers import retention_summarize_to_table as mod
+from poindexter.services.integrations.handlers import retention_summarize_to_table as mod
 
 # ---------------------------------------------------------------------------
 # Fake pool — same shape as ``test_collapse_old_embeddings_job.FakePool``,
@@ -655,7 +655,7 @@ class TestTransactionalSafety:
 @pytest.mark.unit
 class TestRegistration:
     def test_handler_is_registered(self):
-        from services.integrations import registry
+        from poindexter.services.integrations import registry
         # Importing the module triggers the @register_handler decorator.
         # If load_all() or a direct import has run, this lookup succeeds.
         h = registry.lookup("retention", "summarize_to_table")
@@ -677,7 +677,7 @@ class TestSummaryPromptResolution:
         honors the (default-off) override gate."""
         from unittest.mock import MagicMock
 
-        from services import prompt_manager as pm_mod
+        from poindexter.services import prompt_manager as pm_mod
 
         pm = pm_mod.UnifiedPromptManager()
         with patch.object(
@@ -692,7 +692,7 @@ class TestSummaryPromptResolution:
 
     def test_falls_back_inline_when_manager_unavailable(self):
         with patch(
-            "services.prompt_manager.get_prompt_manager",
+            "poindexter.services.prompt_manager.get_prompt_manager",
             side_effect=RuntimeError("boom"),
         ):
             template = mod._resolve_summary_prompt_template()

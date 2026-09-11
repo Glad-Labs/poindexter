@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.telegram_config import TelegramConfig
+from poindexter.services.telegram_config import TelegramConfig
 
 # ---------------------------------------------------------------------------
 # Construction
@@ -168,8 +168,8 @@ class TestAppContainerWiring:
     """``AppContainer.telegram_config`` returns a memoised TelegramConfig."""
 
     def test_app_container_exposes_telegram_config(self):
-        from services.container import AppContainer
-        from services.site_config import SiteConfig
+        from poindexter.services.container import AppContainer
+        from poindexter.services.site_config import SiteConfig
 
         site_config = SiteConfig(initial_config={"telegram_chat_id": "999"})
         container = AppContainer(site_config=site_config, pool=MagicMock())
@@ -180,8 +180,8 @@ class TestAppContainerWiring:
 
     def test_cached_property_memoises(self):
         """Two reads return the same instance (cached_property contract)."""
-        from services.container import AppContainer
-        from services.site_config import SiteConfig
+        from poindexter.services.container import AppContainer
+        from poindexter.services.site_config import SiteConfig
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         first = container.telegram_config

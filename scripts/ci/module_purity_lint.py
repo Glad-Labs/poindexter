@@ -42,7 +42,9 @@ for py_file in sorted(CONTENT_DIR.rglob("*.py")):
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             if isinstance(node, ast.ImportFrom) and node.module:
-                module = node.module
+                # poindexter#1046 step 3: imports spell `poindexter.services.x`; the banned
+                # list stays keyed on the module, whichever spelling reached it.
+                module = node.module.removeprefix("poindexter.")
                 for banned_mod, hint in BANNED:
                     if module == banned_mod or module.startswith(banned_mod + "."):
                         # Check if any of the names imported are the banned ones

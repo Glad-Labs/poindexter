@@ -11,8 +11,8 @@ from dataclasses import replace
 
 import pytest
 
-import services.pipeline_architect as pa
-from services.atom_registry import discover, list_atoms
+import poindexter.services.pipeline_architect as pa
+from poindexter.services.atom_registry import discover, list_atoms
 
 
 def _first_real_atom():

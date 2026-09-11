@@ -53,9 +53,9 @@ from typing import Any
 
 import httpx
 
-from services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.edge_challenge import is_edge_challenge
 
 logger = get_logger(__name__)

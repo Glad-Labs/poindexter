@@ -15,7 +15,7 @@ import pytest
 
 
 def test_media_pipeline_spec_has_narration_node():
-    from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+    from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
 
     ids = [n["id"] for n in MEDIA_PIPELINE_GRAPH_DEF["nodes"]]
     assert "render_narration" in ids
@@ -26,7 +26,7 @@ def test_media_pipeline_spec_has_narration_node():
 
 def test_media_pipeline_narration_edges_rewired():
     """load_scripts → render_narration → transcribe_narration (no skip edge)."""
-    from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+    from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
 
     edges = {(e["from"], e["to"]) for e in MEDIA_PIPELINE_GRAPH_DEF["edges"]}
     assert ("load_scripts", "render_narration") in edges
@@ -38,8 +38,8 @@ def test_media_pipeline_narration_edges_rewired():
 @pytest.mark.asyncio
 async def test_media_pipeline_graph_compiles():
     """build_graph_from_spec resolves every atom + passes the #753 schema check."""
-    from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
-    from services.pipeline_architect import build_graph_from_spec
+    from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+    from poindexter.services.pipeline_architect import build_graph_from_spec
 
     # pool=None is fine: atoms resolve via the registry; no DB needed to compile.
     graph = build_graph_from_spec(MEDIA_PIPELINE_GRAPH_DEF, pool=None)

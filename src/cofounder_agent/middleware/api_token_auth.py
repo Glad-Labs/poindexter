@@ -27,8 +27,8 @@ from typing import Any
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from services.auth.oauth_issuer import InvalidToken, verify_token
-from services.logger_config import get_logger
+from poindexter.services.auth.oauth_issuer import InvalidToken, verify_token
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -97,7 +97,7 @@ def _request_site_config(request: Request) -> Any:
     container = getattr(getattr(request.app, "state", None), "container", None)
     if container is not None:
         return getattr(container, "site_config", None)
-    from services.container_registry import get_container
+    from poindexter.services.container_registry import get_container
 
     registered = get_container()
     if registered is not None:

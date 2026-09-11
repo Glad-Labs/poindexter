@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import random
 
-from services.gpu_lease_stats import (
+from poindexter.services.gpu_lease_stats import (
     LeaseStats,
     fold_sample,
     read_stats,
@@ -93,7 +93,7 @@ class TestDbSeam:
     async def test_record_release_folds_not_overwrites(self, monkeypatch):
         """The upsert must write fold_sample(prev, x), proving the read-fold-
         write cycle — not a blind overwrite of the row."""
-        import services.gpu_lease_stats as m
+        import poindexter.services.gpu_lease_stats as m
 
         prev = fold_sample(LeaseStats(), 100.0)
         executed: list[tuple] = []
@@ -129,7 +129,7 @@ class TestDbSeam:
         assert abs(args[3] - expected.ewma_ms) < 1e-9
 
     async def test_record_release_swallows_all_failures(self, monkeypatch):
-        import services.gpu_lease_stats as m
+        import poindexter.services.gpu_lease_stats as m
 
         async def _boom():
             raise RuntimeError("db down")
@@ -138,7 +138,7 @@ class TestDbSeam:
         await record_release("ollama", "x", 100.0)  # must not raise
 
     async def test_read_stats_returns_none_when_unavailable(self, monkeypatch):
-        import services.gpu_lease_stats as m
+        import poindexter.services.gpu_lease_stats as m
 
         async def _none():
             return None
@@ -147,7 +147,7 @@ class TestDbSeam:
         assert await read_stats("ollama", "x") is None
 
     async def test_read_stats_maps_row(self, monkeypatch):
-        import services.gpu_lease_stats as m
+        import poindexter.services.gpu_lease_stats as m
 
         class _Conn:
             async def fetchrow(self, _sql, owner, phase):

@@ -19,8 +19,8 @@ import logging
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from services.revalidation_service import trigger_isr_revalidate
-from services.static_export_service import export_post
+from poindexter.services.revalidation_service import trigger_isr_revalidate
+from poindexter.services.static_export_service import export_post
 
 logger = logging.getLogger(__name__)
 

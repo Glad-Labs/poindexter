@@ -122,7 +122,7 @@ def test_the_rule_names_the_sentinel_in_its_remediation():
 def test_the_shipped_tree_is_clean():
     """The rule is only worth having if the tree it guards passes it — and this
     is what catches a future write site re-introducing the literal."""
-    from services.pipeline_db import LEGACY_SITE_TARGETS
+    from poindexter.services.pipeline_db import LEGACY_SITE_TARGETS
 
     repo_root = next(
         p for p in Path(__file__).resolve().parents

@@ -92,7 +92,7 @@ async def get_http_client(request: Request) -> httpx.AsyncClient:
     Usage in a route handler::
 
         from fastapi import Depends
-        from services.http_client import get_http_client
+        from poindexter.services.http_client import get_http_client
 
         @router.get("/foo")
         async def foo(client: httpx.AsyncClient = Depends(get_http_client)):
@@ -118,17 +118,17 @@ async def get_http_client(request: Request) -> httpx.AsyncClient:
 # Update this tuple when adding new migrated callers — the lifespan
 # loops over the list at startup and at shutdown.
 WIRED_HTTP_CLIENT_MODULES: tuple[str, ...] = (
-    "services.citation_verifier",
+    "poindexter.services.citation_verifier",
     "modules.content.content_validator",
     # services.image_decision_agent removed: migrated to dispatch_complete
     # (poindexter#706) — the module no longer holds a lifespan http_client.
-    "services.image_service",
-    "services.image_providers.pexels",
-    "services.image_providers.pexels_video",
-    "services.image_providers.flux_schnell",
-    "services.image_providers.ai_generation",
-    "services.integrations.operator_notify",
-    "services.metrics_exporter",
+    "poindexter.services.image_service",
+    "poindexter.services.image_providers.pexels",
+    "poindexter.services.image_providers.pexels_video",
+    "poindexter.services.image_providers.flux_schnell",
+    "poindexter.services.image_providers.ai_generation",
+    "poindexter.services.integrations.operator_notify",
+    "poindexter.services.metrics_exporter",
     "modules.content.multi_model_qa",
 )
 
@@ -149,7 +149,7 @@ def wire_http_client_modules(client: httpx.AsyncClient | None) -> int:
     """
     import importlib
 
-    from services.module_paths import resolve_module_path
+    from poindexter.services.module_paths import resolve_module_path
 
     wired = 0
     failures: list[str] = []

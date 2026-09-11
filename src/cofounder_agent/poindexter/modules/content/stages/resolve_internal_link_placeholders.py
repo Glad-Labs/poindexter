@@ -73,10 +73,10 @@ logger = logging.getLogger(__name__)
 # the qa.rewrite safety net (an atom must not import a stage, so the shared
 # home sits in services/; poindexter#1023). The old names stay importable
 # from here for existing callers/tests.
-from services.internal_link_placeholders import (  # noqa: E402
+from poindexter.services.internal_link_placeholders import (  # noqa: E402
     PLACEHOLDER_RE as _PLACEHOLDER_RE,
 )
-from services.internal_link_placeholders import (  # noqa: E402, F401
+from poindexter.services.internal_link_placeholders import (  # noqa: E402, F401
     scrub_unresolved_placeholders,
 )
 

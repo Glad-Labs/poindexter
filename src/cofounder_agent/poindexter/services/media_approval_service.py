@@ -345,7 +345,7 @@ async def _evaluate_and_notify(
             # Lazy import — media_quality_service lazy-imports this module
             # for its notify hook; a top-level import here would close the
             # cycle eagerly.
-            from services import media_quality_service
+            from poindexter.services import media_quality_service
 
             if medium == "podcast":
                 await media_quality_service.evaluate_podcast(
@@ -479,7 +479,7 @@ async def notify_pending_for_review(
         # Lazy-import to avoid pulling the integrations framework into
         # the approval service's import path (keeps the test surface
         # small + lets callers mock notify_operator at one seam).
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
 
         await notify_operator(message, critical=False)
         logger.info(
@@ -583,7 +583,7 @@ async def decide(
     # approval is already committed above, so a rebuild failure must not bubble.
     if approved and site_config is not None:
         try:
-            from services.media_feed_rebuild import rebuild_feed_for_medium
+            from poindexter.services.media_feed_rebuild import rebuild_feed_for_medium
 
             await rebuild_feed_for_medium(site_config, medium)
         except Exception as e:  # noqa: BLE001 — feed rebuild is additive

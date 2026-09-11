@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import pytest
 
-from services.podcast_service import (
+from poindexter.services.podcast_service import (
     _wrap_with_intro_outro,
     dedupe_episode_title,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 SHOW = "Glad Labs Podcast"
 

@@ -17,12 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from services.jobs.run_dev_diary_post import (
+from poindexter.services.jobs.run_dev_diary_post import (
     _DEFAULT_LOOKBACK_HOURS,
     _DEFAULT_SCHEDULE,
     RunDevDiaryPostJob,
 )
-from services.topic_sources.dev_diary_source import DevDiaryContext
+from poindexter.services.topic_sources.dev_diary_source import DevDiaryContext
 
 
 def _cron_interval_hours(expr: str) -> int:

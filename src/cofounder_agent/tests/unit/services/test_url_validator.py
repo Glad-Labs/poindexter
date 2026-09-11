@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.site_config import SiteConfig
-from services.url_validator import URLValidator
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.url_validator import URLValidator
 
 
 @pytest.fixture
@@ -145,7 +145,7 @@ class TestValidateUrl:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.head = AsyncMock(return_value=mock_resp)
 
-        with patch("services.url_validator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.url_validator.httpx.AsyncClient", return_value=mock_client):
             result = self._run(validator.validate_url("https://good.com"))
         assert result is True
 
@@ -158,7 +158,7 @@ class TestValidateUrl:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.head = AsyncMock(return_value=mock_resp)
 
-        with patch("services.url_validator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.url_validator.httpx.AsyncClient", return_value=mock_client):
             result = self._run(validator.validate_url("https://missing.com"))
         assert result is False
 
@@ -174,7 +174,7 @@ class TestValidateUrl:
         mock_client.head = AsyncMock(return_value=head_resp)
         mock_client.get = AsyncMock(return_value=get_resp)
 
-        with patch("services.url_validator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.url_validator.httpx.AsyncClient", return_value=mock_client):
             result = self._run(validator.validate_url("https://no-head.com"))
         assert result is True
         mock_client.get.assert_called_once()
@@ -185,7 +185,7 @@ class TestValidateUrl:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.head = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
 
-        with patch("services.url_validator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.url_validator.httpx.AsyncClient", return_value=mock_client):
             result = self._run(validator.validate_url("https://slow.com"))
         assert result is False
 
@@ -226,7 +226,7 @@ class TestUserAgent:
             timeout=2.0,
         )
         mock_client = self._mock_client()
-        with patch("services.url_validator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.url_validator.httpx.AsyncClient", return_value=mock_client):
             self._run(validator.validate_url("https://ok.example"))
 
         ua = mock_client.head.call_args.kwargs["headers"]["User-Agent"]
@@ -242,7 +242,7 @@ class TestUserAgent:
             timeout=2.0,
         )
         mock_client = self._mock_client()
-        with patch("services.url_validator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.url_validator.httpx.AsyncClient", return_value=mock_client):
             self._run(validator.validate_url("https://ok.example"))
 
         ua = mock_client.head.call_args.kwargs["headers"]["User-Agent"]
@@ -282,7 +282,7 @@ class TestValidateUrls:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.head = mock_head
 
-        with patch("services.url_validator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.url_validator.httpx.AsyncClient", return_value=mock_client):
             result = self._run(
                 validator.validate_urls(["https://good.com", "https://bad.com"])
             )
@@ -326,7 +326,7 @@ class TestAppContainerWiring:
     """``AppContainer.url_validator`` returns a memoised URLValidator."""
 
     def test_app_container_exposes_url_validator(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         site_config = SiteConfig(initial_config={"site_domain": "wired.example"})
         container = AppContainer(site_config=site_config, pool=MagicMock())
@@ -337,7 +337,7 @@ class TestAppContainerWiring:
         assert "wired.example" in v._skip_domains()
 
     def test_cached_property_memoises(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         assert container.url_validator is container.url_validator

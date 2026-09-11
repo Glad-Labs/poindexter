@@ -15,7 +15,7 @@ import inspect
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.mark.unit

@@ -142,15 +142,15 @@ async def _run_finalize_stage() -> dict:
     fake_pdb = MagicMock()
     fake_pdb.upsert_version = AsyncMock()
     with patch(
-        "services.pipeline_db.PipelineDB", return_value=fake_pdb,
+        "poindexter.services.pipeline_db.PipelineDB", return_value=fake_pdb,
     ), patch(
-        "services.text_utils.normalize_text", side_effect=lambda s: s,
+        "poindexter.services.text_utils.normalize_text", side_effect=lambda s: s,
     ), patch(
-        "services.excerpt_generator.generate_excerpt", return_value="excerpt",
+        "poindexter.services.excerpt_generator.generate_excerpt", return_value="excerpt",
     ), patch(
-        "services.title_generation.strip_qa_batch_suffix", side_effect=lambda s: s,
+        "poindexter.services.title_generation.strip_qa_batch_suffix", side_effect=lambda s: s,
     ), patch(
-        "services.content_revisions_logger.log_revision", new=AsyncMock(),
+        "poindexter.services.content_revisions_logger.log_revision", new=AsyncMock(),
     ):
         await FinalizeTaskStage().execute(ctx, {})
     return _captured_metadata(db)
@@ -164,13 +164,13 @@ async def _run_persist_atom() -> dict:
     fake_pdb = MagicMock()
     fake_pdb.upsert_version = AsyncMock()
     with patch(
-        "services.pipeline_db.PipelineDB", return_value=fake_pdb,
+        "poindexter.services.pipeline_db.PipelineDB", return_value=fake_pdb,
     ), patch(
-        "services.text_utils.normalize_text", side_effect=lambda s: s,
+        "poindexter.services.text_utils.normalize_text", side_effect=lambda s: s,
     ), patch(
-        "services.title_generation.strip_qa_batch_suffix", side_effect=lambda s: s,
+        "poindexter.services.title_generation.strip_qa_batch_suffix", side_effect=lambda s: s,
     ), patch(
-        "services.content_revisions_logger.log_revision", new=AsyncMock(),
+        "poindexter.services.content_revisions_logger.log_revision", new=AsyncMock(),
     ):
         await persist_run(state)
     return _captured_metadata(db)

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from plugins.tts_provider import TTSResult
-from services.tts_service import render_openai_tts
+from poindexter.services.tts_service import render_openai_tts
 
 logger = logging.getLogger(__name__)
 

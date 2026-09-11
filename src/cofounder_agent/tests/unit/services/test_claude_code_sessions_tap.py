@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from services.taps.claude_code_sessions import (
+from poindexter.services.taps.claude_code_sessions import (
     ClaudeCodeSessionsTap,
     _compile_scrub_patterns,
     _extract_assistant_text,

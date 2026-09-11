@@ -1,7 +1,7 @@
 """Guard: the beacon bot-flag tunables ship as app_settings defaults."""
 from __future__ import annotations
 
-from services.settings_defaults import DEFAULTS
+from poindexter.services.settings_defaults import DEFAULTS
 
 
 def test_beacon_bot_flag_defaults_present():

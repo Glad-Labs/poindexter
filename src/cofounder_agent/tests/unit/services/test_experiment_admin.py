@@ -26,7 +26,7 @@ from uuid import uuid4
 
 import pytest
 
-from services import experiment_admin
+from poindexter.services import experiment_admin
 
 
 def _build_pool(conn: MagicMock) -> MagicMock:
@@ -110,7 +110,7 @@ class TestCreateExperiment:
         ns_cls.return_value.get_by_slug = AsyncMock(return_value=_niche())
         new_id = str(uuid4())
         fake_pool["conn"].fetchrow = AsyncMock(return_value={"id": new_id})
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             got = await experiment_admin.create_experiment(
                 fake_pool["pool"],
                 key="glad-labs/test",
@@ -123,7 +123,7 @@ class TestCreateExperiment:
     async def test_unknown_niche_raises_without_insert(self, fake_pool):
         ns_cls = MagicMock()
         ns_cls.return_value.get_by_slug = AsyncMock(return_value=None)
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             with pytest.raises(experiment_admin.ExperimentAdminError, match="unknown niche"):
                 await experiment_admin.create_experiment(
                     fake_pool["pool"],
@@ -138,7 +138,7 @@ class TestCreateExperiment:
         ns_cls = MagicMock()
         ns_cls.return_value.get_by_slug = AsyncMock(return_value=_niche())
         fake_pool["conn"].fetchrow = AsyncMock(side_effect=fake_pool["UniqueViolationError"]("dup"))
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             with pytest.raises(experiment_admin.ExperimentAdminError, match="already exists"):
                 await experiment_admin.create_experiment(
                     fake_pool["pool"],

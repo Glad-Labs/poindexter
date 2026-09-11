@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from modules.content.multi_model_qa import MultiModelQA
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # multi_model_qa._resolve_critic_model
@@ -108,7 +108,7 @@ class TestMultiModelQAResolveCriticModel:
 class TestSelfReviewResolveModel:
     @pytest.mark.asyncio
     async def test_returns_pin(self):
-        from services.self_review import _resolve_self_review_model
+        from poindexter.services.self_review import _resolve_self_review_model
 
         sc = MagicMock()
         sc.get = MagicMock(return_value="ollama/gemma3:27b")
@@ -119,7 +119,7 @@ class TestSelfReviewResolveModel:
     async def test_pool_none_still_reads_pin(self):
         # ``pool`` is unused — resolution reads writer_self_review_model
         # regardless of whether a pool is supplied.
-        from services.self_review import _resolve_self_review_model
+        from poindexter.services.self_review import _resolve_self_review_model
 
         sc = MagicMock()
         sc.get = MagicMock(return_value="gemma3:27b")
@@ -128,12 +128,12 @@ class TestSelfReviewResolveModel:
 
     @pytest.mark.asyncio
     async def test_raises_and_notifies_when_pin_unset(self):
-        from services.self_review import _resolve_self_review_model
+        from poindexter.services.self_review import _resolve_self_review_model
 
         notify = AsyncMock()
         sc = MagicMock()
         sc.get = MagicMock(return_value=None)
-        with patch("services.self_review.notify_operator", notify):
+        with patch("poindexter.services.self_review.notify_operator", notify):
             with pytest.raises(RuntimeError, match="no model resolvable"):
                 await _resolve_self_review_model(MagicMock(), site_config=sc)
         assert notify.await_count == 1

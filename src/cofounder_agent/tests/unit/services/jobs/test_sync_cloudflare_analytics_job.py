@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.sync_cloudflare_analytics import (
+from poindexter.services.jobs.sync_cloudflare_analytics import (
     SyncCloudflareAnalyticsJob,
     _parse_iso,
 )
@@ -159,7 +159,7 @@ class TestSyncCloudflareAnalyticsSkips:
         pool, _ = _make_pool()
         sc = _sc(api_token="")
         with patch(
-            "services.jobs.sync_cloudflare_analytics.emit_finding"
+            "poindexter.services.jobs.sync_cloudflare_analytics.emit_finding"
         ) as mock_finding:
             result = await SyncCloudflareAnalyticsJob().run(
                 pool, {"_site_config": sc}
@@ -339,7 +339,7 @@ class TestSyncCloudflareAnalyticsFailures:
         sc = _sc()
         sc.get_secret = AsyncMock(side_effect=RuntimeError("decrypt fail"))
         with patch(
-            "services.jobs.sync_cloudflare_analytics.emit_finding"
+            "poindexter.services.jobs.sync_cloudflare_analytics.emit_finding"
         ) as mock_finding:
             result = await SyncCloudflareAnalyticsJob().run(
                 pool, {"_site_config": sc}
@@ -498,7 +498,7 @@ class TestTransientNetworkDeferral:
         )
         findings: list = []
         with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
-            "services.jobs.sync_cloudflare_analytics.emit_finding",
+            "poindexter.services.jobs.sync_cloudflare_analytics.emit_finding",
             lambda **kw: findings.append(kw),
         ):
             result = await SyncCloudflareAnalyticsJob().run(
@@ -520,7 +520,7 @@ class TestTransientNetworkDeferral:
         fake_httpx, _ = _fake_httpx(raises=ValueError("CF rejected the query"))
         findings: list = []
         with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
-            "services.jobs.sync_cloudflare_analytics.emit_finding",
+            "poindexter.services.jobs.sync_cloudflare_analytics.emit_finding",
             lambda **kw: findings.append(kw),
         ):
             result = await SyncCloudflareAnalyticsJob().run(
@@ -534,7 +534,7 @@ class TestTransientNetworkDeferral:
         dedup key — a divergent copy re-splits the page."""
         from pathlib import Path
 
-        import services.jobs.sync_affiliate_clicks as aff
+        import poindexter.services.jobs.sync_affiliate_clicks as aff
 
         src = Path(aff.__file__).read_text(encoding="utf-8")
         assert "is_transient_network_error" in src
@@ -681,7 +681,7 @@ async def _run_cycle(pool, ae: _FakeAnalyticsEngine, now: datetime, **cfg):
     fake_httpx.AsyncClient = _AsyncClient
 
     with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
-        "services.jobs.sync_cloudflare_analytics.datetime", _frozen_datetime(now)
+        "poindexter.services.jobs.sync_cloudflare_analytics.datetime", _frozen_datetime(now)
     ):
         return await SyncCloudflareAnalyticsJob().run(
             pool, {"_site_config": _sc(), **cfg}

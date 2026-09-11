@@ -129,8 +129,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not content_text:
         return {}
 
-    from services.llm_providers.thinking_models import strip_reasoning_artifacts
-    from services.text_utils import normalize_text, scrub_fabricated_links
+    from poindexter.services.llm_providers.thinking_models import strip_reasoning_artifacts
+    from poindexter.services.text_utils import normalize_text, scrub_fabricated_links
 
     # Defense-in-depth: strip leaked reasoning / chat-template control tokens
     # (e.g. "<|channel>thought<channel|>…") from the persisted body. Production

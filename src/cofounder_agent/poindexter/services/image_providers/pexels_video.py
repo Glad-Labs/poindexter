@@ -97,7 +97,7 @@ class PexelsVideoProvider:
         if not api_key:
             # Same fallback as the photo provider — one Pexels account,
             # one encrypted setting, both search endpoints.
-            from services.image_providers.pexels import (
+            from poindexter.services.image_providers.pexels import (
                 _load_pexels_api_key_from_settings,
             )
             api_key = await _load_pexels_api_key_from_settings()

@@ -76,7 +76,7 @@ def test_legacy_topic_key_survives_only_as_the_no_task_fallback(writer_src):
 def test_prune_covers_the_writer_subgraph():
     """Keying on the task is only half of it — the prune handler still has to
     be told the prefix exists, or the new threads are just as unreachable."""
-    from services.integrations.handlers.retention_checkpoint_prune import (
+    from poindexter.services.integrations.handlers.retention_checkpoint_prune import (
         _DEFAULT_THREAD_PREFIXES,
     )
 
@@ -89,7 +89,7 @@ def test_backlog_expression_inherits_the_new_prefix():
     """The backlog query (poindexter#933) reads the same prefix list, so a
     prefix added for pruning is automatically covered by the correctness
     probe rather than needing a second, drift-prone list."""
-    from services.integrations.retention_backlog import build_backlog_query
+    from poindexter.services.integrations.retention_backlog import build_backlog_query
 
     q = build_backlog_query("checkpoint_prune", {"ttl_days": 30})
     assert "two_pass-" in q.params[1]

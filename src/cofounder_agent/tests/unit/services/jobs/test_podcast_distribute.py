@@ -16,9 +16,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.jobs import podcast_distribute
-from services.jobs.podcast_distribute import PodcastDistributeJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs import podcast_distribute
+from poindexter.services.jobs.podcast_distribute import PodcastDistributeJob
+from poindexter.services.site_config import SiteConfig
 
 
 class _FakePool:

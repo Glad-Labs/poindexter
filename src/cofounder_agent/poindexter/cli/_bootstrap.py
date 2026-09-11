@@ -140,7 +140,7 @@ async def open_cli_pool(
         dsn or resolve_dsn(), min_size=min_size, max_size=max_size, **kwargs
     )
     try:
-        from services.audit_log import init_global_audit_logger
+        from poindexter.services.audit_log import init_global_audit_logger
 
         # quiet=True: the info-level init line would print to stderr on
         # every CLI invocation (logger_config attaches a stderr handler at
@@ -171,7 +171,7 @@ async def close_cli_pool(pool) -> None:
     the pool closes no matter what the audit teardown does.
     """
     try:
-        from services.audit_log import drain_pending_writes, reset_global_audit_logger
+        from poindexter.services.audit_log import drain_pending_writes, reset_global_audit_logger
 
         reset_global_audit_logger(pool)
         await drain_pending_writes()

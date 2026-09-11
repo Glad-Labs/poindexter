@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins import LLMProvider
-from services.llm_providers.ollama_native import OllamaNativeProvider
-from services.llm_providers.openai_compat import OpenAICompatProvider
+from poindexter.services.llm_providers.ollama_native import OllamaNativeProvider
+from poindexter.services.llm_providers.openai_compat import OpenAICompatProvider
 
 
 class TestOllamaNativeProtocol:
@@ -82,7 +82,7 @@ class TestOpenAICompatComplete:
 
         provider = OpenAICompatProvider()
 
-        with patch("services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
+        with patch("poindexter.services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
             completion = await provider.complete(
                 messages=[{"role": "user", "content": "hi"}],
                 model="gemma3:27b",
@@ -130,7 +130,7 @@ class TestOpenAICompatComplete:
 
         provider = OpenAICompatProvider()
 
-        with patch("services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
+        with patch("poindexter.services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
             await provider.complete(
                 messages=[{"role": "user", "content": "hi"}],
                 model="x",
@@ -164,7 +164,7 @@ class TestOpenAICompatComplete:
 
         provider = OpenAICompatProvider()
 
-        with patch("services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
+        with patch("poindexter.services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
             await provider.complete(
                 messages=[{"role": "user", "content": "hi"}],
                 model="x",
@@ -194,7 +194,7 @@ class TestOpenAICompatComplete:
 
         provider = OpenAICompatProvider()
 
-        with patch("services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
+        with patch("poindexter.services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
             await provider.complete(
                 messages=[{"role": "user", "content": "hi"}],
                 model="x",
@@ -225,7 +225,7 @@ class TestOpenAICompatEmbed:
 
         provider = OpenAICompatProvider()
 
-        with patch("services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
+        with patch("poindexter.services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
             vec = await provider.embed("hello", model="nomic-embed-text")
 
         assert vec == [0.1, 0.2, 0.3]
@@ -249,7 +249,7 @@ class TestOpenAICompatEmbed:
 
         provider = OpenAICompatProvider()
 
-        with patch("services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
+        with patch("poindexter.services.llm_providers.openai_compat.httpx.AsyncClient", return_value=FakeClient()):
             with pytest.raises(ValueError, match="embed response"):
                 await provider.embed("hello", model="x")
 

@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from services.rejection_handlers import (
+from poindexter.services.rejection_handlers import (
     RejectionContext,
     dispatch_rejection,
     final_publish_approval_handler,

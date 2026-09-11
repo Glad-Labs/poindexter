@@ -20,9 +20,9 @@ import httpx
 import pytest
 from bs4 import BeautifulSoup
 
-from services import url_scraper
-from services.site_config import SiteConfig
-from services.url_scraper import (
+from poindexter.services import url_scraper
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.url_scraper import (
     URLScrapeError,
     URLScraper,
     _build_user_agent,
@@ -461,14 +461,14 @@ class TestAppContainerWiring:
     """``AppContainer.url_scraper`` returns a memoised URLScraper."""
 
     def test_app_container_exposes_url_scraper(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         scraper = container.url_scraper
         assert isinstance(scraper, URLScraper)
 
     def test_cached_property_memoises(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         assert container.url_scraper is container.url_scraper

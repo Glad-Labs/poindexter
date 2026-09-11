@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import services
-from services.prompt_manager import UnifiedPromptManager
-from services.skill_frontmatter import extract_section, parse_frontmatter
+from poindexter import services
+from poindexter.services.prompt_manager import UnifiedPromptManager
+from poindexter.services.skill_frontmatter import extract_section, parse_frontmatter
 
 _SKILL_PATH = (
     Path(services.__file__).resolve().parents[2]  # src/cofounder_agent (services/ sits under poindexter/)

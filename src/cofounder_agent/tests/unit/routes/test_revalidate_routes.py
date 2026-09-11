@@ -18,8 +18,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.revalidation_service import RevalidationResult
 from routes.revalidate_routes import router, trigger_nextjs_revalidation
-from services.revalidation_service import RevalidationResult
 
 
 def _ok_result(url: str = "https://www.gladlabs.io/api/revalidate") -> RevalidationResult:
@@ -228,19 +228,19 @@ class TestTriggerNextjsRevalidation:
 
     def test_returns_true_on_200(self):
         mock_client = _make_mock_httpx_client(status_code=200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/", "/archive"], site_config=self._cfg))
         assert result is True
 
     def test_returns_false_on_non_200(self):
         mock_client = _make_mock_httpx_client(status_code=500, text="Internal Server Error")
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/blog"], site_config=self._cfg))
         assert result is False
 
     def test_returns_false_on_404(self):
         mock_client = _make_mock_httpx_client(status_code=404, text="Not Found")
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/about"], site_config=self._cfg))
         assert result is False
 
@@ -249,7 +249,7 @@ class TestTriggerNextjsRevalidation:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/", "/archive"], site_config=self._cfg))
         assert result is False
 
@@ -258,7 +258,7 @@ class TestTriggerNextjsRevalidation:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=httpx.HTTPError("Connection refused"))
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/blog"], site_config=self._cfg))
         assert result is False
 
@@ -267,14 +267,14 @@ class TestTriggerNextjsRevalidation:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=OSError("Network unreachable"))
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/blog"], site_config=self._cfg))
         assert result is False
 
     def test_default_paths_are_root_and_archive(self):
         """When paths=None the helper should call with ["/", "/archive"]."""
         mock_client = _make_mock_httpx_client(status_code=200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(None, site_config=self._cfg))
         assert result is True
         call_kwargs = mock_client.post.call_args
@@ -291,7 +291,7 @@ class TestTriggerNextjsRevalidation:
             "public_site_url": "http://my-site.example.com",
         }.get(key, default)
         mock_cfg.get_secret = AsyncMock(return_value="test-secret")
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/blog"], site_config=mock_cfg))
         assert result is True
         # Confirm the call URL contains the custom host
@@ -308,7 +308,7 @@ class TestTriggerNextjsRevalidation:
             "public_site_url": "http://stripped.example.com/api",
         }.get(key, default)
         mock_cfg.get_secret = AsyncMock(return_value="test-secret")
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/blog"], site_config=mock_cfg))
         assert result is True
         post_args = mock_client.post.call_args

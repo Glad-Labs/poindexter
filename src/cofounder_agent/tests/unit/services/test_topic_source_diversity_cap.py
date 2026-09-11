@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from services.topic_batch_service import TopicBatchService
+from poindexter.services.topic_batch_service import TopicBatchService
 
 _cap = TopicBatchService._apply_source_diversity_cap
 

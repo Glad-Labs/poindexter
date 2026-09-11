@@ -30,12 +30,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from services.jobs.youtube_payload import (
+from poindexter.services.jobs.youtube_payload import (
     _build_youtube_description,
     _build_youtube_title,
     _parse_seo_keywords,
 )
-from services.publish_adapters.youtube import STATUS_NOT_FOUND
+from poindexter.services.publish_adapters.youtube import STATUS_NOT_FOUND
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -253,7 +253,7 @@ async def sync_youtube_metadata(
 
     adapter = None
     if apply:
-        from services.publish_adapters.youtube import YouTubePublishAdapter
+        from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
 
         adapter = YouTubePublishAdapter(site_config=site_config)
 

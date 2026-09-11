@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.backfill_missing_social_drafts import (
+from poindexter.services.jobs.backfill_missing_social_drafts import (
     BackfillMissingSocialDraftsJob,
 )
 
@@ -34,7 +34,7 @@ def _patch_svc(reconcile_return=None, reconcile_raises: BaseException | None = N
             or {"candidates_checked": 0, "drafts_created": 0, "errors": []}
         )
     ctor = MagicMock(return_value=inst)
-    return patch("services.social_drafts.SocialDraftsService", ctor), inst
+    return patch("poindexter.services.social_drafts.SocialDraftsService", ctor), inst
 
 
 @pytest.mark.asyncio
@@ -65,7 +65,7 @@ async def test_happy_path_reports_drafts_created_not_posts_checked():
         reconcile_return={"candidates_checked": 5, "drafts_created": 2, "errors": []}
     )
     with ctx, patch(
-        "services.jobs.backfill_missing_social_drafts.notify_operator",
+        "poindexter.services.jobs.backfill_missing_social_drafts.notify_operator",
         new_callable=AsyncMock,
     ) as notify:
         result = await job.run(pool=MagicMock(), config=cfg)
@@ -88,7 +88,7 @@ async def test_per_task_errors_trigger_notify_operator():
         }
     )
     with ctx, patch(
-        "services.jobs.backfill_missing_social_drafts.notify_operator",
+        "poindexter.services.jobs.backfill_missing_social_drafts.notify_operator",
         new_callable=AsyncMock,
     ) as notify:
         result = await job.run(pool=MagicMock(), config=cfg)

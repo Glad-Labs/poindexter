@@ -41,11 +41,11 @@ logger = logging.getLogger(__name__)
 _RESEEDS = (
     # (slug, new_version, spec module, spec attr)
     ("canonical_blog", 9,
-     "services.canonical_blog_spec", "CANONICAL_BLOG_GRAPH_DEF"),
+     "poindexter.services.canonical_blog_spec", "CANONICAL_BLOG_GRAPH_DEF"),
     ("podcast_pipeline", 2,
-     "services.podcast_pipeline_spec", "PODCAST_PIPELINE_GRAPH_DEF"),
+     "poindexter.services.podcast_pipeline_spec", "PODCAST_PIPELINE_GRAPH_DEF"),
     ("media_pipeline", 4,
-     "services.media_pipeline_spec", "MEDIA_PIPELINE_GRAPH_DEF"),
+     "poindexter.services.media_pipeline_spec", "MEDIA_PIPELINE_GRAPH_DEF"),
 )
 
 
@@ -69,7 +69,7 @@ async def up(pool) -> None:
             )
 
     try:
-        from services.pipeline_architect import (
+        from poindexter.services.pipeline_architect import (
             ensure_active_graph_defs_stamped,
         )
     except ImportError as exc:

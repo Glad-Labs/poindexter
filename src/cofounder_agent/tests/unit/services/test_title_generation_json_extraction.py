@@ -21,9 +21,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import services.title_generation as tg
-from services.prompt_manager import UnifiedPromptManager
-from services.title_generation import generate_canonical_title
+import poindexter.services.title_generation as tg
+from poindexter.services.prompt_manager import UnifiedPromptManager
+from poindexter.services.title_generation import generate_canonical_title
 
 # --------------------------------------------------------------------------- #
 # Test scaffolding — drives the real model-pin resolution path.
@@ -58,7 +58,7 @@ async def _run(provider_text: str) -> Any:
     provider = _provider_returning(provider_text)
     with patch(
         "plugins.registry.get_all_llm_providers", return_value=[provider]
-    ), patch("services.prompt_manager.get_prompt_manager") as pm:
+    ), patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         return await generate_canonical_title(
             topic="RTX 5090 benchmarks",

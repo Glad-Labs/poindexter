@@ -154,7 +154,7 @@ class TestGenerateSeoMetadata:
         ))
         ctx: dict[str, Any] = {"topic": "AI", "content": "body", "tags": []}
         with patch(
-            "services.seo_content_generator.get_seo_content_generator",
+            "poindexter.services.seo_content_generator.get_seo_content_generator",
             return_value=seo_gen,
         ), patch(
             "modules.content.ai_content_generator.get_content_generator",
@@ -180,7 +180,7 @@ class TestGenerateSeoMetadata:
             generate_seo_assets=MagicMock(return_value=None),
         ))
         with patch(
-            "services.seo_content_generator.get_seo_content_generator",
+            "poindexter.services.seo_content_generator.get_seo_content_generator",
             return_value=seo_gen,
         ), patch(
             "modules.content.ai_content_generator.get_content_generator",
@@ -298,7 +298,7 @@ class TestFinalizeTask:
             "database_service": db,
         }
         with patch(
-            "services.text_utils.normalize_text",
+            "poindexter.services.text_utils.normalize_text",
             side_effect=lambda x: x,
         ):
             result = await FinalizeTaskStage().execute(ctx, {})
@@ -356,9 +356,9 @@ class TestFinalizeTask:
             "database_service": db,
         }
         with (
-            patch("services.text_utils.normalize_text", side_effect=lambda x: x),
+            patch("poindexter.services.text_utils.normalize_text", side_effect=lambda x: x),
             patch(
-                "services.excerpt_generator.generate_excerpt",
+                "poindexter.services.excerpt_generator.generate_excerpt",
                 return_value="excerpt",
             ),
         ):
@@ -405,9 +405,9 @@ class TestFinalizeTask:
             "database_service": db,
         }
         with (
-            patch("services.text_utils.normalize_text", side_effect=lambda x: x),
+            patch("poindexter.services.text_utils.normalize_text", side_effect=lambda x: x),
             patch(
-                "services.excerpt_generator.generate_excerpt",
+                "poindexter.services.excerpt_generator.generate_excerpt",
                 return_value="excerpt",
             ),
         ):
@@ -443,9 +443,9 @@ class TestFinalizeTask:
             "database_service": db,
         }
         with (
-            patch("services.text_utils.normalize_text", side_effect=lambda x: x),
+            patch("poindexter.services.text_utils.normalize_text", side_effect=lambda x: x),
             patch(
-                "services.excerpt_generator.generate_excerpt",
+                "poindexter.services.excerpt_generator.generate_excerpt",
                 return_value="e",
             ),
         ):

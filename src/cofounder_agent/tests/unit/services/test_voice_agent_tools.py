@@ -25,7 +25,7 @@ import pytest
 # resolve without the real Pipecat / livekit packages installed.
 # isort: off
 from tests.unit.services import test_voice_agent_service_mode  # noqa: F401
-import services.voice_agent_livekit as voice_agent_livekit  # noqa: E402
+import poindexter.services.voice_agent_livekit as voice_agent_livekit  # noqa: E402
 # isort: on
 
 

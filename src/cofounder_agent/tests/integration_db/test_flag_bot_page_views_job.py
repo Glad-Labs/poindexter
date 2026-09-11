@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.jobs.flag_bot_page_views import FlagBotPageViewsJob
+from poindexter.services.jobs.flag_bot_page_views import FlagBotPageViewsJob
 
 pytestmark = [
     pytest.mark.integration_db,

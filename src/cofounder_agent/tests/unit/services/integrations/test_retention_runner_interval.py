@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.integrations.retention_runner import run_all
+from poindexter.services.integrations.retention_runner import run_all
 
 
 def _row(name: str, *, min_interval_hours=None, last_run_at=None):
@@ -27,7 +27,7 @@ async def test_skip_when_recently_run():
     row = _row("test.policy", min_interval_hours=1.0, last_run_at=recent)
 
     with patch(
-        "services.integrations.retention_runner._load_enabled_policies",
+        "poindexter.services.integrations.retention_runner._load_enabled_policies",
         new=AsyncMock(return_value=[row]),
     ):
         summary = await run_all(pool=None)
@@ -46,15 +46,15 @@ async def test_not_skipped_when_overdue():
     dispatch_result = {"deleted": 5}
     with (
         patch(
-            "services.integrations.retention_runner._load_enabled_policies",
+            "poindexter.services.integrations.retention_runner._load_enabled_policies",
             new=AsyncMock(return_value=[row]),
         ),
         patch(
-            "services.integrations.retention_runner.registry.dispatch",
+            "poindexter.services.integrations.retention_runner.registry.dispatch",
             new=AsyncMock(return_value=dispatch_result),
         ),
         patch(
-            "services.integrations.retention_runner._record_success",
+            "poindexter.services.integrations.retention_runner._record_success",
             new=AsyncMock(),
         ),
     ):
@@ -73,15 +73,15 @@ async def test_no_interval_always_runs():
     dispatch_result = {"deleted": 0}
     with (
         patch(
-            "services.integrations.retention_runner._load_enabled_policies",
+            "poindexter.services.integrations.retention_runner._load_enabled_policies",
             new=AsyncMock(return_value=[row]),
         ),
         patch(
-            "services.integrations.retention_runner.registry.dispatch",
+            "poindexter.services.integrations.retention_runner.registry.dispatch",
             new=AsyncMock(return_value=dispatch_result),
         ),
         patch(
-            "services.integrations.retention_runner._record_success",
+            "poindexter.services.integrations.retention_runner._record_success",
             new=AsyncMock(),
         ),
     ):
@@ -100,15 +100,15 @@ async def test_no_interval_but_has_last_run_at_still_runs():
     dispatch_result = {"deleted": 3}
     with (
         patch(
-            "services.integrations.retention_runner._load_enabled_policies",
+            "poindexter.services.integrations.retention_runner._load_enabled_policies",
             new=AsyncMock(return_value=[row]),
         ),
         patch(
-            "services.integrations.retention_runner.registry.dispatch",
+            "poindexter.services.integrations.retention_runner.registry.dispatch",
             new=AsyncMock(return_value=dispatch_result),
         ),
         patch(
-            "services.integrations.retention_runner._record_success",
+            "poindexter.services.integrations.retention_runner._record_success",
             new=AsyncMock(),
         ),
     ):
@@ -131,15 +131,15 @@ async def test_timezone_naive_last_run_at_handled():
 
     with (
         patch(
-            "services.integrations.retention_runner._load_enabled_policies",
+            "poindexter.services.integrations.retention_runner._load_enabled_policies",
             new=AsyncMock(return_value=[row]),
         ),
         patch(
-            "services.integrations.retention_runner.registry.dispatch",
+            "poindexter.services.integrations.retention_runner.registry.dispatch",
             new=AsyncMock(return_value={"deleted": 0}),
         ),
         patch(
-            "services.integrations.retention_runner._record_success",
+            "poindexter.services.integrations.retention_runner._record_success",
             new=AsyncMock(),
         ),
     ):

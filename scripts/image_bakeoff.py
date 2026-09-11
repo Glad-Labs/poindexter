@@ -33,7 +33,6 @@ from statistics import mean
 
 from PIL import Image, ImageDraw
 
-
 NEG_PROMPT = (
     "text, words, letters, numbers, signage, UI, labels, "
     "watermark, captions, writing, logo"

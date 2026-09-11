@@ -15,8 +15,8 @@ worse than no test — it is a green light on a broken path.
 """
 from __future__ import annotations
 
-from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
-from services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
+from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+from poindexter.services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
 
 
 def _atoms(spec: dict) -> set[str]:

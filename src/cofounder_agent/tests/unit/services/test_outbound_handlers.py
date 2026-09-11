@@ -13,7 +13,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from services.integrations.handlers import outbound_vercel_isr
+from poindexter.services.integrations.handlers import outbound_vercel_isr
 
 
 class _FakeSiteConfig:

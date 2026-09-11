@@ -22,18 +22,18 @@ import importlib.util
 
 import pytest
 
-from services.llm_providers.litellm_provider import (
+from poindexter.services.llm_providers.litellm_provider import (
     LangfuseConfigError as _ORIGINAL_LANGFUSE_ERROR,
 )
-from services.llm_providers.litellm_provider import (
+from poindexter.services.llm_providers.litellm_provider import (
     LiteLLMProvider as _ORIGINAL_PROVIDER,
 )
 
-_PROVIDER_MOD = "services.llm_providers.litellm_provider"
+_PROVIDER_MOD = "poindexter.services.llm_providers.litellm_provider"
 
 
 def _reload_provider():
-    import services.llm_providers.litellm_provider as mod
+    import poindexter.services.llm_providers.litellm_provider as mod
 
     return importlib.reload(mod)
 
@@ -61,7 +61,7 @@ def _restore_provider_module():
     restoration that works is putting the ORIGINAL objects back, so snapshot
     the namespace and hard-restore it.
     """
-    import services.llm_providers.litellm_provider as mod
+    import poindexter.services.llm_providers.litellm_provider as mod
 
     snapshot = dict(mod.__dict__)
     try:
@@ -160,7 +160,7 @@ class TestReloadLeavesNoCrossFileDamage:
     """
 
     def test_exception_class_identity_is_pristine_at_test_start(self):
-        import services.llm_providers.litellm_provider as mod
+        import poindexter.services.llm_providers.litellm_provider as mod
 
         assert mod.LangfuseConfigError is _ORIGINAL_LANGFUSE_ERROR, (
             "LangfuseConfigError is not the object it was at import time — a "
@@ -174,7 +174,7 @@ class TestReloadLeavesNoCrossFileDamage:
     def test_provider_class_identity_is_pristine_at_test_start(self):
         # Same hazard, different symbol — LiteLLMProvider is imported by name in
         # several test files and by the plugin registry.
-        import services.llm_providers.litellm_provider as mod
+        import poindexter.services.llm_providers.litellm_provider as mod
 
         assert mod.LiteLLMProvider is _ORIGINAL_PROVIDER
 
@@ -185,7 +185,7 @@ class TestReloadLeavesNoCrossFileDamage:
         the reloaded class fails isinstance against the original.
         """
         importlib.reload(importlib.import_module(_PROVIDER_MOD))
-        import services.llm_providers.litellm_provider as mod
+        import poindexter.services.llm_providers.litellm_provider as mod
 
         assert mod.LangfuseConfigError is not _ORIGINAL_LANGFUSE_ERROR
         assert not isinstance(mod.LangfuseConfigError("x"), _ORIGINAL_LANGFUSE_ERROR)

@@ -48,8 +48,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from services import cost_ledger
-from services.cost_ledger import SpendBreakdown
+from poindexter.services import cost_ledger
+from poindexter.services.cost_ledger import SpendBreakdown
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -555,7 +555,7 @@ class CostGuard:
             # effort emission — never let an audit-log error mask the
             # original cost-write failure (internal tracker finding 3).
             try:
-                from services.audit_log import audit_log_bg  # noqa: PLC0415
+                from poindexter.services.audit_log import audit_log_bg  # noqa: PLC0415
                 audit_log_bg(
                     "cost_log_write_failed",
                     "cost_guard",

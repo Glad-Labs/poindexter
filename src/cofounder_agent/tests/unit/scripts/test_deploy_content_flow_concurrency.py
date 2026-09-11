@@ -69,7 +69,7 @@ class TestSettingsDefaultsSeedTheCap:
     and the regen-app-settings doc picks them up."""
 
     def test_both_keys_present_with_safe_defaults(self) -> None:
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         assert DEFAULTS["prefect_content_flow_concurrency"] == "3"
         assert DEFAULTS["content_flow_max_concurrency"] == "3"

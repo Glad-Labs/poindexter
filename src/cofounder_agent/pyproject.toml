@@ -375,13 +375,13 @@ poindexter = "poindexter.cli.app:main"
 # full design.
 [project.entry-points."poindexter.taps"]
 hello = "cofounder_agent.plugins.samples.hello_tap:HelloTap"
-memory = "cofounder_agent.services.taps.memory:MemoryFilesTap"
-posts = "cofounder_agent.services.taps.published_posts:PostsTap"
-audit = "cofounder_agent.services.taps.audit:AuditTap"
-brain_knowledge = "cofounder_agent.services.taps.brain_knowledge:BrainKnowledgeTap"
-brain_decisions = "cofounder_agent.services.taps.brain_decisions:BrainDecisionsTap"
-claude_code_sessions = "cofounder_agent.services.taps.claude_code_sessions:ClaudeCodeSessionsTap"
-openclaw_sqlite = "cofounder_agent.services.taps.openclaw_sqlite:OpenClawSQLiteTap"
+memory = "poindexter.services.taps.memory:MemoryFilesTap"
+posts = "poindexter.services.taps.published_posts:PostsTap"
+audit = "poindexter.services.taps.audit:AuditTap"
+brain_knowledge = "poindexter.services.taps.brain_knowledge:BrainKnowledgeTap"
+brain_decisions = "poindexter.services.taps.brain_decisions:BrainDecisionsTap"
+claude_code_sessions = "poindexter.services.taps.claude_code_sessions:ClaudeCodeSessionsTap"
+openclaw_sqlite = "poindexter.services.taps.openclaw_sqlite:OpenClawSQLiteTap"
 
 [project.entry-points."poindexter.probes"]
 database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
@@ -389,48 +389,48 @@ database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
 [project.entry-points."poindexter.jobs"]
 # noop + sync_page_views removed 2026-06-02 (#936) — dead no-op jobs; kept in
 # sync with plugins.registry._SAMPLES (test_registry_completeness enforces it).
-expire_stale_approvals = "cofounder_agent.services.jobs.expire_stale_approvals:ExpireStaleApprovalsJob"
-db_backup = "cofounder_agent.services.jobs.db_backup:DbBackupJob"
-render_prometheus_rules = "cofounder_agent.services.jobs.render_prometheus_rules:RenderPrometheusRulesJob"
-render_alertmanager_config = "cofounder_agent.services.jobs.render_alertmanager_config:RenderAlertmanagerConfigJob"
-postgres_vacuum = "cofounder_agent.services.jobs.postgres_vacuum:PostgresVacuumJob"
-check_published_links = "cofounder_agent.services.jobs.check_published_links:CheckPublishedLinksJob"
-flag_missing_seo = "cofounder_agent.services.jobs.flag_missing_seo:FlagMissingSeoJob"
-fix_missing_seo = "cofounder_agent.services.jobs.fix_missing_seo:FixMissingSeoJob"
-detect_duplicate_posts = "cofounder_agent.services.jobs.detect_duplicate_posts:DetectDuplicatePostsJob"
-audit_published_quality = "cofounder_agent.services.jobs.audit_published_quality:AuditPublishedQualityJob"
-fix_broken_internal_links = "cofounder_agent.services.jobs.fix_broken_internal_links:FixBrokenInternalLinksJob"
-fix_broken_external_links = "cofounder_agent.services.jobs.fix_broken_external_links:FixBrokenExternalLinksJob"
-fix_uncategorized_posts = "cofounder_agent.services.jobs.fix_uncategorized_posts:FixUncategorizedPostsJob"
-tune_publish_threshold = "cofounder_agent.services.jobs.tune_publish_threshold:TunePublishThresholdJob"
-verify_published_posts = "cofounder_agent.services.jobs.verify_published_posts:VerifyPublishedPostsJob"
-crosspost_to_devto = "cofounder_agent.services.jobs.crosspost_to_devto:CrosspostToDevtoJob"
-update_utility_rates = "cofounder_agent.services.jobs.update_utility_rates:UpdateUtilityRatesJob"
-analyze_topic_gaps = "cofounder_agent.services.jobs.analyze_topic_gaps:AnalyzeTopicGapsJob"
-run_niche_topic_sweep = "cofounder_agent.services.jobs.run_niche_topic_sweep:RunNicheTopicSweepJob"
-run_dev_diary_post = "cofounder_agent.services.jobs.run_dev_diary_post:RunDevDiaryPostJob"
-detect_anomalies = "cofounder_agent.services.jobs.detect_anomalies:DetectAnomaliesJob"
-check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:CheckMemoryStalenessJob"
-morning_brief = "cofounder_agent.services.jobs.morning_brief:MorningBriefJob"
-run_taps = "cofounder_agent.services.jobs.run_taps:RunTapsJob"
-ingest_corsair_csv = "cofounder_agent.services.jobs.ingest_corsair_csv:IngestCorsairCsvJob"
-run_retention = "cofounder_agent.services.jobs.run_retention:RunRetentionJob"
+expire_stale_approvals = "poindexter.services.jobs.expire_stale_approvals:ExpireStaleApprovalsJob"
+db_backup = "poindexter.services.jobs.db_backup:DbBackupJob"
+render_prometheus_rules = "poindexter.services.jobs.render_prometheus_rules:RenderPrometheusRulesJob"
+render_alertmanager_config = "poindexter.services.jobs.render_alertmanager_config:RenderAlertmanagerConfigJob"
+postgres_vacuum = "poindexter.services.jobs.postgres_vacuum:PostgresVacuumJob"
+check_published_links = "poindexter.services.jobs.check_published_links:CheckPublishedLinksJob"
+flag_missing_seo = "poindexter.services.jobs.flag_missing_seo:FlagMissingSeoJob"
+fix_missing_seo = "poindexter.services.jobs.fix_missing_seo:FixMissingSeoJob"
+detect_duplicate_posts = "poindexter.services.jobs.detect_duplicate_posts:DetectDuplicatePostsJob"
+audit_published_quality = "poindexter.services.jobs.audit_published_quality:AuditPublishedQualityJob"
+fix_broken_internal_links = "poindexter.services.jobs.fix_broken_internal_links:FixBrokenInternalLinksJob"
+fix_broken_external_links = "poindexter.services.jobs.fix_broken_external_links:FixBrokenExternalLinksJob"
+fix_uncategorized_posts = "poindexter.services.jobs.fix_uncategorized_posts:FixUncategorizedPostsJob"
+tune_publish_threshold = "poindexter.services.jobs.tune_publish_threshold:TunePublishThresholdJob"
+verify_published_posts = "poindexter.services.jobs.verify_published_posts:VerifyPublishedPostsJob"
+crosspost_to_devto = "poindexter.services.jobs.crosspost_to_devto:CrosspostToDevtoJob"
+update_utility_rates = "poindexter.services.jobs.update_utility_rates:UpdateUtilityRatesJob"
+analyze_topic_gaps = "poindexter.services.jobs.analyze_topic_gaps:AnalyzeTopicGapsJob"
+run_niche_topic_sweep = "poindexter.services.jobs.run_niche_topic_sweep:RunNicheTopicSweepJob"
+run_dev_diary_post = "poindexter.services.jobs.run_dev_diary_post:RunDevDiaryPostJob"
+detect_anomalies = "poindexter.services.jobs.detect_anomalies:DetectAnomaliesJob"
+check_memory_staleness = "poindexter.services.jobs.check_memory_staleness:CheckMemoryStalenessJob"
+morning_brief = "poindexter.services.jobs.morning_brief:MorningBriefJob"
+run_taps = "poindexter.services.jobs.run_taps:RunTapsJob"
+ingest_corsair_csv = "poindexter.services.jobs.ingest_corsair_csv:IngestCorsairCsvJob"
+run_retention = "poindexter.services.jobs.run_retention:RunRetentionJob"
 
 [project.entry-points."poindexter.topic_sources"]
-hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
-devto = "cofounder_agent.services.topic_sources.devto:DevtoSource"
-web_search = "cofounder_agent.services.topic_sources.web_search:WebSearchSource"
-knowledge = "cofounder_agent.services.topic_sources.knowledge:KnowledgeSource"
-codebase = "cofounder_agent.services.topic_sources.codebase:CodebaseSource"
-dev_diary = "cofounder_agent.services.topic_sources.dev_diary_source:DevDiarySource"
-igdb = "cofounder_agent.services.topic_sources.igdb:IGDBSource"
-gsc_query_gap = "cofounder_agent.services.topic_sources.gsc_query_gap:GscQueryGapSource"
+hackernews = "poindexter.services.topic_sources.hackernews:HackerNewsSource"
+devto = "poindexter.services.topic_sources.devto:DevtoSource"
+web_search = "poindexter.services.topic_sources.web_search:WebSearchSource"
+knowledge = "poindexter.services.topic_sources.knowledge:KnowledgeSource"
+codebase = "poindexter.services.topic_sources.codebase:CodebaseSource"
+dev_diary = "poindexter.services.topic_sources.dev_diary_source:DevDiarySource"
+igdb = "poindexter.services.topic_sources.igdb:IGDBSource"
+gsc_query_gap = "poindexter.services.topic_sources.gsc_query_gap:GscQueryGapSource"
 
 [project.entry-points."poindexter.image_providers"]
-pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
-image_gen = "cofounder_agent.services.image_providers.image_gen:ImageGenProvider"
-ai_generation = "cofounder_agent.services.image_providers.ai_generation:AIGenerationProvider"
-screenshot = "cofounder_agent.services.image_providers.screenshot:ScreenshotProvider"
+pexels = "poindexter.services.image_providers.pexels:PexelsProvider"
+image_gen = "poindexter.services.image_providers.image_gen:ImageGenProvider"
+ai_generation = "poindexter.services.image_providers.ai_generation:AIGenerationProvider"
+screenshot = "poindexter.services.image_providers.screenshot:ScreenshotProvider"
 
 # Stages moved from services/stages/ to modules/content/stages/ in the
 # Module v1 Phase 3 migration (2026-06-04); targets repointed to match
@@ -448,14 +448,14 @@ capture_training_data = "cofounder_agent.modules.content.stages.capture_training
 finalize_task = "cofounder_agent.modules.content.stages.finalize_task:FinalizeTaskStage"
 
 [project.entry-points."poindexter.llm_providers"]
-ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
-openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAICompatProvider"
+ollama_native = "poindexter.services.llm_providers.ollama_native:OllamaNativeProvider"
+openai_compat = "poindexter.services.llm_providers.openai_compat:OpenAICompatProvider"
 # LiteLLM-backed provider — the production default after migration 0160
 # (Glad-Labs/poindexter#372). Also discoverable via plugins/registry.py
 # core_samples so it's available even when entry_points haven't been
 # refreshed (e.g. dev installs where `poetry install` hasn't re-run
 # since this entry was added).
-litellm = "cofounder_agent.services.llm_providers.litellm_provider:LiteLLMProvider"
+litellm = "poindexter.services.llm_providers.litellm_provider:LiteLLMProvider"
 
 # Module v1 (Glad-Labs/poindexter#490) — business-function modules.
 # In-tree modules (e.g. content) are discovered by DIRECTORY SCAN

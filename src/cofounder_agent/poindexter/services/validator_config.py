@@ -27,7 +27,7 @@ Usage
 
 ::
 
-    from services.validator_config import is_validator_enabled, get_validator_threshold
+    from poindexter.services.validator_config import is_validator_enabled, get_validator_threshold
 
     if not is_validator_enabled("first_person_claims", niche="dev_diary"):
         return  # rule disabled in DB, or niche-scoped out
@@ -52,8 +52,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
 # setter were removed. ``is_validator_enabled`` now REQUIRES a keyword-only

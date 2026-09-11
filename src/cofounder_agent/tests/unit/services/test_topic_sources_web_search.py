@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.topic_source import TopicSource
-from services.topic_sources.web_search import WebSearchSource
+from poindexter.services.topic_sources.web_search import WebSearchSource
 
 
 def _make_researcher(results_by_query: dict[str, list[dict]] | list[dict]):
@@ -35,8 +35,8 @@ class TestWebSearchSource:
         ])
         fake_categories = {"technology": ["distributed systems", "databases"]}
 
-        with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake), \
+             patch("poindexter.services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None,
@@ -56,8 +56,8 @@ class TestWebSearchSource:
         ])
         fake_categories = {"technology": ["scale databases"]}
 
-        with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake), \
+             patch("poindexter.services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None, config={"categories": ["technology"]},
@@ -74,8 +74,8 @@ class TestWebSearchSource:
         ])
         fake_categories = {"technology": ["async task queues"]}
 
-        with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake), \
+             patch("poindexter.services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None, config={"categories": ["technology"]},
@@ -93,8 +93,8 @@ class TestWebSearchSource:
             "tech": ["a"], "ai": ["b"], "cloud": ["c"], "devops": ["d"], "security": ["e"],
         }
 
-        with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake), \
+             patch("poindexter.services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             # Explicit categories now required (the no-config global-bank
             # fallback is retired); the cap still clips to 2.
@@ -110,8 +110,8 @@ class TestWebSearchSource:
         # Empty config + no niche context now fails loud — the silent
         # "search every global category" fallback is retired (§2b).
         fake = _make_researcher([])
-        with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_sources._filters.CATEGORY_SEARCHES", {}):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake), \
+             patch("poindexter.services.topic_sources._filters.CATEGORY_SEARCHES", {}):
             source = WebSearchSource()
             with pytest.raises(ValueError):
                 await source.extract(pool=None, config={})
@@ -125,8 +125,8 @@ class TestWebSearchSource:
         ])
         fake_categories = {"technology": ["rust safety"]}
 
-        with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake), \
+             patch("poindexter.services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None,
@@ -142,8 +142,8 @@ class TestWebSearchSource:
         ])
         fake_categories = {"technology": ["valid query"], "empty_cat": []}
 
-        with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake), \
+             patch("poindexter.services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None,
@@ -159,7 +159,7 @@ class TestWebSearchSource:
         fake = _make_researcher({"my exact query": [
             {"title": "An article about the exact pinned query topic", "url": "https://x/1"},
         ]})
-        with patch("services.web_research.WebResearcher", return_value=fake):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None,
@@ -179,7 +179,7 @@ class TestWebSearchSource:
         """
         fake = MagicMock()
         fake.search_simple = AsyncMock(return_value=[])
-        with patch("services.web_research.WebResearcher", return_value=fake):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake):
             source = WebSearchSource()
             with pytest.raises(ValueError) as exc:
                 await source.extract(
@@ -204,8 +204,8 @@ class TestWebSearchSource:
         fake = MagicMock()
         fake.search_simple = AsyncMock(return_value=[])
         fake_categories = {"technology": ["q"], "engineering": ["q"]}
-        with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake), \
+             patch("poindexter.services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             with pytest.raises(ValueError) as exc:
                 await source.extract(pool=None, config={"niche_slug": "glad-labs"})
@@ -227,8 +227,8 @@ class TestWebSearchSource:
         fake = MagicMock()
         fake.search_simple = AsyncMock(side_effect=_search)
         fake_categories = {"technology": ["latest AI developer tools"]}
-        with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=fake), \
+             patch("poindexter.services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             await source.extract(
                 pool=None,

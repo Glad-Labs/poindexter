@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.jobs.probe_media_render_loop import ProbeMediaRenderLoopJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs.probe_media_render_loop import ProbeMediaRenderLoopJob
+from poindexter.services.site_config import SiteConfig
 
 
 class _FakePool:
@@ -52,7 +52,7 @@ class TestProbeMediaRenderLoop:
     async def test_looping_task_pages_critical(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_media_render_loop.emit_finding",
+            "poindexter.services.jobs.probe_media_render_loop.emit_finding",
             lambda **kw: findings.append(kw),
         )
         # One structural loop (14 failures — the 08-24 per-task rate) plus a
@@ -80,7 +80,7 @@ class TestProbeMediaRenderLoop:
         loop-shaped — the infra probes and existing alerts own that case."""
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_media_render_loop.emit_finding",
+            "poindexter.services.jobs.probe_media_render_loop.emit_finding",
             lambda **kw: findings.append(kw),
         )
         pool = _FakePool([
@@ -97,7 +97,7 @@ class TestProbeMediaRenderLoop:
     async def test_threshold_and_window_are_db_tunable(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_media_render_loop.emit_finding",
+            "poindexter.services.jobs.probe_media_render_loop.emit_finding",
             lambda **kw: findings.append(kw),
         )
         pool = _FakePool([{"task_id": "t1", "failures": 3}])
@@ -120,7 +120,7 @@ class TestProbeMediaRenderLoop:
     async def test_disabled_via_app_settings(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_media_render_loop.emit_finding",
+            "poindexter.services.jobs.probe_media_render_loop.emit_finding",
             lambda **kw: findings.append(kw),
         )
         pool = _FakePool([{"task_id": "t1", "failures": 99}])

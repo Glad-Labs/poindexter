@@ -523,6 +523,9 @@ def test_console_is_scanned_despite_being_stripped() -> None:
 # ---------------------------------------------------------------------------
 
 _SRC_PREFIX = "src/cofounder_agent/"
+_FLAT_ROOTS = frozenset(
+    {"services", "plugins", "modules", "utils", "routes", "schemas", "config", "tasks", "brain"}
+)
 
 
 def _top_level_import_modules(tree: ast.Module) -> list[str]:
@@ -569,9 +572,18 @@ def test_no_shipping_test_file_imports_a_stripped_module() -> None:
         except (OSError, UnicodeDecodeError, SyntaxError):
             continue  # not this test's concern — collection would fail for other reasons
         for mod_name in _top_level_import_modules(tree):
-            candidate = f"{_SRC_PREFIX}{mod_name.replace('.', '/')}.py"
-            if not CHECK.would_ship(candidate):
-                violations.append(f"{rel} imports {mod_name!r} (-> {candidate}, stripped)")
+            # Both spellings name the same file since poindexter#1046 step 2: the flat
+            # `modules.finance.x` is an alias of `poindexter.modules.finance.x`, and
+            # the file lives under poindexter/. Map flat -> canonical before building
+            # the path, or a flat import of a stripped module would look shipped.
+            if mod_name.split(".")[0] in _FLAT_ROOTS:
+                mod_name = f"poindexter.{mod_name}"
+            path = mod_name.replace(".", "/")
+            candidates = (f"{_SRC_PREFIX}{path}.py", f"{_SRC_PREFIX}{path}/__init__.py")
+            for candidate in candidates:
+                if not CHECK.would_ship(candidate):
+                    violations.append(f"{rel} imports {mod_name!r} (-> {candidate}, stripped)")
+                    break
 
     assert not violations, (
         "The following public test files have a module-level import that "

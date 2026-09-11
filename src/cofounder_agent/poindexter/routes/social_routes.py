@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from services.database_service import DatabaseService
-from services.social_drafts import SocialDraftRow, SocialDraftsService
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.social_drafts import SocialDraftRow, SocialDraftsService
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = logging.getLogger(__name__)

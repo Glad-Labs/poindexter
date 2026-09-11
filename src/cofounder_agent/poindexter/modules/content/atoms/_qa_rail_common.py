@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -335,7 +335,7 @@ def missing_required_gates(
     ``{}``) yields an empty list — the guard then leaves the aggregate
     decision untouched.
     """
-    from services.qa_gates_db_writer import reviewer_to_gate
+    from poindexter.services.qa_gates_db_writer import reviewer_to_gate
 
     present: set[str] = set()
     for r in reviews:

@@ -1,7 +1,7 @@
 """live_activity begin/update/finish roundtrip against the real table."""
 import pytest
 
-from services import live_activity
+from poindexter.services import live_activity
 
 pytestmark = [
     pytest.mark.integration_db,

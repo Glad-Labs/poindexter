@@ -94,7 +94,7 @@ async def _backfill_atom_run_outcome(
     succeeds, so the pool is healthy and ``emit_finding`` will land.
     """
     try:
-        from services.atom_runs import record_atom_run_outcome
+        from poindexter.services.atom_runs import record_atom_run_outcome
 
         await record_atom_run_outcome(
             pool,

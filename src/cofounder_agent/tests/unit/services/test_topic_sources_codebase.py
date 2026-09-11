@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from plugins.topic_source import TopicSource
-from services.topic_sources.codebase import (
+from poindexter.services.topic_sources.codebase import (
     CodebaseSource,
     _extract_topic_from_row,
 )
@@ -108,7 +108,7 @@ class TestExtractTopicFromRow:
 # ---------------------------------------------------------------------------
 
 
-_DISPATCH_EMBED = "services.llm_providers.dispatcher.dispatch_embed"
+_DISPATCH_EMBED = "poindexter.services.llm_providers.dispatcher.dispatch_embed"
 
 
 def _embed_dispatch(embedding: list[float] | None):

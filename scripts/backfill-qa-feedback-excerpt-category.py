@@ -43,8 +43,8 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 import asyncpg  # noqa: E402
-from services.excerpt_generator import generate_excerpt  # noqa: E402
 from modules.content.multi_model_qa import format_qa_feedback_from_reviews  # noqa: E402
+from poindexter.services.excerpt_generator import generate_excerpt  # noqa: E402
 
 
 def _resolve_db_url() -> str:

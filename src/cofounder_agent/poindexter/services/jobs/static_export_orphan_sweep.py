@@ -72,7 +72,7 @@ class StaticExportOrphanSweepJob:
 
         # Import inside run() so the module imports cleanly without the export
         # service's heavier deps at registry-scan time.
-        from services.static_export_service import (
+        from poindexter.services.static_export_service import (
             _list_exported_post_slugs,
             _retire_slug,
         )

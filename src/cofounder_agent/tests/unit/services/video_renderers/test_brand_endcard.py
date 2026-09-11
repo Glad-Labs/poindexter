@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from PIL import Image
 
-from services.video_renderers.brand_endcard import (
+from poindexter.services.video_renderers.brand_endcard import (
     _keyed_logo,
     render_endcard,
 )

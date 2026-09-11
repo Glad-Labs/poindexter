@@ -20,10 +20,10 @@ from typing import Any
 
 import pytest
 
-import services.chat_plans as chat_plans
-import services.pipeline_architect as pipeline_architect
-from services.chat_plans import namespace_spec
-from services.chat_tools import ChatToolContext, ChatToolError, get_tool
+import poindexter.services.chat_plans as chat_plans
+import poindexter.services.pipeline_architect as pipeline_architect
+from poindexter.services.chat_plans import namespace_spec
+from poindexter.services.chat_tools import ChatToolContext, ChatToolError, get_tool
 
 
 @pytest.mark.unit
@@ -245,7 +245,7 @@ class TestPlanPipelineTool:
 
         async def compose(intent, *, site_config, pool, max_attempts):
             assert max_attempts == 2
-            from services.pipeline_architect import ArchitectResult
+            from poindexter.services.pipeline_architect import ArchitectResult
             return ArchitectResult(ok=True, spec=_spec())
 
         monkeypatch.setattr(pipeline_architect, "compose", compose)
@@ -265,7 +265,7 @@ class TestPlanPipelineTool:
         pool, *_ = plan_env
 
         async def compose(intent, *, site_config, pool, max_attempts):
-            from services.pipeline_architect import ArchitectResult
+            from poindexter.services.pipeline_architect import ArchitectResult
             return ArchitectResult(
                 ok=False, errors=["FIX: node 'qa.bogus' names an unknown atom"],
             )
@@ -282,7 +282,7 @@ class TestPlanPipelineTool:
 @pytest.mark.unit
 class TestLoopCardDrain:
     def test_emitted_cards_become_parts_and_events(self, monkeypatch):
-        from services.chat_tools import ChatToolSpec
+        from poindexter.services.chat_tools import ChatToolSpec
         from tests.unit.services.test_chat_agent import (
             FakeStore,
             _completion,

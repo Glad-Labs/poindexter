@@ -55,20 +55,20 @@ class _Cfg:
 @pytest.mark.unit
 class TestTtsService:
     def test_is_enabled_true(self):
-        from services.tts_service import is_tts_enabled
+        from poindexter.services.tts_service import is_tts_enabled
         assert is_tts_enabled(_Cfg(enabled=True)) is True
 
     def test_is_enabled_false(self):
-        from services.tts_service import is_tts_enabled
+        from poindexter.services.tts_service import is_tts_enabled
         assert is_tts_enabled(_Cfg(enabled=False)) is False
 
     def test_is_enabled_none_site_config(self):
-        from services.tts_service import is_tts_enabled
+        from poindexter.services.tts_service import is_tts_enabled
         assert is_tts_enabled(None) is False
 
     async def test_synthesize_returns_bytes_on_success(self, monkeypatch):
         """A 200 audio/wav response returns the audio bytes."""
-        from services.tts_service import synthesize_speech
+        from poindexter.services.tts_service import synthesize_speech
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -80,7 +80,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             result = await synthesize_speech("Hello world", site_config=_Cfg())
 
         assert result == b"RIFF_fake_audio_bytes"
@@ -89,13 +89,13 @@ class TestTtsService:
         """Speaches byte-concatenates per-segment WAVs for long input, so wav
         cuts off at ~24s; self-synchronizing MP3 frames play in full. The
         default MUST be mp3 (regression guard for #media-render-fixes)."""
-        from services.tts_service import _DEFAULT_FORMAT
+        from poindexter.services.tts_service import _DEFAULT_FORMAT
         assert _DEFAULT_FORMAT == "mp3"
 
     async def test_request_uses_default_mp3_when_unset(self):
         """When podcast_tts_format is unset, the request body carries the mp3
         default — not wav."""
-        from services.tts_service import synthesize_speech
+        from poindexter.services.tts_service import synthesize_speech
 
         class _NoFmtCfg(_Cfg):
             def get(self, key, default=None):
@@ -117,32 +117,32 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=_post)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             await synthesize_speech("Hello", site_config=_NoFmtCfg())
 
         assert captured["json"]["response_format"] == "mp3"
 
     async def test_synthesize_returns_none_when_disabled(self):
-        from services.tts_service import synthesize_speech
+        from poindexter.services.tts_service import synthesize_speech
         result = await synthesize_speech("Hello", site_config=_Cfg(enabled=False))
         assert result is None
 
     async def test_synthesize_returns_none_on_error(self, monkeypatch):
         """A network error returns None, does not raise."""
-        from services.tts_service import synthesize_speech
+        from poindexter.services.tts_service import synthesize_speech
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=ConnectionError("unreachable"))
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             result = await synthesize_speech("Hello", site_config=_Cfg())
 
         assert result is None
 
     async def test_synthesize_returns_none_on_non_200(self, monkeypatch):
-        from services.tts_service import synthesize_speech
+        from poindexter.services.tts_service import synthesize_speech
 
         mock_response = MagicMock()
         mock_response.status_code = 503
@@ -153,7 +153,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             result = await synthesize_speech("Hello", site_config=_Cfg())
 
         assert result is None
@@ -163,8 +163,8 @@ class TestTtsService:
     async def test_render_openai_tts_posts_and_normalizes(self, monkeypatch):
         """render_openai_tts POSTs the OpenAI body (with extra_body merged) and
         returns the normalized bytes."""
-        import services.tts_service as mod
-        from services.tts_service import render_openai_tts
+        import poindexter.services.tts_service as mod
+        from poindexter.services.tts_service import render_openai_tts
 
         captured = {}
 
@@ -189,7 +189,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=_post)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             out = await render_openai_tts(
                 base_url="http://chatterbox:8000/v1",
                 model="chatterbox",
@@ -207,14 +207,14 @@ class TestTtsService:
 
     async def test_render_openai_tts_returns_none_on_error(self):
         """A transport error returns None, never raises."""
-        from services.tts_service import render_openai_tts
+        from poindexter.services.tts_service import render_openai_tts
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=ConnectionError("down"))
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             out = await render_openai_tts(
                 base_url="http://x:8000/v1", model="m", voice="v", text="hi",
             )
@@ -224,8 +224,8 @@ class TestTtsService:
         """read_timeout raises the httpx read timeout above the 120s default so a
         slow CPU bake-off sidecar isn't cut off mid-generation; the default is
         preserved when the arg is omitted."""
-        import services.tts_service as mod
-        from services.tts_service import render_openai_tts
+        import poindexter.services.tts_service as mod
+        from poindexter.services.tts_service import render_openai_tts
 
         async def _fake_remux(audio_bytes, fmt, **kwargs):
             return b"NORMALIZED"
@@ -241,7 +241,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient",
+        with patch("poindexter.services.tts_service.httpx.AsyncClient",
                    return_value=mock_client) as ctor:
             await render_openai_tts(
                 base_url="http://chatterbox:8000/v1", model="chatterbox",
@@ -249,7 +249,7 @@ class TestTtsService:
             )
         assert ctor.call_args.kwargs["timeout"].read == 600.0
 
-        with patch("services.tts_service.httpx.AsyncClient",
+        with patch("poindexter.services.tts_service.httpx.AsyncClient",
                    return_value=mock_client) as ctor_default:
             await render_openai_tts(
                 base_url="http://x:8000/v1", model="m", voice="v", text="hi",
@@ -261,20 +261,20 @@ class TestTtsService:
     async def test_remux_skips_non_self_syncing_format(self):
         """A concatenated WAV is unrecoverable under `-c copy` (only the first
         RIFF chunk survives), so the remux is a no-op and returns bytes as-is."""
-        from services.tts_service import _remux_concatenated_audio
+        from poindexter.services.tts_service import _remux_concatenated_audio
         raw = b"RIFF....fake-wav-bytes"
         assert await _remux_concatenated_audio(raw, "wav") == raw
 
     async def test_remux_fails_soft_when_ffmpeg_missing(self, monkeypatch):
         """No ffmpeg on PATH → return the raw bytes, never raise."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: None)
         raw = b"ID3fake-mp3-bytes"
         assert await mod._remux_concatenated_audio(raw, "mp3") == raw
 
     async def test_remux_fails_soft_on_ffmpeg_error(self, monkeypatch):
         """ffmpeg exits non-zero → return the raw bytes, never raise."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
 
         class _Proc:
@@ -292,7 +292,7 @@ class TestTtsService:
 
     async def test_remux_returns_ffmpeg_output_on_success(self, monkeypatch):
         """On success the remuxed file's bytes are returned (not the input)."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
 
         async def _fake_exec(*args, **_k):
@@ -313,8 +313,8 @@ class TestTtsService:
     async def test_synthesize_applies_remux_for_mp3(self, monkeypatch):
         """synthesize_speech runs the remux on the Speaches bytes for mp3 and
         returns the remuxed result — wires the single TTS boundary."""
-        import services.tts_service as mod
-        from services.tts_service import synthesize_speech
+        import poindexter.services.tts_service as mod
+        from poindexter.services.tts_service import synthesize_speech
 
         called = {}
 
@@ -337,7 +337,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             result = await synthesize_speech(
                 "Hi", site_config=_Cfg(fmt="mp3", remux=True)
             )
@@ -348,8 +348,8 @@ class TestTtsService:
 
     async def test_synthesize_skips_remux_when_disabled(self, monkeypatch):
         """podcast_tts_remux_enabled=false → remux never runs, raw bytes flow."""
-        import services.tts_service as mod
-        from services.tts_service import synthesize_speech
+        import poindexter.services.tts_service as mod
+        from poindexter.services.tts_service import synthesize_speech
 
         async def _boom(*_a, **_k):
             raise AssertionError("remux must not run when disabled")
@@ -364,7 +364,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             result = await synthesize_speech(
                 "Hi", site_config=_Cfg(fmt="mp3", remux=False)
             )
@@ -380,7 +380,7 @@ class TestTtsService:
         (lossless, no truncation) — guards the remux against dropping audio."""
         import subprocess
 
-        from services.tts_service import _remux_concatenated_audio
+        from poindexter.services.tts_service import _remux_concatenated_audio
 
         src = tmp_path / "tone.mp3"
         subprocess.run(
@@ -408,7 +408,7 @@ class TestTtsService:
         """``mode='reencode'`` builds an ffmpeg re-encode (libmp3lame + bitrate),
         NOT ``-c copy`` — that is what collapses the byte-concatenated, multi-
         header Speaches stream into one clean single-stream MP3."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -437,7 +437,7 @@ class TestTtsService:
     async def test_remux_copy_mode_preserves_c_copy(self, monkeypatch):
         """``mode='copy'`` keeps the legacy lossless ``-c copy`` path for back-
         compat (operators who want zero re-encode can set it)."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -462,7 +462,7 @@ class TestTtsService:
     def test_remux_mode_default_is_reencode(self):
         """The module default mode is reencode — the structural fix is the
         default, not opt-in (copy stays available for back-compat)."""
-        from services.tts_service import _DEFAULT_REMUX_MODE
+        from poindexter.services.tts_service import _DEFAULT_REMUX_MODE
         assert _DEFAULT_REMUX_MODE == "reencode"
 
     @pytest.mark.skipif(
@@ -477,7 +477,7 @@ class TestTtsService:
         (≤1 header) with BOTH segments preserved (not truncated to the first)."""
         import subprocess
 
-        from services.tts_service import _remux_concatenated_audio
+        from poindexter.services.tts_service import _remux_concatenated_audio
 
         def _mk(path, freq, dur):
             subprocess.run(
@@ -518,7 +518,7 @@ class TestTtsService:
         """Loudness target defaults to the podcast standard (-16 LUFS) with
         true-peak headroom (-1.5 dBTP) — so Kokoro's full-scale output is pulled
         below the qa.audio -0.1 dBFS clip gate instead of pinning at 0.0 dBFS."""
-        from services.tts_service import (
+        from poindexter.services.tts_service import (
             _DEFAULT_LOUDNORM_I,
             _DEFAULT_LOUDNORM_TP,
         )
@@ -529,7 +529,7 @@ class TestTtsService:
         """loudnorm=True injects `-af loudnorm=I=..:TP=..:LRA=..` so the rendered
         narration is normalized to the loudness target with true-peak headroom
         (the root-cause fix for the 0.0 dBFS audio_clipping finding)."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -562,7 +562,7 @@ class TestTtsService:
     async def test_remux_loudnorm_forces_reencode_over_copy(self, monkeypatch):
         """A filter graph cannot ride on `-c copy`, so loudnorm=True forces a
         re-encode even when mode='copy' is requested."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -590,7 +590,7 @@ class TestTtsService:
     async def test_remux_without_loudnorm_has_no_af(self, monkeypatch):
         """Default (loudnorm=False) keeps the plain header-repair re-encode with
         NO audio filter — guards against always-on processing."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -613,8 +613,8 @@ class TestTtsService:
     async def test_synthesize_applies_loudnorm_for_mp3(self, monkeypatch):
         """synthesize_speech resolves the loudnorm config and threads it to the
         render boundary so podcast + both video lanes inherit the headroom."""
-        import services.tts_service as mod
-        from services.tts_service import synthesize_speech
+        import poindexter.services.tts_service as mod
+        from poindexter.services.tts_service import synthesize_speech
 
         called: dict = {}
 
@@ -633,7 +633,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             await synthesize_speech(
                 "Hi", site_config=_Cfg(fmt="mp3", remux=True, loudnorm=True)
             )
@@ -649,8 +649,8 @@ class TestTtsService:
         """Loudness normalization is its own concern: it must run even when the
         header-repair remux is disabled — otherwise disabling remux silently
         re-introduces the clipping the fix removes."""
-        import services.tts_service as mod
-        from services.tts_service import synthesize_speech
+        import poindexter.services.tts_service as mod
+        from poindexter.services.tts_service import synthesize_speech
 
         called: dict = {}
 
@@ -669,7 +669,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             await synthesize_speech(
                 "Hi", site_config=_Cfg(fmt="mp3", remux=False, loudnorm=True)
             )
@@ -691,7 +691,7 @@ class TestTtsService:
         """192k mp3 is effectively transparent for spoken word. The prior 96k
         default compounded with the sidecar's own encode into an audible
         double lossy transcode (the audio-fidelity investigation)."""
-        from services.tts_service import _DEFAULT_REMUX_BITRATE
+        from poindexter.services.tts_service import _DEFAULT_REMUX_BITRATE
         assert _DEFAULT_REMUX_BITRATE == "192k"
 
     async def test_remux_wav_without_encode_format_stays_noop(self):
@@ -699,7 +699,7 @@ class TestTtsService:
         untouched — protects any caller that hasn't verified its wav is a
         single, unconcatenated file (e.g. Speaches, if ever misconfigured to
         request wav)."""
-        from services.tts_service import _remux_concatenated_audio
+        from poindexter.services.tts_service import _remux_concatenated_audio
         raw = b"RIFF....fake-wav-bytes"
         assert await _remux_concatenated_audio(raw, "wav") == raw
 
@@ -708,7 +708,7 @@ class TestTtsService:
     ):
         """A verified single-file wav + encode_format runs ONE ffmpeg encode
         straight to the delivery format/bitrate."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -740,7 +740,7 @@ class TestTtsService:
         """loudnorm + the wav->target encode ride the SAME ffmpeg invocation —
         exactly one lossy pass total, not a decode-then-normalize-then-encode
         chain."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -774,8 +774,8 @@ class TestTtsService:
         mp3 delivery encode — even with remux/loudnorm both off, the encode
         must still run since it is the only step that produces the delivery
         format at all."""
-        import services.tts_service as mod
-        from services.tts_service import render_openai_tts
+        import poindexter.services.tts_service as mod
+        from poindexter.services.tts_service import render_openai_tts
 
         captured = {}
 
@@ -795,7 +795,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             out = await render_openai_tts(
                 base_url="http://chatterbox:8000/v1", model="chatterbox",
                 voice="default", text="hi", response_format="wav",
@@ -809,7 +809,7 @@ class TestTtsService:
     async def test_render_openai_tts_skips_remux_when_no_encode_target(self):
         """Without encode_format, a plain wav response with remux/loudnorm off
         is returned as-is — unchanged legacy behavior."""
-        from services.tts_service import render_openai_tts
+        from poindexter.services.tts_service import render_openai_tts
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -819,7 +819,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             out = await render_openai_tts(
                 base_url="http://x:8000/v1", model="m", voice="v", text="hi",
                 response_format="wav", remux_enabled=False, loudnorm_enabled=False,
@@ -838,7 +838,7 @@ class TestTtsService:
         duration — not truncated, not silently corrupted."""
         import subprocess
 
-        from services.tts_service import _remux_concatenated_audio
+        from poindexter.services.tts_service import _remux_concatenated_audio
 
         src = tmp_path / "in.wav"
         subprocess.run(
@@ -872,7 +872,7 @@ class TestTtsService:
         import subprocess
 
         from modules.content.atoms.qa_audio import _DEFAULT_MAX_VOLUME_CLIP_DB
-        from services.tts_service import _remux_concatenated_audio
+        from poindexter.services.tts_service import _remux_concatenated_audio
 
         def _max_volume_db(path) -> float:
             r = subprocess.run(
@@ -916,7 +916,7 @@ class TestTtsService:
     def test_atempo_defaults_to_off(self):
         """Pace adjustment is opt-in — the right value depends on the pinned
         voice, so an install that never sets it must get untouched audio."""
-        from services.tts_service import _DEFAULT_ATEMPO, _resolve_atempo
+        from poindexter.services.tts_service import _DEFAULT_ATEMPO, _resolve_atempo
 
         assert _DEFAULT_ATEMPO == "1.0"
         assert _resolve_atempo(_DEFAULT_ATEMPO) is None
@@ -925,7 +925,7 @@ class TestTtsService:
         """None/empty/1.0 all mean 'add no filter'. Empty string matters: it is
         the app_settings unset sentinel, so an unset key must not be parsed as
         a rate."""
-        from services.tts_service import _resolve_atempo
+        from poindexter.services.tts_service import _resolve_atempo
 
         assert _resolve_atempo(None) is None
         assert _resolve_atempo("") is None
@@ -936,7 +936,7 @@ class TestTtsService:
     def test_resolve_atempo_ignores_unparseable_rather_than_raising(self):
         """A typo in a delivery-polish knob must not cost an operator a whole
         episode — it degrades to 'no pace change' and warns."""
-        from services.tts_service import _resolve_atempo
+        from poindexter.services.tts_service import _resolve_atempo
 
         assert _resolve_atempo("slower") is None
         assert _resolve_atempo("0") is None
@@ -945,7 +945,7 @@ class TestTtsService:
     def test_resolve_atempo_clamps_to_intelligible_range(self):
         """Speech is unintelligible outside roughly half-to-double speed, so
         absurd values clamp instead of producing unusable audio."""
-        from services.tts_service import (
+        from poindexter.services.tts_service import (
             _ATEMPO_MAX,
             _ATEMPO_MIN,
             _resolve_atempo,
@@ -957,7 +957,7 @@ class TestTtsService:
 
     async def test_remux_applies_atempo_filter(self, monkeypatch):
         """An active atempo reaches ffmpeg as `-af atempo=<rate>`."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -985,7 +985,7 @@ class TestTtsService:
         """loudnorm measures integrated loudness across the whole stream, so it
         must run AFTER the tempo change — otherwise it targets a signal whose
         duration is about to change underneath it."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -1015,7 +1015,7 @@ class TestTtsService:
 
     async def test_remux_without_atempo_has_no_atempo_filter(self, monkeypatch):
         """Guards against always-on resampling of every episode."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -1038,7 +1038,7 @@ class TestTtsService:
     async def test_atempo_forces_reencode_over_copy(self, monkeypatch):
         """A filter graph cannot ride on `-c copy`, so an active atempo forces a
         re-encode the same way loudnorm does."""
-        import services.tts_service as mod
+        import poindexter.services.tts_service as mod
         monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
         captured = {}
 
@@ -1069,8 +1069,8 @@ class TestTtsService:
         """The one setting whose entire purpose is to change the audio must not
         become a silent no-op just because the two normalization passes are
         disabled."""
-        import services.tts_service as mod
-        from services.tts_service import render_openai_tts
+        import poindexter.services.tts_service as mod
+        from poindexter.services.tts_service import render_openai_tts
 
         called: dict = {}
 
@@ -1088,7 +1088,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             out = await render_openai_tts(
                 base_url="http://x/v1", model="m", voice="v", text="hi",
                 response_format="mp3", remux_enabled=False,
@@ -1101,8 +1101,8 @@ class TestTtsService:
     async def test_render_skips_pass_when_atempo_is_the_default(self, monkeypatch):
         """Counterpart to the above: an inactive atempo must NOT drag an
         otherwise-disabled render into an extra transcode."""
-        import services.tts_service as mod
-        from services.tts_service import render_openai_tts
+        import poindexter.services.tts_service as mod
+        from poindexter.services.tts_service import render_openai_tts
 
         called: dict = {}
 
@@ -1120,7 +1120,7 @@ class TestTtsService:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.services.tts_service.httpx.AsyncClient", return_value=mock_client):
             out = await render_openai_tts(
                 base_url="http://x/v1", model="m", voice="v", text="hi",
                 response_format="mp3", remux_enabled=False,
@@ -1142,7 +1142,7 @@ class TestTtsService:
         """
         import subprocess
 
-        from services.tts_service import _remux_concatenated_audio
+        from poindexter.services.tts_service import _remux_concatenated_audio
 
         def _duration(path):
             r = subprocess.run(

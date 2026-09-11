@@ -159,8 +159,8 @@ async def _judge(
 ) -> str:
     """Render the ``qa.title_coherence`` prompt and ask the resolved local
     model for the verdict. Thin indirection so tests monkeypatch here."""
-    from services.llm_text import ollama_chat_text
-    from services.prompt_manager import get_prompt_manager
+    from poindexter.services.llm_text import ollama_chat_text
+    from poindexter.services.prompt_manager import get_prompt_manager
 
     prompt = get_prompt_manager().get_prompt(
         "qa.title_coherence", title=title, content=content_digest,
@@ -212,7 +212,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not _is_enabled(site_config):
         return {}
 
-    from services.title_generation import build_title_grounding_digest
+    from poindexter.services.title_generation import build_title_grounding_digest
 
     try:
         digest_chars = site_config.get_int(

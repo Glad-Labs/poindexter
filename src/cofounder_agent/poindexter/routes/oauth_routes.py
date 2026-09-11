@@ -45,14 +45,14 @@ from mcp.server.auth.settings import (
 from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 
-from services.auth.oauth_issuer import (
+from poindexter.services.auth.oauth_issuer import (
     ALLOWED_SCOPES,
     DEFAULT_TTL_SECONDS,
     issue_token,
 )
-from services.auth.oauth_provider import PoindexterOAuthProvider
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
+from poindexter.services.auth.oauth_provider import PoindexterOAuthProvider
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
 from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 

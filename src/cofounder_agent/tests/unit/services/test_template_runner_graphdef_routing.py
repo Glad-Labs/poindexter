@@ -8,10 +8,10 @@ from __future__ import annotations
 import pytest
 from langgraph.graph import END, StateGraph
 
-from services import pipeline_architect
-from services.pipeline_templates import TEMPLATES
-from services.site_config import SiteConfig
-from services.template_runner import PipelineState, TemplateRunner
+from poindexter.services import pipeline_architect
+from poindexter.services.pipeline_templates import TEMPLATES
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.template_runner import PipelineState, TemplateRunner
 
 
 def _trivial_graph() -> StateGraph:
@@ -82,7 +82,7 @@ class TestGraphDefRouting:
         # The runner does `from services.pipeline_templates import load_active_graph_def`
         # lazily inside run(); patch it on that module so the lazy import resolves
         # to the fake at call time.
-        import services.pipeline_templates as pt
+        import poindexter.services.pipeline_templates as pt
         monkeypatch.setattr(pt, "load_active_graph_def", fake_load)
 
         summary = await _runner(True).run("canonical_blog", {"task_id": "t2"})
@@ -106,7 +106,7 @@ class TestGraphDefRouting:
 
         monkeypatch.setitem(TEMPLATES, "canonical_blog", fake_factory)
         monkeypatch.setattr(pipeline_architect, "build_graph_from_spec", fake_build)
-        import services.pipeline_templates as pt
+        import poindexter.services.pipeline_templates as pt
         monkeypatch.setattr(pt, "load_active_graph_def", fake_load)
 
         summary = await _runner(True).run("canonical_blog", {"task_id": "t3"})

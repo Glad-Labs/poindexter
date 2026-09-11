@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.jobs.postgres_vacuum import DEFAULT_TABLES, PostgresVacuumJob
+from poindexter.services.jobs.postgres_vacuum import DEFAULT_TABLES, PostgresVacuumJob
 
 
 def _make_mock_pool(execute_side_effect=None) -> Any:

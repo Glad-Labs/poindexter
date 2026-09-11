@@ -9,7 +9,7 @@ them onto the virtual atom's contract (and thereby its fingerprint).
 """
 import pytest
 
-from services.atom_registry import _stage_to_atom_meta
+from poindexter.services.atom_registry import _stage_to_atom_meta
 
 
 class _DeclaredStage:

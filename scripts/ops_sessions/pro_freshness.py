@@ -468,7 +468,7 @@ def main() -> int:
     # resolve_category comes from the live stack tree so identity-key policy
     # can never drift from the taxonomy the app itself uses.
     sys.path.insert(0, str(stack / "src" / "cofounder_agent"))
-    from services.settings_categories import resolve_category  # noqa: E402
+    from poindexter.services.settings_categories import resolve_category  # noqa: E402
 
     if not _ensure_clone(log):
         return 2
@@ -482,7 +482,7 @@ def main() -> int:
             )
         )
     ]
-    from services.settings_defaults import DEFAULTS  # noqa: E402
+    from poindexter.services.settings_defaults import DEFAULTS  # noqa: E402
 
     seed, drops = build_seed(rows, resolve_category, frozenset(DEFAULTS))
     seed_path = CLONE_DIR / "config" / "seed-settings.json"

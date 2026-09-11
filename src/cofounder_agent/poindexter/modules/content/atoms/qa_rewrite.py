@@ -109,7 +109,7 @@ def _resolve_revise_prompt(*, content: str, feedback: str) -> str:
     surface), falling back to the inline constant, per
     feedback_prompts_must_be_db_configurable."""
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(
             _REVISE_PROMPT_KEY, content=content, feedback=feedback,
         )
@@ -204,7 +204,7 @@ def _emit_empty_finding(model: str) -> None:
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    from services.llm_text import ollama_chat_text, resolve_writer_model
+    from poindexter.services.llm_text import ollama_chat_text, resolve_writer_model
 
     content = (state.get("content") or "").strip()
     attempts = int(state.get("qa_rewrite_attempts") or 0)
@@ -266,7 +266,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             from modules.content.atoms._scaffold_helpers import (
                 strip_leaked_planning_scaffold,
             )
-            from services.llm_providers.thinking_models import (
+            from poindexter.services.llm_providers.thinking_models import (
                 strip_reasoning_artifacts,
             )
 
@@ -321,7 +321,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # out. The prompt's "never placeholders" instruction is advisory; this
     # strip is the deterministic net (originally in the deleted
     # cross_model_qa stage, lost in the atom-cutover #355).
-    from services.internal_link_placeholders import scrub_unresolved_placeholders
+    from poindexter.services.internal_link_placeholders import scrub_unresolved_placeholders
 
     revised, stripped_placeholders = scrub_unresolved_placeholders(revised)
     if stripped_placeholders:

@@ -136,7 +136,7 @@ class TestAutoPublishBails:
 
         db = _make_db(published_today=1, daily_limit="1")
         pub_mock = AsyncMock(return_value=_publish_result())
-        with patch("services.publish_service.publish_post_from_task", pub_mock):
+        with patch("poindexter.services.publish_service.publish_post_from_task", pub_mock):
             result = await auto_publish_task(
                 database_service=db,
                 task_id="t-limit",
@@ -156,7 +156,7 @@ class TestAutoPublishBails:
         task = {"task_id": "t-noimg", "featured_image_url": None}
         db = _make_db(published_today=0, daily_limit="1", task=task)
         pub_mock = AsyncMock(return_value=_publish_result())
-        with patch("services.publish_service.publish_post_from_task", pub_mock):
+        with patch("poindexter.services.publish_service.publish_post_from_task", pub_mock):
             result = await auto_publish_task(
                 database_service=db,
                 task_id="t-noimg",
@@ -175,7 +175,7 @@ class TestAutoPublishBails:
 
         db = _make_db(published_today=0, daily_limit="1", task=None)
         pub_mock = AsyncMock(return_value=_publish_result())
-        with patch("services.publish_service.publish_post_from_task", pub_mock):
+        with patch("poindexter.services.publish_service.publish_post_from_task", pub_mock):
             result = await auto_publish_task(
                 database_service=db,
                 task_id="t-missing",
@@ -221,7 +221,7 @@ class TestAutoPublishBails:
         check_pool.fetchval = AsyncMock(side_effect=RuntimeError("connection reset"))
 
         pub_mock = AsyncMock(return_value=_publish_result())
-        with patch("services.publish_service.publish_post_from_task", pub_mock):
+        with patch("poindexter.services.publish_service.publish_post_from_task", pub_mock):
             result = await auto_publish_task(
                 database_service=db,
                 task_id="t-dberr",
@@ -260,9 +260,9 @@ class TestAutoPublishHappyPath:
         pipeline_db = MagicMock()
         pipeline_db.add_distribution = AsyncMock(return_value=None)
         with patch(
-            "services.publish_service.publish_post_from_task", pub_mock,
+            "poindexter.services.publish_service.publish_post_from_task", pub_mock,
         ), patch(
-            "services.pipeline_db.PipelineDB", return_value=pipeline_db,
+            "poindexter.services.pipeline_db.PipelineDB", return_value=pipeline_db,
         ):
             result = await auto_publish_task(
                 database_service=db,
@@ -302,7 +302,7 @@ class TestAutoPublishHappyPath:
         db = _make_db(published_today=0, daily_limit="1", task=task)
 
         pub_mock = AsyncMock(return_value=_publish_result(success=False))
-        with patch("services.publish_service.publish_post_from_task", pub_mock):
+        with patch("poindexter.services.publish_service.publish_post_from_task", pub_mock):
             result = await auto_publish_task(
                 database_service=db,
                 task_id="t-pubfail",
@@ -345,7 +345,7 @@ class TestAutoPublishBookkeepingVisibility:
 
         pub_mock = AsyncMock(return_value=_publish_result(success=True))
         with (
-            patch("services.publish_service.publish_post_from_task", pub_mock),
+            patch("poindexter.services.publish_service.publish_post_from_task", pub_mock),
             patch.object(ap_mod, "emit_finding", create=True) as emit_mock,
             caplog.at_level(_logging.ERROR, logger="poindexter.modules.content.auto_publish"),
         ):
@@ -389,8 +389,8 @@ class TestAutoPublishBookkeepingVisibility:
         pipeline_db = MagicMock()
         pipeline_db.add_distribution = AsyncMock(return_value=None)
         with (
-            patch("services.publish_service.publish_post_from_task", pub_mock),
-            patch("services.pipeline_db.PipelineDB", return_value=pipeline_db),
+            patch("poindexter.services.publish_service.publish_post_from_task", pub_mock),
+            patch("poindexter.services.pipeline_db.PipelineDB", return_value=pipeline_db),
             patch.object(ap_mod, "emit_finding", create=True) as emit_mock,
             caplog.at_level(_logging.ERROR, logger="poindexter.modules.content.auto_publish"),
         ):
@@ -445,14 +445,14 @@ class TestVetoWindow:
         from zoneinfo import ZoneInfo
 
         return (
-            patch("services.publish_service.publish_post_from_task", pub_mock),
-            patch("services.scheduling_service.assign_slot", slot_mock),
+            patch("poindexter.services.publish_service.publish_post_from_task", pub_mock),
+            patch("poindexter.services.scheduling_service.assign_slot", slot_mock),
             patch(
-                "services.integrations.operator_notify.notify_operator",
+                "poindexter.services.integrations.operator_notify.notify_operator",
                 notify_mock,
             ),
             patch(
-                "services.clock.get_operator_tz",
+                "poindexter.services.clock.get_operator_tz",
                 AsyncMock(return_value=ZoneInfo("UTC")),
             ),
         )
@@ -521,9 +521,9 @@ class TestVetoWindow:
         pipeline_db = MagicMock()
         pipeline_db.add_distribution = AsyncMock(return_value=None)
         with patch(
-            "services.publish_service.publish_post_from_task", pub_mock,
+            "poindexter.services.publish_service.publish_post_from_task", pub_mock,
         ), patch(
-            "services.pipeline_db.PipelineDB", return_value=pipeline_db,
+            "poindexter.services.pipeline_db.PipelineDB", return_value=pipeline_db,
         ):
             result = await auto_publish_task(
                 database_service=db,
@@ -551,9 +551,9 @@ class TestVetoWindow:
         pipeline_db = MagicMock()
         pipeline_db.add_distribution = AsyncMock(return_value=None)
         with patch(
-            "services.publish_service.publish_post_from_task", pub_mock,
+            "poindexter.services.publish_service.publish_post_from_task", pub_mock,
         ), patch(
-            "services.pipeline_db.PipelineDB", return_value=pipeline_db,
+            "poindexter.services.pipeline_db.PipelineDB", return_value=pipeline_db,
         ):
             result = await auto_publish_task(
                 database_service=db,

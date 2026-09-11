@@ -38,7 +38,7 @@ class TestEmbedDispatch:
         embed_mock = AsyncMock(return_value=vec)
 
         with patch(
-            "services.llm_providers.dispatcher.dispatch_embed", embed_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_embed", embed_mock,
         ):
             out = await mc.embed("hello world")
 
@@ -56,7 +56,7 @@ class TestEmbedDispatch:
         mc, _http_mock = _client_with_fake_conn()
 
         with patch(
-            "services.llm_providers.dispatcher.dispatch_embed",
+            "poindexter.services.llm_providers.dispatcher.dispatch_embed",
             AsyncMock(return_value=[0.1] * 5),
         ):
             with pytest.raises(RuntimeError, match="Expected"):
@@ -70,7 +70,7 @@ class TestEmbedDispatch:
         mc, http_mock = _client_with_fake_conn()
 
         with patch(
-            "services.llm_providers.dispatcher.dispatch_embed",
+            "poindexter.services.llm_providers.dispatcher.dispatch_embed",
             AsyncMock(side_effect=RuntimeError("provider down")),
         ):
             with pytest.raises(RuntimeError, match="provider down"):

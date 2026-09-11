@@ -14,13 +14,13 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 
 from middleware.api_token_auth import verify_api_token
-from schemas.task_schemas import TaskListResponse, UnifiedTaskRequest
-from schemas.unified_task_response import UnifiedTaskResponse
 
 # Import async database service
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
+from schemas.task_schemas import TaskListResponse, UnifiedTaskRequest
+from schemas.unified_task_response import UnifiedTaskResponse
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 from utils.uuid_prefix import resolve_task_id_prefix
@@ -125,7 +125,7 @@ async def _resolve_seed_url(
     # Import late so tests that don't exercise seed_url don't pay the
     # httpx import cost and so the module is easy to monkeypatch in
     # route tests without the full http stack loaded.
-    from services.seed_url_fetcher import (
+    from poindexter.services.seed_url_fetcher import (
         SeedURLError,
         SeedURLFetcher,
         build_source_attribution,
@@ -220,7 +220,7 @@ async def _resolve_niche_for_topics(pool, niche_slug: str | None):
     poindexter#947 so the Cofounder chat agent's ``create_post`` tool shares
     it; this wrapper just maps the transport-agnostic error onto HTTP.
     """
-    from services.blog_task_creation import (
+    from poindexter.services.blog_task_creation import (
         BlogTaskCreationError,
         resolve_niche_for_topics,
     )
@@ -258,7 +258,7 @@ async def discover_topics(
     ``topic_auto_resolve``) before anything reaches the pipeline.
     """
     try:
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
 
         pool = db_service.pool
         if not pool:
@@ -366,7 +366,7 @@ async def _handle_blog_post_creation(
     the Cofounder chat agent's ``create_post`` tool shares the exact same
     path; this wrapper maps the transport-agnostic error onto HTTP.
     """
-    from services.blog_task_creation import (
+    from poindexter.services.blog_task_creation import (
         BlogTaskCreationError,
         create_blog_post_task,
     )

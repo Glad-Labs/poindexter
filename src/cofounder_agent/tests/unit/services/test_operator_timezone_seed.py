@@ -1,7 +1,7 @@
 """operator_timezone: OSS default is UTC; operator overlay is America/New_York."""
 from __future__ import annotations
 
-from services.settings_defaults import DEFAULTS
+from poindexter.services.settings_defaults import DEFAULTS
 
 
 def test_oss_default_is_utc():
@@ -10,7 +10,7 @@ def test_oss_default_is_utc():
 
 def test_operator_overlay_sets_real_zone():
     # The overlay module is stripped from the public mirror; import guarded.
-    from services.operator_overrides import OPERATOR_SETTING_OVERRIDES
+    from poindexter.services.operator_overrides import OPERATOR_SETTING_OVERRIDES
 
     assert OPERATOR_SETTING_OVERRIDES["operator_timezone"] == "America/New_York"
 

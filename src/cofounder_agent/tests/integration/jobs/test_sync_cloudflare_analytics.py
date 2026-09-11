@@ -16,7 +16,7 @@ import asyncpg
 import pytest
 
 from plugins import Job
-from services.jobs.sync_cloudflare_analytics import SyncCloudflareAnalyticsJob
+from poindexter.services.jobs.sync_cloudflare_analytics import SyncCloudflareAnalyticsJob
 from tests.integration.conftest import requires_real_services
 
 # asyncio mark dropped — ``asyncio_mode = "auto"`` (pyproject.toml) auto-marks
@@ -81,7 +81,7 @@ class TestSyncCloudflareAnalyticsJob:
         ingest green for ~54 days."""
         sc = _sc(api_token="")
         with patch(
-            "services.jobs.sync_cloudflare_analytics.emit_finding"
+            "poindexter.services.jobs.sync_cloudflare_analytics.emit_finding"
         ) as mock_finding:
             result = await SyncCloudflareAnalyticsJob().run(
                 clean_test_tables, {"_site_config": sc}

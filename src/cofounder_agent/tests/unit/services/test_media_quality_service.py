@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services import media_quality_service
+from poindexter.services import media_quality_service
 
 
 @pytest.fixture

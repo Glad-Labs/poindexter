@@ -1,9 +1,9 @@
 """The three wall-clock jobs are authored in operator-local time now."""
 from __future__ import annotations
 
-from services.jobs.findings_daily_digest import FindingsDailyDigestJob
-from services.jobs.morning_brief import MorningBriefJob
-from services.jobs.run_dev_diary_post import RunDevDiaryPostJob
+from poindexter.services.jobs.findings_daily_digest import FindingsDailyDigestJob
+from poindexter.services.jobs.morning_brief import MorningBriefJob
+from poindexter.services.jobs.run_dev_diary_post import RunDevDiaryPostJob
 
 
 def test_morning_brief_is_7am_local():

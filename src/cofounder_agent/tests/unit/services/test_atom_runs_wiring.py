@@ -23,11 +23,11 @@ from typing import Any
 import pytest
 from langgraph.graph import END, StateGraph
 
-import services.atom_runs as atom_runs
+import poindexter.services.atom_runs as atom_runs
 from modules.content.auto_publish_gate import record_post_approve_metrics
-from services.pipeline_templates import TEMPLATES
-from services.site_config import SiteConfig
-from services.template_runner import (
+from poindexter.services.pipeline_templates import TEMPLATES
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.template_runner import (
     PipelineState,
     TemplateRunner,
     TemplateRunRecord,

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services import media_feed_rebuild
+from poindexter.services import media_feed_rebuild
 
 
 def _site_config() -> MagicMock:
@@ -91,7 +91,7 @@ async def test_rebuild_podcast_feed_fetches_route_and_uploads_r2_key() -> None:
     r2 = MagicMock()
     r2.upload_to_r2 = upload
     with patch("httpx.AsyncClient", return_value=client), patch(
-        "services.r2_upload_service.R2UploadService", return_value=r2
+        "poindexter.services.r2_upload_service.R2UploadService", return_value=r2
     ):
         await media_feed_rebuild.rebuild_podcast_feed(sc)
     # GET the worker's podcast feed route ...
@@ -108,7 +108,7 @@ async def test_rebuild_video_feed_fetches_route_and_uploads_r2_key() -> None:
     r2 = MagicMock()
     r2.upload_to_r2 = upload
     with patch("httpx.AsyncClient", return_value=client), patch(
-        "services.r2_upload_service.R2UploadService", return_value=r2
+        "poindexter.services.r2_upload_service.R2UploadService", return_value=r2
     ):
         await media_feed_rebuild.rebuild_video_feed(sc)
     assert "/api/video/feed.xml" in client.get.await_args.args[0]
@@ -187,7 +187,7 @@ def _patch_transport(rendered: str | None, published: str | None):
         client_patch = patch("httpx.AsyncClient", return_value=_mock_httpx_client(rendered))
 
     return client_patch, patch(
-        "services.r2_upload_service.R2UploadService", return_value=r2
+        "poindexter.services.r2_upload_service.R2UploadService", return_value=r2
     ), upload
 
 

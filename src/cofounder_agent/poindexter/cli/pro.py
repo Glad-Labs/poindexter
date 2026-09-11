@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 async def _open_ctx() -> tuple[Any, Any]:
     """Pool + a loaded SiteConfig (pool-backed so get_secret works)."""
     pool = await open_cli_pool()
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     site_config = SiteConfig(pool=pool)
     await site_config.load(pool)
@@ -70,7 +70,7 @@ def cmd_status(limit: int, as_json: bool) -> None:
 async def _run_status(limit: int, as_json: bool) -> None:
     pool, site_config = await _open_ctx()
     try:
-        from services.pro_delivery import cli_status
+        from poindexter.services.pro_delivery import cli_status
 
         payload = await cli_status(pool, site_config, limit=limit)
     finally:
@@ -116,7 +116,7 @@ def cmd_sync(as_json: bool) -> None:
 async def _run_sync_cmd(as_json: bool) -> None:
     pool, site_config = await _open_ctx()
     try:
-        from services.pro_delivery import ProDeliveryConfigError, run_sync
+        from poindexter.services.pro_delivery import ProDeliveryConfigError, run_sync
 
         try:
             outcome = await run_sync(pool, site_config)
@@ -150,7 +150,7 @@ def cmd_link(subscription: str, username: str, as_json: bool) -> None:
 async def _run_link(subscription: str, username: str, as_json: bool) -> None:
     pool, site_config = await _open_ctx()
     try:
-        from services.pro_delivery import ProDeliveryConfigError, cli_link
+        from poindexter.services.pro_delivery import ProDeliveryConfigError, cli_link
 
         try:
             payload = await cli_link(pool, site_config, subscription, username)
@@ -180,7 +180,7 @@ def cmd_unlink(subscription: str, as_json: bool) -> None:
 async def _run_unlink(subscription: str, as_json: bool) -> None:
     pool, site_config = await _open_ctx()
     try:
-        from services.pro_delivery import ProDeliveryConfigError, cli_unlink
+        from poindexter.services.pro_delivery import ProDeliveryConfigError, cli_unlink
 
         try:
             payload = await cli_unlink(pool, site_config, subscription)
@@ -220,7 +220,7 @@ def cmd_relay_status(as_json: bool) -> None:
 async def _run_relay_status(as_json: bool) -> None:
     pool, site_config = await _open_ctx()
     try:
-        from services.pro_delivery import cli_relay_status
+        from poindexter.services.pro_delivery import cli_relay_status
 
         payload = await cli_relay_status(pool, site_config)
     finally:
@@ -269,7 +269,7 @@ def cmd_relay_register(relay_url: str, as_json: bool) -> None:
 async def _run_relay_register(relay_url: str, as_json: bool) -> None:
     pool, site_config = await _open_ctx()
     try:
-        from services.pro_delivery import ProDeliveryConfigError, cli_relay_register
+        from poindexter.services.pro_delivery import ProDeliveryConfigError, cli_relay_register
 
         try:
             payload = await cli_relay_register(pool, site_config, relay_url)
@@ -306,7 +306,7 @@ def cmd_relay_remove(webhook_id: str, as_json: bool) -> None:
 async def _run_relay_remove(webhook_id: str, as_json: bool) -> None:
     pool, site_config = await _open_ctx()
     try:
-        from services.pro_delivery import ProDeliveryConfigError, cli_relay_remove
+        from poindexter.services.pro_delivery import ProDeliveryConfigError, cli_relay_remove
 
         try:
             payload = await cli_relay_remove(pool, site_config, webhook_id)
@@ -368,7 +368,7 @@ async def _run_apply(
 ) -> None:
     pool, _site_config = await _open_ctx()
     try:
-        from services.pro_delivery import cli_apply
+        from poindexter.services.pro_delivery import cli_apply
 
         try:
             payload = await cli_apply(

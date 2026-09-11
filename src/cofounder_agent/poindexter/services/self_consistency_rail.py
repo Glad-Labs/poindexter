@@ -60,7 +60,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -92,7 +92,7 @@ def _resolve_summary_prompt(*, topic: str, content: str) -> str:
     resolve-then-fallback prompt pattern so operator-edited prompts in Langfuse
     win without a restart."""
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(
             _SUMMARY_PROMPT_KEY, topic=topic, content=content,
         )
@@ -120,7 +120,7 @@ def is_enabled(site_config: Any) -> bool:
             # poindexter#455 — symmetric to guardrails / deepeval / ragas
             # is_enabled fixes. Silent fallback masked broken SiteConfig
             # wrappers as "self-consistency disabled".
-            from services.logger_config import get_logger
+            from poindexter.services.logger_config import get_logger
             get_logger(__name__).warning(
                 "[self_consistency] is_enabled: both get_bool and get raised "
                 "while reading self_consistency_enabled — treating as disabled. "
@@ -178,7 +178,7 @@ async def _sample_summaries(
         )
         return []
 
-    from services.llm_providers.dispatcher import dispatch_complete
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
     truncated = content[:4000]
     prompt = _resolve_summary_prompt(
@@ -192,7 +192,7 @@ async def _sample_summaries(
     # (pipeline_local_writer_model, else the writer when it is itself local)
     # and never bills cloud prices when pipeline_writer_model is pinned to a
     # paid model for a writer experiment (the 2026-07-07 Sonnet-canary).
-    from services.llm_text import resolve_local_writer_model
+    from poindexter.services.llm_text import resolve_local_writer_model
     try:
         writer_model = resolve_local_writer_model(site_config=site_config)
     except ValueError as exc:
@@ -273,7 +273,7 @@ async def _pairwise_mean_cosine(
 
     import numpy as np
 
-    from services.llm_providers.dispatcher import dispatch_embed
+    from poindexter.services.llm_providers.dispatcher import dispatch_embed
 
     # DB-first per feedback_db_first_config — was a hardcoded literal, which
     # would silently diverge the moment an operator repoints `embed_model`

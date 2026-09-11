@@ -14,15 +14,15 @@ from typing import Any
 
 import pytest
 
-import services.blog_task_creation as btc
-import services.pipeline_throttle as pipeline_throttle
-import services.topic_dedup_guard as topic_dedup_guard
-from schemas.task_schemas import UnifiedTaskRequest
-from services import topic_pool as topic_pool_mod
-from services.blog_task_creation import (
+import poindexter.services.blog_task_creation as btc
+import poindexter.services.pipeline_throttle as pipeline_throttle
+import poindexter.services.topic_dedup_guard as topic_dedup_guard
+from poindexter.services import topic_pool as topic_pool_mod
+from poindexter.services.blog_task_creation import (
     BlogTaskCreationError,
     create_blog_post_task,
 )
+from schemas.task_schemas import UnifiedTaskRequest
 
 
 class FakeDb:
@@ -147,7 +147,7 @@ class TestResolveNicheForTopics:
             async def get_by_slug(self, slug):
                 return None
 
-        import services.niche_service as niche_service
+        import poindexter.services.niche_service as niche_service
         monkeypatch.setattr(niche_service, "NicheService", Nsvc)
         with pytest.raises(BlogTaskCreationError) as exc_info:
             asyncio.run(btc.resolve_niche_for_topics(object(), "nope"))
@@ -165,7 +165,7 @@ class TestResolveNicheForTopics:
             async def list_active(self):
                 return [Niche("a"), Niche("b")]
 
-        import services.niche_service as niche_service
+        import poindexter.services.niche_service as niche_service
         monkeypatch.setattr(niche_service, "NicheService", Nsvc)
         with pytest.raises(BlogTaskCreationError) as exc_info:
             asyncio.run(btc.resolve_niche_for_topics(object(), None))

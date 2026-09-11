@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.image_provider import ImageResult
-from services.image_providers.ai_generation import (
+from poindexter.services.image_providers.ai_generation import (
     AIGenerationProvider,
     _build_image_gen_prompt,
     _scrub_human_terms,
@@ -41,7 +41,7 @@ class TestScrubHumanTerms:
     async def test_fallback_has_no_human_or_negation_tokens(self):
         # Ollama unreachable -> fallback path; must be human-free and must NOT
         # carry a counterproductive "no people" token in the POSITIVE prompt.
-        with patch("services.image_providers.ai_generation.http_client", None), \
+        with patch("poindexter.services.image_providers.ai_generation.http_client", None), \
              patch("httpx.AsyncClient", side_effect=RuntimeError("offline")):
             out = await _build_image_gen_prompt("GPU benchmarks", "qwen", site_config=None)
         low = out.lower()
@@ -79,7 +79,7 @@ class TestAIGenerationProviderFetch:
         ])
 
         with patch(
-            "services.image_providers.ai_generation._build_image_gen_prompt",
+            "poindexter.services.image_providers.ai_generation._build_image_gen_prompt",
             new=AsyncMock(return_value="a cinematic prompt"),
         ), \
              patch(
@@ -102,7 +102,7 @@ class TestAIGenerationProviderFetch:
         ])
 
         with patch(
-            "services.image_providers.ai_generation._build_image_gen_prompt",
+            "poindexter.services.image_providers.ai_generation._build_image_gen_prompt",
             new=AsyncMock(return_value="p"),
         ), \
              patch(
@@ -129,7 +129,7 @@ class TestAIGenerationProviderFetch:
         ])
 
         with patch(
-            "services.image_providers.ai_generation._build_image_gen_prompt",
+            "poindexter.services.image_providers.ai_generation._build_image_gen_prompt",
             new=AsyncMock(return_value="p"),
         ), \
              patch(
@@ -145,7 +145,7 @@ class TestAIGenerationProviderFetch:
     async def test_no_gen_available_returns_empty(self):
         # Zero image providers at all — graceful.
         with patch(
-            "services.image_providers.ai_generation._build_image_gen_prompt",
+            "poindexter.services.image_providers.ai_generation._build_image_gen_prompt",
             new=AsyncMock(return_value="p"),
         ), \
              patch(
@@ -209,7 +209,7 @@ class TestBuildImageGenPrompt:
         # No httpx client is wired; if the code took the fallback path it would
         # try httpx.AsyncClient and trip the AssertionError below.
         with patch(
-            "services.llm_providers.dispatcher.dispatch_complete", new=dispatch
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch
         ), patch("httpx.AsyncClient", side_effect=AssertionError("must not hit httpx")):
             result = await _build_image_gen_prompt(
                 "Data centers", "llama3:latest", site_config=site_config,
@@ -232,7 +232,7 @@ class TestBuildImageGenPrompt:
         site_config._pool = MagicMock()
 
         with patch(
-            "services.llm_providers.dispatcher.dispatch_complete",
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete",
             new=AsyncMock(side_effect=RuntimeError("provider down")),
         ):
             result = await _build_image_gen_prompt(
@@ -261,7 +261,7 @@ class TestBuildImageGenPrompt:
         completion.text = '"a cinematic AI chip scene, neon lighting, 4k"'
 
         with patch(
-            "services.llm_providers.dispatcher.dispatch_complete",
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete",
             new=AsyncMock(return_value=completion),
         ) as mock_dispatch:
             result = await _build_image_gen_prompt(

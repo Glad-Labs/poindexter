@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 async def up(pool) -> None:
     """Rewrite the stored canonical_blog graph_def with the split atoms."""
-    from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+    from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
 
     async with pool.acquire() as conn:
         tag = await conn.execute(
@@ -55,7 +55,7 @@ async def up(pool) -> None:
     # (migrations-smoke has no LangGraph) and defers to the boot self-heal;
     # any other failure in a full env is a broken deploy and must fail loudly.
     try:
-        from services.pipeline_architect import ensure_active_graph_defs_stamped
+        from poindexter.services.pipeline_architect import ensure_active_graph_defs_stamped
     except ImportError as exc:
         logger.info(
             "reseed_canonical_blog_split_contradiction_atoms: registry env "

@@ -79,7 +79,7 @@ async def test_persist_moves_renders_and_records_both_assets(
     tmp_path, monkeypatch, patched_recorder
 ):
     durable = tmp_path / "durable_video"
-    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", durable)
 
     long_src = _write_tmp(tmp_path / "media_t1_long_video_path.mp4")
     short_src = _write_tmp(tmp_path / "media_t1_short_video_path.mp4")
@@ -119,7 +119,7 @@ async def test_persist_derives_dims_and_duration_from_shot_list(
     tmp_path, monkeypatch, patched_recorder
 ):
     durable = tmp_path / "durable_video"
-    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", durable)
     _write_tmp(tmp_path / "long.mp4")
 
     state = {
@@ -149,7 +149,7 @@ async def test_persist_prefers_probed_real_duration_over_plan(
     legitimately diverges from the plan (a 61.3s fitted short was booked as
     45.0s before this)."""
     durable = tmp_path / "durable_video"
-    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", durable)
     _write_tmp(tmp_path / "long.mp4")
 
     state = {
@@ -162,7 +162,7 @@ async def test_persist_prefers_probed_real_duration_over_plan(
     # _probed_duration_ms imports _probe_duration function-locally, so patch
     # at its source module.
     with patch(
-        "services.media_quality_service._probe_duration",
+        "poindexter.services.media_quality_service._probe_duration",
         AsyncMock(return_value=61.3),
     ):
         await persist_run(state)
@@ -178,7 +178,7 @@ async def test_persist_skips_missing_or_empty_renders(
     """Empty long path + a short path pointing at a non-existent file → no
     records, empty result. The renders own their own failure findings."""
     durable = tmp_path / "durable_video"
-    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", durable)
 
     state = {
         "task_id": "t3",
@@ -195,7 +195,7 @@ async def test_persist_skips_missing_or_empty_renders(
 @pytest.mark.asyncio
 async def test_persist_no_pool_is_best_effort(tmp_path, monkeypatch, patched_recorder):
     durable = tmp_path / "durable_video"
-    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", durable)
     _write_tmp(tmp_path / "long.mp4")
 
     state = {
@@ -212,7 +212,7 @@ async def test_persist_no_pool_is_best_effort(tmp_path, monkeypatch, patched_rec
 @pytest.mark.asyncio
 async def test_persist_pool_from_database_service(tmp_path, monkeypatch, patched_recorder):
     durable = tmp_path / "durable_video"
-    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", durable)
     _write_tmp(tmp_path / "long.mp4")
     pool = _FakePool()
 
@@ -236,7 +236,7 @@ async def test_persist_skips_flavor_already_recorded(
     the long video must NOT re-persist it (no duplicate task-keyed row); the
     not-yet-recorded short still persists."""
     durable = tmp_path / "durable_video"
-    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", durable)
 
     long_src = _write_tmp(tmp_path / "media_t6_long_video_path.mp4")
     short_src = _write_tmp(tmp_path / "media_t6_short_video_path.mp4")
@@ -270,7 +270,7 @@ async def test_persist_skips_all_flavors_when_both_recorded(
     """A full re-execution for a task that already has both flavors is a complete
     no-op — nothing recorded, both renders left untouched in temp."""
     durable = tmp_path / "durable_video"
-    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", durable)
 
     long_src = _write_tmp(tmp_path / "media_t7_long_video_path.mp4")
     short_src = _write_tmp(tmp_path / "media_t7_short_video_path.mp4")

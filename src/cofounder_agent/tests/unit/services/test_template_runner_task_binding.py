@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from services.task_context import current_task_id
-from services.template_runner import TemplateRunner
+from poindexter.services.task_context import current_task_id
+from poindexter.services.template_runner import TemplateRunner
 
 pytestmark = pytest.mark.asyncio
 

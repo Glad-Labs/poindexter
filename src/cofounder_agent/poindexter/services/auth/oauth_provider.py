@@ -43,7 +43,7 @@ from mcp.server.auth.provider import (
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-from services.auth.oauth_issuer import (
+from poindexter.services.auth.oauth_issuer import (
     ALLOWED_SCOPES,
     InvalidToken,
     generate_authorization_code,
@@ -53,7 +53,7 @@ from services.auth.oauth_issuer import (
     signing_key,
     verify_token,
 )
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

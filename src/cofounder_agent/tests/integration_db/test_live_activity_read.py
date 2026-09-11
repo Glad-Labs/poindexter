@@ -1,7 +1,7 @@
 """get_live_activity read (freshness window + summary) and reap_stale."""
 import pytest
 
-from services import live_activity
+from poindexter.services import live_activity
 
 pytestmark = [
     pytest.mark.integration_db,

@@ -54,8 +54,8 @@ _litellm_otel_stub.OpenTelemetryConfig = _mock_otel_config_cls
 # to a MagicMock and computed bogus per-token costs. The fixture-scoped
 # ``monkeypatch.setitem`` below restores the real module on teardown so
 # downstream tests see authoritative LiteLLM data.
-from services.llm_providers import litellm_provider  # noqa: E402
-from services.llm_providers.litellm_provider import (  # noqa: E402
+from poindexter.services.llm_providers import litellm_provider  # noqa: E402
+from poindexter.services.llm_providers.litellm_provider import (  # noqa: E402
     LangfuseConfigError,
     LiteLLMProvider,
     configure_langfuse_callback,

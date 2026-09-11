@@ -12,14 +12,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.classify_content_types import ClassifyContentTypesJob
+from poindexter.services.jobs.classify_content_types import ClassifyContentTypesJob
 
 pytestmark = [
     pytest.mark.integration_db,
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
-_MODULE = "services.jobs.classify_content_types"
+_MODULE = "poindexter.services.jobs.classify_content_types"
 
 
 class _FakeSiteConfig:

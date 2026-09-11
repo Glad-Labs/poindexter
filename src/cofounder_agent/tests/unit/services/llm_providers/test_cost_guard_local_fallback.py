@@ -22,9 +22,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import services.llm_providers.dispatcher as d
-from services.cost_guard import CostGuardExhausted
-from services.site_config import SiteConfig
+import poindexter.services.llm_providers.dispatcher as d
+from poindexter.services.cost_guard import CostGuardExhausted
+from poindexter.services.site_config import SiteConfig
 
 _PAID = "anthropic/claude-sonnet-5"
 _LOCAL = "ollama/gemma-4-31B-it-qat:latest"
@@ -46,7 +46,7 @@ def _container(**settings: str):
     sc = SiteConfig(initial_config=dict(settings))
     container = MagicMock()
     container.site_config = sc
-    return patch("services.container_registry.get_container", lambda: container)
+    return patch("poindexter.services.container_registry.get_container", lambda: container)
 
 
 def _resolve(exc, *, model=_PAID, provider_config=None, paid=lambda m, pc: "anthropic" in m):
@@ -115,7 +115,7 @@ def test_reraises_when_no_container_is_registered():
     """Early-boot / bootstrap paths have no SiteConfig — fail as before rather
     than guess."""
     exc = _exhausted()
-    with patch("services.container_registry.get_container", lambda: None):
+    with patch("poindexter.services.container_registry.get_container", lambda: None):
         with pytest.raises(CostGuardExhausted):
             _resolve(exc)
 
@@ -145,7 +145,7 @@ async def test_dispatch_completes_locally_after_the_cap_is_hit():
          patch.object(d, "_is_paid_llm_call", lambda m, pc=None: "anthropic" in m), \
          patch.object(d, "_gpu_serialize_local_dispatch", lambda m, pc: False), \
          patch.object(d, "_vram_guard_enabled", lambda: False), \
-         patch("services.ollama_client.resolve_num_ctx", lambda *a, **k: 16384), \
+         patch("poindexter.services.ollama_client.resolve_num_ctx", lambda *a, **k: 16384), \
          patch("utils.findings.emit_finding"):
         out = await d.dispatch_complete(
             MagicMock(), [{"role": "user", "content": "hi"}], _PAID,

@@ -23,7 +23,7 @@ def _budget(*vals):
 
 
 def _arch_factory(weight_gb=18):
-    from services.vram_budget import ModelArch
+    from poindexter.services.vram_budget import ModelArch
 
     # gemma-4-31B-class illustrative shape; tests assert the clamp relationship,
     # not absolute GB, so the exact numbers only need to be internally usable.
@@ -37,7 +37,7 @@ def _arch_factory(weight_gb=18):
 
 
 async def test_clamp_num_ctx_reduces_when_over_budget(monkeypatch):
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     # f16 KV (2.0 bytes/elem — the dangerous *unquantized* case): a 65k context
     # on an 18GB-weights writer projects ~31.5GB, over the 32-3=29GB budget, so
@@ -53,7 +53,7 @@ async def test_clamp_num_ctx_reduces_when_over_budget(monkeypatch):
 
 
 async def test_clamp_noop_when_within_budget(monkeypatch):
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     # q8 KV (1.0) at 8k ctx on the same writer is ~20GB — comfortably inside the
     # 29GB budget, so the requested context passes through untouched.
@@ -67,7 +67,7 @@ async def test_clamp_noop_when_within_budget(monkeypatch):
 
 
 async def test_clamp_noop_when_arch_unavailable(monkeypatch):
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     async def _none(*_a, **_k):
         return None
@@ -92,7 +92,7 @@ def test_resolve_default_num_ctx_none_for_paid(monkeypatch):
     """A paid/cloud dispatch never gets a defaulted num_ctx — it is meaningless
     there and would trigger a wasted /api/show against a non-local model in the
     clamp below."""
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     monkeypatch.setattr(d, "_is_paid_llm_call", lambda _model, _pc: True)
     assert d._resolve_default_num_ctx("qa.vision", "claude-opus-4-8", {}) is None
@@ -103,7 +103,7 @@ def test_resolve_default_num_ctx_resolves_for_local(monkeypatch):
     context, so vision / media / research are bounded + clamped like the writer.
     Delegates to resolve_num_ctx with the request's phase and the container's
     SiteConfig (None when no container is bootstrapped)."""
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     monkeypatch.setattr(d, "_is_paid_llm_call", lambda _model, _pc: False)
     captured = {}
@@ -113,8 +113,8 @@ def test_resolve_default_num_ctx_resolves_for_local(monkeypatch):
         captured["site_config"] = site_config
         return 4096
 
-    monkeypatch.setattr("services.ollama_client.resolve_num_ctx", _fake_resolve)
-    monkeypatch.setattr("services.container_registry.get_container", lambda: None)
+    monkeypatch.setattr("poindexter.services.ollama_client.resolve_num_ctx", _fake_resolve)
+    monkeypatch.setattr("poindexter.services.container_registry.get_container", lambda: None)
 
     out = d._resolve_default_num_ctx(
         "qa.vision", "ollama/gemma-4-31B-it-qat:latest", {},
@@ -187,7 +187,7 @@ def _install_recording_dispatch(monkeypatch, d, recorded):
 
 
 async def test_dispatch_complete_stamps_langfuse_session_and_phase(monkeypatch):
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     recorded: list[tuple[str, object]] = []
     _install_recording_dispatch(monkeypatch, d, recorded)
@@ -209,7 +209,7 @@ async def test_dispatch_complete_stamps_langfuse_session_and_phase(monkeypatch):
 
 
 async def test_dispatch_complete_omits_session_when_no_task_id(monkeypatch):
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     recorded: list[tuple[str, object]] = []
     _install_recording_dispatch(monkeypatch, d, recorded)
@@ -231,7 +231,7 @@ async def test_dispatch_complete_always_stamps_trace_metadata_model(monkeypatch)
     """The console's /api/traces list reads TRACE-level metadata.model — the
     model @observe sites stamp lands on the observation, which the trace-list
     API never surfaces (poindexter#902). Every dispatch stamps it, task or not."""
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     recorded: list[tuple[str, object]] = []
     _install_recording_dispatch(monkeypatch, d, recorded)
@@ -254,8 +254,8 @@ async def test_dispatch_complete_falls_back_to_ambient_task_context(monkeypatch)
     """A call site inside a template run that never threaded task_id still
     groups into the task's Langfuse session via the services.task_context
     binding TemplateRunner.run installs (poindexter#902)."""
-    import services.llm_providers.dispatcher as d
-    from services.task_context import bind_task_id, reset_task_id
+    import poindexter.services.llm_providers.dispatcher as d
+    from poindexter.services.task_context import bind_task_id, reset_task_id
 
     recorded: list[tuple[str, object]] = []
     _install_recording_dispatch(monkeypatch, d, recorded)
@@ -278,8 +278,8 @@ async def test_dispatch_complete_falls_back_to_ambient_task_context(monkeypatch)
 
 async def test_dispatch_complete_explicit_task_id_beats_ambient(monkeypatch):
     """The ambient binding is a fallback, never an override."""
-    import services.llm_providers.dispatcher as d
-    from services.task_context import bind_task_id, reset_task_id
+    import poindexter.services.llm_providers.dispatcher as d
+    from poindexter.services.task_context import bind_task_id, reset_task_id
 
     recorded: list[tuple[str, object]] = []
     _install_recording_dispatch(monkeypatch, d, recorded)
@@ -310,7 +310,7 @@ async def test_dispatch_complete_captures_prompt_and_completion(monkeypatch):
     the trace regardless of caller."""
     import json
 
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     recorded: list[tuple[str, object]] = []
     _install_recording_dispatch(monkeypatch, d, recorded)
@@ -344,7 +344,7 @@ async def test_dispatch_complete_caps_oversize_span_io(monkeypatch):
     routes base64 image data-URLs through dispatch_complete (multi_model_qa
     _vision_complete), so an uncapped capture would store multi-MB blobs per
     call. _set_span_io truncates the serialized value with a visible marker."""
-    import services.llm_providers.dispatcher as d
+    import poindexter.services.llm_providers.dispatcher as d
 
     recorded: list[tuple[str, object]] = []
     _install_recording_dispatch(monkeypatch, d, recorded)

@@ -19,9 +19,9 @@ import json
 
 import pytest
 
-import services.chat_agent as chat_agent
+import poindexter.services.chat_agent as chat_agent
 from plugins.llm_provider import Completion
-from services.chat_tools import ChatToolError, ChatToolSpec
+from poindexter.services.chat_tools import ChatToolError, ChatToolSpec
 
 
 class FakeStore:

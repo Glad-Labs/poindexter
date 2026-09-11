@@ -7,7 +7,7 @@ immediately on logout, defeating session replay attacks (issue #721).
 Usage
 -----
 On app startup, call:
-    from services.jwt_blocklist_service import jwt_blocklist
+    from poindexter.services.jwt_blocklist_service import jwt_blocklist
     await jwt_blocklist.initialize(pool)
 
 On logout, call:
@@ -26,7 +26,7 @@ from typing import Any
 
 import asyncpg
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

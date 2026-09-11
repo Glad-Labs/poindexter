@@ -17,9 +17,9 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from services.jobs import media_distribute as md
-from services.jobs.media_distribute import MediaDistributeJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs import media_distribute as md
+from poindexter.services.jobs.media_distribute import MediaDistributeJob
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**overrides):
@@ -399,7 +399,7 @@ async def test_long_form_dispatch_rebuilds_the_video_rss_feed(tmp_path):
     rebuild = AsyncMock()
     with patch.object(md, "_dispatch_asset", disp), \
             patch.object(md, "record_dispatched", AsyncMock()), \
-            patch("services.media_feed_rebuild.rebuild_video_feed", rebuild):
+            patch("poindexter.services.media_feed_rebuild.rebuild_video_feed", rebuild):
         await job.run(pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")})
     rebuild.assert_awaited_once()
 
@@ -427,7 +427,7 @@ async def test_shorts_only_dispatch_does_not_rebuild_the_video_feed(tmp_path):
     rebuild = AsyncMock()
     with patch.object(md, "_dispatch_asset", disp), \
             patch.object(md, "record_dispatched", AsyncMock()), \
-            patch("services.media_feed_rebuild.rebuild_video_feed", rebuild):
+            patch("poindexter.services.media_feed_rebuild.rebuild_video_feed", rebuild):
         await job.run(pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")})
     rebuild.assert_not_awaited()
 
@@ -477,8 +477,8 @@ async def test_dispatch_asset_threads_back_external_id_and_url():
         "post_id": "p1", "title": "Clip", "content": "c", "excerpt": "e",
         "seo_keywords": "", "slug": "s", "storage_path": "/tmp/v.mp4",
     }
-    with patch("services.integrations.registry.dispatch", dispatch), patch(
-        "services.integrations.handlers.load_all", lambda: None
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
     ):
         results = await md._dispatch_asset(
             pool, _sc(media_pipeline_trigger_enabled="true"), row, shorts=True
@@ -510,8 +510,8 @@ async def test_dispatch_asset_marks_failure_without_external_id():
         "post_id": "p1", "title": "Clip", "content": "c", "excerpt": "e",
         "seo_keywords": "", "slug": "s", "storage_path": "/tmp/v.mp4",
     }
-    with patch("services.integrations.registry.dispatch", dispatch), patch(
-        "services.integrations.handlers.load_all", lambda: None
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
     ):
         results = await md._dispatch_asset(
             pool, _sc(media_pipeline_trigger_enabled="true"), row, shorts=False
@@ -736,7 +736,7 @@ async def test_concurrent_dispatch_passes_upload_once(tmp_path):
     disp = AsyncMock(side_effect=_slow_upload)
     with patch.object(md, "_dispatch_asset", disp), \
             patch.object(md, "record_dispatched", AsyncMock(side_effect=_mark_dispatched)), \
-            patch("services.media_feed_rebuild.rebuild_video_feed", AsyncMock()):
+            patch("poindexter.services.media_feed_rebuild.rebuild_video_feed", AsyncMock()):
         job = MediaDistributeJob()
         cfg = {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
         await asyncio.gather(job.run(pool, cfg), job.run(pool, cfg))
@@ -771,7 +771,7 @@ async def test_concurrent_dispatch_double_uploads_without_the_guard(tmp_path):
     with patch.object(md, "_dispatch_asset", disp), \
             patch.object(md, "claim_media_dispatch", _no_guard), \
             patch.object(md, "record_dispatched", AsyncMock()), \
-            patch("services.media_feed_rebuild.rebuild_video_feed", AsyncMock()):
+            patch("poindexter.services.media_feed_rebuild.rebuild_video_feed", AsyncMock()):
         job = MediaDistributeJob()
         cfg = {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
         await asyncio.gather(job.run(pool, cfg), job.run(pool, cfg))

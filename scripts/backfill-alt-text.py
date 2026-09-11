@@ -45,7 +45,7 @@ _SERVICES_PARENT = _REPO_ROOT / "src" / "cofounder_agent"
 if str(_SERVICES_PARENT) not in sys.path:
     sys.path.insert(0, str(_SERVICES_PARENT))
 
-from services.alt_text import (  # noqa: E402  (sys.path munge above)
+from poindexter.services.alt_text import (  # noqa: E402  (sys.path munge above)
     strip_tokens_from_img_tags,
 )
 
@@ -208,7 +208,7 @@ def _verify_alts_clean(samples: Iterable[str]) -> None:
     Not used in the main flow; kept here so operators can extend the
     script if they want to audit the DB after running.
     """
-    from services.alt_text import assert_alt_text_clean
+    from poindexter.services.alt_text import assert_alt_text_clean
 
     for alt in samples:
         try:

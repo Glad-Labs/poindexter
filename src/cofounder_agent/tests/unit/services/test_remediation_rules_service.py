@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from services import remediation_rules_service as svc
+from poindexter.services import remediation_rules_service as svc
 
 
 class _FakeConn:

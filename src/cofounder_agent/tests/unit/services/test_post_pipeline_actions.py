@@ -133,7 +133,7 @@ class TestWebhookEmits:
 
     @pytest.mark.asyncio
     async def test_emits_task_completed_on_success(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool()
         db = _make_db_service(pool=pool)
@@ -148,9 +148,9 @@ class TestWebhookEmits:
 
         emit_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+            "poindexter.services.post_pipeline_actions.emit_webhook_event", emit_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new_callable=AsyncMock,
         ):
             await run_post_pipeline_actions(
@@ -191,7 +191,7 @@ class TestAutoCurator:
 
     @pytest.mark.asyncio
     async def test_rejects_when_score_below_threshold(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, conn = _make_pool(fetchval_return=None)  # writer_rag_mode → not deterministic
         db = _make_db_service(pool=pool)
@@ -203,9 +203,9 @@ class TestAutoCurator:
         emit_mock = AsyncMock()
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+            "poindexter.services.post_pipeline_actions.emit_webhook_event", emit_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -245,7 +245,7 @@ class TestAutoCurator:
     @pytest.mark.asyncio
     async def test_no_reject_when_score_at_threshold(self):
         """``0 < score < min`` is strict — equal to min stays alive."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return=None)
         db = _make_db_service(pool=pool)
@@ -253,10 +253,10 @@ class TestAutoCurator:
         settings = _make_settings_service(values={"min_curation_score": "70"})
 
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new_callable=AsyncMock,
         ):
             await run_post_pipeline_actions(
@@ -280,7 +280,7 @@ class TestAutoCurator:
     async def test_no_reject_when_score_zero(self):
         """``quality_score=0`` is the fallback when no QA ran; the
         ``0 <`` lower bound prevents auto-rejecting those."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return=None)
         db = _make_db_service(pool=pool)
@@ -288,10 +288,10 @@ class TestAutoCurator:
         settings = _make_settings_service(values={"min_curation_score": "70"})
 
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new_callable=AsyncMock,
         ):
             await run_post_pipeline_actions(
@@ -318,7 +318,7 @@ class TestAutoCurator:
         intended output. 2026-05-28: bypass keys off niche_slug now
         (previously keyed off the now-deleted DETERMINISTIC_COMPOSITOR
         writer_rag_mode sentinel)."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         # niche_slug='dev_diary' — fetchval returns it
         pool, conn = _make_pool(fetchval_return="dev_diary")
@@ -329,9 +329,9 @@ class TestAutoCurator:
         emit_mock = AsyncMock()
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+            "poindexter.services.post_pipeline_actions.emit_webhook_event", emit_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -367,7 +367,7 @@ class TestAutoPublish:
 
     @pytest.mark.asyncio
     async def test_auto_publishes_when_threshold_met_and_approval_optional(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return=None)
         db = _make_db_service(pool=pool)
@@ -382,7 +382,7 @@ class TestAutoPublish:
         auto_pub_mock = AsyncMock(return_value=True)
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
             "modules.content.api.get_auto_publish_threshold",
@@ -391,7 +391,7 @@ class TestAutoPublish:
             "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -416,7 +416,7 @@ class TestAutoPublish:
 
     @pytest.mark.asyncio
     async def test_does_not_auto_publish_when_human_approval_required(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return=None)
         db = _make_db_service(pool=pool)
@@ -431,13 +431,13 @@ class TestAutoPublish:
         auto_pub_mock = AsyncMock(return_value=True)
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
             "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -455,7 +455,7 @@ class TestAutoPublish:
 
     @pytest.mark.asyncio
     async def test_does_not_auto_publish_below_threshold(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return=None)
         db = _make_db_service(pool=pool)
@@ -469,7 +469,7 @@ class TestAutoPublish:
 
         auto_pub_mock = AsyncMock(return_value=True)
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
             "modules.content.api.get_auto_publish_threshold",
@@ -478,7 +478,7 @@ class TestAutoPublish:
             "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new_callable=AsyncMock,
         ):
             await run_post_pipeline_actions(
@@ -508,7 +508,7 @@ class TestOperatorNotification:
         """The fetchval that looks up
         ``pipeline_versions.stage_data->metadata->>'preview_token'``
         returns the token finalize_task wrote — the message embeds it."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return="abcd1234efgh5678")
         db = _make_db_service(pool=pool)
@@ -525,10 +525,10 @@ class TestOperatorNotification:
 
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -552,7 +552,7 @@ class TestOperatorNotification:
         """When the finalize stage somehow didn't write a token (shouldn't
         happen post-PR #368 but defensive), the notification still fires
         — just without a preview link."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return=None)
         db = _make_db_service(pool=pool)
@@ -569,10 +569,10 @@ class TestOperatorNotification:
 
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -605,7 +605,7 @@ class TestFailureIsolation:
 
     @pytest.mark.asyncio
     async def test_webhook_failure_does_not_block_notification(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return="token-abc")
         db = _make_db_service(pool=pool)
@@ -621,9 +621,9 @@ class TestFailureIsolation:
         emit_mock = AsyncMock(side_effect=RuntimeError("webhook DB down"))
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+            "poindexter.services.post_pipeline_actions.emit_webhook_event", emit_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -672,7 +672,7 @@ class TestRejectedTaskGuard:
 
     @pytest.mark.asyncio
     async def test_qa_rejected_sends_reject_notice_not_awaiting(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchrow_return=self._REJECT_ROW)
         db = _make_db_service(pool=pool)
@@ -683,10 +683,10 @@ class TestRejectedTaskGuard:
 
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -713,7 +713,7 @@ class TestRejectedTaskGuard:
 
     @pytest.mark.asyncio
     async def test_qa_rejected_suppresses_task_completed_webhook(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchrow_return=self._REJECT_ROW)
         db = _make_db_service(pool=pool)
@@ -722,9 +722,9 @@ class TestRejectedTaskGuard:
 
         emit_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+            "poindexter.services.post_pipeline_actions.emit_webhook_event", emit_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new_callable=AsyncMock,
         ):
             await run_post_pipeline_actions(
@@ -745,7 +745,7 @@ class TestRejectedTaskGuard:
 
     @pytest.mark.asyncio
     async def test_qa_rejected_does_not_auto_publish(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchrow_return=self._REJECT_ROW)
         db = _make_db_service(pool=pool)
@@ -758,7 +758,7 @@ class TestRejectedTaskGuard:
         # never publish — the guard returns before _maybe_auto_publish.
         auto_pub_mock = AsyncMock(return_value=True)
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
             "modules.content.api.get_auto_publish_threshold",
@@ -766,7 +766,7 @@ class TestRejectedTaskGuard:
         ), patch(
             "modules.content.api.auto_publish_task", auto_pub_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new_callable=AsyncMock,
         ):
             await run_post_pipeline_actions(
@@ -782,7 +782,7 @@ class TestRejectedTaskGuard:
 
     @pytest.mark.asyncio
     async def test_already_published_task_skips_all_side_effects(self):
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(
             fetchrow_return={"status": "published", "error_message": None},
@@ -794,9 +794,9 @@ class TestRejectedTaskGuard:
         emit_mock = AsyncMock()
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+            "poindexter.services.post_pipeline_actions.emit_webhook_event", emit_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -816,7 +816,7 @@ class TestRejectedTaskGuard:
     async def test_already_completed_task_skips_all_side_effects(self):
         """A utility job finalized to 'completed' (e.g. image_rebuild) must not
         trigger the success-path webhook / auto-publish / awaiting-approval ping."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(
             fetchrow_return={"status": "completed", "error_message": None},
@@ -828,9 +828,9 @@ class TestRejectedTaskGuard:
         emit_mock = AsyncMock()
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+            "poindexter.services.post_pipeline_actions.emit_webhook_event", emit_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -851,7 +851,7 @@ class TestRejectedTaskGuard:
         """Regression guard: a genuinely awaiting task is unaffected by the
         new terminal-status guard — it still gets the 'Awaiting approval'
         ping."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(
             fetchval_return=None,
@@ -874,10 +874,10 @@ class TestRejectedTaskGuard:
 
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -937,7 +937,7 @@ class TestAutoPublishGateBypass:
         global require_human_approval flag is bypassed. The gate-bypass
         path also short-circuits the global ``auto_publish_threshold``
         check — ``get_auto_publish_threshold`` is NOT consulted."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return=None)
         db = _make_db_service(pool=pool)
@@ -954,7 +954,7 @@ class TestAutoPublishGateBypass:
         notify_mock = AsyncMock()
         threshold_mock = AsyncMock(return_value=80.0)
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
             "modules.content.api.get_auto_publish_threshold",
@@ -963,7 +963,7 @@ class TestAutoPublishGateBypass:
             "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -998,7 +998,7 @@ class TestAutoPublishGateBypass:
         gate is no bypass at all. With require_human_approval=false the
         global auto_publish_threshold path still governs — and with the
         threshold above the score it stays in awaiting_approval."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         pool, _ = _make_pool(fetchval_return=None)
         db = _make_db_service(pool=pool)
@@ -1014,7 +1014,7 @@ class TestAutoPublishGateBypass:
         auto_pub_mock = AsyncMock(return_value=True)
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
             "modules.content.api.get_auto_publish_threshold",
@@ -1024,7 +1024,7 @@ class TestAutoPublishGateBypass:
             "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -1056,7 +1056,7 @@ class TestAutoPublishGateBypass:
         would_fire=True/dry_run=False — uses that decision to bypass
         require_human_approval. The result dict here carries NO gate key,
         so the inline path is the only way the bypass can engage."""
-        from services.post_pipeline_actions import run_post_pipeline_actions
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
         # fetchrow returns the niche_slug row the inline branch reads.
         pool, _ = _make_pool(fetchval_return=None)
@@ -1083,14 +1083,14 @@ class TestAutoPublishGateBypass:
         auto_pub_mock = AsyncMock(return_value=True)
         notify_mock = AsyncMock()
         with patch(
-            "services.post_pipeline_actions.emit_webhook_event",
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
             "modules.content.api.evaluate_auto_publish_gate", gate_eval_mock,
         ), patch(
             "modules.content.api.auto_publish_task", auto_pub_mock,
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         ):
             await run_post_pipeline_actions(
@@ -1140,7 +1140,7 @@ class TestProductionCallsiteGuards:
     """
 
     def test_content_generation_flow_calls_run_post_pipeline_actions(self):
-        from services.flows import content_generation
+        from poindexter.services.flows import content_generation
 
         source = inspect.getsource(content_generation)
         assert "run_post_pipeline_actions" in source, (
@@ -1154,7 +1154,7 @@ class TestProductionCallsiteGuards:
     def test_post_pipeline_actions_module_has_docstring(self):
         """``feedback_docs_and_tests_default`` — the module must
         carry a README-level docstring explaining its purpose."""
-        import services.post_pipeline_actions as ppa
+        import poindexter.services.post_pipeline_actions as ppa
 
         assert ppa.__doc__ is not None
         # Mention of the issue + the 4 side-effects must be present so

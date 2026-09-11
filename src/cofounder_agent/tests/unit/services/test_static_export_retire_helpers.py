@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services import static_export_service as ses
-from services.site_config import SiteConfig
+from poindexter.services import static_export_service as ses
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.mark.unit
@@ -33,7 +33,7 @@ class TestRetireHelpers:
             ]
         )
         with patch(
-            "services.r2_upload_service.R2UploadService", return_value=fake_r2
+            "poindexter.services.r2_upload_service.R2UploadService", return_value=fake_r2
         ):
             slugs = await ses._list_exported_post_slugs(site_config=SiteConfig())
 
@@ -53,7 +53,7 @@ class TestRetireHelpers:
             return True
 
         with patch.object(ses, "_delete_json", _delete), patch(
-            "services.revalidation_service.trigger_isr_revalidate", _revalidate
+            "poindexter.services.revalidation_service.trigger_isr_revalidate", _revalidate
         ):
             await ses._retire_slug("ghost", site_config=SiteConfig())
 
@@ -67,7 +67,7 @@ class TestRetireHelpers:
             raise RuntimeError("edge challenged")
 
         with patch.object(ses, "_delete_json", AsyncMock(return_value=True)), patch(
-            "services.revalidation_service.trigger_isr_revalidate", _boom
+            "poindexter.services.revalidation_service.trigger_isr_revalidate", _boom
         ):
             # Should not raise.
             await ses._retire_slug("ghost", site_config=SiteConfig())

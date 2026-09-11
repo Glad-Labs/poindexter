@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from services.llm_providers.thinking_models import (
+from poindexter.services.llm_providers.thinking_models import (
     _DEFAULT_SUBSTRINGS,
     is_thinking_model,
     resolve_thinking_substrings,
@@ -394,25 +394,25 @@ class TestResolveThinkingSubstrings:
 
 class TestInstructExclusion:
     def test_instruct_tag_is_not_thinking_by_default(self):
-        from services.llm_providers.thinking_models import is_thinking_model
+        from poindexter.services.llm_providers.thinking_models import is_thinking_model
 
         assert is_thinking_model("ollama/qwen3-vl:30b") is True
         assert is_thinking_model("ollama/qwen3-vl:30b-a3b-instruct") is False
         assert is_thinking_model("qwen3:30b-a3b-instruct-2507") is False
 
     def test_explicit_exclusions_override_default(self):
-        from services.llm_providers.thinking_models import is_thinking_model
+        from poindexter.services.llm_providers.thinking_models import is_thinking_model
 
         # An operator whose instruct tag DOES think disables the veto with [].
         assert is_thinking_model("qwen3-vl:30b-a3b-instruct", exclusions=()) is True
         assert is_thinking_model("qwen3-vl:30b", exclusions=("-vl",)) is False
 
     def test_resolver_reads_setting_and_falls_back(self):
-        from services.llm_providers.thinking_models import (
+        from poindexter.services.llm_providers.thinking_models import (
             _DEFAULT_EXCLUSIONS,
             resolve_non_thinking_substrings,
         )
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         assert resolve_non_thinking_substrings(None) == _DEFAULT_EXCLUSIONS
         assert resolve_non_thinking_substrings(SiteConfig(initial_config={})) == _DEFAULT_EXCLUSIONS
@@ -427,11 +427,11 @@ class TestInstructExclusion:
         ) == ()
 
     def test_judge_paths_treat_instruct_as_plain(self):
-        from services.llm_providers.thinking_models import (
+        from poindexter.services.llm_providers.thinking_models import (
             judge_json_mode_supported,
             resolve_judge_num_predict,
         )
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         cfg = SiteConfig(initial_config={
             "thinking_model_substrings": '["qwen3", "deepseek-r1"]',
@@ -444,8 +444,8 @@ class TestInstructExclusion:
         assert judge_json_mode_supported(instruct, cfg) is True
 
     def test_veto_disabled_by_operator_restores_thinking(self):
-        from services.llm_providers.thinking_models import judge_json_mode_supported
-        from services.site_config import SiteConfig
+        from poindexter.services.llm_providers.thinking_models import judge_json_mode_supported
+        from poindexter.services.site_config import SiteConfig
 
         cfg = SiteConfig(initial_config={
             "thinking_model_substrings": '["qwen3"]',
@@ -454,7 +454,7 @@ class TestInstructExclusion:
         assert judge_json_mode_supported("ollama/qwen3-vl:30b-a3b-instruct", cfg) is False
 
     def test_setting_is_seeded(self):
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
         assert DEFAULTS["non_thinking_model_substrings"] == '["-instruct"]'
         assert "non_thinking_model_substrings" in METADATA

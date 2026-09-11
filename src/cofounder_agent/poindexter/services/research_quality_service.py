@@ -9,8 +9,8 @@ import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 # 2026-05-29 — SiteConfig DI migration (#272 leaf batch 4) converted this
 # module from the module-level ``site_config`` singleton + ``set_site_config``

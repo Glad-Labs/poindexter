@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2g: publish_post_from_task requires an injected site_config.
 _TEST_SC = SiteConfig(initial_config={"site_url": "https://www.test-site.example.com"})
@@ -101,14 +101,14 @@ async def test_stage_only_records_edit_metrics_at_approve_seam() -> None:
     the operator's edit distance is known, so the metric row MUST be written
     on the staging path — the old phase-13 tail call was unreachable from
     the stage_only short-circuit and the table silently froze."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     recorder = AsyncMock(return_value=True)
 
     with patch("modules.content.api.record_post_approve_metrics", recorder), \
-         patch("services.publish_service._spawn_background"), \
-         patch("services.publish_service._should_run_post_publish_hooks", return_value=False):
+         patch("poindexter.services.publish_service._spawn_background"), \
+         patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False):
         result = await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",
             publisher="operator-test",
@@ -141,16 +141,16 @@ async def test_immediate_publish_records_edit_metrics() -> None:
     """The pre-2026-06-24 behavior must survive the seam move: an immediate
     publish (stage_only=False, no existing post) still records exactly one
     row."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     recorder = AsyncMock(return_value=True)
 
     with patch("modules.content.api.record_post_approve_metrics", recorder), \
-         patch("services.publish_service._spawn_background"), \
-         patch("services.publish_service._should_run_post_publish_hooks", return_value=False), \
-         patch("services.static_export_service.export_post", new=AsyncMock(return_value=True)), \
-         patch("services.integrations.operator_notify.notify_operator", new=AsyncMock()):
+         patch("poindexter.services.publish_service._spawn_background"), \
+         patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False), \
+         patch("poindexter.services.static_export_service.export_post", new=AsyncMock(return_value=True)), \
+         patch("poindexter.services.integrations.operator_notify.notify_operator", new=AsyncMock()):
         result = await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",
             publisher="operator-test",
@@ -173,7 +173,7 @@ async def test_promote_existing_approved_does_not_record_again() -> None:
     """One row per approve: the go-live promote of an already-staged post
     (approve already recorded the metric) must NOT write a second row —
     the operator made their edits at approve time, not at promote time."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     db.pool.fetchrow = AsyncMock(return_value=_existing_post("approved"))
@@ -182,8 +182,8 @@ async def test_promote_existing_approved_does_not_record_again() -> None:
     recorder = AsyncMock(return_value=True)
 
     with patch("modules.content.api.record_post_approve_metrics", recorder), \
-         patch("services.publish_service._spawn_background"), \
-         patch("services.static_export_service.export_post", new=AsyncMock(return_value=True)):
+         patch("poindexter.services.publish_service._spawn_background"), \
+         patch("poindexter.services.static_export_service.export_post", new=AsyncMock(return_value=True)):
         result = await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",
             publisher="operator-test",
@@ -204,14 +204,14 @@ async def test_promote_existing_approved_does_not_record_again() -> None:
 async def test_restage_does_not_record_again() -> None:
     """A second approve of the same task (stage_only twice) short-circuits
     as a no-op in phase 2 and must not write a duplicate metric row."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     db.pool.fetchrow = AsyncMock(return_value=_existing_post("approved"))
     recorder = AsyncMock(return_value=True)
 
     with patch("modules.content.api.record_post_approve_metrics", recorder), \
-         patch("services.publish_service._spawn_background"):
+         patch("poindexter.services.publish_service._spawn_background"):
         result = await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",
             publisher="operator-test",
@@ -231,7 +231,7 @@ async def test_edit_metrics_failure_is_warning_plus_finding_not_fatal(
     """feedback_self_heal_not_suppress: a recorder failure must never fail
     the publish, but it must be LOUD — WARNING log + emit_finding — not the
     DEBUG-level swallow that hid the 17-day freeze."""
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     db = _make_db_service()
     recorder = AsyncMock(side_effect=RuntimeError("simulated insert failure"))
@@ -242,8 +242,8 @@ async def test_edit_metrics_failure_is_warning_plus_finding_not_fatal(
 
     with patch("modules.content.api.record_post_approve_metrics", recorder), \
          patch("utils.findings.emit_finding", side_effect=_capture_finding), \
-         patch("services.publish_service._spawn_background"), \
-         patch("services.publish_service._should_run_post_publish_hooks", return_value=False), \
+         patch("poindexter.services.publish_service._spawn_background"), \
+         patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False), \
          caplog.at_level(logging.WARNING, logger="poindexter.services.publish_service"):
         result = await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",

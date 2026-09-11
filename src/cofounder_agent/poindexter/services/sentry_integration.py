@@ -63,7 +63,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 try:
     import sentry_sdk
@@ -685,7 +685,7 @@ def setup_sentry(
     Convenience function to initialize Sentry.
 
     Usage in main.py:
-        from services.sentry_integration import setup_sentry
+        from poindexter.services.sentry_integration import setup_sentry
         setup_sentry(app, site_config, service_name="poindexter-worker")
 
     Args:

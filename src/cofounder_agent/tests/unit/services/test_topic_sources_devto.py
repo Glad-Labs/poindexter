@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.topic_source import TopicSource
-from services.topic_sources.devto import DevtoSource
+from poindexter.services.topic_sources.devto import DevtoSource
 
 
 def _make_client(articles: list[dict[str, Any]] | dict[str, Any], status: int = 200):

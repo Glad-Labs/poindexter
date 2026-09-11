@@ -6,9 +6,9 @@ deterministic and offline — no sentence-transformers download, no GPU.
 
 from __future__ import annotations
 
-from services.model_eval.scorers.reranker import RerankerScorer
-from services.model_eval.types import GoldenCase, GoldenSet
-from services.site_config import SiteConfig
+from poindexter.services.model_eval.scorers.reranker import RerankerScorer
+from poindexter.services.model_eval.types import GoldenCase, GoldenSet
+from poindexter.services.site_config import SiteConfig
 
 
 class _FakeEncoder:

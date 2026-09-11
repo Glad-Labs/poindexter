@@ -46,7 +46,7 @@ from typing import Any
 
 import httpx
 
-from services.image_prompt_sanitizer import clean_image_prompt
+from poindexter.services.image_prompt_sanitizer import clean_image_prompt
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -125,7 +125,7 @@ def _default_render_timeout() -> int:
     had drifted to four different values across the codebase, each a fossil of
     the default on the day its call site was written (2026-07-31).
     """
-    from services.settings_defaults import default_int
+    from poindexter.services.settings_defaults import default_int
 
     return default_int("image_render_timeout_seconds")
 
@@ -185,7 +185,7 @@ def _build_inline_prompt_instruction(
     the title get echoed into the rendered image as garbled text.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         return get_prompt_manager().get_prompt(
             "image.inline_illustration",
@@ -214,7 +214,7 @@ def _normalize_from_router(text: str) -> str:
     (``_normalize_from_router(content_text)``); lazy import preserves lock-free
     startup.
     """
-    from services.text_utils import normalize_text
+    from poindexter.services.text_utils import normalize_text
     return normalize_text(text)
 
 
@@ -260,7 +260,7 @@ async def _plan_and_inject_placeholders(
     already holds a placeholder is never given a second one.
     """
     try:
-        from services.image_decision_agent import plan_images
+        from poindexter.services.image_decision_agent import plan_images
     except Exception as e:
         logger.exception("[IMAGE_AGENT] Image Decision Agent FAILED to import: %s", e)
         return content_text, {"agent_error": str(e)}
@@ -397,7 +397,7 @@ async def _record_inline_image_asset(
         # insert — backfill picks them up later from the rendered HTML.
         return
     try:
-        from services.media_asset_recorder import record_media_asset
+        from poindexter.services.media_asset_recorder import record_media_asset
     except Exception as exc:  # noqa: BLE001 — defensive import guard
         emit_finding(
             source="content.image_helpers",
@@ -450,7 +450,7 @@ async def _try_image_gen(
     pipeline task. Without this, the inline-image phase logged un-
     attributed sessions — see Glad-Labs/poindexter#157.
     """
-    from services.gpu_scheduler import gpu
+    from poindexter.services.gpu_scheduler import gpu
 
     try:
         image_gen_url = site_config.get("image_gen_server_url", "http://image-gen-server:9836")
@@ -528,7 +528,7 @@ async def _try_image_gen(
                 )
 
         if img_resp.status_code != 200:
-            from services.image_ocr_gate import (
+            from poindexter.services.image_ocr_gate import (
                 describe_ocr_gate_rejection,
                 is_ocr_gate_rejection,
                 safe_json,
@@ -616,7 +616,7 @@ async def _render_one_with_retry(
                 timeout=render_timeout,
             )
             if img_resp.status_code != 200:
-                from services.image_ocr_gate import (
+                from poindexter.services.image_ocr_gate import (
                     describe_ocr_gate_rejection,
                     is_ocr_gate_rejection,
                     safe_json,
@@ -692,7 +692,7 @@ async def _batch_generate_inline_image_urls(
     bootstrap), no platform handle, or either GPU lock acquisition fails — the
     caller then Pexels-falls-back every image.
     """
-    from services.gpu_scheduler import gpu
+    from poindexter.services.gpu_scheduler import gpu
 
     n = len(placeholders)
     if n == 0:
@@ -898,7 +898,7 @@ async def _upload_to_r2_with_fallback(
     img_url = tmp_path
     upload_error: Exception | None = None
     try:
-        from services.r2_upload_service import R2UploadService
+        from poindexter.services.r2_upload_service import R2UploadService
         if site_config is None:
             raise RuntimeError(
                 "R2 upload requires site_config; stage execute() must "

@@ -54,8 +54,8 @@ def _patches(*, row, regen=None, run_result=None, run_side_effect=None):
               new=AsyncMock(return_value=MagicMock())),
         patch("poindexter.cli.pipeline._fetch_paused_row",
               new=AsyncMock(return_value=row)),
-        patch("services.approval_service.regen_at_gate", new=regen_mock),
-        patch("services.template_runner.TemplateRunner", new=runner_cls),
+        patch("poindexter.services.approval_service.regen_at_gate", new=regen_mock),
+        patch("poindexter.services.template_runner.TemplateRunner", new=runner_cls),
         patch("poindexter.cli.pipeline._dsn",
               new=MagicMock(return_value="postgresql://test/dsn")),
         # The resume re-threads the full (database_service, platform) handles a
@@ -124,7 +124,7 @@ class TestRegenCommand:
         regen_mock.assert_not_awaited()
 
     def test_cap_reached_errors_without_resuming(self):
-        from services.approval_service import RegenCapReachedError
+        from poindexter.services.approval_service import RegenCapReachedError
 
         regen = AsyncMock(
             side_effect=RegenCapReachedError(

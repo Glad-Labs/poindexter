@@ -47,7 +47,7 @@ from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 # Reuse subprocess helpers from the audit-era QA service — they handle
 # asyncio subprocess lifecycle and ffprobe/ffmpeg argv composition.
-from services.media_quality_service import _probe_duration, _run_argv
+from poindexter.services.media_quality_service import _probe_duration, _run_argv
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 

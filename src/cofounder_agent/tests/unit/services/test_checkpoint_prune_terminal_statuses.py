@@ -72,7 +72,7 @@ def _completed_at_statuses() -> set[str]:
 
 
 def _handler_default() -> list[str]:
-    from services.integrations.handlers.retention_checkpoint_prune import (
+    from poindexter.services.integrations.handlers.retention_checkpoint_prune import (
         _DEFAULT_TERMINAL_STATUSES,
     )
 

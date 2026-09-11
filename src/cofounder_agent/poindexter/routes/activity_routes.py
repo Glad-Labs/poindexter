@@ -12,10 +12,10 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from middleware.api_token_auth import verify_api_token
-from services.database_service import DatabaseService
-from services.live_activity import get_live_activity
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.live_activity import get_live_activity
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)

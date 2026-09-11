@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 
-from services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
+from poindexter.services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from plugins.topic_source import DiscoveredTopic
-from services.topic_pool import dedup_key, insert_pooled_topics
+from poindexter.services.topic_pool import dedup_key, insert_pooled_topics
 
 
 def test_dedup_key_normalizes_title():
@@ -73,8 +73,8 @@ def _topic(title, *, desc="", url="", cat="", score=0.0):
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_read_pooled_maps_external_and_internal_shapes(db_pool):
-    from services.niche_service import NicheService
-    from services.topic_pool import read_pooled
+    from poindexter.services.niche_service import NicheService
+    from poindexter.services.topic_pool import read_pooled
 
     n = await NicheService(db_pool).create(
         slug="pool-read-shapes", name="Pool Read Shapes",
@@ -114,8 +114,8 @@ async def test_read_pooled_maps_external_and_internal_shapes(db_pool):
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_read_pooled_scopes_by_niche_and_status(db_pool):
-    from services.niche_service import NicheService
-    from services.topic_pool import mark_batched, read_pooled
+    from poindexter.services.niche_service import NicheService
+    from poindexter.services.topic_pool import mark_batched, read_pooled
 
     nsvc = NicheService(db_pool)
     n1 = await nsvc.create(slug="pool-scope-a", name="A")
@@ -140,8 +140,8 @@ async def test_read_pooled_scopes_by_niche_and_status(db_pool):
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_read_pooled_caps_per_source_by_score(db_pool):
-    from services.niche_service import NicheService
-    from services.topic_pool import read_pooled
+    from poindexter.services.niche_service import NicheService
+    from poindexter.services.topic_pool import read_pooled
 
     n = await NicheService(db_pool).create(
         slug="pool-per-source-cap", name="Cap",
@@ -166,8 +166,8 @@ async def test_read_pooled_caps_per_source_by_score(db_pool):
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_mark_batched_flips_only_named_ids(db_pool):
-    from services.niche_service import NicheService
-    from services.topic_pool import mark_batched, read_pooled
+    from poindexter.services.niche_service import NicheService
+    from poindexter.services.topic_pool import mark_batched, read_pooled
 
     n = await NicheService(db_pool).create(
         slug="pool-mark-batched", name="Mark",
@@ -210,8 +210,8 @@ async def test_mark_batched_flips_only_named_ids(db_pool):
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_claim_best_pooled_topic_picks_sane_best_and_flips(db_pool):
-    from services.niche_service import NicheService
-    from services.topic_pool import claim_best_pooled_topic
+    from poindexter.services.niche_service import NicheService
+    from poindexter.services.topic_pool import claim_best_pooled_topic
 
     n = await NicheService(db_pool).create(
         slug="pool-claim-best", name="Claim",
@@ -244,8 +244,8 @@ async def test_claim_best_pooled_topic_picks_sane_best_and_flips(db_pool):
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_claim_best_pooled_topic_returns_none_when_pool_dry(db_pool):
-    from services.niche_service import NicheService
-    from services.topic_pool import claim_best_pooled_topic
+    from poindexter.services.niche_service import NicheService
+    from poindexter.services.topic_pool import claim_best_pooled_topic
 
     n = await NicheService(db_pool).create(
         slug="pool-claim-empty", name="Empty",
@@ -271,8 +271,8 @@ async def test_benchmark_findings_is_an_internal_source(db_pool):
     would both mislabel it and, for any category outside the enum, violate the
     constraint on insert.
     """
-    from services.niche_service import NicheService
-    from services.topic_pool import read_pooled
+    from poindexter.services.niche_service import NicheService
+    from poindexter.services.topic_pool import read_pooled
 
     n = await NicheService(db_pool).create(
         slug="pool-bench-internal", name="Pool Bench Internal",

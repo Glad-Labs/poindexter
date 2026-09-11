@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
-import services.pro_delivery as pro_delivery
-from services.jobs.sync_pro_subscriptions import SyncProSubscriptionsJob
-from services.pro_delivery import ProDeliveryConfigError, SyncOutcome
-from services.site_config import SiteConfig
+import poindexter.services.pro_delivery as pro_delivery
+from poindexter.services.jobs.sync_pro_subscriptions import SyncProSubscriptionsJob
+from poindexter.services.pro_delivery import ProDeliveryConfigError, SyncOutcome
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.fixture()
 def findings(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     captured: list[dict[str, Any]] = []
-    import services.jobs.sync_pro_subscriptions as job_module
+    import poindexter.services.jobs.sync_pro_subscriptions as job_module
 
     monkeypatch.setattr(job_module, "emit_finding", lambda **kw: captured.append(kw))
     return captured

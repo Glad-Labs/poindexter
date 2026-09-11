@@ -3328,7 +3328,7 @@ async def main():
     try:
         # Lazy import — brain's PYTHONPATH includes the worker services
         # tree at /app in the container build (see brain/Dockerfile).
-        from services.bootstrap import build_container as _build_app_container
+        from poindexter.services.bootstrap import build_container as _build_app_container
 
         _APP_CONTAINER = await _build_app_container(pool)
         logger.info(

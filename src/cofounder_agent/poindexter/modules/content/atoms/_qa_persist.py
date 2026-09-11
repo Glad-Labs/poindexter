@@ -201,7 +201,7 @@ async def persist_qa_reject(
 
     # 2. Rejected draft.
     try:
-        from services.pipeline_db import PipelineDB
+        from poindexter.services.pipeline_db import PipelineDB
         await PipelineDB(database_service.pool).upsert_version(task_id, {
             "title": title,
             "content": content,
@@ -306,7 +306,7 @@ async def persist_qa_approved_snapshot(
     if database_service is None or not task_id or not content:
         return
     try:
-        from services.pipeline_db import PipelineDB
+        from poindexter.services.pipeline_db import PipelineDB
         await PipelineDB(database_service.pool).upsert_version(task_id, {
             "title": title,
             "content": content,

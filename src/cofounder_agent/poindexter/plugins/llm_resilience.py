@@ -77,8 +77,8 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from plugins.tracing import get_tracer
-from services.audit_log import audit_log_bg
-from services.logger_config import get_logger
+from poindexter.services.audit_log import audit_log_bg
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

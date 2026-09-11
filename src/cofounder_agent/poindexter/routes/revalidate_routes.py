@@ -15,12 +15,12 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from services.logger_config import get_logger
-from services.revalidation_service import (
+from poindexter.services.logger_config import get_logger
+from poindexter.services.revalidation_service import (
     trigger_nextjs_revalidation,  # noqa: F401 — re-exported for legacy tests
     trigger_nextjs_revalidation_detailed,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)

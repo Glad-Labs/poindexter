@@ -244,7 +244,7 @@ class TestWholePostEvaluate:
 
         async def fake_embed(text, *, site_config):
             return [0.0]
-        monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+        monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
         class _Conn:
             async def fetchrow(self, _sql, _vec):
@@ -278,7 +278,7 @@ class TestWholePostEvaluate:
 
         async def fake_embed(text, *, site_config):
             return [0.0]
-        monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+        monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
         class _Conn:
             async def fetchrow(self, _sql, _vec):

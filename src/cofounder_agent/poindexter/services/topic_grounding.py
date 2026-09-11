@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 

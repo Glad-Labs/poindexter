@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 import poindexter.cli.community as com
-from services.community_drafts import CommunityDraft
+from poindexter.services.community_drafts import CommunityDraft
 
 
 class _NoopPool:
@@ -126,7 +126,7 @@ def test_drafts_mark_posted(runner, monkeypatch):
 
 
 def test_profiles_import_csv(runner, monkeypatch, tmp_path):
-    from services.subreddit_import import ImportReport, ImportRowResult
+    from poindexter.services.subreddit_import import ImportReport, ImportRowResult
 
     async def _imp(pool, path, *, force=False):
         return ImportReport(rows=[ImportRowResult("LocalLLaMA", "created")])
@@ -148,6 +148,6 @@ async def test_make_site_config_fails_loud_on_load_error(monkeypatch):
             raise RuntimeError("db boom")
 
     # _make_site_config imports SiteConfig from services.site_config at call time.
-    monkeypatch.setattr("services.site_config.SiteConfig", _BadSiteConfig)
+    monkeypatch.setattr("poindexter.services.site_config.SiteConfig", _BadSiteConfig)
     with pytest.raises(click.ClickException, match="failed to load settings"):
         await com._make_site_config(object())

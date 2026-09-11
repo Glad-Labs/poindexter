@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import asyncpg
 import pytest
 
-from services.jwt_blocklist_service import JWTBlocklistService, jwt_blocklist
+from poindexter.services.jwt_blocklist_service import JWTBlocklistService, jwt_blocklist
 
 # ---------------------------------------------------------------------------
 # Helpers

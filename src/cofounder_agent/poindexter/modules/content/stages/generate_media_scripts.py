@@ -29,12 +29,12 @@ from typing import Any
 
 from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 from plugins.stage import StageResult
-from services.audio_gen_service import generate_audio, is_audio_gen_enabled
-from services.gpu_admission import GpuBusyError
-from services.gpu_scheduler import media_wait_budget_s
-from services.podcast_service import PODCAST_DIR
-from services.tts_service import is_tts_enabled, resolve_tts_format, synthesize_speech
-from services.video_service import VIDEO_DIR
+from poindexter.services.audio_gen_service import generate_audio, is_audio_gen_enabled
+from poindexter.services.gpu_admission import GpuBusyError
+from poindexter.services.gpu_scheduler import media_wait_budget_s
+from poindexter.services.podcast_service import PODCAST_DIR
+from poindexter.services.tts_service import is_tts_enabled, resolve_tts_format, synthesize_speech
+from poindexter.services.video_service import VIDEO_DIR
 from utils.findings import emit_finding
 
 _INTRO_PROMPT_FALLBACK = (
@@ -96,8 +96,8 @@ class GenerateMediaScriptsStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.gpu_scheduler import gpu
-        from services.podcast_service import (
+        from poindexter.services.gpu_scheduler import gpu
+        from poindexter.services.podcast_service import (
             _build_script_with_llm,
             _normalize_for_script,
             _strip_markdown,
@@ -761,7 +761,7 @@ def _build_video_narration_prompt(
     """
     content = clean_content[:3500]
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(
             "video.long_form_narration",
             title=title,

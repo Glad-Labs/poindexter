@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import services.gpu_lease_stats as stats_mod
-from services.gpu_scheduler import GPUScheduler
+import poindexter.services.gpu_lease_stats as stats_mod
+from poindexter.services.gpu_scheduler import GPUScheduler
 
 pytestmark = pytest.mark.asyncio
 

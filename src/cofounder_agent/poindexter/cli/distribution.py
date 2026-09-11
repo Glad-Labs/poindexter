@@ -10,7 +10,7 @@ import sys
 import click
 
 from poindexter.cli._dataplane import run_service
-from services.distribution_yield import surface_yield
+from poindexter.services.distribution_yield import surface_yield
 
 
 @click.group(name="distribution")

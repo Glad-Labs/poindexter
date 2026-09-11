@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.fix_broken_internal_links import (
+from poindexter.services.jobs.fix_broken_internal_links import (
     FixBrokenInternalLinksJob,
     _strip_slug_references,
 )
@@ -133,7 +133,7 @@ class TestRun:
         )
         job = FixBrokenInternalLinksJob()
         with patch(
-            "services.jobs.fix_broken_internal_links.emit_finding",
+            "poindexter.services.jobs.fix_broken_internal_links.emit_finding",
             new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {})
@@ -158,7 +158,7 @@ class TestRun:
         job = FixBrokenInternalLinksJob()
         mock_gitea = MagicMock()
         with patch(
-            "services.jobs.fix_broken_internal_links.emit_finding",
+            "poindexter.services.jobs.fix_broken_internal_links.emit_finding",
             new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})
@@ -177,7 +177,7 @@ class TestRun:
         )
         job = FixBrokenInternalLinksJob()
         with patch(
-            "services.jobs.fix_broken_internal_links.emit_finding",
+            "poindexter.services.jobs.fix_broken_internal_links.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {"file_gitea_issue": False})

@@ -114,7 +114,7 @@ class TestRenderImageGenNon200ReturnsNone:
             "modules.content.stages.source_featured_image.httpx.AsyncClient",
             return_value=_fake_httpx_client_returning(post_resp),
         ), patch(
-            "services.gpu_scheduler.gpu", _gpu_lock_noop(),
+            "poindexter.services.gpu_scheduler.gpu", _gpu_lock_noop(),
         ):
             output_path, gen_meta = await _render_image_gen(
                 image_gen_url="http://image-gen-server:9836",

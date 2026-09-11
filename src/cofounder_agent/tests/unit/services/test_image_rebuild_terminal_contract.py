@@ -7,10 +7,10 @@ PipelineState (the #753 seed-time schema gate).
 """
 from __future__ import annotations
 
-import services.pipeline_architect as pa
-from services.atom_registry import discover
-from services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
-from services.post_pipeline_actions import _DECIDED_NON_REJECTED_STATUSES
+import poindexter.services.pipeline_architect as pa
+from poindexter.services.atom_registry import discover
+from poindexter.services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
+from poindexter.services.post_pipeline_actions import _DECIDED_NON_REJECTED_STATUSES
 
 
 def _node_by_id(spec: dict) -> dict[str, dict]:

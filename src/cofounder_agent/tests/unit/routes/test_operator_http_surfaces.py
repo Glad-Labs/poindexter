@@ -109,7 +109,7 @@ def _app_media_approval(mock_db=None):
 
 def _schedule_result(ok=True, detail="ok", rows=None, count=0):
     """Minimal ScheduleResult-like dataclass."""
-    from services.scheduling_service import ScheduleResult
+    from poindexter.services.scheduling_service import ScheduleResult
 
     return ScheduleResult(ok=ok, detail=detail, rows=rows or [], count=count)
 
@@ -124,7 +124,7 @@ class TestGatesRoutes:
     def test_list_gates_returns_envelope(self):
         app, _ = _app_gates()
         gates = [{"gate_name": "draft", "enabled": True, "pending_count": 2}]
-        with patch("services.approval_service.list_gates", new=AsyncMock(return_value=gates)):
+        with patch("poindexter.services.approval_service.list_gates", new=AsyncMock(return_value=gates)):
             resp = TestClient(app).get("/api/gates")
         assert resp.status_code == 200
         data = resp.json()
@@ -138,14 +138,14 @@ class TestGatesRoutes:
 
     def test_list_gates_empty(self):
         app, _ = _app_gates()
-        with patch("services.approval_service.list_gates", new=AsyncMock(return_value=[])):
+        with patch("poindexter.services.approval_service.list_gates", new=AsyncMock(return_value=[])):
             resp = TestClient(app).get("/api/gates")
         assert resp.json() == {"items": [], "total": 0, "limit": 0, "offset": 0}
 
     def test_set_gate_enabled_true(self):
         app, _ = _app_gates()
         result = {"ok": True, "gate_name": "draft", "enabled": True, "key": "pipeline_gate_draft"}
-        with patch("services.approval_service.set_gate_enabled", new=AsyncMock(return_value=result)):
+        with patch("poindexter.services.approval_service.set_gate_enabled", new=AsyncMock(return_value=result)):
             resp = TestClient(app).patch("/api/gates/draft", json={"enabled": True})
         assert resp.status_code == 200
         assert resp.json()["enabled"] is True
@@ -153,7 +153,7 @@ class TestGatesRoutes:
     def test_list_pending_gates(self):
         app, _ = _app_gates()
         tasks = [{"task_id": "t-1", "gate_name": "draft"}]
-        with patch("services.approval_service.list_pending", new=AsyncMock(return_value=tasks)):
+        with patch("poindexter.services.approval_service.list_pending", new=AsyncMock(return_value=tasks)):
             resp = TestClient(app).get("/api/gates/pending")
         assert resp.status_code == 200
         data = resp.json()
@@ -167,17 +167,17 @@ class TestGatesRoutes:
     def test_show_pending_found(self):
         app, _ = _app_gates()
         detail = {"task_id": "t-1", "gate_name": "draft", "artifact": {}}
-        with patch("services.approval_service.show_pending", new=AsyncMock(return_value=detail)):
+        with patch("poindexter.services.approval_service.show_pending", new=AsyncMock(return_value=detail)):
             resp = TestClient(app).get("/api/gates/pending/t-1")
         assert resp.status_code == 200
         assert resp.json()["task_id"] == "t-1"
 
     def test_show_pending_not_found_returns_404(self):
         app, _ = _app_gates()
-        from services.approval_service import TaskNotFoundError
+        from poindexter.services.approval_service import TaskNotFoundError
 
         with patch(
-            "services.approval_service.show_pending",
+            "poindexter.services.approval_service.show_pending",
             new=AsyncMock(side_effect=TaskNotFoundError("Task t-x not found")),
         ):
             resp = TestClient(app).get("/api/gates/pending/t-x")
@@ -185,10 +185,10 @@ class TestGatesRoutes:
 
     def test_show_pending_not_paused_returns_409(self):
         app, _ = _app_gates()
-        from services.approval_service import TaskNotPausedError
+        from poindexter.services.approval_service import TaskNotPausedError
 
         with patch(
-            "services.approval_service.show_pending",
+            "poindexter.services.approval_service.show_pending",
             new=AsyncMock(side_effect=TaskNotPausedError("not paused")),
         ):
             resp = TestClient(app).get("/api/gates/pending/t-1")
@@ -206,7 +206,7 @@ class TestGatesRoutes:
             "mode": "approve_resume_started",
         }
         mock = AsyncMock(return_value=result)
-        with patch("services.gate_resume.approve_and_schedule_resume", new=mock):
+        with patch("poindexter.services.gate_resume.approve_and_schedule_resume", new=mock):
             resp = TestClient(app).post(
                 "/api/gates/pending/t-1/approve", json={"feedback": "ship it"}
             )
@@ -220,17 +220,17 @@ class TestGatesRoutes:
     def test_approve_pending_body_optional(self):
         app, _ = _app_gates()
         mock = AsyncMock(return_value={"ok": True, "mode": "approve_resume_started"})
-        with patch("services.gate_resume.approve_and_schedule_resume", new=mock):
+        with patch("poindexter.services.gate_resume.approve_and_schedule_resume", new=mock):
             resp = TestClient(app).post("/api/gates/pending/t-1/approve")
         assert resp.status_code == 202
         assert mock.await_args.kwargs["feedback"] is None
 
     def test_approve_pending_not_found_returns_404(self):
         app, _ = _app_gates()
-        from services.approval_service import TaskNotFoundError
+        from poindexter.services.approval_service import TaskNotFoundError
 
         with patch(
-            "services.gate_resume.approve_and_schedule_resume",
+            "poindexter.services.gate_resume.approve_and_schedule_resume",
             new=AsyncMock(side_effect=TaskNotFoundError("Task t-x not found")),
         ):
             resp = TestClient(app).post("/api/gates/pending/t-x/approve")
@@ -238,10 +238,10 @@ class TestGatesRoutes:
 
     def test_approve_pending_inflight_returns_409(self):
         app, _ = _app_gates()
-        from services.gate_resume import ResumeInFlightError
+        from poindexter.services.gate_resume import ResumeInFlightError
 
         with patch(
-            "services.gate_resume.approve_and_schedule_resume",
+            "poindexter.services.gate_resume.approve_and_schedule_resume",
             new=AsyncMock(side_effect=ResumeInFlightError("already resuming")),
         ):
             resp = TestClient(app).post("/api/gates/pending/t-1/approve")
@@ -249,10 +249,10 @@ class TestGatesRoutes:
 
     def test_approve_pending_not_paused_returns_409(self):
         app, _ = _app_gates()
-        from services.approval_service import TaskNotPausedError
+        from poindexter.services.approval_service import TaskNotPausedError
 
         with patch(
-            "services.gate_resume.approve_and_schedule_resume",
+            "poindexter.services.gate_resume.approve_and_schedule_resume",
             new=AsyncMock(side_effect=TaskNotPausedError("not paused")),
         ):
             resp = TestClient(app).post("/api/gates/pending/t-1/approve")
@@ -269,7 +269,7 @@ class TestGatesRoutes:
             "new_status": "rejected",
         }
         mock = AsyncMock(return_value=result)
-        with patch("services.approval_service.reject", new=mock):
+        with patch("poindexter.services.approval_service.reject", new=mock):
             resp = TestClient(app).post(
                 "/api/gates/pending/t-1/reject", json={"reason": "title too spammy"}
             )
@@ -283,10 +283,10 @@ class TestGatesRoutes:
 
     def test_reject_pending_not_found_returns_404(self):
         app, _ = _app_gates()
-        from services.approval_service import TaskNotFoundError
+        from poindexter.services.approval_service import TaskNotFoundError
 
         with patch(
-            "services.approval_service.reject",
+            "poindexter.services.approval_service.reject",
             new=AsyncMock(side_effect=TaskNotFoundError("Task t-x not found")),
         ):
             resp = TestClient(app).post("/api/gates/pending/t-x/reject")
@@ -294,10 +294,10 @@ class TestGatesRoutes:
 
     def test_reject_pending_not_paused_returns_409(self):
         app, _ = _app_gates()
-        from services.approval_service import TaskNotPausedError
+        from poindexter.services.approval_service import TaskNotPausedError
 
         with patch(
-            "services.approval_service.reject",
+            "poindexter.services.approval_service.reject",
             new=AsyncMock(side_effect=TaskNotPausedError("not paused")),
         ):
             resp = TestClient(app).post("/api/gates/pending/t-1/reject")
@@ -314,7 +314,7 @@ class TestPostsApprovalRoutes:
     def test_list_pending_publish_returns_envelope(self):
         app, _ = _app_posts_approval()
         posts = [{"post_id": "p-1", "gate_name": "final_publish_approval"}]
-        with patch("services.posts_approval_service.list_pending_publish", new=AsyncMock(return_value=posts)):
+        with patch("poindexter.services.posts_approval_service.list_pending_publish", new=AsyncMock(return_value=posts)):
             resp = TestClient(app).get("/api/posts-approval/pending")
         assert resp.status_code == 200
         data = resp.json()
@@ -328,17 +328,17 @@ class TestPostsApprovalRoutes:
     def test_approve_publish_success(self):
         app, _ = _app_posts_approval()
         result = {"ok": True, "post_id": "p-1", "gate_name": "final_publish_approval", "feedback": ""}
-        with patch("services.posts_approval_service.approve_publish", new=AsyncMock(return_value=result)):
+        with patch("poindexter.services.posts_approval_service.approve_publish", new=AsyncMock(return_value=result)):
             resp = TestClient(app).post("/api/posts-approval/p-1/approve", json={})
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
 
     def test_approve_publish_not_found_returns_404(self):
         app, _ = _app_posts_approval()
-        from services.posts_approval_service import PostNotFoundError
+        from poindexter.services.posts_approval_service import PostNotFoundError
 
         with patch(
-            "services.posts_approval_service.approve_publish",
+            "poindexter.services.posts_approval_service.approve_publish",
             new=AsyncMock(side_effect=PostNotFoundError("Post p-x not found")),
         ):
             resp = TestClient(app).post("/api/posts-approval/p-x/approve", json={})
@@ -347,17 +347,17 @@ class TestPostsApprovalRoutes:
     def test_reject_publish_success(self):
         app, _ = _app_posts_approval()
         result = {"ok": True, "post_id": "p-1", "gate_name": "final_publish_approval", "new_status": "rejected", "reason": "off-brand"}
-        with patch("services.posts_approval_service.reject_publish", new=AsyncMock(return_value=result)):
+        with patch("poindexter.services.posts_approval_service.reject_publish", new=AsyncMock(return_value=result)):
             resp = TestClient(app).post("/api/posts-approval/p-1/reject", json={"reason": "off-brand"})
         assert resp.status_code == 200
         assert resp.json()["new_status"] == "rejected"
 
     def test_reject_publish_gate_mismatch_returns_409(self):
         app, _ = _app_posts_approval()
-        from services.posts_approval_service import PostGateMismatchError
+        from poindexter.services.posts_approval_service import PostGateMismatchError
 
         with patch(
-            "services.posts_approval_service.reject_publish",
+            "poindexter.services.posts_approval_service.reject_publish",
             new=AsyncMock(side_effect=PostGateMismatchError("mismatch")),
         ):
             resp = TestClient(app).post("/api/posts-approval/p-1/reject", json={})
@@ -366,7 +366,7 @@ class TestPostsApprovalRoutes:
     def test_show_pending_publish_found(self):
         app, _ = _app_posts_approval()
         detail = {"post_id": "p-1", "gate_name": "final_publish_approval", "artifact": {}}
-        with patch("services.posts_approval_service.show_pending_publish", new=AsyncMock(return_value=detail)):
+        with patch("poindexter.services.posts_approval_service.show_pending_publish", new=AsyncMock(return_value=detail)):
             resp = TestClient(app).get("/api/posts-approval/pending/p-1")
         assert resp.status_code == 200
 
@@ -381,7 +381,7 @@ class TestSchedulingRoutes:
     def test_list_scheduled_returns_result(self):
         app, _ = _app_scheduling()
         result = _schedule_result(rows=[{"post_id": "p-1", "published_at": NOW}], count=1)
-        with patch("services.scheduling_service.list_scheduled", new=AsyncMock(return_value=result)):
+        with patch("poindexter.services.scheduling_service.list_scheduled", new=AsyncMock(return_value=result)):
             resp = TestClient(app).get("/api/scheduling")
         assert resp.status_code == 200
         data = resp.json()
@@ -391,7 +391,7 @@ class TestSchedulingRoutes:
     def test_show_scheduled_not_found_returns_ok_false(self):
         app, _ = _app_scheduling()
         result = _schedule_result(ok=False, detail="Post p-x not found")
-        with patch("services.scheduling_service.show_scheduled", new=AsyncMock(return_value=result)):
+        with patch("poindexter.services.scheduling_service.show_scheduled", new=AsyncMock(return_value=result)):
             resp = TestClient(app).get("/api/scheduling/p-x")
         assert resp.status_code == 200
         assert resp.json()["ok"] is False
@@ -399,21 +399,21 @@ class TestSchedulingRoutes:
     def test_assign_slot_success(self):
         app, _ = _app_scheduling()
         result = _schedule_result(rows=[{"post_id": "p-1"}], count=1)
-        with patch("services.scheduling_service.assign_slot", new=AsyncMock(return_value=result)):
+        with patch("poindexter.services.scheduling_service.assign_slot", new=AsyncMock(return_value=result)):
             resp = TestClient(app).post("/api/scheduling/p-1", json={"when": "2026-07-01T12:00:00Z"})
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
 
     def test_assign_slot_bad_when_returns_422(self):
         app, _ = _app_scheduling()
-        with patch("services.scheduling_service.assign_slot", new=AsyncMock(side_effect=ValueError("bad when"))):
+        with patch("poindexter.services.scheduling_service.assign_slot", new=AsyncMock(side_effect=ValueError("bad when"))):
             resp = TestClient(app).post("/api/scheduling/p-1", json={"when": "not-a-date"})
         assert resp.status_code == 422
 
     def test_assign_batch_success(self):
         app, _ = _app_scheduling()
         result = _schedule_result(count=3)
-        with patch("services.scheduling_service.assign_batch", new=AsyncMock(return_value=result)):
+        with patch("poindexter.services.scheduling_service.assign_batch", new=AsyncMock(return_value=result)):
             resp = TestClient(app).post(
                 "/api/scheduling/batch",
                 json={"count": 3, "interval": "1d", "start": "2026-07-01T12:00:00Z"},
@@ -423,14 +423,14 @@ class TestSchedulingRoutes:
     def test_shift_success(self):
         app, _ = _app_scheduling()
         result = _schedule_result(count=2)
-        with patch("services.scheduling_service.shift", new=AsyncMock(return_value=result)):
+        with patch("poindexter.services.scheduling_service.shift", new=AsyncMock(return_value=result)):
             resp = TestClient(app).patch("/api/scheduling/shift", json={"by_delta": "2h"})
         assert resp.status_code == 200
 
     def test_clear_success(self):
         app, _ = _app_scheduling()
         result = _schedule_result(count=1)
-        with patch("services.scheduling_service.clear", new=AsyncMock(return_value=result)):
+        with patch("poindexter.services.scheduling_service.clear", new=AsyncMock(return_value=result)):
             resp = TestClient(app).delete("/api/scheduling")
         assert resp.status_code == 200
 
@@ -443,7 +443,7 @@ BATCH_ID = "11111111-1111-1111-1111-111111111111"
 
 
 def _make_batch_view():
-    from services.topic_batch_service import BatchView, CandidateView
+    from poindexter.services.topic_batch_service import BatchView, CandidateView
 
     cand = CandidateView(
         id="cand-001",
@@ -473,7 +473,7 @@ class TestTopicBatchRoutes:
     def test_show_batch_returns_view(self):
         app, _ = _app_topic_batch()
         view = _make_batch_view()
-        with patch("services.topic_batch_service.TopicBatchService.show_batch", new=AsyncMock(return_value=view)):
+        with patch("poindexter.services.topic_batch_service.TopicBatchService.show_batch", new=AsyncMock(return_value=view)):
             resp = TestClient(app).get(f"/api/topic-batches/{BATCH_ID}")
         assert resp.status_code == 200
         data = resp.json()
@@ -483,7 +483,7 @@ class TestTopicBatchRoutes:
     def test_show_batch_not_found_returns_404(self):
         app, _ = _app_topic_batch()
         with patch(
-            "services.topic_batch_service.TopicBatchService.show_batch",
+            "poindexter.services.topic_batch_service.TopicBatchService.show_batch",
             new=AsyncMock(side_effect=ValueError("unknown batch_id")),
         ):
             resp = TestClient(app).get(f"/api/topic-batches/{BATCH_ID}")
@@ -496,7 +496,7 @@ class TestTopicBatchRoutes:
 
     def test_rank_batch_success(self):
         app, _ = _app_topic_batch()
-        with patch("services.topic_batch_service.TopicBatchService.rank_batch", new=AsyncMock(return_value=None)):
+        with patch("poindexter.services.topic_batch_service.TopicBatchService.rank_batch", new=AsyncMock(return_value=None)):
             resp = TestClient(app).post(
                 f"/api/topic-batches/{BATCH_ID}/rank",
                 json={"ordered_candidate_ids": ["cand-001"]},
@@ -507,7 +507,7 @@ class TestTopicBatchRoutes:
     def test_edit_winner_no_rank_one_returns_409(self):
         app, _ = _app_topic_batch()
         with patch(
-            "services.topic_batch_service.TopicBatchService.edit_winner",
+            "poindexter.services.topic_batch_service.TopicBatchService.edit_winner",
             new=AsyncMock(side_effect=ValueError("no rank-1 candidate")),
         ):
             resp = TestClient(app).post(
@@ -518,13 +518,13 @@ class TestTopicBatchRoutes:
 
     def test_resolve_batch_success(self):
         app, _ = _app_topic_batch()
-        with patch("services.topic_batch_service.TopicBatchService.resolve_batch", new=AsyncMock(return_value=None)):
+        with patch("poindexter.services.topic_batch_service.TopicBatchService.resolve_batch", new=AsyncMock(return_value=None)):
             resp = TestClient(app).post(f"/api/topic-batches/{BATCH_ID}/resolve")
         assert resp.status_code == 200
 
     def test_reject_batch_success(self):
         app, _ = _app_topic_batch()
-        with patch("services.topic_batch_service.TopicBatchService.reject_batch", new=AsyncMock(return_value=None)):
+        with patch("poindexter.services.topic_batch_service.TopicBatchService.reject_batch", new=AsyncMock(return_value=None)):
             resp = TestClient(app).post(f"/api/topic-batches/{BATCH_ID}/reject", json={})
         assert resp.status_code == 200
 
@@ -539,7 +539,7 @@ class TestMediaApprovalRoutes:
     def test_list_pending_returns_envelope(self):
         app, _ = _app_media_approval()
         rows = [{"post_id": "p-1", "medium": "podcast", "created_at": NOW}]
-        with patch("services.media_approval_service.list_pending", new=AsyncMock(return_value=rows)):
+        with patch("poindexter.services.media_approval_service.list_pending", new=AsyncMock(return_value=rows)):
             resp = TestClient(app).get("/api/media-approval/pending")
         assert resp.status_code == 200
         data = resp.json()
@@ -552,13 +552,13 @@ class TestMediaApprovalRoutes:
 
     def test_list_pending_empty(self):
         app, _ = _app_media_approval()
-        with patch("services.media_approval_service.list_pending", new=AsyncMock(return_value=[])):
+        with patch("poindexter.services.media_approval_service.list_pending", new=AsyncMock(return_value=[])):
             resp = TestClient(app).get("/api/media-approval/pending")
         assert resp.json() == {"items": [], "total": 0, "limit": 50, "offset": 0}
 
     def test_decide_approve_success(self):
         app, _ = _app_media_approval()
-        with patch("services.media_approval_service.decide", new=AsyncMock(return_value=None)):
+        with patch("poindexter.services.media_approval_service.decide", new=AsyncMock(return_value=None)):
             with patch("middleware.api_token_auth.get_operator_identity", return_value={"id": "operator:test"}):
                 resp = TestClient(app).post(
                     "/api/media-approval/p-1/podcast/decide",
@@ -571,7 +571,7 @@ class TestMediaApprovalRoutes:
     def test_decide_row_not_found_returns_404(self):
         app, _ = _app_media_approval()
         with patch(
-            "services.media_approval_service.decide",
+            "poindexter.services.media_approval_service.decide",
             new=AsyncMock(side_effect=ValueError("No media_approvals row")),
         ):
             with patch("middleware.api_token_auth.get_operator_identity", return_value={"id": "operator:test"}):

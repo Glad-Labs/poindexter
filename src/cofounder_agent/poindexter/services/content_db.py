@@ -19,6 +19,7 @@ from uuid import uuid4
 import asyncpg
 from asyncpg import Pool
 
+from poindexter.services.logger_config import get_logger
 from schemas.database_response_models import (
     AuthorResponse,
     CategoryResponse,
@@ -30,7 +31,6 @@ from schemas.database_response_models import (
     TagResponse,
 )
 from schemas.model_converter import ModelConverter
-from services.logger_config import get_logger
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin

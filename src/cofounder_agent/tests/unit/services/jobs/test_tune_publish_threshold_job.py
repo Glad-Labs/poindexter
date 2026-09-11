@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.jobs.tune_publish_threshold import (
+from poindexter.services.jobs.tune_publish_threshold import (
     TunePublishThresholdJob,
     _compute_adjustment,
 )

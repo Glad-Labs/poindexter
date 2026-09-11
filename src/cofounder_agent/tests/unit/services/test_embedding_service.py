@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.embedding_service import EmbeddingService
-from services.taps.published_posts import build_post_text
+from poindexter.services.embedding_service import EmbeddingService
+from poindexter.services.taps.published_posts import build_post_text
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -177,8 +177,8 @@ class TestEmbedPost:
         """The collision guard: ``embed_post`` and ``PostsTap`` write the
         same key, so they must derive the same chunk-0 content_hash from the
         same post or they will clobber each other forever."""
-        from services.taps._chunking import content_hash as tap_hash
-        from services.taps.published_posts import PostsTap  # noqa: F401
+        from poindexter.services.taps._chunking import content_hash as tap_hash
+        from poindexter.services.taps.published_posts import PostsTap  # noqa: F401
 
         post = _make_post(content="a real post body " * 50)
         await service.embed_post(post)

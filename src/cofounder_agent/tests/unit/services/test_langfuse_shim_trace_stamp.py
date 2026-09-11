@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from services import langfuse_shim
+from poindexter.services import langfuse_shim
 
 
 class _RecordingSpan:

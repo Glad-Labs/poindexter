@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.image_markers import strip_unresolved_image_markers
+from poindexter.services.image_markers import strip_unresolved_image_markers
 
 
 @pytest.mark.parametrize(

@@ -36,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from plugins.job import JobResult
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -88,7 +88,7 @@ class SyncPostizDeliveryStateJob:
         if not rows:
             return JobResult(ok=True, detail="no unverified posted drafts in window")
 
-        from services.integrations.postiz_client import PostizClient
+        from poindexter.services.integrations.postiz_client import PostizClient
 
         base_url = site_config.get("postiz_api_url", "http://postiz:3000")
         api_key = await site_config.get_secret("postiz_api_key", "")

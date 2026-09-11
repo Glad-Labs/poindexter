@@ -25,16 +25,16 @@ import pytest
 
 import modules.content.content_validator as content_validator
 import modules.content.multi_model_qa as multi_model_qa
-import services.citation_verifier as citation_verifier
-import services.image_decision_agent as image_decision_agent
-import services.image_providers.ai_generation as ai_generation
-import services.image_providers.flux_schnell as flux_schnell
-import services.image_providers.pexels as pexels_provider
-import services.image_providers.pexels_video as pexels_video_provider
-import services.image_service as image_service
-import services.integrations.operator_notify as operator_notify
-import services.metrics_exporter as metrics_exporter
-from services.http_client import (
+import poindexter.services.citation_verifier as citation_verifier
+import poindexter.services.image_decision_agent as image_decision_agent
+import poindexter.services.image_providers.ai_generation as ai_generation
+import poindexter.services.image_providers.flux_schnell as flux_schnell
+import poindexter.services.image_providers.pexels as pexels_provider
+import poindexter.services.image_providers.pexels_video as pexels_video_provider
+import poindexter.services.image_service as image_service
+import poindexter.services.integrations.operator_notify as operator_notify
+import poindexter.services.metrics_exporter as metrics_exporter
+from poindexter.services.http_client import (
     WIRED_HTTP_CLIENT_MODULES,
     get_shared_http_client,
     set_http_client,
@@ -148,7 +148,7 @@ async def test_lifespan_wiring_via_app_state():
     module."""
     from types import SimpleNamespace
 
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     fake_site_cfg = SiteConfig(initial_config={
         "shared_http_client_timeout_seconds": "5.0",
@@ -239,7 +239,7 @@ async def test_get_http_client_dependency_reads_from_app_state():
     is a convenience for non-route callers."""
     from types import SimpleNamespace
 
-    from services.http_client import get_http_client
+    from poindexter.services.http_client import get_http_client
 
     client = httpx.AsyncClient()
     try:
@@ -300,7 +300,7 @@ def test_wire_skips_module_with_failing_import(monkeypatch):
     of failing modules and the module-local pointer is still updated."""
     import importlib
 
-    from services.module_paths import flat_module_path
+    from poindexter.services.module_paths import flat_module_path
 
     # Measure the baseline first so the assertion is robust to future
     # additions/removals from WIRED_HTTP_CLIENT_MODULES.
@@ -308,7 +308,7 @@ def test_wire_skips_module_with_failing_import(monkeypatch):
     baseline = wire_http_client_modules(client)
     wire_http_client_modules(None)
 
-    target = "services.metrics_exporter"
+    target = "poindexter.services.metrics_exporter"
     assert target in WIRED_HTTP_CLIENT_MODULES, (
         "Test assumes metrics_exporter is in the wiring tuple"
     )
@@ -316,7 +316,7 @@ def test_wire_skips_module_with_failing_import(monkeypatch):
 
     def fake_import(name, *args, **kwargs):
         # Callers pass the RESOLVED spelling (poindexter.services.x); compare flat.
-        if flat_module_path(name) == target:
+        if flat_module_path(name) == flat_module_path(target):
             raise ImportError(f"simulated import failure for {name}")
         return real_import(name, *args, **kwargs)
 

@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.users_db import UsersDatabase
+from poindexter.services.users_db import UsersDatabase
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -288,7 +288,7 @@ class TestGetOrCreateOAuthUser:
         sentinel = object()
         with (
             patch(f"{_CONVERTER}.to_user_response", return_value=sentinel),
-            patch("services.users_db.uuid4", return_value=_fixed_uuid),
+            patch("poindexter.services.users_db.uuid4", return_value=_fixed_uuid),
         ):
             result = await db.get_or_create_oauth_user(
                 provider="google",
@@ -322,7 +322,7 @@ class TestGetOrCreateOAuthUser:
 
         with (
             patch(f"{_CONVERTER}.to_user_response", return_value=MagicMock()),
-            patch("services.users_db.uuid4", return_value=_fixed_uuid),
+            patch("poindexter.services.users_db.uuid4", return_value=_fixed_uuid),
         ):
             # Should not raise even with no email
             await db.get_or_create_oauth_user(
@@ -376,7 +376,7 @@ class TestGetOrCreateOAuthUserRace:
 
         with (
             patch(f"{_CONVERTER}.to_user_response", return_value=MagicMock()),
-            patch("services.users_db.uuid4", return_value=_fixed_uuid),
+            patch("poindexter.services.users_db.uuid4", return_value=_fixed_uuid),
         ):
             await db.get_or_create_oauth_user(
                 provider="github",
@@ -411,7 +411,7 @@ class TestGetOrCreateOAuthUserRace:
         winner_sentinel = object()
         with (
             patch(f"{_CONVERTER}.to_user_response", return_value=winner_sentinel),
-            patch("services.users_db.uuid4", return_value=_my_uuid),
+            patch("poindexter.services.users_db.uuid4", return_value=_my_uuid),
         ):
             result = await db.get_or_create_oauth_user(
                 provider="github",

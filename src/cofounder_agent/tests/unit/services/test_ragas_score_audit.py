@@ -19,13 +19,13 @@ from unittest.mock import patch
 
 import pytest
 
-from services.ragas_eval import _emit_ragas_score_audit
+from poindexter.services.ragas_eval import _emit_ragas_score_audit
 
 
 @pytest.mark.unit
 class TestEmitRagasScoreAudit:
     def test_writes_averaged_score_and_components(self):
-        with patch("services.audit_log.audit_log_bg") as mock_bg:
+        with patch("poindexter.services.audit_log.audit_log_bg") as mock_bg:
             _emit_ragas_score_audit(
                 {"faithfulness": 0.8, "answer_relevancy": 0.9, "context_precision": 0.7},
                 topic="Bootstrapping a SaaS",
@@ -60,7 +60,7 @@ class TestEmitRagasScoreAudit:
         ``TestEmitRagasDegradedMetricsFinding``) so this test stays scoped
         to the ``ragas_score`` write contract only."""
         with (
-            patch("services.audit_log.audit_log_bg") as mock_bg,
+            patch("poindexter.services.audit_log.audit_log_bg") as mock_bg,
             patch("utils.findings.emit_finding"),
         ):
             _emit_ragas_score_audit(
@@ -85,7 +85,7 @@ class TestEmitRagasScoreAudit:
         alongside is covered separately — see
         ``TestEmitRagasDegradedMetricsFinding.test_full_failure_also_emits_degraded_finding``.)"""
         with (
-            patch("services.audit_log.audit_log_bg") as mock_bg,
+            patch("poindexter.services.audit_log.audit_log_bg") as mock_bg,
             patch("utils.findings.emit_finding"),
         ):
             _emit_ragas_score_audit(
@@ -101,7 +101,7 @@ class TestEmitRagasScoreAudit:
         best-effort telemetry, the chain shouldn't crash on a
         downstream write error."""
         with patch(
-            "services.audit_log.audit_log_bg",
+            "poindexter.services.audit_log.audit_log_bg",
             side_effect=RuntimeError("pool not initialised"),
         ):
             # Just shouldn't raise.
@@ -116,7 +116,7 @@ class TestEmitRagasScoreAudit:
         latest-rows panel, not a primary key — cap it so a
         pathologically long topic doesn't bloat the JSONB column."""
         long_topic = "x" * 500
-        with patch("services.audit_log.audit_log_bg") as mock_bg:
+        with patch("poindexter.services.audit_log.audit_log_bg") as mock_bg:
             _emit_ragas_score_audit(
                 {"faithfulness": 0.6, "answer_relevancy": 0.6, "context_precision": 0.6},
                 topic=long_topic,
@@ -130,7 +130,7 @@ class TestEmitRagasScoreAudit:
         """The Grafana time-series panel queries ``score`` as a float;
         rounding here keeps the JSONB payload compact and avoids
         spurious precision in the dashboard tooltips."""
-        with patch("services.audit_log.audit_log_bg") as mock_bg:
+        with patch("poindexter.services.audit_log.audit_log_bg") as mock_bg:
             _emit_ragas_score_audit(
                 {
                     "faithfulness": 1 / 3,
@@ -153,7 +153,7 @@ class TestEmitRagasDegradedMetricsFinding:
 
     def test_partial_failure_emits_degraded_finding(self):
         with (
-            patch("services.audit_log.audit_log_bg"),
+            patch("poindexter.services.audit_log.audit_log_bg"),
             patch("utils.findings.emit_finding") as mock_finding,
         ):
             _emit_ragas_score_audit(
@@ -175,7 +175,7 @@ class TestEmitRagasDegradedMetricsFinding:
         report), but the finding must still fire — full failure is the
         MOST degraded case, not an exemption."""
         with (
-            patch("services.audit_log.audit_log_bg") as mock_bg,
+            patch("poindexter.services.audit_log.audit_log_bg") as mock_bg,
             patch("utils.findings.emit_finding") as mock_finding,
         ):
             _emit_ragas_score_audit(
@@ -198,7 +198,7 @@ class TestEmitRagasDegradedMetricsFinding:
 
     def test_healthy_run_does_not_emit_finding(self):
         with (
-            patch("services.audit_log.audit_log_bg"),
+            patch("poindexter.services.audit_log.audit_log_bg"),
             patch("utils.findings.emit_finding") as mock_finding,
         ):
             _emit_ragas_score_audit(
@@ -215,7 +215,7 @@ class TestEmitRagasDegradedMetricsFinding:
         case down to a single page (findings_alert_router's whole reason
         for existing)."""
         with (
-            patch("services.audit_log.audit_log_bg"),
+            patch("poindexter.services.audit_log.audit_log_bg"),
             patch("utils.findings.emit_finding") as mock_finding,
         ):
             _emit_ragas_score_audit(
@@ -235,7 +235,7 @@ class TestEmitRagasDegradedMetricsFinding:
         """Mirrors the audit_log_bg resilience test — the finding call is
         also best-effort and must never crash the Ragas caller."""
         with (
-            patch("services.audit_log.audit_log_bg"),
+            patch("poindexter.services.audit_log.audit_log_bg"),
             patch(
                 "utils.findings.emit_finding",
                 side_effect=RuntimeError("audit_log unavailable"),

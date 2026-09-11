@@ -7,9 +7,9 @@ import asyncio
 
 import pytest
 
-import services.jobs.chat_task_watch as watch_job_module
-from services.chat_watch import TERMINAL_STATUSES, watch_task
-from services.jobs.chat_task_watch import ChatTaskWatchJob
+import poindexter.services.jobs.chat_task_watch as watch_job_module
+from poindexter.services.chat_watch import TERMINAL_STATUSES, watch_task
+from poindexter.services.jobs.chat_task_watch import ChatTaskWatchJob
 
 
 class FakeWatchPool:
@@ -111,13 +111,13 @@ def job_env(monkeypatch):
                          "parts": parts})
         return {"id": "m"}
 
-    import services.chat_conversation_store as store_module
+    import poindexter.services.chat_conversation_store as store_module
     monkeypatch.setattr(store_module, "add_message", add_message)
 
     async def notify_operator(message, *, critical=False, site_config=None):
         pings.append({"message": message, "critical": critical})
 
-    import services.integrations.operator_notify as notify_module
+    import poindexter.services.integrations.operator_notify as notify_module
     monkeypatch.setattr(notify_module, "notify_operator", notify_operator)
     return messages, pings
 

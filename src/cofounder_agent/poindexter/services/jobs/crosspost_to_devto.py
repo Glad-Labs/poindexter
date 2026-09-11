@@ -149,7 +149,7 @@ class CrosspostToDevtoJob:
     idempotent = True  # dedup on metadata.devto_url — safe to retry
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        from services.devto_service import DevToCrossPostService
+        from poindexter.services.devto_service import DevToCrossPostService
 
         batch_size = int(config.get("batch_size", 3))
         file_issue = bool(config.get("file_gitea_issue", False))

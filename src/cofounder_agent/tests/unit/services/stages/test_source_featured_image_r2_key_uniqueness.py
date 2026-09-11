@@ -47,7 +47,7 @@ async def test_upload_featured_to_r2_uses_unique_key_per_call() -> None:
     mock_svc.upload_to_r2 = AsyncMock(side_effect=_fake_upload_to_r2)
 
     with patch(
-        "services.r2_upload_service.R2UploadService",
+        "poindexter.services.r2_upload_service.R2UploadService",
         return_value=mock_svc,
     ):
         await _upload_featured_to_r2(

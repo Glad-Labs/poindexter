@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from services.model_eval.golden_sets.critic import build_critic_golden_set
-from services.site_config import SiteConfig
+from poindexter.services.model_eval.golden_sets.critic import build_critic_golden_set
+from poindexter.services.site_config import SiteConfig
 
 
 class _FakeConn:

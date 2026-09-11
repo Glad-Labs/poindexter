@@ -22,8 +22,8 @@ import textwrap
 
 import pytest
 
-from services.topic_batch_service import _carried_origin
-from services.topic_ranking import ScoredCandidate
+from poindexter.services.topic_batch_service import _carried_origin
+from poindexter.services.topic_ranking import ScoredCandidate
 
 
 @pytest.mark.unit
@@ -66,7 +66,7 @@ class TestBothTablesPersistIt:
     INSERTs actually carry it."""
 
     def test_write_batch_persists_provenance_for_both_tables(self) -> None:
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
 
         body = textwrap.dedent(inspect.getsource(TopicBatchService._write_batch))
         assert body.count("carried_from_batch_id") >= 2, "both INSERTs must name the column"

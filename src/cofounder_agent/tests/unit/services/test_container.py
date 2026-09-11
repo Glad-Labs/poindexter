@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.bootstrap import build_container
-from services.container import (
+from poindexter.services.bootstrap import build_container
+from poindexter.services.container import (
     AppContainer,
     ServiceContainer,
     get_service,
@@ -27,7 +27,7 @@ from services.container import (
     register_service,
     service_container,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.fixture(autouse=True)
@@ -209,7 +209,7 @@ class TestAppContainerRedisCache:
 
     def test_redis_cache_wired_with_site_config(self):
         """The container constructs a RedisCache carrying its SiteConfig."""
-        from services.redis_cache import RedisCache
+        from poindexter.services.redis_cache import RedisCache
 
         site_config = SiteConfig()
         container = AppContainer(site_config=site_config, pool=MagicMock())
@@ -347,9 +347,9 @@ def test_container_exposes_gpu_registry():
 
     pool=None: GPURegistry reads VRAM totals from Prometheus, never the DB pool.
     """
-    from services.container import AppContainer
-    from services.gpu_registry import GPURegistry
-    from services.site_config import SiteConfig
+    from poindexter.services.container import AppContainer
+    from poindexter.services.gpu_registry import GPURegistry
+    from poindexter.services.site_config import SiteConfig
 
     c = AppContainer(site_config=SiteConfig(initial_config={}), pool=None)
     assert isinstance(c.gpu_registry, GPURegistry)

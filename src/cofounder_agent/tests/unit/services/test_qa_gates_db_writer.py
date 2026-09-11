@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from services.qa_gates_db_writer import _REVIEWER_TO_GATE, record_chain_run
+from poindexter.services.qa_gates_db_writer import _REVIEWER_TO_GATE, record_chain_run
 
 
 class _Review:

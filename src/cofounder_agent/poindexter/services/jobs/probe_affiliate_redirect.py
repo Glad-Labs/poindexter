@@ -64,7 +64,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from plugins.job import JobResult
-from services.metrics_exporter import AFFILIATE_REDIRECT_HEALTHY
+from poindexter.services.metrics_exporter import AFFILIATE_REDIRECT_HEALTHY
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 

@@ -14,17 +14,17 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from schemas.video_shot_list import Shot, VideoShotList
-from services.demo_clips import (
+from poindexter.services.demo_clips import (
     BakeResult,
     available_demos,
     load_manifest,
     write_manifest,
 )
-from services.video_renderers.shot_list_renderer import (
+from poindexter.services.video_renderers.shot_list_renderer import (
     _REGENERABLE_SOURCES,
     _resolve_demo_clip,
 )
+from schemas.video_shot_list import Shot, VideoShotList
 
 
 class _Cfg:

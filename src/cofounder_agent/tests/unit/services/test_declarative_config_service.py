@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.declarative_config_service import (
+from poindexter.services.declarative_config_service import (
     _SURFACES,
     SurfaceSpec,
     SurfaceValidationError,

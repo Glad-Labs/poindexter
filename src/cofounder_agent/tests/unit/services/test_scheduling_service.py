@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from services.scheduling_service import (
+from poindexter.services.scheduling_service import (
     ScheduleResult,
     assign_batch,
     assign_slot,
@@ -28,7 +28,7 @@ from services.scheduling_service import (
     shift,
     show_scheduled,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Mock pool — captures every call site
@@ -119,7 +119,7 @@ def _capture_audit(monkeypatch):
         })
 
     monkeypatch.setattr(
-        "services.scheduling_service.audit_log_bg", _capture,
+        "poindexter.services.scheduling_service.audit_log_bg", _capture,
     )
     yield
 

@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.check_memory_staleness import CheckMemoryStalenessJob
+from poindexter.services.jobs.check_memory_staleness import CheckMemoryStalenessJob
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -79,9 +79,9 @@ async def test_notify_failure_emits_finding(monkeypatch):
     memory_cls = _fake_memory_client(_stale_stats())
 
     with patch("poindexter.memory.MemoryClient", memory_cls), patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new=AsyncMock(side_effect=RuntimeError("discord down")),
-    ), patch("services.audit_log.audit_log_bg", new=MagicMock()):
+    ), patch("poindexter.services.audit_log.audit_log_bg", new=MagicMock()):
         result = await CheckMemoryStalenessJob().run(pool, {})
 
     # The job still completes; the alert just didn't reach Discord.
@@ -100,8 +100,8 @@ async def test_state_persist_failure_emits_finding(monkeypatch):
     memory_cls = _fake_memory_client(_stale_stats())
 
     with patch("poindexter.memory.MemoryClient", memory_cls), patch(
-        "services.integrations.operator_notify.notify_operator", new=AsyncMock(),
-    ), patch("services.audit_log.audit_log_bg", new=MagicMock()):
+        "poindexter.services.integrations.operator_notify.notify_operator", new=AsyncMock(),
+    ), patch("poindexter.services.audit_log.audit_log_bg", new=MagicMock()):
         result = await CheckMemoryStalenessJob().run(pool, {})
 
     assert result.ok is True
@@ -118,8 +118,8 @@ async def test_clean_run_emits_no_finding(monkeypatch):
     memory_cls = _fake_memory_client(_stale_stats())
 
     with patch("poindexter.memory.MemoryClient", memory_cls), patch(
-        "services.integrations.operator_notify.notify_operator", new=AsyncMock(),
-    ), patch("services.audit_log.audit_log_bg", new=MagicMock()):
+        "poindexter.services.integrations.operator_notify.notify_operator", new=AsyncMock(),
+    ), patch("poindexter.services.audit_log.audit_log_bg", new=MagicMock()):
         await CheckMemoryStalenessJob().run(pool, {})
 
     assert calls == []

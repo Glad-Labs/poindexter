@@ -25,7 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "src" / "cofounder_agent"))
 sys.path.insert(0, str(_REPO_ROOT))
 
-from services.triage.sweep import find_gaps  # noqa: E402
+from poindexter.services.triage.sweep import find_gaps  # noqa: E402
 
 # Issues are content-routed to BOTH repos (OSS -> poindexter, business/internal
 # -> glad-labs-stack), and a label is an issue-write, so the sweep applies the

@@ -1,5 +1,5 @@
 """Pure node → (step, honest progress %) mapper for the content seam."""
-from services.live_activity_content import content_step_pct
+from poindexter.services.live_activity_content import content_step_pct
 
 
 class _Rec:

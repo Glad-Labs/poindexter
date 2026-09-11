@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from services import trace_read
+from poindexter.services import trace_read
 
 pytestmark = [
     pytest.mark.integration_db,

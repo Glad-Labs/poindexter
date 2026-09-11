@@ -55,8 +55,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from services.llm_providers.thinking_models import strip_reasoning_artifacts
-from services.logger_config import get_logger
+from poindexter.services.llm_providers.thinking_models import strip_reasoning_artifacts
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

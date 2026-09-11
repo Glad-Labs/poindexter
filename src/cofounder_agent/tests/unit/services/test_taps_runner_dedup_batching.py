@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.taps import runner as runner_mod
+from poindexter.services.taps import runner as runner_mod
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 

@@ -26,9 +26,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.probe_wan_ip_change import ProbeWanIpChangeJob, _looks_like_ip
+from poindexter.services.jobs.probe_wan_ip_change import ProbeWanIpChangeJob, _looks_like_ip
 
-_MOD = "services.jobs.probe_wan_ip_change"
+_MOD = "poindexter.services.jobs.probe_wan_ip_change"
 
 
 def _sc(last_seen: str = "", enabled: str = "true",

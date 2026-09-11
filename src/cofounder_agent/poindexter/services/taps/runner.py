@@ -51,7 +51,7 @@ from typing import Any
 
 from plugins.config import PluginConfig
 from plugins.registry import get_core_samples, get_taps
-from services.taps._chunking import chunk_text, content_hash
+from poindexter.services.taps._chunking import chunk_text, content_hash
 
 logger = logging.getLogger(__name__)
 
@@ -632,7 +632,7 @@ async def run_all(
     enforce_intervals = True
     interval_grace_s = _DEFAULT_INTERVAL_GRACE_S
     try:
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         _sc = SiteConfig(pool=pool)
         await _sc.load(pool)

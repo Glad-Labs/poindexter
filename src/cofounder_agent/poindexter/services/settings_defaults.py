@@ -58,7 +58,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.settings_categories import resolve_category
+from poindexter.services.settings_categories import resolve_category
 
 # Every value is stored as `str` because `app_settings.value` is a TEXT
 # column. Numeric / bool consumers parse via `site_config.get_int()`,
@@ -6136,14 +6136,14 @@ async def apply_operator_overrides(pool: Any) -> int:
     if pool is None:
         return 0
     try:
-        from services.operator_overrides import (
+        from poindexter.services.operator_overrides import (
             OPERATOR_MODEL_PINS,
             OPERATOR_SETTING_OVERRIDES,
         )
     except ImportError:
         return 0  # OSS install — no operator overlay present.
     try:
-        from services.operator_overrides import OPERATOR_NICHE_OVERRIDES
+        from poindexter.services.operator_overrides import OPERATOR_NICHE_OVERRIDES
     except ImportError:  # overlay predates niche overrides
         OPERATOR_NICHE_OVERRIDES = ()
     overrides = {**OPERATOR_MODEL_PINS, **OPERATOR_SETTING_OVERRIDES}
@@ -6233,13 +6233,13 @@ async def seed_operator_subreddit_profiles(pool: Any) -> int:
     if pool is None:
         return 0
     try:
-        from services.operator_overrides import OPERATOR_SUBREDDIT_PROFILES
+        from poindexter.services.operator_overrides import OPERATOR_SUBREDDIT_PROFILES
     except ImportError:
         return 0  # OSS install (or an overlay predating this attribute).
     if not OPERATOR_SUBREDDIT_PROFILES:
         return 0
 
-    from services.community_drafts import SubredditProfile, add_profile
+    from poindexter.services.community_drafts import SubredditProfile, add_profile
 
     seeded = 0
     async with pool.acquire() as conn:

@@ -278,7 +278,7 @@ class TestWebhookEndpoint:
     def test_persists_each_alert(self):
         pool = _FakePool()
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(return_value=None),
         ):
             client = TestClient(_build_app(pool))
@@ -314,7 +314,7 @@ class TestWebhookEndpoint:
         pool = _FakePool()
         mock_notify = AsyncMock(return_value=None)
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=mock_notify,
         ):
             client = TestClient(_build_app(pool))
@@ -343,7 +343,7 @@ class TestWebhookEndpoint:
         pool = _FakePool()
         mock_notify = AsyncMock(return_value=None)
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=mock_notify,
         ):
             client = TestClient(_build_app(pool))
@@ -404,7 +404,7 @@ class TestWebhookEndpoint:
             }),
         })
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(return_value=None),
         ):
             client = TestClient(_build_app(pool))
@@ -429,7 +429,7 @@ class TestWebhookEndpoint:
     def test_tolerates_malformed_alerts_entry(self):
         pool = _FakePool()
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(return_value=None),
         ):
             client = TestClient(_build_app(pool))

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.llm_providers.thinking_models import resolve_judge_num_predict
+from poindexter.services.llm_providers.thinking_models import resolve_judge_num_predict
 
 
 class _SC:
@@ -78,7 +78,7 @@ class TestBothRailsActuallyPassIt:
     """A resolver nothing calls would leave the rails just as dark."""
 
     def test_deepeval_passes_num_predict_to_the_ollama_model(self, monkeypatch) -> None:
-        import services.deepeval_rails as dr
+        import poindexter.services.deepeval_rails as dr
 
         captured = {}
 

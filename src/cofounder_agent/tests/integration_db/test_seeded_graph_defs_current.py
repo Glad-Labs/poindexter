@@ -36,8 +36,8 @@ from dataclasses import replace
 
 import pytest
 
-import services.pipeline_architect as pa
-from services.atom_registry import discover, registry_is_empty
+import poindexter.services.pipeline_architect as pa
+from poindexter.services.atom_registry import discover, registry_is_empty
 
 pytestmark = [
     pytest.mark.integration_db,

@@ -10,7 +10,7 @@ import logging
 
 import pytest
 
-from services.audit_event_schemas import (
+from poindexter.services.audit_event_schemas import (
     EVENT_SCHEMAS,
     FindingDetails,
     QaPassCompletedDetails,

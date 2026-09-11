@@ -48,15 +48,15 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from services.audit_log import audit_log_bg
-from services.gate_machinery import (
+from poindexter.services.audit_log import audit_log_bg
+from poindexter.services.gate_machinery import (
     GateServiceError,
     ensure_gate_match,
     iso_or_none,
     resolve_reject_status,
 )
-from services.gate_machinery import coerce_artifact as _coerce_artifact
-from services.logger_config import get_logger
+from poindexter.services.gate_machinery import coerce_artifact as _coerce_artifact
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -251,7 +251,7 @@ async def _notify_publish_gate_tripped(
     (was ``services.task_executor._notify_alert`` until the Prefect
     Stage 4 cutover deleted ``task_executor.py`` — Glad-Labs/poindexter#410).
     """
-    from services.integrations.operator_notify import notify_operator
+    from poindexter.services.integrations.operator_notify import notify_operator
 
     title = artifact.get("title") or artifact.get("slug") or "(untitled)"
     preview = artifact.get("preview_url") or artifact.get("permalink") or ""
@@ -516,7 +516,7 @@ async def reject_publish(
     # try/except so handler failure never makes a successful
     # rejection return non-zero from the CLI.
     try:
-        from services.rejection_handlers import (
+        from poindexter.services.rejection_handlers import (
             RejectionContext,
             dispatch_rejection,
         )

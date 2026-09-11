@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.module_runner import (
+from poindexter.services.module_runner import (
     ModuleMigrationResult,
     run_module_migrations,
 )

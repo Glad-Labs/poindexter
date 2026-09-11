@@ -260,7 +260,7 @@ def _calc_cost_usd(
 # ---------------------------------------------------------------------------
 
 
-from services.cost_guard import CostGuardExhausted as _BaseCostGuardExhausted
+from poindexter.services.cost_guard import CostGuardExhausted as _BaseCostGuardExhausted
 
 
 class CostGuardExhausted(_BaseCostGuardExhausted):
@@ -560,7 +560,9 @@ class AnthropicProvider:
         Wh/1K-token estimate. Tests still monkey-patch this method
         as the seam.
         """
-        from services.cost_guard import CostGuard  # noqa: PLC0415 — avoid circular at import time
+        from poindexter.services.cost_guard import (
+            CostGuard,  # noqa: PLC0415 — avoid circular at import time
+        )
         sc = self._site_config
         pool = None
         if sc is not None:

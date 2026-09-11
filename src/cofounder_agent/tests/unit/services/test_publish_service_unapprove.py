@@ -38,11 +38,11 @@ def _make_pool(*, update_result="UPDATE 1", delete_result="DELETE 1"):
 class TestUnapproveTask:
     @pytest.mark.asyncio
     async def test_reverts_to_awaiting_approval_and_removes_staged_post(self):
-        from services.publish_service import unapprove_task
+        from poindexter.services.publish_service import unapprove_task
 
         pool, conn = _make_pool(update_result="UPDATE 1", delete_result="DELETE 1")
-        with patch("services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
-            "services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
+        with patch("poindexter.services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
+            "poindexter.services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
         ) as mock_rfb:
             mock_pdb_cls.return_value.clear_qa_approved_snapshot = AsyncMock()
             result = await unapprove_task(pool, "task-1")
@@ -69,11 +69,11 @@ class TestUnapproveTask:
 
     @pytest.mark.asyncio
     async def test_reverts_to_rejected_final_with_no_staged_post(self):
-        from services.publish_service import unapprove_task
+        from poindexter.services.publish_service import unapprove_task
 
         pool, conn = _make_pool(update_result="UPDATE 1", delete_result="DELETE 0")
-        with patch("services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
-            "services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
+        with patch("poindexter.services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
+            "poindexter.services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
         ):
             mock_pdb_cls.return_value.clear_qa_approved_snapshot = AsyncMock()
             result = await unapprove_task(
@@ -86,11 +86,11 @@ class TestUnapproveTask:
 
     @pytest.mark.asyncio
     async def test_reverts_to_rejected_retry(self):
-        from services.publish_service import unapprove_task
+        from poindexter.services.publish_service import unapprove_task
 
         pool, conn = _make_pool(update_result="UPDATE 1", delete_result="DELETE 1")
-        with patch("services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
-            "services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
+        with patch("poindexter.services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
+            "poindexter.services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
         ):
             mock_pdb_cls.return_value.clear_qa_approved_snapshot = AsyncMock()
             result = await unapprove_task(
@@ -101,7 +101,7 @@ class TestUnapproveTask:
 
     @pytest.mark.asyncio
     async def test_not_currently_approved_is_idempotent_noop(self):
-        from services.publish_service import unapprove_task
+        from poindexter.services.publish_service import unapprove_task
 
         pool, conn = _make_pool(update_result="UPDATE 0")
         result = await unapprove_task(pool, "task-1")
@@ -120,14 +120,14 @@ class TestUnapproveTask:
     async def test_audit_trail_failures_do_not_mask_successful_revert(self):
         """Best-effort writes must never raise past unapprove_task — the
         status flip already committed and must be reported as such."""
-        from services.publish_service import unapprove_task
+        from poindexter.services.publish_service import unapprove_task
 
         pool, conn = _make_pool(update_result="UPDATE 1", delete_result="DELETE 1")
         pool.execute = AsyncMock(side_effect=RuntimeError("gate_history boom"))
         with patch(
-            "services.pipeline_db.PipelineDB", side_effect=RuntimeError("snapshot boom"),
+            "poindexter.services.pipeline_db.PipelineDB", side_effect=RuntimeError("snapshot boom"),
         ), patch(
-            "services.router_outcome_feedback.record_task_outcome",
+            "poindexter.services.router_outcome_feedback.record_task_outcome",
             new=AsyncMock(side_effect=RuntimeError("outcome boom")),
         ):
             result = await unapprove_task(pool, "task-1")
@@ -150,11 +150,11 @@ class TestUnapproveTaskScheduledPost:
 
     @pytest.mark.asyncio
     async def test_delete_predicate_covers_scheduled_rows(self):
-        from services.publish_service import unapprove_task
+        from poindexter.services.publish_service import unapprove_task
 
         pool, conn = _make_pool(update_result="UPDATE 1", delete_result="DELETE 1")
-        with patch("services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
-            "services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
+        with patch("poindexter.services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
+            "poindexter.services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
         ):
             mock_pdb_cls.return_value.clear_qa_approved_snapshot = AsyncMock()
             result = await unapprove_task(pool, "task-1")
@@ -175,11 +175,11 @@ class TestUnapproveTaskScheduledPost:
     async def test_no_longer_writes_the_dropped_scheduled_at_column(self):
         """``pipeline_tasks.scheduled_at`` was dropped as an orphan — the
         UPDATE must not reference it or every unapprove errors post-migration."""
-        from services.publish_service import unapprove_task
+        from poindexter.services.publish_service import unapprove_task
 
         pool, conn = _make_pool(update_result="UPDATE 1", delete_result="DELETE 0")
-        with patch("services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
-            "services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
+        with patch("poindexter.services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
+            "poindexter.services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
         ):
             mock_pdb_cls.return_value.clear_qa_approved_snapshot = AsyncMock()
             await unapprove_task(pool, "task-1")

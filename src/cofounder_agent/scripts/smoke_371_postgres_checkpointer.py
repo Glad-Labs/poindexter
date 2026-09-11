@@ -59,12 +59,12 @@ async def _smoke() -> None:
     import asyncpg
     from langgraph.graph import END, StateGraph
 
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
     site_config = SiteConfig()
     # ---- 1. Resolve a base DSN from bootstrap.toml or DATABASE_URL ----
-    import services.pipeline_templates as pt
+    import poindexter.services.pipeline_templates as pt
     from brain.bootstrap import resolve_database_url
-    from services.template_runner import PipelineState, TemplateRunner
+    from poindexter.services.template_runner import PipelineState, TemplateRunner
     base_dsn = resolve_database_url()
     if not base_dsn:
         raise SystemExit(

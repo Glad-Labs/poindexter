@@ -98,7 +98,7 @@ def _grounding_pool(*, post_row=None):
 
 
 async def test_grounding_section_post_eligible_has_preview_and_url(monkeypatch):
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", lambda t: t)
     ig = {"source_table": "posts", "source_id": "42",
           "preview": "How we cut VRAM spill on a single GPU.", "similarity": 0.71}
     section, src = await two_pass._build_internal_grounding_section(
@@ -112,7 +112,7 @@ async def test_grounding_section_post_eligible_has_preview_and_url(monkeypatch):
 
 
 async def test_grounding_section_ineligible_source_returns_empty(monkeypatch):
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", lambda t: t)
     ig = {"source_table": "memory", "source_id": "9", "preview": "ops note", "similarity": 0.8}
     section, src = await two_pass._build_internal_grounding_section(
         ig, site_config=_grounding_site_config(),  # default filter = posts only
@@ -123,7 +123,7 @@ async def test_grounding_section_ineligible_source_returns_empty(monkeypatch):
 
 
 async def test_grounding_section_nonpost_eligible_is_framing_only(monkeypatch):
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", lambda t: t)
     ig = {"source_table": "claude_sessions", "source_id": "s1",
           "preview": "we debugged the checkpoint poisoning", "similarity": 0.66}
     section, src = await two_pass._build_internal_grounding_section(
@@ -139,7 +139,7 @@ async def test_grounding_section_nonpost_eligible_is_framing_only(monkeypatch):
 async def test_grounding_section_scrub_failure_returns_empty(monkeypatch):
     def _boom(_t):
         raise RuntimeError("scrub down")
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", _boom)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", _boom)
     ig = {"source_table": "posts", "source_id": "42", "preview": "x", "similarity": 0.9}
     section, src = await two_pass._build_internal_grounding_section(
         ig, site_config=_grounding_site_config(),
@@ -150,7 +150,7 @@ async def test_grounding_section_scrub_failure_returns_empty(monkeypatch):
 
 
 async def test_grounding_section_post_url_relative_when_no_site_url(monkeypatch):
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", lambda t: t)
     ig = {"source_table": "posts", "source_id": "7", "preview": "prev", "similarity": 0.7}
     section, src = await two_pass._build_internal_grounding_section(
         ig, site_config=_grounding_site_config(site_url=""),
@@ -161,7 +161,7 @@ async def test_grounding_section_post_url_relative_when_no_site_url(monkeypatch)
 
 
 async def test_grounding_section_empty_preview_returns_empty(monkeypatch):
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", lambda t: t)
     ig = {"source_table": "posts", "source_id": "42", "preview": "   ", "similarity": 0.9}
     section, src = await two_pass._build_internal_grounding_section(
         ig, site_config=_grounding_site_config(), pool=_grounding_pool(post_row={"slug": "s"}),
@@ -188,8 +188,8 @@ async def test_internal_grounding_post_injected_into_draft_prompt(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", lambda t: t)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -219,7 +219,7 @@ async def test_internal_grounding_absent_leaves_prompt_unchanged(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -239,8 +239,8 @@ async def test_internal_grounding_disabled_flag_no_section(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", lambda t: t)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -263,8 +263,8 @@ async def test_internal_grounding_ineligible_source_no_section(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", lambda t: t)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -299,8 +299,8 @@ async def test_draft_prompt_size_breakdown_all_sections_present(monkeypatch):
     monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
-    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.rag_scrub.scrub_rag_text", lambda t: t)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -332,7 +332,7 @@ async def test_draft_prompt_size_breakdown_zero_when_sections_absent(monkeypatch
     monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -352,7 +352,7 @@ async def test_no_external_needed_returns_pass1_draft(monkeypatch):
         return "A clean first draft with no markers."
     monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None): return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -381,12 +381,12 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
     monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_revise(prompt, **kwargs):
         return next(drafts)
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
     async def fake_research(query, max_sources=2, *, site_config=None):
         return f"External research result for: {query}"
-    monkeypatch.setattr("services.research_service.research_topic", fake_research, raising=False)
+    monkeypatch.setattr("poindexter.services.research_service.research_topic", fake_research, raising=False)
     async def fake_embed(text, *, site_config=None): return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -415,14 +415,14 @@ async def test_revise_chars_accumulate_across_two_loops(monkeypatch):
     async def fake_revise(prompt, **kwargs):
         revise_prompts.append(prompt)
         return next(drafts)
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
 
     async def fake_research(query, max_sources=2, *, site_config=None):
         return f"External research result for: {query}"
-    monkeypatch.setattr("services.research_service.research_topic", fake_research, raising=False)
+    monkeypatch.setattr("poindexter.services.research_service.research_topic", fake_research, raising=False)
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -442,7 +442,7 @@ async def test_revise_chars_zero_when_no_revision(monkeypatch):
     monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -474,7 +474,7 @@ async def test_research_context_injected_into_draft_prompt(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     research = (
         "Source A: 2026 Developer Content Survey "
@@ -506,7 +506,7 @@ async def test_no_research_context_leaves_draft_prompt_unchanged(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -526,12 +526,12 @@ async def test_loop_caps_at_max_revisions(monkeypatch):
     async def fake_revise(prompt, **kwargs):
         counter["n"] += 1
         return f"Revised with [EXTERNAL_NEEDED: another thing {counter['n']}]."
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
     async def fake_research(query, max_sources=2, *, site_config=None):
         return "fact"
-    monkeypatch.setattr("services.research_service.research_topic", fake_research, raising=False)
+    monkeypatch.setattr("poindexter.services.research_service.research_topic", fake_research, raising=False)
     async def fake_embed(text, *, site_config=None): return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -560,7 +560,7 @@ async def test_revise_uses_plain_text_helper_not_json_helper(monkeypatch):
             "::TestJsonEnvelopeLeakDetection for the failure mode."
         )
     monkeypatch.setattr(
-        "services.topic_ranking._ollama_chat_json", forbidden_json_helper,
+        "poindexter.services.topic_ranking._ollama_chat_json", forbidden_json_helper,
     )
 
     drafts = iter([
@@ -575,16 +575,16 @@ async def test_revise_uses_plain_text_helper_not_json_helper(monkeypatch):
     )
     async def fake_revise(prompt, **kwargs):
         return next(drafts)
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
     async def fake_research(query, max_sources=2, *, site_config=None):
         return "ok"
     monkeypatch.setattr(
-        "services.research_service.research_topic",
+        "poindexter.services.research_service.research_topic",
         fake_research, raising=False,
     )
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -617,14 +617,14 @@ async def test_draft_uses_plain_text_helper_not_json_helper(monkeypatch):
             "models don't return empty content. See #572."
         )
     monkeypatch.setattr(
-        "services.topic_ranking._ollama_chat_json", forbidden_json_helper,
+        "poindexter.services.topic_ranking._ollama_chat_json", forbidden_json_helper,
     )
 
     called = {}
     async def fake_text(prompt, **kwargs):
         called["text"] = True
         return "# A clean draft\n\nProse body, no JSON envelope."
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_text)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_text)
 
     async def fake_resolve(*, site_config=None):
         return "glm-4.7-5090:latest"
@@ -683,13 +683,13 @@ def _wire_one_revise(monkeypatch):
         return f"External research result for: {query}"
 
     monkeypatch.setattr(
-        "services.research_service.research_topic", fake_research, raising=False,
+        "poindexter.services.research_service.research_topic", fake_research, raising=False,
     )
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
 
 async def test_bad_variant_override_raises_falls_back_to_default(monkeypatch):
@@ -706,7 +706,7 @@ async def test_bad_variant_override_raises_falls_back_to_default(monkeypatch):
             raise RuntimeError("model 'bad-model:1b' not found, try pulling it")
         return "Revised draft via the default writer."
 
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
 
     findings: list[dict] = []
 
@@ -750,7 +750,7 @@ async def test_bad_variant_override_empty_falls_back_to_default(monkeypatch):
             return ""  # empty content — the silent-zero failure mode
         return "Revised draft via the default writer."
 
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -783,7 +783,7 @@ async def test_good_variant_override_used_as_is(monkeypatch):
         calls.append(model)
         return "Revised draft via the variant model."
 
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -815,7 +815,7 @@ async def test_no_override_single_call_no_fallback_machinery(monkeypatch):
         calls.append(model)
         return "Revised draft, default path."
 
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -860,7 +860,7 @@ async def test_empty_revise_retries_once_and_recovers(monkeypatch):
         calls.append(model)
         return "" if len(calls) == 1 else "Revised draft after a retry."
 
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -894,7 +894,7 @@ async def test_empty_revise_keeps_prior_draft_when_retry_also_empty(monkeypatch)
         calls.append(model)
         return ""  # both the call and its retry come back empty
 
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -990,7 +990,7 @@ async def test_degenerate_first_draft_retries_once_and_recovers(monkeypatch):
     )
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -1023,7 +1023,7 @@ async def test_degenerate_first_draft_kept_when_retry_also_degenerate(monkeypatc
     )
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -1055,7 +1055,7 @@ async def test_degenerate_revise_retries_once_and_recovers(monkeypatch):
         calls.append(model)
         return "... . .." if len(calls) == 1 else "Revised draft after a retry."
 
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -1087,7 +1087,7 @@ async def test_degenerate_revise_keeps_prior_draft_when_retry_also_degenerate(mo
         calls.append(model)
         return ". .. ..."  # both the call and its retry come back degenerate
 
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -1136,7 +1136,7 @@ async def test_target_length_threaded_into_draft_call(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -1172,7 +1172,7 @@ async def test_generate_with_context_forwards_target_length_to_prompt(monkeypatc
 
     async def fake_text(prompt, **kwargs):
         return "draft body"
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_text)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_text)
 
     await acg.generate_with_context(
         topic="t", angle="a", snippets=[],
@@ -1203,7 +1203,7 @@ async def test_generate_with_context_populates_prompt_metrics(monkeypatch):
 
     async def fake_text(prompt, **kwargs):
         return "draft body"
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_text)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_text)
 
     snippets = [{"source": "posts", "ref": "1", "snippet": "hello world"}]
     metrics: dict = {}
@@ -1239,7 +1239,7 @@ async def test_generate_with_context_prompt_metrics_none_is_noop(monkeypatch):
 
     async def fake_text(prompt, **kwargs):
         return "draft body"
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_text)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_text)
 
     content = await acg.generate_with_context(
         topic="t", angle="a", snippets=[],
@@ -1289,14 +1289,14 @@ async def test_short_draft_triggers_expansion_pass(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     expand_calls: list[str] = []
 
     async def fake_expand(prompt, **kwargs):
         expand_calls.append(kwargs.get("phase"))
         return "word " * 2000  # a long, expanded draft
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_expand)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -1325,11 +1325,11 @@ async def test_expansion_shorter_keeps_original_draft(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     async def fake_expand(prompt, **kwargs):
         return "too short"  # 2 words — must NOT replace the 200-word draft
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_expand)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -1356,14 +1356,14 @@ async def test_no_expansion_when_draft_meets_target(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     called: list[int] = []
 
     async def fake_expand(prompt, **kwargs):
         called.append(1)
         return "x"
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_expand)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -1389,14 +1389,14 @@ async def test_expansion_disabled_via_setting(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     called: list[int] = []
 
     async def fake_expand(prompt, **kwargs):
         called.append(1)
         return "word " * 2000
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_expand)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -1436,14 +1436,14 @@ async def test_degenerate_draft_skips_expansion_pass(monkeypatch):
     )
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     expand_calls: list[str] = []
 
     async def fake_expand(prompt, **kwargs):
         expand_calls.append(kwargs.get("phase"))
         return "word " * 2000  # would win keep-best if it were ever called
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_expand)
 
     findings: list[dict] = []
     monkeypatch.setattr(
@@ -1481,14 +1481,14 @@ async def test_substantial_short_draft_still_triggers_expansion(monkeypatch):
     )
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     expand_calls: list[str] = []
 
     async def fake_expand(prompt, **kwargs):
         expand_calls.append(kwargs.get("phase"))
         return "word " * 2000
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_expand)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -1547,7 +1547,7 @@ async def test_embed_and_fetch_applies_source_filter(monkeypatch):
     allowlist — never scan the whole embeddings table."""
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return "Clean draft, no markers."
@@ -1694,7 +1694,7 @@ async def test_run_strips_prompt_echo_from_final_draft(monkeypatch):
     )
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
@@ -1723,7 +1723,7 @@ async def test_run_no_echo_leaves_clean_draft_untouched(monkeypatch):
     )
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
@@ -2143,7 +2143,7 @@ async def test_run_strips_planning_dump_from_final_draft(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
@@ -2175,7 +2175,7 @@ async def test_run_clean_draft_fires_no_planning_dump_finding(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
@@ -2205,14 +2205,14 @@ async def test_expansion_planning_dump_stripped_before_keep_best(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     # Expansion output: dump + article long enough that the CLEAN article
     # (not the dump-inflated total) wins keep-best on its own merits.
     long_article_tail = "\n\nSubstance sentence with real detail here. " * 60
     async def fake_expand(prompt, **kwargs):
         return _E46_FUSED_DUMP + long_article_tail
-    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+    monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_expand)
 
     findings: list[dict] = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
@@ -2306,7 +2306,7 @@ async def test_run_trims_dangling_heading_and_fires_finding(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
@@ -2337,7 +2337,7 @@ async def test_run_clean_ending_fires_no_dangling_finding(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
@@ -2392,7 +2392,7 @@ async def test_run_passes_think_false_to_draft_call(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     await two_pass.run(
         topic="t", angle="a", niche_id="glad-labs",
@@ -2417,7 +2417,7 @@ async def test_run_omits_think_when_switch_off(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     await two_pass.run(
         topic="t", angle="a", niche_id="glad-labs",
@@ -2598,7 +2598,7 @@ async def test_embed_and_fetch_oversamples_candidate_pool(monkeypatch):
     snippet_limit — MMR needs a bigger pool than it returns to select from."""
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return "Clean draft, no markers."
@@ -2632,7 +2632,7 @@ async def test_embed_and_fetch_mmr_suppresses_near_duplicate_sibling(monkeypatch
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     rows = [
         {"source_table": "posts", "source_id": "A", "snippet_text": "alpha", "embedding": "[1,0]", "relevance": 0.90},
@@ -2662,7 +2662,7 @@ async def test_embed_and_fetch_dedup_ceiling_drops_near_identical(monkeypatch):
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     rows = [
         {"source_table": "posts", "source_id": "dupe", "snippet_text": "x", "embedding": "[1,0]", "relevance": 0.95},

@@ -151,7 +151,7 @@ class FluxSchnellProvider:
         upload_target = str(config.get("upload_to", "") or "")
         if upload_target == "cloudinary":
             try:
-                from services.cloudinary_upload_service import (
+                from poindexter.services.cloudinary_upload_service import (
                     upload_to_cloudinary,
                 )
                 url = await upload_to_cloudinary(
@@ -285,7 +285,7 @@ async def _generate_to_path(
     another provider.
     """
     try:
-        from services.settings_defaults import default_int
+        from poindexter.services.settings_defaults import default_int
 
         _render_default = default_int("image_render_timeout_seconds")
         render_timeout = (
@@ -423,7 +423,7 @@ def _materialize_sidecar_json(
 
 async def _upload_to_r2(path: str, prompt: str, site_config: Any) -> str:
     """Upload a generated PNG to R2 via the shared r2_upload_service."""
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
 
     if site_config is None:
         raise RuntimeError(

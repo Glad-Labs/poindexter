@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.qa_gates_db import QAGateSpec, load_qa_gate_chain
+from poindexter.services.qa_gates_db import QAGateSpec, load_qa_gate_chain
 
 # ---------------------------------------------------------------------------
 # QAGateSpec.applies_to_style
@@ -238,7 +238,7 @@ class TestLoadQAGateChainFailureLogging:
     @pytest.mark.asyncio
     async def test_transient_failure_logs_warning(self, monkeypatch):
         fake_logger = MagicMock()
-        monkeypatch.setattr("services.qa_gates_db.logger", fake_logger)
+        monkeypatch.setattr("poindexter.services.qa_gates_db.logger", fake_logger)
         pool = _make_failing_pool(ConnectionError("connection was closed"))
         assert await load_qa_gate_chain(pool) == []
         fake_logger.warning.assert_called_once()
@@ -250,7 +250,7 @@ class TestLoadQAGateChainFailureLogging:
             sqlstate = "42P01"  # asyncpg UndefinedTableError SQLSTATE
 
         fake_logger = MagicMock()
-        monkeypatch.setattr("services.qa_gates_db.logger", fake_logger)
+        monkeypatch.setattr("poindexter.services.qa_gates_db.logger", fake_logger)
         pool = _make_failing_pool(
             _UndefinedTable('relation "qa_gates" does not exist')
         )

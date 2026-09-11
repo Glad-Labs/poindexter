@@ -80,9 +80,9 @@ class WarmPinnedLlmEndpointsJob:
 
         import httpx
 
-        from services.llm_providers.dispatcher import get_provider_config
-        from services.llm_providers.litellm_provider import _coerce_override_map
-        from services.ollama_client import resolve_num_ctx
+        from poindexter.services.llm_providers.dispatcher import get_provider_config
+        from poindexter.services.llm_providers.litellm_provider import _coerce_override_map
+        from poindexter.services.ollama_client import resolve_num_ctx
         from utils.findings import emit_finding
 
         provider_config = await get_provider_config(pool, _PROVIDER)

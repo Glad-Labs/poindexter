@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from services import atom_runs
-from services.atom_runs import persist_atom_runs
+from poindexter.services import atom_runs
+from poindexter.services.atom_runs import persist_atom_runs
 
 # --- asyncpg pool stub ------------------------------------------------------
 
@@ -189,7 +189,7 @@ class TestPersistAtomRuns:
         assert args[15] is None   # output_keys
 
 
-from services.atom_runs import record_atom_run_outcome
+from poindexter.services.atom_runs import record_atom_run_outcome
 
 
 @pytest.mark.unit

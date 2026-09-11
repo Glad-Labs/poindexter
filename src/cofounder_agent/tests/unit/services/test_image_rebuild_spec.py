@@ -10,9 +10,9 @@ validators the seed path exercises:
 
 import pytest
 
-from services.atom_registry import discover
-from services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
-from services.pipeline_architect import _validate_spec, build_graph_from_spec
+from poindexter.services.atom_registry import discover
+from poindexter.services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
+from poindexter.services.pipeline_architect import _validate_spec, build_graph_from_spec
 
 
 @pytest.fixture(autouse=True)

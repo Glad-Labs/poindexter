@@ -14,7 +14,7 @@ import pytest
 from click.testing import CliRunner
 
 from poindexter.cli.social import list_drafts
-from services.social_drafts import SocialDraftPage, SocialDraftRow
+from poindexter.services.social_drafts import SocialDraftPage, SocialDraftRow
 
 pytestmark = pytest.mark.unit
 

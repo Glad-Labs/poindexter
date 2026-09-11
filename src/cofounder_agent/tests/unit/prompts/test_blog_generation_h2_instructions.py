@@ -27,7 +27,7 @@ directly.
 
 from __future__ import annotations
 
-from services.prompt_manager import UnifiedPromptManager
+from poindexter.services.prompt_manager import UnifiedPromptManager
 
 
 def _load_prompt(key: str) -> str:

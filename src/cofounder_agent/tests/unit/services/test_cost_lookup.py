@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.cost_lookup import (
+from poindexter.services.cost_lookup import (
     DEFAULT_COST_PER_1K,
     estimate_cost,
     get_model_cost,

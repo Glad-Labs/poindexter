@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from plugins.publish_adapter import PublishAdapter, PublishResult
-from services.publish_adapters.youtube import YouTubePublishAdapter
+from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
 
 
 class _StubSiteConfig:
@@ -736,7 +736,7 @@ class _FakeExec:
 
 def _run_update_blocking(snippet, **overrides):
     """Drive _do_update_metadata_blocking against a fake YouTube client."""
-    from services.publish_adapters import youtube as yt
+    from poindexter.services.publish_adapters import youtube as yt
 
     captured: dict = {}
     fake = type("_FakeYT", (), {"videos": lambda self: _FakeVideos(snippet, captured)})()
@@ -833,7 +833,7 @@ def test_insufficient_scope_classifier_matches_the_real_403():
     """The expected first failure: the live grant is upload-only (verified
     2026-08-31). It must be recognised so the caller can print the
     re-consent command instead of a raw Google error."""
-    from services.publish_adapters.youtube import _is_insufficient_scope
+    from poindexter.services.publish_adapters.youtube import _is_insufficient_scope
 
     real = (
         "<HttpError 403 when requesting https://youtube.googleapis.com/youtube/v3/"
@@ -846,7 +846,7 @@ def test_insufficient_scope_classifier_matches_the_real_403():
 def test_insufficient_scope_classifier_ignores_unrelated_403s():
     """A suspended channel is also a 403 and must NOT be mislabelled as
     'go re-consent' — that would send the operator down the wrong path."""
-    from services.publish_adapters.youtube import _is_insufficient_scope
+    from poindexter.services.publish_adapters.youtube import _is_insufficient_scope
 
     assert _is_insufficient_scope(Exception("HttpError 403 ... channelSuspended")) is False
     assert _is_insufficient_scope(Exception("HttpError 404 videoNotFound")) is False
@@ -866,7 +866,7 @@ def test_credentials_do_not_pin_a_scope_list():
     ``None`` is also the only value correct in both states, so this must stay
     unset even after the operator re-consents.
     """
-    from services.publish_adapters.youtube import YouTubePublishAdapter
+    from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
 
     captured = {}
 
@@ -908,7 +908,7 @@ def test_credentials_do_not_pin_a_scope_list():
 def test_insufficient_scope_classifier_matches_the_refresh_time_shape():
     """The refresh-time refusal carries no HTTP status, so a status-only check
     misses it — which is what happened the first time this ran live."""
-    from services.publish_adapters.youtube import _is_insufficient_scope
+    from poindexter.services.publish_adapters.youtube import _is_insufficient_scope
 
     real = (
         "RefreshError: ('invalid_scope: Bad Request', {'error': 'invalid_scope', "

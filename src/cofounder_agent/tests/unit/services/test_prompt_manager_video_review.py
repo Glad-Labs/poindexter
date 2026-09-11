@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.prompt_manager import get_prompt_manager
+from poindexter.services.prompt_manager import get_prompt_manager
 
 
 @pytest.mark.unit

@@ -22,8 +22,8 @@ from typing import Any
 
 import pytest
 
-from services import pipeline_architect
-from services.site_config import SiteConfig
+from poindexter.services import pipeline_architect
+from poindexter.services.site_config import SiteConfig
 
 
 def _patch_io(monkeypatch, captured: dict[str, Any]) -> None:

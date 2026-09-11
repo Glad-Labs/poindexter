@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)

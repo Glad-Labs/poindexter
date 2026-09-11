@@ -178,7 +178,7 @@ def _non_echo_fallback_title(state: dict[str, Any], topic: str) -> str | None:
     """Best non-echo programmatic title candidate: the canonical display title
     (``state['title']``), else the draft's H1. ``None`` when neither exists or
     both are themselves topic echoes."""
-    from services.title_generation import extract_h1_title
+    from poindexter.services.title_generation import extract_h1_title
 
     canonical = str(state.get("canonical_title") or state.get("title") or "").strip()
     if canonical:
@@ -269,7 +269,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not content or site_config is None:
         return {}
 
-    from services.title_generation import (
+    from poindexter.services.title_generation import (
         DEFAULT_TITLE_EXCERPT_CHARS,
         build_title_grounding_digest,
     )

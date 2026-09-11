@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.integrations.handlers import outbound_apprise
+from poindexter.services.integrations.handlers import outbound_apprise
 
 
 class _FakeSiteConfig:

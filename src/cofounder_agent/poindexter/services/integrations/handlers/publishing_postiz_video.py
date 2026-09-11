@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from services.integrations.registry import register_handler
+from poindexter.services.integrations.registry import register_handler
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ async def postiz_video(
     pool: Any = None,
 ) -> dict[str, Any]:
     """Upload a video to TikTok or Instagram Reels via Postiz."""
-    from services.integrations.postiz_client import PostizClient
+    from poindexter.services.integrations.postiz_client import PostizClient
 
     if not isinstance(payload, dict):
         raise TypeError(

@@ -54,13 +54,13 @@ def _make_db_service(pool=None):
 @pytest.mark.unit
 class TestRunMigrationsNoDB:
     def test_no_database_service_returns_false(self):
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         result = _run(run_migrations(None))
         assert result is False
 
     def test_no_pool_returns_false(self):
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         db = _make_db_service(pool=None)
         result = _run(run_migrations(db))
@@ -70,21 +70,21 @@ class TestRunMigrationsNoDB:
 @pytest.mark.unit
 class TestRunMigrationsNoFiles:
     def test_no_migration_files_returns_true(self):
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         pool, conn = _make_pool()
         db = _make_db_service(pool=pool)
         # Patch glob to return empty list
-        with patch("services.migrations.Path.glob", return_value=iter([])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([])):
             result = _run(run_migrations(db))
         assert result is True
 
     def test_creates_tracking_table_even_when_no_files(self):
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         pool, conn = _make_pool()
         db = _make_db_service(pool=pool)
-        with patch("services.migrations.Path.glob", return_value=iter([])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([])):
             _run(run_migrations(db))
         # The _MIGRATIONS_TABLE_SQL execute should have been called
         conn.execute.assert_called()
@@ -93,7 +93,7 @@ class TestRunMigrationsNoFiles:
 @pytest.mark.unit
 class TestRunMigrationsAlreadyApplied:
     def test_already_applied_migrations_are_skipped(self):
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         mock_file = MagicMock(spec=Path)
         mock_file.name = "0001_initial.py"
@@ -101,7 +101,7 @@ class TestRunMigrationsAlreadyApplied:
         pool, conn = _make_pool(already_applied=42)  # fetchval returns existing id
         db = _make_db_service(pool=pool)
 
-        with patch("services.migrations.Path.glob", return_value=iter([mock_file])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([mock_file])):
             result = _run(run_migrations(db))
 
         assert result is True
@@ -111,7 +111,7 @@ class TestRunMigrationsAlreadyApplied:
 @pytest.mark.unit
 class TestRunMigrationsNewMigration:
     def test_new_migration_is_applied_and_recorded(self):
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         mock_file = MagicMock(spec=Path)
         mock_file.name = "0001_initial.py"
@@ -124,12 +124,12 @@ class TestRunMigrationsNewMigration:
         mock_spec = MagicMock()
         mock_spec.loader.exec_module = MagicMock()
 
-        with patch("services.migrations.Path.glob", return_value=iter([mock_file])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([mock_file])):
             with patch(
-                "services.migrations.importlib.util.spec_from_file_location", return_value=mock_spec
+                "poindexter.services.migrations.importlib.util.spec_from_file_location", return_value=mock_spec
             ):
                 with patch(
-                    "services.migrations.importlib.util.module_from_spec", return_value=mock_module
+                    "poindexter.services.migrations.importlib.util.module_from_spec", return_value=mock_module
                 ):
                     result = _run(run_migrations(db))
 
@@ -137,7 +137,7 @@ class TestRunMigrationsNewMigration:
         mock_module.up.assert_awaited_once_with(pool)
 
     def test_migration_without_up_function_is_skipped(self):
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         mock_file = MagicMock(spec=Path)
         mock_file.name = "0002_no_up.py"
@@ -150,12 +150,12 @@ class TestRunMigrationsNewMigration:
         mock_spec = MagicMock()
         mock_spec.loader.exec_module = MagicMock()
 
-        with patch("services.migrations.Path.glob", return_value=iter([mock_file])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([mock_file])):
             with patch(
-                "services.migrations.importlib.util.spec_from_file_location", return_value=mock_spec
+                "poindexter.services.migrations.importlib.util.spec_from_file_location", return_value=mock_spec
             ):
                 with patch(
-                    "services.migrations.importlib.util.module_from_spec", return_value=mock_module
+                    "poindexter.services.migrations.importlib.util.module_from_spec", return_value=mock_module
                 ):
                     result = _run(run_migrations(db))
 
@@ -180,7 +180,7 @@ class TestRunMigrationsFailure:
     def test_failing_migration_halts_before_subsequent_migrations(self):
         """#697 regression: a failing migration must re-raise so subsequent
         migrations never apply and the caller can halt the process."""
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         file1 = _sortable_path_mock("0001_fail.py")
         file2 = _sortable_path_mock("0002_success.py")
@@ -202,12 +202,12 @@ class TestRunMigrationsFailure:
                 return failing_module
             return success_module
 
-        with patch("services.migrations.Path.glob", return_value=iter([file1, file2])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([file1, file2])):
             with patch(
-                "services.migrations.importlib.util.spec_from_file_location", side_effect=fake_spec
+                "poindexter.services.migrations.importlib.util.spec_from_file_location", side_effect=fake_spec
             ):
                 with patch(
-                    "services.migrations.importlib.util.module_from_spec", side_effect=fake_module
+                    "poindexter.services.migrations.importlib.util.module_from_spec", side_effect=fake_module
                 ):
                     with pytest.raises(RuntimeError, match="SQL error"):
                         _run(run_migrations(db))
@@ -217,7 +217,7 @@ class TestRunMigrationsFailure:
 
     def test_outer_exception_propagates(self):
         """Top-level exception in run_migrations propagates so startup can halt."""
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         db = _make_db_service(pool=MagicMock())
         # Make pool.acquire raise immediately (e.g. tracking table creation fails)
@@ -232,7 +232,7 @@ class TestRunMigrationsFailure:
 class TestRunMigrationsMultipleMixed:
     def test_all_applied_returns_true(self):
         """All migrations already applied — skipped — returns True."""
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         file1 = _sortable_path_mock("0001_initial.py")
         file2 = _sortable_path_mock("0002_indexes.py")
@@ -240,7 +240,7 @@ class TestRunMigrationsMultipleMixed:
         pool, conn = _make_pool(already_applied=1)  # Both already applied
         db = _make_db_service(pool=pool)
 
-        with patch("services.migrations.Path.glob", return_value=iter([file1, file2])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([file1, file2])):
             result = _run(run_migrations(db))
 
         assert result is True
@@ -278,14 +278,14 @@ class TestGetMigrationStatus:
     """
 
     def test_returns_error_when_pool_unavailable(self):
-        from services.migrations import get_migration_status
+        from poindexter.services.migrations import get_migration_status
 
         result = _run(get_migration_status(None))
         assert "error" in result
         assert "pool unavailable" in result["error"]
 
     def test_clean_state_reports_zero_pending(self):
-        from services.migrations import get_migration_status
+        from poindexter.services.migrations import get_migration_status
 
         # Two files on disk; both recorded as applied → 0 pending.
         f1 = MagicMock(name="20260520_171234_a.py")
@@ -296,7 +296,7 @@ class TestGetMigrationStatus:
             applied_names=["20260520_171234_a.py", "20260520_171235_b.py"],
             latest="20260520_171235_b.py",
         )
-        with patch("services.migrations.Path.glob", return_value=iter([f1, f2])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([f1, f2])):
             result = _run(get_migration_status(pool))
         assert result == {
             "applied": 2,
@@ -306,7 +306,7 @@ class TestGetMigrationStatus:
         }
 
     def test_pending_files_surface_in_status(self):
-        from services.migrations import get_migration_status
+        from poindexter.services.migrations import get_migration_status
 
         # Two on disk; only one applied → 1 pending. This is the case
         # the brain probe is built to detect.
@@ -318,7 +318,7 @@ class TestGetMigrationStatus:
             applied_names=["20260520_171234_a.py"],
             latest="20260520_171234_a.py",
         )
-        with patch("services.migrations.Path.glob", return_value=iter([f1, f2])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([f1, f2])):
             result = _run(get_migration_status(pool))
         assert result["applied"] == 1
         assert result["pending"] == 1
@@ -327,7 +327,7 @@ class TestGetMigrationStatus:
 
     def test_excludes_init_py_from_on_disk_list(self):
         """__init__.py is the runner module, not a migration."""
-        from services.migrations import get_migration_status
+        from poindexter.services.migrations import get_migration_status
 
         init = MagicMock()
         init.name = "__init__.py"
@@ -338,7 +338,7 @@ class TestGetMigrationStatus:
             latest="20260520_171234_real.py",
         )
         with patch(
-            "services.migrations.Path.glob",
+            "poindexter.services.migrations.Path.glob",
             return_value=iter([init, real]),
         ):
             result = _run(get_migration_status(pool))
@@ -349,7 +349,7 @@ class TestGetMigrationStatus:
 
     def test_missing_schema_migrations_table_treated_as_zero_applied(self):
         """Fresh DB before runner initializes the table — graceful degrade."""
-        from services.migrations import get_migration_status
+        from poindexter.services.migrations import get_migration_status
 
         conn = AsyncMock()
         conn.fetch = AsyncMock(side_effect=Exception("table does not exist"))
@@ -361,7 +361,7 @@ class TestGetMigrationStatus:
 
         f = MagicMock()
         f.name = "20260520_171234_a.py"
-        with patch("services.migrations.Path.glob", return_value=iter([f])):
+        with patch("poindexter.services.migrations.Path.glob", return_value=iter([f])):
             result = _run(get_migration_status(pool))
         # Nothing applied (table doesn't exist yet); 1 pending; no
         # exception out of the health check.
@@ -374,7 +374,7 @@ class TestGetMigrationStatus:
 
     def test_unexpected_exception_becomes_error_dict(self):
         """Health endpoint must never raise — turn anything weird into {'error': ...}."""
-        from services.migrations import get_migration_status
+        from poindexter.services.migrations import get_migration_status
 
         pool = MagicMock()
         pool.acquire = MagicMock(side_effect=RuntimeError("pool exploded"))

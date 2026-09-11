@@ -24,15 +24,15 @@ from unittest.mock import patch
 
 import pytest
 
-import services
-from services.prompt_manager import UnifiedPromptManager
-from services.voice_prompts import (
+from poindexter import services
+from poindexter.services.prompt_manager import UnifiedPromptManager
+from poindexter.services.voice_prompts import (
     CLAUDE_BRIDGE_TTS_KEY,
     EMMA_SYSTEM_KEY,
     resolve_voice_prompt,
 )
 
-_PATCH_TARGET = "services.prompt_manager.get_prompt_manager"
+_PATCH_TARGET = "poindexter.services.prompt_manager.get_prompt_manager"
 
 _CASES = [
     ("emma", EMMA_SYSTEM_KEY, {}),

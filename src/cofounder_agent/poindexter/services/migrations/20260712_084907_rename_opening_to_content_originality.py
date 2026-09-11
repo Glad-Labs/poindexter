@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 async def up(pool) -> None:
     """Rename the qa_gates row + re-seed the canonical_blog graph_def."""
-    from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+    from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
 
     raw = json.dumps(CANONICAL_BLOG_GRAPH_DEF)
     async with pool.acquire() as conn:

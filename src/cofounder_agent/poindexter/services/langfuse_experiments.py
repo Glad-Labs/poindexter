@@ -42,7 +42,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

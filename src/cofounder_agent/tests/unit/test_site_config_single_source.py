@@ -17,9 +17,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from middleware.api_token_auth import _request_site_config
-from services.container import AppContainer
-from services.container_registry import set_container
-from services.site_config import SiteConfig
+from poindexter.services.container import AppContainer
+from poindexter.services.container_registry import set_container
+from poindexter.services.site_config import SiteConfig
 from utils.route_utils import get_site_config_dependency
 
 

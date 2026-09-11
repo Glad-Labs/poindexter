@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from services.jobs.run_seo_opportunity_analyzer import (
+from poindexter.services.jobs.run_seo_opportunity_analyzer import (
     RunSeoOpportunityAnalyzerJob,
     _thresholds,
 )

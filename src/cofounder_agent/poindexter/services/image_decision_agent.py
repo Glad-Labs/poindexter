@@ -12,7 +12,7 @@ This is the first ML decision point in the pipeline. The pattern
 is reusable for other decision points (model selection, topic scoring, etc.)
 
 Usage:
-    from services.image_decision_agent import plan_images
+    from poindexter.services.image_decision_agent import plan_images
     plan = await plan_images(content, topic, category)
     # plan.images = [{section, source, style, prompt, position}, ...]
 """
@@ -21,12 +21,12 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from services.langfuse_shim import observe
-from services.llm_providers.dispatcher import dispatch_complete
-from services.llm_providers.thinking_models import strip_think_blocks
-from services.logger_config import get_logger
-from services.prompt_manager import get_prompt_manager
-from services.site_config import SiteConfig
+from poindexter.services.langfuse_shim import observe
+from poindexter.services.llm_providers.dispatcher import dispatch_complete
+from poindexter.services.llm_providers.thinking_models import strip_think_blocks
+from poindexter.services.logger_config import get_logger
+from poindexter.services.prompt_manager import get_prompt_manager
+from poindexter.services.site_config import SiteConfig
 
 # Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
 # shim were removed. ``plan_images`` now requires an explicit
@@ -139,7 +139,7 @@ async def plan_images(
     # task. Empty → page (advisory) and return an empty plan.
     model = (_sc.get("model_role_image_decision") or "").removeprefix("ollama/")
     if not model:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         await notify_operator(
             "image_decision_agent: model_role_image_decision is empty — "
             "image planning skipped",
@@ -286,7 +286,7 @@ async def plan_images(
             # config policy), so no manual os.getenv needed here.
             import asyncpg
 
-            from services.decision_service import log_decision
+            from poindexter.services.decision_service import log_decision
             _dsn = _sc.get("database_url", "")
             if _dsn:
                 _conn = await asyncpg.connect(_dsn)

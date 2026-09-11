@@ -35,7 +35,7 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-from services.template_runner import (
+from poindexter.services.template_runner import (
     PipelineState,
     TemplateRunner,
     _CheckpointerSetupError,
@@ -66,7 +66,7 @@ def trivial_templates(monkeypatch):
     fake_registry = {"trivial": _trivial_graph_factory}
     # Defer import so the test module loads even if the templates module
     # has its own registry side effects.
-    import services.pipeline_templates as pt
+    import poindexter.services.pipeline_templates as pt
     monkeypatch.setattr(pt, "TEMPLATES", fake_registry)
     return "trivial"
 
@@ -78,7 +78,7 @@ def flag_on():
     #272 Phase-2f deleted the template_runner module-global site_config;
     tests now construct a SiteConfig and thread it into TemplateRunner.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
     return SiteConfig(initial_config={
         "template_runner_use_postgres_checkpointer": "true",
     })
@@ -87,7 +87,7 @@ def flag_on():
 @pytest.fixture
 def flag_off():
     """Return a SiteConfig with the postgres-checkpointer flag = false."""
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
     return SiteConfig(initial_config={
         "template_runner_use_postgres_checkpointer": "false",
     })

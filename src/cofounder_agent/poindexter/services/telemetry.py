@@ -162,7 +162,7 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
         return
 
     if site_config is None:
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
         site_config = SiteConfig()
 
     # Check if tracing is enabled via app_settings (DI seam, #330).

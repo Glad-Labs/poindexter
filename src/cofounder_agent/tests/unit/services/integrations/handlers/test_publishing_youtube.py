@@ -24,8 +24,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.publish_adapter import PublishResult
-from services.integrations import registry
-from services.integrations.handlers import publishing_youtube  # noqa: F401  side-effect: decorator
+from poindexter.services.integrations import registry
+from poindexter.services.integrations.handlers import (
+    publishing_youtube,  # noqa: F401  side-effect: decorator
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -97,7 +99,7 @@ async def test_handler_dispatches_to_adapter_with_payload_fields(stub_site_confi
     fake_adapter.publish = AsyncMock(return_value=_publish_result())
 
     with patch(
-        "services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
+        "poindexter.services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
         return_value=fake_adapter,
     ):
         result = await handler(
@@ -140,7 +142,7 @@ async def test_handler_threads_shorts_flag_to_adapter(stub_site_config) -> None:
     fake_adapter.publish = AsyncMock(return_value=_publish_result())
 
     with patch(
-        "services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
+        "poindexter.services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
         return_value=fake_adapter,
     ):
         await handler(
@@ -160,7 +162,7 @@ async def test_handler_defaults_shorts_false(stub_site_config) -> None:
     fake_adapter.publish = AsyncMock(return_value=_publish_result())
 
     with patch(
-        "services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
+        "poindexter.services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
         return_value=fake_adapter,
     ):
         await handler(
@@ -190,7 +192,7 @@ async def test_handler_propagates_adapter_failure(stub_site_config) -> None:
     )
 
     with patch(
-        "services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
+        "poindexter.services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
         return_value=fake_adapter,
     ):
         result = await handler(

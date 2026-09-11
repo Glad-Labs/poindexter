@@ -29,7 +29,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.approval_service import (
+from poindexter.services.approval_service import (
     GateMismatchError,
     RegenCapReachedError,
     TaskNotFoundError,
@@ -316,7 +316,7 @@ def fake_pool():
 @pytest.fixture
 def patched_audit():
     """Stop audit_log_bg from trying to schedule a real coroutine."""
-    with patch("services.approval_service.audit_log_bg") as m:
+    with patch("poindexter.services.approval_service.audit_log_bg") as m:
         yield m
 
 
@@ -324,7 +324,7 @@ def patched_audit():
 def patched_notify():
     """Don't depend on the live Telegram / Discord plumbing."""
     with patch(
-        "services.approval_service._notify_gate_tripped",
+        "poindexter.services.approval_service._notify_gate_tripped",
         side_effect=lambda **kw: __import__("asyncio").sleep(0)
         or {"sent": True, "reason": "ok"},
     ) as m:
@@ -587,7 +587,7 @@ class TestReject:
 
         outcome = AsyncMock()
         with patch(
-            "services.router_outcome_feedback.record_task_outcome", new=outcome,
+            "poindexter.services.router_outcome_feedback.record_task_outcome", new=outcome,
         ):
             await reject(
                 task_id="t-1",
@@ -604,7 +604,7 @@ class TestReject:
             "gate_paused_at": datetime.now(timezone.utc),
         }
         with patch(
-            "services.router_outcome_feedback.record_task_outcome", new=outcome,
+            "poindexter.services.router_outcome_feedback.record_task_outcome", new=outcome,
         ):
             await reject(
                 task_id="t-2",
@@ -628,7 +628,7 @@ class TestReject:
 
         dispatched = AsyncMock()
         with patch(
-            "services.rejection_handlers.dispatch_rejection", new=dispatched,
+            "poindexter.services.rejection_handlers.dispatch_rejection", new=dispatched,
         ):
             await reject(
                 task_id="t-1",

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.seo_read import read_seo
+from poindexter.services.seo_read import read_seo
 
 # The db_pool fixture is loop_scope="session"; tests must share that loop.
 pytestmark = pytest.mark.asyncio(loop_scope="session")

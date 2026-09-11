@@ -21,9 +21,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.image_decision_agent import ImagePlanResult, plan_images
-from services.prompt_manager import UnifiedPromptManager
-from services.site_config import SiteConfig
+from poindexter.services.image_decision_agent import ImagePlanResult, plan_images
+from poindexter.services.prompt_manager import UnifiedPromptManager
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.fixture
@@ -205,7 +205,7 @@ class TestPlanImagesEdgeCases:
         """No cost-tier pool AND empty fallback key → page operator, empty plan."""
         notify = AsyncMock()
         monkeypatch.setattr(
-            "services.integrations.operator_notify.notify_operator", notify
+            "poindexter.services.integrations.operator_notify.notify_operator", notify
         )
         # Explicitly empty the fallback; pool returns None so tier resolution fails.
         sc = _sc(model_role_image_decision="")
@@ -226,7 +226,7 @@ class TestPlanImagesEdgeCases:
     async def test_no_sections_returns_empty_without_dispatch(self):
         """Content with no headings short-circuits before any dispatch_complete call."""
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(),
         ) as mock_dispatch:
             result = await plan_images(
@@ -256,7 +256,7 @@ class TestPlanImagesEdgeCases:
         )
 
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(plan_json)),
         ) as mock_dispatch:
             result = await plan_images(body, topic="T", site_config=_sc())
@@ -278,7 +278,7 @@ class TestPlanImagesEdgeCases:
         fenced = "```json\n" + json.dumps(inner) + "\n```"
 
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(fenced)),
         ):
             result = await plan_images("## A\n\nbody", topic="T", site_config=_sc())
@@ -296,7 +296,7 @@ class TestPlanImagesEdgeCases:
         noisy = f"Let me think it through. {json.dumps(inner)} That is my plan."
 
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(noisy)),
         ):
             result = await plan_images("## A\n\nbody", topic="T", site_config=_sc())
@@ -309,7 +309,7 @@ class TestPlanImagesEdgeCases:
         garbage = "I cannot produce a plan for this article, sorry."
 
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(garbage)),
         ):
             result = await plan_images("## A\n\nbody", topic="T", site_config=_sc())
@@ -328,7 +328,7 @@ class TestPlanImagesEdgeCases:
         )
 
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(partial)),
         ):
             result = await plan_images(
@@ -353,7 +353,7 @@ class TestPlanImagesEdgeCases:
         body = json.dumps({"featured": {}, "inline": inline})
 
         with patch(
-            "services.image_decision_agent.dispatch_complete",
+            "poindexter.services.image_decision_agent.dispatch_complete",
             new=AsyncMock(return_value=_completion(body)),
         ):
             result = await plan_images(
@@ -368,7 +368,7 @@ class TestPlanImagesEdgeCases:
 @pytest.mark.unit
 def test_section_list_includes_body_excerpt():
     """The decision-agent fallback grounds on section BODY, not just headings."""
-    import services.image_decision_agent as ida
+    import poindexter.services.image_decision_agent as ida
 
     content = (
         "## Draft phase\n\nA small draft model proposes tokens cheaply.\n\n"
@@ -385,7 +385,7 @@ def test_section_list_includes_body_excerpt():
 
 @pytest.mark.unit
 def test_extract_sections_truncates_to_budget():
-    import services.image_decision_agent as ida
+    import poindexter.services.image_decision_agent as ida
 
     content = "## H\n\n" + ("word " * 200)
     sections = ida._extract_sections(content, body_chars=50)
@@ -394,7 +394,7 @@ def test_extract_sections_truncates_to_budget():
 
 @pytest.mark.unit
 def test_extract_sections_bold_fallback_title_only():
-    import services.image_decision_agent as ida
+    import poindexter.services.image_decision_agent as ida
 
     sections = ida._extract_sections("**First Idea**\n\nprose\n", body_chars=200)
     assert sections == [{"level": 2, "title": "First Idea", "excerpt": ""}]

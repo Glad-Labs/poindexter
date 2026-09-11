@@ -25,10 +25,10 @@ import hashlib
 from typing import Any
 
 from plugins.llm_provider import LLMProvider
-from services.logger_config import get_logger
-from services.taps._chunking import chunk_text as split_into_chunks
-from services.taps._chunking import content_hash as chunk_content_hash
-from services.taps.published_posts import build_post_text
+from poindexter.services.logger_config import get_logger
+from poindexter.services.taps._chunking import chunk_text as split_into_chunks
+from poindexter.services.taps._chunking import content_hash as chunk_content_hash
+from poindexter.services.taps.published_posts import build_post_text
 
 from .embeddings_db import EmbeddingsDatabase
 

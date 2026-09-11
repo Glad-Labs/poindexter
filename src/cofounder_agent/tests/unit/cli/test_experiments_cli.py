@@ -187,7 +187,7 @@ class TestCreate:
             return_value={"id": new_id},
         )
 
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = runner.invoke(
                 experiments_group,
                 [
@@ -203,7 +203,7 @@ class TestCreate:
     def test_unknown_niche_rejected(self, runner, fake_asyncpg):
         ns_cls = MagicMock()
         ns_cls.return_value.get_by_slug = AsyncMock(return_value=None)
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = runner.invoke(
                 experiments_group,
                 ["create", "k", "--niche", "no-such-niche"],
@@ -220,7 +220,7 @@ class TestCreate:
         fake_asyncpg["conn"].fetchrow = AsyncMock(
             side_effect=fake_asyncpg["UniqueViolationError"]("dup"),
         )
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = runner.invoke(
                 experiments_group,
                 ["create", "dup-key", "--niche", n.slug],

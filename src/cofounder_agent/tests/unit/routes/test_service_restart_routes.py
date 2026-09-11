@@ -63,7 +63,7 @@ class TestPostRestart:
         # handler (unlike a path-traversal shape, which Starlette's own
         # routing rejects as a 404 before any handler code runs) and is
         # rejected by create_restart_request's shape check.
-        from services.service_restart_requests import InvalidContainerName
+        from poindexter.services.service_restart_requests import InvalidContainerName
 
         with patch(
             "routes.service_restart_routes.create_restart_request",
@@ -79,7 +79,7 @@ class TestPostRestart:
         queue itself, so a queued restart could never reach a terminal row.
         Refused up front with a manual-remediation string, not queued to
         strand (glad-labs-stack#2505)."""
-        from services.service_restart_requests import SelfDefeatingRestart
+        from poindexter.services.service_restart_requests import SelfDefeatingRestart
 
         with patch(
             "routes.service_restart_routes.create_restart_request",

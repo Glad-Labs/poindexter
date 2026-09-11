@@ -14,9 +14,9 @@ from __future__ import annotations
 import pytest
 
 # Importing the handler modules registers their backlog expressions.
-import services.integrations.handlers.retention_checkpoint_prune  # noqa: F401
-import services.integrations.handlers.retention_ttl_prune  # noqa: F401
-from services.integrations.retention_backlog import (
+import poindexter.services.integrations.handlers.retention_checkpoint_prune  # noqa: F401
+import poindexter.services.integrations.handlers.retention_ttl_prune  # noqa: F401
+from poindexter.services.integrations.retention_backlog import (
     BacklogQuery,
     BacklogRegistrationError,
     BacklogResult,
@@ -26,7 +26,7 @@ from services.integrations.retention_backlog import (
     measure_backlog,
     register_backlog,
 )
-from services.jobs.probe_retention_backlog import breaching_policies, build_body
+from poindexter.services.jobs.probe_retention_backlog import breaching_policies, build_body
 
 
 class _Conn:
@@ -165,7 +165,7 @@ def test_checkpoint_backlog_measures_the_invariant_not_the_policy_config():
     The expression must therefore be phrased as 'NOT active', so a terminal
     status missing from the policy's list still counts as backlog.
     """
-    from services.integrations.handlers.retention_checkpoint_prune import (
+    from poindexter.services.integrations.handlers.retention_checkpoint_prune import (
         _ACTIVE_STATUSES,
     )
 
@@ -318,7 +318,7 @@ def test_body_reports_failed_measurements_as_unknown():
 
 from datetime import UTC, datetime, timedelta
 
-from services.jobs.probe_retention_backlog import eligible_for_sampling
+from poindexter.services.jobs.probe_retention_backlog import eligible_for_sampling
 
 
 def _policy(name, *, minutes_since_run=5.0, run_at=None):
@@ -442,7 +442,7 @@ class _SC:
 @pytest.mark.asyncio
 async def test_a_probe_that_never_samples_reports_not_ok():
     """Never landing in a window is a phase fault, not a quiet pass."""
-    from services.jobs.probe_retention_backlog import ProbeRetentionBacklogJob
+    from poindexter.services.jobs.probe_retention_backlog import ProbeRetentionBacklogJob
 
     res = await ProbeRetentionBacklogJob().run(
         _BlindPool(hours_since_sample=48.0), {"_site_config": _SC()},
@@ -456,7 +456,7 @@ async def test_a_probe_that_never_samples_reports_not_ok():
 @pytest.mark.asyncio
 async def test_a_single_out_of_window_tick_is_still_fine():
     """The common case must stay quiet, or the alarm is worthless."""
-    from services.jobs.probe_retention_backlog import ProbeRetentionBacklogJob
+    from poindexter.services.jobs.probe_retention_backlog import ProbeRetentionBacklogJob
 
     res = await ProbeRetentionBacklogJob().run(
         _BlindPool(hours_since_sample=2.0), {"_site_config": _SC()},
@@ -468,7 +468,7 @@ async def test_a_single_out_of_window_tick_is_still_fine():
 @pytest.mark.asyncio
 async def test_no_history_at_all_is_not_yet_a_fault():
     """A fresh install has no baseline to call anything wrong."""
-    from services.jobs.probe_retention_backlog import ProbeRetentionBacklogJob
+    from poindexter.services.jobs.probe_retention_backlog import ProbeRetentionBacklogJob
 
     res = await ProbeRetentionBacklogJob().run(
         _BlindPool(hours_since_sample=None), {"_site_config": _SC()},

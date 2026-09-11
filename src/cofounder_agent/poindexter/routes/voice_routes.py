@@ -198,7 +198,7 @@ async def voice_join(
     # the AppContainer bound to app.state by main.py's lifespan; absent in
     # router-only tests, where the resolver falls back to env (monkeypatched
     # LIVEKIT_API_* there).
-    from services.voice_pipecat import resolve_livekit_creds_async
+    from poindexter.services.voice_pipecat import resolve_livekit_creds_async
 
     _container = getattr(getattr(request.app, "state", None), "container", None)
     site_config = getattr(_container, "site_config", None)

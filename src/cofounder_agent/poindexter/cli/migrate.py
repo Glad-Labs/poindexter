@@ -54,7 +54,7 @@ async def _make_pool():
 
 def _migrations_dir() -> Path:
     """Path to the on-disk migrations directory."""
-    from services import migrations as _migrations_pkg
+    from poindexter.services import migrations as _migrations_pkg
 
     return Path(_migrations_pkg.__file__).parent
 
@@ -271,7 +271,7 @@ def migrate_up(to_target: str | None, json_output: bool) -> None:
     """
 
     async def _impl() -> dict[str, Any]:
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         pool = await _make_pool()
         try:

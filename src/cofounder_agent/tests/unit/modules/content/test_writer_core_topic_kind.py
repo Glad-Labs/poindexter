@@ -70,7 +70,7 @@ async def test_read_error_fails_open_to_none():
 async def test_two_pass_draft_node_threads_topic_kind_into_the_draft_call(monkeypatch):
     """state["topic_kind"] → generate_with_context(topic_kind=…)."""
     from modules.content.atoms import two_pass_writer as tp
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     seen = {}
 

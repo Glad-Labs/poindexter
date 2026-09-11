@@ -23,7 +23,7 @@ import pytest
 
 from plugins.registry import clear_registry_cache, get_video_providers
 from plugins.video_provider import VideoProvider, VideoResult
-from services.video_providers.wan2_1 import (
+from poindexter.services.video_providers.wan2_1 import (
     Wan21Provider,
     _resolve_negative,
     _resolve_server_url,
@@ -102,7 +102,7 @@ def _mock_httpx_post(response):
     else:
         client.post = AsyncMock(return_value=response)
     with patch(
-        "services.video_providers.wan2_1.httpx.AsyncClient",
+        "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
         return_value=client,
     ):
         yield client
@@ -143,7 +143,7 @@ class TestWan21ProviderMetadata:
         validation would create a regression footgun. Explicit guard
         so a future contributor copy-pasting this file gets a clear
         test failure."""
-        from services import video_providers
+        from poindexter.services import video_providers
         assert not hasattr(video_providers, "wan2_1_14b"), (
             "wan2.1-14b is intentionally not shipped in this PR — "
             "see GH#124 follow-up ticket"
@@ -312,7 +312,7 @@ class TestWan21ProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.video_providers.wan2_1.httpx.AsyncClient",
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
             return_value=client,
         ):
             await Wan21Provider().fetch(
@@ -352,7 +352,7 @@ class TestWan21ProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.video_providers.wan2_1.httpx.AsyncClient",
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
             return_value=client,
         ):
             await Wan21Provider().fetch(
@@ -387,7 +387,7 @@ class TestWan21ProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.video_providers.wan2_1.httpx.AsyncClient",
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
             return_value=client,
         ):
             await Wan21Provider().fetch(
@@ -417,7 +417,7 @@ class TestWan21ProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.video_providers.wan2_1.httpx.AsyncClient",
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
             return_value=client,
         ):
             await Wan21Provider().fetch(
@@ -447,7 +447,7 @@ class TestWan21ProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.video_providers.wan2_1.httpx.AsyncClient",
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
             return_value=client,
         ):
             await Wan21Provider().fetch(
@@ -487,7 +487,7 @@ class TestWan21ProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.video_providers.wan2_1.httpx.AsyncClient",
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
             return_value=client,
         ):
             await Wan21Provider().fetch(
@@ -520,7 +520,7 @@ class TestWan21ProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.video_providers.wan2_1.httpx.AsyncClient",
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
             return_value=client,
         ):
             await Wan21Provider().fetch(
@@ -542,7 +542,7 @@ class TestWan21ProviderFetch:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.video_providers.wan2_1.httpx.AsyncClient",
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
             return_value=client,
         ):
             await Wan21Provider().fetch(
@@ -557,7 +557,7 @@ class TestWan21ProviderFetch:
 
     async def test_upload_to_cloudinary_triggers_upload(self, tmp_path):
         with _mock_httpx_post(_video_response(content=b"\x00\x00MP4")), patch(
-            "services.video_providers.wan2_1._upload_to_cloudinary",
+            "poindexter.services.video_providers.wan2_1._upload_to_cloudinary",
             new=AsyncMock(return_value="https://cdn.cloudinary/x.mp4"),
         ) as up:
             results = await Wan21Provider().fetch(
@@ -573,7 +573,7 @@ class TestWan21ProviderFetch:
 
     async def test_upload_to_r2_triggers_upload(self, tmp_path):
         with _mock_httpx_post(_video_response(content=b"\x00\x00MP4")), patch(
-            "services.video_providers.wan2_1._upload_to_r2",
+            "poindexter.services.video_providers.wan2_1._upload_to_r2",
             new=AsyncMock(return_value="https://cdn.r2/x.mp4"),
         ) as up:
             results = await Wan21Provider().fetch(
@@ -592,7 +592,7 @@ class TestWan21ProviderFetch:
     ):
         output_path = str(tmp_path / "o.mp4")
         with _mock_httpx_post(_video_response(content=b"\x00\x00MP4")), patch(
-            "services.video_providers.wan2_1._upload_to_cloudinary",
+            "poindexter.services.video_providers.wan2_1._upload_to_cloudinary",
             new=AsyncMock(side_effect=RuntimeError("auth failed")),
         ):
             results = await Wan21Provider().fetch(
@@ -805,7 +805,7 @@ class TestLastErrorReason:
 
     async def test_reason_is_capped(self, tmp_path):
         """It rides a Discord-routed finding body — bounded, but generously."""
-        from services.video_providers.wan2_1 import _MAX_REASON_CHARS
+        from poindexter.services.video_providers.wan2_1 import _MAX_REASON_CHARS
 
         provider = Wan21Provider()
         with _mock_httpx_post(_fastapi_error_response(500, "x" * 5000)):

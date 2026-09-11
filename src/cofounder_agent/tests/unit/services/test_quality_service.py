@@ -17,7 +17,7 @@ from modules.content.quality_service import (
     get_content_quality_service,
     get_quality_service,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures

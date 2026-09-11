@@ -14,7 +14,7 @@ import sys
 import click
 
 from poindexter.cli._dataplane import dump_row, fmt_age, render_table, run_service
-from services import declarative_config_service as dcs
+from poindexter.services import declarative_config_service as dcs
 
 _SURFACE = "taps"
 
@@ -173,9 +173,9 @@ def taps_run(name: str | None) -> None:
     With NAME: runs just that tap (requires enabled=TRUE).
     """
     async def _impl(pool):
-        from services.integrations import tap_runner
-        from services.integrations.handlers import load_all
-        from services.site_config import SiteConfig
+        from poindexter.services.integrations import tap_runner
+        from poindexter.services.integrations.handlers import load_all
+        from poindexter.services.site_config import SiteConfig
 
         load_all()  # idempotent — registry refuses duplicate registrations
         # SiteConfig DI (#272): build a run-bound instance so tap.singer_subprocess

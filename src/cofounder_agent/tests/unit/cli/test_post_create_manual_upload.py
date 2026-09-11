@@ -129,7 +129,7 @@ def _parse_json(result) -> dict:
 
 def _patch_site_config(initial: dict[str, str] | None = None):
     """Stub SiteConfig; idempotency off by default so the INSERT is the only op."""
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     seed = {"cli_post_create_idempotency_enabled": "false"}
     seed.update(initial or {})
@@ -141,12 +141,12 @@ def _patch_site_config(initial: dict[str, str] | None = None):
         async def load(self, _pool):
             return 0
 
-    return patch("services.site_config.SiteConfig", _StubSiteConfig)
+    return patch("poindexter.services.site_config.SiteConfig", _StubSiteConfig)
 
 
 def _patch_guard_allow():
     """No-op the dedup guard (allow path) so no MemoryClient is built."""
-    import services.topic_dedup_guard as guard
+    import poindexter.services.topic_dedup_guard as guard
 
     return patch.object(guard, "assert_topic_not_duplicate", AsyncMock())
 
@@ -155,7 +155,7 @@ def _patch_guard_block():
     """Make the dedup guard raise DuplicateTopicError on the resolved title."""
     import types
 
-    import services.topic_dedup_guard as guard
+    import poindexter.services.topic_dedup_guard as guard
 
     captured: dict = {}
 
@@ -448,7 +448,7 @@ class TestDedup:
         assert fake_asyncpg["conn"].fetchrow.await_count == 1
 
     def test_distinct_title_passes_guard_and_inserts(self, runner, fake_asyncpg):
-        import services.topic_dedup_guard as guard
+        import poindexter.services.topic_dedup_guard as guard
 
         allow = AsyncMock()
         with _patch_site_config(), patch.object(

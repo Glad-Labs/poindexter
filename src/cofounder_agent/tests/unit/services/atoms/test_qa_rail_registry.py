@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from services import pipeline_architect
-from services.atom_registry import discover, get_atom_callable, get_atom_meta
+from poindexter.services import pipeline_architect
+from poindexter.services.atom_registry import discover, get_atom_callable, get_atom_meta
 
 _RAILS = (
     "qa.programmatic", "qa.deepeval", "qa.ragas", "qa.critic",

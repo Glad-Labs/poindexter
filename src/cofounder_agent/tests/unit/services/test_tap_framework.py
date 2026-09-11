@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from services.integrations import registry as registry_module
-from services.integrations import tap_runner
-from services.integrations.handlers import (
+from poindexter.services.integrations import registry as registry_module
+from poindexter.services.integrations import tap_runner
+from poindexter.services.integrations.handlers import (
     tap_builtin_topic_source,
     tap_singer_subprocess,
 )

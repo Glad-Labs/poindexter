@@ -71,7 +71,7 @@ def test_dead_key_absent_from_settings_defaults(key: str) -> None:
     ``0000_baseline.seeds.sql`` (which never had these keys to begin with;
     see module docstring).
     """
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert key not in DEFAULTS, (
         f"{key!r} is back in settings_defaults.DEFAULTS. CosyVoice2 was "
@@ -108,7 +108,7 @@ def test_live_neighbour_keys_still_seeded() -> None:
     ``settings_defaults.DEFAULTS`` — see module docstring for why the
     baseline seed file isn't the right source here.
     """
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     for key in _LIVE_NEIGHBOUR_KEYS:
         assert key in DEFAULTS, f"live key {key!r} lost from settings_defaults.DEFAULTS"

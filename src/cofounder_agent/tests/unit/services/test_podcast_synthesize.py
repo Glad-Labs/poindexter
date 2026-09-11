@@ -14,8 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
-from services.podcast_service import EpisodeResult, PodcastService
-from services.site_config import SiteConfig
+from poindexter.services.podcast_service import EpisodeResult, PodcastService
+from poindexter.services.site_config import SiteConfig
 
 _SCRIPT = "This is a long enough podcast narration body to render into audio."
 
@@ -121,7 +121,7 @@ def test_pronunciation_map_includes_memory_acronyms() -> None:
     rules and verifies _normalize_for_speech applies them — not that they're
     hardcoded.
     """
-    from services.podcast_service import _normalize_for_speech
+    from poindexter.services.podcast_service import _normalize_for_speech
 
     sc = SiteConfig(initial_config={"tts_pronunciations": _TTS_PRONUNCIATIONS})
     out = _normalize_for_speech(
@@ -148,7 +148,7 @@ async def test_generate_with_voice_applies_pronunciation(tmp_path: Path) -> None
         Path(output_path).write_bytes(b"audio-bytes")
         return b"audio-bytes"
 
-    with patch("services.tts_service.synthesize_speech", side_effect=fake_synth):
+    with patch("poindexter.services.tts_service.synthesize_speech", side_effect=fake_synth):
         result = await svc._generate_with_voice(
             "Choosing VRAM over SRAM matters for local inference.", "bf_emma", out,
         )

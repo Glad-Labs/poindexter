@@ -10,7 +10,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from services.net_transient import (
+from poindexter.services.net_transient import (
     is_transient_network_error,
     transient_retry_transport,
 )

@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.research_service import KNOWN_REFERENCES, ResearchService
-from services.site_config import SiteConfig
+from poindexter.services.research_service import KNOWN_REFERENCES, ResearchService
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2b: research_service's constructor + free functions take a
 # keyword-required ``site_config``. Tests pass this empty instance — the
@@ -143,14 +143,14 @@ class TestWebSearch:
         mock_researcher.search = AsyncMock(return_value=[
             {"title": "Docker Guide", "url": "https://example.com/docker", "snippet": "A guide", "content": ""},
         ])
-        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=mock_researcher):
             results = await service._web_search("Docker tips")
         assert len(results) == 1
         assert results[0]["title"] == "Docker Guide"
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_import_error(self, service):
-        with patch.dict("sys.modules", {"services.web_research": None}):
+        with patch.dict("sys.modules", {"poindexter.services.web_research": None}):
             results = await service._web_search("Docker tips")
         assert results == []
 
@@ -158,7 +158,7 @@ class TestWebSearch:
     async def test_returns_empty_on_search_exception(self, service):
         mock_researcher = MagicMock()
         mock_researcher.search = AsyncMock(side_effect=RuntimeError("network error"))
-        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=mock_researcher):
             results = await service._web_search("Docker tips")
         assert results == []
 
@@ -275,7 +275,7 @@ class TestWebSearchContentExtraction:
             {"title": "T", "url": "https://e.com", "snippet": "s", "content": "real body text"},
         ])
         mock_researcher.search_simple = AsyncMock(return_value=[])
-        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=mock_researcher):
             results = await svc._web_search("topic")
         mock_researcher.search.assert_awaited_once()
         mock_researcher.search_simple.assert_not_called()
@@ -292,7 +292,7 @@ class TestWebSearchContentExtraction:
         mock_researcher.search_simple = AsyncMock(return_value=[
             {"title": "T", "url": "https://e.com", "snippet": "s", "content": ""},
         ])
-        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+        with patch("poindexter.services.web_research.WebResearcher", return_value=mock_researcher):
             results = await svc._web_search("topic")
         mock_researcher.search_simple.assert_awaited_once()
         mock_researcher.search.assert_not_called()
@@ -513,7 +513,7 @@ class TestGetKnownReferences:
     """
 
     def test_returns_defaults_when_no_setting(self):
-        from services.research_service import (
+        from poindexter.services.research_service import (
             _DEFAULT_KNOWN_REFERENCES,
             get_known_references,
         )
@@ -525,7 +525,7 @@ class TestGetKnownReferences:
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
     def test_parses_valid_json_override(self):
-        from services.research_service import get_known_references
+        from poindexter.services.research_service import get_known_references
         custom = '{"woodworking": [{"title": "Wood Magazine", "url": "https://woodmagazine.com"}]}'
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
@@ -536,7 +536,7 @@ class TestGetKnownReferences:
         assert "fastapi" not in refs
 
     def test_invalid_json_falls_back_to_defaults(self):
-        from services.research_service import (
+        from poindexter.services.research_service import (
             _DEFAULT_KNOWN_REFERENCES,
             get_known_references,
         )
@@ -547,7 +547,7 @@ class TestGetKnownReferences:
 
     def test_non_dict_top_level_falls_back_to_defaults(self):
         """Top-level JSON must be an object, not a list."""
-        from services.research_service import (
+        from poindexter.services.research_service import (
             _DEFAULT_KNOWN_REFERENCES,
             get_known_references,
         )
@@ -557,7 +557,7 @@ class TestGetKnownReferences:
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
     def test_lowercases_top_level_keys(self):
-        from services.research_service import get_known_references
+        from poindexter.services.research_service import get_known_references
         custom = '{"COOKING": [{"title": "Cookbook", "url": "https://cookbook.com"}]}'
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
@@ -568,7 +568,7 @@ class TestGetKnownReferences:
 
     def test_skips_entries_missing_url(self):
         """Entries without a 'url' field are filtered out (defensive parsing)."""
-        from services.research_service import get_known_references
+        from poindexter.services.research_service import get_known_references
         custom = (
             '{"x": ['
             '{"title": "Has URL", "url": "https://a.com"},'
@@ -583,7 +583,7 @@ class TestGetKnownReferences:
 
     def test_skips_non_list_value(self):
         """If a key's value isn't a list, that key is skipped (not the whole config)."""
-        from services.research_service import get_known_references
+        from poindexter.services.research_service import get_known_references
         custom = (
             '{"good": [{"title": "T", "url": "https://g.com"}],'
             ' "bad": "not a list"}'
@@ -598,7 +598,7 @@ class TestGetKnownReferences:
         """If parsing produces nothing usable (every entry was dropped),
         the function falls back to defaults rather than returning an empty
         dict that would silently disable references."""
-        from services.research_service import (
+        from poindexter.services.research_service import (
             _DEFAULT_KNOWN_REFERENCES,
             get_known_references,
         )
@@ -623,8 +623,8 @@ class TestResearchTopicShim:
 
     @pytest.mark.asyncio
     async def test_returns_built_context_on_success(self):
-        from services.research_service import research_topic
-        with patch("services.research_service.ResearchService") as MockSvc:
+        from poindexter.services.research_service import research_topic
+        with patch("poindexter.services.research_service.ResearchService") as MockSvc:
             instance = MockSvc.return_value
             instance.build_context = AsyncMock(return_value="VERIFIED REFERENCES: ...")
             result = await research_topic("FastAPI", site_config=_SC)
@@ -637,8 +637,8 @@ class TestResearchTopicShim:
     @pytest.mark.asyncio
     async def test_returns_empty_string_when_no_context_built(self):
         """When build_context returns '' the shim returns '' (not the stub)."""
-        from services.research_service import research_topic
-        with patch("services.research_service.ResearchService") as MockSvc:
+        from poindexter.services.research_service import research_topic
+        with patch("poindexter.services.research_service.ResearchService") as MockSvc:
             instance = MockSvc.return_value
             instance.build_context = AsyncMock(return_value="")
             result = await research_topic("xyz", site_config=_SC)
@@ -649,8 +649,8 @@ class TestResearchTopicShim:
         """If build_context raises (DuckDuckGo rate-limit, no network) the
         shim returns a clearly-marked stub so the writer can still produce
         a coherent revision and the validator can flag the missing citation."""
-        from services.research_service import research_topic
-        with patch("services.research_service.ResearchService") as MockSvc:
+        from poindexter.services.research_service import research_topic
+        with patch("poindexter.services.research_service.ResearchService") as MockSvc:
             instance = MockSvc.return_value
             instance.build_context = AsyncMock(side_effect=RuntimeError("DDG rate-limited"))
             result = await research_topic("FastAPI", site_config=_SC)
@@ -661,12 +661,12 @@ class TestResearchTopicShim:
     async def test_max_sources_explicit_arg_skips_settings_lookup(self):
         """When caller passes max_sources, the function does NOT consult
         site_config (defensive — settings may not be loaded yet)."""
-        from services.research_service import research_topic
+        from poindexter.services.research_service import research_topic
         # A SiteConfig whose get_int would raise — proves the explicit
         # max_sources short-circuits before any settings read.
         sc = MagicMock()
         sc.get_int = MagicMock(side_effect=AssertionError("must not read settings"))
-        with patch("services.research_service.ResearchService") as MockSvc:
+        with patch("poindexter.services.research_service.ResearchService") as MockSvc:
             instance = MockSvc.return_value
             instance.build_context = AsyncMock(return_value="ctx")
             result = await research_topic("topic", max_sources=5, site_config=sc)
@@ -675,11 +675,11 @@ class TestResearchTopicShim:
     @pytest.mark.asyncio
     async def test_max_sources_falls_back_to_2_when_settings_unavailable(self):
         """When max_sources is None and site_config.get_int raises, default to 2."""
-        from services.research_service import research_topic
+        from poindexter.services.research_service import research_topic
         # site_config.get_int raises so the shim hits the except branch.
         bad_sc = MagicMock()
         bad_sc.get_int = MagicMock(side_effect=RuntimeError("settings not loaded"))
-        with patch("services.research_service.ResearchService") as MockSvc:
+        with patch("poindexter.services.research_service.ResearchService") as MockSvc:
             instance = MockSvc.return_value
             instance.build_context = AsyncMock(return_value="ctx")
             result = await research_topic("topic", site_config=bad_sc)
@@ -698,7 +698,7 @@ class TestFindReferencesPartialMatch:
     def test_partial_word_match_picks_first_ref_only(self):
         """Verifies the cap of `refs[:1]` for partial matches — only the
         first ref under each partial-matched keyword is added."""
-        from services.research_service import ResearchService
+        from poindexter.services.research_service import ResearchService
         svc = ResearchService(pool=None, site_config=_SC)
         # "monitoring" keyword has 3 refs in DEFAULTS; full substring match
         # would return all 3. Partial-word match should only return the 1st.

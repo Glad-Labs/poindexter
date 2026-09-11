@@ -67,7 +67,7 @@ def test_create_warns_when_site_config_load_fails(monkeypatch):
 
     # posts.py imports SiteConfig function-locally (posts.py:548), so the
     # patch has to land on the source module, not on posts'.
-    import services.site_config as sc_mod
+    import poindexter.services.site_config as sc_mod
 
     monkeypatch.setattr(sc_mod, "SiteConfig", _BrokenSiteConfig)
 
@@ -106,7 +106,7 @@ def test_site_config_helpers_warn_on_load_failure(
     import asyncio
     import importlib
 
-    import services.site_config as sc_mod
+    import poindexter.services.site_config as sc_mod
 
     class _BrokenSiteConfig:
         def __init__(self, *_a, **_k):

@@ -54,7 +54,7 @@ async def test_record_media_asset_video_upsert_is_idempotent(test_txn) -> None:
     """A second record_media_asset for the same (post, 'video') UPDATEs the row
     (same id, refreshed attrs) instead of raising under the unique guard — i.e.
     the ON CONFLICT predicate really matches uniq_media_assets_post_video_type."""
-    from services.media_asset_recorder import record_media_asset
+    from poindexter.services.media_asset_recorder import record_media_asset
 
     class _TxnPool:
         """Adapt the rolled-back test_txn connection to pool.acquire()."""

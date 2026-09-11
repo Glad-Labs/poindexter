@@ -35,8 +35,8 @@ import asyncio
 import math
 from typing import Any
 
-from services.gpu_admission import GpuBusyError
-from services.logger_config import get_logger
+from poindexter.services.gpu_admission import GpuBusyError
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -89,7 +89,7 @@ async def _resolve_judge_model(site_config: Any = None) -> str:
     per ``feedback_no_silent_defaults.md`` — the ``cost_tier.*`` fallback was
     removed.
     """
-    from services.integrations.operator_notify import notify_operator
+    from poindexter.services.integrations.operator_notify import notify_operator
 
     judge: str | None = None
     if site_config is not None:
@@ -160,9 +160,9 @@ def _build_dispatcher_ragas_wrappers(
     from ragas.embeddings import LangchainEmbeddingsWrapper
     from ragas.llms import LangchainLLMWrapper
 
-    from services.gpu_scheduler import qa_rail_wait_budget_s
-    from services.llm_providers.dispatcher import dispatch_complete, dispatch_embed
-    from services.llm_providers.thinking_models import judge_json_mode_supported
+    from poindexter.services.gpu_scheduler import qa_rail_wait_budget_s
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete, dispatch_embed
+    from poindexter.services.llm_providers.thinking_models import judge_json_mode_supported
 
     json_mode_ok = judge_json_mode_supported(judge_model, site_config)
 
@@ -330,7 +330,7 @@ async def _build_ragas_models(
     # cuts it off mid-reasoning and Ollama returns EMPTY content, which Ragas
     # surfaces as the -1.0 sentinel rather than as a starved call. See
     # resolve_judge_num_predict for the 2026-08-28 blackout this fixes.
-    from services.llm_providers.thinking_models import resolve_judge_num_predict
+    from poindexter.services.llm_providers.thinking_models import resolve_judge_num_predict
 
     llm = LangchainLLMWrapper(
         ChatOllama(
@@ -496,7 +496,7 @@ def _emit_ragas_score_audit(
 
     avg = sum(valid.values()) / len(valid)
     try:
-        from services.audit_log import audit_log_bg
+        from poindexter.services.audit_log import audit_log_bg
         audit_log_bg(
             "ragas_score",
             "ragas_eval",

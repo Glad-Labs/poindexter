@@ -16,8 +16,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import services.chat_agent as chat_agent
-import services.chat_conversation_store as store_module
+import poindexter.services.chat_agent as chat_agent
+import poindexter.services.chat_conversation_store as store_module
 from middleware.api_token_auth import verify_api_token
 from routes.chat_routes import router
 from utils.route_utils import get_database_dependency, get_site_config_dependency
@@ -138,7 +138,7 @@ class TestToolsCatalog:
 @pytest.mark.unit
 class TestApprovalRoutes:
     def _client_with_resolver(self, monkeypatch, resolver):
-        import services.chat_approvals as chat_approvals
+        import poindexter.services.chat_approvals as chat_approvals
 
         monkeypatch.setattr(chat_approvals, "resolve_approval", resolver)
         return _build_client()
@@ -181,7 +181,7 @@ class TestApprovalRoutes:
 @pytest.mark.unit
 class TestPlanRunRoute:
     def test_run_passthrough(self, fake_store, monkeypatch):
-        import services.chat_plans as chat_plans
+        import poindexter.services.chat_plans as chat_plans
 
         seen = {}
 
@@ -203,7 +203,7 @@ class TestPlanRunRoute:
                         "params": {"post_id": "78f8a6cc"}}
 
     def test_bad_params_422(self, fake_store, monkeypatch):
-        import services.chat_plans as chat_plans
+        import poindexter.services.chat_plans as chat_plans
 
         async def run_plan(**kwargs):
             raise ValueError("param key 'task_id' is reserved")
@@ -217,7 +217,7 @@ class TestPlanRunRoute:
         assert "reserved" in resp.json()["detail"]
 
     def test_unknown_plan_404(self, fake_store, monkeypatch):
-        import services.chat_plans as chat_plans
+        import poindexter.services.chat_plans as chat_plans
 
         async def run_plan(**kwargs):
             raise KeyError(kwargs["plan_id"])
@@ -234,7 +234,7 @@ class TestPlanRunRoute:
 @pytest.mark.unit
 class TestWatchRoute:
     def test_snapshot_passthrough(self, fake_store, monkeypatch):
-        import services.chat_watch as chat_watch
+        import poindexter.services.chat_watch as chat_watch
 
         async def watch_task(pool, task_id):
             return {"task_id": task_id, "status": "in_progress",
@@ -247,7 +247,7 @@ class TestWatchRoute:
         assert resp.json()["nodes_done"] == 3
 
     def test_unknown_task_404(self, fake_store, monkeypatch):
-        import services.chat_watch as chat_watch
+        import poindexter.services.chat_watch as chat_watch
 
         async def watch_task(pool, task_id):
             return None

@@ -21,8 +21,8 @@ import re
 from typing import Any
 
 from plugins.stage import StageResult
-from services.alt_text import _IMG_ALT_RE  # (<img...alt=")(value)(")
-from services.image_captioner import caption_image
+from poindexter.services.alt_text import _IMG_ALT_RE  # (<img...alt=")(value)(")
+from poindexter.services.image_captioner import caption_image
 
 logger = logging.getLogger(__name__)
 

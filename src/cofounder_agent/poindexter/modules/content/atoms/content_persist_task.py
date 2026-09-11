@@ -63,8 +63,8 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Write the awaiting_approval record to content_tasks."""
-    from services.quality_models import ensure_quality_assessment
-    from services.text_utils import normalize_text as _normalize_text
+    from poindexter.services.quality_models import ensure_quality_assessment
+    from poindexter.services.text_utils import normalize_text as _normalize_text
 
     task_id = state.get("task_id")
     database_service = state.get("database_service")
@@ -102,7 +102,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         seo_keywords_list = []
 
     # Canonical title.
-    from services.title_generation import strip_qa_batch_suffix
+    from poindexter.services.title_generation import strip_qa_batch_suffix
     final_title = (
         state.get("title") or seo_title or strip_qa_batch_suffix(topic)
     )
@@ -172,7 +172,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     # pipeline_versions upsert (poindexter#473).
     try:
-        from services.pipeline_db import PipelineDB
+        from poindexter.services.pipeline_db import PipelineDB
         await PipelineDB(database_service.pool).upsert_version(
             task_id,
             {
@@ -200,7 +200,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     # Revision snapshot.
     try:
-        from services.content_revisions_logger import log_revision
+        from poindexter.services.content_revisions_logger import log_revision
         await log_revision(
             database_service.pool,
             task_id=task_id,

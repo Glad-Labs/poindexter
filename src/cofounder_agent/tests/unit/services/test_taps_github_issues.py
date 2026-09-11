@@ -20,7 +20,7 @@ import httpx
 import pytest
 
 from plugins import Tap
-from services.taps.github_issues import (
+from poindexter.services.taps.github_issues import (
     GitHubIssuesTap,
     _build_source_id,
     _parse_repos,
@@ -262,14 +262,14 @@ class TestOssGenericDefaults:
     """
 
     def test_code_default_is_empty(self):
-        from services.taps.github_issues import _DEFAULT_REPOS
+        from poindexter.services.taps.github_issues import _DEFAULT_REPOS
 
         assert _DEFAULT_REPOS == ""
 
     def test_seeded_default_names_no_repo(self):
         import json
 
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         cfg = json.loads(DEFAULTS["plugin.tap.github_issues"])
         assert cfg["config"]["repos"] == ""

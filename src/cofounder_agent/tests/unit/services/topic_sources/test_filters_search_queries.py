@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.topic_sources._filters import (
+from poindexter.services.topic_sources._filters import (
     is_junk_search_query,
     is_news_or_junk,
     permutation_clusters,

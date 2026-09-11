@@ -56,7 +56,7 @@ async def record_run(
     # registry is already populated at startup; this is a memory hit.
     atoms_by_name: dict[str, Any] = {}
     try:
-        from services import atom_registry
+        from poindexter.services import atom_registry
         atoms_by_name = {m.name: m for m in atom_registry.list_atoms()}
     except Exception:
         atoms_by_name = {}

@@ -20,10 +20,10 @@ async def test_rebuild_triggers_revalidation_on_success():
     db.pool = object()
     sc = MagicMock()
     with patch(
-        "services.static_export_service.export_full_rebuild",
+        "poindexter.services.static_export_service.export_full_rebuild",
         AsyncMock(return_value={"success": True, "posts": 5}),
     ), patch(
-        "services.revalidation_service.trigger_nextjs_revalidation",
+        "poindexter.services.revalidation_service.trigger_nextjs_revalidation",
         AsyncMock(return_value=True),
     ) as reval:
         resp = await cms_routes.rebuild_static_export(db_service=db, site_config_dep=sc)
@@ -44,10 +44,10 @@ async def test_rebuild_does_not_revalidate_on_failure():
     db.pool = object()
     sc = MagicMock()
     with patch(
-        "services.static_export_service.export_full_rebuild",
+        "poindexter.services.static_export_service.export_full_rebuild",
         AsyncMock(return_value={"success": False, "error": "r2 down"}),
     ), patch(
-        "services.revalidation_service.trigger_nextjs_revalidation",
+        "poindexter.services.revalidation_service.trigger_nextjs_revalidation",
         AsyncMock(return_value=True),
     ) as reval:
         resp = await cms_routes.rebuild_static_export(db_service=db, site_config_dep=sc)

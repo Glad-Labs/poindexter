@@ -32,7 +32,7 @@ import json
 import logging
 from typing import Any
 
-from services.integrations import registry
+from poindexter.services.integrations import registry
 
 logger = logging.getLogger(__name__)
 

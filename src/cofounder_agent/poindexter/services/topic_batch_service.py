@@ -33,18 +33,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from services.logger_config import get_logger
-from services.niche_service import Niche, NicheService
-from services.site_config import SiteConfig
-from services.topic_grounding import internal_grounding
-from services.topic_length import pick_target_length
-from services.topic_ranking import (
+from poindexter.services.logger_config import get_logger
+from poindexter.services.niche_service import Niche, NicheService
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_grounding import internal_grounding
+from poindexter.services.topic_length import pick_target_length
+from poindexter.services.topic_ranking import (
     ScoredCandidate,
     apply_decay,
     goal_vector_for,
     weighted_cosine_score,
 )
-from services.topic_sanity import (
+from poindexter.services.topic_sanity import (
     TopicSanityError,
     evaluate_topic_sanity,
     resolve_min_alpha_words,
@@ -293,7 +293,7 @@ class TopicBatchService:
             top10 = pool_external[:top_n] + pool_internal[:top_n]
 
             # Lazy import so tests can patch services.topic_ranking.llm_final_score.
-            from services.topic_ranking import llm_final_score
+            from poindexter.services.topic_ranking import llm_final_score
 
             goals = await self._niche_svc.get_goals(niche.id)
             # #272 Phase-2d: topic_ranking has no module global — pass the
@@ -360,7 +360,7 @@ class TopicBatchService:
                 str(c.id) for c in ranked if str(c.id) in pool_ids
             ]
             if chosen_pool_ids:
-                from services.topic_pool import mark_batched
+                from poindexter.services.topic_pool import mark_batched
 
                 async with self._pool.acquire() as conn:
                     await mark_batched(conn, chosen_pool_ids)
@@ -536,7 +536,7 @@ class TopicBatchService:
         loop body lives on verbatim in the tap handler
         (``services/integrations/handlers/tap_builtin_topic_source.py``).
         """
-        from services.topic_pool import read_pooled
+        from poindexter.services.topic_pool import read_pooled
 
         per_source_limit = self._site_config.get_int(
             "niche_pool_read_per_source_limit", 20,
@@ -697,7 +697,7 @@ class TopicBatchService:
         problem than the content stall an exception here would cause (same
         posture as the empty-batch-wedge guard in ``run_sweep``).
         """
-        from services.topic_dedup_semantic import get_deduplicator
+        from poindexter.services.topic_dedup_semantic import get_deduplicator
 
         wrappers: list[_DedupCandidate] = []
         for item in external:
@@ -937,7 +937,7 @@ class TopicBatchService:
         ``monkeypatch.setattr("services.topic_ranking.embed_text", ...)``
         works without reaching into this module's namespace.
         """
-        from services.topic_ranking import embed_text
+        from poindexter.services.topic_ranking import embed_text
 
         goals = await self._niche_svc.get_goals(niche.id)
         # #272 Phase-2d: thread the DI-injected site_config into the
@@ -956,7 +956,7 @@ class TopicBatchService:
         penalty_factor = self._site_config.get_float(
             "niche_external_grounding_penalty_factor", 0.6,
         )
-        from services.topic_ranking import parse_rank_weights, source_rank_weight
+        from poindexter.services.topic_ranking import parse_rank_weights, source_rank_weight
 
         rank_weights = parse_rank_weights(
             self._site_config.get("topic_source_rank_weights", ""),
@@ -966,7 +966,7 @@ class TopicBatchService:
         # concurrency and a 7-day DB cache. Fail-open per candidate — an
         # unknown is factor 1.0 with ``_wiki_views: None`` in the breakdown.
         # See services/entity_demand.py.
-        from services.entity_demand import (
+        from poindexter.services.entity_demand import (
             DemandSettings,
             WikipediaDemandScorer,
             combined_factor,
@@ -1342,7 +1342,7 @@ class TopicBatchService:
         """
         logger.info("Opened topic_decision gate for batch %s", batch.id)
 
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
 
         await notify_operator(
             f"New topic batch ready for review — {niche.name} "
@@ -1691,7 +1691,7 @@ class TopicBatchService:
         # (self-heal), operator resolve paths surface it as a 400 / CLI
         # error. Fail-open on infra errors inside the checker — only a real
         # match blocks.
-        from services.topic_recent_coverage import (
+        from poindexter.services.topic_recent_coverage import (
             RecentCoverageError,
             assert_no_recent_coverage,
             compose_text,
@@ -1799,7 +1799,7 @@ class TopicBatchService:
         # that this INSERT omitted template_slug entirely, leaving
         # it NULL → content_router_service fails the task per
         # feedback_no_silent_defaults (jank-audit finding #3).
-        from services.template_slug_resolver import resolve_template_slug
+        from poindexter.services.template_slug_resolver import resolve_template_slug
         template_slug = await resolve_template_slug(
             self._pool, niche_slug=niche.slug,
         )

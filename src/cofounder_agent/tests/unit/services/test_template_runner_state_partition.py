@@ -32,7 +32,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
-from services.template_runner import (
+from poindexter.services.template_runner import (
     _CONFIG_SERVICES_KEY,
     PipelineState,
     TemplateRunner,
@@ -229,7 +229,7 @@ def _service_aware_factory_with_capture(
     ``services.pipeline_templates.TEMPLATES`` entries.
     """
 
-    from services.template_runner import _services_from_config
+    from poindexter.services.template_runner import _services_from_config
 
     def _factory(*, pool: Any, record_sink: list | None = None) -> StateGraph:
         g: StateGraph = StateGraph(PipelineState)
@@ -271,7 +271,7 @@ def flag_off_for_partition():
     #272 Phase-2f deleted the template_runner module-global site_config;
     tests now construct a SiteConfig and thread it into TemplateRunner.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
     return SiteConfig(initial_config={
         "template_runner_use_postgres_checkpointer": "false",
     })
@@ -345,7 +345,7 @@ class TestRunnerPartitionsServicesFromState:
         factory = _service_aware_factory_with_capture(capture)
 
         # Inject our factory into the templates registry.
-        import services.pipeline_templates as pt
+        import poindexter.services.pipeline_templates as pt
         monkeypatch.setattr(pt, "TEMPLATES", {"svc_partition": factory})
 
         runner = TemplateRunner(
@@ -429,7 +429,7 @@ class TestRunnerPartitionsServicesFromState:
         """
         capture: dict[str, Any] = {}
         factory = _service_aware_factory_with_capture(capture)
-        import services.pipeline_templates as pt
+        import poindexter.services.pipeline_templates as pt
         monkeypatch.setattr(pt, "TEMPLATES", {"svc_platform": factory})
 
         runner = TemplateRunner(
@@ -464,7 +464,7 @@ class TestRunnerPartitionsServicesFromState:
         audit_log writer, both of which JSON-serialize their inputs."""
         capture: dict[str, Any] = {}
         factory = _service_aware_factory_with_capture(capture)
-        import services.pipeline_templates as pt
+        import poindexter.services.pipeline_templates as pt
         monkeypatch.setattr(pt, "TEMPLATES", {"svc_partition_2": factory})
 
         runner = TemplateRunner(
@@ -503,7 +503,7 @@ class TestRunnerPartitionsServicesFromState:
         """
         capture: dict[str, Any] = {}
         factory = _service_aware_factory_with_capture(capture)
-        import services.pipeline_templates as pt
+        import poindexter.services.pipeline_templates as pt
         monkeypatch.setattr(pt, "TEMPLATES", {"svc_partition_3": factory})
 
         runner = TemplateRunner(

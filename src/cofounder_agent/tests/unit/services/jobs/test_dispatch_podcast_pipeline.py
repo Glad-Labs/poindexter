@@ -11,9 +11,9 @@ from unittest.mock import patch
 
 import pytest
 
-from services.jobs import dispatch_podcast_pipeline
-from services.jobs.dispatch_podcast_pipeline import DispatchPodcastPipelineJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs import dispatch_podcast_pipeline
+from poindexter.services.jobs.dispatch_podcast_pipeline import DispatchPodcastPipelineJob
+from poindexter.services.site_config import SiteConfig
 
 
 class _FakePool:

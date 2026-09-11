@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services import task_failure_alerts as tfa
+from poindexter.services import task_failure_alerts as tfa
 
 
 def _make_get_setting(overrides: dict[str, str] | None = None):
@@ -51,7 +51,7 @@ async def test_dedup_window_blocks_repeat_alerts_for_same_task_and_error():
         "task_failure_alert_severity": "telegram",  # worst case
     }
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         results = []
@@ -86,7 +86,7 @@ async def test_distinct_errors_for_same_task_are_not_deduped():
 
     overrides = {"task_failure_alert_dedup_window_seconds": "900"}
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         await tfa.send_failure_alert(
@@ -118,7 +118,7 @@ async def test_default_severity_routes_to_discord_not_telegram():
     tfa._reset_lru_for_tests()
 
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         out = await tfa.send_failure_alert(
@@ -141,7 +141,7 @@ async def test_explicit_telegram_severity_routes_critical_true():
     tfa._reset_lru_for_tests()
 
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         out = await tfa.send_failure_alert(
@@ -165,7 +165,7 @@ async def test_invalid_severity_fails_loud_and_falls_back_to_discord():
     tfa._reset_lru_for_tests()
 
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         out = await tfa.send_failure_alert(
@@ -195,7 +195,7 @@ async def test_window_zero_disables_dedup():
 
     overrides = {"task_failure_alert_dedup_window_seconds": "0"}
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         for _ in range(3):
@@ -271,7 +271,7 @@ async def test_none_error_message_does_not_crash_alert_path():
     tfa._reset_lru_for_tests()
 
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         out = await tfa.send_failure_alert(
@@ -302,7 +302,7 @@ async def test_notify_operator_raising_does_not_propagate():
     tfa._reset_lru_for_tests()
 
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
         side_effect=RuntimeError("telegram bot offline"),
     ):
@@ -332,7 +332,7 @@ async def test_get_setting_raising_falls_back_to_safe_defaults():
         raise RuntimeError("settings cache not yet warmed")
 
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         out = await tfa.send_failure_alert(
@@ -360,7 +360,7 @@ async def test_non_integer_window_falls_back_to_default_900():
 
     overrides = {"task_failure_alert_dedup_window_seconds": "never"}
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         await tfa.send_failure_alert(
@@ -394,7 +394,7 @@ async def test_severity_normalization_strips_and_lowercases():
     tfa._reset_lru_for_tests()
 
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         out = await tfa.send_failure_alert(
@@ -423,7 +423,7 @@ async def test_distinct_task_ids_with_same_error_are_independent():
 
     overrides = {"task_failure_alert_dedup_window_seconds": "900"}
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         await tfa.send_failure_alert(
@@ -456,7 +456,7 @@ async def test_negative_window_clamps_to_zero_and_disables_dedup():
 
     overrides = {"task_failure_alert_dedup_window_seconds": "-60"}
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         for _ in range(3):
@@ -493,7 +493,7 @@ async def test_persistent_dedup_db_error_is_swallowed():
             raise RuntimeError("pool is closed")
 
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new_callable=AsyncMock,
     ) as mock_notify:
         out = await tfa.send_failure_alert(

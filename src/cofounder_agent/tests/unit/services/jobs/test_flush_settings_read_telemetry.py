@@ -17,11 +17,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services import settings_read_sink
-from services.jobs.flush_settings_read_telemetry import (
+from poindexter.services import settings_read_sink
+from poindexter.services.jobs.flush_settings_read_telemetry import (
     FlushSettingsReadTelemetryJob,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.fixture(autouse=True)

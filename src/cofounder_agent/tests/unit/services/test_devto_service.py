@@ -10,14 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.devto_service import (
+from poindexter.services.devto_service import (
     DEVTO_STATUS_ALREADY_EXISTS,
     DEVTO_STATUS_GAVE_UP,
     DEVTO_STATUS_POSTED,
     CrossPostResult,
     DevToCrossPostService,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # Per glad-labs-stack#330: tests construct an explicit SiteConfig
 # instead of mutating the module singleton. _TEST_SC is threaded into
@@ -257,7 +257,7 @@ class TestCrossPostSuccess:
             "id": 12345,
         }
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             mock_client_instance = AsyncMock()
             mock_client_instance.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(
@@ -312,7 +312,7 @@ class TestCrossPostSuccess:
             "status": 422,
         }
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             mock_client_instance = AsyncMock()
             mock_client_instance.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(
@@ -362,7 +362,7 @@ class TestCrossPostSuccess:
             '{"error":"CANONICAL URL HAS ALREADY BEEN TAKEN","status":422}'
         )
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             client = AsyncMock()
             client.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
@@ -394,7 +394,7 @@ class TestCrossPostSuccess:
             '"status":422}'
         )
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             client = AsyncMock()
             client.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
@@ -423,7 +423,7 @@ class TestCrossPostSuccess:
         mock_response.json.side_effect = ValueError("not json")
         mock_response.text = "<html>500 from upstream cdn</html>"
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             client = AsyncMock()
             client.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
@@ -448,7 +448,7 @@ class TestCrossPostSuccess:
         mock_response.status_code = 415
         mock_response.text = "Unsupported Media Type"
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             client = AsyncMock()
             client.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
@@ -474,7 +474,7 @@ class TestCrossPostSuccess:
         mock_response.status_code = 503
         mock_response.text = "Service Unavailable"
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             mock_client_instance = AsyncMock()
             mock_client_instance.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(
@@ -501,7 +501,7 @@ class TestCrossPostSuccess:
         mock_response.status_code = 429
         mock_response.text = "Too Many Requests"
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             mock_client_instance = AsyncMock()
             mock_client_instance.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(
@@ -523,7 +523,7 @@ class TestCrossPostSuccess:
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
         svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             mock_client_instance = AsyncMock()
             mock_client_instance.post = AsyncMock(
                 side_effect=Exception("Connection timeout")
@@ -551,7 +551,7 @@ class TestCrossPostSuccess:
         mock_response.status_code = 201
         mock_response.json.return_value = {"url": "https://dev.to/x", "id": 1}
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             mock_client_instance = AsyncMock()
             mock_client_instance.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(
@@ -642,7 +642,7 @@ class TestCrossPostByPostIdDedup:
             "id": 999,
         }
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             client = AsyncMock()
             client.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
@@ -695,7 +695,7 @@ class TestCrossPostByPostIdDedup:
             "status": 422,
         }
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             client = AsyncMock()
             client.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
@@ -754,7 +754,7 @@ class TestCrossPostByPostIdDedup:
         }
         mock_response.text = '{"error":"Title is too long","status":422}'
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             client = AsyncMock()
             client.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
@@ -794,7 +794,7 @@ class TestCrossPostByPostIdDedup:
         mock_response.status_code = 503
         mock_response.text = "Service Unavailable"
 
-        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+        with patch("poindexter.services.devto_service.httpx.AsyncClient") as MockClient:
             client = AsyncMock()
             client.post = AsyncMock(return_value=mock_response)
             MockClient.return_value.__aenter__ = AsyncMock(return_value=client)

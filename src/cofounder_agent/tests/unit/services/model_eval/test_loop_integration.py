@@ -7,10 +7,10 @@ promotion. Offline + deterministic; no DB, no langfuse, no model download.
 
 from __future__ import annotations
 
-from services.model_eval.bakeoff import run_reranker_bakeoff
-from services.model_eval.harness import InMemoryEvalHarness
-from services.model_eval.scorers.reranker import RerankerScorer
-from services.site_config import SiteConfig
+from poindexter.services.model_eval.bakeoff import run_reranker_bakeoff
+from poindexter.services.model_eval.harness import InMemoryEvalHarness
+from poindexter.services.model_eval.scorers.reranker import RerankerScorer
+from poindexter.services.site_config import SiteConfig
 
 # Distinct, non-substring markers so a query marker matches exactly one doc.
 _MARKERS = ["alpha", "bravo", "charlie", "delta"]

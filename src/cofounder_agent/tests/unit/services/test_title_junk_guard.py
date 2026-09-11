@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.title_generation import (
+from poindexter.services.title_generation import (
     _DEFAULT_TITLE_MAX_LENGTH,
     _is_junk_title,
     _is_meta_commentary_title,

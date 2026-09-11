@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import services.posts_approval_service as svc
+import poindexter.services.posts_approval_service as svc
 from tests.unit.services._gate_fakes import FakeConn, FakePool, executed_sql
 
 pytestmark = pytest.mark.unit
@@ -91,7 +91,7 @@ class TestRejectPublish:
         row = {"id": "p1", "status": "scheduled", "awaiting_gate": "g", "gate_artifact": "{}"}
         conn = FakeConn(fetchrow_result=row)
         pool = FakePool(conn)
-        with patch("services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
+        with patch("poindexter.services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
             out = await svc.reject_publish(post_id="p1", reason="no", site_config=None, pool=pool)
         assert out["new_status"] == "rejected"
         assert out["reason"] == "no"
@@ -103,7 +103,7 @@ class TestRejectPublish:
         pool = FakePool(conn)
         sc = MagicMock()
         sc.get.return_value = "draft"
-        with patch("services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
+        with patch("poindexter.services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
             out = await svc.reject_publish(post_id="p1", site_config=sc, pool=pool)
         assert out["new_status"] == "draft"
 

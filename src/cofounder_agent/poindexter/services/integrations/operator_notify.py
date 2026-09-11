@@ -46,7 +46,7 @@ from typing import Any
 
 import httpx
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
@@ -123,7 +123,7 @@ def _resolve_site_config() -> Any | None:
     the calling notification path can fall back gracefully.
     """
     try:
-        from services.integrations.shared_context import get_site_config
+        from poindexter.services.integrations.shared_context import get_site_config
     except ImportError as exc:
         logger.warning(
             "[notify_operator] shared_context.get_site_config import failed (%s) — "
@@ -185,8 +185,8 @@ async def notify_operator(
     """
     # Phase 1: framework path.
     try:
-        from services.integrations import outbound_dispatcher
-        from services.integrations.shared_context import get_database_service
+        from poindexter.services.integrations import outbound_dispatcher
+        from poindexter.services.integrations.shared_context import get_database_service
 
         db_service = get_database_service()
         # Fall back to the lifespan-bound SiteConfig when callers don't

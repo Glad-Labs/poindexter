@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.rag_engine import _aembed_query_with_retry
+from poindexter.services.rag_engine import _aembed_query_with_retry
 
 
 @pytest.mark.unit

@@ -45,7 +45,7 @@ Testing:
 
 import os
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -318,7 +318,7 @@ class SiteConfig:
         services.clock (invalid -> loud-degrade to UTC). Picks up changes on
         the minute-ly reload. Returns `zoneinfo.ZoneInfo`.
         """
-        from services.clock import DEFAULT_TZ, resolve_operator_tz
+        from poindexter.services.clock import DEFAULT_TZ, resolve_operator_tz
 
         return resolve_operator_tz(self.get("operator_timezone", DEFAULT_TZ))
 

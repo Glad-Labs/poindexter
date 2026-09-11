@@ -11,8 +11,8 @@ error must never break generation.
 
 from __future__ import annotations
 
-from services.pipeline_architect import _RecordingSink
-from services.template_runner import TemplateRunRecord
+from poindexter.services.pipeline_architect import _RecordingSink
+from poindexter.services.template_runner import TemplateRunRecord
 
 
 async def test_recording_sink_fires_on_record_with_monotonic_seq():

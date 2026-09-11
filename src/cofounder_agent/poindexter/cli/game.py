@@ -50,7 +50,7 @@ async def _open_pool() -> Any:
 
 
 async def _make_site_config(pool):
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     site_config = SiteConfig(pool=pool)
     await site_config.load(pool)
@@ -159,12 +159,12 @@ async def _evict_ollama(site_config) -> str:
     rather than firing ``keep_alive:0`` and hoping; the operator is about to
     launch a game against this VRAM, so an unconfirmed unload is worthless.
     """
-    from services import game_mode
+    from poindexter.services import game_mode
 
     if not site_config.get_bool(game_mode.EVICT_OLLAMA_KEY, True):
         return "skipped (game_mode_evict_ollama=false)"
 
-    from services.llm_providers.ollama_unload import (
+    from poindexter.services.llm_providers.ollama_unload import (
         ollama_base_urls,
         unload_loaded_ollama_models,
     )
@@ -221,7 +221,7 @@ def game_on(hours: float | None, as_json: bool) -> None:
     """Park GPU services and pause pipeline GPU admission."""
 
     async def _run() -> dict[str, Any]:
-        from services import game_mode
+        from poindexter.services import game_mode
 
         pool = await _open_pool()
         try:
@@ -261,7 +261,7 @@ def game_off(as_json: bool) -> None:
     """End game mode early. Services come back on the next brain cycle."""
 
     async def _run() -> dict[str, Any]:
-        from services import game_mode
+        from poindexter.services import game_mode
 
         pool = await _open_pool()
         try:
@@ -285,7 +285,7 @@ def game_status(as_json: bool) -> None:
     """Show whether game mode is active, and the live container state."""
 
     async def _run() -> dict[str, Any]:
-        from services import game_mode
+        from poindexter.services import game_mode
 
         pool = await _open_pool()
         try:

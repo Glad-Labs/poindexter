@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.check_memory_staleness import CheckMemoryStalenessJob
+from poindexter.services.jobs.check_memory_staleness import CheckMemoryStalenessJob
 
 
 def _make_pool(last_alerts: dict | None = None, settings: dict | None = None):
@@ -95,8 +95,8 @@ class TestCheckMemoryStalenessJobRun:
         audit_mock = MagicMock()
 
         with patch("poindexter.memory.MemoryClient", memory_cls), \
-             patch("services.integrations.operator_notify.notify_operator", new=notify_mock), \
-             patch("services.audit_log.audit_log_bg", new=audit_mock):
+             patch("poindexter.services.integrations.operator_notify.notify_operator", new=notify_mock), \
+             patch("poindexter.services.audit_log.audit_log_bg", new=audit_mock):
             result = await CheckMemoryStalenessJob().run(pool, {})
 
         assert result.ok is True
@@ -115,7 +115,7 @@ class TestCheckMemoryStalenessJobRun:
 
         notify_mock = AsyncMock()
         with patch("poindexter.memory.MemoryClient", memory_cls), \
-             patch("services.integrations.operator_notify.notify_operator", new=notify_mock):
+             patch("poindexter.services.integrations.operator_notify.notify_operator", new=notify_mock):
             result = await CheckMemoryStalenessJob().run(pool, {})
 
         assert result.ok is True
@@ -133,7 +133,7 @@ class TestCheckMemoryStalenessJobRun:
 
         notify_mock = AsyncMock()
         with patch("poindexter.memory.MemoryClient", memory_cls), \
-             patch("services.integrations.operator_notify.notify_operator", new=notify_mock):
+             patch("poindexter.services.integrations.operator_notify.notify_operator", new=notify_mock):
             result = await CheckMemoryStalenessJob().run(pool, {})
 
         assert result.ok is True
@@ -153,7 +153,7 @@ class TestCheckMemoryStalenessJobRun:
 
         notify_mock = AsyncMock()
         with patch("poindexter.memory.MemoryClient", memory_cls), \
-             patch("services.integrations.operator_notify.notify_operator", new=notify_mock):
+             patch("poindexter.services.integrations.operator_notify.notify_operator", new=notify_mock):
             result = await CheckMemoryStalenessJob().run(pool, {})
 
         assert result.changes_made == 1

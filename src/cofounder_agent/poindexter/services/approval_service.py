@@ -42,15 +42,15 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from services.audit_log import audit_log_bg
-from services.gate_machinery import (
+from poindexter.services.audit_log import audit_log_bg
+from poindexter.services.gate_machinery import (
     GateServiceError,
     ensure_gate_match,
     iso_or_none,
     resolve_reject_status,
 )
-from services.gate_machinery import coerce_artifact as _coerce_artifact
-from services.logger_config import get_logger
+from poindexter.services.gate_machinery import coerce_artifact as _coerce_artifact
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -152,7 +152,7 @@ async def _record_router_outcome(
     break an operator approve/reject (per ``feedback_human_approval``).
     """
     try:
-        from services.router_outcome_feedback import record_task_outcome
+        from poindexter.services.router_outcome_feedback import record_task_outcome
 
         await record_task_outcome(
             pool=pool,
@@ -367,7 +367,7 @@ async def _notify_gate_tripped(
     :mod:`services.integrations.operator_notify`. The call signature
     is now ``notify_operator(msg, critical=..., site_config=...)``.
     """
-    from services.integrations.operator_notify import notify_operator
+    from poindexter.services.integrations.operator_notify import notify_operator
 
     artifact_summary = _summarize_artifact(artifact)
     msg = (
@@ -861,7 +861,7 @@ async def reject(
     # Failures inside the handler are logged + swallowed so this never
     # makes a successful rejection look like a CLI error.
     try:
-        from services.rejection_handlers import (
+        from poindexter.services.rejection_handlers import (
             RejectionContext,
             dispatch_rejection,
         )
@@ -1313,7 +1313,7 @@ async def list_gates(
     Each row carries ``gate_name`` / ``enabled`` / ``pending_count`` (backcompat)
     plus ``mechanism`` / ``wired_into`` / ``setting_key``.
     """
-    from services.gate_machinery import GATE_CATALOG
+    from poindexter.services.gate_machinery import GATE_CATALOG
 
     async with pool.acquire() as conn:
         setting_rows = await conn.fetch(

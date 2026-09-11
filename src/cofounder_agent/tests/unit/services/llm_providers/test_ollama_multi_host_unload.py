@@ -14,8 +14,8 @@ import json
 
 import pytest
 
-from services.llm_providers.ollama_unload import ollama_base_urls
-from services.site_config import SiteConfig
+from poindexter.services.llm_providers.ollama_unload import ollama_base_urls
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**over):
@@ -83,7 +83,7 @@ def test_malformed_plugin_config_falls_back_to_primary():
 
 from datetime import datetime, timedelta, timezone
 
-from services.llm_providers.ollama_unload import _is_permanently_pinned
+from poindexter.services.llm_providers.ollama_unload import _is_permanently_pinned
 
 
 def _iso(dt):

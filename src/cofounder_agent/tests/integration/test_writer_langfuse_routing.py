@@ -135,8 +135,8 @@ async def test_dispatch_complete_routes_through_litellm_and_registers_langfuse_c
     if not await _ollama_is_reachable(url):
         pytest.skip(f"Ollama not reachable at {url}")
 
-    from services.llm_providers.dispatcher import dispatch_complete
-    from services.llm_providers.litellm_provider import configure_langfuse_callback
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete
+    from poindexter.services.llm_providers.litellm_provider import configure_langfuse_callback
 
     # Configure Langfuse callback FIRST — this is what main.py's
     # lifespan does at worker startup. Without it, the litellm

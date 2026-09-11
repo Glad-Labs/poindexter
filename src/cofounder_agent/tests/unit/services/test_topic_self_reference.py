@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.topic_self_reference import (
+from poindexter.services.topic_self_reference import (
     EXCLUDED_DOMAINS_KEY,
     is_self_referential,
     normalize_host,

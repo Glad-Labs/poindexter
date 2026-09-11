@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services import gate_resume as mod
-from services.approval_service import (
+from poindexter.services import gate_resume as mod
+from poindexter.services.approval_service import (
     ApprovalServiceError,
     TaskNotFoundError,
     TaskNotPausedError,

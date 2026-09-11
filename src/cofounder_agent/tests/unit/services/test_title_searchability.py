@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.title_searchability import (
+from poindexter.services.title_searchability import (
     find_searchable_entities,
     has_searchable_entity,
     keyword_terms,

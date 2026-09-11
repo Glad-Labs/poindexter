@@ -26,7 +26,7 @@ from modules.content.stages.source_featured_image import (
     DEFAULT_STAGE_OVERHEAD_SECONDS,
     resolve_stage_timeout_seconds,
 )
-from services.settings_defaults import DEFAULTS
+from poindexter.services.settings_defaults import DEFAULTS
 
 
 def _site_config(**overrides):

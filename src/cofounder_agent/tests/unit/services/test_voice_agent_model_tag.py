@@ -27,7 +27,7 @@ from tests.unit.services.test_voice_agent_service_mode import (
 
 def _normalize():
     _ensure_pipecat_stubs()
-    from services.voice_agent import _normalize_ollama_tag
+    from poindexter.services.voice_agent import _normalize_ollama_tag
     return _normalize_ollama_tag
 
 

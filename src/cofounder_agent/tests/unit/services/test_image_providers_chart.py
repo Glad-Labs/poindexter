@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.image_providers.chart import ChartProvider, ChartSpecError, parse_spec
+from poindexter.services.image_providers.chart import ChartProvider, ChartSpecError, parse_spec
 
-_MODULE = "services.image_providers.chart"
+_MODULE = "poindexter.services.image_providers.chart"
 
 _PAYLOAD = {
     "form": "bar",
@@ -144,7 +144,7 @@ class TestChartProviderFetch:
         """Structural: an image plugin must never fetch its own data."""
         import inspect
 
-        import services.image_providers.chart as mod
+        import poindexter.services.image_providers.chart as mod
 
         src = inspect.getsource(mod).lower()
         for token in ("select ", "insert ", "conn.fetch", "pool.acquire"):

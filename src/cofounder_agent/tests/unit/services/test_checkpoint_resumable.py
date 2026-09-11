@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.template_runner import has_resumable_checkpoint
+from poindexter.services.template_runner import has_resumable_checkpoint
 from tests.unit.services._gate_fakes import FakeConn, FakePool
 
 pytestmark = pytest.mark.unit

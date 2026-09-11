@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from services.topic_ranking import parse_rank_weights, source_rank_weight
+from poindexter.services.topic_ranking import parse_rank_weights, source_rank_weight
 
 
 def test_parses_csv_pairs():
@@ -30,8 +30,8 @@ def test_unlisted_and_missing_source_default_to_one():
 
 
 def test_default_setting_boosts_the_two_demand_sources():
-    from services.settings_categories import resolve_category
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_categories import resolve_category
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     w = parse_rank_weights(DEFAULTS["topic_source_rank_weights"])
     assert w["search_autocomplete"] > 1.0 and w["gsc_query_gap"] > 1.0

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from services.taps.openclaw_sqlite import OpenClawSQLiteTap
+from poindexter.services.taps.openclaw_sqlite import OpenClawSQLiteTap
 
 
 def _build_sqlite(path: Path, rows: list[tuple]) -> None:

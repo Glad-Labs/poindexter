@@ -13,8 +13,8 @@ from typing import Any
 import httpx
 import pytest
 
-from services.topic_sources import search_autocomplete as mod
-from services.topic_sources.search_autocomplete import SearchAutocompleteSource
+from poindexter.services.topic_sources import search_autocomplete as mod
+from poindexter.services.topic_sources.search_autocomplete import SearchAutocompleteSource
 
 
 class _Cfg:
@@ -303,7 +303,7 @@ class TestShipsInert:
     def test_seeded_default_disables_the_source(self):
         """The runner defaults a MISSING plugin row to enabled=True, so the row
         has to exist with enabled=false or this source switches itself on."""
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         raw = DEFAULTS["plugin.topic_source.search_autocomplete"]
         cfg = json.loads(raw)

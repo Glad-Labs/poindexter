@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.sync_postiz_delivery_state import SyncPostizDeliveryStateJob
+from poindexter.services.jobs.sync_postiz_delivery_state import SyncPostizDeliveryStateJob
 
 
 def _site_config(settings: dict[str, str]) -> MagicMock:
@@ -57,7 +57,7 @@ def _patch_client(posts: list[dict] | None = None, raises: BaseException | None 
     else:
         inst.list_posts = AsyncMock(return_value=posts or [])
     ctor = MagicMock(return_value=inst)
-    return patch("services.integrations.postiz_client.PostizClient", ctor), inst
+    return patch("poindexter.services.integrations.postiz_client.PostizClient", ctor), inst
 
 
 @pytest.mark.asyncio
@@ -93,7 +93,7 @@ async def test_error_state_demotes_to_failed_and_emits_finding():
     pool = _pool([_draft_row("d1", "pz1")])
     ctx, _ = _patch_client(posts=[{"id": "pz1", "state": "ERROR"}])
     with ctx, patch(
-        "services.jobs.sync_postiz_delivery_state.emit_finding"
+        "poindexter.services.jobs.sync_postiz_delivery_state.emit_finding"
     ) as finding:
         result = await job.run(pool=pool, config=cfg)
     assert result.ok is True
@@ -118,7 +118,7 @@ async def test_published_state_stamps_release_url():
                 "releaseURL": "https://bsky.app/profile/x/post/y"}]
     )
     with ctx, patch(
-        "services.jobs.sync_postiz_delivery_state.emit_finding"
+        "poindexter.services.jobs.sync_postiz_delivery_state.emit_finding"
     ) as finding:
         result = await job.run(pool=pool, config=cfg)
     assert result.ok is True

@@ -13,7 +13,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.seo.striking_distance import (
+from poindexter.services.seo.striking_distance import (
     DEFAULT_THRESHOLDS,
     analyze,
     upsert_opportunities,

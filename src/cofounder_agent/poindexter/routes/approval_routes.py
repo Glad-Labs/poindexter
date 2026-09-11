@@ -21,11 +21,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import get_operator_identity, verify_api_token
+from poindexter.services.audit_log import audit_log_bg
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.error_handler import AppError
+from poindexter.services.logger_config import get_logger
 from schemas.task_schemas import PendingApprovalListResponse
-from services.audit_log import audit_log_bg
-from services.database_service import DatabaseService
-from services.error_handler import AppError
-from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
 from utils.uuid_prefix import resolve_task_id_prefix
 
@@ -214,7 +214,7 @@ async def reject_task(
         # sweep's promote bucket — would resurrect the very draft the human
         # just threw away. Best-effort; the rejection itself stands regardless.
         try:
-            from services.pipeline_db import PipelineDB
+            from poindexter.services.pipeline_db import PipelineDB
 
             await PipelineDB(db_service.pool).clear_qa_approved_snapshot(full_task_id)
         except Exception as marker_err:
@@ -293,7 +293,7 @@ async def reject_task(
         # on that decision, not a new judgment of the content.
         if not escalation:
             try:
-                from services.router_outcome_feedback import record_task_outcome
+                from poindexter.services.router_outcome_feedback import record_task_outcome
 
                 await record_task_outcome(
                     pool=db_service.pool,
@@ -395,7 +395,7 @@ async def unapprove_task_route(
                 detail="feedback is required when 'to' targets a rejected_* status",
             )
 
-        from services.publish_service import unapprove_task
+        from poindexter.services.publish_service import unapprove_task
 
         result = await unapprove_task(
             db_service.pool,

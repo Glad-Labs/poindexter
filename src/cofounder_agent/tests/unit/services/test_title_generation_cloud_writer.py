@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.title_generation import generate_canonical_title
+from poindexter.services.title_generation import generate_canonical_title
 
 
 def _result(text: str) -> MagicMock:
@@ -71,12 +71,12 @@ async def test_cloud_writer_routes_through_dispatch_not_local_ollama():
     local = _make_local_provider('{"title": "SHOULD NOT BE USED"}')
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI trends",
@@ -110,12 +110,12 @@ async def test_local_writer_with_pool_also_routes_through_dispatch():
     local = _make_local_provider('{"title": "SHOULD NOT BE USED"}')
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",
@@ -138,12 +138,12 @@ async def test_no_pool_falls_back_to_local_ollama_provider():
     local = _make_local_provider('{"title": "A Local Fallback Title"}')
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",
@@ -168,12 +168,12 @@ async def test_title_pin_overrides_writer_model():
     local = _make_local_provider('{"title": "SHOULD NOT BE USED"}')
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",

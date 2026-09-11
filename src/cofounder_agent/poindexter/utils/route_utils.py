@@ -23,8 +23,8 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 # Process-wide empty-SiteConfig fallback (#272 capstone). Returned by
 # ``get_site_config_dependency`` only when neither ``app.state`` nor the
@@ -188,7 +188,7 @@ def get_site_config_dependency(request: Request) -> Any:
         if sc is not None:
             return sc
 
-    from services.container_registry import get_container
+    from poindexter.services.container_registry import get_container
 
     registered = get_container()
     if registered is not None:
@@ -235,8 +235,8 @@ def get_container_dependency(request: Request) -> Any:
 
 def get_enhanced_status_change_service() -> Any:
     """FastAPI dependency for enhanced status change service."""
-    from services.enhanced_status_change_service import EnhancedStatusChangeService
-    from services.tasks_db import TasksDatabase
+    from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
+    from poindexter.services.tasks_db import TasksDatabase
 
     # Get the database pool from the generic database service
     db = _services.get_database()

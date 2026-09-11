@@ -29,7 +29,7 @@ import uuid
 
 import pytest
 
-from services.pipeline_db import LEGACY_SITE_TARGETS, SITE_TARGET, PipelineDB
+from poindexter.services.pipeline_db import LEGACY_SITE_TARGETS, SITE_TARGET, PipelineDB
 
 pytestmark = [
     pytest.mark.integration_db,

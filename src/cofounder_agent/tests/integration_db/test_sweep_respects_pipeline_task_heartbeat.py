@@ -52,7 +52,7 @@ async def _insert_stale_inprogress(conn, task_id: str, *, hours_old: int = 2) ->
 async def test_heartbeat_refreshed_task_survives_sweep(test_pool) -> None:
     """A task heartbeat-refreshed AFTER its stale-by-clock claim must not be
     touched by sweep_stale_tasks, even though its original claim looks old."""
-    from services.tasks_db import TasksDatabase
+    from poindexter.services.tasks_db import TasksDatabase
 
     task_id = "sweep-vs-heartbeat-alive-757"
     async with test_pool.acquire() as setup:
@@ -86,7 +86,7 @@ async def test_heartbeat_refreshed_task_survives_sweep(test_pool) -> None:
 async def test_task_without_heartbeat_is_still_reclaimed(test_pool) -> None:
     """No-regression guard: a stale in_progress task that never got a
     heartbeat must still be reclaimed exactly as before this change."""
-    from services.tasks_db import TasksDatabase
+    from poindexter.services.tasks_db import TasksDatabase
 
     task_id = "sweep-vs-heartbeat-dead-757"
     async with test_pool.acquire() as setup:

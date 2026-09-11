@@ -929,7 +929,7 @@ class TestUnpublishPostRoute:
 
     @staticmethod
     def _app_with_site_config():
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
         from utils.route_utils import get_site_config_dependency
 
         app = _build_app()
@@ -951,7 +951,7 @@ class TestUnpublishPostRoute:
         unpublish = AsyncMock(return_value=service_result)
         with patch(
             "routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)
-        ), patch("services.publish_service.unpublish_post", new=unpublish):
+        ), patch("poindexter.services.publish_service.unpublish_post", new=unpublish):
             client = TestClient(self._app_with_site_config())
             resp = client.post(
                 f"/api/posts/{POST_UUID}/unpublish",
@@ -974,7 +974,7 @@ class TestUnpublishPostRoute:
         )
         with patch(
             "routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)
-        ), patch("services.publish_service.unpublish_post", new=unpublish):
+        ), patch("poindexter.services.publish_service.unpublish_post", new=unpublish):
             client = TestClient(self._app_with_site_config())
             resp = client.post(
                 f"/api/posts/{POST_UUID}/unpublish",

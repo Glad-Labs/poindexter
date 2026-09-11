@@ -54,7 +54,7 @@ External-workload detection (off by default):
   share the GPU with a game set the flag true.
 
 Usage:
-    from services.gpu_scheduler import gpu
+    from poindexter.services.gpu_scheduler import gpu
     async with gpu.lock("ollama", model="glm-4.7-5090"):
         result = await ollama.generate(...)
 """
@@ -76,9 +76,9 @@ import httpx
 # int64 range: -9223372036854775808 .. 9223372036854775807
 GPU_ADVISORY_LOCK_KEY: int = 7_777_777_777
 
-from services.llm_providers.ollama_unload import unload_loaded_ollama_models
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.llm_providers.ollama_unload import unload_loaded_ollama_models
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
@@ -114,7 +114,7 @@ def _sc() -> SiteConfig:
     Crash-safe — returns ``_FALLBACK_SITE_CONFIG`` (an empty SiteConfig)
     when no container has been registered yet.
     """
-    from services.container_registry import get_container
+    from poindexter.services.container_registry import get_container
 
     container = get_container()
     return container.site_config if container is not None else _FALLBACK_SITE_CONFIG
@@ -139,7 +139,7 @@ def _container_pool() -> Any:
     that never bootstrap a container, and a missing pool must degrade the
     hard rung to soft rather than raise inside a best-effort lever.
     """
-    from services.container_registry import get_container
+    from poindexter.services.container_registry import get_container
 
     container = get_container()
     return getattr(container, "pool", None) if container is not None else None
@@ -1271,7 +1271,7 @@ class GPUScheduler:
             # contention is in-process within prefect-worker; revisit with
             # the P4 lease-table gate if cross-process waits become common.)
             try:
-                from services.gpu_queue_mirror import enqueue as _queue_enqueue
+                from poindexter.services.gpu_queue_mirror import enqueue as _queue_enqueue
 
                 queue_row_id = await _queue_enqueue(
                     owner, model=model, phase=phase, priority=priority
@@ -1365,7 +1365,7 @@ class GPUScheduler:
         finally:
             if queue_row_id is not None:
                 try:
-                    from services.gpu_queue_mirror import dequeue as _queue_dequeue
+                    from poindexter.services.gpu_queue_mirror import dequeue as _queue_dequeue
 
                     await _queue_dequeue(queue_row_id)
                 except Exception:
@@ -1421,7 +1421,7 @@ class GPUScheduler:
             # ("Task was destroyed but it is pending"), and the write must
             # never extend the release path's latency, let alone gate it.
             try:
-                import services.gpu_lease_stats as _lease_stats
+                import poindexter.services.gpu_lease_stats as _lease_stats
 
                 _t = asyncio.get_running_loop().create_task(
                     _lease_stats.record_release(owner, phase or owner, duration * 1000.0)
@@ -1480,7 +1480,7 @@ class GPUScheduler:
     def _get_registry(self) -> Any:
         """Lazily-built GPURegistry sharing the scheduler's SiteConfig seam."""
         if getattr(self, "_registry", None) is None:
-            from services.gpu_registry import GPURegistry
+            from poindexter.services.gpu_registry import GPURegistry
 
             self._registry = GPURegistry(site_config=_sc())
         return self._registry
@@ -1494,7 +1494,7 @@ class GPUScheduler:
         missing stats row degrades to "grant", never to a false reject.
         Returns the AdmissionDecision; raises GpuBusyError on reject.
         """
-        from services import gpu_admission
+        from poindexter.services import gpu_admission
 
         inputs = await self._assemble_admission_inputs(
             model=model, max_wait_s=max_wait_s
@@ -1561,7 +1561,7 @@ class GPUScheduler:
 
     async def _assemble_admission_inputs(self, *, model: str | None,
                                          max_wait_s: float):
-        from services.gpu_admission import AdmissionInputs, CardVram
+        from poindexter.services.gpu_admission import AdmissionInputs, CardVram
 
         holder_key = holder_elapsed = holder_stats = None
         if self._any_gate_locked() and self._current_owner is not None:
@@ -1570,7 +1570,7 @@ class GPUScheduler:
             holder_key = (h_owner, h_phase)
             holder_elapsed = time.monotonic() - self._acquired_at
             try:
-                from services import gpu_lease_stats as _lease_stats
+                from poindexter.services import gpu_lease_stats as _lease_stats
 
                 holder_stats = await _lease_stats.read_stats(h_owner, h_phase)
             except Exception:
@@ -1598,8 +1598,8 @@ class GPUScheduler:
         estimate_gb: float | None = None
         if model:
             try:
-                from services.llm_providers.dispatcher import _read_arch_for_budget
-                from services.vram_budget import (
+                from poindexter.services.llm_providers.dispatcher import _read_arch_for_budget
+                from poindexter.services.vram_budget import (
                     estimate_kv_cache_gb,
                     estimate_model_vram_gb,
                     kv_bytes_per_elem,
@@ -1873,7 +1873,7 @@ class GPUScheduler:
         # new GPU work. Raising (instead of waiting out a multi-hour window)
         # lets fail-soft callers skip honestly this cycle; the eta is exact
         # rather than estimated, because game mode has a real expiry.
-        from services import game_mode, gpu_admission
+        from poindexter.services import game_mode, gpu_admission
 
         gm = game_mode.status_from_config(_sc())
         if gm.active:
@@ -1957,7 +1957,7 @@ class GPUScheduler:
         # pipeline loads exactly that vision model right before the hero
         # render. Clearing only the primary left ~20 GB resident and wan
         # OOM'd anyway. One host = identical behaviour to before.
-        from services.llm_providers.ollama_unload import ollama_base_urls
+        from poindexter.services.llm_providers.ollama_unload import ollama_base_urls
 
         site_config = _sc()
         try:
@@ -2080,7 +2080,7 @@ class GPUScheduler:
         ``/generate``. Default stays soft (no body) for the pre-existing
         ``prepare_mode('ollama'/'idle')`` callers.
         """
-        from services.bootstrap_defaults import DEFAULT_IMAGE_GEN_URL
+        from poindexter.services.bootstrap_defaults import DEFAULT_IMAGE_GEN_URL
         image_gen_url = _sc_get("image_gen_server_url", DEFAULT_IMAGE_GEN_URL)
         try:
             client = self._get_http_client()
@@ -2146,7 +2146,7 @@ class GPUScheduler:
         Best-effort: the `tts-hq` profile is opt-in, so the sidecar being
         absent is the common case, not a bug.
         """
-        from services.bootstrap_defaults import DEFAULT_CHATTERBOX_URL
+        from poindexter.services.bootstrap_defaults import DEFAULT_CHATTERBOX_URL
 
         # One source of truth for where chatterbox lives: the provider's
         # base_url, minus the OpenAI-shaped `/v1` suffix that /unload isn't
@@ -2204,7 +2204,7 @@ class GPUScheduler:
         (``wan_server_url`` → plugin namespace → default ``:9840``) so the
         reclaim hits the exact server the render will.
         """
-        from services.video_providers.wan2_1 import _resolve_server_url
+        from poindexter.services.video_providers.wan2_1 import _resolve_server_url
 
         base = _resolve_server_url({}, _sc()).rstrip("/")
         try:
@@ -2457,7 +2457,7 @@ class GPUScheduler:
                 logger.debug("[GPU] comfyui squat (unqueued) finding failed", exc_info=True)
             return
 
-        from services.service_restart_requests import create_restart_request
+        from poindexter.services.service_restart_requests import create_restart_request
 
         row = await create_restart_request(
             pool, container, requested_by="gpu_vram_reclaim",
@@ -2515,7 +2515,7 @@ class GPUScheduler:
     async def _render_free_vram_gb(self) -> float | None:
         """Free VRAM on the render GPU, or None when unreadable."""
         try:
-            from services.render_vram import render_gpu_free_vram_gb
+            from poindexter.services.render_vram import render_gpu_free_vram_gb
 
             return await render_gpu_free_vram_gb(_sc())
         except Exception:  # noqa: BLE001
@@ -2554,7 +2554,7 @@ class GPUScheduler:
         no-op, same posture as the other rungs (the profile-gated sidecar
         simply isn't up on installs that use wan21).
         """
-        from services.video_providers.comfyui import _resolve_server_url
+        from poindexter.services.video_providers.comfyui import _resolve_server_url
 
         base = _resolve_server_url({}, _sc()).rstrip("/")
         try:
@@ -2618,7 +2618,7 @@ class GPUScheduler:
         URL resolution reuses the provider's own chain so the reclaim hits the
         exact server a render will.
         """
-        from services.audio_gen_providers.stable_audio_open import (
+        from poindexter.services.audio_gen_providers.stable_audio_open import (
             _resolve_server_url,
         )
 

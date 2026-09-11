@@ -8,8 +8,8 @@ original) and trigger the QA rescue/rewrite cycle.
 """
 
 from modules.content.content_validator import validate_content
-from services.site_config import SiteConfig
-from services.validator_config import reset_cache, seed_cache_for_tests
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.validator_config import reset_cache, seed_cache_for_tests
 
 _SC = SiteConfig()
 

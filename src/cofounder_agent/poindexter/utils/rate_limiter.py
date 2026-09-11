@@ -88,7 +88,7 @@ except ImportError:
     # Graceful no-op if slowapi is not installed.
     # Routes decorated with @limiter.limit() will still work but limiting
     # will be silently skipped.
-    from services.logger_config import get_logger
+    from poindexter.services.logger_config import get_logger
 
     get_logger(__name__).warning(
         "slowapi not installed — rate limiting disabled. " "Install with: pip install slowapi"

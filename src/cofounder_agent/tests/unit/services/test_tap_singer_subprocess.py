@@ -17,8 +17,8 @@ from typing import Any
 
 import pytest
 
-from services.integrations import registry as registry_module
-from services.integrations.handlers import (
+from poindexter.services.integrations import registry as registry_module
+from poindexter.services.integrations.handlers import (
     tap_external_metrics_writer,
     tap_singer_subprocess,
 )

@@ -32,9 +32,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.verify_published_posts import VerifyPublishedPostsJob
+from poindexter.services.jobs.verify_published_posts import VerifyPublishedPostsJob
 
-_LOGGER_NAME = "services.jobs.verify_published_posts"
+_LOGGER_NAME = "poindexter.services.jobs.verify_published_posts"
 
 
 def _sc(site_url: str = "https://gladlabs.io") -> MagicMock:
@@ -100,9 +100,9 @@ async def test_audit_insert_failures_emit_one_aggregate_warning(caplog):
 
     caplog.set_level(logging.WARNING, logger=_LOGGER_NAME)
     with patch(
-        "services.jobs.verify_published_posts.httpx.AsyncClient", return_value=client,
+        "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient", return_value=client,
     ), patch(
-        "services.jobs.verify_published_posts.emit_finding", new=MagicMock(),
+        "poindexter.services.jobs.verify_published_posts.emit_finding", new=MagicMock(),
     ):
         job = VerifyPublishedPostsJob()
         result = await job.run(pool, {"_site_config": _sc()})
@@ -126,9 +126,9 @@ async def test_successful_audit_inserts_emit_no_warning(caplog):
 
     caplog.set_level(logging.WARNING, logger=_LOGGER_NAME)
     with patch(
-        "services.jobs.verify_published_posts.httpx.AsyncClient", return_value=client,
+        "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient", return_value=client,
     ), patch(
-        "services.jobs.verify_published_posts.emit_finding", new=MagicMock(),
+        "poindexter.services.jobs.verify_published_posts.emit_finding", new=MagicMock(),
     ):
         job = VerifyPublishedPostsJob()
         result = await job.run(pool, {"_site_config": _sc()})

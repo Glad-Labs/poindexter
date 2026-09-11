@@ -32,7 +32,7 @@ class RunRetentionJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        from services.integrations import retention_runner
+        from poindexter.services.integrations import retention_runner
 
         site_config = config.get("_site_config")
         try:

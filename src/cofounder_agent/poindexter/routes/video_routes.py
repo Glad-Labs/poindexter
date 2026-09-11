@@ -14,9 +14,9 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 
+from poindexter.services.logger_config import get_logger
+from poindexter.services.video_service import VIDEO_DIR
 from schemas.media_schemas import VideoEpisodeListResponse
-from services.logger_config import get_logger
-from services.video_service import VIDEO_DIR
 from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)

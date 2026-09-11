@@ -98,7 +98,9 @@ def wire_site_config_modules(site_cfg: Any) -> int:
     # framework state (in case any wired module's set_site_config()
     # eagerly fans out to a notify_operator call during wiring).
     try:
-        from services.integrations.shared_context import set_site_config as _set_shared_site_config
+        from poindexter.services.integrations.shared_context import (
+            set_site_config as _set_shared_site_config,
+        )
         _set_shared_site_config(site_cfg)
     except Exception as exc:  # noqa: BLE001 — defensive: keep going
         logger.warning(
@@ -134,7 +136,7 @@ async def build_and_wire_for_subprocess(pool: Any) -> Any:
     Grafana / Loki — the absence of this log line at flow startup is
     the canary for a regression of this fix.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     site_cfg = SiteConfig()
     try:
@@ -187,7 +189,7 @@ async def build_and_wire_subprocess_with_container(
     that (no try/except wrap here) — a Prefect flow that can't read
     its config shouldn't pretend it can.
     """
-    from services.bootstrap import build_container
+    from poindexter.services.bootstrap import build_container
 
     container = await build_container(pool)
     site_cfg = container.site_config
@@ -203,7 +205,7 @@ async def build_and_wire_subprocess_with_container(
     # falls through to YAML (the documented OSS path) and the prompt
     # manager's own configured-but-unusable finding stays loud.
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         await get_prompt_manager().load_from_db(pool, site_config=site_cfg)
     except Exception:  # noqa: BLE001 — prompt preload must never block work
@@ -251,8 +253,8 @@ def build_platform_for_subprocess(
         from plugins.kernel_platform import build_kernel_platform
         from plugins.platform import scope_for_module
         from plugins.registry import get_modules
-        from services.audit_log import get_audit_logger
-        from services.llm_providers.dispatcher import dispatch_complete
+        from poindexter.services.audit_log import get_audit_logger
+        from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
         audit_logger = get_audit_logger()
         if audit_logger is None:

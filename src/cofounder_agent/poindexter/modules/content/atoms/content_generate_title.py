@@ -52,20 +52,20 @@ ATOM_META = AtomMeta(
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Generate and persist the canonical title, including originality check."""
     from modules.content.atoms._seo_common import resolve_primary_keyword
-    from services.title_generation import (
+    from poindexter.services.title_generation import (
         DEFAULT_TITLE_EXCERPT_CHARS,
         build_title_grounding_digest,
     )
-    from services.title_generation import (
+    from poindexter.services.title_generation import (
         check_title_originality as _check_title_originality,
     )
-    from services.title_generation import (
+    from poindexter.services.title_generation import (
         choose_canonical_title as _choose_canonical_title,
     )
-    from services.title_generation import (
+    from poindexter.services.title_generation import (
         generate_canonical_title as _generate_canonical_title,
     )
-    from services.title_generation import (
+    from poindexter.services.title_generation import (
         originality_rank as _originality_rank,
     )
 
@@ -104,7 +104,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # Variety guidance for the title prompt: the recent corpus's structural
     # and lexical HABITS, not a dump of its titles. See
     # services.title_avoidance for why the dump made repetition worse.
-    from services.title_avoidance import build_avoidance_block_for_pool
+    from poindexter.services.title_avoidance import build_avoidance_block_for_pool
 
     avoidance_block = await build_avoidance_block_for_pool(
         pool, site_config=site_config, source="content.generate_title",
@@ -234,7 +234,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 def _heading_terms(content_text: str, limit: int = 6) -> list[str]:
     """Proper nouns / digit tokens from the article's own headings — the
     concrete things the regeneration directive may name. Never invents."""
-    from services.title_searchability import find_searchable_entities
+    from poindexter.services.title_searchability import find_searchable_entities
 
     terms: list[str] = []
     for line in (content_text or "").splitlines():
@@ -263,13 +263,13 @@ async def _apply_searchability_gate(
     task_id: Any,
 ) -> tuple[str, dict[str, Any]]:
     """Enforce "the title names something searchable"; see module notes."""
-    from services.title_generation import (
+    from poindexter.services.title_generation import (
         check_title_originality as _check_title_originality,
     )
-    from services.title_generation import (
+    from poindexter.services.title_generation import (
         generate_canonical_title as _generate_canonical_title,
     )
-    from services.title_searchability import (
+    from poindexter.services.title_searchability import (
         has_searchable_entity,
         render_entity_directive,
     )

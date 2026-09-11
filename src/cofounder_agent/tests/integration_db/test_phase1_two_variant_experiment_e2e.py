@@ -161,8 +161,8 @@ async def _seed_active_2_variant_experiment(
 async def test_two_variant_sampling_is_uniform_within_tolerance(
     test_txn, monkeypatch,
 ) -> None:
-    from services import experiment_runner
-    from services.experiment_runner import pick_variant
+    from poindexter.services import experiment_runner
+    from poindexter.services.experiment_runner import pick_variant
 
     _exp_id, variant_ids = await _seed_active_2_variant_experiment(test_txn)
     pool = _ConnAsPool(test_txn)
@@ -222,8 +222,8 @@ async def test_two_variant_sampling_is_uniform_within_tolerance(
 async def test_capability_outcomes_and_lab_view_propagate_variant_id(
     test_txn, monkeypatch,
 ) -> None:
-    from services import experiment_runner
-    from services.experiment_runner import pick_variant
+    from poindexter.services import experiment_runner
+    from poindexter.services.experiment_runner import pick_variant
 
     exp_id, variant_ids = await _seed_active_2_variant_experiment(test_txn)
     pool = _ConnAsPool(test_txn)
@@ -346,8 +346,8 @@ async def test_capability_outcomes_and_lab_view_propagate_variant_id(
 async def test_scorecard_correctness_for_seeded_outcome_distribution(
     test_txn, monkeypatch,
 ) -> None:
-    from services import experiment_runner
-    from services.experiment_runner import pick_variant
+    from poindexter.services import experiment_runner
+    from poindexter.services.experiment_runner import pick_variant
 
     exp_uuid, variant_ids = await _seed_active_2_variant_experiment(test_txn)
     pool = _ConnAsPool(test_txn)

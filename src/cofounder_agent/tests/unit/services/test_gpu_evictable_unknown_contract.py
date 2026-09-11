@@ -22,9 +22,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.gpu_admission import AdmissionInputs, decide
-from services.gpu_registry import GPURegistry
-from services.site_config import SiteConfig
+from poindexter.services.gpu_admission import AdmissionInputs, decide
+from poindexter.services.gpu_registry import GPURegistry
+from poindexter.services.site_config import SiteConfig
 
 
 def _registry(**settings: str) -> GPURegistry:

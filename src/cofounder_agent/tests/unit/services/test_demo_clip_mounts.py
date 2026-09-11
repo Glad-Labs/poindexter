@@ -65,7 +65,7 @@ def test_demo_clip_dir_is_mounted(filename: str, service: str) -> None:
 
 def test_container_path_matches_the_setting_default() -> None:
     """A drifted default would mount one directory and read another."""
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["demo_clip_dir"] == CONTAINER_PATH
 
@@ -83,8 +83,8 @@ def test_bake_default_and_render_default_agree() -> None:
     landed somewhere nothing would ever look and every cli_demo shot carded.
     Nothing failed — the bake reported success and the video reported success.
     """
-    from services.demo_clips import clip_dir
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.demo_clips import clip_dir
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert str(clip_dir(None)) == DEFAULTS["demo_clip_dir"]
     assert str(clip_dir(None)) == CONTAINER_PATH
@@ -97,7 +97,7 @@ def test_zygote_failure_is_diagnosed_not_dumped() -> None:
     a naive tail yields `trp: 0000... | [end of stack trace]` — which is what
     the first real bake reported, and it says nothing.
     """
-    from services.demo_clips import _diagnose_bake_failure
+    from poindexter.services.demo_clips import _diagnose_bake_failure
 
     blob = "content::ZygoteHostImpl::Init()\ntrp: 0000 msk: 0000\n[end of stack trace]"
     msg = _diagnose_bake_failure(blob, blob.splitlines()[-2:])
@@ -106,7 +106,7 @@ def test_zygote_failure_is_diagnosed_not_dumped() -> None:
 
 
 def test_unrecognised_failure_still_reports_the_tail() -> None:
-    from services.demo_clips import _diagnose_bake_failure
+    from poindexter.services.demo_clips import _diagnose_bake_failure
 
     msg = _diagnose_bake_failure("parse error line 3", ["parse error line 3"])
     assert "parse error line 3" in msg

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.tts_provider import TTSResult
-from services.podcast_service import (
+from poindexter.services.podcast_service import (
     VOICE_POOL,
     EpisodeResult,
     PodcastService,
@@ -16,10 +16,10 @@ from services.podcast_service import (
     _select_voice,
     _strip_markdown,
 )
-from services.podcast_service import (
+from poindexter.services.podcast_service import (
     _build_script_fallback as _build_script,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2f: PodcastService + the free functions now require a
 # site_config (the module-global fallback was deleted). Tests thread this
@@ -201,7 +201,7 @@ class TestPodcastService:
             svc._generate_with_voice = AsyncMock(
                 return_value=EpisodeResult(success=False, error="empty content")
             )
-            with patch("services.podcast_service._build_script_with_llm", side_effect=_mock_script):
+            with patch("poindexter.services.podcast_service._build_script_with_llm", side_effect=_mock_script):
                 result = await svc.generate_episode("abc", "Title", "")
             assert result.success or result.error is not None
 
@@ -214,7 +214,7 @@ class TestPodcastService:
             svc._generate_with_voice = AsyncMock(
                 return_value=EpisodeResult(success=False, error="no edge_tts")
             )
-            with patch("services.podcast_service._build_script_with_llm", side_effect=_mock_script):
+            with patch("poindexter.services.podcast_service._build_script_with_llm", side_effect=_mock_script):
                 result = await svc.generate_episode("abc", "Title", "Some content here")
             assert result.success or result.error is not None
 
@@ -233,7 +233,7 @@ class TestGenerateEpisode:
         async def _fallback(title, content, **kwargs):
             return _build_script(title, content, site_config=_TEST_SC)
 
-        with patch("services.podcast_service._build_script_with_llm", side_effect=_fallback):
+        with patch("poindexter.services.podcast_service._build_script_with_llm", side_effect=_fallback):
             yield
 
     @pytest.mark.asyncio
@@ -247,7 +247,7 @@ class TestGenerateEpisode:
                     Path(output_path).write_bytes(b"fake mp3 audio data here")
                 return b"fake mp3 audio data here"
 
-            with patch("services.tts_service.synthesize_speech", side_effect=mock_synthesize):
+            with patch("poindexter.services.tts_service.synthesize_speech", side_effect=mock_synthesize):
                 result = await svc.generate_episode(
                     "post-001", "My Great Post", "# Hello\n\nSome content."
                 )
@@ -291,7 +291,7 @@ class TestGenerateEpisode:
                     Path(output_path).write_bytes(b"brand new audio data")
                 return b"brand new audio data"
 
-            with patch("services.tts_service.synthesize_speech", side_effect=mock_synthesize):
+            with patch("poindexter.services.tts_service.synthesize_speech", side_effect=mock_synthesize):
                 result = await svc.generate_episode(
                     "post-003", "Title", "Content", force=True
                 )
@@ -318,7 +318,7 @@ class TestGenerateEpisode:
                     Path(output_path).write_bytes(b"fallback audio")
                 return b"fallback audio"
 
-            with patch("services.tts_service.synthesize_speech", side_effect=mock_synthesize):
+            with patch("poindexter.services.tts_service.synthesize_speech", side_effect=mock_synthesize):
                 result = await svc.generate_episode(
                     "post-004", "Title", "Some content"
                 )
@@ -336,7 +336,7 @@ class TestGenerateEpisode:
                 # Always return None — simulates Speaches unavailable
                 return None
 
-            with patch("services.tts_service.synthesize_speech", side_effect=mock_synthesize_none):
+            with patch("poindexter.services.tts_service.synthesize_speech", side_effect=mock_synthesize_none):
                 result = await svc.generate_episode(
                     "post-005", "Title", "Some content"
                 )
@@ -391,7 +391,7 @@ class TestListEpisodes:
 
 class TestNormalizeForSpeech:
     def test_smart_quotes_converted_to_straight(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("\u201cHello\u201d and \u2018world\u2019", site_config=_TEST_SC)
         assert "\u201c" not in result
         assert "\u201d" not in result
@@ -399,23 +399,23 @@ class TestNormalizeForSpeech:
         assert "\u2019" not in result
 
     def test_ellipsis_converted(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("wait\u2026 for it", site_config=_TEST_SC)
         assert "\u2026" not in result
         assert "..." in result
 
     def test_double_spaces_collapsed(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("hello  world   foo", site_config=_TEST_SC)
         assert "  " not in result
 
     def test_double_commas_collapsed(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("hello, , world", site_config=_TEST_SC)
         assert ", ," not in result
 
     def test_db_pronunciation_override_applied(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         sc = SiteConfig(initial_config={
             "tts_pronunciations": '{"GitHub": "git hub"}',
             "tts_acronym_replacements": "",
@@ -424,7 +424,7 @@ class TestNormalizeForSpeech:
         assert "git hub" in result.lower() or "git hub" in result
 
     def test_invalid_db_pronunciations_does_not_raise(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         sc = SiteConfig(initial_config={
             "tts_pronunciations": "not valid json {",
             "tts_acronym_replacements": "",
@@ -434,7 +434,7 @@ class TestNormalizeForSpeech:
         assert isinstance(result, str)
 
     def test_acronym_regex_applied(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         sc = SiteConfig(initial_config={
             "tts_pronunciations": "",
             "tts_acronym_replacements": '{"NASA": "nassa"}',
@@ -468,7 +468,7 @@ class TestFileExtensionRuleNeverEatsNumbers:
         "the U.S. economy shrank",
     ])
     def test_numbers_survive_normalization(self, text):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         assert _normalize_for_speech(text, site_config=_TEST_SC) == text
 
     @pytest.mark.parametrize("text,gone", [
@@ -478,7 +478,7 @@ class TestFileExtensionRuleNeverEatsNumbers:
     ])
     def test_real_filenames_still_stripped(self, text, gone):
         """The rule must keep doing its job — a spoken "dot py" is noise."""
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         assert gone not in _normalize_for_speech(text, site_config=_TEST_SC)
 
 
@@ -495,36 +495,36 @@ class TestNormalizeModelNames:
     FAMS = ("gemma", "glm", "qwen", "phi", "llama", "mistral", "deepseek")
 
     def test_strips_quant_and_tag_tail(self):
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("we use gemma-4-31B-it-qat:latest", families=self.FAMS)
             == "we use gemma 4 31B"
         )
 
     def test_strips_gpu_suffix_keeps_decimal_version(self):
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("the glm-4.7-5090 reviser", families=self.FAMS)
             == "the glm 4.7 reviser"
         )
 
     def test_colon_size_tag_kept(self):
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("runs gemma-4:31b locally", families=self.FAMS)
             == "runs gemma 4 31b locally"
         )
 
     def test_glued_ollama_version(self):
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert _normalize_model_names("qwen3:30b", families=self.FAMS) == "qwen 3 30b"
 
     def test_glued_family_version_no_tail(self):
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert _normalize_model_names("phi4", families=self.FAMS) == "phi 4"
 
     def test_instruct_variant_stripped(self):
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("mistral-7B-instruct", families=self.FAMS)
             == "mistral 7B"
@@ -532,7 +532,7 @@ class TestNormalizeModelNames:
 
     def test_trailing_sentence_period_preserved(self):
         # A model at the end of a sentence must keep its period, not eat it.
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("It runs on gemma-4-31B.", families=self.FAMS)
             == "It runs on gemma 4 31B."
@@ -540,12 +540,12 @@ class TestNormalizeModelNames:
 
     def test_prose_family_words_untouched(self):
         # No numeric version → not a model identifier → leave prose alone.
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         text = "The llama on the farm, the latest chat, and phi coefficients"
         assert _normalize_model_names(text, families=self.FAMS) == text
 
     def test_hyphenated_family_word_without_number_untouched(self):
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("a llama-shaped cookie", families=self.FAMS)
             == "a llama-shaped cookie"
@@ -554,7 +554,7 @@ class TestNormalizeModelNames:
     def test_bare_integer_config_not_treated_as_model(self):
         # "phi-node-2" (compiler SSA term) has only a bare integer, no size/
         # decimal version — it must not be mistaken for a model identifier.
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("the phi-node-2 pass", families=self.FAMS)
             == "the phi-node-2 pass"
@@ -562,14 +562,14 @@ class TestNormalizeModelNames:
 
     def test_family_substring_not_matched(self):
         # "Philadelphia" contains "phi" but must be left intact.
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("a trip to Philadelphia", families=self.FAMS)
             == "a trip to Philadelphia"
         )
 
     def test_multiple_models_one_sentence(self):
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names(
                 "gemma-4-31B-it-qat:latest writes, glm-4.7 revises", families=self.FAMS
@@ -578,7 +578,7 @@ class TestNormalizeModelNames:
         )
 
     def test_empty_families_is_noop(self):
-        from services.podcast_service import _normalize_model_names
+        from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("gemma-4-31B-it-qat:latest", families=())
             == "gemma-4-31B-it-qat:latest"
@@ -587,7 +587,7 @@ class TestNormalizeModelNames:
 
 class TestGetModelFamilies:
     def test_falls_back_to_default_when_unset(self):
-        from services.podcast_service import (
+        from poindexter.services.podcast_service import (
             _DEFAULT_MODEL_FAMILIES,
             _get_model_families,
         )
@@ -595,13 +595,13 @@ class TestGetModelFamilies:
         assert _get_model_families(site_config=sc) == _DEFAULT_MODEL_FAMILIES
 
     def test_reads_csv_from_db(self):
-        from services.podcast_service import _get_model_families
+        from poindexter.services.podcast_service import _get_model_families
         sc = SiteConfig(initial_config={"tts_model_name_families": "gemma, glm ,qwen"})
         assert _get_model_families(site_config=sc) == ("gemma", "glm", "qwen")
 
     def test_shipped_default_setting_has_core_families(self):
-        from services.podcast_service import _get_model_families
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.podcast_service import _get_model_families
+        from poindexter.services.settings_defaults import DEFAULTS
 
         sc = SiteConfig(initial_config={
             "tts_model_name_families": DEFAULTS["tts_model_name_families"],
@@ -616,7 +616,7 @@ class TestNormalizeForSpeechModelNames:
     BEFORE the pronunciation map (so a split-off 'glm' still gets 'G L M')."""
 
     def test_quant_tail_stripped_end_to_end(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         sc = SiteConfig(initial_config={
             "tts_pronunciations": "",
             "tts_acronym_replacements": "",
@@ -629,8 +629,8 @@ class TestNormalizeForSpeechModelNames:
         assert "31B" in result
 
     def test_glm_family_pronounced_after_split(self):
-        from services.podcast_service import _normalize_for_speech
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.podcast_service import _normalize_for_speech
+        from poindexter.services.settings_defaults import DEFAULTS
 
         sc = SiteConfig(initial_config={
             "tts_pronunciations": DEFAULTS["tts_pronunciations"],
@@ -644,7 +644,7 @@ class TestNormalizeForSpeechModelNames:
 
 class TestGetTtsReplacements:
     def test_returns_default_list_when_no_db_config(self):
-        from services.podcast_service import _get_tts_replacements
+        from poindexter.services.podcast_service import _get_tts_replacements
         sc = SiteConfig(initial_config={"tts_pronunciations": ""})
         result = _get_tts_replacements(site_config=sc)
         assert isinstance(result, list)
@@ -654,7 +654,7 @@ class TestGetTtsReplacements:
             assert len(item) == 2
 
     def test_db_overrides_merge_with_defaults(self):
-        from services.podcast_service import _get_tts_replacements
+        from poindexter.services.podcast_service import _get_tts_replacements
         sc = SiteConfig(initial_config={
             "tts_pronunciations": '{"customword": "kustom werd"}',
         })
@@ -664,7 +664,7 @@ class TestGetTtsReplacements:
         assert as_dict.get("customword") == "kustom werd"
 
     def test_invalid_json_falls_back_to_defaults(self):
-        from services.podcast_service import _get_tts_replacements
+        from poindexter.services.podcast_service import _get_tts_replacements
         sc = SiteConfig(initial_config={"tts_pronunciations": "not json"})
         result = _get_tts_replacements(site_config=sc)
         # Should still return a non-empty list (the defaults)
@@ -674,14 +674,14 @@ class TestGetTtsReplacements:
 
 class TestGetAcronymRegex:
     def test_returns_empty_when_no_db_config(self):
-        from services.podcast_service import _get_acronym_regex
+        from poindexter.services.podcast_service import _get_acronym_regex
         sc = SiteConfig(initial_config={"tts_acronym_replacements": ""})
         result = _get_acronym_regex(site_config=sc)
         # No hardcoded fallback — empty DB key = no acronym expansion
         assert result == []
 
     def test_db_acronyms_compiled_to_regex(self):
-        from services.podcast_service import _get_acronym_regex
+        from poindexter.services.podcast_service import _get_acronym_regex
         sc = SiteConfig(initial_config={
             "tts_acronym_replacements": '{"AWS": "ay double-yoo ess"}',
         })
@@ -691,7 +691,7 @@ class TestGetAcronymRegex:
         assert "ay double-yoo ess" in replacements
 
     def test_invalid_json_returns_empty(self):
-        from services.podcast_service import _get_acronym_regex
+        from poindexter.services.podcast_service import _get_acronym_regex
         sc = SiteConfig(initial_config={"tts_acronym_replacements": "not json"})
         result = _get_acronym_regex(site_config=sc)
         # Invalid JSON: no fallback, no crash — returns empty
@@ -707,50 +707,50 @@ class TestNormalizeForSpeechWordBoundaries:
     """Pure-letter tokens must not fire inside longer words."""
 
     def test_gb_replaced_standalone(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("256 GB SSD", site_config=_TTS_SC)
         assert "gigabyte" in result.lower()
 
     def test_gb_does_not_fire_inside_rgb(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("RGB lighting", site_config=_TTS_SC)
         assert "gigabyte" not in result.lower()
         assert "rgb" in result.lower()
 
     def test_mb_replaced_standalone(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("The file is 512 MB", site_config=_TTS_SC)
         assert "megabyte" in result.lower()
 
     def test_tb_replaced_standalone(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("4 TB drive", site_config=_TTS_SC)
         assert "terabyte" in result.lower()
 
     def test_ghz_replaced(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("running at 3.5 GHz", site_config=_TTS_SC)
         assert "gigahertz" in result.lower()
 
     def test_mbps_replaced(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("1000 Mbps link", site_config=_TTS_SC)
         assert "megabits per second" in result.lower()
 
     def test_fps_replaced_standalone(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("running at 60 fps", site_config=_TTS_SC)
         assert "frames per second" in result.lower()
 
     def test_vs_does_not_corrupt_versus(self):
         # Regression: "vs" fired inside "versus" → "versuserus".
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("Team A versus Team B", site_config=_TTS_SC)
         assert "versuserus" not in result
         assert "versus" in result
 
     def test_db_override_respects_word_boundary(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         sc = SiteConfig(initial_config={
             "tts_pronunciations": '{"API": "A P I"}',
             "tts_acronym_replacements": "",
@@ -770,7 +770,7 @@ class TestNormalizeForSpeechWordBoundaries:
 def _default_pron_sc():
     """SiteConfig seeded with the real shipped tts_pronunciations default,
     so these tests pin the actual config operators receive."""
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     return SiteConfig(initial_config={
         "tts_pronunciations": DEFAULTS["tts_pronunciations"],
@@ -783,13 +783,13 @@ class TestCiPronunciation:
     clobber the longer ``CI/CD`` form."""
 
     def test_ci_spoken_as_see_eye(self):
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("Our CI pipeline runs on push", site_config=_default_pron_sc())
         assert "Our See Eye pipeline" in result
 
     def test_ci_does_not_corrupt_words(self):
         # Regression guard: bare "CI" must not fire inside common words.
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech(
             "A social decision about efficiency and precision", site_config=_default_pron_sc()
         )
@@ -800,7 +800,7 @@ class TestCiPronunciation:
     def test_ci_cd_resolves_before_ci(self):
         # "CI/CD" must become "See Eye See Dee" — the slash form is consumed
         # first, leaving no stray bare "CI"/"CD".
-        from services.podcast_service import _normalize_for_speech
+        from poindexter.services.podcast_service import _normalize_for_speech
         result = _normalize_for_speech("Our CI/CD pipeline ships nightly", site_config=_default_pron_sc())
         assert "See Eye See Dee" in result
         assert "CI/CD" not in result
@@ -814,8 +814,8 @@ class TestRenderBoundaryWordSafety:
 
     @pytest.mark.asyncio
     async def test_render_boundary_does_not_corrupt_words(self, tmp_path):
-        from services.podcast_service import PodcastService
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.podcast_service import PodcastService
+        from poindexter.services.settings_defaults import DEFAULTS
 
         sc = SiteConfig(initial_config={
             "tts_pronunciations": DEFAULTS["tts_pronunciations"],
@@ -834,7 +834,7 @@ class TestRenderBoundaryWordSafety:
         # "number"/"social" would corrupt under the old no-boundary pass
         # ("numegabyteer", "soSee Eyeal"); "CI" standalone must still convert.
         script = "Our CI run measured the number of social signals."
-        with patch("services.tts_service.synthesize_speech", side_effect=fake_synth):
+        with patch("poindexter.services.tts_service.synthesize_speech", side_effect=fake_synth):
             result = await svc._generate_with_voice(script, "bf_emma", tmp_path / "r.mp3")
 
         assert result.success is True
@@ -852,9 +852,9 @@ class TestRenderBoundaryWordSafety:
 class TestGeneratePodcastEpisodeWrapper:
     @pytest.mark.asyncio
     async def test_calls_service_generate_episode(self):
-        from services.podcast_service import generate_podcast_episode
+        from poindexter.services.podcast_service import generate_podcast_episode
 
-        with patch("services.podcast_service.PodcastService") as MockSvc:
+        with patch("poindexter.services.podcast_service.PodcastService") as MockSvc:
             mock_instance = MagicMock()
             mock_result = MagicMock(success=True)
             mock_instance.generate_episode = AsyncMock(return_value=mock_result)
@@ -869,9 +869,9 @@ class TestGeneratePodcastEpisodeWrapper:
 
     @pytest.mark.asyncio
     async def test_logs_failure_without_raising(self):
-        from services.podcast_service import generate_podcast_episode
+        from poindexter.services.podcast_service import generate_podcast_episode
 
-        with patch("services.podcast_service.PodcastService") as MockSvc:
+        with patch("poindexter.services.podcast_service.PodcastService") as MockSvc:
             mock_instance = MagicMock()
             mock_result = MagicMock(success=False, error="TTS down")
             mock_instance.generate_episode = AsyncMock(return_value=mock_result)
@@ -882,9 +882,9 @@ class TestGeneratePodcastEpisodeWrapper:
 
     @pytest.mark.asyncio
     async def test_swallows_unexpected_exception(self):
-        from services.podcast_service import generate_podcast_episode
+        from poindexter.services.podcast_service import generate_podcast_episode
 
-        with patch("services.podcast_service.PodcastService") as MockSvc:
+        with patch("poindexter.services.podcast_service.PodcastService") as MockSvc:
             mock_instance = MagicMock()
             mock_instance.generate_episode = AsyncMock(side_effect=RuntimeError("boom"))
             MockSvc.return_value = mock_instance
@@ -894,9 +894,9 @@ class TestGeneratePodcastEpisodeWrapper:
 
     @pytest.mark.asyncio
     async def test_pre_generated_script_passed_through(self):
-        from services.podcast_service import generate_podcast_episode
+        from poindexter.services.podcast_service import generate_podcast_episode
 
-        with patch("services.podcast_service.PodcastService") as MockSvc:
+        with patch("poindexter.services.podcast_service.PodcastService") as MockSvc:
             mock_instance = MagicMock()
             mock_instance.generate_episode = AsyncMock(return_value=MagicMock(success=True))
             MockSvc.return_value = mock_instance
@@ -919,7 +919,7 @@ class TestUnwrapIntroOutro:
 
     def test_round_trip_returns_body_only(self, monkeypatch):
         """wrap then unwrap must equal the original body."""
-        from services.podcast_service import (
+        from poindexter.services.podcast_service import (
             _unwrap_intro_outro,
             _wrap_with_intro_outro,
         )
@@ -949,7 +949,7 @@ class TestUnwrapIntroOutro:
     def test_unwrap_no_intro_when_disabled(self, monkeypatch):
         """When the wrapper didn't add an intro, unwrap leaves the
         leading content alone."""
-        from services.podcast_service import _unwrap_intro_outro
+        from poindexter.services.podcast_service import _unwrap_intro_outro
 
         class _StubSC:
             @staticmethod
@@ -988,7 +988,7 @@ class TestSpokenDomain:
         return _StubSC()
 
     def test_io_tld_spoken_as_eye_oh(self):
-        from services.podcast_service import _spoken_domain
+        from poindexter.services.podcast_service import _spoken_domain
 
         assert (
             _spoken_domain("gladlabs.io", site_config=self._sc())  # type: ignore[arg-type]
@@ -996,7 +996,7 @@ class TestSpokenDomain:
         )
 
     def test_unmapped_tld_spoken_as_written(self):
-        from services.podcast_service import _spoken_domain
+        from poindexter.services.podcast_service import _spoken_domain
 
         # "com" is not in the map → plain " dot " join (no regression).
         assert (
@@ -1005,7 +1005,7 @@ class TestSpokenDomain:
         )
 
     def test_tld_match_is_case_insensitive(self):
-        from services.podcast_service import _spoken_domain
+        from poindexter.services.podcast_service import _spoken_domain
 
         assert (
             _spoken_domain("GLADLABS.IO", site_config=self._sc())  # type: ignore[arg-type]
@@ -1013,7 +1013,7 @@ class TestSpokenDomain:
         )
 
     def test_subdomain_only_tld_rewritten(self):
-        from services.podcast_service import _spoken_domain
+        from poindexter.services.podcast_service import _spoken_domain
 
         assert (
             _spoken_domain("www.gladlabs.io", site_config=self._sc())  # type: ignore[arg-type]
@@ -1021,7 +1021,7 @@ class TestSpokenDomain:
         )
 
     def test_empty_map_falls_back_to_dot_join(self):
-        from services.podcast_service import _spoken_domain
+        from poindexter.services.podcast_service import _spoken_domain
 
         assert (
             _spoken_domain("gladlabs.io", site_config=self._sc(tld_map=""))  # type: ignore[arg-type]
@@ -1029,7 +1029,7 @@ class TestSpokenDomain:
         )
 
     def test_invalid_json_map_falls_back_to_dot_join(self):
-        from services.podcast_service import _spoken_domain
+        from poindexter.services.podcast_service import _spoken_domain
 
         assert (
             _spoken_domain("gladlabs.io", site_config=self._sc(tld_map="{not json"))  # type: ignore[arg-type]
@@ -1037,7 +1037,7 @@ class TestSpokenDomain:
         )
 
     def test_no_dot_domain_unchanged(self):
-        from services.podcast_service import _spoken_domain
+        from poindexter.services.podcast_service import _spoken_domain
 
         # The "our site" fallback has no TLD — leave it alone.
         assert (
@@ -1046,7 +1046,7 @@ class TestSpokenDomain:
         )
 
     def test_build_outro_uses_spoken_tld(self):
-        from services.podcast_service import _build_outro
+        from poindexter.services.podcast_service import _build_outro
 
         outro = _build_outro(site_config=self._sc())  # type: ignore[arg-type]
         assert "Visit gladlabs dot eye oh for more episodes" in outro
@@ -1064,7 +1064,7 @@ class TestNarrationSibling:
         """When enabled (default), the sibling MP3 lands at
         ``{post_id}-narration.mp3``, derived from the same script
         without the intro/outro wrappers."""
-        from services.podcast_service import PodcastService
+        from poindexter.services.podcast_service import PodcastService
 
         class _StubSC:
             @staticmethod
@@ -1098,7 +1098,7 @@ class TestNarrationSibling:
                 "and insights. See you next time."
             )
 
-            with patch("services.tts_service.synthesize_speech", side_effect=_mock_synthesize):
+            with patch("poindexter.services.tts_service.synthesize_speech", side_effect=_mock_synthesize):
                 await svc._maybe_generate_narration_sibling(
                     post_id="abc",
                     script=wrapped_script,
@@ -1119,7 +1119,7 @@ class TestNarrationSibling:
     @pytest.mark.asyncio
     async def test_disabled_setting_skips_sibling(self, monkeypatch):
         """When the toggle is off, no sibling MP3 is written."""
-        from services.podcast_service import PodcastService
+        from poindexter.services.podcast_service import PodcastService
 
         class _StubSC:
             @staticmethod
@@ -1148,7 +1148,7 @@ class TestNarrationSibling:
     async def test_failure_is_non_fatal(self, monkeypatch):
         """If TTS raises during the sibling pass, the call must
         not propagate — the main episode is already done."""
-        from services.podcast_service import PodcastService
+        from poindexter.services.podcast_service import PodcastService
 
         class _StubSC:
             @staticmethod
@@ -1168,7 +1168,7 @@ class TestNarrationSibling:
 
         with tempfile.TemporaryDirectory() as tmp:
             svc = PodcastService(output_dir=Path(tmp), site_config=_sc)  # type: ignore[arg-type]
-            with patch("services.tts_service.synthesize_speech", side_effect=_broken_synthesize):
+            with patch("poindexter.services.tts_service.synthesize_speech", side_effect=_broken_synthesize):
                 # Must not raise — the sibling failure is best-effort.
                 await svc._maybe_generate_narration_sibling(
                     post_id="abc",
@@ -1277,10 +1277,10 @@ class TestGenerateWithVoiceEngineDispatch:
 
         svc = PodcastService(output_dir=tmp_path, site_config=sc)
         with patch(
-            "services.tts_service.synthesize_speech",
+            "poindexter.services.tts_service.synthesize_speech",
             new=AsyncMock(side_effect=_fake_synthesize_speech),
         ) as speaches_mock, patch(
-            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            "poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
         ) as chatterbox_mock:
             out = tmp_path / "ep.mp3"
             result = await svc._generate_with_voice("hello world", "bf_emma", out)
@@ -1310,10 +1310,10 @@ class TestGenerateWithVoiceEngineDispatch:
             )
 
         with patch(
-            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            "poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
             new=_fake_synthesize,
         ), patch(
-            "services.tts_service.synthesize_speech", new=AsyncMock()
+            "poindexter.services.tts_service.synthesize_speech", new=AsyncMock()
         ) as speaches_mock:
             result = await svc._generate_with_voice("hello world", "bf_emma", out)
 
@@ -1353,7 +1353,7 @@ class TestGenerateWithVoiceEngineDispatch:
             )
 
         with patch(
-            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            "poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
             new=_fake_synthesize,
         ):
             await svc._generate_with_voice("hello", "bf_emma", out)
@@ -1384,7 +1384,7 @@ class TestGenerateWithVoiceEngineDispatch:
             )
 
         with patch(
-            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            "poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
             new=_fake_synthesize,
         ):
             await svc._generate_with_voice("hello", "bf_emma", out)
@@ -1398,7 +1398,7 @@ class TestGenerateWithVoiceEngineDispatch:
         sc = SiteConfig(initial_config={"podcast_tts_engine": "chatterbox"})
         svc = PodcastService(output_dir=tmp_path, site_config=sc)
         with patch(
-            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            "poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
             new=AsyncMock(side_effect=RuntimeError("sidecar down")),
         ):
             result = await svc._generate_with_voice(
@@ -1438,11 +1438,11 @@ class TestScaffoldDumpGuard:
     )
 
     def test_detects_leaked_scaffold_opening(self):
-        from services.podcast_service import _looks_like_scaffold_dump
+        from poindexter.services.podcast_service import _looks_like_scaffold_dump
         assert _looks_like_scaffold_dump(self._DUMP) is True
 
     def test_clean_prose_not_flagged(self):
-        from services.podcast_service import _looks_like_scaffold_dump
+        from poindexter.services.podcast_service import _looks_like_scaffold_dump
         clean = (
             "Every token a model produces requires a full forward pass through "
             "every layer of the network. The model cannot guess ahead; it "
@@ -1453,7 +1453,7 @@ class TestScaffoldDumpGuard:
 
     def test_incidental_dash_not_flagged(self):
         """A single hyphen aside in otherwise-prose output is not a dump."""
-        from services.podcast_service import _looks_like_scaffold_dump
+        from poindexter.services.podcast_service import _looks_like_scaffold_dump
         mostly_prose = (
             "Speculative decoding pairs two models instead of one.\n"
             "The draft proposes tokens and the target verifies them.\n"
@@ -1464,13 +1464,13 @@ class TestScaffoldDumpGuard:
         assert _looks_like_scaffold_dump(mostly_prose) is False
 
     def test_empty_not_flagged(self):
-        from services.podcast_service import _looks_like_scaffold_dump
+        from poindexter.services.podcast_service import _looks_like_scaffold_dump
         assert _looks_like_scaffold_dump("") is False
 
     async def test_build_script_falls_back_on_dump(self):
         """A scaffold-dump LLM response must be discarded in favour of the
         deterministic fallback script — the scaffold never reaches TTS."""
-        from services.podcast_service import _build_script_with_llm
+        from poindexter.services.podcast_service import _build_script_with_llm
 
         sc = SiteConfig(initial_config={
             "podcast_script_model": "ollama/gemma-4-31B-it-qat",
@@ -1492,10 +1492,10 @@ class TestScaffoldDumpGuard:
         mock_pm.get_prompt.return_value = "rewrite prompt"
 
         with patch(
-            "services.llm_providers.dispatcher.dispatch_complete",
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete",
             new=AsyncMock(return_value=dump_result),
         ), patch(
-            "services.prompt_manager.get_prompt_manager", return_value=mock_pm,
+            "poindexter.services.prompt_manager.get_prompt_manager", return_value=mock_pm,
         ), patch("utils.findings.emit_finding") as mock_finding:
             script = await _build_script_with_llm(title, content, site_config=sc)
 
@@ -1518,23 +1518,23 @@ class TestResolvePodcastThink:
 
     def test_default_disables_thinking(self):
         # Unset → default 'true' → disable the reasoning channel.
-        from services.podcast_service import _resolve_podcast_think
+        from poindexter.services.podcast_service import _resolve_podcast_think
         assert _resolve_podcast_think(SiteConfig()) is False
 
     def test_explicit_true_disables_thinking(self):
-        from services.podcast_service import _resolve_podcast_think
+        from poindexter.services.podcast_service import _resolve_podcast_think
         sc = SiteConfig(initial_config={"podcast_disable_thinking": "true"})
         assert _resolve_podcast_think(sc) is False
 
     def test_opt_out_leaves_backend_default(self):
         # Operator opt-out → None → leave the backend default (thinking on);
         # never pin think=True from here.
-        from services.podcast_service import _resolve_podcast_think
+        from poindexter.services.podcast_service import _resolve_podcast_think
         sc = SiteConfig(initial_config={"podcast_disable_thinking": "false"})
         assert _resolve_podcast_think(sc) is None
 
     def test_none_site_config_disables_thinking(self):
-        from services.podcast_service import _resolve_podcast_think
+        from poindexter.services.podcast_service import _resolve_podcast_think
         assert _resolve_podcast_think(None) is False
 
 
@@ -1554,7 +1554,7 @@ class TestBuildScriptThreadsThink:
     async def _dispatch_kwargs(self, disable_value):
         """Run _build_script_with_llm with a clean (non-dump) LLM response and
         return the kwargs the dispatcher was called with."""
-        from services.podcast_service import _build_script_with_llm
+        from poindexter.services.podcast_service import _build_script_with_llm
 
         cfg = {"podcast_script_model": "ollama/gemma-4-31B-it-qat"}
         if disable_value is not None:
@@ -1569,9 +1569,9 @@ class TestBuildScriptThreadsThink:
         dispatch = AsyncMock(return_value=clean_result)
 
         with patch(
-            "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
         ), patch(
-            "services.prompt_manager.get_prompt_manager", return_value=mock_pm,
+            "poindexter.services.prompt_manager.get_prompt_manager", return_value=mock_pm,
         ):
             await _build_script_with_llm("Title", "# Body\n\nprose body", site_config=sc)
 
@@ -1601,7 +1601,7 @@ class TestAppendPodcastCta:
     )
 
     def test_appends_cta_when_set(self):
-        from services.podcast_service import _append_podcast_cta
+        from poindexter.services.podcast_service import _append_podcast_cta
         sc = SiteConfig(initial_config={"media.cta.podcast": self._CTA})
         out = _append_podcast_cta(
             "Body text. Thanks for listening. See you next time.", site_config=sc,
@@ -1611,7 +1611,7 @@ class TestAppendPodcastCta:
         assert "See you next time." in out
 
     def test_idempotent_no_double_append(self):
-        from services.podcast_service import _append_podcast_cta
+        from poindexter.services.podcast_service import _append_podcast_cta
         sc = SiteConfig(initial_config={"media.cta.podcast": self._CTA})
         once = _append_podcast_cta("Body text.", site_config=sc)
         twice = _append_podcast_cta(once, site_config=sc)
@@ -1619,7 +1619,7 @@ class TestAppendPodcastCta:
         assert once.count(self._CTA) == 1
 
     def test_noop_when_cta_unset(self):
-        from services.podcast_service import _append_podcast_cta
+        from poindexter.services.podcast_service import _append_podcast_cta
         sc = SiteConfig(initial_config={"media.cta.podcast": ""})
         script = "Body text. See you next time."
         assert _append_podcast_cta(script, site_config=sc) == script
@@ -1633,7 +1633,7 @@ class TestPronunciationsMalformedSurfaces:
 
     def test_invalid_pronunciations_emits_finding(self, monkeypatch):
         import utils.findings as findings
-        from services.podcast_service import _get_tts_replacements
+        from poindexter.services.podcast_service import _get_tts_replacements
 
         calls: list[dict] = []
         monkeypatch.setattr(findings, "emit_finding", lambda **kw: calls.append(kw))
@@ -1657,7 +1657,7 @@ def test_default_tts_pronunciations_valid_and_has_model_names():
     """
     import json
 
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     parsed = json.loads(DEFAULTS["tts_pronunciations"])
     for key in ("GLM", "vLLM", "SDXL"):
@@ -1669,7 +1669,7 @@ def test_default_tts_pronunciations_valid_and_has_model_names():
 # boundary only.
 # ---------------------------------------------------------------------------
 
-from services.podcast_service import (  # noqa: E402
+from poindexter.services.podcast_service import (  # noqa: E402
     _normalize_for_script,
     _normalize_for_speech,
 )
@@ -1678,7 +1678,7 @@ from services.podcast_service import (  # noqa: E402
 def _pron_sc():
     import json
 
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
     return SiteConfig(initial_config={
         "tts_pronunciations": json.dumps({
             "CI/CD": "See Eye See Dee",
@@ -1771,7 +1771,7 @@ class TestNormalizeDashes:
         ("The card needs 8-16 GB of VRAM.", "The card needs 8 to 16 GB of VRAM."),
     ])
     def test_confirmed_failure_modes(self, text, expected):
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         assert _normalize_dashes(text, site_config=_TEST_SC) == expected
 
     # -- range readings -----------------------------------------------------
@@ -1788,7 +1788,7 @@ class TestNormalizeDashes:
         ("the 2024–2026 roadmap", "the 2024 to 2026 roadmap"),
     ])
     def test_ranges_become_to(self, text, expected):
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         assert _normalize_dashes(text, site_config=_TEST_SC) == expected
 
     # -- negative readings --------------------------------------------------
@@ -1800,19 +1800,19 @@ class TestNormalizeDashes:
         ("it hit −5 overnight", "it hit negative 5 overnight"),
     ])
     def test_negative_numbers(self, text, expected):
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         assert _normalize_dashes(text, site_config=_TEST_SC) == expected
 
     # -- ISO dates ----------------------------------------------------------
     def test_iso_date_spoken(self):
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         out = _normalize_dashes("It shipped on 2026-05-04, on schedule.", site_config=_TEST_SC)
         assert out == "It shipped on May 4, 2026, on schedule."
 
     def test_pseudo_date_falls_through_to_range(self):
         """A month of 99 is not a date — the generic range reading applies
         rather than a fabricated month name."""
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         out = _normalize_dashes("build 2026-99-01 failed", site_config=_TEST_SC)
         assert "May" not in out
         assert out == "build 2026 to 99 to 01 failed"
@@ -1833,13 +1833,13 @@ class TestNormalizeDashes:
         "the pre-2026 baseline",
     ])
     def test_untouched_forms(self, text):
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         assert _normalize_dashes(text, site_config=_TEST_SC) == text
 
     def test_spaced_em_dash_between_numbers_stays_a_pause(self):
         """'in 2024 — 12 people came' is an aside, not a range: the dash pass
         leaves it, and the structural pass downstream turns it into a comma."""
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         text = "in 2024 — 12 people came"
         assert _normalize_dashes(text, site_config=_TEST_SC) == text
         full = _normalize_for_speech(text, site_config=_TEST_SC)
@@ -1858,7 +1858,7 @@ class TestNormalizeDashes:
         ("e-mail and X-ray", "e mail and X ray"),
     ])
     def test_compound_hyphen_becomes_a_space(self, text, expected):
-        from services.podcast_service import _space_compound_hyphens
+        from poindexter.services.podcast_service import _space_compound_hyphens
         assert _space_compound_hyphens(text, site_config=_TEST_SC) == expected
 
     @pytest.mark.parametrize("text", [
@@ -1869,7 +1869,7 @@ class TestNormalizeDashes:
         "the pre-2026 baseline",
     ])
     def test_compound_rule_never_touches_digit_adjacent_hyphens(self, text):
-        from services.podcast_service import _space_compound_hyphens
+        from poindexter.services.podcast_service import _space_compound_hyphens
         assert _space_compound_hyphens(text, site_config=_TEST_SC) == text
 
     def test_compound_and_digit_rules_compose(self):
@@ -1887,7 +1887,7 @@ class TestNormalizeDashes:
         )
 
     def test_master_switch_also_disables_the_compound_rule(self):
-        from services.podcast_service import _space_compound_hyphens
+        from poindexter.services.podcast_service import _space_compound_hyphens
         sc = SiteConfig(initial_config={"tts_dash_normalization_enabled": "false"})
         text = "a self-hosted rack"
         assert _space_compound_hyphens(text, site_config=sc) == text
@@ -1914,13 +1914,13 @@ class TestNormalizeDashes:
 
     # -- config surface -----------------------------------------------------
     def test_disabled_flag_leaves_text_alone(self):
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         sc = SiteConfig(initial_config={"tts_dash_normalization_enabled": "false"})
         text = "a 9-5 job at -5 degrees on 2026-05-04"
         assert _normalize_dashes(text, site_config=sc) == text
 
     def test_custom_words(self):
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         sc = SiteConfig(initial_config={
             "tts_negative_number_word": "minus",
             "tts_number_range_word": "through",
@@ -1954,7 +1954,7 @@ class TestNormalizeDashes:
         assert " to " not in out
 
     def test_idempotent_on_already_spoken_forms(self):
-        from services.podcast_service import _normalize_dashes
+        from poindexter.services.podcast_service import _normalize_dashes
         once = _normalize_dashes(
             "9-5 at -5 degrees on 2026-05-04", site_config=_TEST_SC
         )

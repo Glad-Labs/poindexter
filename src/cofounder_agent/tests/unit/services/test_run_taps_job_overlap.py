@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.jobs.run_taps import RunTapsJob
+from poindexter.services.jobs.run_taps import RunTapsJob
 
 pytestmark = pytest.mark.unit
 

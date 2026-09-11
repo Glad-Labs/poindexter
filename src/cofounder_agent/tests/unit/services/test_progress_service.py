@@ -8,7 +8,11 @@ callback registration, cleanup, and the global singleton accessor.
 
 import pytest
 
-from services.progress_service import GenerationProgress, ProgressService, get_progress_service
+from poindexter.services.progress_service import (
+    GenerationProgress,
+    ProgressService,
+    get_progress_service,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures

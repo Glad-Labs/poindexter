@@ -25,7 +25,7 @@ from modules.content.stages.generate_content import (
     _strip_leaked_image_prompts,
 )
 from modules.content.writer_core import _writing_style_directive
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Pure helpers — no patching required
@@ -185,25 +185,25 @@ def _patch_everything():
                 )),
             ),
         ),
-        patch("services.model_preferences.parse_model_preferences",
+        patch("poindexter.services.model_preferences.parse_model_preferences",
               return_value=("glm-4.7-5090", "ollama")),
-        patch("services.writing_style_context.build_writing_style_context",
+        patch("poindexter.services.writing_style_context.build_writing_style_context",
               AsyncMock(return_value="style context")),
-        patch("services.research_context.build_rag_context",
+        patch("poindexter.services.research_context.build_rag_context",
               AsyncMock(return_value="rag context")),
-        patch("services.title_generation.generate_canonical_title",
+        patch("poindexter.services.title_generation.generate_canonical_title",
               AsyncMock(return_value="Generated Title")),
-        patch("services.title_generation.check_title_originality",
+        patch("poindexter.services.title_generation.check_title_originality",
               AsyncMock(return_value={
                   "is_original": True, "max_similarity": 0.1, "similar_titles": [],
               })),
-        patch("services.text_utils.normalize_text",
+        patch("poindexter.services.text_utils.normalize_text",
               side_effect=lambda x: x),
-        patch("services.text_utils.scrub_fabricated_links",
+        patch("poindexter.services.text_utils.scrub_fabricated_links",
               side_effect=lambda x, **_kw: x),
-        patch("services.gpu_scheduler.gpu",
+        patch("poindexter.services.gpu_scheduler.gpu",
               SimpleNamespace(lock=_no_gpu_lock)),
-        patch("services.research_service.ResearchService",
+        patch("poindexter.services.research_service.ResearchService",
               return_value=SimpleNamespace(build_context=AsyncMock(return_value="auto research"))),
     ]
 
@@ -222,7 +222,7 @@ class TestCollectResearchContextDedup:
     """
 
     async def test_skips_rebuild_when_caller_research_is_already_a_render(self):
-        from services.research_service import RESEARCH_RENDER_SENTINEL
+        from poindexter.services.research_service import RESEARCH_RENDER_SENTINEL
 
         prior_render = (
             "EXISTING POSTS ON OUR SITE (link to these where relevant):\n"
@@ -233,9 +233,9 @@ class TestCollectResearchContextDedup:
             "- Link to the reference URLs above when discussing those tools"
         )
         db = _FakeDb(task_row={"research_context": prior_render})
-        with patch("services.research_service.ResearchService") as rs_ctor, \
+        with patch("poindexter.services.research_service.ResearchService") as rs_ctor, \
              patch(
-                 "services.research_context.build_rag_context",
+                 "poindexter.services.research_context.build_rag_context",
                  AsyncMock(return_value="rag context"),
              ) as rag:
             out = await GenerateContentStage()._collect_research_context(
@@ -259,10 +259,10 @@ class TestCollectResearchContextDedup:
             build_context=AsyncMock(return_value="auto research"),
         )
         with patch(
-            "services.research_service.ResearchService",
+            "poindexter.services.research_service.ResearchService",
             return_value=research_svc,
         ), patch(
-            "services.research_context.build_rag_context",
+            "poindexter.services.research_context.build_rag_context",
             AsyncMock(return_value="rag context"),
         ):
             out = await GenerateContentStage()._collect_research_context(
@@ -280,10 +280,10 @@ class TestCollectResearchContextDedup:
             build_context=AsyncMock(return_value="auto research"),
         )
         with patch(
-            "services.research_service.ResearchService",
+            "poindexter.services.research_service.ResearchService",
             return_value=research_svc,
         ), patch(
-            "services.research_context.build_rag_context",
+            "poindexter.services.research_context.build_rag_context",
             AsyncMock(return_value="rag context"),
         ):
             out = await GenerateContentStage()._collect_research_context(
@@ -365,7 +365,7 @@ class TestGenerateContentStageExecute:
         }
         patches = _patch_everything()
         with patch(
-            "services.self_review.self_review_and_revise",
+            "poindexter.services.self_review.self_review_and_revise",
             AsyncMock(),
         ) as self_review_mock:
             for p in patches:
@@ -412,10 +412,10 @@ class TestGenerateContentStageExecute:
             p.start()
         try:
             with patch(
-                "services.title_generation.check_title_originality",
+                "poindexter.services.title_generation.check_title_originality",
                 new=originality_mock,
             ), patch(
-                "services.title_generation.generate_canonical_title",
+                "poindexter.services.title_generation.generate_canonical_title",
                 new=title_mock,
             ):
                 result = await GenerateContentStage().execute(ctx, {})
@@ -447,7 +447,7 @@ class TestGenerateContentStageExecute:
             p.start()
         try:
             with patch(
-                "services.title_generation.generate_canonical_title",
+                "poindexter.services.title_generation.generate_canonical_title",
                 new=title_mock,
             ):
                 result = await GenerateContentStage().execute(ctx, {})

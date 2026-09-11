@@ -521,7 +521,7 @@ def _judge_token_budget(model: str, base: int, site_config: Any) -> int:
     vision models keep ``base``; an already-larger ``base`` is never lowered.
     """
     try:
-        from services.llm_providers.thinking_models import (
+        from poindexter.services.llm_providers.thinking_models import (
             is_thinking_model,
             resolve_thinking_substrings,
         )
@@ -560,13 +560,13 @@ async def _score_candidate(
         candidate.reason = f"unreadable candidate file: {exc}"
         return
 
-    from services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
 
     prompt = get_prompt_manager().get_prompt(
         "qa.featured_image_fanout", brief=brief,
     )
 
-    from services.llm_providers.dispatcher import dispatch_complete
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
     messages = [{
         "role": "user",
@@ -659,7 +659,7 @@ async def _retain_candidates(
     """
     if site_config is None or not candidates or not _retain_enabled(site_config):
         return
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
 
     svc = R2UploadService(site_config=site_config)
     now = time.gmtime()
@@ -698,7 +698,7 @@ async def _record_outcome(
     losing the row loses telemetry, never the image."""
     if pool is None:
         return
-    from services.audit_event_schemas import validate_event_details
+    from poindexter.services.audit_event_schemas import validate_event_details
 
     payload: dict[str, Any] = {
         "winner": winner.name,
@@ -779,7 +779,7 @@ async def run_featured_fanout(
         # image-gen must be out of VRAM before the ComfyUI models load — the
         # decline-gated hard unload is a cheap no-op when it holds nothing.
         try:
-            from services.gpu_scheduler import gpu
+            from poindexter.services.gpu_scheduler import gpu
 
             await gpu._unload_image_gen(hard=True)
         except Exception as exc:  # noqa: BLE001  # silent-ok: reclaim is an
@@ -877,7 +877,7 @@ async def run_featured_fanout(
     # its own per-candidate budget — correctness over warm-cache speed.
     if comfy_wanted:
         try:
-            from services.gpu_scheduler import gpu
+            from poindexter.services.gpu_scheduler import gpu
 
             await gpu._unload_comfyui()
         except Exception as exc:  # noqa: BLE001  # silent-ok: freeing is an

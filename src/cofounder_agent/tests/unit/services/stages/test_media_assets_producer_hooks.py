@@ -77,7 +77,7 @@ class TestSourceFeaturedImageRecordsAsset:
                 source="image_gen_local",
             )),
         ), patch(
-            "services.media_asset_recorder.record_media_asset",
+            "poindexter.services.media_asset_recorder.record_media_asset",
             recorder,
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -124,7 +124,7 @@ class TestSourceFeaturedImageRecordsAsset:
             "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ), patch(
-            "services.media_asset_recorder.record_media_asset",
+            "poindexter.services.media_asset_recorder.record_media_asset",
             recorder,
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -161,7 +161,7 @@ class TestSourceFeaturedImageRecordsAsset:
             "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ), patch(
-            "services.media_asset_recorder.record_media_asset",
+            "poindexter.services.media_asset_recorder.record_media_asset",
             recorder,
         ):
             await SourceFeaturedImageStage().execute(ctx, {})
@@ -218,7 +218,7 @@ class TestFeaturedImageDataContextUpdates:
             "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=gen_img),
         ), patch(
-            "services.media_asset_recorder.record_media_asset",
+            "poindexter.services.media_asset_recorder.record_media_asset",
             AsyncMock(return_value="asset-row"),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -275,7 +275,7 @@ class TestFeaturedImageDataContextUpdates:
             "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=gen_img),
         ), patch(
-            "services.media_asset_recorder.record_media_asset",
+            "poindexter.services.media_asset_recorder.record_media_asset",
             recorder,
         ):
             await SourceFeaturedImageStage().execute(ctx, {})
@@ -317,7 +317,7 @@ class TestFeaturedImageDataContextUpdates:
             "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ), patch(
-            "services.media_asset_recorder.record_media_asset",
+            "poindexter.services.media_asset_recorder.record_media_asset",
             AsyncMock(return_value="row"),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})

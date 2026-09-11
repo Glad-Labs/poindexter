@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.llm_throughput import _clamp, get_llm_throughput_trend
+from poindexter.services.llm_throughput import _clamp, get_llm_throughput_trend
 
 # db_pool is loop_scope="session"; tests must share that loop.
 pytestmark = pytest.mark.asyncio(loop_scope="session")

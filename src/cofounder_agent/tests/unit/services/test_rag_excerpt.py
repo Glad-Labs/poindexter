@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.rag_excerpt import excerpt_around_query, extract_terms
+from poindexter.services.rag_excerpt import excerpt_around_query, extract_terms
 
 
 class TestExtractTerms:

@@ -62,7 +62,9 @@ def test_migrations_smoke_excludes_underscore_prefix_files(tmp_path, monkeypatch
 
 def test_services_migrations_collect_excludes_underscore_prefix_files(tmp_path):
     """_collect_migration_files() must skip _-prefixed files and __init__.py."""
-    from services.migrations import _collect_migration_files  # type: ignore[attr-defined]
+    from poindexter.services.migrations import (
+        _collect_migration_files,  # type: ignore[attr-defined]
+    )
 
     _populate(tmp_path)
     names = [f.name for f in _collect_migration_files(tmp_path)]
@@ -76,7 +78,9 @@ def test_services_migrations_collect_excludes_underscore_prefix_files(tmp_path):
 
 def test_services_migrations_collect_returns_sorted(tmp_path):
     """_collect_migration_files() must return files in alphabetical order."""
-    from services.migrations import _collect_migration_files  # type: ignore[attr-defined]
+    from poindexter.services.migrations import (
+        _collect_migration_files,  # type: ignore[attr-defined]
+    )
 
     (tmp_path / "20260602_000000_b.py").write_text("")
     (tmp_path / "0000_baseline.py").write_text("")

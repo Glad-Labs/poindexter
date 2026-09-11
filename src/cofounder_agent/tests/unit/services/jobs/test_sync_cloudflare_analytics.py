@@ -6,7 +6,7 @@ finding (not per-row noise) so a silent CF-AE timestamp-format drift is caught.
 
 
 def test_emit_bad_timestamp_finding_aggregates(monkeypatch):
-    from services.jobs import sync_cloudflare_analytics as m
+    from poindexter.services.jobs import sync_cloudflare_analytics as m
 
     calls = []
     monkeypatch.setattr(m, "emit_finding", lambda **kw: calls.append(kw))

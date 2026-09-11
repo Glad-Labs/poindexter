@@ -184,20 +184,20 @@ def test_open_prefix_resolves_then_opens(monkeypatch, runner, tmp_path):
     pool = MagicMock()
     pool.close = AsyncMock()
 
-    fake_service = types.ModuleType("services.media_approval_service")
+    fake_service = types.ModuleType("poindexter.services.media_approval_service")
     fake_service.get_asset_storage_path = AsyncMock(return_value=container_path)  # type: ignore[attr-defined]
 
     # `from services import media_approval_service` resolves via the package
     # attribute, not just sys.modules — patch both, same pattern as
     # TestDecideResolvesPrefix.
-    import services as _services_pkg
+    import poindexter.services as _services_pkg
 
     with patch.object(
         media, "_make_pool", new=AsyncMock(return_value=pool),
     ), patch.object(
         media, "resolve_uuid_prefix", new=AsyncMock(return_value=full),
     ), patch.dict(
-        sys.modules, {"services.media_approval_service": fake_service},
+        sys.modules, {"poindexter.services.media_approval_service": fake_service},
     ), patch.object(
         _services_pkg, "media_approval_service", fake_service, create=True,
     ), patch.object(media.subprocess, "run"):
@@ -301,14 +301,14 @@ class TestDecideResolvesPrefix:
         async def _fake_decide(_db, post_id, medium, **kwargs):
             decide_calls.append((post_id, medium, kwargs))
 
-        fake_service = types.ModuleType("services.media_approval_service")
+        fake_service = types.ModuleType("poindexter.services.media_approval_service")
         fake_service.decide = _fake_decide  # type: ignore[attr-defined]
         monkeypatch.setitem(
-            sys.modules, "services.media_approval_service", fake_service
+            sys.modules, "poindexter.services.media_approval_service", fake_service
         )
         # _decide does `from services import media_approval_service`; make the
         # attribute resolve to our fake on the parent package too.
-        import services as _services_pkg
+        import poindexter.services as _services_pkg
         monkeypatch.setattr(
             _services_pkg, "media_approval_service", fake_service, raising=False
         )

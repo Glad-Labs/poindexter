@@ -38,7 +38,7 @@ async def test_enqueue_inserts_image_rebuild_task(monkeypatch):
             added["task_data"] = task_data
             return "rebuild-task-123"
 
-    monkeypatch.setattr("services.tasks_db.TasksDatabase", FakeTasksDb)
+    monkeypatch.setattr("poindexter.services.tasks_db.TasksDatabase", FakeTasksDb)
 
     pool = FakePool()
     new_id = await enqueue_image_rebuild(pool, "draft-1", allow_stock=True)
@@ -64,7 +64,7 @@ async def test_enqueue_defaults_allow_stock_false(monkeypatch):
             added["task_data"] = task_data
             return "rebuild-task-456"
 
-    monkeypatch.setattr("services.tasks_db.TasksDatabase", FakeTasksDb)
+    monkeypatch.setattr("poindexter.services.tasks_db.TasksDatabase", FakeTasksDb)
 
     await enqueue_image_rebuild(FakePool(), "draft-2")
     assert added["task_data"]["task_metadata"]["allow_stock"] is False

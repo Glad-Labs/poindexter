@@ -149,7 +149,7 @@ class StaticExportReconciliationJob:
         _sc = config.get("_site_config")
         manifest = None
         if _sc is not None:
-            from services.r2_upload_service import R2UploadService
+            from poindexter.services.r2_upload_service import R2UploadService
             manifest = await R2UploadService(site_config=_sc).get_json(
                 "static/manifest.json"
             )
@@ -219,7 +219,7 @@ class StaticExportReconciliationJob:
         )
 
         try:
-            from services.static_export_service import export_full_rebuild
+            from poindexter.services.static_export_service import export_full_rebuild
 
             # #272 Phase-2d: export_full_rebuild requires an explicit
             # site_config. The scheduler seeds the run-bound instance into

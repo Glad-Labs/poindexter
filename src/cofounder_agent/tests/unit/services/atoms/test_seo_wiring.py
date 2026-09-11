@@ -4,9 +4,9 @@
 These tests verify the graph_def reflects that change and that both the
 individual atoms AND the new combined atom are discoverable.
 """
-from services import atom_registry
-from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF as G
-from services.prompt_manager import get_prompt_manager
+from poindexter.services import atom_registry
+from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF as G
+from poindexter.services.prompt_manager import get_prompt_manager
 
 
 def _node_atom(nid):

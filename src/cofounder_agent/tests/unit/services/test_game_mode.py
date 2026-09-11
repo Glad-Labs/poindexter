@@ -18,8 +18,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from services import game_mode
-from services.site_config import SiteConfig
+from poindexter.services import game_mode
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**overrides: str) -> SiteConfig:
@@ -181,8 +181,8 @@ def test_parked_services_tolerates_whitespace_and_blanks():
 
 @pytest.mark.asyncio
 async def test_gpu_scheduler_rejects_new_acquire_during_game_mode(monkeypatch):
-    from services import gpu_scheduler
-    from services.gpu_admission import GpuBusyError
+    from poindexter.services import gpu_scheduler
+    from poindexter.services.gpu_admission import GpuBusyError
 
     future = (datetime.now(UTC) + timedelta(hours=3)).isoformat()
     monkeypatch.setattr(
@@ -205,8 +205,8 @@ async def test_gpu_scheduler_game_mode_outranks_current_owner_guard(monkeypatch)
     Reentrant acquires never reach this function (lock() returns earlier on
     _gpu_session_active), so anything arriving here is genuinely new work.
     """
-    from services import gpu_scheduler
-    from services.gpu_admission import GpuBusyError
+    from poindexter.services import gpu_scheduler
+    from poindexter.services.gpu_admission import GpuBusyError
 
     future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     monkeypatch.setattr(
@@ -223,7 +223,7 @@ async def test_gpu_scheduler_game_mode_outranks_current_owner_guard(monkeypatch)
 @pytest.mark.asyncio
 async def test_gpu_scheduler_unaffected_when_game_mode_off(monkeypatch):
     """The util-heuristic path stays exactly as it was — no new false pauses."""
-    from services import gpu_scheduler
+    from poindexter.services import gpu_scheduler
 
     monkeypatch.setattr(
         gpu_scheduler, "_sc", lambda: _sc(**{game_mode.UNTIL_KEY: ""})
@@ -295,7 +295,7 @@ class TestEvictReportsUnreachableHonestly:
         sc = _sc()
         with patch.object(game_cli, "_ollama_reachable", AsyncMock(return_value=False)), \
              patch(
-                 "services.llm_providers.ollama_unload.ollama_base_urls",
+                 "poindexter.services.llm_providers.ollama_unload.ollama_base_urls",
                  lambda _sc: ["http://host.docker.internal:11434"],
              ):
             msg = await game_cli._evict_ollama(sc)
@@ -313,10 +313,10 @@ class TestEvictReportsUnreachableHonestly:
         sc = _sc()
         with patch.object(game_cli, "_ollama_reachable", AsyncMock(return_value=True)), \
              patch(
-                 "services.llm_providers.ollama_unload.ollama_base_urls",
+                 "poindexter.services.llm_providers.ollama_unload.ollama_base_urls",
                  lambda _sc: ["http://localhost:11434"],
              ), patch(
-                 "services.llm_providers.ollama_unload.unload_loaded_ollama_models",
+                 "poindexter.services.llm_providers.ollama_unload.unload_loaded_ollama_models",
                  AsyncMock(return_value=[]),
              ):
             msg = await game_cli._evict_ollama(sc)

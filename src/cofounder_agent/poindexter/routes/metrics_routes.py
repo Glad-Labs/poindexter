@@ -11,10 +11,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from middleware.api_token_auth import verify_api_token
-from services.cost_aggregation_service import CostAggregationService
-from services.database_service import DatabaseService
-from services.llm_throughput import VALID_METRICS, get_llm_throughput_trend
-from services.logger_config import get_logger
+from poindexter.services.cost_aggregation_service import CostAggregationService
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.llm_throughput import VALID_METRICS, get_llm_throughput_trend
+from poindexter.services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -225,7 +225,7 @@ async def get_operational_metrics(
         # --- WebSocket connections ---
         ws_total = 0
         try:
-            from services.websocket_manager import websocket_manager
+            from poindexter.services.websocket_manager import websocket_manager
 
             ws_total = sum(len(conns) for conns in websocket_manager.active_connections.values())
         except Exception as ws_err:

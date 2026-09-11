@@ -46,8 +46,8 @@ import json
 import time
 from typing import Any, Protocol
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
@@ -499,7 +499,7 @@ def _resolve_system_prompt() -> str:
     surfaces instead of silently serving the inline copy.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(_PROMPT_KEY)
     except Exception as exc:  # noqa: BLE001 — triage must not be gated on the registry
         logger.error(

@@ -55,7 +55,7 @@ class TestApprovalGateAtom:
         from modules.content.atoms import approval_gate
 
         with patch(
-            "services.approval_service.is_gate_enabled", return_value=False,
+            "poindexter.services.approval_service.is_gate_enabled", return_value=False,
         ):
             out = await approval_gate.run(_state())
         assert out == {}
@@ -78,7 +78,7 @@ class TestApprovalGateAtom:
         conn = FakeConn(fetchrow_result={"event_kind": "approved"})
         state = _state_with_pool(conn)
         with patch(
-            "services.approval_service.is_gate_enabled", return_value=True,
+            "poindexter.services.approval_service.is_gate_enabled", return_value=True,
         ):
             out = await approval_gate.run(state)
         # Approved on a prior pass → resume case → pass-through, no interrupt.
@@ -90,7 +90,7 @@ class TestApprovalGateAtom:
         conn = FakeConn(fetchrow_result={"event_kind": "rejected"})
         state = _state_with_pool(conn)
         with patch(
-            "services.approval_service.is_gate_enabled", return_value=True,
+            "poindexter.services.approval_service.is_gate_enabled", return_value=True,
         ):
             out = await approval_gate.run(state)
         assert out.get("_halt") is True
@@ -112,10 +112,10 @@ class TestApprovalGateAtom:
             raise GraphInterrupt(payload)
 
         with (
-            patch("services.approval_service.is_gate_enabled", return_value=True),
-            patch("services.approval_service.pause_at_gate", pause_mock),
+            patch("poindexter.services.approval_service.is_gate_enabled", return_value=True),
+            patch("poindexter.services.approval_service.pause_at_gate", pause_mock),
             patch(
-                "services.integrations.operator_notify.notify_operator",
+                "poindexter.services.integrations.operator_notify.notify_operator",
                 notify_mock,
             ),
             patch.object(approval_gate, "interrupt", _raise_interrupt),
@@ -143,13 +143,13 @@ class TestApprovalGateAtom:
         state = _state_with_pool(conn, title="Hello")
 
         with (
-            patch("services.approval_service.is_gate_enabled", return_value=True),
+            patch("poindexter.services.approval_service.is_gate_enabled", return_value=True),
             patch(
-                "services.approval_service.pause_at_gate",
+                "poindexter.services.approval_service.pause_at_gate",
                 AsyncMock(return_value={"ok": True}),
             ),
             patch(
-                "services.integrations.operator_notify.notify_operator",
+                "poindexter.services.integrations.operator_notify.notify_operator",
                 AsyncMock(),
             ),
             patch.object(
@@ -166,7 +166,7 @@ class TestApprovalGateAtom:
         # database_service present but pool is None.
         state = _state(database_service=SimpleNamespace(pool=None))
         with patch(
-            "services.approval_service.is_gate_enabled", return_value=True,
+            "poindexter.services.approval_service.is_gate_enabled", return_value=True,
         ):
             out = await approval_gate.run(state)
         assert out.get("_halt") is True
@@ -211,10 +211,10 @@ class TestApprovalGateRetryCountFreshness:
             raise GraphInterrupt(payload)
 
         with (
-            patch("services.approval_service.is_gate_enabled", return_value=True),
-            patch("services.approval_service.pause_at_gate", pause_mock),
+            patch("poindexter.services.approval_service.is_gate_enabled", return_value=True),
+            patch("poindexter.services.approval_service.pause_at_gate", pause_mock),
             patch(
-                "services.integrations.operator_notify.notify_operator",
+                "poindexter.services.integrations.operator_notify.notify_operator",
                 AsyncMock(),
             ),
             patch.object(approval_gate, "interrupt", _raise_interrupt),
@@ -236,7 +236,7 @@ class TestApprovalGateRetryCountFreshness:
         })
         state = _state_with_pool(conn)
         with patch(
-            "services.approval_service.is_gate_enabled", return_value=True,
+            "poindexter.services.approval_service.is_gate_enabled", return_value=True,
         ):
             out = await approval_gate.run(state)
         assert out == {}
@@ -254,7 +254,7 @@ class TestApprovalGateRetryCountFreshness:
         })
         state = _state_with_pool(conn)
         with patch(
-            "services.approval_service.is_gate_enabled", return_value=True,
+            "poindexter.services.approval_service.is_gate_enabled", return_value=True,
         ):
             out = await approval_gate.run(state)
         assert out == {}
@@ -302,10 +302,10 @@ class TestApprovalGatePendingRegen:
         pause_mock = AsyncMock()
         notify_mock = AsyncMock()
         with (
-            patch("services.approval_service.is_gate_enabled", return_value=True),
-            patch("services.approval_service.pause_at_gate", pause_mock),
+            patch("poindexter.services.approval_service.is_gate_enabled", return_value=True),
+            patch("poindexter.services.approval_service.pause_at_gate", pause_mock),
             patch(
-                "services.integrations.operator_notify.notify_operator", notify_mock,
+                "poindexter.services.integrations.operator_notify.notify_operator", notify_mock,
             ),
             # If the impl is missing, the atom falls through to interrupt();
             # return a sentinel so RED fails cleanly on the _goto assertion
@@ -331,10 +331,10 @@ class TestApprovalGatePendingRegen:
             regen_targets=self._TARGETS, title="x", topic="t",
         )
         with (
-            patch("services.approval_service.is_gate_enabled", return_value=True),
-            patch("services.approval_service.pause_at_gate", AsyncMock()),
+            patch("poindexter.services.approval_service.is_gate_enabled", return_value=True),
+            patch("poindexter.services.approval_service.pause_at_gate", AsyncMock()),
             patch(
-                "services.integrations.operator_notify.notify_operator", AsyncMock(),
+                "poindexter.services.integrations.operator_notify.notify_operator", AsyncMock(),
             ),
         ):
             out = await approval_gate.run(state)
@@ -359,7 +359,7 @@ class TestApprovalGatePendingRegen:
         state = _state_with_pool(
             conn, gate_name="preview_gate", regen_targets=self._TARGETS,
         )
-        with patch("services.approval_service.is_gate_enabled", return_value=True):
+        with patch("poindexter.services.approval_service.is_gate_enabled", return_value=True):
             out = await approval_gate.run(state)
         assert out.get("_goto") == "plan_image_markers"
 
@@ -371,10 +371,10 @@ class TestApprovalGatePendingRegen:
         conn = FakeConn(fetchrow_result=_regen_fetchrow(images=True))
         state = _state_with_pool(conn, gate_name="preview_gate")  # no regen_targets
         with (
-            patch("services.approval_service.is_gate_enabled", return_value=True),
-            patch("services.approval_service.pause_at_gate", AsyncMock()),
+            patch("poindexter.services.approval_service.is_gate_enabled", return_value=True),
+            patch("poindexter.services.approval_service.pause_at_gate", AsyncMock()),
             patch(
-                "services.integrations.operator_notify.notify_operator", AsyncMock(),
+                "poindexter.services.integrations.operator_notify.notify_operator", AsyncMock(),
             ),
             patch.object(approval_gate, "interrupt", lambda payload: {"approved": True}),
         ):
@@ -391,7 +391,7 @@ class TestApprovalGatePendingRegen:
 @pytest.mark.unit
 class TestGraphInterruptPropagation:
     async def test_wrap_atom_does_not_swallow_graph_interrupt(self):
-        from services.pipeline_architect import _wrap_atom
+        from poindexter.services.pipeline_architect import _wrap_atom
 
         async def run_fn(state):
             raise GraphInterrupt({"paused": True})
@@ -407,7 +407,7 @@ class TestGraphInterruptPropagation:
     async def test_wrap_atom_still_catches_other_exceptions(self):
         """Regression guard: the GraphInterrupt re-raise must not break the
         normal error path (other exceptions still halt + record)."""
-        from services.pipeline_architect import _wrap_atom
+        from poindexter.services.pipeline_architect import _wrap_atom
 
         async def boom(state):
             raise ValueError("nope")
@@ -420,7 +420,7 @@ class TestGraphInterruptPropagation:
         assert sink[0].ok is False
 
     async def test_make_stage_node_does_not_swallow_graph_interrupt(self):
-        from services.template_runner import make_stage_node
+        from poindexter.services.template_runner import make_stage_node
 
         # A fake stage whose execute() raises GraphInterrupt (mirrors a
         # stage.* virtual atom calling interrupt()).
@@ -445,9 +445,9 @@ class TestGraphInterruptPropagation:
                 AsyncMock(return_value=enabled_cfg),
             ),
             patch(
-                "services.template_runner._mark_stage_column", AsyncMock(),
+                "poindexter.services.template_runner._mark_stage_column", AsyncMock(),
             ),
-            patch("services.template_runner._emit_progress", AsyncMock()),
+            patch("poindexter.services.template_runner._emit_progress", AsyncMock()),
         ):
             with pytest.raises(GraphInterrupt):
                 await node({"task_id": "t"}, None)
@@ -461,7 +461,7 @@ class TestGraphInterruptPropagation:
 @pytest.mark.unit
 class TestWrapAtomConfigMerge:
     async def test_node_config_seeds_atom_input(self):
-        from services.pipeline_architect import _wrap_atom
+        from poindexter.services.pipeline_architect import _wrap_atom
 
         seen: dict = {}
 
@@ -479,7 +479,7 @@ class TestWrapAtomConfigMerge:
         assert seen["task_id"] == "t"
 
     async def test_state_takes_precedence_over_config(self):
-        from services.pipeline_architect import _wrap_atom
+        from poindexter.services.pipeline_architect import _wrap_atom
 
         seen: dict = {}
 
@@ -507,8 +507,8 @@ class TestTemplateRunnerResume:
         """run(resume=True) calls ainvoke(Command(resume=...), config)."""
         from langgraph.types import Command
 
-        from services.site_config import SiteConfig
-        from services.template_runner import TemplateRunner
+        from poindexter.services.site_config import SiteConfig
+        from poindexter.services.template_runner import TemplateRunner
 
         sc = SiteConfig(initial_config={
             "pipeline_use_graph_def": "false",
@@ -536,7 +536,7 @@ class TestTemplateRunnerResume:
                 "services.pipeline_templates.TEMPLATES",
                 fake_templates, clear=False,
             ),
-            patch("services.template_runner._emit_progress", AsyncMock()),
+            patch("poindexter.services.template_runner._emit_progress", AsyncMock()),
         ):
             summary = await runner.run(
                 "canonical_blog",
@@ -553,8 +553,8 @@ class TestTemplateRunnerResume:
 
     async def test_normal_run_invokes_with_data_state(self):
         """Backwards compat: resume=False (default) passes the data_state."""
-        from services.site_config import SiteConfig
-        from services.template_runner import TemplateRunner
+        from poindexter.services.site_config import SiteConfig
+        from poindexter.services.template_runner import TemplateRunner
 
         sc = SiteConfig(initial_config={
             "pipeline_use_graph_def": "false",
@@ -578,7 +578,7 @@ class TestTemplateRunnerResume:
                 "services.pipeline_templates.TEMPLATES",
                 {"canonical_blog": lambda **kw: _Graph()}, clear=False,
             ),
-            patch("services.template_runner._emit_progress", AsyncMock()),
+            patch("poindexter.services.template_runner._emit_progress", AsyncMock()),
         ):
             await runner.run(
                 "canonical_blog",

@@ -26,7 +26,7 @@ import types
 
 import pytest
 
-import services.llm_providers.dispatcher as dispatcher
+import poindexter.services.llm_providers.dispatcher as dispatcher
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 

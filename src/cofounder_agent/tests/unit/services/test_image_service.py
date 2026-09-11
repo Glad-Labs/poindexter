@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.image_service import (
+from poindexter.services.image_service import (
     IMAGE_MODEL_REGISTRY,
     FeaturedImageMetadata,
     ImageModel,
@@ -23,7 +23,7 @@ from services.image_service import (
     get_default_image_model,
     get_image_service,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
 # ``set_site_config`` were removed; ``ImageService`` / ``get_image_service`` /
@@ -629,7 +629,7 @@ class TestInitializeModel:
 
     def test_sets_gen_available_false_when_diffusers_unavailable(self):
         svc = ImageService(site_config=_test_sc())
-        with patch("services.image_service.DIFFUSERS_AVAILABLE", False):
+        with patch("poindexter.services.image_service.DIFFUSERS_AVAILABLE", False):
             svc._initialize_model(ImageModel.SDXL_BASE)
         assert svc.gen_available is False
         assert svc._gen_pipe is None
@@ -637,8 +637,8 @@ class TestInitializeModel:
     def test_sets_gen_available_false_when_torch_unavailable(self):
         svc = ImageService(site_config=_test_sc())
         with (
-            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
-            patch("services.image_service.TORCH_AVAILABLE", False),
+            patch("poindexter.services.image_service.DIFFUSERS_AVAILABLE", True),
+            patch("poindexter.services.image_service.TORCH_AVAILABLE", False),
         ):
             svc._initialize_model(ImageModel.SDXL_BASE)
         assert svc.gen_available is False
@@ -653,8 +653,8 @@ class TestInitializeModel:
         # DIFFUSERS and TORCH must be True so we get past the prerequisite checks
         # and reach the unload branch. We then let the actual load fail (no real GPU).
         with (
-            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
-            patch("services.image_service.TORCH_AVAILABLE", True),
+            patch("poindexter.services.image_service.DIFFUSERS_AVAILABLE", True),
+            patch("poindexter.services.image_service.TORCH_AVAILABLE", True),
             patch.object(svc, "_unload_model") as mock_unload,
             patch.object(svc, "_import_pipeline_class", side_effect=ImportError("no GPU")),
         ):
@@ -664,9 +664,9 @@ class TestInitializeModel:
     def test_uses_get_default_when_model_is_none(self):
         svc = ImageService(site_config=_test_sc())
         with (
-            patch("services.image_service.DIFFUSERS_AVAILABLE", False),
+            patch("poindexter.services.image_service.DIFFUSERS_AVAILABLE", False),
             patch(
-                "services.image_service.get_default_image_model",
+                "poindexter.services.image_service.get_default_image_model",
                 return_value=ImageModel.FLUX_SCHNELL,
             ) as mock_default,
         ):
@@ -687,7 +687,7 @@ class TestUnloadModel:
         svc._active_model = ImageModel.SDXL_BASE
         svc.gen_available = True
 
-        with patch("services.image_service.TORCH_AVAILABLE", False):
+        with patch("poindexter.services.image_service.TORCH_AVAILABLE", False):
             svc._unload_model()
 
         assert svc._gen_pipe is None
@@ -697,7 +697,7 @@ class TestUnloadModel:
     def test_noop_when_no_pipeline_loaded(self):
         svc = ImageService(site_config=_test_sc())
         assert svc._gen_pipe is None
-        with patch("services.image_service.TORCH_AVAILABLE", False):
+        with patch("poindexter.services.image_service.TORCH_AVAILABLE", False):
             svc._unload_model()  # Should not raise
         assert svc._gen_pipe is None
         assert svc._active_model is None
@@ -711,12 +711,12 @@ class TestUnloadModel:
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = True
 
-        import services.image_service as img_mod
+        import poindexter.services.image_service as img_mod
 
         original_torch = getattr(img_mod, "torch", None)
         try:
             img_mod.torch = mock_torch
-            with patch("services.image_service.TORCH_AVAILABLE", True):
+            with patch("poindexter.services.image_service.TORCH_AVAILABLE", True):
                 svc._unload_model()
             mock_torch.cuda.empty_cache.assert_called_once()
         finally:
@@ -731,12 +731,12 @@ class TestUnloadModel:
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = False
 
-        import services.image_service as img_mod
+        import poindexter.services.image_service as img_mod
 
         original_torch = getattr(img_mod, "torch", None)
         try:
             img_mod.torch = mock_torch
-            with patch("services.image_service.TORCH_AVAILABLE", True):
+            with patch("poindexter.services.image_service.TORCH_AVAILABLE", True):
                 svc._unload_model()
             mock_torch.cuda.empty_cache.assert_not_called()
         finally:
@@ -956,7 +956,7 @@ class TestEnsurePexelsKey:
         ImageService — non-None ``_pool`` (so the loud-failure guard
         passes) plus an async ``get_secret`` returning ``secret_value``.
         """
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         cfg = SiteConfig()
         cfg._pool = MagicMock()  # non-None — passes the loud-failure guard
@@ -999,7 +999,7 @@ class TestEnsurePexelsKey:
         intentionally unset" from "lookup mechanism broken" without a
         DB pool, so refuse to continue with pexels_available=False.
         """
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         cfg = SiteConfig()  # no pool — fresh test instance
         svc = ImageService(site_config=cfg)
@@ -1024,7 +1024,7 @@ class TestEnsurePexelsKey:
     @pytest.mark.asyncio
     async def test_get_secret_exception_raises_loud(self):
         """A DB error mid-lookup must raise, not silently fall back."""
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         cfg = SiteConfig()
         cfg._pool = MagicMock()  # passes pool guard
@@ -1073,8 +1073,8 @@ class TestPexelsResolutionViaSiteConfigDI:
         ``_ensure_pexels_key`` ensures the warning that triggered #381
         cannot silently re-emerge.
         """
-        from services.image_service import ImageService, get_image_service
-        from services.site_config import SiteConfig
+        from poindexter.services.image_service import ImageService, get_image_service
+        from poindexter.services.site_config import SiteConfig
 
         cfg = SiteConfig()
         cfg._pool = MagicMock()  # non-None: passes the loud-failure guard

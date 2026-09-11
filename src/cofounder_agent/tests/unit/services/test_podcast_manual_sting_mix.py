@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.podcast_service import EpisodeResult, PodcastService
+from poindexter.services.podcast_service import EpisodeResult, PodcastService
 
 
 def _sc(**overrides: Any) -> SimpleNamespace:
@@ -83,7 +83,7 @@ class TestManualRegenerateMixesSting:
         async def fake_probe(path):
             return 311.5
 
-        import services.podcast_sting_mixer as mixer
+        import poindexter.services.podcast_sting_mixer as mixer
         monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
         monkeypatch.setattr(mixer, "probe_duration_s", fake_probe)
 
@@ -120,7 +120,7 @@ class TestManualRegenerateMixesSting:
         async def fake_probe(path):
             return 311.5
 
-        import services.podcast_sting_mixer as mixer
+        import poindexter.services.podcast_sting_mixer as mixer
         monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
         monkeypatch.setattr(mixer, "probe_duration_s", fake_probe)
 
@@ -156,12 +156,12 @@ class TestManualRegenerateMixesSting:
             order.append(f"duration={kwargs['duration_ms']}")
             return "asset-uuid"
 
-        import services.podcast_sting_mixer as mixer
+        import poindexter.services.podcast_sting_mixer as mixer
         monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
         monkeypatch.setattr(mixer, "probe_duration_s", fake_probe)
 
         with patch.object(svc, "_generate_with_voice", _dry_render()), \
-             patch("services.media_asset_recorder.record_media_asset", fake_record):
+             patch("poindexter.services.media_asset_recorder.record_media_asset", fake_record):
             await _run(svc)
 
         assert order[:2] == ["mix", "record"]
@@ -221,7 +221,7 @@ class TestFailSoft:
         async def fake_mix(*a, **k):
             return None
 
-        import services.podcast_sting_mixer as mixer
+        import poindexter.services.podcast_sting_mixer as mixer
         import utils.findings as uf
         monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
         monkeypatch.setattr(uf, "emit_finding", lambda **kw: findings.append(kw))
@@ -255,7 +255,7 @@ class TestFailSoft:
 
         import shutil as _shutil
 
-        import services.podcast_sting_mixer as mixer
+        import poindexter.services.podcast_sting_mixer as mixer
         monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
         monkeypatch.setattr(_shutil, "move", boom)
 
@@ -285,7 +285,7 @@ class TestFailSoft:
         async def no_duration(path):
             return None
 
-        import services.podcast_sting_mixer as mixer
+        import poindexter.services.podcast_sting_mixer as mixer
         monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
         monkeypatch.setattr(mixer, "probe_duration_s", no_duration)
 
@@ -313,7 +313,7 @@ class TestFailSoft:
             calls.append(a)
             return None
 
-        import services.podcast_sting_mixer as mixer
+        import poindexter.services.podcast_sting_mixer as mixer
         monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
 
         with patch.object(svc, "_generate_with_voice", _dry_render()):

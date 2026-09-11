@@ -47,7 +47,7 @@ from typing import Any
 import httpx
 
 from plugins.topic_source import DiscoveredTopic
-from services.topic_sources._filters import classify_category
+from poindexter.services.topic_sources._filters import classify_category
 
 logger = logging.getLogger(__name__)
 

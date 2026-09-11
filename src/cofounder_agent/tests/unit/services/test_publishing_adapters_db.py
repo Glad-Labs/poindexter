@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from services.publishing_adapters_db import (
+from poindexter.services.publishing_adapters_db import (
     PublishingAdapterRow,
     _parse_jsonb,
     load_enabled_publishers,

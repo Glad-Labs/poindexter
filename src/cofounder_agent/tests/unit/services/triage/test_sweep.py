@@ -1,4 +1,4 @@
-from services.triage.sweep import find_gaps
+from poindexter.services.triage.sweep import find_gaps
 
 
 def _issue(num, title, labels, milestone=None, body=""):

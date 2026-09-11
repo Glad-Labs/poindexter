@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from services.model_eval.promotion import propose_promotion
-from services.model_eval.runner import EvalReport
-from services.model_eval.types import MetricResult
-from services.site_config import SiteConfig
+from poindexter.services.model_eval.promotion import propose_promotion
+from poindexter.services.model_eval.runner import EvalReport
+from poindexter.services.model_eval.types import MetricResult
+from poindexter.services.site_config import SiteConfig
 
 
 def _report(slot: str = "rag_rerank_model", beats: bool = True) -> EvalReport:

@@ -48,7 +48,7 @@ _LITERAL_RE = re.compile(r"\bstatus\s*=\s*'([a-z_]+)'")
 _IN_RE = re.compile(r"\bstatus\s+IN\s*\(([^)]*)\)", re.I)
 
 _MIGRATION = (
-    "services.migrations."
+    "poindexter.services.migrations."
     "20260816_021929_add_expired_and_dismissed_to_pipeline_tasks_status_check"
 )
 
@@ -109,13 +109,13 @@ def test_update_literals_are_valid_statuses():
 def test_named_status_sets_are_valid():
     from poindexter.cli._status_style import TASK_STATUS
     from poindexter.cli.tasks import _VALID_STATUSES as cli_choices
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         DEFAULT_REJECT_STATUS,
         DEFAULT_REJECT_STATUS_DISMISS,
     )
-    from services.chat_plans import _TERMINAL_STATUSES as plan_terminal
-    from services.chat_watch import TERMINAL_STATUSES as watch_terminal
-    from services.social_drafts import _TERMINAL_REJECT_TASK_STATUSES
+    from poindexter.services.chat_plans import _TERMINAL_STATUSES as plan_terminal
+    from poindexter.services.chat_watch import TERMINAL_STATUSES as watch_terminal
+    from poindexter.services.social_drafts import _TERMINAL_REJECT_TASK_STATUSES
 
     named: dict[str, set[str]] = {
         "approval_service reject statuses": {

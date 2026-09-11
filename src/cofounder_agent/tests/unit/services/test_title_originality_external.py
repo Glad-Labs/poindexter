@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.site_config import SiteConfig
-from services.title_originality_external import (
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.title_originality_external import (
     ExternalOriginalityResult,
     TitleOriginalityExternalChecker,
     _cache_key,
@@ -188,7 +188,7 @@ class TestCheckExternalTitleDuplicates:
             ]),
         )
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
             result = await enabled_checker.check_external_title_duplicates(probe)
@@ -210,7 +210,7 @@ class TestCheckExternalTitleDuplicates:
             text=_ddg_body_with([(near, "https://example.com/1")]),
         )
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
             result = await enabled_checker.check_external_title_duplicates(probe)
@@ -230,7 +230,7 @@ class TestCheckExternalTitleDuplicates:
             ]),
         )
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
             result = await enabled_checker.check_external_title_duplicates(probe)
@@ -249,7 +249,7 @@ class TestCheckExternalTitleDuplicates:
         )
         fake_client = _fake_async_client(response=resp)
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
             return_value=fake_client,
         ) as mock_client_cls:
             first = await enabled_checker.check_external_title_duplicates(probe)
@@ -268,10 +268,10 @@ class TestCheckExternalTitleDuplicates:
         probe = "Rate Limited Title"
         resp = MagicMock(status_code=429, text="rate limit")
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ), patch(
-            "services.title_originality_external.TITLE_ORIGINALITY_FAIL_OPEN",
+            "poindexter.services.title_originality_external.TITLE_ORIGINALITY_FAIL_OPEN",
         ) as mock_counter:
             mock_counter.labels.return_value = mock_counter
             result = await enabled_checker.check_external_title_duplicates(probe)
@@ -287,7 +287,7 @@ class TestCheckExternalTitleDuplicates:
     async def test_timeout_fail_open(self, enabled_checker):
         probe = "Timeout Title"
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(raise_exc=httpx.TimeoutException("boom")),
         ):
             result = await enabled_checker.check_external_title_duplicates(probe)
@@ -304,7 +304,7 @@ class TestCheckExternalTitleDuplicates:
             text="<html><body>unusual traffic from your network</body></html>",
         )
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
             result = await enabled_checker.check_external_title_duplicates(probe)
@@ -323,7 +323,7 @@ class TestCheckExternalTitleDuplicates:
         )
 
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
         ) as mock_cls:
             mock_cls.side_effect = [
                 _fake_async_client(response=rate_limited),
@@ -342,7 +342,7 @@ class TestCheckExternalTitleDuplicates:
         """Kill-switch must short-circuit before any HTTP call."""
         probe = "Anything"
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
         ) as mock_cls:
             result = await disabled_checker.check_external_title_duplicates(probe)
 
@@ -352,7 +352,7 @@ class TestCheckExternalTitleDuplicates:
     async def test_empty_title_returns_empty_result(self, enabled_checker):
         """Defensive: no probe = no work."""
         with patch(
-            "services.title_originality_external.httpx.AsyncClient",
+            "poindexter.services.title_originality_external.httpx.AsyncClient",
         ) as mock_cls:
             result = await enabled_checker.check_external_title_duplicates("")
             result2 = await enabled_checker.check_external_title_duplicates("   ")
@@ -374,7 +374,7 @@ class TestCheckTitleOriginalityIntegration:
         """When the DDG HTML path finds a verbatim match, the legacy
         check_title_originality() must set is_original=False and surface
         the penalty + external match details."""
-        from services.title_generation import check_title_originality
+        from poindexter.services.title_generation import check_title_originality
 
         # Internal-corpus path: WebResearcher returns nothing (original vs
         # our own posts). External path: DDG returns a verbatim match.
@@ -396,7 +396,7 @@ class TestCheckTitleOriginalityIntegration:
         # ``qa_title_similarity_threshold`` fall back to their code
         # defaults (True / 0.6).
         with patch(
-            "services.web_research.WebResearcher",
+            "poindexter.services.web_research.WebResearcher",
             return_value=mock_researcher,
         ), patch(
             "services.title_originality_external.TitleOriginalityExternalChecker"
@@ -417,7 +417,7 @@ class TestCheckTitleOriginalityIntegration:
 
     async def test_external_fail_open_does_not_break_legacy_result(self):
         """A DDG rate-limit should leave is_original alone."""
-        from services.title_generation import check_title_originality
+        from poindexter.services.title_generation import check_title_originality
 
         mock_researcher = MagicMock()
         mock_researcher.search_simple = AsyncMock(return_value=[])
@@ -427,7 +427,7 @@ class TestCheckTitleOriginalityIntegration:
         )
 
         with patch(
-            "services.web_research.WebResearcher",
+            "poindexter.services.web_research.WebResearcher",
             return_value=mock_researcher,
         ), patch(
             "services.title_originality_external.TitleOriginalityExternalChecker"
@@ -452,14 +452,14 @@ class TestAppContainerWiring:
     """``AppContainer.title_originality_external`` returns a memoised checker."""
 
     def test_app_container_exposes_checker(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         checker = container.title_originality_external
         assert isinstance(checker, TitleOriginalityExternalChecker)
 
     def test_cached_property_memoises(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         assert (

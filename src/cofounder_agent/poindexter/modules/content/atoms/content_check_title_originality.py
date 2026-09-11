@@ -58,7 +58,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     site_config = state.get("site_config")
     try:
-        from services.title_generation import check_title_originality
+        from poindexter.services.title_generation import check_title_originality
         originality = await check_title_originality(title, site_config=site_config)  # type: ignore[arg-type]
         return {"title_originality": originality}
     except Exception as exc:

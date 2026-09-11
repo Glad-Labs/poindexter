@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.community_drafts import (
+from poindexter.services.community_drafts import (
     SubredditProfile,
     add_profile,
     create_draft,
@@ -14,7 +14,7 @@ from services.community_drafts import (
     mark_posted,
     suggest_subreddits_for_post,
 )
-from services.subreddit_import import export_csv, import_csv
+from poindexter.services.subreddit_import import export_csv, import_csv
 
 pytestmark = [
     pytest.mark.integration_db,

@@ -98,7 +98,7 @@ class TestWorkerClientOAuthPath:
         # Patch the OAuthClient's underlying httpx so no real network.
         # We can't easily reach into `_oauth._http` until __aenter__ has
         # finished, so we monkey-patch httpx.AsyncClient at import-time.
-        from services.auth import oauth_client as oac_module
+        from poindexter.services.auth import oauth_client as oac_module
 
         original_async_client = httpx.AsyncClient
 
@@ -352,7 +352,7 @@ def _patched_httpx(handler):
     """Return ``(factory, oauth_module)`` — a drop-in ``httpx.AsyncClient``
     factory that routes every request through ``handler`` (a MockTransport),
     plus the oauth_client module to patch alongside the CLI module."""
-    from services.auth import oauth_client as oac_module
+    from poindexter.services.auth import oauth_client as oac_module
 
     original = httpx.AsyncClient
 

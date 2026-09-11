@@ -104,7 +104,7 @@ async def _upload_to_r2(png_bytes: bytes, task_id: str, site_config) -> str | No
         # Late import — these only resolve cleanly inside the worker
         # container (where /app is on PYTHONPATH).
         sys.path.insert(0, "/app")
-        from services.r2_upload_service import R2UploadService  # type: ignore
+        from poindexter.services.r2_upload_service import R2UploadService  # type: ignore
     except Exception as exc:
         logger.warning("r2_upload_service import failed: %s", exc)
         return None
@@ -154,7 +154,7 @@ async def main(task_ids: list[str] | None) -> int:
     # lifespan; we replicate the dance so this script doesn't need a
     # running FastAPI process.
     sys.path.insert(0, "/app")
-    from services.site_config import SiteConfig  # type: ignore
+    from poindexter.services.site_config import SiteConfig  # type: ignore
 
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
     site_config = SiteConfig()

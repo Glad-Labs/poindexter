@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from services import prometheus_rule_builder as rb
+from poindexter.services import prometheus_rule_builder as rb
 
 
 class _FakePool:

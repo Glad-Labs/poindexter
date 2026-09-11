@@ -2,8 +2,8 @@
 
 import pytest
 
-from services.site_config import SiteConfig
-from services.topic_grounding import (
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_grounding import (
     GroundingMatch,
     GroundingResult,
     internal_grounding,

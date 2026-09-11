@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.self_review import self_review_and_revise
+from poindexter.services.self_review import self_review_and_revise
 
 _DRAFT = "This draft has enough substance for a cross-section review. " * 15
 _CONTRADICTIONS = "1. SECTION A conflicts with SECTION B: the claims disagree."
@@ -77,9 +77,9 @@ async def _run(revision: str, site_config: MagicMock | None = None):
     dispatch = AsyncMock(side_effect=[_result(_CONTRADICTIONS), _result(revision)])
     findings: list[dict] = []
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm, \
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm, \
          patch("utils.findings.emit_finding", side_effect=lambda **kw: findings.append(kw)):
         pm.return_value.get_prompt.return_value = "PROMPT"
         out, stats = await self_review_and_revise(

@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**over):
@@ -38,10 +38,10 @@ def _sc(**over):
 async def test_image_gen_is_hard_unloaded_before_the_hero_load():
     """A soft unload does not return the VRAM — the process keeps its CUDA
     reserved pool — so this must be the HARD unload or the fix does nothing."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     unload = AsyncMock()
-    with patch("services.gpu_scheduler.gpu._unload_image_gen", unload), \
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", unload), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
         await slr._clear_image_gen_for_hero(_sc())
 
@@ -52,7 +52,7 @@ async def test_image_gen_is_hard_unloaded_before_the_hero_load():
 @pytest.mark.asyncio
 async def test_unload_precedes_the_wan_provider_call():
     """Ordering is the whole fix: unloading after the load would be pointless."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     order = []
 
@@ -65,7 +65,7 @@ async def test_unload_precedes_the_wan_provider_call():
             return []
 
     with patch.object(slr, "_clear_image_gen_for_hero", _fake_clear), \
-         patch("services.video_providers.wan2_1.Wan21Provider", _Provider):
+         patch("poindexter.services.video_providers.wan2_1.Wan21Provider", _Provider):
         await slr._render_generative_clip(
             prompt="a glowing server rack", output_path="/tmp/x.mp4",
             image_path=None, duration_s=5, site_config=_sc(),
@@ -80,10 +80,10 @@ async def test_unload_failure_still_attempts_the_render():
     """Best-effort by design. A reclaim that fails must not turn a POSSIBLE
     render into a CERTAIN skip — the pre-fix behaviour (wan may OOM and fall
     back to a still) is strictly better than not trying."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     with patch(
-        "services.gpu_scheduler.gpu._unload_image_gen",
+        "poindexter.services.gpu_scheduler.gpu._unload_image_gen",
         AsyncMock(side_effect=RuntimeError("image-gen unreachable")),
     ), patch.object(slr.asyncio, "sleep", AsyncMock()):
         await slr._clear_image_gen_for_hero(_sc())  # must not raise
@@ -94,10 +94,10 @@ async def test_unload_failure_still_attempts_the_render():
 async def test_operator_can_disable_the_unload():
     """A card that comfortably fits both should not pay image-gen's cold
     reload on every hero clip."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     unload = AsyncMock()
-    with patch("services.gpu_scheduler.gpu._unload_image_gen", unload):
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", unload):
         await slr._clear_image_gen_for_hero(
             _sc(video_hero_unload_image_gen="false"),
         )
@@ -110,13 +110,13 @@ async def test_operator_can_disable_the_unload():
 async def test_settings_read_failure_defaults_to_unloading():
     """Fail toward the safer behaviour: a broken settings read must not
     silently disable the protection."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     broken = MagicMock()
     broken.get_bool.side_effect = RuntimeError("settings down")
     broken.get_float.return_value = 0.0
     unload = AsyncMock()
-    with patch("services.gpu_scheduler.gpu._unload_image_gen", unload), \
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", unload), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
         await slr._clear_image_gen_for_hero(broken)
 
@@ -143,12 +143,12 @@ async def test_settings_read_failure_defaults_to_unloading():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_ollama_is_evicted_before_the_hero_load():
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     unload_img = AsyncMock()
     unload_ollama = AsyncMock()
-    with patch("services.gpu_scheduler.gpu._unload_image_gen", unload_img), \
-         patch("services.gpu_scheduler.gpu._unload_ollama_models", unload_ollama), \
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", unload_img), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_ollama_models", unload_ollama), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
         await slr._clear_image_gen_for_hero(_sc())
 
@@ -159,12 +159,12 @@ async def test_ollama_is_evicted_before_the_hero_load():
 @pytest.mark.asyncio
 async def test_ollama_evict_is_operator_disableable():
     """An operator whose card fits both should not pay the writer's reload."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     unload_img = AsyncMock()
     unload_ollama = AsyncMock()
-    with patch("services.gpu_scheduler.gpu._unload_image_gen", unload_img), \
-         patch("services.gpu_scheduler.gpu._unload_ollama_models", unload_ollama), \
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", unload_img), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_ollama_models", unload_ollama), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
         await slr._clear_image_gen_for_hero(_sc(video_hero_evict_ollama="false"))
 
@@ -177,11 +177,11 @@ async def test_ollama_evict_is_operator_disableable():
 async def test_ollama_evict_failure_still_attempts_the_render():
     """Same best-effort contract as the image-gen lever: a failed reclaim must
     never convert a possible render into a certain skip."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_scheduler.gpu._unload_image_gen", AsyncMock()), \
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", AsyncMock()), \
          patch(
-             "services.gpu_scheduler.gpu._unload_ollama_models",
+             "poindexter.services.gpu_scheduler.gpu._unload_ollama_models",
              AsyncMock(side_effect=RuntimeError("ollama unreachable")),
          ), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
@@ -202,7 +202,7 @@ async def test_ollama_evict_failure_still_attempts_the_render():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_image_gen_ready_wait_returns_true_on_health_200():
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     class _Resp:
         status_code = 200
@@ -223,7 +223,7 @@ async def test_image_gen_ready_wait_returns_true_on_health_200():
 async def test_image_gen_ready_wait_times_out_without_raising():
     """Timeout must return False and let the render proceed — the shots then
     fall into the same substitute ladder as before, never worse."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     class _Client:
         async def __aenter__(self): return self
@@ -241,7 +241,7 @@ async def test_image_gen_ready_wait_times_out_without_raising():
 @pytest.mark.asyncio
 async def test_image_gen_ready_wait_skips_when_url_missing():
     """No URL configured must not hang or raise."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     assert await slr._wait_image_gen_ready("", None, budget_s=5) is False
 
@@ -307,7 +307,7 @@ def _no_live_vram_probe(monkeypatch):
     nothing. The sampling behaviour (4 reads, keep the max) is unchanged; only
     the wall-clock wait goes. No test asserts the gap itself.
     """
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=None))
     monkeypatch.setattr(slr, "_wan_resident_gb", AsyncMock(return_value=0.0))
@@ -317,9 +317,9 @@ def _no_live_vram_probe(monkeypatch):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_plate_steps_down_to_the_quality_floor():
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(23.0)):
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(23.0)):
         w, h = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
 
     assert (w, h) == (704, 400)  # the floor rung, not below it
@@ -332,9 +332,9 @@ async def test_below_the_floor_declines_to_animate():
     upscaled still reads as motion. It does not — every hero rendered there
     came back as neon morphing garbage. Below the floor we ship the still.
     """
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(16.0)):
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(16.0)):
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) is None
 
 
@@ -342,7 +342,7 @@ async def test_below_the_floor_declines_to_animate():
 def test_no_ladder_rung_below_the_quality_floor():
     """Guard the floor itself: a future 'just one more rung' re-creates the
     slop. 704x400 is the smallest plate that renders coherently."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     assert min(w for w, _h, _g in slr._HERO_PLATE_LADDER) >= 704
     assert min(h for _w, h, _g in slr._HERO_PLATE_LADDER) >= 400
@@ -351,9 +351,9 @@ def test_no_ladder_rung_below_the_quality_floor():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_plate_is_unchanged_when_vram_is_ample():
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)):
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)):
         w, h = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
 
     assert (w, h) == (832, 480)
@@ -363,9 +363,9 @@ async def test_plate_is_unchanged_when_vram_is_ample():
 @pytest.mark.asyncio
 async def test_portrait_orientation_is_preserved():
     """The 9:16 lane must stay vertical after a step-down."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(23.0)):
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(23.0)):
         w, h = await slr._fit_hero_dims_to_free_vram(480, 832, _sc())
 
     assert (w, h) == (400, 704)
@@ -376,9 +376,9 @@ async def test_portrait_orientation_is_preserved():
 @pytest.mark.asyncio
 async def test_never_steps_up_past_operator_config():
     """An operator who pinned a small plate keeps it even on an empty card."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(31.0)):
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(31.0)):
         out = await slr._fit_hero_dims_to_free_vram(512, 320, _sc())
 
     assert out == (512, 320)
@@ -388,24 +388,24 @@ async def test_never_steps_up_past_operator_config():
 @pytest.mark.asyncio
 async def test_unreadable_probe_keeps_requested_dims():
     """An unreadable probe must never shrink a render that would have worked."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(None)):
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(None)):
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
 
     def _boom(**kw):
         raise RuntimeError("prometheus down")
 
-    with patch("services.gpu_registry.GPURegistry", _boom):
+    with patch("poindexter.services.gpu_registry.GPURegistry", _boom):
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_operator_can_disable_adaptation():
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(5.0)):
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(5.0)):
         out = await slr._fit_hero_dims_to_free_vram(
             832, 480, _sc(video_hero_adaptive_plate_enabled="false"),
         )
@@ -427,9 +427,9 @@ async def test_operator_can_disable_adaptation():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_wan_resident_pool_is_counted_as_available():
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(1.0)), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(1.0)), \
          patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=26.0)):
         # 1GB raw free + 26GB wan already holds = 27GB → full plate
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
@@ -440,9 +440,9 @@ async def test_wan_resident_pool_is_counted_as_available():
 async def test_unreadable_wan_health_falls_back_to_raw_free():
     """Under-counting only makes the check more conservative — never wrong in
     the direction that ships slop."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
          patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)):
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
 
@@ -452,9 +452,9 @@ async def test_unreadable_wan_health_falls_back_to_raw_free():
 async def test_genuinely_full_card_still_declines():
     """The skip must survive the refinement: a card full of OTHER tenants
     (wan not loaded) still declines rather than rendering sub-floor."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(8.0)), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(8.0)), \
          patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)):
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) is None
 
@@ -478,11 +478,11 @@ async def test_genuinely_full_card_still_declines():
 @pytest.mark.asyncio
 async def test_stale_first_sample_does_not_decide():
     """A low sample followed by the post-reclaim truth must use the truth."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     reg = MagicMock()
     reg.free_gb = AsyncMock(side_effect=[3.1, 3.1, 28.0])  # scrape catches up
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: reg), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: reg), \
          patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
         out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
@@ -494,11 +494,11 @@ async def test_stale_first_sample_does_not_decide():
 @pytest.mark.asyncio
 async def test_ample_first_sample_short_circuits():
     """No reason to wait out a scrape interval when the card is already free."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     reg = MagicMock()
     reg.free_gb = AsyncMock(return_value=30.0)
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: reg), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: reg), \
          patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
         out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
@@ -512,7 +512,7 @@ def test_reclaim_precedes_the_plate_probe_in_animate_hero():
     """Guard the ORDER — the whole defect was probing before reclaiming."""
     import inspect
 
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     src = inspect.getsource(slr._animate_hero)
     assert src.index("_clear_image_gen_for_hero") < src.index(
@@ -534,11 +534,11 @@ def test_reclaim_precedes_the_plate_probe_in_animate_hero():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_live_reading_is_preferred_over_stale_prometheus():
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     reg = MagicMock()
     reg.free_gb = AsyncMock(return_value=1.0)  # stale scrape says "no room"
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: reg), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: reg), \
          patch.object(slr, "_live_free_vram_gb", AsyncMock(return_value=28.0)):
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
 
@@ -550,11 +550,11 @@ async def test_live_reading_is_preferred_over_stale_prometheus():
 async def test_falls_back_to_prometheus_when_live_is_unavailable():
     """An older wan build (no device_free_mb) or an unreachable server must
     not disable the gate — the scrape path still applies."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     reg = MagicMock()
     reg.free_gb = AsyncMock(return_value=30.0)
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: reg), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: reg), \
          patch.object(slr, "_live_free_vram_gb", AsyncMock(return_value=None)), \
          patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
@@ -566,9 +566,9 @@ async def test_falls_back_to_prometheus_when_live_is_unavailable():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_live_reading_still_declines_a_genuinely_full_card():
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: MagicMock()), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: MagicMock()), \
          patch.object(slr, "_live_free_vram_gb", AsyncMock(return_value=9.0)):
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) is None
 
@@ -583,12 +583,12 @@ async def test_live_wan_reading_wins_over_the_prometheus_fallback(monkeypatch):
     fallback patches came to be silently bypassed on any box with a reachable
     wan server. Overrides the autouse stub deliberately.
     """
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=30.0))
     registry = _registry(16.0)  # would say "no room" and decline to animate
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: registry):
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: registry):
         out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
 
     # The live 30GB reading wins: full plate, not the fallback's verdict.
@@ -601,12 +601,12 @@ async def test_live_wan_reading_wins_over_the_prometheus_fallback(monkeypatch):
 async def test_falls_back_to_registry_when_live_read_unavailable(monkeypatch):
     """None from the live probe means 'ask Prometheus instead' — the branch
     every other test in this file actually exercises."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=None))
     registry = _registry(23.0)
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: registry):
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: registry):
         out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
 
     assert out == (704, 400)
@@ -624,9 +624,9 @@ async def test_configured_plate_above_the_top_rung_is_capped_and_says_so(caplog)
     """
     import logging
 
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
          caplog.at_level(
              logging.WARNING, logger="poindexter.services.video_renderers.shot_list_renderer"
          ):
@@ -647,9 +647,9 @@ async def test_configured_plate_at_the_top_rung_is_not_warned(caplog):
     can actually honour is not a misconfiguration."""
     import logging
 
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
+    with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
          caplog.at_level(
              logging.WARNING, logger="poindexter.services.video_renderers.shot_list_renderer"
          ):
@@ -670,7 +670,7 @@ def test_no_ladder_rung_above_832x480_on_this_hardware():
     ~2.8GB permanently held by speaches, which the reclaim ladder never evicts.
     A rung above 832x480 could never fire, so adding one is dead code that
     makes the ceiling look higher than it is."""
-    from services.video_renderers import shot_list_renderer as slr
+    from poindexter.services.video_renderers import shot_list_renderer as slr
 
     assert max(w for w, _h, _g in slr._HERO_PLATE_LADDER) <= 832
     assert max(h for _w, h, _g in slr._HERO_PLATE_LADDER) <= 480

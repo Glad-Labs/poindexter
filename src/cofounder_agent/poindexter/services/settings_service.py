@@ -12,8 +12,8 @@ requested.
 import os
 import time
 
-from services.logger_config import get_logger
-from services.settings_read_sink import record_read
+from poindexter.services.logger_config import get_logger
+from poindexter.services.settings_read_sink import record_read
 
 logger = get_logger(__name__)
 

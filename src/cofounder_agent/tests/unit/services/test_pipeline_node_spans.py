@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from langgraph.errors import GraphInterrupt
 
-from services import pipeline_architect as pa
+from poindexter.services import pipeline_architect as pa
 
 pytestmark = pytest.mark.unit
 

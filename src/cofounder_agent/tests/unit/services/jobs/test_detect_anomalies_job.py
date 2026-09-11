@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.detect_anomalies import DetectAnomaliesJob
+from poindexter.services.jobs.detect_anomalies import DetectAnomaliesJob
 
 
 def _make_pool(recent_values, hist_stats):
@@ -41,8 +41,8 @@ class TestCostMetricSplit:
     that share the ``cost_ledger`` predicate definitions."""
 
     def test_cost_metric_split_into_api_and_electricity_axes(self):
-        from services import cost_ledger
-        from services.jobs.detect_anomalies import _metric_queries
+        from poindexter.services import cost_ledger
+        from poindexter.services.jobs.detect_anomalies import _metric_queries
 
         by_name = {name: (recent, hist) for name, recent, hist in _metric_queries(24, 30)}
 

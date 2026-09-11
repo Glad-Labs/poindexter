@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from plugins.job import JobResult
-from services.live_activity import reap_stale
+from poindexter.services.live_activity import reap_stale
 
 
 class ReapStaleActivityJob:

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.flag_missing_seo import FlagMissingSeoJob
+from poindexter.services.jobs.flag_missing_seo import FlagMissingSeoJob
 
 
 def _make_pool(rows: list[dict] | None = None, raises: BaseException | None = None) -> Any:
@@ -57,7 +57,7 @@ class TestRun:
         job = FlagMissingSeoJob()
 
         with patch(
-            "services.jobs.flag_missing_seo.emit_finding",
+            "poindexter.services.jobs.flag_missing_seo.emit_finding",
             new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {"limit": 10})
@@ -86,7 +86,7 @@ class TestRun:
         job = FlagMissingSeoJob()
         mock_gitea = MagicMock()
         with patch(
-            "services.jobs.flag_missing_seo.emit_finding", new=mock_gitea,
+            "poindexter.services.jobs.flag_missing_seo.emit_finding", new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})
         mock_gitea.assert_not_called()
@@ -98,7 +98,7 @@ class TestRun:
         pool, _ = _make_pool(rows)
         job = FlagMissingSeoJob()
         with patch(
-            "services.jobs.flag_missing_seo.emit_finding",
+            "poindexter.services.jobs.flag_missing_seo.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {})

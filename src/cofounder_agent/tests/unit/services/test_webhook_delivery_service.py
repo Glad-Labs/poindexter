@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.site_config import SiteConfig
-from services.webhook_delivery_service import (
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.webhook_delivery_service import (
     MAX_RETRIES,
     WebhookDeliveryService,
     emit_webhook_event,
@@ -422,7 +422,7 @@ class TestDeliveryLoop:
 
         svc._deliver_pending = fake_deliver
 
-        with patch("services.webhook_delivery_service.asyncio.sleep", new_callable=AsyncMock):
+        with patch("poindexter.services.webhook_delivery_service.asyncio.sleep", new_callable=AsyncMock):
             await svc._delivery_loop()
 
         assert call_count == 1
@@ -445,7 +445,7 @@ class TestDeliveryLoop:
 
         svc._deliver_pending = exploding_deliver
 
-        with patch("services.webhook_delivery_service.asyncio.sleep", new_callable=AsyncMock):
+        with patch("poindexter.services.webhook_delivery_service.asyncio.sleep", new_callable=AsyncMock):
             await svc._delivery_loop()
 
         assert call_count == 2  # survived the first error and ran again

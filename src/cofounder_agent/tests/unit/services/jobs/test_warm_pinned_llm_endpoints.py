@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.warm_pinned_llm_endpoints import WarmPinnedLlmEndpointsJob
+from poindexter.services.jobs.warm_pinned_llm_endpoints import WarmPinnedLlmEndpointsJob
 
 _PINNED = "http://host.docker.internal:11435"
 _DEFAULT = "http://host.docker.internal:11434"
@@ -64,17 +64,17 @@ def _patches(client_ctx, overrides: dict[str, str]):
     return [
         patch("httpx.AsyncClient", return_value=client_ctx),
         patch(
-            "services.llm_providers.dispatcher.get_provider_config",
+            "poindexter.services.llm_providers.dispatcher.get_provider_config",
             new=AsyncMock(return_value={
                 "api_base": _DEFAULT,
                 "model_api_base_overrides": overrides,
             }),
         ),
         patch(
-            "services.llm_providers.litellm_provider._coerce_override_map",
+            "poindexter.services.llm_providers.litellm_provider._coerce_override_map",
             lambda v: dict(v or {}),
         ),
-        patch("services.ollama_client.resolve_num_ctx", lambda *_a, **_k: 8192),
+        patch("poindexter.services.ollama_client.resolve_num_ctx", lambda *_a, **_k: 8192),
         patch("utils.findings.emit_finding", lambda **_k: None),
     ]
 

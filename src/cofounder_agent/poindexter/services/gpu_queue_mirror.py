@@ -22,8 +22,8 @@ import os
 import uuid
 from typing import Any
 
-from services.gpu_lease_stats import _connect
-from services.logger_config import get_logger
+from poindexter.services.gpu_lease_stats import _connect
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

@@ -41,7 +41,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from services.di_wiring import (
+from poindexter.services.di_wiring import (
     WIRED_MODULES,
     build_and_wire_for_subprocess,
     wire_site_config_modules,
@@ -70,9 +70,9 @@ class TestWiredModulesList:
     @pytest.mark.parametrize(
         "modname",
         [
-            "services.ollama_client",
-            "services.prompt_manager",
-            "services.gpu_scheduler",
+            "poindexter.services.ollama_client",
+            "poindexter.services.prompt_manager",
+            "poindexter.services.gpu_scheduler",
             "utils.route_utils",
         ],
     )
@@ -112,28 +112,28 @@ class TestWireSiteConfigModules:
         """The shared_context publish side-effect is independent of the
         (now-empty) per-module loop and must keep firing — the
         operator-notify helper depends on it."""
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         sentinel = SiteConfig()
         sentinel._config["__sentinel__"] = "shared_ctx_272"
 
         wire_site_config_modules(sentinel)
 
-        from services.integrations import shared_context
+        from poindexter.services.integrations import shared_context
         assert shared_context.get_site_config() is sentinel
 
     def test_empty_loop_does_not_break(self):
         """Patching WIRED_MODULES back to a bogus list still wires the
         real entries — proves the loop body is intact for any future
         re-population."""
-        from services import di_wiring
+        from poindexter.services import di_wiring
 
         with patch.object(
             di_wiring,
             "WIRED_MODULES",
-            ("services.this_module_does_not_exist_anywhere",),
+            ("poindexter.services.this_module_does_not_exist_anywhere",),
         ):
-            from services.site_config import SiteConfig
+            from poindexter.services.site_config import SiteConfig
             count = wire_site_config_modules(SiteConfig())
 
         # The bogus entry is swallowed (no set_site_config) → 0 wired.
@@ -151,9 +151,9 @@ class TestContainerAccessor:
     ``set_site_config`` fan-out."""
 
     def test_round_trips_container(self):
-        from services.container import AppContainer
-        from services.container_registry import get_container, set_container
-        from services.site_config import SiteConfig
+        from poindexter.services.container import AppContainer
+        from poindexter.services.container_registry import get_container, set_container
+        from poindexter.services.site_config import SiteConfig
 
         original = get_container()
         try:
@@ -169,11 +169,11 @@ class TestContainerAccessor:
     def test_modules_source_site_config_from_container(self):
         """gpu_scheduler ``_sc()`` + prompt_manager ``_sc()`` resolve the
         registered container's SiteConfig."""
-        import services.gpu_scheduler as gs
-        import services.prompt_manager as pm
-        from services.container import AppContainer
-        from services.container_registry import get_container, set_container
-        from services.site_config import SiteConfig
+        import poindexter.services.gpu_scheduler as gs
+        import poindexter.services.prompt_manager as pm
+        from poindexter.services.container import AppContainer
+        from poindexter.services.container_registry import get_container, set_container
+        from poindexter.services.site_config import SiteConfig
 
         original = get_container()
         try:
@@ -192,10 +192,10 @@ class TestContainerAccessor:
     def test_no_container_falls_back_to_empty(self):
         """With no container registered, ``_sc()`` returns the module's
         empty fallback rather than crashing."""
-        import services.gpu_scheduler as gs
-        import services.ollama_client as oc
-        import services.prompt_manager as pm
-        from services.container_registry import get_container, set_container
+        import poindexter.services.gpu_scheduler as gs
+        import poindexter.services.ollama_client as oc
+        import poindexter.services.prompt_manager as pm
+        from poindexter.services.container_registry import get_container, set_container
 
         original = get_container()
         try:
@@ -222,7 +222,7 @@ class TestBuildAndWireForSubprocess:
 
     @pytest.mark.asyncio
     async def test_loads_site_config_then_publishes(self):
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         load_called_with = {}
 
@@ -238,12 +238,12 @@ class TestBuildAndWireForSubprocess:
         assert load_called_with["pool"] is pool
         assert result_cfg.get("preferred_ollama_model") == "gemma3:27b"
         # Published to shared_context (the surviving wiring side-effect).
-        from services.integrations import shared_context
+        from poindexter.services.integrations import shared_context
         assert shared_context.get_site_config() is result_cfg
 
     @pytest.mark.asyncio
     async def test_load_failure_still_returns_env_fallback(self):
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         async def fake_load(self_sc, pool):
             raise RuntimeError("simulated DB outage")
@@ -314,7 +314,7 @@ class TestSubprocessPromptManagerPreload:
     async def test_container_bootstrap_preloads_prompt_manager(self):
         from unittest.mock import AsyncMock
 
-        from services.di_wiring import build_and_wire_subprocess_with_container
+        from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
 
         fake_sc = MagicMock()
         fake_sc._config = {}
@@ -323,10 +323,10 @@ class TestSubprocessPromptManagerPreload:
         fake_pm.load_from_db = AsyncMock(return_value=0)
 
         with patch(
-            "services.bootstrap.build_container",
+            "poindexter.services.bootstrap.build_container",
             AsyncMock(return_value=fake_container),
         ), patch(
-            "services.prompt_manager.get_prompt_manager",
+            "poindexter.services.prompt_manager.get_prompt_manager",
             return_value=fake_pm,
         ):
             pool = MagicMock()
@@ -339,7 +339,7 @@ class TestSubprocessPromptManagerPreload:
     async def test_preload_failure_never_breaks_bootstrap(self):
         from unittest.mock import AsyncMock
 
-        from services.di_wiring import build_and_wire_subprocess_with_container
+        from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
 
         fake_sc = MagicMock()
         fake_sc._config = {}
@@ -348,10 +348,10 @@ class TestSubprocessPromptManagerPreload:
         fake_pm.load_from_db = AsyncMock(side_effect=RuntimeError("db down"))
 
         with patch(
-            "services.bootstrap.build_container",
+            "poindexter.services.bootstrap.build_container",
             AsyncMock(return_value=fake_container),
         ), patch(
-            "services.prompt_manager.get_prompt_manager",
+            "poindexter.services.prompt_manager.get_prompt_manager",
             return_value=fake_pm,
         ):
             site_cfg, _ = await build_and_wire_subprocess_with_container(MagicMock())

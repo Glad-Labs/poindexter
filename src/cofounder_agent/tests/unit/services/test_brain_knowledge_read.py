@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from services import brain_knowledge_read
+from poindexter.services import brain_knowledge_read
 
 
 def _make_pool(rows=None, row=None):

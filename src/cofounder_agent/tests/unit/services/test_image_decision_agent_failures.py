@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc():
@@ -29,7 +29,7 @@ CONTENT = "## Alpha\n\nSome body text here.\n\n## Beta\n\nMore body text here."
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_timeout_is_surfaced_on_the_result():
-    from services import image_decision_agent as ida
+    from poindexter.services import image_decision_agent as ida
 
     with patch.object(ida, "dispatch_complete", AsyncMock(side_effect=TimeoutError("300 s"))), \
          patch.object(ida, "get_prompt_manager") as gpm:
@@ -43,7 +43,7 @@ async def test_timeout_is_surfaced_on_the_result():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_unparseable_plan_is_surfaced_on_the_result():
-    from services import image_decision_agent as ida
+    from poindexter.services import image_decision_agent as ida
 
     completion = MagicMock(text="not json at all")
     with patch.object(ida, "dispatch_complete", AsyncMock(return_value=completion)), \
@@ -62,7 +62,7 @@ async def test_planner_call_disables_reasoning():
     model otherwise burns the 800-token budget deliberating."""
     import asyncpg
 
-    from services import image_decision_agent as ida
+    from poindexter.services import image_decision_agent as ida
 
     completion = MagicMock(text='{"featured": {}, "inline": []}')
     dispatch = AsyncMock(return_value=completion)

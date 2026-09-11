@@ -18,7 +18,7 @@ Usage:
         logger = logging.getLogger(__name__)
 
     Use:
-        from services.logger_config import get_logger
+        from poindexter.services.logger_config import get_logger
         logger = get_logger(__name__)
 
 This ensures all loggers use the centralized configuration.
@@ -580,7 +580,7 @@ def get_logger(name: str | None = None) -> StructuredLogger:
         Logger instance (structlog or standard logging)
 
     Example:
-        from services.logger_config import get_logger
+        from poindexter.services.logger_config import get_logger
         logger = get_logger(__name__)
         logger.info("Starting application")
         logger.error("Something went wrong", error=exc)
@@ -604,7 +604,7 @@ def set_log_level(level: str) -> None:
         level: One of DEBUG, INFO, WARNING, ERROR, CRITICAL
 
     Example:
-        from services.logger_config import set_log_level
+        from poindexter.services.logger_config import set_log_level
         set_log_level("DEBUG")  # Enable debug logging
     """
     level_upper = level.upper()

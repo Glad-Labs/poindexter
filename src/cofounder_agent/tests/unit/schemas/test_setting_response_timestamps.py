@@ -158,7 +158,7 @@ class TestNoFabricatedAuthorship:
         Pinned against the real constant so adding the column to the query
         without also deciding what the API should report fails here.
         """
-        from services.admin_db import AdminDatabase
+        from poindexter.services.admin_db import AdminDatabase
 
         assert field not in AdminDatabase._APP_SETTINGS_COLUMNS
 
@@ -224,7 +224,7 @@ class TestLifecycleMetadataReachesTheApi:
     @pytest.mark.parametrize("field", LIFECYCLE)
     def test_selected_by_the_query(self, field):
         """The chain starts at the SELECT — if it isn't fetched, nothing else matters."""
-        from services.admin_db import AdminDatabase
+        from poindexter.services.admin_db import AdminDatabase
 
         assert field in AdminDatabase._APP_SETTINGS_COLUMNS
 

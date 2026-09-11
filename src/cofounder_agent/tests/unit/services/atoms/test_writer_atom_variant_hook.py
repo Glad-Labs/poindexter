@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.experiment_runner import ExperimentVariant
+from poindexter.services.experiment_runner import ExperimentVariant
 
 pytestmark = pytest.mark.asyncio
 
@@ -104,12 +104,12 @@ async def test_no_active_experiment_state_unchanged() -> None:
         "modules.content.atoms.two_pass_writer.run",
         new=AsyncMock(return_value=fake_atom_result),
     ), patch(
-        "services.experiment_runner.pick_variant",
+        "poindexter.services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=None),
     ), patch(
         # gpu.lock is an async context manager; replace it with a
         # passthrough that does nothing.
-        "services.gpu_scheduler.gpu.lock",
+        "poindexter.services.gpu_scheduler.gpu.lock",
         new=_passthrough_lock,
     ):
         content, model_used, metrics = await stage._generate_via_two_pass_atom(
@@ -165,10 +165,10 @@ async def test_research_context_forwarded_to_writer_atom() -> None:
     ), patch(
         "modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
-        "services.experiment_runner.pick_variant",
+        "poindexter.services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.gpu_scheduler.gpu.lock", new=_passthrough_lock,
+        "poindexter.services.gpu_scheduler.gpu.lock", new=_passthrough_lock,
     ):
         await stage._generate_via_two_pass_atom(
             topic="t", style="", tone="", tags=[],
@@ -228,10 +228,10 @@ async def test_active_experiment_writer_model_override_flows_through() -> None:
     ), patch(
         "modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
-        "services.experiment_runner.pick_variant",
+        "poindexter.services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=variant),
     ), patch(
-        "services.gpu_scheduler.gpu.lock", new=_passthrough_lock,
+        "poindexter.services.gpu_scheduler.gpu.lock", new=_passthrough_lock,
     ):
         content, model_used, metrics = await stage._generate_via_two_pass_atom(
             topic="t", style="", tone="", tags=[],
@@ -300,10 +300,10 @@ async def test_active_experiment_no_overrides_preserves_defaults() -> None:
     ), patch(
         "modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
-        "services.experiment_runner.pick_variant",
+        "poindexter.services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=variant),
     ), patch(
-        "services.gpu_scheduler.gpu.lock", new=_passthrough_lock,
+        "poindexter.services.gpu_scheduler.gpu.lock", new=_passthrough_lock,
     ):
         content, model_used, metrics = await stage._generate_via_two_pass_atom(
             topic="t", style="", tone="", tags=[],
@@ -330,7 +330,7 @@ async def test_variant_id_propagates_to_record_run() -> None:
     """End-to-end at the recorder boundary: when the writer atom
     returns a metrics dict carrying ``variant_id``, ``record_run`` must
     INSERT it into the variant_id column."""
-    from services.capability_outcomes import record_run
+    from poindexter.services.capability_outcomes import record_run
 
     # Reuse the test_capability_outcomes pool stub shape inline.
     executed: list[tuple[str, tuple[Any, ...]]] = []
@@ -415,7 +415,7 @@ async def test_rag_config_shallow_merge_via_hook_helper() -> None:
     sets ``snippet_limit=10`` + ``max_tokens=4000``, the resulting
     state['rag_config'] must be {snippet_limit:10, max_tokens:4000}
     — variant wins on conflict, non-conflicting keys carry through."""
-    from services.experiment_runner import apply_variant_to_state
+    from poindexter.services.experiment_runner import apply_variant_to_state
 
     variant = ExperimentVariant(
         variant_id="00000000-0000-0000-0000-000000000004",
@@ -496,10 +496,10 @@ async def test_prompt_size_metrics_forwarded_to_stage_metrics() -> None:
         "modules.content.atoms.two_pass_writer.run",
         new=AsyncMock(return_value=fake_atom_result),
     ), patch(
-        "services.experiment_runner.pick_variant",
+        "poindexter.services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.gpu_scheduler.gpu.lock",
+        "poindexter.services.gpu_scheduler.gpu.lock",
         new=_passthrough_lock,
     ):
         _content, _model_used, metrics = await stage._generate_via_two_pass_atom(
@@ -545,10 +545,10 @@ async def test_prompt_size_metrics_absent_when_atom_doesnt_return_them() -> None
         "modules.content.atoms.two_pass_writer.run",
         new=AsyncMock(return_value=fake_atom_result),
     ), patch(
-        "services.experiment_runner.pick_variant",
+        "poindexter.services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.gpu_scheduler.gpu.lock",
+        "poindexter.services.gpu_scheduler.gpu.lock",
         new=_passthrough_lock,
     ):
         _content, _model_used, metrics = await stage._generate_via_two_pass_atom(

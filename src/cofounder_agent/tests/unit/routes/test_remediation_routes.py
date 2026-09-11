@@ -23,8 +23,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.site_config import SiteConfig
 from routes.remediation_routes import router, set_model_router_for_tests
-from services.site_config import SiteConfig
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 # ---------------------------------------------------------------------------
@@ -275,7 +275,7 @@ class TestSelectorModelRouterResolution:
         router_obj = _SelectorModelRouter(sc)
 
         with patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="{}"),
         ) as mock_chat:
             result = await router_obj.invoke(
@@ -316,7 +316,7 @@ class TestSelectorModelRouterResolution:
         })
 
         with patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="{}"),
         ) as mock_chat:
             await _SelectorModelRouter(sc).invoke(
@@ -339,7 +339,7 @@ class TestSelectorModelRouterResolution:
         router_obj = _SelectorModelRouter(sc)
 
         with patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="{}"),
         ) as mock_chat:
             await router_obj.invoke(model_class="ops_firefighter", system="s", user="u")

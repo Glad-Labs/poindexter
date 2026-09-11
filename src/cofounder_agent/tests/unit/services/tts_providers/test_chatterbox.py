@@ -12,16 +12,16 @@ from plugins.tts_provider import TTSProvider
 @pytest.mark.unit
 class TestChatterboxTTSProvider:
     def test_conforms_to_protocol(self):
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
         assert isinstance(ChatterboxTTSProvider(), TTSProvider)
         assert ChatterboxTTSProvider().name == "chatterbox"
 
     async def test_synthesize_passes_emotion_knobs(self, tmp_path):
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         out = tmp_path / "cb.mp3"
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"CBBYTES"),
         ) as m:
             result = await ChatterboxTTSProvider().synthesize(
@@ -41,9 +41,9 @@ class TestChatterboxTTSProvider:
         assert result.metadata["exaggeration"] == 0.8
 
     async def test_bad_float_falls_back_to_default(self, tmp_path):
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"X"),
         ) as m:
             await ChatterboxTTSProvider().synthesize(
@@ -54,9 +54,9 @@ class TestChatterboxTTSProvider:
         assert m.await_args.kwargs["extra_body"]["exaggeration"] == 0.5
 
     async def test_raises_when_sidecar_returns_none(self, tmp_path):
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=None),
         ):
             with pytest.raises(RuntimeError, match="chatterbox"):
@@ -65,10 +65,10 @@ class TestChatterboxTTSProvider:
     async def test_synthesize_forwards_audio_prompt_path(self, tmp_path):
         """A configured voice-clone reference flows through to the sidecar
         request so the live pipeline can pin a production voice."""
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"CBBYTES"),
         ) as m:
             await ChatterboxTTSProvider().synthesize(
@@ -84,10 +84,10 @@ class TestChatterboxTTSProvider:
         os.path.exists on any truthy value). Omitting the key falls back to
         the sidecar's own built-in voice, matching today's zero-config
         bake-off behavior for OSS installs with no reference clip."""
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"X"),
         ) as m:
             await ChatterboxTTSProvider().synthesize(
@@ -107,10 +107,10 @@ class TestChatterboxTTSProvider:
     async def test_synthesize_requests_wav_from_sidecar_regardless_of_delivery_format(
         self, tmp_path
     ):
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"CBBYTES"),
         ) as m:
             await ChatterboxTTSProvider().synthesize(
@@ -120,10 +120,10 @@ class TestChatterboxTTSProvider:
         assert m.await_args.kwargs["response_format"] == "wav"
 
     async def test_synthesize_passes_delivery_format_as_encode_format(self, tmp_path):
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"CBBYTES"),
         ) as m:
             await ChatterboxTTSProvider().synthesize(
@@ -137,10 +137,10 @@ class TestChatterboxTTSProvider:
     ):
         """No response_format configured -> falls back to default_format
         (mp3), not the wav wire format."""
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"X"),
         ) as m:
             await ChatterboxTTSProvider().synthesize("hi", tmp_path / "x.mp3")
@@ -148,10 +148,10 @@ class TestChatterboxTTSProvider:
         assert m.await_args.kwargs["response_format"] == "wav"
 
     async def test_synthesize_forwards_remux_bitrate_when_configured(self, tmp_path):
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"X"),
         ) as m:
             await ChatterboxTTSProvider().synthesize(
@@ -163,10 +163,10 @@ class TestChatterboxTTSProvider:
         """No remux_bitrate in config -> the kwarg is omitted entirely so
         render_openai_tts's own default wins (single source of truth, no
         duplicated literal to drift out of sync)."""
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"X"),
         ) as m:
             await ChatterboxTTSProvider().synthesize("hi", tmp_path / "x.mp3")
@@ -175,10 +175,10 @@ class TestChatterboxTTSProvider:
     async def test_synthesize_forwards_loudnorm_settings_when_configured(
         self, tmp_path
     ):
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"X"),
         ) as m:
             await ChatterboxTTSProvider().synthesize(
@@ -201,10 +201,10 @@ class TestChatterboxTTSProvider:
     async def test_synthesize_omits_loudnorm_settings_when_unconfigured(
         self, tmp_path
     ):
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"X"),
         ) as m:
             await ChatterboxTTSProvider().synthesize("hi", tmp_path / "x.mp3")
@@ -217,10 +217,10 @@ class TestChatterboxTTSProvider:
     async def test_synthesize_reports_delivery_format_not_wire_format(self, tmp_path):
         """TTSResult.audio_format must reflect what's actually in the returned
         bytes (the delivery format) — never the internal wav wire format."""
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         with patch(
-            "services.tts_providers.chatterbox.render_openai_tts",
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
             new=AsyncMock(return_value=b"MP3BYTES"),
         ):
             result = await ChatterboxTTSProvider().synthesize(

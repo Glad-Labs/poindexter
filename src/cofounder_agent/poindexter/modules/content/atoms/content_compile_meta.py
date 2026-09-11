@@ -66,8 +66,8 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Run all pure meta-compilation transforms."""
-    from services.quality_models import ensure_quality_assessment
-    from services.text_utils import normalize_text as _normalize_text
+    from poindexter.services.quality_models import ensure_quality_assessment
+    from poindexter.services.text_utils import normalize_text as _normalize_text
 
     content_text = state.get("content") or ""
     topic = state.get("topic", "")
@@ -81,7 +81,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     # Sources-section auto-append.
     try:
-        from services.citation_verifier import append_sources_section, extract_urls
+        from poindexter.services.citation_verifier import append_sources_section, extract_urls
         _flag = (
             platform.config.get("auto_append_sources_section", "true")
             if platform is not None else "true"
@@ -107,7 +107,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         )
 
     # Excerpt derivation.
-    from services.excerpt_generator import generate_excerpt
+    from poindexter.services.excerpt_generator import generate_excerpt
     excerpt_text = generate_excerpt(title=seo_title or topic, content=content_text)
 
     # QA feedback formatting.

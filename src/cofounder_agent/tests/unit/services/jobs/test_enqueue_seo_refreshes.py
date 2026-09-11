@@ -6,7 +6,7 @@ import pytest
 
 
 def test_job_has_required_attrs():
-    from services.jobs.enqueue_seo_refreshes import EnqueueSeoRefreshesJob
+    from poindexter.services.jobs.enqueue_seo_refreshes import EnqueueSeoRefreshesJob
 
     job = EnqueueSeoRefreshesJob()
     assert job.name == "enqueue_seo_refreshes"
@@ -33,7 +33,7 @@ class _SC:
 
 @pytest.mark.asyncio
 async def test_noop_when_refresh_disabled():
-    from services.jobs.enqueue_seo_refreshes import EnqueueSeoRefreshesJob
+    from poindexter.services.jobs.enqueue_seo_refreshes import EnqueueSeoRefreshesJob
 
     job = EnqueueSeoRefreshesJob()
     res = await job.run(
@@ -45,7 +45,7 @@ async def test_noop_when_refresh_disabled():
 
 @pytest.mark.asyncio
 async def test_noop_when_no_site_config():
-    from services.jobs.enqueue_seo_refreshes import EnqueueSeoRefreshesJob
+    from poindexter.services.jobs.enqueue_seo_refreshes import EnqueueSeoRefreshesJob
 
     job = EnqueueSeoRefreshesJob()
     res = await job.run(pool=object(), config={})
@@ -54,7 +54,7 @@ async def test_noop_when_no_site_config():
 
 @pytest.mark.asyncio
 async def test_enqueues_capped_and_parks(monkeypatch):
-    from services.jobs import enqueue_seo_refreshes as mod
+    from poindexter.services.jobs import enqueue_seo_refreshes as mod
 
     candidates = [
         {
@@ -140,7 +140,7 @@ async def test_min_impressions_floor_passed_to_query(monkeypatch):
     # even if a stale 'open' row predates the classifier's own floor. Assert
     # the resolved setting actually reaches the query as $2, default and
     # overridden.
-    from services.jobs import enqueue_seo_refreshes as mod
+    from poindexter.services.jobs import enqueue_seo_refreshes as mod
 
     captured_args = []
 

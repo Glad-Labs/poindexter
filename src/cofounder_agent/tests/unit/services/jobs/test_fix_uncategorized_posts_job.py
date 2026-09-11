@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob
+from poindexter.services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob
 
 
 def _make_pool(
@@ -67,7 +67,7 @@ class TestRun:
         ])
         job = FixUncategorizedPostsJob()
         with patch(
-            "services.jobs.fix_uncategorized_posts.emit_finding",
+            "poindexter.services.jobs.fix_uncategorized_posts.emit_finding",
             new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {})
@@ -83,7 +83,7 @@ class TestRun:
         pool, conn = _make_pool([{"id": "p1", "title": "T"}])
         job = FixUncategorizedPostsJob()
         with patch(
-            "services.jobs.fix_uncategorized_posts.emit_finding",
+            "poindexter.services.jobs.fix_uncategorized_posts.emit_finding",
             new=MagicMock(),
         ):
             await job.run(pool, {
@@ -130,7 +130,7 @@ class TestRun:
 
         job = FixUncategorizedPostsJob()
         with patch(
-            "services.jobs.fix_uncategorized_posts.emit_finding",
+            "poindexter.services.jobs.fix_uncategorized_posts.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {"file_gitea_issue": False})
@@ -145,7 +145,7 @@ class TestRun:
         job = FixUncategorizedPostsJob()
         mock_gitea = MagicMock()
         with patch(
-            "services.jobs.fix_uncategorized_posts.emit_finding",
+            "poindexter.services.jobs.fix_uncategorized_posts.emit_finding",
             new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})

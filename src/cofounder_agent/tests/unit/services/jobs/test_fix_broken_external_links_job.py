@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.fix_broken_external_links import (
+from poindexter.services.jobs.fix_broken_external_links import (
     FixBrokenExternalLinksJob,
     _extract_external_urls,
     _strip_url_from_content,
@@ -151,7 +151,7 @@ class TestRun:
         ])
         client = _patched_client({"https://other.com/live": 200})
         with patch(
-            "services.jobs.fix_broken_external_links.httpx.AsyncClient",
+            "poindexter.services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ):
             job = FixBrokenExternalLinksJob()
@@ -174,10 +174,10 @@ class TestRun:
             "https://other.com/404": 404,
         })
         with patch(
-            "services.jobs.fix_broken_external_links.httpx.AsyncClient",
+            "poindexter.services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.fix_broken_external_links.emit_finding",
+            "poindexter.services.jobs.fix_broken_external_links.emit_finding",
             new=MagicMock(),
         ) as mock_gitea:
             job = FixBrokenExternalLinksJob()
@@ -204,10 +204,10 @@ class TestRun:
             "https://dns-fail.example/": httpx.ConnectError("no DNS"),
         })
         with patch(
-            "services.jobs.fix_broken_external_links.httpx.AsyncClient",
+            "poindexter.services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.fix_broken_external_links.emit_finding",
+            "poindexter.services.jobs.fix_broken_external_links.emit_finding",
             new=MagicMock(),
         ):
             job = FixBrokenExternalLinksJob()
@@ -224,7 +224,7 @@ class TestRun:
         ])
         client = _patched_client({"https://other.com/err": 500})
         with patch(
-            "services.jobs.fix_broken_external_links.httpx.AsyncClient",
+            "poindexter.services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ):
             job = FixBrokenExternalLinksJob()
@@ -241,7 +241,7 @@ class TestRun:
             f"https://ext{i}.com": 200 for i in range(15)
         })
         with patch(
-            "services.jobs.fix_broken_external_links.httpx.AsyncClient",
+            "poindexter.services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ):
             job = FixBrokenExternalLinksJob()
@@ -258,10 +258,10 @@ class TestRun:
         client = _patched_client({"https://other.com/404": 404})
         mock_gitea = MagicMock()
         with patch(
-            "services.jobs.fix_broken_external_links.httpx.AsyncClient",
+            "poindexter.services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.fix_broken_external_links.emit_finding",
+            "poindexter.services.jobs.fix_broken_external_links.emit_finding",
             new=mock_gitea,
         ):
             job = FixBrokenExternalLinksJob()
@@ -291,10 +291,10 @@ class TestRun:
             "https://b.com/404": 404,
         })
         with patch(
-            "services.jobs.fix_broken_external_links.httpx.AsyncClient",
+            "poindexter.services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.fix_broken_external_links.emit_finding",
+            "poindexter.services.jobs.fix_broken_external_links.emit_finding",
             new=MagicMock(),
         ):
             job = FixBrokenExternalLinksJob()
@@ -318,7 +318,7 @@ class TestUserAgent:
         client = _patched_client({"https://other.com/live": 200})
         mock_cls = MagicMock(return_value=client)
         with patch(
-            "services.jobs.fix_broken_external_links.httpx.AsyncClient", mock_cls,
+            "poindexter.services.jobs.fix_broken_external_links.httpx.AsyncClient", mock_cls,
         ):
             job = FixBrokenExternalLinksJob()
             await job.run(pool, {"file_gitea_issue": False})
@@ -339,7 +339,7 @@ class TestUserAgent:
         )
         mock_cls = MagicMock(return_value=client)
         with patch(
-            "services.jobs.fix_broken_external_links.httpx.AsyncClient", mock_cls,
+            "poindexter.services.jobs.fix_broken_external_links.httpx.AsyncClient", mock_cls,
         ):
             job = FixBrokenExternalLinksJob()
             await job.run(pool, {"file_gitea_issue": False, "_site_config": sc})

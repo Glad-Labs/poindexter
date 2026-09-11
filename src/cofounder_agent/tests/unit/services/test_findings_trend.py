@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from services.findings_read import get_findings_trend
+from poindexter.services.findings_read import get_findings_trend
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

@@ -16,7 +16,7 @@ import logging
 import re
 from typing import Any
 
-from services import live_activity
+from poindexter.services import live_activity
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -182,7 +182,7 @@ async def render_narration(
         )
         return ""
 
-    from services.podcast_service import PodcastService
+    from poindexter.services.podcast_service import PodcastService
 
     # Best-effort live-activity: surface the TTS synth as a kind='media' row in
     # the console pulse (podcast + long/short video narration all reach here).

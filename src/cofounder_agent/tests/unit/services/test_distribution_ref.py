@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.distribution_ref import (
+from poindexter.services.distribution_ref import (
     SURFACE_MEDIUM,
     RefConfig,
     resolve_ref_config,

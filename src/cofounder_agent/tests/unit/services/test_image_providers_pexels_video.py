@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.video_provider import VideoResult
-from services.image_providers.pexels_video import PexelsVideoProvider, _pick_video_file
+from poindexter.services.image_providers.pexels_video import PexelsVideoProvider, _pick_video_file
 
 
 def _make_pexels_client(videos: list[dict], status: int = 200):
@@ -126,7 +126,7 @@ class TestFetch:
     @pytest.mark.asyncio
     async def test_empty_api_key_returns_empty_list(self):
         provider = PexelsVideoProvider()
-        with patch("services.container.get_service", return_value=None):
+        with patch("poindexter.services.container.get_service", return_value=None):
             results = await provider.fetch("query", config={})
         assert results == []
 

@@ -53,7 +53,7 @@ async def _resolve_post_id(pool: Any, post_id: str) -> str:
     ``PostsApprovalServiceError`` (→ clean exit 1) when nothing matches,
     or ``AmbiguousPrefixError`` (→ exit 2) when several do.
     """
-    from services.posts_approval_service import PostsApprovalServiceError
+    from poindexter.services.posts_approval_service import PostsApprovalServiceError
 
     resolved = await resolve_uuid_prefix(
         pool, table="posts", column="id", prefix=post_id, noun="post",
@@ -68,7 +68,7 @@ async def _make_pool():
 
 
 async def _make_site_config(pool):
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     cfg = SiteConfig(pool=pool)
     try:
@@ -134,7 +134,7 @@ def approve_publish_command(
     Clears the gate columns; the next ``scheduled_publisher`` tick
     flips the row to ``status='published'``.
     """
-    from services.posts_approval_service import (
+    from poindexter.services.posts_approval_service import (
         PostsApprovalServiceError,
         approve_publish,
     )
@@ -207,7 +207,7 @@ def reject_publish_command(
     app_settings — set to ``draft`` to bounce the post back into the
     draft pool for re-work).
     """
-    from services.posts_approval_service import (
+    from poindexter.services.posts_approval_service import (
         PostsApprovalServiceError,
         reject_publish,
     )
@@ -268,7 +268,7 @@ def list_pending_publish_command(
     gate_name: str | None, limit: int, json_output: bool,
 ) -> None:
     """List every scheduled post currently paused at any publish gate."""
-    from services.posts_approval_service import list_pending_publish
+    from poindexter.services.posts_approval_service import list_pending_publish
 
     async def _impl():
         pool = await _make_pool()
@@ -310,7 +310,7 @@ def list_pending_publish_command(
 @click.option("--json", "json_output", is_flag=True)
 def show_pending_publish_command(post_id: str, json_output: bool) -> None:
     """Show the publish-gate state + full artifact for one post."""
-    from services.posts_approval_service import (
+    from poindexter.services.posts_approval_service import (
         PostsApprovalServiceError,
         show_pending_publish,
     )

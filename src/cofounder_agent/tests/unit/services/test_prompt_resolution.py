@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.prompt_manager import (
+from poindexter.services.prompt_manager import (
     PromptCategory,
     PromptResolution,
     PromptVersion,
@@ -111,7 +111,7 @@ class TestPromptResolution:
             "version": "v3.7",
         }
         # Stub metadata so other accesses don't blow up on lookups
-        from services.prompt_manager import PromptMetadata
+        from poindexter.services.prompt_manager import PromptMetadata
         pm.metadata["test.synthetic"] = PromptMetadata(
             category=PromptCategory.UTILITY,
             version=PromptVersion.V1_1,
@@ -132,7 +132,7 @@ class TestPromptResolution:
             "template": "x",
             "version": "draft",
         }
-        from services.prompt_manager import PromptMetadata
+        from poindexter.services.prompt_manager import PromptMetadata
         pm.metadata["test.nonnumeric"] = PromptMetadata(
             category=PromptCategory.UTILITY,
             version=PromptVersion.V1_1,

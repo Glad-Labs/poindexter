@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.image_prompt_sanitizer import (
+from poindexter.services.image_prompt_sanitizer import (
     clean_image_prompt,
     strip_bullet,
     subject_fallback_prompt,

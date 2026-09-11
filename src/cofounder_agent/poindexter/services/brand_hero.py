@@ -28,7 +28,7 @@ import tempfile
 from dataclasses import dataclass
 from html import escape
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -198,7 +198,7 @@ async def render_hero_png(spec: HeroSpec | None = None) -> bytes | None:
     ``capture_preview_screenshot``'s contract so callers treat it as "no image"
     exactly like a failed generation.
     """
-    from services.preview_screenshot import capture_preview_screenshot
+    from poindexter.services.preview_screenshot import capture_preview_screenshot
 
     html = render_hero_html(spec)
     with tempfile.NamedTemporaryFile(

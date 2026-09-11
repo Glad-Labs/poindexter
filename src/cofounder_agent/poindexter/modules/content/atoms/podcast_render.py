@@ -57,7 +57,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     a single TTS code path across podcast + video narration (#689).
     """
     from modules.content.atoms._narration_render import render_narration
-    from services.podcast_service import dedupe_episode_title
+    from poindexter.services.podcast_service import dedupe_episode_title
 
     task_id = state.get("task_id")
     if not task_id:
@@ -96,7 +96,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         ).lower() == "true"
     )
     if path and enabled:
-        from services.podcast_sting_mixer import mix_intro_outro, resolve_sting_path
+        from poindexter.services.podcast_sting_mixer import mix_intro_outro, resolve_sting_path
 
         sting = resolve_sting_path(state.get("podcast_intro_audio_path"), site_config)
         if sting.path:

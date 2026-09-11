@@ -44,7 +44,7 @@ def model_eval_group() -> None:
 async def _load_cfg(pool: Any) -> Any:
     """Build a SiteConfig from app_settings; tolerate an unreachable DB so
     operator CLI flags still flow (mirrors schedule.py::_load_site_config)."""
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     cfg = SiteConfig(pool=pool)
     try:
@@ -100,15 +100,15 @@ def model_eval_run(slot: str, challengers: tuple[str, ...], json_output: bool) -
         try:
             cfg = await _load_cfg(pool)
             if slot == "self-review":
-                from services.model_eval.bakeoff import run_self_review_bakeoff
+                from poindexter.services.model_eval.bakeoff import run_self_review_bakeoff
 
                 return await run_self_review_bakeoff(
                     pool=pool, site_config=cfg, challengers=list(challengers),
                 )
             if slot == "critic":
                 from plugins.kernel_platform import KernelPlatform
-                from services.llm_providers.dispatcher import dispatch_complete
-                from services.model_eval.bakeoff import run_critic_bakeoff
+                from poindexter.services.llm_providers.dispatcher import dispatch_complete
+                from poindexter.services.model_eval.bakeoff import run_critic_bakeoff
 
                 async def _noop_audit(*_a: Any, **_kw: Any) -> None:
                     return None
@@ -125,7 +125,7 @@ def model_eval_run(slot: str, challengers: tuple[str, ...], json_output: bool) -
                     platform=platform,
                     challengers=list(challengers),
                 )
-            from services.model_eval.bakeoff import run_reranker_bakeoff
+            from poindexter.services.model_eval.bakeoff import run_reranker_bakeoff
 
             return await run_reranker_bakeoff(
                 pool=pool, site_config=cfg, challengers=list(challengers)
@@ -196,12 +196,12 @@ def model_eval_status(slot: str, json_output: bool) -> None:
 
     async def _impl() -> dict[str, float]:
 
-        from services.model_eval.harness import LangfuseEvalHarness
+        from poindexter.services.model_eval.harness import LangfuseEvalHarness
 
         if slot == "pipeline_critic_model":
-            from services.model_eval.scorers.critic import CriticScorer as _Scorer
+            from poindexter.services.model_eval.scorers.critic import CriticScorer as _Scorer
         else:
-            from services.model_eval.scorers.reranker import RerankerScorer as _Scorer
+            from poindexter.services.model_eval.scorers.reranker import RerankerScorer as _Scorer
 
         pool = await open_cli_pool()
         try:

@@ -28,8 +28,8 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.integrations.operator_notify import notify_operator
-from services.site_config import SiteConfig
+from poindexter.services.integrations.operator_notify import notify_operator
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class BackfillMissingSocialDraftsJob:
             )
         )
 
-        from services.social_drafts import SocialDraftsService
+        from poindexter.services.social_drafts import SocialDraftsService
 
         try:
             result = await SocialDraftsService().reconcile_missing_drafts(

@@ -177,7 +177,7 @@ class TestBuildRagContextStatusFilter:
             },
         })
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         result = await build_rag_context(
             _DatabaseServiceDouble(pool),
@@ -209,7 +209,7 @@ class TestBuildRagContextStatusFilter:
             },
         })
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         await build_rag_context(
             _DatabaseServiceDouble(pool),
@@ -247,7 +247,7 @@ class TestBuildRagContextStatusFilter:
             },
         })
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         result = await build_rag_context(
             _DatabaseServiceDouble(pool),
@@ -262,7 +262,7 @@ class TestBuildRagContextStatusFilter:
         stub_memory_client["find_similar_posts_result"] = []
         pool = _PoolDouble({})
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         result = await build_rag_context(
             _DatabaseServiceDouble(pool),
@@ -288,7 +288,7 @@ class TestBuildRagContextStatusFilter:
             },
         })
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         result = await build_rag_context(
             _DatabaseServiceDouble(pool),
@@ -334,7 +334,7 @@ class TestBuildRagContextSelfLink:
             },
         })
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         result = await build_rag_context(
             _DatabaseServiceDouble(pool),
@@ -373,7 +373,7 @@ class TestBuildRagContextSelfLink:
             },
         })
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         # Pass current_post_id WITHOUT the prefix — must still match.
         result = await build_rag_context(
@@ -409,7 +409,7 @@ class TestBuildRagContextSelfLink:
             },
         })
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         result = await build_rag_context(
             _DatabaseServiceDouble(pool),
@@ -447,7 +447,7 @@ class TestBuildRagContextDisplaySimilarity:
             },
         })
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         result = await build_rag_context(
             _DatabaseServiceDouble(pool),
@@ -474,7 +474,7 @@ class TestBuildRagContextDisplaySimilarity:
             },
         })
 
-        from services.research_context import build_rag_context
+        from poindexter.services.research_context import build_rag_context
 
         result = await build_rag_context(
             _DatabaseServiceDouble(pool),

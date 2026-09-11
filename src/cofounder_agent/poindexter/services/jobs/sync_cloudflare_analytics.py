@@ -55,7 +55,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from plugins.job import JobResult
-from services.watermark_cursor import (
+from poindexter.services.watermark_cursor import (
     DEFAULT_INGESTION_LAG_SECONDS,
     is_future_cursor,
     next_high_water,
@@ -303,7 +303,7 @@ class SyncCloudflareAnalyticsJob:
         # posture; the high-water mark is untouched so the next cycle
         # re-pulls everything) and raise the SHARED network_unreachable
         # finding so one fault pages once, however many CF consumers it hits.
-        from services.net_transient import (
+        from poindexter.services.net_transient import (
             is_transient_network_error,
             transient_retry_transport,
         )

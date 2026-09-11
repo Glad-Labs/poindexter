@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services import chart_catalog
+from poindexter.services import chart_catalog
 
 pytestmark = pytest.mark.unit
 

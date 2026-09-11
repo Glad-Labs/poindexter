@@ -131,7 +131,7 @@ class TestLoadCanonicalBlogSpec:
         """Cross-check the stdlib path against the real object. If the spec
         ever grows a non-literal construct, this and the parser must not
         disagree silently."""
-        from services.canonical_blog_spec import (  # noqa: PLC0415
+        from poindexter.services.canonical_blog_spec import (  # noqa: PLC0415
             CANONICAL_BLOG_GRAPH_DEF as real,
         )
 

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.cancel_orphaned_social_drafts import CancelOrphanedSocialDraftsJob
+from poindexter.services.jobs.cancel_orphaned_social_drafts import CancelOrphanedSocialDraftsJob
 
 
 def _site_config(settings: dict[str, str]) -> MagicMock:
@@ -27,7 +27,7 @@ def _patch_svc(cancel_return=0, cancel_raises: BaseException | None = None):
     else:
         inst.cancel_orphaned_for_rejected_tasks = AsyncMock(return_value=cancel_return)
     ctor = MagicMock(return_value=inst)
-    return patch("services.social_drafts.SocialDraftsService", ctor), inst
+    return patch("poindexter.services.social_drafts.SocialDraftsService", ctor), inst
 
 
 @pytest.mark.asyncio

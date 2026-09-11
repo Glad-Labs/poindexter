@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.newsletter_service import (  # noqa: E402
+from poindexter.services.newsletter_service import (  # noqa: E402
     _build_html,
     _get_active_subscribers,
     send_post_newsletter,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2b: newsletter_service no longer carries a lifespan-bound
 # module global — every entry point takes a keyword-required
@@ -184,7 +184,7 @@ class TestSendNewsletterSuccess:
             }.get(k, d)
         mock_cfg.get_secret = AsyncMock(side_effect=_get_secret)
 
-        with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
+        with patch("poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = (True, None)
             result = await send_post_newsletter(pool, "New Post", "Great stuff", "new-post", site_config=mock_cfg)
 
@@ -229,7 +229,7 @@ class TestSendNewsletterSuccess:
         mock_cfg.get_secret = AsyncMock(side_effect=_get_secret)
 
         send_results = [(True, None), (False, "422 invalid recipient"), (True, None)]
-        with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
+        with patch("poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
             mock_send.side_effect = send_results
             result = await send_post_newsletter(pool, "T", "E", "s", site_config=mock_cfg)
 
@@ -276,7 +276,7 @@ class TestSendNewsletterSuccess:
 class TestSendViaResend:
     @pytest.mark.asyncio
     async def test_success_returns_true(self):
-        from services.newsletter_service import _send_via_resend
+        from poindexter.services.newsletter_service import _send_via_resend
 
         cfg = {"resend_api_key": "test-key"}
 
@@ -300,7 +300,7 @@ class TestSendViaResend:
 
     @pytest.mark.asyncio
     async def test_no_id_returns_false(self):
-        from services.newsletter_service import _send_via_resend
+        from poindexter.services.newsletter_service import _send_via_resend
 
         cfg = {"resend_api_key": "test-key"}
 
@@ -318,7 +318,7 @@ class TestSendViaResend:
 
     @pytest.mark.asyncio
     async def test_exception_returns_false(self):
-        from services.newsletter_service import _send_via_resend
+        from poindexter.services.newsletter_service import _send_via_resend
 
         cfg = {"resend_api_key": "test-key"}
 
@@ -343,7 +343,7 @@ class TestSendViaResend:
 class TestSendViaSmtp:
     @pytest.mark.asyncio
     async def test_success_returns_true(self):
-        from services.newsletter_service import _send_via_smtp
+        from poindexter.services.newsletter_service import _send_via_smtp
 
         cfg = {
             "smtp_host": "smtp.example.com",
@@ -371,7 +371,7 @@ class TestSendViaSmtp:
 
     @pytest.mark.asyncio
     async def test_exception_returns_false(self):
-        from services.newsletter_service import _send_via_smtp
+        from poindexter.services.newsletter_service import _send_via_smtp
 
         cfg = {
             "smtp_host": "smtp.example.com",
@@ -397,7 +397,7 @@ class TestSendViaSmtp:
     @pytest.mark.asyncio
     async def test_empty_user_passes_none_to_aiosmtplib(self):
         """Empty smtp_user should be passed as None (not empty string) to aiosmtplib."""
-        from services.newsletter_service import _send_via_smtp
+        from poindexter.services.newsletter_service import _send_via_smtp
 
         cfg = {
             "smtp_host": "smtp.example.com",
@@ -430,7 +430,7 @@ class TestSendViaSmtp:
 class TestLogSend:
     @pytest.mark.asyncio
     async def test_writes_to_campaign_email_logs(self):
-        from services.newsletter_service import _log_send
+        from poindexter.services.newsletter_service import _log_send
 
         pool = AsyncMock()
         pool.execute = AsyncMock()
@@ -448,7 +448,7 @@ class TestLogSend:
 
     @pytest.mark.asyncio
     async def test_with_error_message(self):
-        from services.newsletter_service import _log_send
+        from poindexter.services.newsletter_service import _log_send
 
         pool = AsyncMock()
         pool.execute = AsyncMock()
@@ -461,7 +461,7 @@ class TestLogSend:
     @pytest.mark.asyncio
     async def test_db_exception_swallowed(self):
         """Logging failure must not block the send pipeline."""
-        from services.newsletter_service import _log_send
+        from poindexter.services.newsletter_service import _log_send
 
         pool = AsyncMock()
         pool.execute = AsyncMock(side_effect=RuntimeError("logs table missing"))
@@ -478,7 +478,7 @@ class TestLogSend:
 class TestSendNewsletterSmtpProvider:
     @pytest.mark.asyncio
     async def test_no_smtp_host_returns_skipped(self):
-        from services.newsletter_service import send_post_newsletter
+        from poindexter.services.newsletter_service import send_post_newsletter
 
         pool = AsyncMock()
 
@@ -500,7 +500,7 @@ class TestSendNewsletterSmtpProvider:
 
     @pytest.mark.asyncio
     async def test_smtp_provider_routes_to_smtp_function(self):
-        from services.newsletter_service import send_post_newsletter
+        from poindexter.services.newsletter_service import send_post_newsletter
 
         pool = AsyncMock()
         pool.fetch = AsyncMock(side_effect=[
@@ -524,8 +524,8 @@ class TestSendNewsletterSmtpProvider:
         # smtp_password is now a secret — fetched via the async path.
         mock_cfg.get_secret = AsyncMock(return_value="pass")
 
-        with patch("services.newsletter_service._send_via_smtp", new_callable=AsyncMock) as mock_smtp, \
-             patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_resend:
+        with patch("poindexter.services.newsletter_service._send_via_smtp", new_callable=AsyncMock) as mock_smtp, \
+             patch("poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_resend:
             mock_smtp.return_value = (True, None)
             mock_resend.return_value = (True, None)
 
@@ -543,14 +543,14 @@ class TestSendNewsletterSmtpProvider:
 
 class TestFromHeader:
     def test_bare_address_with_name(self):
-        from services.newsletter_service import _from_header
+        from poindexter.services.newsletter_service import _from_header
 
         assert _from_header(
             {"from_email": "news@example.com", "from_name": "Glad Labs"}
         ) == "Glad Labs <news@example.com>"
 
     def test_bare_address_without_name(self):
-        from services.newsletter_service import _from_header
+        from poindexter.services.newsletter_service import _from_header
 
         assert _from_header(
             {"from_email": "news@example.com", "from_name": ""}
@@ -560,34 +560,34 @@ class TestFromHeader:
         """THE regression: newsletter_from_email stored as a full mailbox
         used to become ``Name <Name <addr>>`` and 422 every Resend send
         (53/53 failures 2026-05-08 → 07-10)."""
-        from services.newsletter_service import _from_header
+        from poindexter.services.newsletter_service import _from_header
 
         assert _from_header(
             {"from_email": "Glad Labs <news@example.com>", "from_name": "Glad Labs"}
         ) == "Glad Labs <news@example.com>"
 
     def test_from_name_wins_over_embedded_name(self):
-        from services.newsletter_service import _from_header
+        from poindexter.services.newsletter_service import _from_header
 
         assert _from_header(
             {"from_email": "Old Name <news@example.com>", "from_name": "New Name"}
         ) == "New Name <news@example.com>"
 
     def test_embedded_name_kept_when_from_name_empty(self):
-        from services.newsletter_service import _from_header
+        from poindexter.services.newsletter_service import _from_header
 
         assert _from_header(
             {"from_email": "Embedded <news@example.com>", "from_name": ""}
         ) == "Embedded <news@example.com>"
 
     def test_unparseable_raises_value_error(self):
-        from services.newsletter_service import _from_header
+        from poindexter.services.newsletter_service import _from_header
 
         with pytest.raises(ValueError):
             _from_header({"from_email": "not-an-address", "from_name": "X"})
 
     def test_empty_raises_value_error(self):
-        from services.newsletter_service import _from_header
+        from poindexter.services.newsletter_service import _from_header
 
         with pytest.raises(ValueError):
             _from_header({"from_email": "", "from_name": "X"})
@@ -659,7 +659,7 @@ class TestResendIdempotency:
         ])
         pool.execute = AsyncMock()
 
-        with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
+        with patch("poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = (True, None)
             result = await send_post_newsletter(
                 pool, "T", "E", "some-slug", site_config=_resend_cfg_mock(),
@@ -676,7 +676,7 @@ class TestResendIdempotency:
     async def test_delivered_lookup_failure_falls_open(self):
         """A transient SELECT error must not block the campaign — worst
         case is a duplicate email, not a silent no-send."""
-        from services.newsletter_service import _already_delivered_ids
+        from poindexter.services.newsletter_service import _already_delivered_ids
 
         pool = AsyncMock()
         pool.fetch = AsyncMock(side_effect=RuntimeError("db hiccup"))
@@ -702,7 +702,7 @@ class TestTotalFailureFinding:
         ])
         pool.execute = AsyncMock()
 
-        with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send, \
+        with patch("poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send, \
              patch("utils.findings.emit_finding") as mock_finding:
             mock_send.return_value = (False, "Invalid `from` field.")
             result = await send_post_newsletter(
@@ -729,7 +729,7 @@ class TestTotalFailureFinding:
         ])
         pool.execute = AsyncMock()
 
-        with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send, \
+        with patch("poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send, \
              patch("utils.findings.emit_finding") as mock_finding:
             mock_send.side_effect = [(True, None), (False, "bounce")]
             await send_post_newsletter(

@@ -11,13 +11,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from poindexter.services.site_config import SiteConfig
 from routes.podcast_routes import (
     _build_rss_xml,
     _format_duration,
     _rfc2822,
     router,
 )
-from services.site_config import SiteConfig
 
 # storage_* cutover (#731): podcast routes read storage_public_url (was
 # r2_public_url). Build a dedicated SiteConfig for the feed-rendering

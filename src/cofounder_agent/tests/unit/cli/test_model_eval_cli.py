@@ -15,9 +15,9 @@ import pytest
 from click.testing import CliRunner
 
 from poindexter.cli.model_eval import model_eval_group
-from services.model_eval.promotion import PromotionProposal
-from services.model_eval.runner import EvalReport
-from services.model_eval.types import MetricResult
+from poindexter.services.model_eval.promotion import PromotionProposal
+from poindexter.services.model_eval.runner import EvalReport
+from poindexter.services.model_eval.types import MetricResult
 
 _REPORT = EvalReport(
     slot="rag_rerank_model",
@@ -68,7 +68,7 @@ def fake_asyncpg(monkeypatch):
 
 def test_run_prints_summary_and_proposal(runner, fake_asyncpg) -> None:
     with patch(
-        "services.model_eval.bakeoff.run_reranker_bakeoff",
+        "poindexter.services.model_eval.bakeoff.run_reranker_bakeoff",
         new=AsyncMock(return_value=(_REPORT, _PROPOSAL)),
     ):
         res = runner.invoke(model_eval_group, ["run", "--challenger", "chall"])
@@ -80,7 +80,7 @@ def test_run_prints_summary_and_proposal(runner, fake_asyncpg) -> None:
 
 def test_run_json_output(runner, fake_asyncpg) -> None:
     with patch(
-        "services.model_eval.bakeoff.run_reranker_bakeoff",
+        "poindexter.services.model_eval.bakeoff.run_reranker_bakeoff",
         new=AsyncMock(return_value=(_REPORT, _PROPOSAL)),
     ):
         res = runner.invoke(model_eval_group, ["run", "--challenger", "chall", "--json"])
@@ -104,7 +104,7 @@ def test_run_no_promotion_message(runner, fake_asyncpg) -> None:
         results=[MetricResult("rag_rerank_model", "champ", "ndcg@10", 0.80, 50, 1)],
     )
     with patch(
-        "services.model_eval.bakeoff.run_reranker_bakeoff",
+        "poindexter.services.model_eval.bakeoff.run_reranker_bakeoff",
         new=AsyncMock(return_value=(hold, None)),
     ):
         res = runner.invoke(model_eval_group, ["run", "--challenger", "chall"])

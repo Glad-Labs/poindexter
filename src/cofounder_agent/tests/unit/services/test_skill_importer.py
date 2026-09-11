@@ -20,7 +20,7 @@ import pytest
 
 # The module under test is loaded lazily in each test to keep imports
 # isolated from each other.
-from services.skill_importer import (
+from poindexter.services.skill_importer import (
     SkillImportError,
     _convert_github_blob_url,
     _parse_frontmatter,
@@ -196,7 +196,7 @@ class TestImportSkill:
 
         skills_root = tmp_path / "skills"
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             result = await import_skill(
                 str(source_file),
                 pack="test-pack",
@@ -224,7 +224,7 @@ class TestImportSkill:
 
         skills_root = tmp_path / "skills"
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             # First install
             await import_skill(str(source_file), pack="test-pack", pool=None)
 
@@ -246,7 +246,7 @@ class TestImportSkill:
 
         skills_root = tmp_path / "skills"
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             await import_skill(str(source_file), pack="test-pack", pool=None)
 
             result = await import_skill(
@@ -285,7 +285,7 @@ class TestImportSkill:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 result = await import_skill(
                     blob_url,
@@ -311,7 +311,7 @@ class TestImportSkill:
 
         skills_root = tmp_path / "skills"
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             with pytest.raises(SkillImportError, match="GPL-3.0"):
                 await import_skill(
                     str(source_file),
@@ -330,7 +330,7 @@ class TestImportSkill:
         skills_root = tmp_path / "skills"
         pool, conn = _make_pool()
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             result = await import_skill(
                 str(source_file),
                 pack="test-pack",
@@ -358,7 +358,7 @@ class TestListAndRemoveSkills:
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text(_VALID_SKILL_MD, encoding="utf-8")
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             result = await list_skills(pool=None)
 
         assert len(result) == 1
@@ -400,7 +400,7 @@ class TestListAndRemoveSkills:
         skill_file = skill_dir / "SKILL.md"
         skill_file.write_text(_VALID_SKILL_MD, encoding="utf-8")
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             result = await remove_skill("my-skill", pool=None)
 
         assert result["ok"] is True
@@ -414,7 +414,7 @@ class TestListAndRemoveSkills:
         skills_root = tmp_path / "skills"
         skills_root.mkdir(parents=True)
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             with pytest.raises(SkillImportError, match="not installed"):
                 await remove_skill("ghost-skill", pool=None)
 
@@ -456,7 +456,7 @@ class TestBodyValidation:
         source_file.write_text(hollow, encoding="utf-8")
         skills_root = tmp_path / "skills"
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             with pytest.raises(SkillImportError, match="hollow.go"):
                 await import_skill(str(source_file), pack="imported", pool=None)
 
@@ -472,7 +472,7 @@ class TestBodyValidation:
         source_file.write_text(_VALID_SKILL_MD, encoding="utf-8")
         skills_root = tmp_path / "skills"
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             result = await import_skill(str(source_file), pack="test-pack", pool=None)
 
         assert result["ok"] is True
@@ -500,7 +500,7 @@ class TestImportTelemetry:
         source_file.write_text(_VALID_SKILL_MD, encoding="utf-8")
         skills_root = tmp_path / "skills"
 
-        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+        with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
             result = await import_skill(
                 str(source_file), pack="test-pack", pool=None, force=True,
             )

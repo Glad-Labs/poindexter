@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.llm_providers.litellm_provider import LiteLLMProvider
+from poindexter.services.llm_providers.litellm_provider import LiteLLMProvider
 
 _LOCAL_BASE = "http://host.docker.internal:11434"
 
@@ -48,7 +48,7 @@ class _FakeStreamResponse:
 
 def _guard_patch():
     return patch(
-        "services.llm_providers.litellm_provider.maybe_reclaim_before_coldload",
+        "poindexter.services.llm_providers.litellm_provider.maybe_reclaim_before_coldload",
         new_callable=AsyncMock,
         return_value=False,
     )

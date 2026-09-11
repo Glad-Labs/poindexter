@@ -160,7 +160,7 @@ class TestR2UploadFallbackIsVisible:
                 raise RuntimeError("R2 credentials rejected")
 
         monkeypatch.setattr(
-            "services.r2_upload_service.R2UploadService", _BoomService,
+            "poindexter.services.r2_upload_service.R2UploadService", _BoomService,
         )
 
         tmp = "/data/glad-labs-generated-images/inline-abc123.png"
@@ -198,7 +198,7 @@ class TestR2UploadFallbackIsVisible:
                 return "https://cdn.example.com/images/inline/abc.webp"
 
         monkeypatch.setattr(
-            "services.r2_upload_service.R2UploadService", _OkService,
+            "poindexter.services.r2_upload_service.R2UploadService", _OkService,
         )
         monkeypatch.setattr(_image_helpers.os, "remove", lambda _p: None)
 
@@ -277,7 +277,7 @@ class TestAtomSideTwinsOfWriterCoreGaps:
         (stack#3209) — one lookup now serving all three title paths. The
         de-silencing contract is what matters and it moves with it.
         """
-        from services.title_avoidance import fetch_recent_titles
+        from poindexter.services.title_avoidance import fetch_recent_titles
 
         findings = _capture(monkeypatch)
 
@@ -307,7 +307,7 @@ class TestCompileMetaSilentLosses:
         def _boom(*_a: Any, **_kw: Any):
             raise RuntimeError("citation verifier exploded")
 
-        monkeypatch.setattr("services.citation_verifier.extract_urls", _boom)
+        monkeypatch.setattr("poindexter.services.citation_verifier.extract_urls", _boom)
 
         with caplog.at_level(logging.WARNING):
             out = await content_compile_meta.run({
@@ -401,7 +401,7 @@ class TestQaAggregateAuditVisibility:
             raise RuntimeError("qa_gates counter write failed")
 
         monkeypatch.setattr(
-            "services.qa_gates_db_writer.record_chain_run", _boom,
+            "poindexter.services.qa_gates_db_writer.record_chain_run", _boom,
         )
 
         class _OkAudit:
@@ -454,7 +454,7 @@ class TestPersistTaskRevisionVisibility:
             raise RuntimeError("revisions table unavailable")
 
         monkeypatch.setattr(
-            "services.content_revisions_logger.log_revision", _boom,
+            "poindexter.services.content_revisions_logger.log_revision", _boom,
         )
 
         class _Db:

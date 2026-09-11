@@ -21,9 +21,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services import settings_defaults as _sd
-from services.settings_categories import resolve_category
-from services.settings_defaults import (
+from poindexter.services import settings_defaults as _sd
+from poindexter.services.settings_categories import resolve_category
+from poindexter.services.settings_defaults import (
     DEFAULTS,
     NICHE_OVERRIDE_COLUMNS,
     apply_operator_overrides,
@@ -83,7 +83,7 @@ def _all_overrides(oo):
 @pytest.mark.asyncio
 async def test_apply_is_noop_when_overlay_absent(monkeypatch):
     """OSS install: importing the private overlay fails -> no DB writes."""
-    monkeypatch.setitem(sys.modules, "services.operator_overrides", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.operator_overrides", None)
     pool, conn = _mock_pool(fetchval_side_effect=lambda *a, **k: None)
 
     applied = await apply_operator_overrides(pool)
@@ -102,7 +102,7 @@ async def test_apply_compares_against_oss_default_and_counts_changes():
     """Overlay present: each setting issues a conditional UPSERT keyed on the
     OSS default, each niche a conditional UPDATE, and only rows that actually
     changed are counted."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
     overrides = _all_overrides(oo)
     niche_entries = oo.OPERATOR_NICHE_OVERRIDES
 
@@ -143,7 +143,7 @@ async def test_niche_overrides_issue_conditional_updates():
     """Each niche override UPDATEs only the row whose slug matches AND whose
     writer_prompt_override still equals the OSS-seeded default — a hand-tuned
     prompt (or an already-restored row) never gets clobbered."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
     entries = oo.OPERATOR_NICHE_OVERRIDES
     assert entries, "operator overlay should carry branded niche overrides"
 
@@ -173,7 +173,7 @@ async def test_niche_overrides_issue_conditional_updates():
 def test_niche_override_set_uses_allowlisted_columns_only():
     """The public machinery interpolates SET column names into SQL, so entries
     may only use the allowlisted columns."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
 
     for entry in oo.OPERATOR_NICHE_OVERRIDES:
         unknown = set(entry["set"]) - set(NICHE_OVERRIDE_COLUMNS)
@@ -189,7 +189,7 @@ def test_niche_override_expect_matches_baseline_seed():
     OSS-seeded prompt, so each entry's expect text must equal what
     ``0000_baseline.seeds.sql`` actually seeds for that slug — otherwise the
     restore silently no-ops on a fresh operator install."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
     seeds = _baseline_niche_map()
 
     for entry in oo.OPERATOR_NICHE_OVERRIDES:
@@ -209,7 +209,7 @@ def test_niche_override_expect_matches_baseline_seed():
 def test_niche_override_set_differs_from_expect():
     """A niche override that sets the same prompt it expects is dead weight
     (and a sign the genericised seed leaked back to the branded text)."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
 
     for entry in oo.OPERATOR_NICHE_OVERRIDES:
         new_prompt = entry["set"].get("writer_prompt_override")
@@ -223,7 +223,7 @@ def test_niche_override_set_differs_from_expect():
 def test_every_override_key_has_a_public_oss_default():
     """The overlay skips a key whose OSS default it can't see, so every override
     key must exist in DEFAULTS (else the operator silently loses that value)."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
 
     missing = [k for k in _all_overrides(oo) if k not in DEFAULTS]
     assert not missing, (
@@ -236,7 +236,7 @@ def test_every_override_key_has_a_public_oss_default():
 def test_overrides_differ_from_oss_default():
     """An overlay entry only makes sense when it differs from the public OSS
     default — an equal value is dead weight (and a sign the seed drifted)."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
 
     redundant = {k: v for k, v in _all_overrides(oo).items() if v == DEFAULTS.get(k)}
     assert not redundant, (
@@ -251,7 +251,7 @@ def test_overlaid_keys_seed_matches_defaults():
     ``DEFAULTS[key]`` — otherwise the overlay silently no-ops on a fresh operator
     install and the operator loses that value. Guards hand-transcribed seeds like
     the multi-line voice prompt against DEFAULTS/baseline drift."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
     seeds = _baseline_seed_map()
     drift = {
         key: {"baseline": seeds[key], "defaults": DEFAULTS.get(key)}
@@ -273,7 +273,7 @@ async def test_apply_does_not_seed_remediation_rules():
     zero rules — precisely so rules stay opt-in runtime state.) So the overlay
     carries no rule set and ``apply_operator_overrides`` issues zero
     ``remediation_rules`` writes."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
     assert not hasattr(oo, "OPERATOR_REMEDIATION_RULES"), (
         "operator overlay must not hardcode firefighter rules — they are runtime "
         "CRUD state in remediation_rules, deletable without boot-time resurrection"
@@ -305,7 +305,7 @@ def test_remediation_rules_seeded_by_neither_baseline_nor_overlay():
         "0000_baseline.seeds.sql seeds remediation_rules, but firefighter rules "
         "are runtime CRUD state — the baseline must not seed them."
     )
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
     assert not hasattr(oo, "OPERATOR_REMEDIATION_RULES"), (
         "the operator overlay must not carry a hardcoded firefighter rule set — "
         "rules live only in the remediation_rules table, managed via CRUD."
@@ -314,7 +314,7 @@ def test_remediation_rules_seeded_by_neither_baseline_nor_overlay():
 
 # --- seed_operator_subreddit_profiles: fresh-install bootstrap of the
 #     operator's community-draft targets (seed-if-EMPTY) -----------------------
-from services.settings_defaults import seed_operator_subreddit_profiles  # noqa: E402
+from poindexter.services.settings_defaults import seed_operator_subreddit_profiles  # noqa: E402
 
 
 class _SeedPool:
@@ -352,7 +352,7 @@ async def test_seed_subreddit_profiles_noop_for_none_pool():
 @pytest.mark.asyncio
 async def test_seed_subreddit_profiles_noop_when_overlay_absent(monkeypatch):
     """OSS install: the private overlay is stripped -> nothing seeded."""
-    monkeypatch.setitem(sys.modules, "services.operator_overrides", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.operator_overrides", None)
     pool = _SeedPool(existing_count=0)
     assert await seed_operator_subreddit_profiles(pool) == 0
     assert pool.inserted == []
@@ -362,7 +362,7 @@ async def test_seed_subreddit_profiles_noop_when_overlay_absent(monkeypatch):
 async def test_seed_subreddit_profiles_seeds_when_table_empty():
     """Fresh install / rebuild: the empty table is bootstrapped with every
     overlay profile."""
-    oo = pytest.importorskip("services.operator_overrides")
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
     profiles = getattr(oo, "OPERATOR_SUBREDDIT_PROFILES", ())
     assert profiles, "operator overlay should carry the operator's subreddit profiles"
 
@@ -381,7 +381,7 @@ async def test_seed_subreddit_profiles_skips_when_table_nonempty():
     profile removed via ``community profiles remove`` can't resurrect on boot —
     the same hazard the remediation_rules note guards against. Seed-if-EMPTY,
     not seed-if-absent-per-row."""
-    pytest.importorskip("services.operator_overrides")
+    pytest.importorskip("poindexter.services.operator_overrides")
     pool = _SeedPool(existing_count=3)
     assert await seed_operator_subreddit_profiles(pool) == 0
     assert pool.inserted == []
@@ -390,8 +390,8 @@ async def test_seed_subreddit_profiles_skips_when_table_nonempty():
 def test_operator_subreddit_profiles_have_valid_shape():
     """Each overlay profile dict must construct a SubredditProfile (valid keys)
     and carry sane enum values — the data ships in code, so pin it."""
-    oo = pytest.importorskip("services.operator_overrides")
-    from services.community_drafts import SubredditProfile
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
+    from poindexter.services.community_drafts import SubredditProfile
 
     profiles = getattr(oo, "OPERATOR_SUBREDDIT_PROFILES", ())
     assert profiles, "overlay should carry subreddit profiles"

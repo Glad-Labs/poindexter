@@ -69,7 +69,7 @@ def _repo_prompt_catalog() -> dict[str, dict[str, str]]:
     ``skills/*/*/SKILL.md`` frontmatter (plus any legacy YAML, of which the
     repo ships none), so its ``prompts`` dict IS the authoritative inventory.
     """
-    from services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
 
     pm = get_prompt_manager()
     catalog: dict[str, dict[str, str]] = {}

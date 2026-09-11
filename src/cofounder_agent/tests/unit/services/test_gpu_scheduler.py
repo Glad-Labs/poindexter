@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUScheduler
+from poindexter.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUScheduler
 
 # Network isolation for gpu.lock("image_gen"/"video") (which delegates to the
 # real unload_loaded_ollama_models + confirm poll) is provided globally by
@@ -84,7 +84,7 @@ class TestGPUScheduler:
         freezes the desktop (lever 3, 2026-06-21)."""
         with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
             with patch(
-                "services.gpu_scheduler.unload_loaded_ollama_models",
+                "poindexter.services.gpu_scheduler.unload_loaded_ollama_models",
                 new=AsyncMock(return_value=["gemma-4-31B-it-qat:latest"]),
             ) as mock_unload:
                 async with self.gpu.lock("image_gen"):
@@ -103,7 +103,7 @@ class TestGPUScheduler:
         It routes through the same confirmed unloader as the image_gen owner."""
         with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
             with patch(
-                "services.gpu_scheduler.unload_loaded_ollama_models",
+                "poindexter.services.gpu_scheduler.unload_loaded_ollama_models",
                 new=AsyncMock(return_value=["gemma-4-31B-it-qat:latest"]),
             ) as mock_unload:
                 async with self.gpu.lock("video"):
@@ -117,7 +117,7 @@ class TestGPUScheduler:
         """Acquiring for Ollama must NOT unload models — it IS the Ollama owner."""
         with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
             with patch(
-                "services.gpu_scheduler.unload_loaded_ollama_models",
+                "poindexter.services.gpu_scheduler.unload_loaded_ollama_models",
                 new=AsyncMock(),
             ) as mock_unload:
                 async with self.gpu.lock("ollama"):
@@ -129,7 +129,7 @@ class TestGPUScheduler:
         """If the delegated unload raises, the image_gen lock still acquires and
         releases — eviction is best-effort and must never wedge the lock."""
         with patch(
-            "services.gpu_scheduler.unload_loaded_ollama_models",
+            "poindexter.services.gpu_scheduler.unload_loaded_ollama_models",
             new=AsyncMock(side_effect=Exception("ollama unreachable")),
         ):
             async with self.gpu.lock("image_gen"):
@@ -238,7 +238,7 @@ class TestGPUSchedulerSingleton:
     """Module-level singleton."""
 
     def test_singleton_exists(self):
-        from services.gpu_scheduler import gpu
+        from poindexter.services.gpu_scheduler import gpu
         assert isinstance(gpu, GPUScheduler)
 
 
@@ -284,7 +284,7 @@ class TestGpuMetricsFromPrometheus:
     async def test_utilization_parsed_from_prometheus_instant_vector(self):
         from unittest.mock import patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         client = self._mock_client(value="75")
@@ -304,7 +304,7 @@ class TestGpuMetricsFromPrometheus:
     async def test_power_draw_parsed_from_prometheus(self):
         from unittest.mock import patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         client = self._mock_client(value="284.5")
@@ -324,7 +324,7 @@ class TestGpuMetricsFromPrometheus:
         """No recent scrape (empty vector) → None, NOT a paged finding."""
         from unittest.mock import AsyncMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._emit_exporter_finding = AsyncMock()
@@ -338,7 +338,7 @@ class TestGpuMetricsFromPrometheus:
     async def test_non_200_emits_finding_and_returns_none(self):
         from unittest.mock import AsyncMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._emit_exporter_finding = AsyncMock()
@@ -352,7 +352,7 @@ class TestGpuMetricsFromPrometheus:
     async def test_connection_error_emits_finding_and_returns_none(self):
         from unittest.mock import AsyncMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._emit_exporter_finding = AsyncMock()
@@ -373,7 +373,7 @@ class TestWaitForGamingClear:
     async def test_idle_gpu_proceeds_immediately(self):
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=10.0)  # below threshold
@@ -381,7 +381,7 @@ class TestWaitForGamingClear:
         mock_sc = MagicMock()
         mock_sc.get_int.side_effect = lambda k, d: d
         mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)  # use defaults
-        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
         # Did not enter gaming-detected state
         assert scheduler._gaming_detected is False
@@ -392,7 +392,7 @@ class TestWaitForGamingClear:
     async def test_none_utilization_proceeds(self):
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=None)
@@ -400,7 +400,7 @@ class TestWaitForGamingClear:
         mock_sc = MagicMock()
         mock_sc.get_int.side_effect = lambda k, d: d
         mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)
-        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
         # No exception, no gaming flag set
         assert scheduler._gaming_detected is False
@@ -410,7 +410,7 @@ class TestWaitForGamingClear:
         """First check is high, second is low — was just a spike, proceed."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         # First check: 90% (high), second check: 5% (idle)
@@ -419,7 +419,7 @@ class TestWaitForGamingClear:
         mock_sc = MagicMock()
         mock_sc.get_int.side_effect = lambda k, d: d
         mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)
-        with patch("services.gpu_scheduler._sc", return_value=mock_sc), \
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=mock_sc), \
              patch("asyncio.sleep", new=AsyncMock()):
             await scheduler._wait_for_gaming_clear()
         # Was just a spike — gaming not flagged
@@ -431,7 +431,7 @@ class TestWaitForGamingClear:
         import time
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._gaming_detected = True
@@ -441,7 +441,7 @@ class TestWaitForGamingClear:
         mock_sc = MagicMock()
         mock_sc.get_int.side_effect = lambda k, d: d
         mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)
-        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
 
         assert scheduler._gaming_detected is False
@@ -458,7 +458,7 @@ class TestWaitForGamingClear:
         """
         from unittest.mock import AsyncMock
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._current_owner = "ollama"  # simulate lock held
@@ -481,7 +481,7 @@ class TestWaitForGamingClear:
         is not mislabelled 'gaming'."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         # Would look exactly like "gaming" to the old code:
@@ -489,7 +489,7 @@ class TestWaitForGamingClear:
 
         mock_sc = MagicMock()
         mock_sc.get_bool.return_value = False  # external-workload wait disabled (default)
-        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
 
         # Gate fired — utilization never queried, no phantom pause
@@ -511,7 +511,7 @@ class TestUnloadWan:
     async def test_hard_unload_posts_to_resolved_url(self):
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         resp = MagicMock(status_code=200, text='{"status":"nothing_to_reclaim"}')
@@ -519,7 +519,7 @@ class TestUnloadWan:
         client.post = AsyncMock(return_value=resp)
         with patch.object(scheduler, "_get_http_client", return_value=client), \
              patch(
-                 "services.video_providers.wan2_1._resolve_server_url",
+                 "poindexter.services.video_providers.wan2_1._resolve_server_url",
                  return_value="http://wan-server:9840/",
              ):
             await scheduler._unload_wan(hard=True)
@@ -535,7 +535,7 @@ class TestUnloadWan:
         # uvicorn flushes the response) — the lever must never raise.
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         client = MagicMock()
@@ -567,13 +567,13 @@ class TestUnloadComfyui:
     async def test_frees_when_queue_empty(self):
         from unittest.mock import patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         client = self._client({"queue_running": [], "queue_pending": []})
         with patch.object(scheduler, "_get_http_client", return_value=client), \
              patch(
-                 "services.video_providers.comfyui._resolve_server_url",
+                 "poindexter.services.video_providers.comfyui._resolve_server_url",
                  return_value="http://comfyui:8188/",
              ):
             await scheduler._unload_comfyui(hard=True)
@@ -587,13 +587,13 @@ class TestUnloadComfyui:
     async def test_declines_while_render_in_flight(self):
         from unittest.mock import patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         client = self._client({"queue_running": [["p1"]], "queue_pending": []})
         with patch.object(scheduler, "_get_http_client", return_value=client), \
              patch(
-                 "services.video_providers.comfyui._resolve_server_url",
+                 "poindexter.services.video_providers.comfyui._resolve_server_url",
                  return_value="http://comfyui:8188",
              ):
             await scheduler._unload_comfyui()
@@ -606,7 +606,7 @@ class TestUnloadComfyui:
         # see — a queue we can't read must decline, not proceed.
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         client = MagicMock()
@@ -616,7 +616,7 @@ class TestUnloadComfyui:
         client.post = AsyncMock()
         with patch.object(scheduler, "_get_http_client", return_value=client), \
              patch(
-                 "services.video_providers.comfyui._resolve_server_url",
+                 "poindexter.services.video_providers.comfyui._resolve_server_url",
                  return_value="http://comfyui:8188",
              ):
             await scheduler._unload_comfyui()
@@ -629,7 +629,7 @@ class TestUnloadComfyui:
         # installs — the lever must never raise.
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         client = MagicMock()
@@ -659,7 +659,7 @@ class TestReclaimRenderVram:
 
     @pytest.mark.asyncio
     async def test_full_ladder_runs_every_rung_hard(self):
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         _mock_all_rungs(scheduler)
@@ -677,7 +677,7 @@ class TestReclaimRenderVram:
     async def test_include_ollama_false_skips_only_the_ollama_rung(self):
         # The LLM-side variant: clearing room FOR an Ollama load must not
         # evict Ollama's own models.
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         _mock_all_rungs(scheduler)
@@ -695,7 +695,7 @@ class TestReclaimRenderVram:
     async def test_exception_in_early_lever_does_not_skip_later_ones(self):
         from unittest.mock import AsyncMock
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         _mock_all_rungs(scheduler)
@@ -712,7 +712,7 @@ class TestReclaimRenderVram:
 class TestPrepareMode:
     @pytest.mark.asyncio
     async def test_image_gen_mode_unloads_ollama(self):
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         _mock_all_rungs(scheduler)
@@ -729,7 +729,7 @@ class TestPrepareMode:
         # 2026-08-25: the old image-gen-only variant let an ~18 GB cold-load
         # OOM beside an idle ComfyUI — "room for Ollama" means every media
         # rung, but never Ollama's own models.
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         _mock_all_rungs(scheduler)
@@ -744,7 +744,7 @@ class TestPrepareMode:
 
     @pytest.mark.asyncio
     async def test_idle_mode_unloads_everything(self):
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         _mock_all_rungs(scheduler)
@@ -756,7 +756,7 @@ class TestPrepareMode:
 
     @pytest.mark.asyncio
     async def test_unknown_mode_no_op(self):
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         _mock_all_rungs(scheduler)
@@ -776,7 +776,7 @@ class TestUnloadImageGen:
     async def test_post_to_unload_endpoint(self):
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         mock_resp = MagicMock()
@@ -788,7 +788,7 @@ class TestUnloadImageGen:
         mock_client.post = AsyncMock(return_value=mock_resp)
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
+             patch("poindexter.services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
             await scheduler._unload_image_gen()
 
         mock_client.post.assert_awaited_once()
@@ -799,7 +799,7 @@ class TestUnloadImageGen:
     async def test_server_unavailable_silently_passes(self):
         from unittest.mock import AsyncMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         mock_client = AsyncMock()
@@ -808,7 +808,7 @@ class TestUnloadImageGen:
         mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
+             patch("poindexter.services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
             # Should not raise
             await scheduler._unload_image_gen()
 
@@ -820,7 +820,7 @@ class TestUnloadImageGen:
         contract only.)"""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         mock_resp = MagicMock()
@@ -831,7 +831,7 @@ class TestUnloadImageGen:
         mock_client.post = AsyncMock(return_value=mock_resp)
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
+             patch("poindexter.services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
             await scheduler._unload_image_gen()
 
         _, kwargs = mock_client.post.await_args
@@ -844,7 +844,7 @@ class TestUnloadImageGen:
         context (2026-07-12 desktop-lockup fix, PR 2)."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         mock_resp = MagicMock()
@@ -855,7 +855,7 @@ class TestUnloadImageGen:
         mock_client.post = AsyncMock(return_value=mock_resp)
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
+             patch("poindexter.services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
             await scheduler._unload_image_gen(hard=True)
 
         mock_client.post.assert_awaited_once()
@@ -871,12 +871,12 @@ class TestUnloadImageGen:
 
 class TestPropertiesAndConfig:
     def test_is_busy_property(self):
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
         scheduler = GPUScheduler()
         assert scheduler.is_busy is False
 
     def test_is_gaming_property(self):
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
         scheduler = GPUScheduler()
         assert scheduler.is_gaming is False
         scheduler._gaming_detected = True
@@ -885,12 +885,12 @@ class TestPropertiesAndConfig:
     def test_status_includes_config(self):
         from unittest.mock import MagicMock, patch
 
-        from services.gpu_scheduler import GPUScheduler
+        from poindexter.services.gpu_scheduler import GPUScheduler
         scheduler = GPUScheduler()
         mock_sc = MagicMock()
         mock_sc.get_int.side_effect = lambda k, d: d
         mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)
-        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=mock_sc):
             status = scheduler.status
         assert "config" in status
         assert "threshold_percent" in status["config"]
@@ -901,9 +901,9 @@ class TestPropertiesAndConfig:
     def test_cfg_int_defaults_when_site_config_missing(self):
         from unittest.mock import patch
 
-        from services.gpu_scheduler import _cfg_int
+        from poindexter.services.gpu_scheduler import _cfg_int
 
-        with patch.dict("sys.modules", {"services.site_config": None}):
+        with patch.dict("sys.modules", {"poindexter.services.site_config": None}):
             result = _cfg_int("any_key", 42)
         # Falls back to default since import fails
         assert result == 42
@@ -911,16 +911,16 @@ class TestPropertiesAndConfig:
     def test_cfg_float_defaults_when_site_config_missing(self):
         from unittest.mock import patch
 
-        from services.gpu_scheduler import _cfg_float
+        from poindexter.services.gpu_scheduler import _cfg_float
 
-        with patch.dict("sys.modules", {"services.site_config": None}):
+        with patch.dict("sys.modules", {"poindexter.services.site_config": None}):
             result = _cfg_float("any_key", 3.14)
         assert result == 3.14
 
     def test_cfg_int_uses_site_config_when_available(self):
         from unittest.mock import MagicMock, patch
 
-        from services import gpu_scheduler
+        from poindexter.services import gpu_scheduler
 
         fake_sc = MagicMock()
         fake_sc.get_int = MagicMock(return_value=99)
@@ -940,7 +940,7 @@ class TestPropertiesAndConfig:
     def test_cfg_int_emits_finding_when_site_config_raises(self):
         from unittest.mock import MagicMock, patch
 
-        from services import gpu_scheduler
+        from poindexter.services import gpu_scheduler
 
         fake_sc = MagicMock()
         fake_sc.get_int = MagicMock(side_effect=RuntimeError("db pool exhausted"))
@@ -963,7 +963,7 @@ class TestPropertiesAndConfig:
     def test_cfg_float_emits_finding_when_site_config_raises(self):
         from unittest.mock import MagicMock, patch
 
-        from services import gpu_scheduler
+        from poindexter.services import gpu_scheduler
 
         fake_sc = MagicMock()
         fake_sc.get_float = MagicMock(side_effect=RuntimeError("connection refused"))
@@ -986,7 +986,7 @@ class TestPropertiesAndConfig:
         """
         from unittest.mock import MagicMock, patch
 
-        from services import gpu_scheduler
+        from poindexter.services import gpu_scheduler
 
         fake_sc = MagicMock()
         fake_sc.get_int = MagicMock(side_effect=RuntimeError("simulated"))
@@ -1238,14 +1238,14 @@ class TestGpuLockAcquireTimeout:
 
     @pytest.mark.asyncio
     async def test_acquire_times_out_when_in_process_lock_held(self):
-        from services.gpu_scheduler import GpuLockTimeoutError
+        from poindexter.services.gpu_scheduler import GpuLockTimeoutError
 
         gpu = GPUScheduler()
         gpu._emit_lock_timeout_finding = MagicMock()
         await gpu._lock.acquire()  # simulate another holder
         try:
             with patch(
-                "services.gpu_scheduler._cfg_int",
+                "poindexter.services.gpu_scheduler._cfg_int",
                 _cfg_int_map(gpu_lock_acquire_timeout_seconds=1),
             ):
                 with pytest.raises(GpuLockTimeoutError):
@@ -1261,7 +1261,7 @@ class TestGpuLockAcquireTimeout:
         await gpu._lock.acquire()
         try:
             with patch(
-                "services.gpu_scheduler._cfg_int",
+                "poindexter.services.gpu_scheduler._cfg_int",
                 _cfg_int_map(gpu_lock_acquire_timeout_seconds=0),
             ):
                 async def _try_lock():
@@ -1283,7 +1283,7 @@ class TestGpuLockAcquireTimeout:
         """If the pg advisory acquire times out AFTER the in-process lock was
         taken, the in-process lock must be released before raising — else the
         whole process wedges on the next acquire."""
-        from services.gpu_scheduler import GpuLockTimeoutError
+        from poindexter.services.gpu_scheduler import GpuLockTimeoutError
 
         gpu = GPUScheduler()
         gpu._emit_lock_timeout_finding = MagicMock()
@@ -1299,7 +1299,7 @@ class TestGpuLockAcquireTimeout:
     @pytest.mark.asyncio
     @pytest.mark.gpu_lock_real_db
     async def test_pg_acquire_timeout_terminates_conn_and_raises(self):
-        from services.gpu_scheduler import GpuLockTimeoutError
+        from poindexter.services.gpu_scheduler import GpuLockTimeoutError
 
         async def _hang(*args, **kwargs):
             await asyncio.sleep(30)
@@ -1331,7 +1331,7 @@ class TestGpuLockAcquireTimeout:
         gpu = GPUScheduler()
         gpu._pg_lock_conn = mock_conn
         with patch(
-            "services.gpu_scheduler._cfg_int",
+            "poindexter.services.gpu_scheduler._cfg_int",
             _cfg_int_map(gpu_lock_release_timeout_seconds=1),
         ):
             await gpu._release_pg_advisory_lock()

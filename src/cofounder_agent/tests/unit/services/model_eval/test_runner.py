@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from services.model_eval.harness import InMemoryEvalHarness
-from services.model_eval.runner import run_slot_eval
-from services.model_eval.types import GoldenSet, MetricResult
+from poindexter.services.model_eval.harness import InMemoryEvalHarness
+from poindexter.services.model_eval.runner import run_slot_eval
+from poindexter.services.model_eval.types import GoldenSet, MetricResult
 
 _SLOT = "rag_rerank_model"
 

@@ -46,16 +46,16 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from services import chat_conversation_store as store
-from services.chat_prompts import CHAT_SYSTEM_KEY, resolve_chat_prompt
-from services.chat_tools import (
+from poindexter.services import chat_conversation_store as store
+from poindexter.services.chat_prompts import CHAT_SYSTEM_KEY, resolve_chat_prompt
+from poindexter.services.chat_tools import (
     ChatToolContext,
     ChatToolError,
     get_tool,
     to_openai_tools,
     tool_names_csv,
 )
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -148,7 +148,7 @@ def _content_of(message_row: dict[str, Any]) -> str:
 
 
 async def _resolve_provider_supports_tools(pool: Any, tier: str) -> tuple[Any, bool]:
-    from services.llm_providers.dispatcher import get_provider
+    from poindexter.services.llm_providers.dispatcher import get_provider
 
     provider = await get_provider(pool, tier)
     return provider, bool(getattr(provider, "supports_tools", False))
@@ -427,7 +427,7 @@ async def run_turn(
                 # executed. The model gets an honest tool result so the turn
                 # wraps up gracefully; the card carries the action forward.
                 if spec.tier == "write":
-                    from services.chat_approvals import (
+                    from poindexter.services.chat_approvals import (
                         approval_policy,
                         create_approval,
                     )
@@ -650,7 +650,7 @@ async def _dispatch(
     pool: Any, messages: list[dict[str, Any]], model: str,
     openai_tools: list[dict[str, Any]],
 ) -> Any:
-    from services.llm_providers.dispatcher import dispatch_complete
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
     return await dispatch_complete(
         pool,
@@ -687,8 +687,8 @@ async def _audit_turn_completed(
         if p.get("type") == "card"
         and (p.get("card") or {}).get("kind") == "approval"
     )
-    from services.audit_event_schemas import validate_event_details
-    from services.audit_log import AuditLogger
+    from poindexter.services.audit_event_schemas import validate_event_details
+    from poindexter.services.audit_log import AuditLogger
 
     details = validate_event_details("chat_turn_completed", {
         "schema_version": 1,
@@ -722,8 +722,8 @@ async def _audit_tool_call(
     error: str | None,
 ) -> None:
     try:
-        from services.audit_event_schemas import validate_event_details
-        from services.audit_log import AuditLogger
+        from poindexter.services.audit_event_schemas import validate_event_details
+        from poindexter.services.audit_log import AuditLogger
 
         details = validate_event_details("chat_tool_call", {
             "schema_version": 1,

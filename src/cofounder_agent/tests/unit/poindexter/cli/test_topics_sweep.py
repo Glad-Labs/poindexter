@@ -156,8 +156,8 @@ class TestSweepSuccess:
         svc_cls.return_value.show_batch = AsyncMock(return_value=view)
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
         ):
             result = runner.invoke(topics_group, ["sweep", "--niche", "glad-labs"])
 
@@ -190,8 +190,8 @@ class TestSweepShortCircuits:
         svc_cls.return_value.run_sweep = AsyncMock(return_value=None)
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
         ):
             result = runner.invoke(topics_group, ["sweep", "--niche", n.slug])
 
@@ -211,8 +211,8 @@ class TestSweepShortCircuits:
         svc_cls.return_value.run_sweep = AsyncMock(return_value=None)
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
         ):
             result = runner.invoke(topics_group, ["sweep", "--niche", n.slug])
 
@@ -234,8 +234,8 @@ class TestSweepErrors:
         svc_cls = MagicMock()
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
         ):
             result = runner.invoke(topics_group, ["sweep", "--niche", "no-such-niche"])
 

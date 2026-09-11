@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.jobs.expire_stale_approvals import ExpireStaleApprovalsJob
+from poindexter.services.jobs.expire_stale_approvals import ExpireStaleApprovalsJob
 
 
 def _make_mock_pool(

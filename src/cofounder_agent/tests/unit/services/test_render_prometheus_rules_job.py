@@ -15,8 +15,8 @@ import httpx
 import pytest
 
 from plugins.job import Job, JobResult
-from services.jobs import render_prometheus_rules as job_module
-from services.jobs.render_prometheus_rules import (
+from poindexter.services.jobs import render_prometheus_rules as job_module
+from poindexter.services.jobs.render_prometheus_rules import (
     RenderPrometheusRulesJob,
     _reload_prometheus,
 )
@@ -54,10 +54,10 @@ class TestRun:
             return (True, "prometheus reloaded")
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", fake_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", fake_reload
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -91,13 +91,13 @@ class TestRun:
             return True
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._prometheus_reload_healthy", healthy
+            "poindexter.services.jobs.render_prometheus_rules._prometheus_reload_healthy", healthy
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -130,13 +130,13 @@ class TestRun:
             return False  # serving config is stale
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", recovering_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", recovering_reload
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._prometheus_reload_healthy",
+            "poindexter.services.jobs.render_prometheus_rules._prometheus_reload_healthy",
             last_reload_failed,
         )
 
@@ -167,13 +167,13 @@ class TestRun:
             return False
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", still_failing_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", still_failing_reload
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._prometheus_reload_healthy",
+            "poindexter.services.jobs.render_prometheus_rules._prometheus_reload_healthy",
             last_reload_failed,
         )
 
@@ -202,13 +202,13 @@ class TestRun:
             return None
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._prometheus_reload_healthy", unknown
+            "poindexter.services.jobs.render_prometheus_rules._prometheus_reload_healthy", unknown
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -234,10 +234,10 @@ class TestRun:
             raise AssertionError("health check should not run when reload disabled")
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._prometheus_reload_healthy", boom_health
+            "poindexter.services.jobs.render_prometheus_rules._prometheus_reload_healthy", boom_health
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -258,10 +258,10 @@ class TestRun:
             raise AssertionError("reload should be skipped")
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -279,7 +279,7 @@ class TestRun:
             raise RuntimeError("db gone")
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", broken_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", broken_build
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -305,10 +305,10 @@ class TestRun:
             return (False, "reload returned 403")
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", failed_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", failed_reload
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -329,10 +329,10 @@ class TestRun:
             return (True, "ok")
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", fake_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", fake_reload
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -359,10 +359,10 @@ class TestRun:
             return (True, "prometheus reloaded")
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus",
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus",
             capture_reload,
         )
 
@@ -396,10 +396,10 @@ class TestRun:
             return original_write_text(self, *args, **kwargs)
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
         )
         monkeypatch.setattr(type(out), "write_text", explode_write_text)
 
@@ -436,10 +436,10 @@ class TestRun:
             return original_read_text(self, *args, **kwargs)
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", fake_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", fake_reload
         )
         monkeypatch.setattr(type(out), "read_text", explode_read_text)
 
@@ -469,10 +469,10 @@ class TestRun:
             return (True, "prometheus reloaded")
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules._reload_prometheus", fake_reload
+            "poindexter.services.jobs.render_prometheus_rules._reload_prometheus", fake_reload
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -495,7 +495,7 @@ class TestRun:
             return rendered
 
         monkeypatch.setattr(
-            "services.jobs.render_prometheus_rules.build_current", fake_build
+            "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
         )
 
         result = await RenderPrometheusRulesJob().run(

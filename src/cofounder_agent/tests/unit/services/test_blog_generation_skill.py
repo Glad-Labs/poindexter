@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.prompt_manager import PromptCategory, UnifiedPromptManager
+from poindexter.services.prompt_manager import PromptCategory, UnifiedPromptManager
 
 _BLOG_KEYS = (
     "blog_generation.initial_draft",

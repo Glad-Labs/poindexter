@@ -18,9 +18,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from services.jobs.reap_stale_topic_batches import ReapStaleTopicBatchesJob
-from services.niche_service import NicheService
-from services.site_config import SiteConfig
+from poindexter.services.jobs.reap_stale_topic_batches import ReapStaleTopicBatchesJob
+from poindexter.services.niche_service import NicheService
+from poindexter.services.site_config import SiteConfig
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -73,7 +73,7 @@ def _capture_findings(monkeypatch):
         calls.append(kwargs)
 
     monkeypatch.setattr(
-        "services.jobs.reap_stale_topic_batches.emit_finding", _capture,
+        "poindexter.services.jobs.reap_stale_topic_batches.emit_finding", _capture,
     )
     return calls
 
@@ -88,7 +88,7 @@ def _queue_open(monkeypatch):
     async def _open(pool, **kwargs):
         return (False, 0, 100)
 
-    monkeypatch.setattr("services.pipeline_throttle.is_queue_full", _open)
+    monkeypatch.setattr("poindexter.services.pipeline_throttle.is_queue_full", _open)
 
 
 @pytest.mark.unit
@@ -215,7 +215,7 @@ async def test_backpressure_parked_batch_is_info_not_warn(
     async def _full(pool, **kwargs):
         return (True, 3, 3)
 
-    monkeypatch.setattr("services.pipeline_throttle.is_queue_full", _full)
+    monkeypatch.setattr("poindexter.services.pipeline_throttle.is_queue_full", _full)
     nsvc = NicheService(db_pool)
     n = await nsvc.create(slug="reaper-parked", name="Parked", batch_size=5)
     batch_id = await _seed_batch(db_pool, n.id, age_hours=48, expires_in_hours=120)

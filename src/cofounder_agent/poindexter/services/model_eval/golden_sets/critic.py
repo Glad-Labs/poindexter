@@ -31,7 +31,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from services.model_eval.types import GoldenCase, GoldenSet
+from poindexter.services.model_eval.types import GoldenCase, GoldenSet
 
 _GOLDEN_NAME = "model_eval_critic"
 # A post must be long enough that a 55% cut is unambiguously mid-article.

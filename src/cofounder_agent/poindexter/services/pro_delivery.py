@@ -1242,7 +1242,7 @@ async def cli_apply(
     opt-in, never implied.
     """
     if defaults is None or metadata is None:
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
         defaults = DEFAULTS if defaults is None else defaults
         metadata = METADATA if metadata is None else metadata

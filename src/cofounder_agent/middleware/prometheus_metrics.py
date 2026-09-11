@@ -38,7 +38,7 @@ from typing import Any
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from services.metrics_exporter import (
+from poindexter.services.metrics_exporter import (
     HTTP_REQUEST_DURATION_SECONDS,
     HTTP_REQUESTS_TOTAL,
     http_route_label,

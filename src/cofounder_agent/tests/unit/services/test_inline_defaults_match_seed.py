@@ -34,9 +34,9 @@ re-export path (`test_resolves_z_image_turbo_without_unknown_warning`).
 
 from __future__ import annotations
 
-from services import tts_service
-from services.image_providers._image_models import get_default_image_model
-from services.settings_defaults import DEFAULTS
+from poindexter.services import tts_service
+from poindexter.services.image_providers._image_models import get_default_image_model
+from poindexter.services.settings_defaults import DEFAULTS
 
 
 class _UnsetCfg:

@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from plugins.job import JobResult
-from services.integrations.tap_runner import RunSummary, TapResult
-from services.jobs.ingest_corsair_csv import IngestCorsairCsvJob
+from poindexter.services.integrations.tap_runner import RunSummary, TapResult
+from poindexter.services.jobs.ingest_corsair_csv import IngestCorsairCsvJob
 
 
 def test_job_metadata_declares_fast_cadence():
@@ -37,7 +37,7 @@ async def test_run_scopes_runner_to_corsair_only():
         total_failed=0,
     )
     with patch(
-        "services.integrations.tap_runner.run_all",
+        "poindexter.services.integrations.tap_runner.run_all",
         new=AsyncMock(return_value=summary),
     ) as run_all:
         res = await job.run(pool=object(), config={"_site_config": "SC"})
@@ -57,7 +57,7 @@ async def test_run_no_tap_configured_is_clean_noop():
     job = IngestCorsairCsvJob()
     summary = RunSummary(taps=[], total_records=0, total_failed=0)
     with patch(
-        "services.integrations.tap_runner.run_all",
+        "poindexter.services.integrations.tap_runner.run_all",
         new=AsyncMock(return_value=summary),
     ):
         res = await job.run(pool=object(), config={})
@@ -83,7 +83,7 @@ async def test_run_surfaces_tap_failure():
         total_failed=1,
     )
     with patch(
-        "services.integrations.tap_runner.run_all",
+        "poindexter.services.integrations.tap_runner.run_all",
         new=AsyncMock(return_value=summary),
     ):
         res = await job.run(pool=object(), config={})
@@ -97,7 +97,7 @@ async def test_run_swallows_runner_exception():
     that dies stops watching everything after it."""
     job = IngestCorsairCsvJob()
     with patch(
-        "services.integrations.tap_runner.run_all",
+        "poindexter.services.integrations.tap_runner.run_all",
         new=AsyncMock(side_effect=RuntimeError("boom")),
     ):
         res = await job.run(pool=object(), config={})

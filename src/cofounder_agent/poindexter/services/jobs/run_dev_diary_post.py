@@ -120,7 +120,7 @@ class RunDevDiaryPostJob:
             )
 
         # ---- 2. Gather context ----
-        from services.topic_sources.dev_diary_source import (
+        from poindexter.services.topic_sources.dev_diary_source import (
             DevDiarySource,
             SubstancePolicy,
         )
@@ -426,7 +426,7 @@ def _format_draft_landed_message(task_id: str, ctx: Any, gates: str) -> str:
 async def _notify_operator(message: str) -> None:
     """Best-effort Telegram/Discord ping via the standard dispatcher."""
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         await notify_operator(message, critical=False)
     except Exception as e:  # noqa: BLE001 — operator notify must never crash the job
         logger.warning("[dev-diary] no notification path available: %s", describe_exception(e))

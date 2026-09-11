@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.llm_text import (
+from poindexter.services.llm_text import (
     maybe_unwrap_json,
     ollama_chat_text,
     resolve_local_model,
@@ -283,7 +283,7 @@ class TestOllamaChatTextDispatcherPath:
         pool = MagicMock()
         sc = _StubSiteConfig()
         dispatch = AsyncMock(return_value=_fake_completion("hello from dispatcher"))
-        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
             result = await ollama_chat_text(
                 "what's the weather?",
                 site_config=sc,
@@ -302,7 +302,7 @@ class TestOllamaChatTextDispatcherPath:
         pool = MagicMock()
         sc = _StubSiteConfig()
         dispatch = AsyncMock(return_value=_fake_completion("answered"))
-        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
             await ollama_chat_text(
                 "tell me a joke",
                 system="you are a critic",
@@ -319,7 +319,7 @@ class TestOllamaChatTextDispatcherPath:
         pool = MagicMock()
         sc = _StubSiteConfig()
         dispatch = AsyncMock(return_value=_fake_completion("budget answer"))
-        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
             await ollama_chat_text(
                 "cheap query",
                 site_config=sc,
@@ -335,7 +335,7 @@ class TestOllamaChatTextDispatcherPath:
         pool = MagicMock()
         sc = _StubSiteConfig()
         dispatch = AsyncMock(return_value=_fake_completion("ok"))
-        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
             await ollama_chat_text("p", site_config=sc, pool=pool, think=False)
         assert dispatch.await_args.kwargs.get("think") is False
 
@@ -345,7 +345,7 @@ class TestOllamaChatTextDispatcherPath:
         pool = MagicMock()
         sc = _StubSiteConfig()
         dispatch = AsyncMock(return_value=_fake_completion("ok"))
-        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
             await ollama_chat_text("p", site_config=sc, pool=pool)
         assert "think" not in dispatch.await_args.kwargs
 
@@ -356,7 +356,7 @@ class TestOllamaChatTextDispatcherPath:
         pool = MagicMock()
         sc = _StubSiteConfig()
         dispatch = AsyncMock(return_value=_fake_completion("{}"))
-        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
             await ollama_chat_text(
                 "p", site_config=sc, pool=pool,
                 response_format={"type": "json_object"},
@@ -369,7 +369,7 @@ class TestOllamaChatTextDispatcherPath:
         pool = MagicMock()
         sc = _StubSiteConfig()
         dispatch = AsyncMock(return_value=_fake_completion("ok"))
-        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
             await ollama_chat_text("p", site_config=sc, pool=pool)
         assert "response_format" not in dispatch.await_args.kwargs
 
@@ -379,7 +379,7 @@ class TestOllamaChatTextDispatcherPath:
         sc = _StubSiteConfig()
         wrapped = '{"thought": "the actual prose"}'
         dispatch = AsyncMock(return_value=_fake_completion(wrapped))
-        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
             result = await ollama_chat_text("p", site_config=sc, pool=pool)
         assert result == "the actual prose"
 
@@ -390,7 +390,7 @@ class TestOllamaChatTextDispatcherPath:
         pool = MagicMock()
         sc = _StubSiteConfig()
         dispatch = AsyncMock(side_effect=RuntimeError("provider down"))
-        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
             with pytest.raises(RuntimeError, match="provider down"):
                 await ollama_chat_text("p", site_config=sc, pool=pool)
 
@@ -486,7 +486,7 @@ class TestOllamaChatTextHttpxFallback:
         dispatch = AsyncMock()
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
-            patch("services.llm_providers.dispatcher.dispatch_complete", dispatch),
+            patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch),
         ):
             await ollama_chat_text("hi", site_config=sc)
 

@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from services.qa_trend import _clamp, get_qa_pass_trend
+from poindexter.services.qa_trend import _clamp, get_qa_pass_trend
 
 # db_pool is loop_scope="session"; tests must share that loop.
 pytestmark = pytest.mark.asyncio(loop_scope="session")

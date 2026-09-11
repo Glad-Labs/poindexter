@@ -33,7 +33,7 @@ async def test_fresh_db_seeds_expected_row_count(test_pool) -> None:
     migration, which seeds ~149 keys. Running the seeder ON TOP should
     add ~218 more (= len(DEFAULTS)) minus any overlap with migrations.
     """
-    from services.settings_defaults import DEFAULTS, seed_all_defaults
+    from poindexter.services.settings_defaults import DEFAULTS, seed_all_defaults
 
     # Snapshot — what's in app_settings after migrations alone?
     async with test_pool.acquire() as conn:
@@ -78,7 +78,7 @@ async def test_fresh_db_seeds_expected_row_count(test_pool) -> None:
 
 async def test_idempotent_second_run_inserts_zero(test_pool) -> None:
     """Running the seeder twice in a row inserts nothing the second time."""
-    from services.settings_defaults import seed_all_defaults
+    from poindexter.services.settings_defaults import seed_all_defaults
 
     # First run (might insert anything left over from the previous test)
     await seed_all_defaults(test_pool)
@@ -91,7 +91,7 @@ async def test_idempotent_second_run_inserts_zero(test_pool) -> None:
 
 async def test_operator_tuned_value_survives_seed(test_pool) -> None:
     """Operator-customised values are NEVER overwritten."""
-    from services.settings_defaults import DEFAULTS, seed_all_defaults
+    from poindexter.services.settings_defaults import DEFAULTS, seed_all_defaults
 
     # Pick the first registry key that has a default value we can flip.
     target_key = next(iter(DEFAULTS))

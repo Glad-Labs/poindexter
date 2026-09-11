@@ -52,7 +52,7 @@ import logging
 from typing import Any
 
 from plugins.topic_source import DiscoveredTopic
-from services.topic_sources._filters import rewrite_as_blog_topic
+from poindexter.services.topic_sources._filters import rewrite_as_blog_topic
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +71,8 @@ class WebSearchSource:
 
         # Lazy import so test environments without the full web_research dep
         # chain can still import this module.
-        from services.site_config import SiteConfig
-        from services.web_research import WebResearcher
+        from poindexter.services.site_config import SiteConfig
+        from poindexter.services.web_research import WebResearcher
 
         results_per_query = int(config.get("results_per_query", 3) or 3)
         relevance_score = float(config.get("relevance_score", 2.0) or 2.0)
@@ -148,7 +148,7 @@ class WebSearchSource:
         if isinstance(categories, list) and categories:
             import random
 
-            from services.topic_sources._filters import CATEGORY_SEARCHES
+            from poindexter.services.topic_sources._filters import CATEGORY_SEARCHES
 
             plan: list[tuple[str, str]] = []
             for cat in categories:
@@ -163,6 +163,6 @@ class WebSearchSource:
 def _category_names() -> list[str]:
     """Category keys available to ``config.categories`` — used in the
     fail-loud remediation so the operator gets valid values, not a guess."""
-    from services.topic_sources._filters import CATEGORY_SEARCHES
+    from poindexter.services.topic_sources._filters import CATEGORY_SEARCHES
 
     return list(CATEGORY_SEARCHES)

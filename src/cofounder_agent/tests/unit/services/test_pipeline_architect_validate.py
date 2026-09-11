@@ -4,7 +4,7 @@
 from unittest.mock import patch
 
 from plugins.atom import AtomMeta
-from services import pipeline_architect
+from poindexter.services import pipeline_architect
 
 
 def _meta(name, *, requires=(), produces=()):
@@ -91,8 +91,8 @@ async def test_wrap_atom_observes_node_duration_seconds():
     """
     from unittest.mock import MagicMock, patch
 
-    import services.template_runner as _tr
-    from services.pipeline_architect import _wrap_atom
+    import poindexter.services.template_runner as _tr
+    from poindexter.services.pipeline_architect import _wrap_atom
 
     mock_histogram = MagicMock()
 
@@ -117,8 +117,8 @@ async def test_wrap_atom_observes_error_outcome():
     """Exceptions from the atom fn must emit outcome='error' to NODE_DURATION_SECONDS."""
     from unittest.mock import MagicMock, patch
 
-    import services.template_runner as _tr
-    from services.pipeline_architect import _wrap_atom
+    import poindexter.services.template_runner as _tr
+    from poindexter.services.pipeline_architect import _wrap_atom
 
     mock_histogram = MagicMock()
 
@@ -138,8 +138,8 @@ def test_real_registered_atoms_validate_with_defaults():
     """A spec of real registered atoms whose requires are seed/config/upstream
     satisfied must pass with default seed_keys — the new check must not break
     the architect's compose() path."""
-    from services.atom_registry import discover
-    from services.atom_registry import get_atom_meta as real_get
+    from poindexter.services.atom_registry import discover
+    from poindexter.services.atom_registry import get_atom_meta as real_get
 
     discover()  # idempotent
     gate = real_get("atoms.approval_gate")
@@ -240,8 +240,8 @@ def test_architect_prompt_references_only_live_atoms():
     """
     import re
 
-    from services import atom_registry
-    from services.prompt_manager import UnifiedPromptManager
+    from poindexter.services import atom_registry
+    from poindexter.services.prompt_manager import UnifiedPromptManager
 
     atom_registry.discover()  # idempotent
     live = atom_registry.list_atoms()
@@ -279,7 +279,7 @@ def test_resolve_system_prompt_renders_site_name_registry_up():
     copy with the real brand substituted and no placeholder or escaped brace
     left behind.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(
         initial_config={"site_name": "Glad Labs", "site_url": "https://gladlabs.io"}
@@ -301,13 +301,13 @@ def test_resolve_system_prompt_renders_site_name_registry_down():
     same fully-rendered shape — brand present, no literal ``{site_name}``, JSON
     braces collapsed — never the raw ``{{site_name}}`` / ``{{`` template.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(
         initial_config={"site_name": "Glad Labs", "site_url": "https://gladlabs.io"}
     )
     with patch(
-        "services.prompt_manager.get_prompt_manager",
+        "poindexter.services.prompt_manager.get_prompt_manager",
         side_effect=RuntimeError("registry down"),
     ):
         rendered = pipeline_architect._resolve_system_prompt(sc)

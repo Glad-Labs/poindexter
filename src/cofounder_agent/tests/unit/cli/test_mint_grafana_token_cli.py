@@ -169,7 +169,7 @@ class TestMintGrafanaHappyPath:
         ), patch(
             "plugins.secrets.get_secret", new=AsyncMock(side_effect=_get_secret),
         ), patch(
-            "services.auth.oauth_issuer.issue_token",
+            "poindexter.services.auth.oauth_issuer.issue_token",
             return_value=(
                 "fake.jwt.token",
                 _make_fake_claims(
@@ -221,7 +221,7 @@ class TestMintGrafanaHappyPath:
         ), patch(
             "plugins.secrets.get_secret", new=AsyncMock(side_effect=_get_secret),
         ), patch(
-            "services.auth.oauth_issuer.issue_token",
+            "poindexter.services.auth.oauth_issuer.issue_token",
             return_value=(
                 "rotated.jwt.token",
                 _make_fake_claims(
@@ -347,7 +347,7 @@ class TestMintGrafanaPersist:
             "plugins.secrets.set_secret",
             new=AsyncMock(side_effect=_capture_set_secret),
         ), patch(
-            "services.auth.oauth_issuer.issue_token",
+            "poindexter.services.auth.oauth_issuer.issue_token",
             return_value=(
                 "persist.jwt.token",
                 _make_fake_claims(
@@ -409,7 +409,7 @@ class TestMintGrafanaPersist:
         ), patch(
             "plugins.secrets.set_secret", new=set_secret_mock,
         ), patch(
-            "services.auth.oauth_issuer.issue_token",
+            "poindexter.services.auth.oauth_issuer.issue_token",
             return_value=(
                 "nopersist.jwt.token",
                 _make_fake_claims(

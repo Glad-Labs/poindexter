@@ -74,8 +74,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from services.gpu_admission import GpuBusyError
-from services.logger_config import get_logger
+from poindexter.services.gpu_admission import GpuBusyError
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -170,7 +170,7 @@ def _build_deepeval_judge_model(
         # returns an EMPTY content with the trace in a separate field — the
         # rail then fails to parse "" and reports a judge error. See
         # resolve_judge_num_predict for the 2026-08-28 blackout this fixes.
-        from services.llm_providers.thinking_models import resolve_judge_num_predict
+        from poindexter.services.llm_providers.thinking_models import resolve_judge_num_predict
 
         return OllamaModel(
             model=model_name,
@@ -213,8 +213,8 @@ def _build_dispatcher_judge_model(
     import json as _json
     import re as _re
 
-    from services.llm_providers.dispatcher import dispatch_complete
-    from services.llm_providers.thinking_models import judge_json_mode_supported
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete
+    from poindexter.services.llm_providers.thinking_models import judge_json_mode_supported
 
     class _DispatcherJudgeLLM(DeepEvalBaseLLM):
         def __init__(self):
@@ -236,7 +236,7 @@ def _build_dispatcher_judge_model(
             # 11.8k–15.5k output tokens against a 16k window. The budget is a
             # bound, not a cure (the trace still comes first); the cure is a
             # judge that does not think — see the issue.
-            from services.llm_providers.thinking_models import resolve_judge_num_predict
+            from poindexter.services.llm_providers.thinking_models import resolve_judge_num_predict
             kwargs: dict[str, Any] = {
                 "max_tokens": resolve_judge_num_predict(judge_model, site_config),
             }
@@ -260,7 +260,7 @@ def _build_dispatcher_judge_model(
             # poindexter#914 P2 — bounded wait (see qa_rail_wait_budget_s).
             # Fail-soft rail: GpuBusyError surfaces as a degraded rail with a
             # finding, not a fabricated pass.
-            from services.gpu_scheduler import qa_rail_wait_budget_s
+            from poindexter.services.gpu_scheduler import qa_rail_wait_budget_s
             try:
                 empty_retries = int(site_config.get("deepeval_judge_empty_retries", 1) or 0) if site_config is not None else 1
             except Exception:  # noqa: BLE001 — stubbed site_config
@@ -580,7 +580,7 @@ def _resolve_g_eval_criterion() -> str:
     newline-free), not a rendered prompt body.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         return get_prompt_manager().get_prompt(_G_EVAL_CRITERION_KEY).strip()
     except Exception as exc:  # noqa: BLE001
@@ -631,7 +631,7 @@ async def _resolve_judge_model(site_config: Any) -> str:
     # branch. The cost_tier.* and cross-step pipeline_writer_model fallbacks
     # were removed.
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         await notify_operator(
             "deepeval_rails: deepeval_judge_model is empty — set it "
             "(the cost_tier.* fallback was removed)",

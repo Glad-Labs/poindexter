@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.llm_providers.openai_compat import (
+from poindexter.services.llm_providers.openai_compat import (
     OpenAICompatProvider,
     _coerce_bool,
 )

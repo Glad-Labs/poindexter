@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-import services.logger_config as lc
+import poindexter.services.logger_config as lc
 
 # Synthetic GitHub App installation tokens — never real, never minted.
 # _CLASSIC is the opaque ghs_ + 36-alphanumeric shape; _STATELESS is the

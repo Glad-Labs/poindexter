@@ -28,9 +28,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from plugins.stage import StageResult
-from services.atom_registry import _make_stage_runner
-from services.pipeline_architect import _wrap_atom
-from services.template_runner import _resolve_node_timeout, make_stage_node
+from poindexter.services.atom_registry import _make_stage_runner
+from poindexter.services.pipeline_architect import _wrap_atom
+from poindexter.services.template_runner import _resolve_node_timeout, make_stage_node
 
 pytestmark = pytest.mark.unit
 
@@ -53,8 +53,8 @@ def _stage_node_patches() -> tuple:
     enabled_cfg = SimpleNamespace(enabled=True, config={}, get=lambda k, d=None: d)
     return (
         patch("plugins.config.PluginConfig.load", AsyncMock(return_value=enabled_cfg)),
-        patch("services.template_runner._mark_stage_column", AsyncMock()),
-        patch("services.template_runner._emit_progress", AsyncMock()),
+        patch("poindexter.services.template_runner._mark_stage_column", AsyncMock()),
+        patch("poindexter.services.template_runner._emit_progress", AsyncMock()),
     )
 
 
@@ -247,7 +247,7 @@ async def test_wrap_atom_records_swallowed_failure_as_error() -> None:
     assert record.metrics["output_keys"] == []
 
     # atom_runs must now call this what it is.
-    from services.atom_runs import _status_of
+    from poindexter.services.atom_runs import _status_of
 
     assert _status_of(record) == "error"
 

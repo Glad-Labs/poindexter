@@ -30,7 +30,7 @@ import pytest
 from langgraph.graph import END, StateGraph
 
 from plugins.stage import StageResult
-from services.template_runner import PipelineState, make_stage_node
+from poindexter.services.template_runner import PipelineState, make_stage_node
 
 
 class _FakeConn:
@@ -164,30 +164,30 @@ async def test_generate_content_stage_returns_research_context_in_updates():
                 )),
             ),
         ),
-        patch("services.model_preferences.parse_model_preferences",
+        patch("poindexter.services.model_preferences.parse_model_preferences",
               return_value=("glm-4.7-5090", "ollama")),
-        patch("services.writing_style_context.build_writing_style_context",
+        patch("poindexter.services.writing_style_context.build_writing_style_context",
               AsyncMock(return_value="style")),
-        patch("services.research_context.build_rag_context",
+        patch("poindexter.services.research_context.build_rag_context",
               AsyncMock(return_value="rag corpus")),
-        patch("services.research_service.ResearchService",
+        patch("poindexter.services.research_service.ResearchService",
               return_value=SimpleNamespace(
                   build_context=AsyncMock(return_value="auto corpus"))),
-        patch("services.title_generation.generate_canonical_title",
+        patch("poindexter.services.title_generation.generate_canonical_title",
               AsyncMock(return_value="A Title")),
-        patch("services.title_generation.check_title_originality",
+        patch("poindexter.services.title_generation.check_title_originality",
               AsyncMock(return_value={
                   "is_original": True, "max_similarity": 0.1,
                   "similar_titles": [],
               })),
-        patch("services.text_utils.normalize_text", side_effect=lambda x: x),
-        patch("services.text_utils.scrub_fabricated_links",
+        patch("poindexter.services.text_utils.normalize_text", side_effect=lambda x: x),
+        patch("poindexter.services.text_utils.scrub_fabricated_links",
               side_effect=lambda x, **_k: x),
-        patch("services.self_review.self_review_and_revise",
+        patch("poindexter.services.self_review.self_review_and_revise",
               AsyncMock(return_value=("x", {"revised": False}))),
-        patch("services.gpu_scheduler.gpu",
+        patch("poindexter.services.gpu_scheduler.gpu",
               SimpleNamespace(lock=_no_gpu_lock)),
-        patch("services.audit_log.audit_log_bg", MagicMock()),
+        patch("poindexter.services.audit_log.audit_log_bg", MagicMock()),
     ]
     ctx: dict[str, Any] = {
         "task_id": "t1", "topic": "AI", "style": "", "tone": "",

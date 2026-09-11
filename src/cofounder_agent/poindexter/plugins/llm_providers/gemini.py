@@ -51,8 +51,8 @@ from plugins.llm_resilience import (
     LLMResilienceManager,
     RetryDecision,
 )
-from services.cost_guard import CostGuard, CostGuardExhausted
-from services.logger_config import get_logger
+from poindexter.services.cost_guard import CostGuard, CostGuardExhausted
+from poindexter.services.logger_config import get_logger
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)

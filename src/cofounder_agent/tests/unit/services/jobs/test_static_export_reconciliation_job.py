@@ -22,11 +22,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.static_export_reconciliation import (
+from poindexter.services.jobs.static_export_reconciliation import (
     StaticExportReconciliationJob,
 )
-from services.r2_upload_service import R2UploadService
-from services.site_config import SiteConfig
+from poindexter.services.r2_upload_service import R2UploadService
+from poindexter.services.site_config import SiteConfig
 
 
 def _make_pool(db_count: int, db_latest: datetime | None) -> Any:
@@ -69,7 +69,7 @@ class TestStaticExportReconciliation:
         }
 
         with _patch_manifest(manifest), patch(
-            "services.static_export_service.export_full_rebuild",
+            "poindexter.services.static_export_service.export_full_rebuild",
             new=AsyncMock(),
         ) as rebuild_mock:
             job = StaticExportReconciliationJob()
@@ -96,10 +96,10 @@ class TestStaticExportReconciliation:
         manifest = {"post_count": 56, "exported_at": now.isoformat()}
 
         with _patch_manifest(manifest), patch(
-            "services.static_export_service.export_full_rebuild",
+            "poindexter.services.static_export_service.export_full_rebuild",
             new=AsyncMock(return_value={"success": True}),
         ) as rebuild_mock, patch(
-            "services.jobs.static_export_reconciliation.emit_finding",
+            "poindexter.services.jobs.static_export_reconciliation.emit_finding",
         ) as finding_mock:
             job = StaticExportReconciliationJob()
             _sc = SiteConfig()
@@ -130,10 +130,10 @@ class TestStaticExportReconciliation:
         pool = _make_pool(db_count=42, db_latest=datetime.now(timezone.utc))
 
         with _patch_manifest(None), patch(
-            "services.static_export_service.export_full_rebuild",
+            "poindexter.services.static_export_service.export_full_rebuild",
             new=AsyncMock(return_value={"success": False, "error": "boom"}),
         ) as rebuild_mock, patch(
-            "services.jobs.static_export_reconciliation.emit_finding",
+            "poindexter.services.jobs.static_export_reconciliation.emit_finding",
         ) as finding_mock:
             job = StaticExportReconciliationJob()
             _sc = SiteConfig()
@@ -161,10 +161,10 @@ class TestStaticExportReconciliation:
         manifest = {"post_count": 8, "exported_at": now.isoformat()}
 
         with _patch_manifest(manifest), patch(
-            "services.static_export_service.export_full_rebuild",
+            "poindexter.services.static_export_service.export_full_rebuild",
             new=AsyncMock(return_value={"success": True}),
         ), patch(
-            "services.jobs.static_export_reconciliation.emit_finding",
+            "poindexter.services.jobs.static_export_reconciliation.emit_finding",
         ) as finding_mock:
             job = StaticExportReconciliationJob()
             await job.run(
@@ -197,10 +197,10 @@ class TestStaticExportReconciliation:
         pool.acquire = MagicMock(return_value=ctx)
 
         with patch(
-            "services.static_export_service.export_full_rebuild",
+            "poindexter.services.static_export_service.export_full_rebuild",
             new=AsyncMock(),
         ) as rebuild_mock, patch(
-            "services.jobs.static_export_reconciliation.emit_finding",
+            "poindexter.services.jobs.static_export_reconciliation.emit_finding",
         ) as finding_mock:
             job = StaticExportReconciliationJob()
             result = await job.run(pool, config={})
@@ -232,7 +232,7 @@ class TestStaticExportReconciliation:
 
         manifest = {"post_count": 7, "exported_at": now.isoformat()}
         with _patch_manifest(manifest), patch(
-            "services.static_export_service.export_full_rebuild",
+            "poindexter.services.static_export_service.export_full_rebuild",
             new=AsyncMock(),
         ):
             job = StaticExportReconciliationJob()

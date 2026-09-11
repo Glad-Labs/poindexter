@@ -15,10 +15,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from services.niche_service import NicheGoal, NicheService
-from services.site_config import SiteConfig
-from services.topic_batch_service import TopicBatchService, _looks_like_uuid
-from services.topic_ranking import ScoredCandidate
+from poindexter.services.niche_service import NicheGoal, NicheService
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_batch_service import TopicBatchService, _looks_like_uuid
+from poindexter.services.topic_ranking import ScoredCandidate
 
 # Same session-scoped loop as test_topic_batch_service: the db_pool fixture's
 # connections live on it, and a test on its own loop would make asyncpg open a
@@ -36,7 +36,7 @@ async def test_uuid_guard():
 
 async def _seed_pool(db_pool, niche_id, titles, *, source="hackernews"):
     from plugins.topic_source import DiscoveredTopic
-    from services.topic_pool import insert_pooled_topics
+    from poindexter.services.topic_pool import insert_pooled_topics
 
     async with db_pool.acquire() as conn:
         await insert_pooled_topics(
@@ -71,7 +71,7 @@ async def test_refresh_returns_dropped_winners_to_pooled(db_pool):
     svc = TopicBatchService(db_pool, site_config=SiteConfig())
     # First ranking: A and B win; the sweep marks them batched.
     snap = await svc._write_batch(niche, [_cand(a, "Alpha topic one", 90), _cand(b, "Beta topic two", 80)], [], [])
-    from services.topic_pool import mark_batched
+    from poindexter.services.topic_pool import mark_batched
 
     async with db_pool.acquire() as conn:
         assert await mark_batched(conn, [a, b]) == 2

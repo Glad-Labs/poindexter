@@ -11,9 +11,9 @@ This is the design's acceptance criterion #1.
 
 import pytest
 
-from services.atom_registry import discover
-from services.pipeline_architect import _validate_spec, build_graph_from_spec
-from services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
+from poindexter.services.atom_registry import discover
+from poindexter.services.pipeline_architect import _validate_spec, build_graph_from_spec
+from poindexter.services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
 
 
 @pytest.fixture(autouse=True)

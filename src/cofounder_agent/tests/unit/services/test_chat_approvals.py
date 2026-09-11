@@ -21,9 +21,9 @@ from typing import Any
 
 import pytest
 
-import services.chat_agent as chat_agent
-import services.chat_approvals as chat_approvals
-from services.chat_tools import ChatToolError, ChatToolSpec
+import poindexter.services.chat_agent as chat_agent
+import poindexter.services.chat_approvals as chat_approvals
+from poindexter.services.chat_tools import ChatToolError, ChatToolSpec
 
 
 class FakePool:

@@ -17,8 +17,8 @@ from typing import Any
 
 import pytest
 
-from services.llm_providers.ollama_native import OllamaNativeProvider
-from services.llm_providers.openai_compat import OpenAICompatProvider
+from poindexter.services.llm_providers.ollama_native import OllamaNativeProvider
+from poindexter.services.llm_providers.openai_compat import OpenAICompatProvider
 
 
 @pytest.mark.unit
@@ -26,7 +26,7 @@ class TestSupportsToolsFlags:
     def test_flags_match_reality(self):
         assert OllamaNativeProvider.supports_tools is False
         assert OpenAICompatProvider.supports_tools is True
-        from services.llm_providers.litellm_provider import LiteLLMProvider
+        from poindexter.services.llm_providers.litellm_provider import LiteLLMProvider
 
         assert LiteLLMProvider.supports_tools is True
 
@@ -96,7 +96,7 @@ class _FakeAsyncClient:
 class TestOpenAICompatToolCalling:
     @pytest.mark.asyncio
     async def test_tools_forwarded_and_tool_calls_normalized(self, monkeypatch):
-        import services.llm_providers.openai_compat as oc
+        import poindexter.services.llm_providers.openai_compat as oc
 
         monkeypatch.setattr(oc.httpx, "AsyncClient", _FakeAsyncClient)
         _FakeAsyncClient.next_response = {
@@ -131,7 +131,7 @@ class TestOpenAICompatToolCalling:
 
     @pytest.mark.asyncio
     async def test_prose_turn_has_no_tool_calls(self, monkeypatch):
-        import services.llm_providers.openai_compat as oc
+        import poindexter.services.llm_providers.openai_compat as oc
 
         monkeypatch.setattr(oc.httpx, "AsyncClient", _FakeAsyncClient)
         _FakeAsyncClient.next_response = {

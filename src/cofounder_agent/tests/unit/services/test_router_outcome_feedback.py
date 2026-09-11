@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from services.router_outcome_feedback import ewma, record_task_outcome
+from poindexter.services.router_outcome_feedback import ewma, record_task_outcome
 
 # ---------------------------------------------------------------------------
 # Programmable asyncpg-shaped stub

@@ -125,9 +125,9 @@ async def _run_validator(
     try:
         _real_httpx.AsyncClient = mock_httpx_cls  # type: ignore[assignment]
         with (
-            patch("services.integrations.operator_notify.http_client", None),
+            patch("poindexter.services.integrations.operator_notify.http_client", None),
             patch(
-                "services.integrations.operator_notify.notify_operator",
+                "poindexter.services.integrations.operator_notify.notify_operator",
                 new=notify_mock,
             ),
         ):
@@ -355,7 +355,7 @@ class TestValidationDisabled:
 
         notify_mock = AsyncMock()
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=notify_mock,
         ):
             await manager._validate_ollama_model_settings(pool)
@@ -372,7 +372,7 @@ class TestValidationDisabled:
 
         notify_mock = AsyncMock()
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=notify_mock,
         ):
             await manager._validate_ollama_model_settings(pool)
@@ -388,7 +388,7 @@ class TestValidationDisabled:
 
         notify_mock = AsyncMock()
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=notify_mock,
         ):
             await manager._validate_ollama_model_settings(pool)

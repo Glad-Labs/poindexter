@@ -33,9 +33,9 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.jobs._content_type_classify import parse_labels_csv, validate_labels
-from services.llm_text import ollama_chat_text, resolve_structured_model
-from services.prompt_manager import get_prompt_manager
+from poindexter.services.jobs._content_type_classify import parse_labels_csv, validate_labels
+from poindexter.services.llm_text import ollama_chat_text, resolve_structured_model
+from poindexter.services.prompt_manager import get_prompt_manager
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)

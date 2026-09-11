@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from services.module_paths import resolve_module_path
+from poindexter.services.module_paths import resolve_module_path
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def audit_worker_imports(site_config: Any) -> dict[str, str]:
     # step failed silently.
     always_required = [
         (
-            "services.deepeval_rails",
+            "poindexter.services.deepeval_rails",
             "QA Rails (DeepEval brand-fabrication / G-Eval / Faithfulness) "
             "skip silently when this is gone — pipeline runs blind on the "
             "deepeval rails. See multi_model_qa.py:1235/1282/1365.",

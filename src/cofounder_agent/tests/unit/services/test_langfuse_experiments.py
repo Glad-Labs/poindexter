@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.langfuse_experiments import (
+from poindexter.services.langfuse_experiments import (
     LangfuseExperimentService,
     _trace_id_for,
 )
@@ -172,7 +172,7 @@ class TestClientLifecycle:
         sc = _stub_site_config()
         svc = LangfuseExperimentService(site_config=sc, pool=None)
         with patch(
-            "services.langfuse_experiments.Langfuse",
+            "poindexter.services.langfuse_experiments.Langfuse",
             return_value=MagicMock(),
         ) as lf_ctor:
             client = await svc._get_client()

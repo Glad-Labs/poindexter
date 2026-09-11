@@ -60,8 +60,8 @@ from uuid import UUID
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-from services.logger_config import get_logger
-from services.rag_scrub import scrub_private_repo_refs as _scrub_private_repo_refs
+from poindexter.services.logger_config import get_logger
+from poindexter.services.rag_scrub import scrub_private_repo_refs as _scrub_private_repo_refs
 
 # Module-level keyed-by-thread store for non-serializable state (the asyncpg
 # pool). The MemorySaver checkpointer serializes state via msgpack, and an
@@ -106,7 +106,7 @@ def _resolve_revise_prompt(
     test paths). Production reads from YAML at minimum.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         resolution = get_prompt_manager().get_prompt_resolution(
             _REVISE_PROMPT_KEY, draft=draft, aug_block=aug_block,
         )
@@ -179,7 +179,7 @@ def _resolve_expand_prompt(
     reads from the SKILL.md default at minimum.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(
             _EXPAND_PROMPT_KEY,
             draft=draft,
@@ -688,7 +688,7 @@ def _emit_degenerate_expand_input_finding(
 # -- nodes --
 
 async def _embed_and_fetch_snippets(state: _State) -> _State:
-    from services.topic_ranking import embed_text
+    from poindexter.services.topic_ranking import embed_text
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     if site_config is not None:
@@ -765,7 +765,7 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
     # FAIL CLOSED — a scrub error drops the snippet rather than passing
     # unscrubbed operator text to a public writer (defense in depth over the
     # tap's write-path scrub; catches any source the write path missed).
-    from services.rag_scrub import scrub_rag_text
+    from poindexter.services.rag_scrub import scrub_rag_text
     snippets: list[dict[str, Any]] = []
     for c in selected:
         try:
@@ -991,7 +991,7 @@ def _detect_needs(state: _State) -> _State:
 
 
 async def _research_each(state: _State) -> _State:
-    from services.research_service import research_topic
+    from poindexter.services.research_service import research_topic
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     max_sources = (
@@ -1126,7 +1126,7 @@ async def _revise_node(state: _State) -> _State:
     # with '}'". ``ollama_chat_text`` also runs ``maybe_unwrap_json``
     # internally as belt-and-suspenders if a model still emits a JSON
     # envelope unprompted.
-    from services.llm_text import ollama_chat_text, resolve_writer_model
+    from poindexter.services.llm_text import ollama_chat_text, resolve_writer_model
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     pool = _POOL_REGISTRY.get(state["pool_thread"])
@@ -1439,7 +1439,7 @@ async def _build_internal_grounding_section(
     if source_table not in _resolve_snippet_source_filter(site_config):
         return "", None
     # Scrub FAIL-CLOSED — never inject unscrubbed operator text.
-    from services.rag_scrub import scrub_rag_text
+    from poindexter.services.rag_scrub import scrub_rag_text
     try:
         preview = scrub_rag_text(str(ig.get("preview") or "")).strip()
     except Exception as exc:  # noqa: BLE001 — leak-safe: drop the anchor
@@ -2089,7 +2089,7 @@ async def _maybe_expand_to_target(
     if words_before >= threshold:
         return draft, meta
 
-    from services.llm_text import ollama_chat_text, resolve_writer_model
+    from poindexter.services.llm_text import ollama_chat_text, resolve_writer_model
     model = resolve_writer_model(model=None, site_config=site_config)
     prompt = _resolve_expand_prompt(
         draft=draft, target_length=target_length, word_count=words_before,

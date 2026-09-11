@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from services.capability_outcomes import record_one, record_run
+from poindexter.services.capability_outcomes import record_one, record_run
 
 # ---------------------------------------------------------------------------
 # Minimal asyncpg pool stub

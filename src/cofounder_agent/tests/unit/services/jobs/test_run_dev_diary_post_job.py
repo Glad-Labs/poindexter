@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.run_dev_diary_post import (
+from poindexter.services.jobs.run_dev_diary_post import (
     _LAST_RUN_KEY,
     _NICHE_SLUG,
     RunDevDiaryPostJob,
@@ -27,7 +27,7 @@ from services.jobs.run_dev_diary_post import (
     _get_last_run_date,
     _set_last_run_date,
 )
-from services.topic_sources.dev_diary_source import DevDiaryContext
+from poindexter.services.topic_sources.dev_diary_source import DevDiaryContext
 
 # ---------------------------------------------------------------------------
 # Metadata
@@ -240,7 +240,7 @@ class TestRun:
         job = RunDevDiaryPostJob()
         gather_called = AsyncMock()
         with patch(
-            "services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+            "poindexter.services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
             gather_called,
         ):
             result = await job.run(db_pool, {})
@@ -266,9 +266,9 @@ class TestRun:
             return _quiet_ctx(today)
 
         with (
-            patch("services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+            patch("poindexter.services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
                   fake_gather),
-            patch("services.integrations.operator_notify.notify_operator", fake_notify),
+            patch("poindexter.services.integrations.operator_notify.notify_operator", fake_notify),
         ):
             result = await RunDevDiaryPostJob().run(db_pool, {"notify_on_draft": True})
 
@@ -308,9 +308,9 @@ class TestRun:
             return _bookkeeping_ctx(today)
 
         with (
-            patch("services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+            patch("poindexter.services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
                   fake_gather),
-            patch("services.integrations.operator_notify.notify_operator", fake_notify),
+            patch("poindexter.services.integrations.operator_notify.notify_operator", fake_notify),
         ):
             result = await RunDevDiaryPostJob().run(db_pool, {"notify_on_draft": True})
 
@@ -347,9 +347,9 @@ class TestRun:
 
         # Default bar (1) would write this day; raising it to 2 must skip.
         with (
-            patch("services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+            patch("poindexter.services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
                   fake_gather),
-            patch("services.integrations.operator_notify.notify_operator", fake_notify),
+            patch("poindexter.services.integrations.operator_notify.notify_operator", fake_notify),
         ):
             result = await RunDevDiaryPostJob().run(
                 db_pool,
@@ -379,9 +379,9 @@ class TestRun:
             return _one_real_pr_ctx(today)
 
         with (
-            patch("services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+            patch("poindexter.services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
                   fake_gather),
-            patch("services.integrations.operator_notify.notify_operator", fake_notify),
+            patch("poindexter.services.integrations.operator_notify.notify_operator", fake_notify),
         ):
             result = await RunDevDiaryPostJob().run(db_pool, {"notify_on_draft": False})
 
@@ -410,9 +410,9 @@ class TestRun:
             return _busy_ctx(today)
 
         with (
-            patch("services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+            patch("poindexter.services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
                   fake_gather),
-            patch("services.integrations.operator_notify.notify_operator", fake_notify),
+            patch("poindexter.services.integrations.operator_notify.notify_operator", fake_notify),
         ):
             result = await RunDevDiaryPostJob().run(
                 db_pool, {"gates": "draft,final", "notify_on_draft": True},
@@ -459,9 +459,9 @@ class TestRun:
             raise RuntimeError("telegram down")
 
         with (
-            patch("services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+            patch("poindexter.services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
                   fake_gather),
-            patch("services.integrations.operator_notify.notify_operator", boom),
+            patch("poindexter.services.integrations.operator_notify.notify_operator", boom),
         ):
             result = await RunDevDiaryPostJob().run(db_pool, {})
 
@@ -477,7 +477,7 @@ class TestRun:
             raise RuntimeError("gh CLI exploded")
 
         with patch(
-            "services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+            "poindexter.services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
             boom,
         ):
             result = await RunDevDiaryPostJob().run(db_pool, {})

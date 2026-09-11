@@ -17,8 +17,8 @@ Module-level helpers (no class instantiation required):
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import cost_ledger
-from services.logger_config import get_logger
+from poindexter.services import cost_ledger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

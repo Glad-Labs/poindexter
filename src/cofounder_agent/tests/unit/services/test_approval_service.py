@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import services.approval_service as svc
+import poindexter.services.approval_service as svc
 from tests.unit.services._gate_fakes import FakeConn, FakePool, executed_sql
 
 pytestmark = pytest.mark.unit
@@ -171,7 +171,7 @@ class TestReject:
         row = {"id": "t1", "status": "in_progress", "awaiting_gate": "g", "gate_artifact": "{}"}
         conn = FakeConn(fetchrow_result=row)
         pool = FakePool(conn)
-        with patch("services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
+        with patch("poindexter.services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
             out = await svc.reject(task_id="t1", reason="nope", site_config=None, pool=pool)
         assert out["new_status"] == "rejected"
         assert out["reason"] == "nope"
@@ -180,7 +180,7 @@ class TestReject:
         row = {"id": "t1", "status": "in_progress", "awaiting_gate": "g", "gate_artifact": "{}"}
         conn = FakeConn(fetchrow_result=row)
         pool = FakePool(conn)
-        with patch("services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
+        with patch("poindexter.services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
             await svc.reject(task_id="t1", reason="bad", site_config=None, pool=pool)
         sql = executed_sql(conn)
         assert "pipeline_gate_history" in sql
@@ -192,7 +192,7 @@ class TestReject:
         pool = FakePool(conn)
         sc = MagicMock()
         sc.get.return_value = "dismissed"
-        with patch("services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
+        with patch("poindexter.services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
             out = await svc.reject(task_id="t1", site_config=sc, pool=pool)
         assert out["new_status"] == "dismissed"
 

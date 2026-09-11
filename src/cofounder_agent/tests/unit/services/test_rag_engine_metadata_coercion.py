@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.rag_engine import _coerce_metadata
+from poindexter.services.rag_engine import _coerce_metadata
 
 
 def test_json_string_does_not_raise_and_decodes():

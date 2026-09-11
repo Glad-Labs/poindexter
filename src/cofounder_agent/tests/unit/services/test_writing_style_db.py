@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.writing_style_db import WritingStyleDatabase
+from poindexter.services.writing_style_db import WritingStyleDatabase
 
 # ---------------------------------------------------------------------------
 # Helpers

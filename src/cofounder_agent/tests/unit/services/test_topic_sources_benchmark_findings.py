@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.topic_sources.benchmark_findings import BenchmarkFindingsSource
+from poindexter.services.topic_sources.benchmark_findings import BenchmarkFindingsSource
 
 pytestmark = pytest.mark.unit
 
@@ -138,6 +138,6 @@ class TestNewnessSemantics:
         """decode_duration_ms only exists from 2026-08-26, so filtering on it
         makes every model look brand new — qwen3-vl:30b, running for months,
         was proposed as a new-model finding for exactly that reason."""
-        from services.topic_sources.benchmark_findings import _FIRST_SEEN_SQL
+        from poindexter.services.topic_sources.benchmark_findings import _FIRST_SEEN_SQL
 
         assert "decode_duration_ms" not in _FIRST_SEEN_SQL

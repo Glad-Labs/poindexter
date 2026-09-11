@@ -109,8 +109,8 @@ class TestMainLifespanWiresContainer:
         ``services.bootstrap`` — pinning the import path so a rename
         breaks loudly."""
         source = (_APP_ROOT / "main.py").read_text(encoding="utf-8")
-        assert "from services.bootstrap import build_container" in source, (
-            "main.py must import build_container from services.bootstrap"
+        assert "services.bootstrap import build_container" in source, (
+            "main.py must import build_container from services.bootstrap (either spelling)"
         )
 
 

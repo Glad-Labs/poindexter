@@ -14,10 +14,10 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from modules.content.atoms import _seo_common, content_republish_post
-from services.atom_registry import discover
-from services.pipeline_architect import build_graph_from_spec
-from services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
-from services.site_config import SiteConfig
+from poindexter.services.atom_registry import discover
+from poindexter.services.pipeline_architect import build_graph_from_spec
+from poindexter.services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
+from poindexter.services.site_config import SiteConfig
 
 _POST_ID = "11111111-1111-1111-1111-111111111111"
 _OPP_ID = "22222222-2222-2222-2222-222222222222"

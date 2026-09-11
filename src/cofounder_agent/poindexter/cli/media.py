@@ -55,7 +55,7 @@ async def _make_site_config(pool):
     non-fatal: an approve still succeeds on partial config (the feed rebuild
     inside ``decide()`` is itself non-fatal — it just won't propagate).
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     cfg = SiteConfig(pool=pool)
     try:
@@ -92,7 +92,7 @@ def media_group():
 def cmd_pending(medium: str | None, limit: int, as_json: bool):
     """List media awaiting operator approval."""
     async def _go():
-        from services import media_approval_service
+        from poindexter.services import media_approval_service
 
         pool = await _make_pool()
         try:
@@ -204,7 +204,7 @@ def cmd_reject(post_id: str, medium: str, note: str | None):
 
 def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
     async def _go():
-        from services import media_approval_service
+        from poindexter.services import media_approval_service
 
         pool = await _make_pool()
         try:
@@ -293,7 +293,7 @@ async def _resolve_open_path(post_id: str, medium: str) -> tuple[str, Path | Non
     asset row exists for the ``(post_id, medium)`` pair (not yet rendered).
     Raises ``click.BadParameter`` for an unresolvable id prefix.
     """
-    from services import media_approval_service
+    from poindexter.services import media_approval_service
 
     pool = await _make_pool()
     try:
@@ -373,7 +373,7 @@ def cmd_open(post_id: str, medium: str):
 _BAKEOFF_PROVIDERS: dict[str, str] = {
     # engine name -> "module:ClassName" (imported lazily so a broken optional
     # provider never breaks `media --help`).
-    "chatterbox": "services.tts_providers.chatterbox:ChatterboxTTSProvider",
+    "chatterbox": "poindexter.services.tts_providers.chatterbox:ChatterboxTTSProvider",
 }
 
 # The bake-off runs on the HOST, so it reaches each engine at its published host
@@ -398,7 +398,7 @@ async def _make_bakeoff_site_config():
     carries an inline default at the call site. Connecting is best-effort —
     it just lets an operator's tuned settings flow into the render.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     try:
         pool = await _make_pool()
@@ -442,7 +442,7 @@ def _bakeoff_engine_config(engine: str, site_config: Any, host: str) -> dict[str
 
 async def _render_bakeoff_engine(engine, text, voice, out_path, site_config, *, host="localhost"):
     """Render `text` through one engine -> `out_path`; return a manifest row."""
-    from services import tts_service
+    from poindexter.services import tts_service
 
     if engine == "speaches":
         # Current-prod baseline (Kokoro via Speaches) reached at its HOST port.
@@ -470,7 +470,7 @@ async def _render_bakeoff_engine(engine, text, voice, out_path, site_config, *, 
         )
     import importlib
 
-    from services.module_paths import resolve_object_path
+    from poindexter.services.module_paths import resolve_object_path
 
     mod_name, cls_name = resolve_object_path(target)
     provider = getattr(importlib.import_module(mod_name), cls_name)()
@@ -502,7 +502,7 @@ def cmd_tts_bakeoff(script_path, engines, voice, out_dir, host):
     """
     from datetime import datetime
 
-    from services.tts_providers.bakeoff_sample import SAMPLE_SCRIPT
+    from poindexter.services.tts_providers.bakeoff_sample import SAMPLE_SCRIPT
 
     text = Path(script_path).read_text(encoding="utf-8") if script_path else SAMPLE_SCRIPT
     engine_list = [e.strip() for e in engines.split(",") if e.strip()]
@@ -551,7 +551,7 @@ def demos_group():
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def cmd_demos_list(as_json: bool):
     """List the demo catalog — what the video director can choose from."""
-    from services.demo_clips import DemoTapeError, load_tapes
+    from poindexter.services.demo_clips import DemoTapeError, load_tapes
 
     try:
         tapes = load_tapes()
@@ -591,7 +591,7 @@ def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
     whose command produces no matching output fails here rather than shipping
     an empty clip into a video.
     """
-    from services.demo_clips import (
+    from poindexter.services.demo_clips import (
         DemoTapeError,
         bake_tape,
         clip_dir,
@@ -626,7 +626,7 @@ def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
         if out_dir:
             return Path(out_dir)
 
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
         pool = await open_cli_pool()
         try:
             sc = SiteConfig()

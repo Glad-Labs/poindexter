@@ -21,19 +21,19 @@ from pydantic import BaseModel, field_validator
 from config import get_config
 from middleware.api_token_auth import verify_api_token
 from modules.content.api import UnifiedQualityService
-from services.container import service_container
+from poindexter.services.container import service_container
 
 # Import services
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 try:
-    from services.sentry_integration import setup_sentry
+    from poindexter.services.sentry_integration import setup_sentry
 except ImportError:
     def setup_sentry(*_args, **_kwargs):  # type: ignore[misc]
         """Stub when Sentry is not installed."""
         return
 
-from services.telemetry import setup_telemetry
+from poindexter.services.telemetry import setup_telemetry
 from utils.connection_health import ConnectionPoolHealth
 
 # Local application imports (must come after path setup)
@@ -109,7 +109,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # operator_notify._legacy_discord_webhook fallback) can
         # opportunistically route through outbound_dispatcher.deliver()
         # when the corresponding webhook_endpoints row is enabled.
-        from services.integrations.shared_context import set_database_service
+        from poindexter.services.integrations.shared_context import set_database_service
         set_database_service(services["database"])
         logger.debug("[LIFESPAN] integrations.shared_context registered")
 
@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # Initialize settings service (DB-backed key-value config)
         logger.info("[LIFESPAN] Initializing settings service. ..")
         try:
-            from services.settings_service import SettingsService
+            from poindexter.services.settings_service import SettingsService
             db_pool = services["database"].pool
             settings_service = SettingsService(db_pool)
             await settings_service.refresh_cache()
@@ -198,7 +198,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # subprocesses (which never run this lifespan) can re-use the
         # same list via ``build_and_wire_for_subprocess``.
         try:
-            from services.di_wiring import wire_site_config_modules
+            from poindexter.services.di_wiring import wire_site_config_modules
             _wired_count = wire_site_config_modules(_site_cfg)
             logger.info(
                 "[LIFESPAN] SiteConfig wired into %d modules", _wired_count,
@@ -233,7 +233,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # runtime ``settings set`` reaches routes within one reload cycle
         # — no restart. (A separate instance here is exactly what made
         # ``enforce_niche_allowlist`` go stale until restart, 2026-06-17.)
-        from services.bootstrap import build_container
+        from poindexter.services.bootstrap import build_container
         app.state.container = await build_container(
             services["database"].pool, site_config=_site_cfg
         )
@@ -275,7 +275,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         try:
             import httpx as _httpx
 
-            from services.http_client import wire_http_client_modules
+            from poindexter.services.http_client import wire_http_client_modules
 
             _shared_http_timeout = _site_cfg.get_float(
                 "shared_http_client_timeout_seconds", 30.0,
@@ -330,7 +330,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.warning("[LIFESPAN] telemetry re-init failed: %s", e)
         try:
-            from services.profiling import setup_pyroscope
+            from poindexter.services.profiling import setup_pyroscope
             # Glad-Labs/poindexter#406 — pass the loaded SiteConfig via the
             # DI seam (the keyword arg) and a service-specific name so the
             # Pyroscope flame graph in Grafana can slice on
@@ -348,7 +348,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # this captures site_config for the Langfuse client init path and
         # pre-fetches the Langfuse secret; see load_from_db's docstring.
         try:
-            from services.prompt_manager import get_prompt_manager
+            from poindexter.services.prompt_manager import get_prompt_manager
             pm = get_prompt_manager()
             db_pool = services["database"].pool
             loaded = await pm.load_from_db(db_pool, site_config=_site_cfg)
@@ -368,7 +368,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # startup so the worker can still boot for non-tracing flows
         # (the operator gets a loud log line + can fix the row + restart).
         try:
-            from services.llm_providers.litellm_provider import (
+            from poindexter.services.llm_providers.litellm_provider import (
                 configure_langfuse_callback,
             )
             registered = await configure_langfuse_callback(_site_cfg)
@@ -391,7 +391,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # the allow_paid_base_url gate. Empty rows are the normal
         # local-only state — names-only logging, never values.
         try:
-            from services.llm_providers.litellm_provider import (
+            from poindexter.services.llm_providers.litellm_provider import (
                 configure_cloud_api_keys,
             )
             stamped = await configure_cloud_api_keys(_site_cfg)
@@ -434,7 +434,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             # is owned by the Prefect deployment (Glad-Labs/poindexter#410);
             # the in-process polling daemon was deleted in Stage 4.
             try:
-                from services.worker_service import WorkerService
+                from poindexter.services.worker_service import WorkerService
 
                 worker_service = WorkerService(
                     services["database"].pool,
@@ -452,7 +452,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             # Coordinator mode: start webhook delivery, scheduled publisher.
             # Task dispatch is owned by Prefect in both modes.
             try:
-                from services.webhook_delivery_service import WebhookDeliveryService
+                from poindexter.services.webhook_delivery_service import WebhookDeliveryService
 
                 webhook_service = WebhookDeliveryService(
                     services["database"].pool,
@@ -476,7 +476,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # AND published_at <= NOW() RETURNING …) so running one copy
         # per mode is safe even if both modes ever coexist on the same
         # DB; Postgres row locks prevent dupes.
-        from services.scheduled_publisher import run_scheduled_publisher
+        from poindexter.services.scheduled_publisher import run_scheduled_publisher
 
         db_pool = services["database"].pool
 
@@ -514,7 +514,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # because the in-process registry is the source of truth.
         if _deployment_mode == "worker" and db_service and getattr(db_service, "pool", None):
             try:
-                from services import atom_registry
+                from poindexter.services import atom_registry
                 atom_registry.discover()
                 synced = await atom_registry.sync_to_db(db_service.pool)
                 logger.info(
@@ -677,8 +677,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             from plugins.kernel_platform import build_kernel_platform
             from plugins.platform import bind_platform_to_modules
             from plugins.registry import get_modules as _get_modules_for_platform
-            from services.audit_log import get_audit_logger
-            from services.llm_providers.dispatcher import dispatch_complete
+            from poindexter.services.audit_log import get_audit_logger
+            from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
             _audit_logger = get_audit_logger()
             if _audit_logger is None:
@@ -728,7 +728,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 # populated in the same process.
                 async def _warm_reranker():
                     try:
-                        from services.rag_engine import (
+                        from poindexter.services.rag_engine import (
                             _RERANKER_CACHE,
                             _build_rerank_retriever_class,
                         )
@@ -813,7 +813,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # Close the GPUScheduler's shared httpx client so we don't leak
         # the underlying connection pool at process shutdown.
         try:
-            from services.gpu_scheduler import gpu as _gpu
+            from poindexter.services.gpu_scheduler import gpu as _gpu
             await _gpu.aclose()
         except Exception as e:
             logger.error(f"[STOP] Error closing gpu_scheduler httpx client: {e}", exc_info=True)
@@ -821,7 +821,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # Same for the revalidation service's shared client (one TLS
         # session reused across all publish-time /api/revalidate calls).
         try:
-            from services import revalidation_service as _revalidation
+            from poindexter.services import revalidation_service as _revalidation
             await _revalidation.aclose()
         except Exception as e:
             logger.error(
@@ -840,7 +840,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # migrated caller stops dereferencing it via the
         # ``set_http_client(None)`` fan-out, then we close the pool.
         try:
-            from services.http_client import wire_http_client_modules
+            from poindexter.services.http_client import wire_http_client_modules
             wire_http_client_modules(None)
             shared_client = getattr(app.state, "http_client", None)
             if shared_client is not None:
@@ -863,7 +863,7 @@ _is_production = config.environment == "production"
 # on this same instance to pull DB values and then hands it to
 # ``build_container(pool, site_config=_site_cfg)`` so it becomes
 # ``app.state.container.site_config`` — the seam routes reach via DI.
-from services.site_config import SiteConfig  # noqa: E402
+from poindexter.services.site_config import SiteConfig  # noqa: E402
 
 _site_cfg = SiteConfig()
 
@@ -930,7 +930,7 @@ setup_telemetry(app, _site_cfg)
 # environment already has enable_pyroscope=true; otherwise the lifespan
 # pass overrides with the DB-loaded values.
 try:
-    from services.profiling import setup_pyroscope
+    from poindexter.services.profiling import setup_pyroscope
     setup_pyroscope(
         service_name="poindexter-worker", site_config=_site_cfg,
     )
@@ -961,7 +961,7 @@ middleware_config.register_all_middleware(app, site_config=_site_cfg)
 # ===== INTEGRATIONS FRAMEWORK HANDLER LOAD =====
 # Must run before route registration so the catch-all webhooks_router has
 # every handler available when the first request lands.
-from services.integrations.handlers import load_all as _load_integration_handlers
+from poindexter.services.integrations.handlers import load_all as _load_integration_handlers
 
 _load_integration_handlers()
 
@@ -1210,7 +1210,7 @@ async def api_health():
         # all leaned on those fake-evidence rows. See
         # ``feedback_verify_brain_triage_before_acting``.
         try:
-            from services.migrations import get_migration_status
+            from poindexter.services.migrations import get_migration_status
 
             pool = getattr(database_service, "pool", None) if database_service else None
             health_data["components"]["migrations"] = await get_migration_status(pool)
@@ -1240,7 +1240,7 @@ async def api_health():
         # snapshot data that lives under ``components.llm_resilience.ollama``.
         try:
             from plugins.llm_resilience import ResilienceRegistry
-            from services.ollama_resilience import get_default_manager
+            from poindexter.services.ollama_resilience import get_default_manager
 
             site_cfg = getattr(getattr(app.state, "container", None), "site_config", None)
             # Ensure the Ollama default manager is registered even when
@@ -1287,7 +1287,7 @@ async def api_health():
         # GPU outage. Record the failure as an explicit error state
         # instead so the health endpoint stays the source of truth.
         try:
-            from services.gpu_scheduler import gpu
+            from poindexter.services.gpu_scheduler import gpu
             health_data["components"]["gpu"] = gpu.status
         except Exception as e:  # pylint: disable=broad-except
             logger.warning("GPU scheduler status probe failed: %s", e, exc_info=True)
@@ -1346,7 +1346,7 @@ async def prometheus_metrics_canonical():
     """
     from fastapi import Response
 
-    from services.metrics_exporter import refresh_metrics, render_exposition
+    from poindexter.services.metrics_exporter import refresh_metrics, render_exposition
 
     # app.state.database is the DatabaseService; its .pool is the asyncpg pool.
     db_service = getattr(app.state, "database", None)

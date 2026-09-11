@@ -54,11 +54,11 @@ async def test_uses_ops_triage_writer_model_when_set(fake_site_config):
 
     with (
         patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="clean diagnosis text"),
         ) as mock_chat,
         patch(
-            "services.llm_text.resolve_local_writer_model",
+            "poindexter.services.llm_text.resolve_local_writer_model",
         ) as mock_resolve,
     ):
         result = await router.invoke(
@@ -84,10 +84,10 @@ async def test_strips_ollama_prefix_from_override(fake_site_config):
 
     with (
         patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
-        patch("services.llm_text.resolve_local_writer_model"),
+        patch("poindexter.services.llm_text.resolve_local_writer_model"),
     ):
         await router.invoke(model_class="ops_triage", system="s", user="u")
 
@@ -106,11 +106,11 @@ async def test_falls_back_to_resolve_local_writer_model_when_override_empty(fake
 
     with (
         patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
         patch(
-            "services.llm_text.resolve_local_writer_model",
+            "poindexter.services.llm_text.resolve_local_writer_model",
             return_value="some-fallback-model:latest",
         ) as mock_resolve,
     ):
@@ -138,10 +138,10 @@ async def test_response_is_think_block_stripped(fake_site_config):
     )
     with (
         patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value=raw_with_think),
         ),
-        patch("services.llm_text.resolve_local_writer_model"),
+        patch("poindexter.services.llm_text.resolve_local_writer_model"),
     ):
         result = await router.invoke(model_class="ops_triage", system="s", user="u")
 
@@ -167,10 +167,10 @@ async def test_router_threads_pool_into_ollama_chat_text(fake_site_config):
 
     with (
         patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
-        patch("services.llm_text.resolve_local_writer_model"),
+        patch("poindexter.services.llm_text.resolve_local_writer_model"),
     ):
         await router.invoke(model_class="ops_triage", system="s", user="u")
 
@@ -192,10 +192,10 @@ async def test_build_router_threads_pool_to_default_router(fake_site_config):
 
     with (
         patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
-        patch("services.llm_text.resolve_local_writer_model"),
+        patch("poindexter.services.llm_text.resolve_local_writer_model"),
     ):
         await router.invoke(model_class="ops_triage", system="s", user="u")
 
@@ -216,11 +216,11 @@ async def test_site_config_get_raising_uses_fallback(fake_site_config):
 
     with (
         patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
         patch(
-            "services.llm_text.resolve_local_writer_model",
+            "poindexter.services.llm_text.resolve_local_writer_model",
             return_value="writer-model:latest",
         ) as mock_resolve,
     ):
@@ -247,7 +247,7 @@ async def test_paid_writer_does_not_leak_uses_local_pin(fake_site_config):
     router = _DefaultModelRouter(sc)
 
     with patch(
-        "services.llm_text.ollama_chat_text",
+        "poindexter.services.llm_text.ollama_chat_text",
         new=AsyncMock(return_value="ok"),
     ) as mock_chat:
         result = await router.invoke(model_class="ops_triage", system="s", user="u")

@@ -123,7 +123,7 @@ class FanoutCandidatePruneJob:
             )
 
         try:
-            from services.r2_upload_service import R2UploadService
+            from poindexter.services.r2_upload_service import R2UploadService
 
             svc = R2UploadService(site_config=site_config)
             objects = await svc.list_objects(_PREFIX)

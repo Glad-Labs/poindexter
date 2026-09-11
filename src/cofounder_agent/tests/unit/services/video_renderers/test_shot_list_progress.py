@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from poindexter.services.video_renderers import shot_list_renderer as slr
 from schemas.video_shot_list import Shot, VideoShotList
-from services.video_renderers import shot_list_renderer as slr
 
 pytestmark = pytest.mark.asyncio
 

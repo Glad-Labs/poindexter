@@ -102,8 +102,10 @@ def _build_status_validated_client(mock_db=None, mock_status_service=None):
     directly; instead we patch the underlying function in ``utils.route_utils``
     (same pattern as ``test_task_status_routes.py``).
     """
+    from poindexter.services.enhanced_status_change_service import (
+        EnhancedStatusChangeService,  # noqa: PLC0415
+    )
     from routes.task_routes import router as task_router  # noqa: PLC0415
-    from services.enhanced_status_change_service import EnhancedStatusChangeService  # noqa: PLC0415
 
     if mock_db is None:
         mock_db = make_mock_db()
@@ -306,7 +308,7 @@ class TestStatusValidatedWrongState409:
 
     def test_wrong_state_transition_returns_409(self):
         """Service returning 'Invalid status transition' should surface as 409."""
-        from services.enhanced_status_change_service import EnhancedStatusChangeService
+        from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
 
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=_PUBLISHED_TASK)
@@ -334,7 +336,7 @@ class TestStatusValidatedWrongState409:
 
     def test_wrong_state_transition_body_contains_message(self):
         """The 409 body should echo the transition error message."""
-        from services.enhanced_status_change_service import EnhancedStatusChangeService
+        from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
 
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=_PUBLISHED_TASK)
@@ -357,7 +359,7 @@ class TestStatusValidatedWrongState409:
 
     def test_successful_transition_still_returns_200(self):
         """Regression: valid transition still succeeds."""
-        from services.enhanced_status_change_service import EnhancedStatusChangeService
+        from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
 
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=_PENDING_TASK)
@@ -383,7 +385,7 @@ class TestStatusValidatedWrongState409:
 
     def test_deprecation_header_present_on_success(self):
         """The Deprecation response header should be set on every response."""
-        from services.enhanced_status_change_service import EnhancedStatusChangeService
+        from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
 
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=_PENDING_TASK)
@@ -407,7 +409,7 @@ class TestStatusValidatedWrongState409:
 
     def test_non_transition_failure_returns_200_success_false(self):
         """Other failures (e.g. update_failed) keep backward-compat 200 body."""
-        from services.enhanced_status_change_service import EnhancedStatusChangeService
+        from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
 
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=_PENDING_TASK)

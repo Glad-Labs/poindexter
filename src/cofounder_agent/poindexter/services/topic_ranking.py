@@ -9,9 +9,9 @@ import json
 import math
 from typing import Any
 
-from services.logger_config import get_logger
-from services.niche_service import NicheGoal
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.niche_service import NicheGoal
+from poindexter.services.site_config import SiteConfig
 
 # ``get_prompt_manager`` is imported lazily inside ``llm_final_score`` (its
 # only caller) instead of at module top-level. ``prompt_manager`` pulls in
@@ -159,7 +159,7 @@ def weighted_cosine_score(
 
 from dataclasses import dataclass
 
-from services.topic_grounding import GroundingMatch
+from poindexter.services.topic_grounding import GroundingMatch
 
 
 @dataclass
@@ -187,7 +187,7 @@ class ScoredCandidate:
     decay_factor: float = 1.0
 
 
-from services.langfuse_shim import langfuse_context, observe
+from poindexter.services.langfuse_shim import langfuse_context, observe
 
 
 @observe(as_type="generation", name="topic_ranking._ollama_chat_json")
@@ -248,7 +248,7 @@ async def _ollama_chat_json(
     resolved_pool = pool if pool is not None else getattr(_sc, "_pool", None)
 
     if resolved_pool is not None:
-        from services.llm_providers.dispatcher import dispatch_complete
+        from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
         langfuse_context.update_current_observation(
             model=model,
@@ -351,7 +351,7 @@ async def llm_final_score(
         # (DB-configurable ``structured_extraction_model``), NOT the writer
         # model — a reasoning writer model returns empty ``content`` under
         # ``response_format=json_object`` (2026-05-28 content-gen stall).
-        from services.llm_text import resolve_structured_model
+        from poindexter.services.llm_text import resolve_structured_model
         model = resolve_structured_model(site_config=_sc)
     descriptions = _resolve_goal_descriptions(site_config=_sc)
     weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {descriptions[g.goal_type]}" for g in weights)
@@ -359,7 +359,7 @@ async def llm_final_score(
     # Lazy import (see module header): defers the PyYAML-bearing prompt_manager
     # import to the only code path that actually needs it, so the MCP server's
     # operator topic tools can import this module without PyYAML installed.
-    from services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
     prompt = get_prompt_manager().get_prompt(
         "topic.ranking",
         weights_descr=weights_descr,

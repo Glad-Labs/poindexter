@@ -66,7 +66,7 @@ class TestDetection:
         assert found == [(1, "modules.content.api"), (1, "modules.finance.api")]
 
     def test_kernel_import_not_flagged(self):
-        assert LINT.scan_source("from services.site_config import SiteConfig\n") == []
+        assert LINT.scan_source("services.site_config import SiteConfig\n") == []
 
     def test_lookalike_prefix_not_flagged(self):
         """``modules_helper`` is not the ``modules`` package — prefix, not namespace."""

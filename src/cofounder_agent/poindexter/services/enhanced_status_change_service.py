@@ -3,8 +3,8 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from services.logger_config import get_logger
-from services.tasks_db import TasksDatabase
+from poindexter.services.logger_config import get_logger
+from poindexter.services.tasks_db import TasksDatabase
 from utils.json_encoder import safe_json_load
 from utils.task_status import StatusTransitionValidator
 

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.schedule_social_drafts import ScheduleSocialDraftsJob
+from poindexter.services.jobs.schedule_social_drafts import ScheduleSocialDraftsJob
 
 pytestmark = pytest.mark.unit
 
@@ -31,7 +31,7 @@ def _svc(auto=None, fired=None) -> MagicMock:
 
 
 def _patch_service(svc):
-    return patch("services.social_drafts.SocialDraftsService", return_value=svc)
+    return patch("poindexter.services.social_drafts.SocialDraftsService", return_value=svc)
 
 
 class TestMetadata:

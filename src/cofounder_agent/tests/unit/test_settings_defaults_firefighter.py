@@ -1,6 +1,6 @@
 import pytest
 
-from services.settings_defaults import DEFAULTS
+from poindexter.services.settings_defaults import DEFAULTS
 
 
 def test_firefighter_defaults_present_and_typed():
@@ -66,7 +66,7 @@ def test_ops_model_defaults_are_permissively_licensed(key):
     these run alongside wan + image-gen, so a permissive-but-huge pin trades a
     licensing bug for a VRAM one.
     """
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     permissive = {
         "ollama/granite4.2:3b",  # IBM Granite 4.2 — Apache-2.0

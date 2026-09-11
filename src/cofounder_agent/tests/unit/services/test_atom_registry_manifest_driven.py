@@ -57,7 +57,7 @@ class TestManifestDrivenAtomDiscovery:
         because pytest-xdist happened to distribute the files apart). Save the
         three module globals, yield, then restore them.
         """
-        import services.atom_registry as ar
+        import poindexter.services.atom_registry as ar
 
         saved_atoms = dict(ar._ATOMS)
         saved_runners = dict(ar._RUNNERS)
@@ -81,7 +81,7 @@ class TestManifestDrivenAtomDiscovery:
 
         Returns the MagicMock for _walk_package so callers can assert on it.
         """
-        import services.atom_registry as ar
+        import poindexter.services.atom_registry as ar
 
         # Force rediscovery.
         ar._DISCOVERED = False
@@ -134,7 +134,7 @@ class TestManifestDrivenAtomDiscovery:
 
     def test_fallback_when_get_modules_raises(self):
         """If get_modules() itself raises, discover() falls back to the hardcoded path."""
-        import services.atom_registry as ar
+        import poindexter.services.atom_registry as ar
 
         ar._DISCOVERED = False
         ar._ATOMS.clear()
@@ -160,7 +160,7 @@ class TestManifestDrivenAtomDiscovery:
     def _walk_that_registers(name: str = "atoms.fake"):
         """A _walk_package stand-in that actually populates the registry —
         successful discovery, so caching applies."""
-        import services.atom_registry as ar
+        import poindexter.services.atom_registry as ar
 
         def _walk(_pkg: str) -> None:
             meta = MagicMock()
@@ -173,7 +173,7 @@ class TestManifestDrivenAtomDiscovery:
     def test_discover_is_idempotent(self):
         """Calling discover() twice after a SUCCESSFUL (non-empty) discovery
         does not double-walk packages."""
-        import services.atom_registry as ar
+        import poindexter.services.atom_registry as ar
 
         ar._DISCOVERED = False
         ar._ATOMS.clear()
@@ -199,7 +199,7 @@ class TestManifestDrivenAtomDiscovery:
         graph_def load in that process then failed the drift gate with
         'atom no longer exists in the registry' for EVERY node, fataling the
         task. An empty discovery must not latch — the next call retries."""
-        import services.atom_registry as ar
+        import poindexter.services.atom_registry as ar
 
         ar._DISCOVERED = False
         ar._ATOMS.clear()
@@ -222,7 +222,7 @@ class TestManifestDrivenAtomDiscovery:
     def test_empty_then_successful_discovery_heals(self):
         """A transient empty discovery followed by a successful one leaves a
         populated, cached registry (self-healing within the process)."""
-        import services.atom_registry as ar
+        import poindexter.services.atom_registry as ar
 
         ar._DISCOVERED = False
         ar._ATOMS.clear()

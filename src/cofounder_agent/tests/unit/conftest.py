@@ -93,7 +93,7 @@ os.environ.setdefault("PREFECT_API_URL", "http://127.0.0.1:1/api")
 import pytest
 import pytest_asyncio
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # Single shared SiteConfig instance for the unit-test process. This
 # replaces the deleted module-level singleton at
@@ -300,7 +300,7 @@ _SHARED_TEST_MODULES = (
     # 2026-05-29 (#272 leaf batch 4); no module-level site_config attr to
     # share. Tests construct ``WebhookDeliveryService(pool, site_config=...)``
     # directly.
-    "services.devto_service",
+    "poindexter.services.devto_service",
     # ``utils.route_utils`` migrated to the process-wide AppContainer
     # accessor 2026-05-29 (#272 capstone); the module global +
     # set_site_config setter are deleted. ``get_site_config_dependency``
@@ -340,7 +340,7 @@ def _share_test_decorators() -> None:
     install it as the module-level default.
     """
     try:
-        from services.decorators import Decorators, set_default_decorators
+        from poindexter.services.decorators import Decorators, set_default_decorators
         set_default_decorators(Decorators(site_config=site_config))
     except Exception:
         pass
@@ -367,8 +367,8 @@ def _register_test_container() -> None:
     try:
         from unittest.mock import MagicMock
 
-        from services.container import AppContainer
-        from services.container_registry import set_container
+        from poindexter.services.container import AppContainer
+        from poindexter.services.container_registry import set_container
 
         set_container(
             AppContainer(
@@ -458,7 +458,7 @@ def _isolate_gpu_ollama_unload():
 
     try:
         patcher = patch(
-            "services.gpu_scheduler.unload_loaded_ollama_models",
+            "poindexter.services.gpu_scheduler.unload_loaded_ollama_models",
             new=AsyncMock(return_value=[]),
         )
         patcher.start()
@@ -565,7 +565,7 @@ def _isolate_ollama_model_arch_probe(request):
         return
     try:
         patcher = patch(
-            "services.vram_budget.read_model_arch",
+            "poindexter.services.vram_budget.read_model_arch",
             new=AsyncMock(return_value=None),
         )
         patcher.start()
@@ -601,7 +601,7 @@ def _isolate_coldload_reclaim_guard():
 
     try:
         patcher = patch(
-            "services.llm_providers.litellm_provider."
+            "poindexter.services.llm_providers.litellm_provider."
             "maybe_reclaim_before_coldload",
             new=AsyncMock(return_value=False),
         )
@@ -701,7 +701,7 @@ def _reset_singletons_between_tests():
 
     # settings_service caches the DB read; clear to force re-fetch.
     try:
-        import services.settings_service as _ss
+        import poindexter.services.settings_service as _ss
         if hasattr(_ss, "_settings_service"):
             _ss._settings_service = None
         if hasattr(_ss.SettingsService, "_cache"):
@@ -713,7 +713,7 @@ def _reset_singletons_between_tests():
 
     # container service registry (the DI holder used by get_service).
     try:
-        from services import container
+        from poindexter.services import container
         if hasattr(container, "_services"):
             container._services = {}
     except Exception:
@@ -862,7 +862,7 @@ async def _db_pool_session():
 
     pool = await asyncpg.create_pool(test_dsn, min_size=1, max_size=4)
     try:
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         class _StubService:
             def __init__(self, pool):
@@ -945,8 +945,8 @@ def default_container():
     """
     from unittest.mock import MagicMock
 
-    from services.container import AppContainer
-    from services.site_config import SiteConfig
+    from poindexter.services.container import AppContainer
+    from poindexter.services.site_config import SiteConfig
 
     return AppContainer(site_config=SiteConfig(), pool=MagicMock(name="default_container.pool"))
 

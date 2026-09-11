@@ -30,7 +30,7 @@ import pytest
 # imports cleanly on Windows too — verified the import chain no longer
 # segfaults — so the skip is stale on both counts and has been removed. The
 # happy-path test still guards on Ragas being installed via ``requires_ragas``.
-from services.ragas_eval import evaluate_sample, is_enabled
+from poindexter.services.ragas_eval import evaluate_sample, is_enabled
 
 
 def _ragas_importable() -> bool:
@@ -114,7 +114,7 @@ class TestEvaluateSampleGuards:
         # failure path (backend down → sentinels), not import breakage
         # (which now fails loud by design — poindexter#839).
         with patch(
-            "services.ragas_eval._build_ragas_models",
+            "poindexter.services.ragas_eval._build_ragas_models",
             side_effect=Exception("ollama down"),
         ), _inject_fake_modules({
             "datasets": MagicMock(),
@@ -148,7 +148,7 @@ class TestEvaluateSampleImportError:
         # succeeds regardless of the local install, making the patched
         # _build_ragas_models raise the ONE ImportError under test.
         with patch(
-            "services.ragas_eval._build_ragas_models",
+            "poindexter.services.ragas_eval._build_ragas_models",
             side_effect=ModuleNotFoundError(
                 "No module named 'langchain_community.chat_models.vertexai'"
             ),
@@ -177,33 +177,33 @@ class TestEvaluateSampleImportError:
 @pytest.mark.unit
 class TestCoerceMetric:
     def test_nan_becomes_sentinel(self):
-        from services.ragas_eval import _coerce_metric
+        from poindexter.services.ragas_eval import _coerce_metric
 
         assert _coerce_metric(float("nan")) == -1.0
 
     def test_infinities_become_sentinel(self):
-        from services.ragas_eval import _coerce_metric
+        from poindexter.services.ragas_eval import _coerce_metric
 
         assert _coerce_metric(float("inf")) == -1.0
         assert _coerce_metric(float("-inf")) == -1.0
 
     def test_none_becomes_sentinel(self):
-        from services.ragas_eval import _coerce_metric
+        from poindexter.services.ragas_eval import _coerce_metric
 
         assert _coerce_metric(None) == -1.0
 
     def test_unparseable_becomes_sentinel(self):
-        from services.ragas_eval import _coerce_metric
+        from poindexter.services.ragas_eval import _coerce_metric
 
         assert _coerce_metric("not-a-number") == -1.0
 
     def test_zero_is_a_real_score_not_a_sentinel(self):
-        from services.ragas_eval import _coerce_metric
+        from poindexter.services.ragas_eval import _coerce_metric
 
         assert _coerce_metric(0.0) == 0.0
 
     def test_normal_score_passes_through(self):
-        from services.ragas_eval import _coerce_metric
+        from poindexter.services.ragas_eval import _coerce_metric
 
         assert _coerce_metric(0.85) == 0.85
 
@@ -230,7 +230,7 @@ class TestBuildRagasModels:
         call_args matter)."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.ragas_eval import _build_ragas_models
+        from poindexter.services.ragas_eval import _build_ragas_models
 
         mock_chat_cls = MagicMock()
         fake_langchain_ollama = MagicMock()
@@ -242,7 +242,7 @@ class TestBuildRagasModels:
 
         with (
             patch(
-                "services.ragas_eval._resolve_judge_model",
+                "poindexter.services.ragas_eval._resolve_judge_model",
                 new_callable=AsyncMock,
                 return_value="phi4:14b",
             ),
@@ -411,7 +411,7 @@ class TestDispatcherWrappers:
     async def test_pool_prefers_dispatcher_over_chat_ollama(self):
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from services.ragas_eval import _build_ragas_models
+        from poindexter.services.ragas_eval import _build_ragas_models
 
         mock_chat_cls = MagicMock()
         fake_langchain_ollama = MagicMock()
@@ -420,7 +420,7 @@ class TestDispatcherWrappers:
 
         with (
             patch(
-                "services.ragas_eval._resolve_judge_model",
+                "poindexter.services.ragas_eval._resolve_judge_model",
                 new_callable=AsyncMock,
                 return_value="phi4:14b",
             ),
@@ -443,13 +443,13 @@ class TestDispatcherWrappers:
 
         from langchain_core.messages import HumanMessage
 
-        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+        from poindexter.services.ragas_eval import _build_dispatcher_ragas_wrappers
 
         dispatch_mock = AsyncMock(
             return_value=SimpleNamespace(text='{"statements": []}'),
         )
         monkeypatch.setattr(
-            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
         )
         with _inject_fake_modules(_identity_wrapper_modules()):
             llm, _ = _build_dispatcher_ragas_wrappers(
@@ -470,11 +470,11 @@ class TestDispatcherWrappers:
     async def test_aembed_routes_through_dispatch_embed(self, monkeypatch):
         from unittest.mock import AsyncMock
 
-        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+        from poindexter.services.ragas_eval import _build_dispatcher_ragas_wrappers
 
         embed_mock = AsyncMock(return_value=[0.1, 0.2])
         monkeypatch.setattr(
-            "services.llm_providers.dispatcher.dispatch_embed", embed_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_embed", embed_mock,
         )
         with _inject_fake_modules(_identity_wrapper_modules()):
             _, embeddings = _build_dispatcher_ragas_wrappers(
@@ -494,7 +494,7 @@ class TestDispatcherWrappers:
         _generate, so this one stays a loud raise (unchanged by #847)."""
         from langchain_core.messages import HumanMessage
 
-        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+        from poindexter.services.ragas_eval import _build_dispatcher_ragas_wrappers
 
         with _inject_fake_modules(_identity_wrapper_modules()):
             llm, _ = _build_dispatcher_ragas_wrappers(
@@ -510,11 +510,11 @@ class TestDispatcherWrappers:
         still return real vectors instead of raising (poindexter#847)."""
         from unittest.mock import AsyncMock
 
-        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+        from poindexter.services.ragas_eval import _build_dispatcher_ragas_wrappers
 
         embed_mock = AsyncMock(return_value=[0.1, 0.2])
         monkeypatch.setattr(
-            "services.llm_providers.dispatcher.dispatch_embed", embed_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_embed", embed_mock,
         )
         with _inject_fake_modules(_identity_wrapper_modules()):
             _, embeddings = _build_dispatcher_ragas_wrappers(
@@ -540,11 +540,11 @@ class TestDispatcherWrappers:
         import asyncio
         from unittest.mock import AsyncMock
 
-        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+        from poindexter.services.ragas_eval import _build_dispatcher_ragas_wrappers
 
         embed_mock = AsyncMock(return_value=[0.3, 0.4])
         monkeypatch.setattr(
-            "services.llm_providers.dispatcher.dispatch_embed", embed_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_embed", embed_mock,
         )
         with _inject_fake_modules(_identity_wrapper_modules()):
             _, embeddings = _build_dispatcher_ragas_wrappers(
@@ -587,7 +587,7 @@ class TestEvaluateSampleStubbed:
         }]
 
         with patch(
-            "services.ragas_eval._build_ragas_models",
+            "poindexter.services.ragas_eval._build_ragas_models",
             return_value=(MagicMock(), MagicMock()),
         ), patch("ragas.evaluate", return_value=fake_result), patch(
             "datasets.Dataset.from_dict", return_value=MagicMock(),
@@ -637,7 +637,7 @@ class TestEvaluateSampleNonFinite:
 
         with (
             patch(
-                "services.ragas_eval._build_ragas_models",
+                "poindexter.services.ragas_eval._build_ragas_models",
                 return_value=(MagicMock(), MagicMock()),
             ),
             _inject_fake_modules({
@@ -645,7 +645,7 @@ class TestEvaluateSampleNonFinite:
                 "ragas": fake_ragas,
                 "ragas.metrics": MagicMock(),
             }),
-            patch("services.audit_log.audit_log_bg") as mock_bg,
+            patch("poindexter.services.audit_log.audit_log_bg") as mock_bg,
         ):
             result = await evaluate_sample(
                 topic="Topic",
@@ -692,7 +692,7 @@ class TestRunConfigFromSettings:
 
     @pytest.mark.asyncio
     async def test_evaluate_receives_run_config_from_site_config(self):
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         captured: dict[str, Any] = {}
 
@@ -713,9 +713,9 @@ class TestRunConfigFromSettings:
         fake_datasets.Dataset.from_dict = lambda d: d
         sc = SiteConfig(initial_config={"ragas_job_timeout_seconds": "900", "ragas_max_workers": "2"})
         with patch(
-            "services.ragas_eval._build_ragas_models",
+            "poindexter.services.ragas_eval._build_ragas_models",
             return_value=(MagicMock(), MagicMock()),
-        ), patch("services.ragas_eval._emit_ragas_score_audit", lambda *a, **k: None), _inject_fake_modules({
+        ), patch("poindexter.services.ragas_eval._emit_ragas_score_audit", lambda *a, **k: None), _inject_fake_modules({
             "datasets": fake_datasets,
             "ragas": fake_ragas,
             "ragas.metrics": MagicMock(),
@@ -728,8 +728,8 @@ class TestRunConfigFromSettings:
         assert captured["run_config"] == ("RunConfig", {"timeout": 900, "max_workers": 2})
 
     def test_int_setting_falls_back_to_default(self):
-        from services.ragas_eval import _int_setting
-        from services.site_config import SiteConfig
+        from poindexter.services.ragas_eval import _int_setting
+        from poindexter.services.site_config import SiteConfig
 
         assert _int_setting(None, "ragas_job_timeout_seconds", 600) == 600
         assert _int_setting(SiteConfig(initial_config={}), "ragas_job_timeout_seconds", 600) == 600

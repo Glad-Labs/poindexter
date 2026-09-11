@@ -108,8 +108,8 @@ def sweep(niche: str) -> None:
     """
     async def _impl():
 
-        from services.niche_service import NicheService
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.niche_service import NicheService
+        from poindexter.services.topic_batch_service import TopicBatchService
 
         pool = await open_cli_pool()
         try:
@@ -235,8 +235,8 @@ def show_batch(niche: str) -> None:
     """Show the current open batch for a niche."""
     async def _impl():
 
-        from services.niche_service import NicheService
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.niche_service import NicheService
+        from poindexter.services.topic_batch_service import TopicBatchService
 
         pool = await open_cli_pool()
         try:
@@ -295,7 +295,7 @@ def rank_batch(batch_id: UUID, order: str) -> None:
     """Set operator ranking for a batch's candidates."""
     async def _impl():
 
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
 
         tokens = [s.strip() for s in order.split(",") if s.strip()]
         pool = await open_cli_pool()
@@ -331,7 +331,7 @@ def edit_winner(batch_id: UUID, topic: str | None, angle: str | None) -> None:
 
     async def _impl():
 
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
 
         pool = await open_cli_pool()
         try:
@@ -360,7 +360,7 @@ def resolve_batch(batch_id: UUID) -> None:
     """Resolve a batch — advance the rank-1 candidate to the pipeline."""
     async def _impl():
 
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
 
         pool = await open_cli_pool()
         try:
@@ -388,7 +388,7 @@ def reject_batch(batch_id: UUID, reason: str) -> None:
     """Reject a batch — discard candidates, allow a fresh sweep."""
     async def _impl():
 
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
 
         pool = await open_cli_pool()
         try:
@@ -422,7 +422,7 @@ def niche_list() -> None:
     """List every active niche."""
     async def _impl():
 
-        from services.niche_service import NicheService
+        from poindexter.services.niche_service import NicheService
 
         pool = await open_cli_pool()
         try:
@@ -440,7 +440,7 @@ def niche_show(slug: str) -> None:
     """Print full niche config (slug, goals, sources) as JSON."""
     async def _impl():
 
-        from services.niche_service import NicheService
+        from poindexter.services.niche_service import NicheService
 
         pool = await open_cli_pool()
         try:
@@ -492,7 +492,7 @@ def niche_set_cadence(niche: str, target: float) -> None:
     """
     async def _impl():
 
-        from services.niche_service import NicheService
+        from poindexter.services.niche_service import NicheService
 
         pool = await open_cli_pool()
         try:

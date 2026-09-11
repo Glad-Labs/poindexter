@@ -20,10 +20,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from middleware.api_token_auth import verify_api_token
-from services.gpu_lease_stats import list_stats
-from services.gpu_queue_mirror import list_waiters
-from services.gpu_scheduler import gpu
-from services.logger_config import get_logger
+from poindexter.services.gpu_lease_stats import list_stats
+from poindexter.services.gpu_queue_mirror import list_waiters
+from poindexter.services.gpu_scheduler import gpu
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

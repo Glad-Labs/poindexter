@@ -130,7 +130,7 @@ from utils.findings import emit_finding
 
 if TYPE_CHECKING:  # annotation-only — the runtime import stays lazy, inside
     # _probe_infra_health, so importing this job never pulls the probe stack.
-    from services.media_infra_health import MediaInfraHealth
+    from poindexter.services.media_infra_health import MediaInfraHealth
 
 logger = logging.getLogger(__name__)
 
@@ -914,7 +914,7 @@ class MediaReconciliationJob:
         is simply skipped by the evaluator.
         """
         try:
-            from services.media_approval_service import record_pending
+            from poindexter.services.media_approval_service import record_pending
 
             await record_pending(
                 pool, post_id, asset_type, file_path=file_path,
@@ -1033,7 +1033,7 @@ class MediaReconciliationJob:
         cdn_ver = sc.get("podcast_cdn_version", "v2") or "v2"
         key = f"podcast/{cdn_ver}/{post_id}.mp3"
         try:
-            from services.r2_upload_service import R2UploadService
+            from poindexter.services.r2_upload_service import R2UploadService
 
             r2 = R2UploadService(site_config=sc)
             url = await r2.upload_to_r2(storage_path, key, "audio/mpeg")
@@ -1297,7 +1297,7 @@ class MediaReconciliationJob:
         """
         cached = getattr(self, "_infra_health_cache", None)
         if cached is None:
-            from services.media_infra_health import check_media_infra_health
+            from poindexter.services.media_infra_health import check_media_infra_health
 
             cached = await check_media_infra_health(
                 getattr(self, "_site_config", None),

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.db_backup import DbBackupJob
+from poindexter.services.jobs.db_backup import DbBackupJob
 
 
 def _fake_proc(returncode: int = 0, stdout: bytes = b"", stderr: bytes = b"") -> MagicMock:
@@ -50,7 +50,7 @@ class TestRun:
         proc = _fake_proc(returncode=0, stdout=b"backup ok")
 
         with patch(
-            "services.jobs.db_backup.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.db_backup.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=proc),
         ):
             job = DbBackupJob()
@@ -70,7 +70,7 @@ class TestRun:
         proc = _fake_proc(returncode=1, stderr=b"pg_dump: connection failed")
 
         with patch(
-            "services.jobs.db_backup.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.db_backup.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=proc),
         ):
             job = DbBackupJob()
@@ -97,9 +97,9 @@ class TestRun:
             raise TimeoutError("simulated")
 
         with patch(
-            "services.jobs.db_backup.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.db_backup.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=proc),
-        ), patch("services.jobs.db_backup.asyncio.wait_for", new=_raise_timeout):
+        ), patch("poindexter.services.jobs.db_backup.asyncio.wait_for", new=_raise_timeout):
             job = DbBackupJob()
             result = await job.run(
                 pool=None,
@@ -116,7 +116,7 @@ class TestRun:
         script.write_text("#!/bin/bash\necho ok\n")
 
         with patch(
-            "services.jobs.db_backup.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.db_backup.asyncio.create_subprocess_exec",
             new=AsyncMock(side_effect=OSError("fork failed")),
         ):
             job = DbBackupJob()

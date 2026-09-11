@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import asyncpg
 import pytest
 
-from services import agent_permissions
+from poindexter.services import agent_permissions
 
 
 def _make_pool(fetchrow_return=None, execute_return=None):

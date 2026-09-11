@@ -134,7 +134,7 @@ def load_token(base_url: str) -> str | None:
         return None
     # Lazy import: keeps CLI cold-start light and avoids an import cycle at
     # module load (oauth_client pulls httpx + logger_config).
-    from services.auth.oauth_client import token_is_fresh
+    from poindexter.services.auth.oauth_client import token_is_fresh
 
     if not token_is_fresh(token):
         return None

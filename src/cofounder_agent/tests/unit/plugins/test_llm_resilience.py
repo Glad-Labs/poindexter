@@ -34,14 +34,14 @@ from plugins.llm_resilience import (
     RetryDecision,
     compute_backoff,
 )
-from services.ollama_resilience import (
+from poindexter.services.ollama_resilience import (
     OllamaCircuitOpenError,
     OllamaEmptyResponseError,
     OllamaResilienceManager,
     is_retryable,
     ollama_classifier,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures

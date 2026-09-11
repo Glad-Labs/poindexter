@@ -23,9 +23,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services.logger_config import get_logger
-from services.media_policy import resolve_media_to_generate
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.media_policy import resolve_media_to_generate
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 from utils.text_utils import extract_title_from_content, strip_title_label
 
@@ -272,7 +272,7 @@ def _spawn_background(coro, name: str | None = None) -> asyncio.Task:
         )
         if isinstance(exc, Exception):
             try:
-                from services.sentry_integration import SentryIntegration
+                from poindexter.services.sentry_integration import SentryIntegration
                 SentryIntegration.capture_exception(
                     exc,
                     context={"task_name": _task_name},
@@ -391,7 +391,7 @@ async def _sync_published_post(post_id: str) -> None:
     if not _should_run_post_publish_hooks():
         return
     try:
-        from services.sync_service import SyncService
+        from poindexter.services.sync_service import SyncService
 
         async with SyncService() as sync:
             ok = await sync.push_post(post_id)
@@ -506,7 +506,7 @@ async def _embed_published_post(db_service, post_dict: dict, site_config: "SiteC
     """Embed a newly published post into pgvector (non-blocking)."""
     try:
         from plugins.registry import get_all_llm_providers
-        from services.embedding_service import EmbeddingService
+        from poindexter.services.embedding_service import EmbeddingService
 
         embeddings_db = getattr(db_service, "embeddings", None)
         if not embeddings_db:
@@ -809,7 +809,7 @@ def _parse_publish_inputs(
     Returns the parsed inputs, or a failed :class:`PublishResult` when the task
     is missing the content or topic required to create a post.
     """
-    from services.llm_text import maybe_unwrap_json
+    from poindexter.services.llm_text import maybe_unwrap_json
 
     task_result = _parse_json_field(task.get("result"), "result", task_id)
     task_metadata = _parse_json_field(task.get("task_metadata"), "task_metadata", task_id)
@@ -973,7 +973,7 @@ async def _promote_or_skip_existing(
         # static_export_reconciliation probe caught up.
         promote_export_success = False
         try:
-            from services.static_export_service import export_post
+            from poindexter.services.static_export_service import export_post
 
             promote_export_success = await export_post(
                 pool, existing["slug"], site_config=site_config,
@@ -1069,12 +1069,12 @@ async def _niche_allowlist_block(
     if draft_mode or not site_config.get_bool("enforce_niche_allowlist", True):
         return None
 
-    from services.niche_service import get_known_niche_slugs
+    from poindexter.services.niche_service import get_known_niche_slugs
 
     task_niche = (task.get("niche_slug") or "").strip()
     known = await get_known_niche_slugs(pool)
     if known and task_niche not in known:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
 
         msg = (
             f"publish blocked (#729): task {task_id} "
@@ -1177,7 +1177,7 @@ async def _upload_media_to_r2_bg(site_config: SiteConfig, post_id: str) -> None:
     import asyncio as _aio
     from pathlib import Path
 
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
     _r2 = R2UploadService(site_config=site_config)
     # Give podcast/video/short generation time to complete
     _delay = int(site_config.get("media_upload_delay_seconds", "240"))
@@ -1216,7 +1216,7 @@ async def _upload_media_to_r2_bg(site_config: SiteConfig, post_id: str) -> None:
     try:
         import httpx as _hx
 
-        from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
+        from poindexter.services.bootstrap_defaults import DEFAULT_WORKER_API_URL
         _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
         # Per-call temp file via tempfile.mkstemp avoids hardcoded
         # /tmp paths (Bandit B108) and prevents collisions when
@@ -1244,7 +1244,7 @@ async def _upload_media_to_r2_bg(site_config: SiteConfig, post_id: str) -> None:
     try:
         import httpx as _hx
 
-        from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
+        from poindexter.services.bootstrap_defaults import DEFAULT_WORKER_API_URL
         _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
         # Per-call temp file via tempfile.mkstemp avoids hardcoded
         # /tmp paths (Bandit B108).
@@ -1295,7 +1295,7 @@ async def _send_post_newsletter_bg(
     have a pool in scope.
     """
     try:
-        from services.newsletter_service import send_post_newsletter
+        from poindexter.services.newsletter_service import send_post_newsletter
         _pool = (
             getattr(pool_or_db, "cloud_pool", None)
             or getattr(pool_or_db, "pool", None)
@@ -1307,7 +1307,7 @@ async def _send_post_newsletter_bg(
             _pool, title, excerpt, slug, site_config=site_config,
         )
         logger.info("[NEWSLETTER] Result: %s", result)
-        from services.audit_log import audit_log_bg
+        from poindexter.services.audit_log import audit_log_bg
         audit_log_bg(
             "newsletter_campaign_sent",
             "newsletter_service",
@@ -1436,7 +1436,7 @@ async def _backstamp_media_assets(db_service, task_id: str, post_id: str) -> Non
 async def _emit_publish_webhook(db_service, task_id: str, post_title: str) -> None:
     """Phase 7 — emit the ``post.published`` webhook event (best-effort)."""
     try:
-        from services.webhook_delivery_service import emit_webhook_event
+        from poindexter.services.webhook_delivery_service import emit_webhook_event
 
         await emit_webhook_event(
             getattr(db_service, "cloud_pool", None) or db_service.pool,
@@ -1514,7 +1514,7 @@ def _queue_devto_crosspost(
 ) -> None:
     """Phase 9b — queue Dev.to cross-posting (best-effort)."""
     try:
-        from services.devto_service import DevToCrossPostService
+        from poindexter.services.devto_service import DevToCrossPostService
 
         # Thread the lifespan-bound site_config so the DevTo crosspost can read
         # site_url for the canonical URL; without it the service falls back to a
@@ -1542,7 +1542,7 @@ async def _revalidate_isr(slug: str, site_config: SiteConfig) -> bool:
     Routed through trigger_isr_revalidate (#327) so every publish path uses the
     same canonical-paths/tags + async get_secret() flow."""
     try:
-        from services.revalidation_service import trigger_isr_revalidate
+        from poindexter.services.revalidation_service import trigger_isr_revalidate
 
         ok = await trigger_isr_revalidate(slug, site_config=site_config)
         if not ok:
@@ -1562,7 +1562,7 @@ async def _export_static_post(db_service, slug: str, site_config: SiteConfig) ->
     result lands on PublishResult.static_export_success so callers can surface
     the failure."""
     try:
-        from services.static_export_service import export_post
+        from poindexter.services.static_export_service import export_post
 
         _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
         ok = await export_post(_pool, slug, site_config=site_config)
@@ -1702,8 +1702,8 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 4. Get author + category
     # ---------------------------------------------------------------
-    from services.category_resolver import select_category_for_topic
-    from services.default_author import get_or_create_default_author
+    from poindexter.services.category_resolver import select_category_for_topic
+    from poindexter.services.default_author import get_or_create_default_author
 
     author_id = await get_or_create_default_author(db_service)
     category_id = await select_category_for_topic(post_title, db_service)
@@ -1933,7 +1933,7 @@ async def publish_post_from_task(
     # before the post existed; now that we have post_id, link them.
     if _sc.get("social_drafts_enabled", "false").lower() in ("true", "1", "yes"):
         try:
-            from services.social_drafts import SocialDraftsService
+            from poindexter.services.social_drafts import SocialDraftsService
             pool = getattr(db_service, "pool", None)
             if pool:
                 await SocialDraftsService().backfill_post_id(task_id, post_id, pool)
@@ -1996,7 +1996,7 @@ async def publish_post_from_task(
     # 12. Send notification
     # ---------------------------------------------------------------
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
 
         _q_score = task.get("quality_score") or merged.get("quality_score") or "N/A"
         await notify_operator(
@@ -2125,7 +2125,7 @@ async def fire_post_distribution_hooks(
         # Static export (R2) so the post becomes fetchable by the
         # public-site getPostBySlug call.
         try:
-            from services.static_export_service import export_post
+            from poindexter.services.static_export_service import export_post
             _spawn_background(
                 export_post(pool, slug, site_config=_sc),
                 name=f"static_export({slug})",
@@ -2140,7 +2140,7 @@ async def fire_post_distribution_hooks(
         # ISR revalidate so Vercel rebuilds the slug page immediately
         # rather than waiting for natural ISR expiry.
         try:
-            from services.revalidation_service import trigger_isr_revalidate
+            from poindexter.services.revalidation_service import trigger_isr_revalidate
             ok = await trigger_isr_revalidate(slug, site_config=_sc)
             if ok:
                 fired["hooks"].append("isr_revalidate")
@@ -2156,7 +2156,7 @@ async def fire_post_distribution_hooks(
 
     # 2. Dev.to
     try:
-        from services.devto_service import DevToCrossPostService
+        from poindexter.services.devto_service import DevToCrossPostService
         devto_svc = DevToCrossPostService(pool, site_config=_sc)
         _spawn_background(
             devto_svc.cross_post_by_post_id(post_id),
@@ -2233,7 +2233,7 @@ async def publish_now(
     """
     if site_config is None:
         try:
-            from services.container_registry import get_container
+            from poindexter.services.container_registry import get_container
             _c = get_container()
             site_config = _c.site_config if _c is not None else SiteConfig()
         except Exception:
@@ -2299,14 +2299,14 @@ async def publish_now(
 
     # ---- Distribution (best-effort; media-gen intentionally excluded) ----
     try:
-        from services.static_export_service import export_post
+        from poindexter.services.static_export_service import export_post
         if await export_post(pool, slug, site_config=_sc):
             fired["hooks"].append("static_export")
     except Exception as e:
         logger.warning("[publish_service] publish_now static_export failed (non-fatal): %s", e)
 
     try:
-        from services.revalidation_service import trigger_isr_revalidate
+        from poindexter.services.revalidation_service import trigger_isr_revalidate
         if await trigger_isr_revalidate(slug, site_config=_sc):
             fired["hooks"].append("isr_revalidate")
     except Exception as e:
@@ -2317,7 +2317,7 @@ async def publish_now(
     # Legacy on-publish distribute path removed 2026-06-29.
 
     try:
-        from services.devto_service import DevToCrossPostService
+        from poindexter.services.devto_service import DevToCrossPostService
         devto_svc = DevToCrossPostService(pool, site_config=_sc)
         _spawn_background(
             devto_svc.cross_post_by_post_id(post_id),
@@ -2386,7 +2386,7 @@ async def unpublish_post(
     """
     if site_config is None:
         try:
-            from services.container_registry import get_container
+            from poindexter.services.container_registry import get_container
 
             _c = get_container()
             site_config = _c.site_config if _c is not None else SiteConfig()
@@ -2453,7 +2453,7 @@ async def unpublish_post(
     # Retire the static JSON + bust ISR so the live site drops the post NOW.
     # Best-effort: a cleanup failure must not mask the completed status flip.
     try:
-        from services.static_export_service import _retire_slug
+        from poindexter.services.static_export_service import _retire_slug
 
         await _retire_slug(slug, site_config=_sc)
         result["hooks"].append("retired")
@@ -2541,7 +2541,7 @@ async def unapprove_task(
     actor = reviewer_id or "operator"
 
     try:
-        from services.pipeline_db import PipelineDB
+        from poindexter.services.pipeline_db import PipelineDB
 
         await PipelineDB(pool).clear_qa_approved_snapshot(task_id)
     except Exception as marker_err:  # noqa: BLE001
@@ -2574,7 +2574,7 @@ async def unapprove_task(
         )
 
     try:
-        from services.router_outcome_feedback import record_task_outcome
+        from poindexter.services.router_outcome_feedback import record_task_outcome
 
         await record_task_outcome(pool=pool, task_id=task_id, decision="rejected")
     except Exception as rfb_err:  # noqa: BLE001  # silent-ok: best-effort learning-signal nudge; the status revert already succeeded and must be reported as such regardless

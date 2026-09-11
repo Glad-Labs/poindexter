@@ -28,7 +28,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from services.chart_render import ChartSpec, Series
+from poindexter.services.chart_render import ChartSpec, Series
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ async def _build_decode_vs_delivered(
     that proposes these posts, so the chart and the prose are drawn from one
     query rather than two that can drift apart.
     """
-    from services.benchmark_findings import measure_models
+    from poindexter.services.benchmark_findings import measure_models
 
     measurements = await measure_models(
         pool, window_days=window_days, min_calls=min_calls,

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.integrations.handlers.tap_external_metrics_writer import (
+from poindexter.services.integrations.handlers.tap_external_metrics_writer import (
     external_metrics_writer,
 )
 

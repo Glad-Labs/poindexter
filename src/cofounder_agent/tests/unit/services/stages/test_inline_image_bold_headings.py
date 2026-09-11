@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 def _make_plan_images_result(*sections: str):
@@ -62,7 +62,7 @@ async def test_bold_pseudo_headings_anchor_inline_image_placeholders():
     fake_plan = _make_plan_images_result("First Real Section", "Second Section")
 
     with patch(
-        "services.image_decision_agent.plan_images",
+        "poindexter.services.image_decision_agent.plan_images",
         new=AsyncMock(return_value=fake_plan),
     ):
         result_content, info = await _plan_and_inject_placeholders(
@@ -99,7 +99,7 @@ async def test_real_h2_headings_still_take_priority():
     fake_plan = _make_plan_images_result("Real Section")
 
     with patch(
-        "services.image_decision_agent.plan_images",
+        "poindexter.services.image_decision_agent.plan_images",
         new=AsyncMock(return_value=fake_plan),
     ):
         result_content, _info = await _plan_and_inject_placeholders(
@@ -127,7 +127,7 @@ async def test_inline_bold_text_does_not_anchor_placeholders():
     fake_plan = _make_plan_images_result("inline bold word")
 
     with patch(
-        "services.image_decision_agent.plan_images",
+        "poindexter.services.image_decision_agent.plan_images",
         new=AsyncMock(return_value=fake_plan),
     ):
         result_content, _info = await _plan_and_inject_placeholders(

@@ -326,9 +326,9 @@ class TestGetEnhancedStatusChangeService:
 
             with (
                 patch("utils.route_utils.ServiceContainer"),  # not patched — import already done
-                patch("services.tasks_db.TasksDatabase", mock_tasks_db_cls),
+                patch("poindexter.services.tasks_db.TasksDatabase", mock_tasks_db_cls),
                 patch(
-                    "services.enhanced_status_change_service.EnhancedStatusChangeService",
+                    "poindexter.services.enhanced_status_change_service.EnhancedStatusChangeService",
                     mock_esc_cls,
                 ),
             ):

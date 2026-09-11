@@ -15,7 +15,7 @@ See docs/architecture/business-os-endgame.md.
 
 from __future__ import annotations
 
-from services.prompt_manager import PromptCategory, UnifiedPromptManager
+from poindexter.services.prompt_manager import PromptCategory, UnifiedPromptManager
 
 # Every key the content_qa pack provides, with the placeholders the
 # template must still contain after migration. Guards against silent

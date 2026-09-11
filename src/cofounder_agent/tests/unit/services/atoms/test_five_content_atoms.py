@@ -92,15 +92,15 @@ class TestContentGenerateTitle:
         orig = _originality_result(is_original=True)
 
         monkeypatch.setattr(
-            "services.title_generation.generate_canonical_title",
+            "poindexter.services.title_generation.generate_canonical_title",
             AsyncMock(return_value=expected_title),
         )
         monkeypatch.setattr(
-            "services.title_generation.choose_canonical_title",
+            "poindexter.services.title_generation.choose_canonical_title",
             lambda topic, content, llm_title, **kw: llm_title,
         )
         monkeypatch.setattr(
-            "services.title_generation.check_title_originality",
+            "poindexter.services.title_generation.check_title_originality",
             AsyncMock(return_value=orig),
         )
 
@@ -128,14 +128,14 @@ class TestContentGenerateTitle:
 
         gen_mock = AsyncMock(return_value="Threaded Title")
         monkeypatch.setattr(
-            "services.title_generation.generate_canonical_title", gen_mock,
+            "poindexter.services.title_generation.generate_canonical_title", gen_mock,
         )
         monkeypatch.setattr(
-            "services.title_generation.choose_canonical_title",
+            "poindexter.services.title_generation.choose_canonical_title",
             lambda topic, content, llm_title, **kw: llm_title,
         )
         monkeypatch.setattr(
-            "services.title_generation.check_title_originality",
+            "poindexter.services.title_generation.check_title_originality",
             AsyncMock(return_value=_originality_result(is_original=True)),
         )
 
@@ -165,7 +165,7 @@ class TestContentGenerateTitle:
         from modules.content.atoms import content_generate_title as atom
 
         gen_mock = AsyncMock(return_value="Some Title")
-        monkeypatch.setattr("services.title_generation.generate_canonical_title", gen_mock)
+        monkeypatch.setattr("poindexter.services.title_generation.generate_canonical_title", gen_mock)
 
         state = _base_state(content="")
         out = await atom.run(state)
@@ -194,9 +194,9 @@ class TestContentGenerateTitle:
         async def _check(title, *, site_config, pool=None, exclude_task_id=None):
             return next(checks)
 
-        monkeypatch.setattr("services.title_generation.generate_canonical_title", _gen)
-        monkeypatch.setattr("services.title_generation.choose_canonical_title", lambda t, c, l, **kw: l)
-        monkeypatch.setattr("services.title_generation.check_title_originality", _check)
+        monkeypatch.setattr("poindexter.services.title_generation.generate_canonical_title", _gen)
+        monkeypatch.setattr("poindexter.services.title_generation.choose_canonical_title", lambda t, c, l, **kw: l)
+        monkeypatch.setattr("poindexter.services.title_generation.check_title_originality", _check)
 
         mock_conn = AsyncMock()
         mock_conn.fetch = AsyncMock(return_value=[])
@@ -218,9 +218,9 @@ class TestContentGenerateTitle:
         expected_title = "Test Title"
         orig = _originality_result()
 
-        monkeypatch.setattr("services.title_generation.generate_canonical_title", AsyncMock(return_value=expected_title))
-        monkeypatch.setattr("services.title_generation.choose_canonical_title", lambda t, c, l, **kw: l)
-        monkeypatch.setattr("services.title_generation.check_title_originality", AsyncMock(return_value=orig))
+        monkeypatch.setattr("poindexter.services.title_generation.generate_canonical_title", AsyncMock(return_value=expected_title))
+        monkeypatch.setattr("poindexter.services.title_generation.choose_canonical_title", lambda t, c, l, **kw: l)
+        monkeypatch.setattr("poindexter.services.title_generation.check_title_originality", AsyncMock(return_value=orig))
 
         db = _make_db()
         db.pool = None  # causes _fetch_existing_titles to return ""
@@ -254,7 +254,7 @@ class TestContentCheckTitleOriginality:
 
         orig = _originality_result(is_original=True)
         monkeypatch.setattr(
-            "services.title_generation.check_title_originality",
+            "poindexter.services.title_generation.check_title_originality",
             AsyncMock(return_value=orig),
         )
 
@@ -270,7 +270,7 @@ class TestContentCheckTitleOriginality:
 
         orig = _originality_result(is_original=False, max_similarity=0.9, similar_titles=["Existing Post Title"])
         monkeypatch.setattr(
-            "services.title_generation.check_title_originality",
+            "poindexter.services.title_generation.check_title_originality",
             AsyncMock(return_value=orig),
         )
 
@@ -286,7 +286,7 @@ class TestContentCheckTitleOriginality:
         from modules.content.atoms import content_check_title_originality as atom
 
         check_mock = AsyncMock(return_value=_originality_result())
-        monkeypatch.setattr("services.title_generation.check_title_originality", check_mock)
+        monkeypatch.setattr("poindexter.services.title_generation.check_title_originality", check_mock)
 
         existing = _originality_result(is_original=True, max_similarity=0.05)
         state = _base_state(title_originality=existing)
@@ -300,7 +300,7 @@ class TestContentCheckTitleOriginality:
         from modules.content.atoms import content_check_title_originality as atom
 
         check_mock = AsyncMock(return_value=_originality_result())
-        monkeypatch.setattr("services.title_generation.check_title_originality", check_mock)
+        monkeypatch.setattr("poindexter.services.title_generation.check_title_originality", check_mock)
 
         state = _base_state(title="")
         out = await atom.run(state)
@@ -315,7 +315,7 @@ class TestContentCheckTitleOriginality:
         async def _boom(title, *, site_config):
             raise RuntimeError("network error")
 
-        monkeypatch.setattr("services.title_generation.check_title_originality", _boom)
+        monkeypatch.setattr("poindexter.services.title_generation.check_title_originality", _boom)
 
         state = _base_state()
         out = await atom.run(state)
@@ -535,11 +535,11 @@ class TestContentGenerateImages:
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
-            "services.image_service.get_image_service",
+            "poindexter.services.image_service.get_image_service",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "services.alt_text.sanitize_alt_text",
+            "poindexter.services.alt_text.sanitize_alt_text",
             lambda alt, budget, topic: alt,
         )
 
@@ -576,11 +576,11 @@ class TestContentGenerateImages:
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
-            "services.image_service.get_image_service",
+            "poindexter.services.image_service.get_image_service",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "services.alt_text.sanitize_alt_text",
+            "poindexter.services.alt_text.sanitize_alt_text",
             lambda alt, budget, topic: alt,
         )
 
@@ -613,11 +613,11 @@ class TestContentGenerateImages:
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
-            "services.image_service.get_image_service",
+            "poindexter.services.image_service.get_image_service",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "services.alt_text.sanitize_alt_text",
+            "poindexter.services.alt_text.sanitize_alt_text",
             lambda alt, budget, topic: alt,
         )
 
@@ -644,8 +644,8 @@ class TestContentGenerateImages:
         monkeypatch.setattr("modules.content.atoms._image_helpers.batch_generate_inline_image_urls", _batch)
         monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", AsyncMock(return_value=None))
         monkeypatch.setattr("modules.content.atoms._image_helpers.record_inline_image_asset", AsyncMock())
-        monkeypatch.setattr("services.image_service.get_image_service", MagicMock(return_value=MagicMock()))
-        monkeypatch.setattr("services.alt_text.sanitize_alt_text", lambda alt, budget, topic: alt)
+        monkeypatch.setattr("poindexter.services.image_service.get_image_service", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr("poindexter.services.alt_text.sanitize_alt_text", lambda alt, budget, topic: alt)
 
         state = _base_state(
             image_plans=[
@@ -691,7 +691,7 @@ class TestContentRecordPipelineVersionBehavior:
             async def upsert_version(self, task_id, data):
                 upsert_calls.append((task_id, data))
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
 
         state = _base_state(
             content="# Post\n\nBody text.",
@@ -722,7 +722,7 @@ class TestContentRecordPipelineVersionBehavior:
             async def upsert_version(self, task_id, data):
                 upsert_calls.append((task_id, data))
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
 
         state = _base_state(seo_keywords=["python", "async", "concurrency"])
         await atom.run(state)
@@ -741,7 +741,7 @@ class TestContentRecordPipelineVersionBehavior:
             async def upsert_version(self, task_id, data):
                 upsert_calls.append((task_id, data))
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
 
         state = _base_state()
         state.pop("task_id")
@@ -759,7 +759,7 @@ class TestContentRecordPipelineVersionBehavior:
             async def upsert_version(self, task_id, data):
                 raise RuntimeError("connection lost")
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _BrokenPipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _BrokenPipelineDB)
 
         state = _base_state(content="body text")
         out = await atom.run(state)
@@ -774,7 +774,7 @@ class TestContentRecordPipelineVersionBehavior:
             def __init__(self, pool): ...
             async def upsert_version(self, task_id, data): ...
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
 
         existing_stages = {"2_content_generated": True, "3_qa_passed": True}
         state = _base_state(stages=existing_stages)
@@ -801,15 +801,15 @@ class TestTitleInternalDuplicateVisibility:
 
     def _patch_title_path(self, monkeypatch, originality):
         monkeypatch.setattr(
-            "services.title_generation.generate_canonical_title",
+            "poindexter.services.title_generation.generate_canonical_title",
             AsyncMock(return_value="A Title"),
         )
         monkeypatch.setattr(
-            "services.title_generation.choose_canonical_title",
+            "poindexter.services.title_generation.choose_canonical_title",
             lambda topic, content, llm_title, **kw: llm_title,
         )
         monkeypatch.setattr(
-            "services.title_generation.check_title_originality",
+            "poindexter.services.title_generation.check_title_originality",
             AsyncMock(return_value=originality),
         )
 

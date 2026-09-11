@@ -12,12 +12,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from schemas.video_shot_list import Shot, VideoShotList
-from services.video_renderers.shot_list_renderer import (
+from poindexter.services.video_renderers.shot_list_renderer import (
     ShotListRenderResult,
     _render_one_shot,
     render_shot_list,
 )
+from schemas.video_shot_list import Shot, VideoShotList
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def _neutralize_image_gen_ready_wait():
     from unittest.mock import AsyncMock as _AsyncMock
 
     with patch(
-        "services.video_renderers.shot_list_renderer._wait_image_gen_ready",
+        "poindexter.services.video_renderers.shot_list_renderer._wait_image_gen_ready",
         _AsyncMock(return_value=True),
     ):
         yield
@@ -57,7 +57,7 @@ def _neutralize_live_vram_probe():
     from unittest.mock import AsyncMock as _AsyncMock
 
     with patch(
-        "services.video_renderers.shot_list_renderer._live_free_vram_gb",
+        "poindexter.services.video_renderers.shot_list_renderer._live_free_vram_gb",
         _AsyncMock(return_value=40.0),
     ):
         yield
@@ -72,7 +72,7 @@ def _neutralize_wan_ready_wait():
     from unittest.mock import AsyncMock as _AsyncMock
 
     with patch(
-        "services.video_renderers.shot_list_renderer._wait_wan_ready",
+        "poindexter.services.video_renderers.shot_list_renderer._wait_wan_ready",
         _AsyncMock(return_value=True),
     ):
         yield
@@ -96,7 +96,7 @@ def _neutralize_unload_settles():
     from unittest.mock import AsyncMock as _AsyncMock
 
     with patch(
-        "services.video_renderers.shot_list_renderer.asyncio.sleep",
+        "poindexter.services.video_renderers.shot_list_renderer.asyncio.sleep",
         _AsyncMock(),
     ):
         yield
@@ -113,8 +113,8 @@ def _neutralize_wan_unload():
     unload re-patch locally; the innermost patch wins."""
     from unittest.mock import AsyncMock as _AsyncMock
 
-    with patch("services.gpu_scheduler.gpu._unload_wan", _AsyncMock()), \
-         patch("services.gpu_scheduler.gpu._unload_comfyui", _AsyncMock()):
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_wan", _AsyncMock()), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", _AsyncMock()):
         yield
 
 
@@ -196,7 +196,7 @@ class TestRenderOneShot:
     async def test_image_gen_render_timeout_comes_from_site_config(self, tmp_path):
         """The image-gen render timeout is read from image_render_timeout_seconds so a
         cold Z-Image load (~133s) survives — not a hardcoded 60s cap."""
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         shot = Shot(
             idx=0,
@@ -241,7 +241,7 @@ class TestRenderOneShot:
         routes through ``Wan21Provider.fetch`` with that still as ``image_path``
         (i2v conditioning). This pins the 422 fix too: the body MUST NOT carry
         the old slideshow fields image_paths/audio_path/ken_burns."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
 
         shot = Shot(
             idx=0,
@@ -254,7 +254,7 @@ class TestRenderOneShot:
 
         # Spy on Wan21Provider.fetch — capture the config dict so we
         # can assert no slideshow fields leaked in.
-        from services.video_providers import wan2_1 as wan21_mod
+        from poindexter.services.video_providers import wan2_1 as wan21_mod
 
         captured_config: dict = {}
 
@@ -319,8 +319,8 @@ class TestRenderOneShot:
             narration_offset_s=0.0,
         )
 
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_providers import wan2_1 as wan21_mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        from poindexter.services.video_providers import wan2_1 as wan21_mod
 
         captured_config: dict = {}
 
@@ -353,7 +353,7 @@ class TestRenderOneShot:
         """Piece 4: a ``generative`` hero shot renders the stylized image-gen still
         first, then animates it into a clip — the success path returns the
         .mp4."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
 
         shot = Shot(idx=0, duration_s=5.0, intent="hero", source="generative",
                     prompt="neon GPU die, cyberpunk", narration_offset_s=0.0)
@@ -384,7 +384,7 @@ class TestRenderOneShot:
         """When i2v produces no clip, fall back to the image-gen still (the
         compositor Ken-Burns it) and emit a ``hero_render_fallback`` finding —
         NOT a holdover of the prior clip."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
 
         shot = Shot(idx=1, duration_s=5.0, intent="hero", source="generative",
                     prompt="neon GPU die", narration_offset_s=0.0)
@@ -418,7 +418,7 @@ class TestRenderOneShot:
         missed (timeout / unreachable / empty result) — not just that it
         did. Without this, diagnosing a miss means grepping wan-server logs
         that may already be gone (e.g. after the container recycled)."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
 
         shot = Shot(idx=1, duration_s=5.0, intent="hero", source="generative",
                     prompt="neon GPU die", narration_offset_s=0.0)
@@ -449,7 +449,7 @@ class TestRenderOneShot:
     async def test_generative_still_render_failure_is_hard_fail(self, tmp_path):
         """If even the image-gen still can't render, there's nothing to fall back
         to — the shot fails (the render pass drops it)."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
 
         shot = Shot(idx=0, duration_s=5.0, intent="hero", source="generative",
                     prompt="neon GPU die", narration_offset_s=0.0)
@@ -465,14 +465,14 @@ class TestRenderOneShot:
         assert result.success is False
 
     def test_generative_is_regenerable(self):
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         assert "generative" in mod._REGENERABLE_SOURCES
 
     def test_pexels_is_regenerable(self):
         """Pexels gets a real second chance on a QA miss (next search
         result), not an immediate holdover — see the fix rationale on
         ``test_pexels_regenerated_with_different_candidate_on_miss``."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         assert "pexels" in mod._REGENERABLE_SOURCES
 
     @pytest.mark.asyncio
@@ -586,7 +586,7 @@ class TestRenderShotList:
             return mock_client
 
         # Mock Wan21Provider.fetch.
-        from services.video_providers import wan2_1 as wan21_mod
+        from poindexter.services.video_providers import wan2_1 as wan21_mod
 
         async def _fake_wan_fetch(self, prompt, config):
             with open(config["output_path"], "wb") as f:
@@ -619,7 +619,7 @@ class TestRenderShotList:
 
         with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_wan_fetch), \
              patch(
-                "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                 _MockCompositor,
              ):
             result = await render_shot_list(
@@ -731,7 +731,7 @@ class TestRenderShotListAspectAndAmbient:
 
         captured: dict = {}
         with patch(
-            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
             self._capturing_compositor(captured),
         ):
             result = await render_shot_list(
@@ -762,7 +762,7 @@ class TestRenderShotListAspectAndAmbient:
 
         captured: dict = {}
         with patch(
-            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
             self._capturing_compositor(captured),
         ):
             await render_shot_list(
@@ -792,7 +792,7 @@ class TestRenderShotListAspectAndAmbient:
 
         captured: dict = {}
         with patch(
-            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
             self._capturing_compositor(captured),
         ):
             await render_shot_list(
@@ -821,7 +821,7 @@ class TestRenderShotListAspectAndAmbient:
 
         captured: dict = {}
         with patch(
-            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
             self._capturing_compositor(captured),
         ):
             await render_shot_list(
@@ -850,7 +850,7 @@ class TestRenderShotListAspectAndAmbient:
 
         captured: dict = {}
         with patch(
-            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
             self._capturing_compositor(captured),
         ):
             await render_shot_list(
@@ -879,7 +879,7 @@ class TestRenderShotListAspectAndAmbient:
 
         captured: dict = {}
         with patch(
-            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
             self._capturing_compositor(captured),
         ):
             await render_shot_list(
@@ -920,7 +920,7 @@ class TestPexelsSource:
         """Patch context: the Pexels VIDEO search returns nothing, so the
         pexels branch falls through to the photo path — isolates the
         pre-existing photo-path tests from the new video-first step."""
-        from services.image_providers import pexels_video as pexels_video_mod
+        from poindexter.services.image_providers import pexels_video as pexels_video_mod
         return patch.object(
             pexels_video_mod.PexelsVideoProvider, "fetch",
             AsyncMock(return_value=[]),
@@ -942,7 +942,7 @@ class TestPexelsSource:
         def _factory(*args, **kwargs):
             return mock_client
 
-        from services.image_providers import pexels_video as pexels_video_mod
+        from poindexter.services.image_providers import pexels_video as pexels_video_mod
 
         async def _fake_video_fetch(self, query, config):
             return [MagicMock(file_url="https://videos.pexels.com/x/hd.mp4")]
@@ -952,11 +952,11 @@ class TestPexelsSource:
         with patch.object(pexels_video_mod.PexelsVideoProvider, "fetch",
                            _fake_video_fetch), \
              patch(
-                "services.video_renderers.shot_list_renderer._render_pexels_image",
+                "poindexter.services.video_renderers.shot_list_renderer._render_pexels_image",
                 photo_spy,
              ), \
              patch(
-                "services.video_renderers.shot_list_renderer._render_image_gen_image",
+                "poindexter.services.video_renderers.shot_list_renderer._render_image_gen_image",
                 image_gen_spy,
              ):
             result = await _render_one_shot(
@@ -991,7 +991,7 @@ class TestPexelsSource:
                 return "false" if k == "video_pexels_video_enabled" else d
 
         with patch(
-            "services.video_renderers.shot_list_renderer._render_pexels_image",
+            "poindexter.services.video_renderers.shot_list_renderer._render_pexels_image",
             photo_spy,
         ):
             result = await _render_one_shot(
@@ -1013,7 +1013,7 @@ class TestPexelsSource:
         """The video SEARCH finds a candidate but the DOWNLOAD fails (dead
         link, network blip) — falls through to the real-photo path rather
         than holding over or image-gen-faking the subject."""
-        from services.image_providers import pexels_video as pexels_video_mod
+        from poindexter.services.image_providers import pexels_video as pexels_video_mod
 
         async def _fake_video_fetch(self, query, config):
             return [MagicMock(file_url="https://videos.pexels.com/x/hd.mp4")]
@@ -1033,7 +1033,7 @@ class TestPexelsSource:
         with patch.object(pexels_video_mod.PexelsVideoProvider, "fetch",
                            _fake_video_fetch), \
              patch(
-                "services.video_renderers.shot_list_renderer._render_pexels_image",
+                "poindexter.services.video_renderers.shot_list_renderer._render_pexels_image",
                 photo_spy,
              ):
             result = await _render_one_shot(
@@ -1066,7 +1066,7 @@ class TestPexelsSource:
         def _factory(*args, **kwargs):
             return mock_client
 
-        from services.image_providers import pexels as pexels_mod
+        from poindexter.services.image_providers import pexels as pexels_mod
 
         async def _fake_fetch(self, query, config):
             return [MagicMock(url="https://images.pexels.com/photos/x.jpg")]
@@ -1075,7 +1075,7 @@ class TestPexelsSource:
         with self._no_video_match(), \
              patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch), \
              patch(
-                "services.video_renderers.shot_list_renderer._render_image_gen_image",
+                "poindexter.services.video_renderers.shot_list_renderer._render_image_gen_image",
                 image_gen_spy,
              ):
             result = await _render_one_shot(
@@ -1104,7 +1104,7 @@ class TestPexelsSource:
 
         image_gen_spy = AsyncMock()
         with patch(
-            "services.video_renderers.shot_list_renderer._render_image_gen_image",
+            "poindexter.services.video_renderers.shot_list_renderer._render_image_gen_image",
             image_gen_spy,
         ):
             result = await _render_one_shot(
@@ -1128,7 +1128,7 @@ class TestPexelsSource:
         (the shot drops out) rather than image-gen-faking a person."""
         image_gen_spy = AsyncMock()
         with patch(
-            "services.video_renderers.shot_list_renderer._render_image_gen_image",
+            "poindexter.services.video_renderers.shot_list_renderer._render_image_gen_image",
             image_gen_spy,
         ):
             result = await _render_one_shot(
@@ -1203,10 +1203,10 @@ class TestPexelsSource:
                 )
 
         with self._no_video_match(), patch(
-            "services.video_renderers.shot_list_renderer._render_pexels_image",
+            "poindexter.services.video_renderers.shot_list_renderer._render_pexels_image",
             _fake_pexels,
         ), patch(
-            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
             _MockCompositor,
         ):
             result = await render_shot_list(
@@ -1241,7 +1241,7 @@ class TestPexelsSource:
         def _factory(*args, **kwargs):
             return mock_client
 
-        from services.image_providers import pexels as pexels_mod
+        from poindexter.services.image_providers import pexels as pexels_mod
 
         captured_config: dict = {}
 
@@ -1287,7 +1287,7 @@ class TestPexelsSource:
         def _factory(*args, **kwargs):
             return mock_client
 
-        from services.image_providers import pexels as pexels_mod
+        from poindexter.services.image_providers import pexels as pexels_mod
 
         captured_config: dict = {}
         fetched_urls = [
@@ -1333,7 +1333,7 @@ class TestPexelsSource:
         def _factory(*args, **kwargs):
             return mock_client
 
-        from services.image_providers import pexels as pexels_mod
+        from poindexter.services.image_providers import pexels as pexels_mod
 
         async def _fake_fetch(self, query, config):
             # A niche query — only one result exists, regardless of per_page.
@@ -1415,13 +1415,13 @@ class TestRenderCheckLoop:
 
     @pytest.mark.asyncio
     async def test_accept_above_threshold_no_regen(self, tmp_path):
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
         shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="a cyan abstract circuit", narration_offset_s=0.0)]
         scorer = AsyncMock(return_value=ShotQAResult(score=90.0, reason="great"))
         with patch.object(mod, "score_shot_frame", scorer), \
-             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+             patch("poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
@@ -1433,8 +1433,8 @@ class TestRenderCheckLoop:
 
     @pytest.mark.asyncio
     async def test_regenerate_then_fallback_emits_finding(self, tmp_path):
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
         shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
                  Shot(idx=1, duration_s=3.0, intent="beat", source="image_gen",
@@ -1445,7 +1445,7 @@ class TestRenderCheckLoop:
         findings = []
         with patch.object(mod, "score_shot_frame", scorer), \
              patch.object(mod, "emit_finding", lambda **kw: findings.append(kw)), \
-             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+             patch("poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
@@ -1460,12 +1460,12 @@ class TestRenderCheckLoop:
     @pytest.mark.asyncio
     async def test_qa_disabled_when_site_config_none(self, tmp_path):
         """site_config=None ⇒ QA never runs (backcompat for the existing suite)."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0)]
         scorer = AsyncMock()
         with patch.object(mod, "score_shot_frame", scorer), \
-             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+             patch("poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
@@ -1477,12 +1477,12 @@ class TestRenderCheckLoop:
 
     @pytest.mark.asyncio
     async def test_disabled_via_flag(self, tmp_path):
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0)]
         scorer = AsyncMock()
         with patch.object(mod, "score_shot_frame", scorer), \
-             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+             patch("poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
@@ -1500,8 +1500,8 @@ class TestRenderCheckLoop:
         for the next result, which is a genuinely different photo (evidenced
         fix: 8/8 shot_quality_fallback findings in 30 days of production were
         pexels shots, 0 on regenerable sources — pexels had no retry path)."""
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
         shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
                  Shot(idx=1, duration_s=3.0, intent="person", source="pexels",
@@ -1522,7 +1522,7 @@ class TestRenderCheckLoop:
         with patch.object(mod, "score_shot_frame", scorer), \
              patch.object(mod, "_render_pexels_image", _fake_pexels), \
              patch.object(mod, "emit_finding", lambda **kw: None), \
-             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+             patch("poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
@@ -1537,8 +1537,8 @@ class TestRenderCheckLoop:
 
     @pytest.mark.asyncio
     async def test_fallback_finding_shape_is_dashboard_ready(self, tmp_path):
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
         shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
                  Shot(idx=1, duration_s=3.0, intent="beat", source="image_gen",
@@ -1547,7 +1547,7 @@ class TestRenderCheckLoop:
         captured = []
         with patch.object(mod, "score_shot_frame", scorer), \
              patch.object(mod, "emit_finding", lambda **kw: captured.append(kw)), \
-             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+             patch("poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             await render_shot_list(
                 post_id="post-xyz", shot_list=_build_shot_list(shots),
@@ -1568,8 +1568,8 @@ class TestRenderCheckLoop:
         not a bare NULL qa_score (which also means 'reused' or 'QA off')."""
         import json as _json
 
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
         shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
                  Shot(idx=1, duration_s=3.0, intent="beat", source="image_gen",
@@ -1582,7 +1582,7 @@ class TestRenderCheckLoop:
         captured = []
         with patch.object(mod, "score_shot_frame", scorer), \
              patch.object(mod, "emit_finding", lambda **kw: captured.append(kw)), \
-             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+             patch("poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             result = await render_shot_list(
                 post_id="post-abc", shot_list=_build_shot_list(shots),
@@ -1609,8 +1609,8 @@ class TestRenderCheckLoop:
         scorer no-ops (no vision_scorer_unavailable finding)."""
         import json as _json
 
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
         shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
                  Shot(idx=1, duration_s=2.0, intent="carry", source="holdover",
@@ -1620,7 +1620,7 @@ class TestRenderCheckLoop:
         captured = []
         with patch.object(mod, "score_shot_frame", scorer), \
              patch.object(mod, "emit_finding", lambda **kw: captured.append(kw)), \
-             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+             patch("poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             result = await render_shot_list(
                 post_id="post-def", shot_list=_build_shot_list(shots),
@@ -1644,9 +1644,9 @@ class TestRenderCheckLoop:
         ``[render0, score0, render1, score1, ...]`` and this assert fails; the
         two-pass renderer produces ``[render0, render1, ..., score0, score1]``.
         """
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_renderers.shot_list_renderer import ShotRenderResult
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        from poindexter.services.video_renderers.shot_list_renderer import ShotRenderResult
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
 
         # Distinct sources keep the ≤2-consecutive-same-source streak guard
         # happy; all three are fresh-render sources, so each is scored once.
@@ -1702,7 +1702,7 @@ class TestRenderCheckLoop:
              patch.object(mod, "_render_hero_still", _fake_hero_still), \
              patch.object(mod, "_animate_hero", _fake_animate), \
              patch.object(mod, "score_shot_frame", _fake_score), \
-             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+             patch("poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
@@ -1731,7 +1731,7 @@ def test_cap_hero_shots_downgrades_excess_to_kenburns():
     """Past ``max_hero`` generative/wan21 shots, the rest downgrade to
     image_kenburns (same prompt) so the director over-asking can't blow the
     GPU budget (spec §3.3). Non-hero shots are untouched, order preserved."""
-    import services.video_renderers.shot_list_renderer as mod
+    import poindexter.services.video_renderers.shot_list_renderer as mod
 
     def _gen(i):
         return Shot(idx=i, duration_s=4.0, intent="hero", source="generative",
@@ -1759,7 +1759,7 @@ def test_cap_hero_shots_downgrades_excess_to_kenburns():
 
 def test_cap_hero_shots_noop_under_budget():
     """Two generative shots under a cap of 3 are left as-is."""
-    import services.video_renderers.shot_list_renderer as mod
+    import poindexter.services.video_renderers.shot_list_renderer as mod
 
     shots = [
         Shot(idx=0, duration_s=4.0, intent="hero", source="generative",
@@ -1777,7 +1777,7 @@ class TestRenderBrandCard:
     def test_card_writes_valid_png_at_requested_dims(self, tmp_path):
         from PIL import Image
 
-        from services.video_renderers.shot_list_renderer import _render_brand_card
+        from poindexter.services.video_renderers.shot_list_renderer import _render_brand_card
 
         out = str(tmp_path / "card.png")
         ok = _render_brand_card(
@@ -1792,7 +1792,7 @@ class TestRenderBrandCard:
     def test_card_renders_solid_field_when_wordmark_empty(self, tmp_path):
         from PIL import Image
 
-        from services.video_renderers.shot_list_renderer import _render_brand_card
+        from poindexter.services.video_renderers.shot_list_renderer import _render_brand_card
 
         out = str(tmp_path / "card_blank.png")
         ok = _render_brand_card(
@@ -1807,7 +1807,7 @@ class TestRenderBrandCard:
         """Even if every font path fails, the solid navy field still saves."""
         from PIL import Image, ImageFont
 
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         def _boom(*a, **k):
             raise OSError("no fonts")
@@ -1832,7 +1832,7 @@ class TestRenderBrandCard:
         tracks the requested size."""
         from PIL import Image, ImageDraw, ImageFont
 
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         # Simulate a host with no DejaVu font FILES on disk: fail truetype for a
         # path string (the on-disk lookups) but let a file-like buffer through,
@@ -1886,7 +1886,7 @@ class TestRenderPassHeroOrdering:
 
     @pytest.mark.asyncio
     async def test_all_stills_render_before_any_wan_animation(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         calls: list[str] = []
 
@@ -1932,7 +1932,7 @@ class TestRenderPassHeroOrdering:
 
     @pytest.mark.asyncio
     async def test_failed_hero_animation_falls_back_to_its_still(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         async def fake_still(*, prompt, output_path, **kwargs):
             with open(output_path, "wb") as fh:
@@ -1964,8 +1964,8 @@ class TestRenderPassHeroOrdering:
         leaves wan resident, so the pass hard-unloads wan before its still
         phase whenever the list has image-gen-family work (1d10e119's long
         rendered clean while its short substituted 5/8 against resident wan)."""
-        from services.gpu_scheduler import gpu as real_gpu
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.gpu_scheduler import gpu as real_gpu
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         async def fake_still(*, prompt, output_path, **kwargs):
             with open(output_path, "wb") as fh:
@@ -1994,8 +1994,8 @@ class TestRenderPassHeroOrdering:
     async def test_render_pass_skips_wan_clear_without_image_gen_work(self, tmp_path):
         """An all-pexels/holdover list needs no image-gen, so evicting wan
         would be a pointless cold-reload tax on the next hero."""
-        from services.gpu_scheduler import gpu as real_gpu
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.gpu_scheduler import gpu as real_gpu
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         wan_unload = AsyncMock()
         render_kwargs = dict(
@@ -2028,7 +2028,7 @@ class TestRenderPassHeroOrdering:
 
     @pytest.mark.asyncio
     async def test_failed_hero_still_reaches_backfill_ladder(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         async def fake_still(*, prompt, output_path, **kwargs):
             return False
@@ -2054,11 +2054,11 @@ class TestBackfillPass:
     """A failed shot is filled with a card, not dropped."""
 
     def _failed_state(self, idx=0, source="image_gen"):
-        from schemas.video_shot_list import Shot
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             ShotRenderResult,
             _ShotState,
         )
+        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=idx, duration_s=6.0, intent="establish topic", source=source,
@@ -2072,7 +2072,7 @@ class TestBackfillPass:
 
     @pytest.mark.asyncio
     async def test_failed_shot_filled_with_card(self, tmp_path):
-        from services.video_renderers.shot_list_renderer import _backfill_pass
+        from poindexter.services.video_renderers.shot_list_renderer import _backfill_pass
 
         st = self._failed_state()
         render_kwargs = dict(
@@ -2095,7 +2095,7 @@ class TestBackfillPass:
     async def test_card_disabled_leaves_shot_dropped(self, tmp_path):
         from unittest.mock import MagicMock
 
-        from services.video_renderers.shot_list_renderer import _backfill_pass
+        from poindexter.services.video_renderers.shot_list_renderer import _backfill_pass
 
         sc = MagicMock()
         sc.get.return_value = "false"  # video_fallback_card_enabled=false
@@ -2116,12 +2116,12 @@ class TestBackfillPass:
 
     @pytest.mark.asyncio
     async def test_successful_shot_untouched(self, tmp_path):
-        from schemas.video_shot_list import Shot
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             ShotRenderResult,
             _backfill_pass,
             _ShotState,
         )
+        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=1, duration_s=5.0, intent="x", source="pexels",
@@ -2155,10 +2155,10 @@ class TestCrossFamilySubstitute:
     a pexels failure never routes to image-gen (no-AI-humans policy)."""
 
     def test_query_strips_style_modifier(self):
-        from schemas.video_shot_list import Shot
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _pexels_query_from_shot,
         )
+        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=0, duration_s=6.0, intent="establish the data center",
@@ -2171,10 +2171,10 @@ class TestCrossFamilySubstitute:
 
     def test_query_falls_back_to_intent_when_prompt_has_no_subject(self):
         """A prompt that is only a style modifier yields no subject → intent."""
-        from schemas.video_shot_list import Shot
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _pexels_query_from_shot,
         )
+        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=0, duration_s=6.0, intent="city skyline at night",
@@ -2186,7 +2186,7 @@ class TestCrossFamilySubstitute:
     async def test_image_gen_failure_substitutes_pexels_video(
         self, tmp_path, monkeypatch
     ):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         async def _fake_video(*, output_path, **kwargs):
             with open(output_path, "wb") as f:
@@ -2214,12 +2214,12 @@ class TestCrossFamilySubstitute:
     @pytest.mark.asyncio
     async def test_pexels_source_never_substitutes_to_image_gen(self, tmp_path):
         """A missed pexels shot must go straight to the card, never image-gen."""
-        from schemas.video_shot_list import Shot
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             ShotRenderResult,
             _backfill_pass,
             _ShotState,
         )
+        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=0, duration_s=5.0, intent="developer at desk",
@@ -2251,7 +2251,7 @@ class TestFitSceneDurations:
     """Pure narration-fit layout: rescale director shots to span the voiceover."""
 
     def test_fits_already_is_noop(self):
-        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        from poindexter.services.video_renderers.shot_list_renderer import _fit_scene_durations
         durs = [2.0, 5.0, 6.0, 5.0]
         # narration (17s) within tolerance of total (18s) → keep director durations
         out = _fit_scene_durations(durs, 17.0, max_shot_s=9.0)
@@ -2260,7 +2260,7 @@ class TestFitSceneDurations:
     def test_video_longer_than_narration_is_noop(self):
         # Without shortfall_hold_s (the pre-compression contract every legacy
         # caller keeps) a shorter narration never triggers a re-layout.
-        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        from poindexter.services.video_renderers.shot_list_renderer import _fit_scene_durations
         durs = [5.0, 5.0, 5.0]
         out = _fit_scene_durations(durs, 8.0, max_shot_s=9.0)  # narration shorter
         assert out == [(0, 5.0), (1, 5.0), (2, 5.0)]
@@ -2270,7 +2270,7 @@ class TestFitSceneDurations:
         # the podcast script) over a ~175s narration shipped ~2 minutes of
         # silent footage. With the hold set, the fit compresses proportionally
         # to narration + hold and preserves the director's pacing ratios.
-        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        from poindexter.services.video_renderers.shot_list_renderer import _fit_scene_durations
         durs = [15.0, 25.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 20.0]  # 300s
         out = _fit_scene_durations(
             durs, 175.0, max_shot_s=30.0, min_shot_s=2.0, shortfall_hold_s=3.0,
@@ -2285,7 +2285,7 @@ class TestFitSceneDurations:
     def test_compression_noop_within_hold(self):
         # A deliberate outro beat (shortfall ≤ hold + tolerance) never churns
         # a re-layout — the video may outlive the voice by the hold.
-        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        from poindexter.services.video_renderers.shot_list_renderer import _fit_scene_durations
         durs = [5.0, 5.0, 5.0]  # 15s
         out = _fit_scene_durations(
             durs, 12.0, max_shot_s=9.0, min_shot_s=2.0, shortfall_hold_s=3.0,
@@ -2297,7 +2297,7 @@ class TestFitSceneDurations:
         # flicker: every shot floors at min_shot_s (the total then runs
         # modestly over the target — bounded, and strictly better than the
         # minutes-long silent tail it replaces).
-        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        from poindexter.services.video_renderers.shot_list_renderer import _fit_scene_durations
         durs = [2.0, 30.0]
         out = _fit_scene_durations(
             durs, 3.0, max_shot_s=30.0, min_shot_s=2.0, shortfall_hold_s=0.0,
@@ -2306,7 +2306,7 @@ class TestFitSceneDurations:
         assert all(d >= 2.0 for _, d in out)
 
     def test_proportional_rescale_spans_narration_and_preserves_pacing(self):
-        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        from poindexter.services.video_renderers.shot_list_renderer import _fit_scene_durations
         durs = [2.0, 5.0, 6.0, 5.0, 6.0, 6.0, 7.0, 8.0]  # 45s, avg 5.625
         out = _fit_scene_durations(durs, 54.0, max_shot_s=9.0)  # scale 1.2, gentle
         # Gentle regime = pure proportional rescale: exact span, one pass, the
@@ -2319,7 +2319,7 @@ class TestFitSceneDurations:
         assert abs(sum(d for _, d in out) - 54.0) < 0.05
 
     def test_large_scale_caps_per_shot_and_cycles(self):
-        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        from poindexter.services.video_renderers.shot_list_renderer import _fit_scene_durations
         durs = [2.0, 5.0, 6.0, 5.0, 6.0, 6.0, 7.0, 8.0]  # 45s
         out = _fit_scene_durations(durs, 158.0, max_shot_s=9.0)  # scale 3.5
         total = sum(d for _, d in out)
@@ -2329,12 +2329,12 @@ class TestFitSceneDurations:
         assert out[8][0] == 0                          # wrapped back to shot 0
 
     def test_scene_count_guard_bounds_pathological_fill(self):
-        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        from poindexter.services.video_renderers.shot_list_renderer import _fit_scene_durations
         out = _fit_scene_durations([1.0], 10_000.0, max_shot_s=1.0, max_scenes=50)
         assert len(out) == 50
 
     def test_empty_or_zero_total_returns_originals(self):
-        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        from poindexter.services.video_renderers.shot_list_renderer import _fit_scene_durations
         assert _fit_scene_durations([], 30.0, max_shot_s=9.0) == []
         assert _fit_scene_durations([0.0, 0.0], 30.0, max_shot_s=9.0) == [(0, 0.0), (1, 0.0)]
 
@@ -2371,7 +2371,7 @@ class TestRenderShotListNarrationFit:
         ``(result, captured_scene_durations, probe_calls)``. ``probe_s`` is the
         stubbed narration duration; ``probe_calls`` counts ffprobe consultations
         so we can assert the OFF path never probes."""
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         shot_list = self._image_gen_shots(durations)
         audio_path = str(tmp_path / "narration.mp3")
@@ -2417,7 +2417,7 @@ class TestRenderShotListNarrationFit:
         monkeypatch.setattr(slr, "_probe_duration_s", _fake_probe, raising=False)
 
         with patch(
-            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
             _MockCompositor,
         ):
             result = await slr.render_shot_list(
@@ -2505,17 +2505,17 @@ class TestHeroRenderDims:
         ~quadratically with the plate, and at 1280x704 the model peaked
         ~25-26GB — OOM against a single co-resident on a 32GB card, and
         impossible on a consumer 8-16GB one."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         assert mod._hero_render_dims("landscape", None) == (832, 480, 24)
 
     def test_portrait_swaps_width_height(self):
         """The 9:16 short lane gets a vertical hero clip — before this,
         shorts letterboxed a landscape clip into a 1080×1920 canvas."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         assert mod._hero_render_dims("portrait", None) == (480, 832, 24)
 
     def test_settings_override(self):
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         sc = _HeroSC({
             "video_hero_width": "832",
             "video_hero_height": "480",
@@ -2529,7 +2529,7 @@ class TestComposeHeroWanPrompt:
     """_compose_hero_wan_prompt — the i2v prompt = still description + motion."""
 
     def test_directors_motion_rides_the_prompt(self):
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         out = mod._compose_hero_wan_prompt(
             "flat vector illustration, data river",
             "slow push-in; particles drift upward",
@@ -2543,19 +2543,19 @@ class TestComposeHeroWanPrompt:
     def test_missing_motion_gets_default_direction(self):
         """A frozen pre-motion-field list still gets motion language —
         re-sending only the still's description animates nothing."""
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         out = mod._compose_hero_wan_prompt("neon GPU die", None, None)
         assert out.startswith("neon GPU die. Camera and motion: ")
         assert mod._HERO_MOTION_FALLBACK in out
 
     def test_default_direction_is_operator_tunable(self):
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         sc = _HeroSC({"video_hero_motion_default": "gentle ripple only"})
         out = mod._compose_hero_wan_prompt("neon GPU die", "", sc)
         assert out == "neon GPU die. Camera and motion: gentle ripple only"
 
     def test_blank_still_prompt_returns_direction_alone(self):
-        import services.video_renderers.shot_list_renderer as mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
         assert mod._compose_hero_wan_prompt("", "drift", None) == "drift"
 
 
@@ -2564,8 +2564,8 @@ class TestHeroMotionThreading:
 
     @pytest.mark.asyncio
     async def test_provider_receives_motion_composed_prompt(self, tmp_path):
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_providers import wan2_1 as wan21_mod
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        from poindexter.services.video_providers import wan2_1 as wan21_mod
 
         shot = Shot(
             idx=0, duration_s=5.0, intent="hero", source="generative",
@@ -2622,7 +2622,7 @@ class TestHeroReliability:
 
     @pytest.mark.asyncio
     async def test_hero_phase_waits_for_wan(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         async def fake_still(*, prompt, output_path, **kwargs):
             with open(output_path, "wb") as fh:
@@ -2649,7 +2649,7 @@ class TestHeroReliability:
 
     @pytest.mark.asyncio
     async def test_no_heroes_no_wait(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         async def fake_still(*, prompt, output_path, **kwargs):
             with open(output_path, "wb") as fh:
@@ -2671,7 +2671,7 @@ class TestHeroReliability:
 
     @pytest.mark.asyncio
     async def test_dead_motion_clip_falls_back_to_still_with_finding(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         still = tmp_path / "shot_00.png"
         still.write_bytes(b"png")
@@ -2695,7 +2695,7 @@ class TestHeroReliability:
 
     @pytest.mark.asyncio
     async def test_live_motion_clip_kept(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         still = tmp_path / "shot_00.png"
         still.write_bytes(b"png")
@@ -2715,7 +2715,7 @@ class TestHeroReliability:
 
     @pytest.mark.asyncio
     async def test_motion_check_fails_open_on_probe_error(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         with patch.object(slr, "_probe_duration_s", AsyncMock(return_value=None)):
             assert await slr._clip_has_motion(
@@ -2749,13 +2749,13 @@ class TestGenerativeProviderSelection:
 
     @pytest.mark.asyncio
     async def test_default_routes_to_wan(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         wan_cls, wan_inst = self._provider_mock("Wan21Provider")
         comfy_cls, comfy_inst = self._provider_mock("ComfyUIProvider")
-        with patch("services.video_providers.wan2_1.Wan21Provider", wan_cls), \
+        with patch("poindexter.services.video_providers.wan2_1.Wan21Provider", wan_cls), \
              patch(
-                 "services.video_providers.comfyui.ComfyUIProvider", comfy_cls,
+                 "poindexter.services.video_providers.comfyui.ComfyUIProvider", comfy_cls,
              ), \
              patch.object(slr, "_clear_image_gen_for_hero", AsyncMock()):
             ok, reason = await slr._render_generative_clip(
@@ -2768,16 +2768,16 @@ class TestGenerativeProviderSelection:
 
     @pytest.mark.asyncio
     async def test_comfyui_setting_routes_to_comfyui(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         wan_cls, wan_inst = self._provider_mock("Wan21Provider")
         comfy_cls, comfy_inst = self._provider_mock(
             "ComfyUIProvider",
             last_error="comfyui not ready at http://x:8188 after 90s",
         )
-        with patch("services.video_providers.wan2_1.Wan21Provider", wan_cls), \
+        with patch("poindexter.services.video_providers.wan2_1.Wan21Provider", wan_cls), \
              patch(
-                 "services.video_providers.comfyui.ComfyUIProvider", comfy_cls,
+                 "poindexter.services.video_providers.comfyui.ComfyUIProvider", comfy_cls,
              ), \
              patch.object(slr, "_clear_image_gen_for_hero", AsyncMock()):
             ok, reason = await slr._render_generative_clip(
@@ -2793,14 +2793,14 @@ class TestGenerativeProviderSelection:
 
     @pytest.mark.asyncio
     async def test_settings_failure_falls_back_to_wan(self, tmp_path):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         class _BrokenSc:
             def get(self, key, default=None):
                 raise RuntimeError("settings store down")
 
         wan_cls, wan_inst = self._provider_mock("Wan21Provider")
-        with patch("services.video_providers.wan2_1.Wan21Provider", wan_cls), \
+        with patch("poindexter.services.video_providers.wan2_1.Wan21Provider", wan_cls), \
              patch.object(slr, "_clear_image_gen_for_hero", AsyncMock()):
             ok, _ = await slr._render_generative_clip(
                 prompt="p", output_path=str(tmp_path / "o.mp4"),
@@ -2825,20 +2825,20 @@ class TestEndcardPlanning:
     _CTA = "Follow for more — like and subscribe."
 
     def test_parse_srt_cues(self):
-        from services.video_renderers.shot_list_renderer import _parse_srt_cues
+        from poindexter.services.video_renderers.shot_list_renderer import _parse_srt_cues
 
         cues = _parse_srt_cues(self._SRT)
         assert len(cues) == 4
         assert cues[2] == (50.0, 52.0, "Follow for more —")
 
     def test_parse_srt_tolerates_junk_blocks(self):
-        from services.video_renderers.shot_list_renderer import _parse_srt_cues
+        from poindexter.services.video_renderers.shot_list_renderer import _parse_srt_cues
 
         assert _parse_srt_cues("") == []
         assert _parse_srt_cues("not\nan srt\n\nat all") == []
 
     def test_detect_cta_start_exact_tail(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _detect_cta_start_s,
             _parse_srt_cues,
         )
@@ -2849,7 +2849,7 @@ class TestEndcardPlanning:
     def test_detect_cta_anchored_at_end_ignores_body_echo(self):
         # The CTA phrase appearing in the BODY must not pull the card early —
         # detection accumulates from the END only.
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _detect_cta_start_s,
             _parse_srt_cues,
         )
@@ -2863,7 +2863,7 @@ class TestEndcardPlanning:
 
     def test_detect_cta_fuzzy_asr_text(self):
         # Raw-ASR fallback captions mishear a word — still above the 0.7 floor.
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _detect_cta_start_s,
             _parse_srt_cues,
         )
@@ -2875,7 +2875,7 @@ class TestEndcardPlanning:
         assert _detect_cta_start_s(_parse_srt_cues(srt), self._CTA) == 50.0
 
     def test_detect_cta_no_match_returns_none(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _detect_cta_start_s,
             _parse_srt_cues,
         )
@@ -2886,7 +2886,7 @@ class TestEndcardPlanning:
         assert _detect_cta_start_s(_parse_srt_cues(srt), "") is None
 
     def test_plan_srt_timed_window(self):
-        from services.video_renderers.shot_list_renderer import _plan_endcard
+        from poindexter.services.video_renderers.shot_list_renderer import _plan_endcard
 
         plan = _plan_endcard(
             narration_s=54.0, hold_s=3.0, cta_text=self._CTA,
@@ -2899,7 +2899,7 @@ class TestEndcardPlanning:
         assert abs((content + card) - 57.0) < 1e-6
 
     def test_plan_rate_estimate_fallback(self):
-        from services.video_renderers.shot_list_renderer import _plan_endcard
+        from poindexter.services.video_renderers.shot_list_renderer import _plan_endcard
 
         plan = _plan_endcard(
             narration_s=54.0, hold_s=3.0, cta_text="six words in this cta here",
@@ -2912,7 +2912,7 @@ class TestEndcardPlanning:
         assert abs((content + card) - 57.0) < 1e-6
 
     def test_plan_clamps_to_max(self):
-        from services.video_renderers.shot_list_renderer import _plan_endcard
+        from poindexter.services.video_renderers.shot_list_renderer import _plan_endcard
 
         srt = (
             "1\n00:00:00,000 --> 00:00:40,000\nbody\n\n"
@@ -2928,7 +2928,7 @@ class TestEndcardPlanning:
         assert content == 49.0  # invariant holds
 
     def test_plan_skips_when_no_cta(self):
-        from services.video_renderers.shot_list_renderer import _plan_endcard
+        from poindexter.services.video_renderers.shot_list_renderer import _plan_endcard
 
         assert _plan_endcard(
             narration_s=54.0, hold_s=3.0, cta_text="  ",
@@ -2937,7 +2937,7 @@ class TestEndcardPlanning:
 
     def test_plan_skips_tiny_video(self):
         # total/3 cap would shrink the card below min → skip, not flash.
-        from services.video_renderers.shot_list_renderer import _plan_endcard
+        from poindexter.services.video_renderers.shot_list_renderer import _plan_endcard
 
         assert _plan_endcard(
             narration_s=5.0, hold_s=1.0, cta_text=self._CTA,
@@ -2945,7 +2945,7 @@ class TestEndcardPlanning:
         ) is None
 
     def test_tagline_resolution(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _resolve_endcard_tagline,
         )
 
@@ -2976,7 +2976,7 @@ class TestEndcardPlanning:
         # the upper band, none dead-center.
         from PIL import Image
 
-        from services.video_renderers.shot_list_renderer import _render_brand_card
+        from poindexter.services.video_renderers.shot_list_renderer import _render_brand_card
 
         out = str(tmp_path / "endcard.png")
         ok = _render_brand_card(
@@ -3023,7 +3023,7 @@ class TestRenderShotListEndcard:
 
     async def _render(self, tmp_path, monkeypatch, *, cta_text, srt_text=None,
                       endcard_off=False):
-        from services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers import shot_list_renderer as slr
 
         shot_list = self._image_gen_shots([15.0, 15.0, 15.0])
         audio_path = str(tmp_path / "narration.mp3")
@@ -3069,7 +3069,7 @@ class TestRenderShotListEndcard:
             monkeypatch.setattr(slr, "_endcard_enabled", lambda sc: False)
 
         with patch(
-            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            "poindexter.services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
             _MockCompositor,
         ):
             result = await slr.render_shot_list(
@@ -3149,7 +3149,7 @@ class TestTopicEscalationHelpers:
     the next-ranked result of the same bad query."""
 
     def test_human_nouns_veto_escalation(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _names_human_subject,
         )
 
@@ -3163,7 +3163,7 @@ class TestTopicEscalationHelpers:
         assert not _names_human_subject("manual override switch", "")
 
     def test_ai_prompt_leads_with_intent(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _ai_prompt_from_stock_shot,
         )
 
@@ -3180,7 +3180,7 @@ class TestTopicEscalationHelpers:
         assert "empty unpopulated scene" in out  # human-free by construction
 
     def test_ai_prompt_survives_missing_fields(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _ai_prompt_from_stock_shot,
         )
 
@@ -3191,7 +3191,7 @@ class TestTopicEscalationHelpers:
         assert "hook" in _ai_prompt_from_stock_shot(shot, style="line art")
 
     def test_style_rotation_and_operator_override(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _STYLE_MODIFIERS,
             _select_ai_style,
         )
@@ -3221,11 +3221,11 @@ class TestEscalateOfftopicStock:
 
     def _state(self, *, source="pexels", score=30.0, query="busy city street",
                intent="benchmark scores collapse in production"):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             ShotRenderResult,
             _ShotState,
         )
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
 
         shot = Shot(
             idx=1, duration_s=4.0, intent=intent, source=source,
@@ -3246,8 +3246,8 @@ class TestEscalateOfftopicStock:
 
     async def _run(self, states, monkeypatch, *, cand_score=85.0,
                    cand_ok=True, site_config=None):
-        from services.video_renderers import shot_list_renderer as slr
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
 
         rendered: list = []
 
@@ -3364,7 +3364,7 @@ class TestRestockQuery:
     """
 
     def test_clean_stock_query_strips_model_chatter(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _clean_stock_query,
         )
 
@@ -3386,8 +3386,8 @@ class TestRestockQuery:
     async def test_requery_fixes_human_subject_shot(self, monkeypatch):
         """The case that motivated this: a person shot that's off-topic gets a
         better query and STAYS real footage (never AI-rendered)."""
-        from services.video_renderers import shot_list_renderer as slr
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
 
         shot = Shot(
             idx=0, duration_s=4.0,
@@ -3440,8 +3440,8 @@ class TestRestockQuery:
 
     @pytest.mark.asyncio
     async def test_requery_keep_best_rejects_worse(self, monkeypatch):
-        from services.video_renderers import shot_list_renderer as slr
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
 
         shot = Shot(
             idx=0, duration_s=4.0, intent="a human moment", source="pexels",
@@ -3486,8 +3486,8 @@ class TestRestockQuery:
     @pytest.mark.asyncio
     async def test_empty_restock_falls_through_to_rung_two(self, monkeypatch):
         """No usable re-query + non-human subject ⇒ the AI still rung runs."""
-        from services.video_renderers import shot_list_renderer as slr
-        from services.video_renderers.shot_vision_qa import ShotQAResult
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+        from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
 
         shot = Shot(
             idx=1, duration_s=4.0, intent="abstract data drift",
@@ -3541,7 +3541,7 @@ class TestRestockQueryEchoRejection:
     """
 
     def test_rejects_the_observed_production_echo(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _clean_stock_query,
         )
 
@@ -3550,7 +3550,7 @@ class TestRestockQueryEchoRejection:
         ) == ""
 
     def test_rejects_meta_words_and_preambles(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _clean_stock_query,
         )
 
@@ -3565,7 +3565,7 @@ class TestRestockQueryEchoRejection:
             assert _clean_stock_query(echo) == "", echo
 
     def test_rejects_degenerate_lengths(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _clean_stock_query,
         )
 
@@ -3573,7 +3573,7 @@ class TestRestockQueryEchoRejection:
         assert _clean_stock_query(" ".join(["word"] * 15)) == ""  # runaway
 
     def test_accepts_real_queries(self):
-        from services.video_renderers.shot_list_renderer import (
+        from poindexter.services.video_renderers.shot_list_renderer import (
             _clean_stock_query,
         )
 

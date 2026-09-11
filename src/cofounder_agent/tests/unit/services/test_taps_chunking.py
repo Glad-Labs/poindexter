@@ -7,7 +7,7 @@ after the Phase B migration.
 
 from __future__ import annotations
 
-from services.taps._chunking import MAX_CHARS, chunk_text, classify_file, content_hash
+from poindexter.services.taps._chunking import MAX_CHARS, chunk_text, classify_file, content_hash
 
 
 class TestContentHash:

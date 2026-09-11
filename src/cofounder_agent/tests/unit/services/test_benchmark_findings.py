@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.benchmark_findings import (
+from poindexter.services.benchmark_findings import (
     KIND_FLEET,
     KIND_NEW_MODEL,
     ModelMeasurement,

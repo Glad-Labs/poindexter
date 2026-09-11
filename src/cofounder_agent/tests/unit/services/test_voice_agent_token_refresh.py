@@ -102,16 +102,16 @@ def _ensure_pipecat_stubs() -> None:
 
     # services.voice_agent re-exports build_voice_pipeline_task; stub it so
     # the import in voice_agent_livekit resolves without pulling Pipecat.
-    if "services.voice_agent" not in sys.modules:
+    if "poindexter.services.voice_agent" not in sys.modules:
         _stub(
-            "services.voice_agent",
+            "poindexter.services.voice_agent",
             build_voice_pipeline_task=lambda *a, **kw: None,
         )
 
 
 _ensure_pipecat_stubs()
 
-from services import voice_agent_livekit  # noqa: E402
+from poindexter.services import voice_agent_livekit  # noqa: E402
 
 
 class _FakeSiteConfig:
@@ -402,9 +402,9 @@ async def test_run_bot_starts_and_cancels_refresh_loop(monkeypatch):
         async def load(self, *_a, **_kw):
             return None
 
-    fake_site_config_module = types.ModuleType("services.site_config")
+    fake_site_config_module = types.ModuleType("poindexter.services.site_config")
     fake_site_config_module.SiteConfig = _SiteConfig
-    monkeypatch.setitem(sys.modules, "services.site_config", fake_site_config_module)
+    monkeypatch.setitem(sys.modules, "poindexter.services.site_config", fake_site_config_module)
 
     monkeypatch.setattr(
         voice_agent_livekit,

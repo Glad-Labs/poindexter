@@ -182,7 +182,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
          ``interrupt()``. On resume, ``interrupt()`` returns the resume
          value and we pass through.
     """
-    from services.approval_service import is_gate_enabled, pause_at_gate
+    from poindexter.services.approval_service import is_gate_enabled, pause_at_gate
 
     gate_name = state.get("gate_name") or ""
     if not gate_name:
@@ -392,7 +392,7 @@ async def _notify_critical(
     this adds the phone hit per the gate's HITL intent. Never raises.
     """
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         title = artifact.get("title") or artifact.get("topic") or ""
         msg = (
             f"[approval gate] Task {task_id[:8]} paused at gate '{gate_name}'.\n"
@@ -516,7 +516,7 @@ async def _graduation_status(
     if threshold <= 0:
         return None
     try:
-        from services.approval_service import count_trailing_clean_approvals
+        from poindexter.services.approval_service import count_trailing_clean_approvals
 
         streak = await count_trailing_clean_approvals(
             pool,

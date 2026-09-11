@@ -64,7 +64,7 @@ async def main() -> int:
 
     import asyncpg
     from plugins.registry import get_core_samples, get_taps
-    from services.taps._chunking import chunk_text, content_hash
+    from poindexter.services.taps._chunking import chunk_text, content_hash
 
     dsn = (
         os.getenv("DATABASE_URL")

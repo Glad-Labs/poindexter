@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services import pipeline_throttle
-from services.pipeline_throttle import (
+from poindexter.services import pipeline_throttle
+from poindexter.services.pipeline_throttle import (
     get_state,
     is_queue_full,
     reset_for_tests,
@@ -45,7 +45,7 @@ def _make_failing_pool():
 def _sc(max_queue: int) -> MagicMock:
     """Build a mock SiteConfig that returns ``max_queue`` for max_approval_queue.
 
-    Replaces the legacy ``patch("services.pipeline_throttle.site_config", ...)``
+    Replaces the legacy ``patch("poindexter.services.pipeline_throttle.site_config", ...)``
     pattern after pipeline_throttle migrated to the DI seam
     (glad-labs-stack#330): is_queue_full now takes site_config as a kwarg.
     """
@@ -227,7 +227,7 @@ class TestRealSiteConfigIntegration:
     @pytest.mark.asyncio
     async def test_real_site_config_max_approval_queue_wins(self):
         """``initial_config={"max_approval_queue": "100"}`` → limit=100."""
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         sc = SiteConfig(initial_config={"max_approval_queue": "100"})
         full, qsize, limit = await is_queue_full(_make_pool(0), site_config=sc)
@@ -242,7 +242,7 @@ class TestRealSiteConfigIntegration:
     async def test_max_approval_queue_zero_disables_throttle(self):
         """``max_approval_queue=0`` is the documented operator escape
         hatch — disables the throttle even with deep queues."""
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         sc = SiteConfig(initial_config={"max_approval_queue": "0"})
         # 50 items waiting; with the sentinel, full must be False.

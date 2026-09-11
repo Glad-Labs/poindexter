@@ -31,7 +31,7 @@ import sys
 import click
 
 from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
-from services.doctor import (
+from poindexter.services.doctor import (
     ROOTS,
     DoctorReport,
     run_doctor,

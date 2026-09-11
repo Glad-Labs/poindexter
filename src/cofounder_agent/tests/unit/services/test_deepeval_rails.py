@@ -26,8 +26,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import services.deepeval_rails as _de_mod
-from services.deepeval_rails import (
+import poindexter.services.deepeval_rails as _de_mod
+from poindexter.services.deepeval_rails import (
     evaluate_brand_fabrication,
     evaluate_faithfulness,
     evaluate_g_eval,
@@ -141,7 +141,7 @@ class TestBrandFabricationMetric:
 
     @pytest.mark.asyncio
     async def test_async_path_matches_sync(self):
-        from services.deepeval_rails import _build_brand_fabrication_metric
+        from poindexter.services.deepeval_rails import _build_brand_fabrication_metric
         cls = _build_brand_fabrication_metric()
         metric = cls(threshold=0.5)
         case = make_test_case(
@@ -153,7 +153,7 @@ class TestBrandFabricationMetric:
         assert sync_score == async_score
 
     def test_clean_returns_one(self):
-        from services.deepeval_rails import _build_brand_fabrication_metric
+        from poindexter.services.deepeval_rails import _build_brand_fabrication_metric
         cls = _build_brand_fabrication_metric()
         metric = cls(threshold=0.5)
         case = make_test_case(
@@ -472,7 +472,7 @@ class TestDispatcherJudgeModel:
 
         dispatch_mock = AsyncMock(return_value=SimpleNamespace(text="judge says hi"))
         monkeypatch.setattr(
-            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
         )
         model = _de_mod._build_dispatcher_judge_model(
             "ollama/gemma3:27b", pool="POOL",
@@ -500,7 +500,7 @@ class TestDispatcherJudgeModel:
             return_value=SimpleNamespace(text='```json\n{"answer": "yes"}\n```'),
         )
         monkeypatch.setattr(
-            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
         )
         model = _de_mod._build_dispatcher_judge_model("gemma3:27b", pool="POOL")
         out = await model.a_generate("prompt", schema=_Verdict)
@@ -554,7 +554,7 @@ class TestResolveJudgeModel:
         }.get(key, default))
         notify = AsyncMock()
         with patch(
-            "services.integrations.operator_notify.notify_operator", notify,
+            "poindexter.services.integrations.operator_notify.notify_operator", notify,
         ):
             with pytest.raises(ValueError, match="no judge model resolvable"):
                 await _de_mod._resolve_judge_model(sc)
@@ -568,7 +568,7 @@ class TestResolveJudgeModel:
         sc.get = MagicMock(return_value="")
         notify = AsyncMock()
         with patch(
-            "services.integrations.operator_notify.notify_operator", notify,
+            "poindexter.services.integrations.operator_notify.notify_operator", notify,
         ):
             with pytest.raises(ValueError, match="no judge model resolvable"):
                 await _de_mod._resolve_judge_model(sc)

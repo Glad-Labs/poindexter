@@ -50,14 +50,14 @@ class TestSentryIntegration:
 
     def setup_method(self):
         """Reset class state before each test."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._initialized = False
         SentryIntegration._sentry_enabled = False
 
     def test_initialize_no_site_config_returns_false(self):
         """Without a DI'd SiteConfig the integration must skip cleanly."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         app = MagicMock()
         result = SentryIntegration.initialize(app)
@@ -66,7 +66,7 @@ class TestSentryIntegration:
         assert SentryIntegration._sentry_enabled is False
 
     def test_initialize_no_dsn_returns_false(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         app = MagicMock()
         cfg = _stub_site_config({"sentry_dsn": ""})
@@ -79,7 +79,7 @@ class TestSentryIntegration:
         assert SentryIntegration._sentry_enabled is False
 
     def test_initialize_disabled_via_setting(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         app = MagicMock()
         cfg = _stub_site_config({
@@ -90,10 +90,10 @@ class TestSentryIntegration:
         assert result is False
         assert SentryIntegration._sentry_enabled is False
 
-    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_initialize_success(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         app = MagicMock()
         cfg = _stub_site_config({
@@ -106,8 +106,8 @@ class TestSentryIntegration:
         assert SentryIntegration._sentry_enabled is True
         mock_sentry.init.assert_called_once()
 
-    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_sdk_debug_off_by_default_even_in_development(self, mock_sentry):
         """Default is debug=False everywhere — environment must not auto-enable it.
 
@@ -117,7 +117,7 @@ class TestSentryIntegration:
         positive, producing ~290k spurious "errors"/day. Gating debug on
         an explicit DB key keeps the default quiet.
         """
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         cfg = _stub_site_config({
             "sentry_dsn": "https://key@sentry.io/123",
@@ -132,15 +132,15 @@ class TestSentryIntegration:
             "(false-positive error-count source)"
         )
 
-    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_sdk_debug_opt_in_via_legacy_alias(self, mock_sentry):
         """Legacy ``sentry_debug_logging`` still works (backcompat shim).
 
         This was the only name the code ever read, so an operator who set it
         by hand must keep working after the switch to ``sentry_sdk_debug``.
         """
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         cfg = _stub_site_config({
             "sentry_dsn": "https://key@sentry.io/123",
@@ -152,8 +152,8 @@ class TestSentryIntegration:
         kwargs = mock_sentry.init.call_args.kwargs
         assert kwargs["debug"] is True
 
-    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_sdk_debug_opt_in_via_canonical_key(self, mock_sentry):
         """``sentry_sdk_debug`` is the seeded key and must actually be read.
 
@@ -161,7 +161,7 @@ class TestSentryIntegration:
         while the code read the never-seeded ``sentry_debug_logging`` — so the
         knob did nothing on any default install.
         """
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         cfg = _stub_site_config({
             "sentry_dsn": "https://key@sentry.io/123",
@@ -172,11 +172,11 @@ class TestSentryIntegration:
         SentryIntegration.initialize(MagicMock(), cfg)
         assert mock_sentry.init.call_args.kwargs["debug"] is True
 
-    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_sdk_debug_canonical_key_wins_over_legacy(self, mock_sentry):
         """An explicit canonical value overrides the legacy alias."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         cfg = _stub_site_config({
             "sentry_dsn": "https://key@sentry.io/123",
@@ -188,9 +188,9 @@ class TestSentryIntegration:
         SentryIntegration.initialize(MagicMock(), cfg)
         assert mock_sentry.init.call_args.kwargs["debug"] is False
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_initialize_already_initialized_skips(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._initialized = True
         SentryIntegration._sentry_enabled = True
@@ -200,9 +200,9 @@ class TestSentryIntegration:
         assert result is True
         mock_sentry.init.assert_not_called()
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_initialize_sdk_init_raises(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         mock_sentry.init.side_effect = RuntimeError("init failed")
         app = MagicMock()
@@ -215,14 +215,14 @@ class TestSentryIntegration:
         assert SentryIntegration._sentry_enabled is False
 
     def test_capture_exception_when_disabled_is_noop(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = False
         SentryIntegration.capture_exception(ValueError("test"))
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_capture_exception_with_context(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_scope = MagicMock()
@@ -233,14 +233,14 @@ class TestSentryIntegration:
         mock_sentry.capture_exception.assert_called_once_with(err)
 
     def test_capture_message_when_disabled_is_noop(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = False
         SentryIntegration.capture_message("test msg")
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_capture_message_calls_sdk(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_scope = MagicMock()
@@ -249,9 +249,9 @@ class TestSentryIntegration:
         SentryIntegration.capture_message("hello", level="warning")
         mock_sentry.capture_message.assert_called_once_with("hello", level="warning")
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_set_user_context(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         SentryIntegration.set_user_context("u1", email="a@b.com", username="matt")
@@ -259,17 +259,17 @@ class TestSentryIntegration:
             {"id": "u1", "email": "a@b.com", "username": "matt"}
         )
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_clear_user_context(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         SentryIntegration.clear_user_context()
         mock_sentry.set_user.assert_called_once_with(None)
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_add_breadcrumb(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         SentryIntegration.add_breadcrumb("api.call", "fetched data", data={"url": "/api"})
@@ -280,9 +280,9 @@ class TestSentryIntegration:
             data={"url": "/api"},
         )
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_start_transaction(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_sentry.start_transaction.return_value = MagicMock()
@@ -291,14 +291,14 @@ class TestSentryIntegration:
         mock_sentry.start_transaction.assert_called_once()
 
     def test_start_transaction_disabled_returns_none(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = False
         result = SentryIntegration.start_transaction("test")
         assert result is None
 
     def test_get_initialized_status(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = False
         assert SentryIntegration.get_initialized_status() is False
@@ -310,7 +310,7 @@ class TestBeforeSend:
     """Tests for the _before_send event filter."""
 
     def test_redacts_authorization_header(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {
             "level": "error",
@@ -323,7 +323,7 @@ class TestBeforeSend:
         assert result["request"]["headers"]["authorization"] == "[REDACTED]"
 
     def test_redacts_api_key_in_url(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {
             "level": "error",
@@ -336,7 +336,7 @@ class TestBeforeSend:
         assert "secret123" not in result["request"]["url"]
 
     def test_passes_through_non_error_events(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {"level": "info", "message": "hello"}
         result = SentryIntegration._before_send(event, {})
@@ -349,7 +349,7 @@ class TestBeforeSend:
         2026-07-02: 7 open issues were seo_refresh_gate pauses). The
         filter matches by class name across the MRO so it needs no
         langgraph import and catches subclasses."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         class GraphInterrupt(Exception):  # noqa: N818 — mirrors langgraph's name
             pass
@@ -365,7 +365,7 @@ class TestBeforeSend:
 
     def test_keeps_real_exceptions_with_tuple_exc_info(self):
         """The GraphInterrupt drop must not swallow genuine errors."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         exc = RuntimeError("real failure")
         hint = {"exc_info": (RuntimeError, exc, None)}
@@ -373,7 +373,7 @@ class TestBeforeSend:
         assert SentryIntegration._before_send(event, hint) == event
 
     def test_redacts_multiple_sensitive_headers(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {
             "level": "error",
@@ -401,7 +401,7 @@ class TestDropExceptionTypes:
     """
 
     def setup_method(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         # Class-level config/cache is shared state — reset so ordering
         # between test classes can't leak a stub into this one.
@@ -413,7 +413,7 @@ class TestDropExceptionTypes:
         return {"exc_info": (exc_cls, exc_cls("nope"), None)}
 
     def test_drops_gpu_busy_error(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         class GpuBusyError(RuntimeError):  # noqa: N818 — mirrors gpu_admission's name
             pass
@@ -424,7 +424,7 @@ class TestDropExceptionTypes:
 
     def test_drop_list_is_db_tunable(self):
         """An operator can add their own expected-control-flow exception."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         class HouseKeepingSignal(Exception):
             pass
@@ -453,7 +453,7 @@ class TestDropExceptionTypes:
             SentryIntegration._site_config = None
 
     def test_real_errors_survive(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._site_config = None
         event = {"level": "error", "message": "boom"}
@@ -469,7 +469,7 @@ class TestFingerprintScrubbing:
     """
 
     def setup_method(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._site_config = None
         SentryIntegration._scrub_cache_key = None
@@ -483,7 +483,7 @@ class TestFingerprintScrubbing:
 
     def test_collapses_tempfile_names(self):
         """164 issues, one per tempfile, from a single 2026-07-20 R2 outage."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         a = self._exc_event(
             "S3UploadFailedError",
@@ -500,7 +500,7 @@ class TestFingerprintScrubbing:
 
     def test_collapses_float_durations(self):
         """31 GpuLockTimeoutError issues, fragmented by full-precision floats."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         a = self._exc_event(
             "GpuLockTimeoutError",
@@ -516,7 +516,7 @@ class TestFingerprintScrubbing:
 
     def test_collapses_uuids_in_log_events(self):
         """11 chat/watch issues, fragmented by conversation UUID."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         def ev(uuid):
             return {
@@ -537,7 +537,7 @@ class TestFingerprintScrubbing:
 
     def test_distinct_errors_stay_distinct(self):
         """Scrubbing must not merge genuinely different failures."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         a = self._exc_event("S3UploadFailedError", "Failed to upload /tmp/tmpaaa.json to a/x.json")
         b = self._exc_event("S3UploadFailedError", "Failed to upload /tmp/tmpbbb.json to b/y.json")
@@ -547,7 +547,7 @@ class TestFingerprintScrubbing:
 
     def test_no_fingerprint_when_nothing_volatile(self):
         """Untouched messages keep the SDK's default grouping."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = self._exc_event("ValueError", "plain old failure")
         SentryIntegration._before_send(event, {})
@@ -555,7 +555,7 @@ class TestFingerprintScrubbing:
 
     def test_message_is_never_mutated(self):
         """The operator still reads the real path/uuid/duration."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         original = "Failed to upload /tmp/tmpnjvtpvv5.json to gladlabs-media/static/feed.json"
         event = self._exc_event("S3UploadFailedError", original)
@@ -563,7 +563,7 @@ class TestFingerprintScrubbing:
         assert event["exception"]["values"][-1]["value"] == original
 
     def test_patterns_are_db_tunable(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._site_config = _stub_site_config(
             {"sentry_fingerprint_scrub_patterns": '[["shard-\\\\d+", "shard-<N>"]]'}
@@ -579,7 +579,7 @@ class TestFingerprintScrubbing:
 
     def test_malformed_patterns_fall_back_to_defaults_loudly(self, caplog):
         """A broken setting must not silently disable scrubbing."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._site_config = _stub_site_config(
             {"sentry_fingerprint_scrub_patterns": "{not json at all"}
@@ -599,7 +599,7 @@ class TestFingerprintScrubbing:
     def test_bad_replacement_template_is_caught_at_compile_time(self, caplog):
         """An invalid group reference raises only at sub() time, which would
         otherwise fail once per event with nothing in the log above debug."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._site_config = _stub_site_config(
             {"sentry_fingerprint_scrub_patterns": '[["(a)(b)", "\\\\9"]]'}
@@ -618,7 +618,7 @@ class TestFingerprintScrubbing:
 
     def test_scrub_failure_never_loses_the_event(self):
         """A fingerprint is an optimisation, not a reason to drop an error."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {"level": "error", "exception": {"values": "not-a-list"}}
         assert SentryIntegration._before_send(event, {}) is event
@@ -628,7 +628,7 @@ class TestSetupSentryConvenience:
     """Test the setup_sentry convenience function."""
 
     def test_setup_sentry_delegates(self):
-        from services.sentry_integration import SentryIntegration, setup_sentry
+        from poindexter.services.sentry_integration import SentryIntegration, setup_sentry
 
         app = MagicMock()
         cfg = _stub_site_config({"sentry_dsn": "https://k@s.io/1"})
@@ -638,7 +638,7 @@ class TestSetupSentryConvenience:
         assert result is True
 
     def test_setup_sentry_default_service_name(self):
-        from services.sentry_integration import SentryIntegration, setup_sentry
+        from poindexter.services.sentry_integration import SentryIntegration, setup_sentry
 
         app = MagicMock()
         cfg = _stub_site_config({})
@@ -651,14 +651,14 @@ class TestCaptureExceptionEdgeCases:
     """Exception-path coverage for capture_exception."""
 
     def setup_method(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
         SentryIntegration._initialized = False
         SentryIntegration._sentry_enabled = False
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_swallows_internal_exception(self, mock_sentry):
         """If sentry_sdk.capture_exception itself raises, the call should not propagate."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_scope = MagicMock()
@@ -669,9 +669,9 @@ class TestCaptureExceptionEdgeCases:
         # Should not raise
         SentryIntegration.capture_exception(ValueError("app error"))
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_no_context_no_set_context(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_scope = MagicMock()
@@ -682,9 +682,9 @@ class TestCaptureExceptionEdgeCases:
         mock_scope.set_context.assert_not_called()
         mock_scope.set_level.assert_called_once_with("error")
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_custom_level_passed_to_scope(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_scope = MagicMock()
@@ -697,13 +697,13 @@ class TestCaptureExceptionEdgeCases:
 
 class TestCaptureMessageEdgeCases:
     def setup_method(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
         SentryIntegration._initialized = False
         SentryIntegration._sentry_enabled = False
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_swallows_internal_exception(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_scope = MagicMock()
@@ -713,9 +713,9 @@ class TestCaptureMessageEdgeCases:
 
         SentryIntegration.capture_message("hello")  # should not raise
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_with_context_sets_each_key(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_scope = MagicMock()
@@ -734,41 +734,41 @@ class TestCaptureMessageEdgeCases:
 
 class TestUserContextEdgeCases:
     def setup_method(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
         SentryIntegration._initialized = False
         SentryIntegration._sentry_enabled = False
 
     def test_set_user_disabled_is_noop(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = False
         SentryIntegration.set_user_context("u1", "a@b.com", "matt")  # should not raise
 
     def test_clear_user_disabled_is_noop(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = False
         SentryIntegration.clear_user_context()  # should not raise
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_set_user_swallows_exception(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_sentry.set_user.side_effect = RuntimeError("down")
         SentryIntegration.set_user_context("u1")  # should not raise
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_clear_user_swallows_exception(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_sentry.set_user.side_effect = RuntimeError("down")
         SentryIntegration.clear_user_context()  # should not raise
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_set_user_default_email_and_username_empty(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         SentryIntegration.set_user_context("u1")
@@ -779,27 +779,27 @@ class TestUserContextEdgeCases:
 
 class TestBreadcrumbEdgeCases:
     def setup_method(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
         SentryIntegration._initialized = False
         SentryIntegration._sentry_enabled = False
 
     def test_disabled_is_noop(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = False
         SentryIntegration.add_breadcrumb("cat", "msg")  # should not raise
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_swallows_exception(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_sentry.add_breadcrumb.side_effect = RuntimeError("down")
         SentryIntegration.add_breadcrumb("cat", "msg")  # should not raise
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_default_data_is_empty_dict(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         SentryIntegration.add_breadcrumb("cat", "msg")
@@ -809,22 +809,22 @@ class TestBreadcrumbEdgeCases:
 
 class TestStartTransactionEdgeCases:
     def setup_method(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
         SentryIntegration._initialized = False
         SentryIntegration._sentry_enabled = False
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_swallows_exception_returns_none(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         mock_sentry.start_transaction.side_effect = RuntimeError("down")
         result = SentryIntegration.start_transaction("test")
         assert result is None
 
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_passes_op_and_description(self, mock_sentry):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._sentry_enabled = True
         SentryIntegration.start_transaction("my-task", op="task", description="A task")
@@ -835,7 +835,7 @@ class TestStartTransactionEdgeCases:
 
 class TestBeforeSendEdgeCases:
     def test_no_request_in_event(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {"level": "error", "message": "boom"}
         result = SentryIntegration._before_send(event, {"exc_info": True})
@@ -843,7 +843,7 @@ class TestBeforeSendEdgeCases:
         assert result is event
 
     def test_no_url_in_request(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {
             "level": "error",
@@ -854,7 +854,7 @@ class TestBeforeSendEdgeCases:
         assert result["request"]["headers"]["authorization"] == "[REDACTED]"
 
     def test_url_without_api_key(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {
             "level": "error",
@@ -868,7 +868,7 @@ class TestBeforeSendEdgeCases:
         assert result["request"]["url"] == "https://api.example.com/posts"
 
     def test_headers_without_sensitive_keys(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {
             "level": "error",
@@ -882,7 +882,7 @@ class TestBeforeSendEdgeCases:
         assert result["request"]["headers"]["content-type"] == "application/json"
 
     def test_warning_level_passes_through(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {"level": "warning", "message": "warn"}
         result = SentryIntegration._before_send(event, {})
@@ -890,7 +890,7 @@ class TestBeforeSendEdgeCases:
 
     def test_exc_info_in_hint_triggers_redaction(self):
         """Even if level isn't 'error', presence of exc_info in hint triggers redaction."""
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         event = {
             "level": "info",  # not error
@@ -905,14 +905,14 @@ class TestBeforeSendEdgeCases:
 
 class TestInitializeSdkUnavailable:
     def setup_method(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
         SentryIntegration._initialized = False
         SentryIntegration._sentry_enabled = False
 
-    @patch("services.sentry_integration.SENTRY_AVAILABLE", False)
-    @patch("services.sentry_integration.sentry_sdk", None)
+    @patch("poindexter.services.sentry_integration.SENTRY_AVAILABLE", False)
+    @patch("poindexter.services.sentry_integration.sentry_sdk", None)
     def test_returns_false_when_sdk_not_installed(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         app = MagicMock()
         cfg = _stub_site_config({"sentry_dsn": "https://key@sentry.io/1"})
@@ -934,13 +934,13 @@ class TestSentrySampleRates:
     """
 
     def setup_method(self):
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         SentryIntegration._initialized = False
         SentryIntegration._sentry_enabled = False
 
     def _init(self, mock_sentry, extra: dict) -> dict:
-        from services.sentry_integration import SentryIntegration
+        from poindexter.services.sentry_integration import SentryIntegration
 
         cfg = _stub_site_config({
             "sentry_dsn": "https://key@sentry.io/123",
@@ -950,8 +950,8 @@ class TestSentrySampleRates:
         SentryIntegration.initialize(MagicMock(), cfg)
         return mock_sentry.init.call_args.kwargs
 
-    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_operator_set_rates_are_honoured(self, mock_sentry):
         kwargs = self._init(mock_sentry, {
             "environment": "production",
@@ -961,8 +961,8 @@ class TestSentrySampleRates:
         assert kwargs["traces_sample_rate"] == 0.5
         assert kwargs["profiles_sample_rate"] == 0.25
 
-    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     @pytest.mark.parametrize("environment", ["production", "development"])
     def test_unset_defaults_to_seeded_value_in_every_environment(
         self, mock_sentry, environment
@@ -979,8 +979,8 @@ class TestSentrySampleRates:
         assert kwargs["traces_sample_rate"] == 0.1
         assert kwargs["profiles_sample_rate"] == 0.1
 
-    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_unparseable_and_empty_values_fall_back(self, mock_sentry):
         """'' is the documented unset sentinel; garbage must not crash init."""
         kwargs = self._init(mock_sentry, {
@@ -991,8 +991,8 @@ class TestSentrySampleRates:
         assert kwargs["traces_sample_rate"] == 0.1
         assert kwargs["profiles_sample_rate"] == 0.1
 
-    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
-    @patch("services.sentry_integration.sentry_sdk")
+    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_rates_are_real_floats_not_mocks(self, mock_sentry):
         """Guards the stub-shape trap that would make this suite vacuous.
 

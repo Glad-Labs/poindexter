@@ -11,7 +11,7 @@ from uuid import uuid4
 import asyncpg
 import pytest
 
-from services.niche_service import Niche, NicheGoal, NicheService, NicheSource
+from poindexter.services.niche_service import Niche, NicheGoal, NicheService, NicheSource
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

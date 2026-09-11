@@ -127,10 +127,10 @@ class TestContentNormalizeDraft:
     async def test_strips_leaked_image_prompts(self, monkeypatch):
         from modules.content.atoms import content_normalize_draft as atom
         monkeypatch.setattr(
-            "services.text_utils.normalize_text", lambda t: t, raising=False
+            "poindexter.services.text_utils.normalize_text", lambda t: t, raising=False
         )
         monkeypatch.setattr(
-            "services.text_utils.scrub_fabricated_links",
+            "poindexter.services.text_utils.scrub_fabricated_links",
             lambda t, known_slugs=None: t, raising=False
         )
         content = "## Section\n\n*A dramatic scene of fire and ice, vivid and detailed*\n\nReal body text."
@@ -141,9 +141,9 @@ class TestContentNormalizeDraft:
 
     async def test_keeps_image_markers_strips_figure(self, monkeypatch):
         from modules.content.atoms import content_normalize_draft as atom
-        monkeypatch.setattr("services.text_utils.normalize_text", lambda t: t, raising=False)
+        monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr(
-            "services.text_utils.scrub_fabricated_links",
+            "poindexter.services.text_utils.scrub_fabricated_links",
             lambda t, known_slugs=None: t, raising=False,
         )
         # Writer markers survive normalize now (content.plan_image_markers owns
@@ -227,10 +227,10 @@ class TestContentNormalizeDraft:
     async def test_inserts_blank_line_before_list_block_end_to_end(self, monkeypatch):
         from modules.content.atoms import content_normalize_draft as atom
         monkeypatch.setattr(
-            "services.text_utils.normalize_text", lambda t: t, raising=False
+            "poindexter.services.text_utils.normalize_text", lambda t: t, raising=False
         )
         monkeypatch.setattr(
-            "services.text_utils.scrub_fabricated_links",
+            "poindexter.services.text_utils.scrub_fabricated_links",
             lambda t, known_slugs=None: t, raising=False,
         )
         content = (
@@ -274,7 +274,7 @@ class TestContentPlanImageMarkers:
         )
         # Patch the import inside the function.
         with patch(
-            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             AsyncMock(),
         ):
             content = "## Intro\n\n[IMAGE-1: a blue server]\n\n## Body\n\n[IMAGE-2: a graph]\n\nText."
@@ -307,7 +307,7 @@ class TestContentPlanImageMarkers:
             _fake_plan,
         )
         with patch(
-            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             AsyncMock(),
         ):
             out = await atom.run(_base_state(content="## Section\n\nNo markers here."))
@@ -382,9 +382,9 @@ class TestContentCompileMeta:
     async def test_produces_all_output_keys(self, monkeypatch):
         from modules.content.atoms import content_compile_meta as atom
 
-        monkeypatch.setattr("services.text_utils.normalize_text", lambda t: t, raising=False)
+        monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr(
-            "services.excerpt_generator.generate_excerpt",
+            "poindexter.services.excerpt_generator.generate_excerpt",
             lambda title, content: "Short excerpt.",
             raising=False,
         )
@@ -409,8 +409,8 @@ class TestContentCompileMeta:
 
     async def test_reuses_existing_preview_token(self, monkeypatch):
         from modules.content.atoms import content_compile_meta as atom
-        monkeypatch.setattr("services.text_utils.normalize_text", lambda t: t, raising=False)
-        monkeypatch.setattr("services.excerpt_generator.generate_excerpt", lambda **kw: "x", raising=False)
+        monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
+        monkeypatch.setattr("poindexter.services.excerpt_generator.generate_excerpt", lambda **kw: "x", raising=False)
         monkeypatch.setattr(
             "modules.content.multi_model_qa.format_qa_feedback_from_reviews",
             lambda *a, **kw: "",
@@ -423,8 +423,8 @@ class TestContentCompileMeta:
 
     async def test_quality_score_fallback_to_zero(self, monkeypatch):
         from modules.content.atoms import content_compile_meta as atom
-        monkeypatch.setattr("services.text_utils.normalize_text", lambda t: t, raising=False)
-        monkeypatch.setattr("services.excerpt_generator.generate_excerpt", lambda **kw: "x", raising=False)
+        monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
+        monkeypatch.setattr("poindexter.services.excerpt_generator.generate_excerpt", lambda **kw: "x", raising=False)
         monkeypatch.setattr(
             "modules.content.multi_model_qa.format_qa_feedback_from_reviews",
             lambda *a, **kw: "",
@@ -454,19 +454,19 @@ class TestContentPersistTask:
     async def test_writes_awaiting_approval(self, monkeypatch):
         from modules.content.atoms import content_persist_task as atom
 
-        monkeypatch.setattr("services.text_utils.normalize_text", lambda t: t, raising=False)
+        monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr(
-            "services.title_generation.strip_qa_batch_suffix",
+            "poindexter.services.title_generation.strip_qa_batch_suffix",
             lambda t: t,
             raising=False,
         )
         monkeypatch.setattr(
-            "services.pipeline_db.PipelineDB",
+            "poindexter.services.pipeline_db.PipelineDB",
             MagicMock(return_value=MagicMock(upsert_version=AsyncMock())),
             raising=False,
         )
         monkeypatch.setattr(
-            "services.content_revisions_logger.log_revision",
+            "poindexter.services.content_revisions_logger.log_revision",
             AsyncMock(),
             raising=False,
         )
@@ -484,8 +484,8 @@ class TestContentPersistTask:
 
         from modules.content.atoms import content_persist_task as atom
 
-        monkeypatch.setattr("services.text_utils.normalize_text", lambda t: t, raising=False)
-        monkeypatch.setattr("services.title_generation.strip_qa_batch_suffix", lambda t: t, raising=False)
+        monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
+        monkeypatch.setattr("poindexter.services.title_generation.strip_qa_batch_suffix", lambda t: t, raising=False)
 
         db = _make_db()
         db.update_task_status_guarded = AsyncMock(return_value=None)  # Guard blocks

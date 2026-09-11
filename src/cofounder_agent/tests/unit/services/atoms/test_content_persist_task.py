@@ -39,7 +39,7 @@ async def test_persist_includes_media_artifacts():
     }
 
     # pipeline_versions + log_revision are best-effort; let them no-op.
-    import services.pipeline_db as _pdb
+    import poindexter.services.pipeline_db as _pdb
     _pdb.PipelineDB = lambda *_a, **_k: SimpleNamespace(upsert_version=AsyncMock())
 
     result = await persist_run(state)
@@ -87,7 +87,7 @@ def _base_state(**overrides):
 
 
 def _patch_pdb():
-    import services.pipeline_db as _pdb
+    import poindexter.services.pipeline_db as _pdb
     _pdb.PipelineDB = lambda *_a, **_k: SimpleNamespace(upsert_version=AsyncMock())
 
 

@@ -18,9 +18,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
-from services.service_restart_requests import (
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
+from poindexter.services.service_restart_requests import (
     InvalidContainerName,
     SelfDefeatingRestart,
     create_restart_request,

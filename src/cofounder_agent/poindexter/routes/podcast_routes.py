@@ -16,9 +16,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.logger_config import get_logger
+from poindexter.services.podcast_service import PODCAST_DIR, PodcastService
 from schemas.media_schemas import PodcastEpisodeListResponse
-from services.logger_config import get_logger
-from services.podcast_service import PODCAST_DIR, PodcastService
 from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_site_config_dependency
 

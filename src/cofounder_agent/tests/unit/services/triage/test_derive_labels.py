@@ -1,7 +1,7 @@
 """Unit tests for the cite-or-None type deriver."""
 import pytest
 
-from services.triage.derive_labels import derive_type
+from poindexter.services.triage.derive_labels import derive_type
 
 
 @pytest.mark.parametrize(

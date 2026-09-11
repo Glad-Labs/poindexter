@@ -20,8 +20,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from services import doctor
-from services.doctor import (
+from poindexter.services import doctor
+from poindexter.services.doctor import (
     DEPENDS_ON,
     ROOTS,
     CheckResult,
@@ -416,7 +416,7 @@ async def test_report_to_dict_shape(monkeypatch):
 
 
 def _report(checks, *, systemic=False, brain_stale=False):
-    from services.doctor import DoctorReport
+    from poindexter.services.doctor import DoctorReport
 
     return DoctorReport(
         score=score(checks),

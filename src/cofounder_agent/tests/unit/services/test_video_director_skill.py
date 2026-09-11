@@ -11,8 +11,8 @@ from __future__ import annotations
 import json
 
 from modules.content.stages.generate_video_shot_list import _extract_json_object
+from poindexter.services.prompt_manager import UnifiedPromptManager
 from schemas.video_shot_list import scan_for_human_tokens
-from services.prompt_manager import UnifiedPromptManager
 
 _KEY = "video.director_v1"
 _SHORT_KEY = "video.director_short_v1"

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services import template_runner as tr
+from poindexter.services import template_runner as tr
 
 
 class _FakeConn:
@@ -89,7 +89,7 @@ async def test_mark_stage_column_also_stamps_progress():
 async def test_claim_pending_task_stamps_progress_at_claim():
     """claim_pending_task must stamp last_progress_at so the column is
     non-NULL from the first moment a task is in_progress."""
-    from services.flows import content_generation as cg
+    from poindexter.services.flows import content_generation as cg
 
     executed: list[tuple[str, tuple[Any, ...]]] = []
 
@@ -145,7 +145,7 @@ async def test_atom_node_stamps_stage_and_progress_on_start():
     using the pool from the threaded database_service. Validation finding 2: the
     stage column used to freeze at the last stage.* node (verify_task) because
     atom nodes previously only stamped the heartbeat (_mark_progress)."""
-    from services import pipeline_architect as pa
+    from poindexter.services import pipeline_architect as pa
 
     conn = _FakeConn()
     db = MagicMock()

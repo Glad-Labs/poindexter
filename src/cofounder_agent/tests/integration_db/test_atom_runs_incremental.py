@@ -26,8 +26,8 @@ from __future__ import annotations
 
 import pytest
 
-from services.atom_runs import persist_one_atom_run
-from services.template_runner import TemplateRunRecord
+from poindexter.services.atom_runs import persist_one_atom_run
+from poindexter.services.template_runner import TemplateRunRecord
 
 pytestmark = [
     pytest.mark.integration_db,

@@ -12,8 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
 from middleware.api_token_auth import verify_api_token
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
@@ -320,7 +320,7 @@ async def get_newsletter_stats(
     route stays a thin adapter (transport-adapter contract, ADR 2026-06-10).
     """
     try:
-        from services.newsletter_service import get_newsletter_stats as _stats
+        from poindexter.services.newsletter_service import get_newsletter_stats as _stats
 
         pool = getattr(db, "cloud_pool", None) or db.pool
         return await _stats(pool)

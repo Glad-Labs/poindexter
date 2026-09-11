@@ -58,7 +58,7 @@ from urllib.parse import quote_plus
 import httpx
 
 from plugins.topic_source import DiscoveredTopic
-from services.topic_sources._filters import (
+from poindexter.services.topic_sources._filters import (
     brand_tokens_from_config,
     classify_category,
     is_junk_search_query,

@@ -29,7 +29,7 @@ import pytest
 pytestmark = [pytest.mark.unit]
 
 _MIGRATION = (
-    "services.migrations."
+    "poindexter.services.migrations."
     "20260829_003232_repoint_the_text_search_tsvector_at_chunk_text_"
     "so_bm25_stops_matching_only_the_preview"
 )
@@ -111,7 +111,7 @@ class TestWriterSnippetPayload:
 
         # Patch at the definition site — the atom imports it lazily, so a
         # partial stub here would reach a real Ollama on the CI box.
-        monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+        monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
         captured: dict = {}
 
@@ -155,7 +155,7 @@ class TestPostWriterAgreement:
         """Both write ``('posts', <id>, 0, <model>)``. Different text means
         different content hashes, which means they overwrite each other on
         every republish forever."""
-        from services.taps.published_posts import PostsTap, build_post_text
+        from poindexter.services.taps.published_posts import PostsTap, build_post_text
 
         post = SimpleNamespace(
             title="A Title", excerpt="An excerpt.", content="Body paragraph.",
@@ -170,7 +170,7 @@ class TestPostWriterAgreement:
         assert tap_text == "# A Title\n\nAn excerpt.\n\nBody paragraph."
 
     def test_builder_skips_empty_parts(self):
-        from services.taps.published_posts import build_post_text
+        from poindexter.services.taps.published_posts import build_post_text
 
         assert build_post_text(title=None, excerpt="", content="Just body.") == "Just body."
         assert build_post_text(title="T", excerpt=None, content=None) == "# T"

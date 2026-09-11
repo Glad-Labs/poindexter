@@ -29,7 +29,7 @@ import logging
 import re
 from typing import Any
 
-from services.rag_scrub import scrub_private_repo_refs as _scrub_private_repo_refs
+from poindexter.services.rag_scrub import scrub_private_repo_refs as _scrub_private_repo_refs
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -153,7 +153,7 @@ def _resolve_system_prompt(site_config: Any = None) -> tuple[str, str | None, in
     site_name = (site_config.get("site_name") if site_config else "") or ""
     site_url = (site_config.get("site_url") if site_config else "") or ""
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         resolution = get_prompt_manager().get_prompt_resolution(
             _PROMPT_KEY, site_name=site_name, site_url=site_url,
         )
@@ -389,8 +389,8 @@ def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
 # maybe-unwrap-json defense at the result boundary. The module-level
 # aliases keep test patches at the historical name working
 # (tests patch ``modules.content.atoms.narrate_bundle._ollama_chat_text``).
-from services.llm_text import maybe_unwrap_json as _maybe_unwrap_json
-from services.llm_text import ollama_chat_text as _ollama_chat_text
+from poindexter.services.llm_text import maybe_unwrap_json as _maybe_unwrap_json
+from poindexter.services.llm_text import ollama_chat_text as _ollama_chat_text
 
 
 def _bundle_is_empty(bundle: dict[str, Any]) -> bool:
@@ -403,7 +403,7 @@ def _record_unsearchable_title(
     """Emit an advisory finding when the dev_diary headline names nothing
     searchable. Pure observation — never changes the title. Best-effort."""
     try:
-        from services.title_searchability import find_searchable_entities, keyword_terms
+        from poindexter.services.title_searchability import find_searchable_entities, keyword_terms
 
         pr_titles = [
             str(p.get("title") or "") for p in (bundle.get("merged_prs") or [])
@@ -626,7 +626,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # state. The resolver honors that explicit string verbatim (``ollama/``
     # prefix stripped, no app_settings hit) so a deliberate dev-diary-on-cloud
     # experiment still works; None = the local writer-grade default.
-    from services.llm_text import resolve_local_writer_model
+    from poindexter.services.llm_text import resolve_local_writer_model
     site_config = state.get("site_config")
     model_override = state.get("writer_model")
     model = resolve_local_writer_model(model=model_override, site_config=site_config)
@@ -656,7 +656,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # titles joined two ideas with "and", 17% opened on an "-ing" verb.
     # Rendered next to the TITLE: instruction, not in the system preamble, for
     # the same adjacency reason as the grounding contract below (#354).
-    from services.title_avoidance import build_avoidance_block_for_pool
+    from poindexter.services.title_avoidance import build_avoidance_block_for_pool
 
     _db_service = state.get("database_service")
     avoidance_block = await build_avoidance_block_for_pool(

@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.model_eval.golden_sets.reranker import build_reranker_golden_set
-from services.model_eval.harness import EvalHarness, LangfuseEvalHarness
-from services.model_eval.promotion import PromotionProposal, propose_promotion
-from services.model_eval.runner import EvalReport, run_slot_eval
-from services.model_eval.scorers.reranker import RerankerScorer
-from services.model_eval.types import Scorer
+from poindexter.services.model_eval.golden_sets.reranker import build_reranker_golden_set
+from poindexter.services.model_eval.harness import EvalHarness, LangfuseEvalHarness
+from poindexter.services.model_eval.promotion import PromotionProposal, propose_promotion
+from poindexter.services.model_eval.runner import EvalReport, run_slot_eval
+from poindexter.services.model_eval.scorers.reranker import RerankerScorer
+from poindexter.services.model_eval.types import Scorer
 
 _SLOT = "rag_rerank_model"
 
@@ -86,8 +86,8 @@ async def run_critic_bakeoff(
     the run is visible on the Findings surface (a silent judge swap is how
     the 2026-06-29 approval collapse ran unnoticed for 5+ weeks).
     """
-    from services.model_eval.golden_sets.critic import build_critic_golden_set
-    from services.model_eval.scorers.critic import CriticScorer
+    from poindexter.services.model_eval.golden_sets.critic import build_critic_golden_set
+    from poindexter.services.model_eval.scorers.critic import CriticScorer
 
     champion = (site_config.get(_CRITIC_SLOT, "") or "").strip()
     if not champion:
@@ -181,8 +181,8 @@ async def run_self_review_bakeoff(
     """
     challengers = list(challengers or [])
 
-    from services.model_eval.golden_sets.self_review import build_self_review_golden_set
-    from services.model_eval.scorers.self_review import SelfReviewScorer
+    from poindexter.services.model_eval.golden_sets.self_review import build_self_review_golden_set
+    from poindexter.services.model_eval.scorers.self_review import SelfReviewScorer
 
     champion = (site_config.get(_SELF_REVIEW_SLOT, "") or "").strip()
     if not champion:

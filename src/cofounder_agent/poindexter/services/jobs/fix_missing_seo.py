@@ -28,8 +28,8 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.seo_content_generator import ContentMetadataGenerator
-from services.site_config import SiteConfig
+from poindexter.services.seo_content_generator import ContentMetadataGenerator
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 

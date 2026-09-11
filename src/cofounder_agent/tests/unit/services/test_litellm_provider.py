@@ -47,7 +47,7 @@ def _provider_instance():
     """Construct a fresh LiteLLMProvider — re-imports so the test sees
     the mocked litellm, not the real one cached at module-load time.
     """
-    from services.llm_providers.litellm_provider import LiteLLMProvider
+    from poindexter.services.llm_providers.litellm_provider import LiteLLMProvider
     return LiteLLMProvider()
 
 

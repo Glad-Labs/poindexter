@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from services.operator_leak_patterns import OPERATOR_SCRUB_PATTERNS
-from services.rag_scrub import scrub_rag_text
+from poindexter.services.operator_leak_patterns import OPERATOR_SCRUB_PATTERNS
+from poindexter.services.rag_scrub import scrub_rag_text
 
 
 def _scrub(text: str) -> str:

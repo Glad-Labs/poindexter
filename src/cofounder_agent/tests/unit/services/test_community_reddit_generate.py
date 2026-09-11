@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-import services.community_drafts as cd
-from services.community_drafts import (
+import poindexter.services.community_drafts as cd
+from poindexter.services.community_drafts import (
     SubredditProfile,
     compute_warnings,
     maybe_append_blog_link,
     split_title_and_body,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 def test_compute_warnings_strict_flair_karma():

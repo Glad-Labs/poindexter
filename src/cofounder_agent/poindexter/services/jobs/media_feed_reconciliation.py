@@ -55,7 +55,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.media_feed_rebuild import RECONCILABLE_MEDIA, reconcile_feed
+from poindexter.services.media_feed_rebuild import RECONCILABLE_MEDIA, reconcile_feed
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 

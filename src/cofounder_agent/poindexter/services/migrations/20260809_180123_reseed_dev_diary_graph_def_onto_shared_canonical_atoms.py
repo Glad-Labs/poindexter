@@ -82,7 +82,7 @@ async def up(pool) -> None:
     re-runs, and it no-ops when there is no active dev_diary row (a fresh DB
     that has not seeded pipeline_templates yet).
     """
-    from services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
+    from poindexter.services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
 
     await _reseed(pool, DEV_DIARY_GRAPH_DEF, 3)
 

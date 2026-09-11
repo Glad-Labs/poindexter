@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services import media_approval_service
+from poindexter.services import media_approval_service
 
 
 @pytest.fixture
@@ -264,7 +264,7 @@ async def test_decide_approve_rebuilds_matching_feed(mock_db: MagicMock) -> None
     mock_db.fetchrow.return_value = {"status": "approved"}
     sc = MagicMock()
     with patch(
-        "services.media_feed_rebuild.rebuild_feed_for_medium",
+        "poindexter.services.media_feed_rebuild.rebuild_feed_for_medium",
         new=AsyncMock(),
     ) as rebuild:
         await media_approval_service.decide(
@@ -279,7 +279,7 @@ async def test_decide_reject_does_not_rebuild_feed(mock_db: MagicMock) -> None:
     mock_db.fetchrow.return_value = {"status": "rejected"}
     sc = MagicMock()
     with patch(
-        "services.media_feed_rebuild.rebuild_feed_for_medium",
+        "poindexter.services.media_feed_rebuild.rebuild_feed_for_medium",
         new=AsyncMock(),
     ) as rebuild:
         await media_approval_service.decide(
@@ -296,7 +296,7 @@ async def test_decide_without_site_config_does_not_rebuild(
     jobs, tests) still work — the rebuild is simply skipped, no error."""
     mock_db.fetchrow.return_value = {"status": "approved"}
     with patch(
-        "services.media_feed_rebuild.rebuild_feed_for_medium",
+        "poindexter.services.media_feed_rebuild.rebuild_feed_for_medium",
         new=AsyncMock(),
     ) as rebuild:
         await media_approval_service.decide(
@@ -312,7 +312,7 @@ async def test_decide_rebuild_failure_is_non_fatal(mock_db: MagicMock) -> None:
     mock_db.fetchrow.return_value = {"status": "approved"}
     sc = MagicMock()
     with patch(
-        "services.media_feed_rebuild.rebuild_feed_for_medium",
+        "poindexter.services.media_feed_rebuild.rebuild_feed_for_medium",
         new=AsyncMock(side_effect=RuntimeError("worker down")),
     ):
         # Must not raise.
@@ -418,7 +418,7 @@ async def test_record_pending_then_notify_discord_dispatches_when_status_pending
     from unittest.mock import AsyncMock as _AsyncMock
     mock_notify = _AsyncMock()
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         mock_notify,
     ):
         result = await media_approval_service.notify_pending_for_review(
@@ -462,7 +462,7 @@ async def test_record_pending_auto_approve_then_discord_notify_skipped(
     from unittest.mock import AsyncMock as _AsyncMock
     mock_notify = _AsyncMock()
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         mock_notify,
     ):
         result = await media_approval_service.notify_pending_for_review(
@@ -491,7 +491,7 @@ async def test_notify_pending_for_review_skips_when_status_rejected(
     from unittest.mock import AsyncMock as _AsyncMock
     mock_notify = _AsyncMock()
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         mock_notify,
     ):
         result = await media_approval_service.notify_pending_for_review(
@@ -516,7 +516,7 @@ async def test_notify_pending_for_review_skips_when_disabled(
     from unittest.mock import AsyncMock as _AsyncMock
     mock_notify = _AsyncMock()
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         mock_notify,
     ):
         result = await media_approval_service.notify_pending_for_review(
@@ -562,7 +562,7 @@ async def test_earned_autonomy_grants_when_threshold_met(
     ]
 
     with patch(
-        "services.media_approval_service.emit_finding",
+        "poindexter.services.media_approval_service.emit_finding",
         return_value=None,
     ):
         result = await media_approval_service.record_pending(
@@ -679,7 +679,7 @@ async def test_earned_autonomy_per_niche_threshold_override(
     ]  # exactly 3 — meets per-niche threshold
 
     with patch(
-        "services.media_approval_service.emit_finding",
+        "poindexter.services.media_approval_service.emit_finding",
         return_value=None,
     ):
         result = await media_approval_service.record_pending(
@@ -713,7 +713,7 @@ async def test_earned_autonomy_emit_finding_called_on_grant(
         captured.append(kwargs)
 
     with patch(
-        "services.media_approval_service.emit_finding",
+        "poindexter.services.media_approval_service.emit_finding",
         side_effect=fake_emit_finding,
     ):
         await media_approval_service.record_pending(
@@ -744,7 +744,7 @@ async def test_record_pending_notify_discord_swallows_dispatch_errors(
     from unittest.mock import AsyncMock as _AsyncMock
     mock_notify = _AsyncMock(side_effect=RuntimeError("discord exploded"))
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         mock_notify,
     ):
         # No raise — returns False to signal "skipped/failed".
@@ -875,7 +875,7 @@ async def test_record_pending_then_quality_eval_path_does_not_notify_when_auto_a
     from unittest.mock import AsyncMock as _AsyncMock
     mock_notify = _AsyncMock()
     with patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         mock_notify,
     ):
         result = await media_approval_service.notify_pending_for_review(
@@ -914,7 +914,7 @@ async def test_record_pending_with_file_path_runs_podcast_eval(
 
     eval_podcast = AsyncMock()
     with patch(
-        "services.media_quality_service.evaluate_podcast", eval_podcast,
+        "poindexter.services.media_quality_service.evaluate_podcast", eval_podcast,
     ):
         status = await media_approval_service.record_pending(
             mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
@@ -935,7 +935,7 @@ async def test_record_pending_with_file_path_runs_video_eval(
 
     eval_video = AsyncMock()
     with patch(
-        "services.media_quality_service.evaluate_video", eval_video,
+        "poindexter.services.media_quality_service.evaluate_video", eval_video,
     ):
         await media_approval_service.record_pending(
             mock_db, _POST, medium, file_path="/data/media/clip.mp4",
@@ -960,7 +960,7 @@ async def test_record_pending_threads_site_config_to_evaluator(
 
     eval_video = AsyncMock()
     with patch(
-        "services.media_quality_service.evaluate_video", eval_video,
+        "poindexter.services.media_quality_service.evaluate_video", eval_video,
     ):
         await media_approval_service.record_pending(
             mock_db, _POST, "video", file_path="/data/media/clip.mp4",
@@ -1002,7 +1002,7 @@ async def test_record_pending_skips_eval_when_already_evaluated(
     eval_podcast = AsyncMock()
     notify = AsyncMock()
     with patch(
-        "services.media_quality_service.evaluate_podcast", eval_podcast,
+        "poindexter.services.media_quality_service.evaluate_podcast", eval_podcast,
     ), patch.object(
         media_approval_service, "notify_pending_for_review", notify,
     ):
@@ -1023,7 +1023,7 @@ async def test_record_pending_skips_eval_when_prior_decision_holds(
 
     eval_podcast = AsyncMock()
     with patch(
-        "services.media_quality_service.evaluate_podcast", eval_podcast,
+        "poindexter.services.media_quality_service.evaluate_podcast", eval_podcast,
     ):
         await media_approval_service.record_pending(
             mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
@@ -1040,7 +1040,7 @@ async def test_record_pending_eval_failure_never_fails_the_seed(
     mock_db.fetchrow.side_effect = _pending_row_side_effects()
 
     with patch(
-        "services.media_quality_service.evaluate_podcast",
+        "poindexter.services.media_quality_service.evaluate_podcast",
         AsyncMock(side_effect=RuntimeError("ffprobe exploded")),
     ):
         status = await media_approval_service.record_pending(

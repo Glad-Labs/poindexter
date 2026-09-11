@@ -62,7 +62,7 @@ def import_skill_cmd(source: str, pack: str, force: bool) -> None:
 
     async def _impl() -> None:
 
-        from services.skill_importer import SkillImportError, import_skill
+        from poindexter.services.skill_importer import SkillImportError, import_skill
 
         pool = None
         site_config = None
@@ -133,7 +133,7 @@ def list_skills_cmd(as_json: bool) -> None:
 
     async def _impl() -> None:
 
-        from services.skill_importer import list_skills
+        from poindexter.services.skill_importer import list_skills
 
         pool = None
         try:
@@ -189,7 +189,7 @@ def remove_skill_cmd(name: str) -> None:
 
     async def _impl() -> None:
 
-        from services.skill_importer import SkillImportError, remove_skill
+        from poindexter.services.skill_importer import SkillImportError, remove_skill
 
         pool = None
         try:
@@ -238,7 +238,7 @@ def update_skill_cmd(name: str) -> None:
 
     async def _impl() -> None:
 
-        from services.skill_importer import SkillImportError, import_skill
+        from poindexter.services.skill_importer import SkillImportError, import_skill
 
         try:
             dsn = _dsn()

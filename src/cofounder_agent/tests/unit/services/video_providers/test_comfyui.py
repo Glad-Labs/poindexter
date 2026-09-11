@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.video_providers import comfyui
-from services.video_providers.comfyui import (
+from poindexter.services.video_providers import comfyui
+from poindexter.services.video_providers.comfyui import (
     ComfyUIProvider,
     build_graph,
     substitute_override,
@@ -196,7 +196,7 @@ def fast_poll(monkeypatch):
 
 def _patched_client(fake):
     return patch(
-        "services.video_providers.comfyui.httpx.AsyncClient",
+        "poindexter.services.video_providers.comfyui.httpx.AsyncClient",
         MagicMock(return_value=fake),
     )
 

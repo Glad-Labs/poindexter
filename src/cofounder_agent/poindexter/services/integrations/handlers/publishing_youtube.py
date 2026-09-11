@@ -42,8 +42,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.integrations.registry import register_handler
-from services.publish_adapters.youtube import YouTubePublishAdapter
+from poindexter.services.integrations.registry import register_handler
+from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
 
 
 @register_handler("publishing", "youtube")

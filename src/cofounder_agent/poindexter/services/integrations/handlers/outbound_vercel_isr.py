@@ -37,8 +37,8 @@ from typing import Any
 
 import httpx
 
-from services.integrations.registry import register_handler
-from services.integrations.secret_resolver import resolve_secret
+from poindexter.services.integrations.registry import register_handler
+from poindexter.services.integrations.secret_resolver import resolve_secret
 
 logger = logging.getLogger(__name__)
 

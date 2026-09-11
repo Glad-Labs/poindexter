@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.podcast_service import EpisodeResult, PodcastService
+from poindexter.services.podcast_service import EpisodeResult, PodcastService
 
 
 def _fake_site_config(pool: Any | None = None, **overrides: Any):
@@ -71,7 +71,7 @@ class TestPodcastServiceRecordsAsset:
         recorder = AsyncMock(return_value="asset-uuid")
         with patch.object(svc, "_generate_with_voice", _gen_with_voice), \
              patch(
-                 "services.media_asset_recorder.record_media_asset", recorder,
+                 "poindexter.services.media_asset_recorder.record_media_asset", recorder,
              ):
             result = await svc.generate_episode(
                 post_id="post-1",
@@ -113,7 +113,7 @@ class TestPodcastServiceRecordsAsset:
         recorder = AsyncMock(return_value="asset-uuid")
         with patch.object(svc, "_generate_with_voice", _gen_with_voice), \
              patch(
-                 "services.media_asset_recorder.record_media_asset", recorder,
+                 "poindexter.services.media_asset_recorder.record_media_asset", recorder,
              ):
             await svc.generate_episode(
                 post_id="post-1",
@@ -149,7 +149,7 @@ class TestPodcastServiceRecordsAsset:
         recorder = AsyncMock(return_value="asset-uuid")
         with patch.object(svc, "_generate_with_voice", _gen_with_voice), \
              patch(
-                 "services.media_asset_recorder.record_media_asset", recorder,
+                 "poindexter.services.media_asset_recorder.record_media_asset", recorder,
              ):
             await svc.generate_episode(
                 post_id="post-1",
@@ -173,7 +173,7 @@ class TestPodcastServiceRecordsAsset:
         recorder = AsyncMock()
         with patch.object(svc, "_generate_with_voice", _gen_with_voice), \
              patch(
-                 "services.media_asset_recorder.record_media_asset", recorder,
+                 "poindexter.services.media_asset_recorder.record_media_asset", recorder,
              ):
             result = await svc.generate_episode(
                 post_id="post-1",
@@ -201,7 +201,7 @@ class TestPodcastServiceRecordsAsset:
 
         recorder = AsyncMock()
         with patch(
-            "services.media_asset_recorder.record_media_asset", recorder,
+            "poindexter.services.media_asset_recorder.record_media_asset", recorder,
         ):
             result = await svc.generate_episode(
                 post_id="post-1",

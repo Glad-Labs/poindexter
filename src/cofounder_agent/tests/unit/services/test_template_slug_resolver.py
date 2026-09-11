@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.template_slug_resolver import (
+from poindexter.services.template_slug_resolver import (
     TemplateSlugUnresolvable,
     resolve_template_slug,
 )

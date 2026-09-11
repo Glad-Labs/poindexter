@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.morning_brief import MorningBriefJob
+from poindexter.services.jobs.morning_brief import MorningBriefJob
 
 # ---------------------------------------------------------------------------
 # Pool fakes
@@ -157,9 +157,9 @@ class TestHappyPath:
         notify_mock = AsyncMock()
 
         with patch(
-            "services.jobs.morning_brief.notify_operator", new=notify_mock,
+            "poindexter.services.jobs.morning_brief.notify_operator", new=notify_mock,
         ), patch(
-            "services.jobs.morning_brief._gather_open_prs",
+            "poindexter.services.jobs.morning_brief._gather_open_prs",
             new=AsyncMock(return_value=[]),
         ):
             job = MorningBriefJob()
@@ -215,9 +215,9 @@ class TestCriticalRouting:
         notify_mock = AsyncMock()
 
         with patch(
-            "services.jobs.morning_brief.notify_operator", new=notify_mock,
+            "poindexter.services.jobs.morning_brief.notify_operator", new=notify_mock,
         ), patch(
-            "services.jobs.morning_brief._gather_open_prs",
+            "poindexter.services.jobs.morning_brief._gather_open_prs",
             new=AsyncMock(return_value=[]),
         ):
             job = MorningBriefJob()
@@ -250,9 +250,9 @@ class TestCriticalRouting:
         notify_mock = AsyncMock()
 
         with patch(
-            "services.jobs.morning_brief.notify_operator", new=notify_mock,
+            "poindexter.services.jobs.morning_brief.notify_operator", new=notify_mock,
         ), patch(
-            "services.jobs.morning_brief._gather_open_prs",
+            "poindexter.services.jobs.morning_brief._gather_open_prs",
             new=AsyncMock(return_value=[]),
         ):
             job = MorningBriefJob()
@@ -301,7 +301,7 @@ class TestDisabled:
             side_effect=AssertionError("notify_operator called when job is disabled"),
         )
 
-        with patch("services.jobs.morning_brief.notify_operator", new=notify_mock):
+        with patch("poindexter.services.jobs.morning_brief.notify_operator", new=notify_mock):
             job = MorningBriefJob()
             result = await job.run(pool, {})
 
@@ -334,7 +334,7 @@ class TestWebhookMissing:
             side_effect=AssertionError("notify_operator called on missing-webhook path"),
         )
 
-        with patch("services.jobs.morning_brief.notify_operator", new=notify_mock):
+        with patch("poindexter.services.jobs.morning_brief.notify_operator", new=notify_mock):
             job = MorningBriefJob()
             result = await job.run(pool, {})
 
@@ -371,9 +371,9 @@ class TestCostPartitionSQL:
         )
 
         with patch(
-            "services.jobs.morning_brief.notify_operator", new=AsyncMock(),
+            "poindexter.services.jobs.morning_brief.notify_operator", new=AsyncMock(),
         ), patch(
-            "services.jobs.morning_brief._gather_open_prs",
+            "poindexter.services.jobs.morning_brief._gather_open_prs",
             new=AsyncMock(return_value=[]),
         ):
             await MorningBriefJob().run(pool, {})

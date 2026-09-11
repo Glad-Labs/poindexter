@@ -26,9 +26,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.site_config import SiteConfig
 from routes import triage_routes
 from routes.triage_routes import router, set_model_router_for_tests
-from services.site_config import SiteConfig
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 # ---------------------------------------------------------------------------
@@ -266,7 +266,7 @@ class TestCostGuard:
     def test_cost_guard_denial_returns_402(self, monkeypatch):
         # Force the guard to deny, even on a local URL, by patching
         # is_local_base_url + CostGuard.preflight.
-        from services.cost_guard import CostGuardExhausted
+        from poindexter.services.cost_guard import CostGuardExhausted
 
         site_cfg = SiteConfig(initial_config={
             "ops_triage_enabled": "true",
@@ -287,7 +287,7 @@ class TestCostGuard:
             )
 
         monkeypatch.setattr(
-            "services.cost_guard.CostGuard.preflight",
+            "poindexter.services.cost_guard.CostGuard.preflight",
             _denied_preflight,
         )
 
@@ -401,7 +401,7 @@ class TestDefaultModelRouterThinking:
         })
 
         with patch(
-            "services.llm_text.ollama_chat_text",
+            "poindexter.services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="Pyroscope is unreachable; restart it."),
         ) as mock_chat:
             out = await _DefaultModelRouter(sc).invoke(

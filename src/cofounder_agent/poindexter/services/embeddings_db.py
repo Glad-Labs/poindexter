@@ -12,7 +12,7 @@ from typing import Any
 
 from asyncpg import Pool
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 from .database_mixin import DatabaseServiceMixin
 

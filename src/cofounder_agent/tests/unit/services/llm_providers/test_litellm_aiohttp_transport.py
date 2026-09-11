@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import litellm
 import pytest
 
-from services.llm_providers.litellm_provider import LiteLLMProvider
+from poindexter.services.llm_providers.litellm_provider import LiteLLMProvider
 
 # No module-level asyncio mark: ``asyncio_mode = "auto"`` auto-marks coroutines.
 

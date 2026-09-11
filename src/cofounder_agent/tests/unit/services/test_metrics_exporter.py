@@ -21,7 +21,7 @@ def _reset_gauges():
     accumulate across the session since prometheus_client doesn't
     expose a clean reset; tests assert ``> 0`` rather than a specific
     value, so accumulation is fine."""
-    from services import metrics_exporter as mx
+    from poindexter.services import metrics_exporter as mx
 
     for g in (
         mx.WORKER_UP,
@@ -72,7 +72,7 @@ def _make_pool(fetchval_responses, fetch_responses):
 async def test_refresh_scheduler_job_state_sets_series_and_skips_never_run():
     from prometheus_client import REGISTRY
 
-    from services import metrics_exporter as mx
+    from poindexter.services import metrics_exporter as mx
 
     class _Ctx:
         def __init__(self, conn):
@@ -108,7 +108,7 @@ async def test_refresh_scheduler_job_state_sets_series_and_skips_never_run():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_refresh_scheduler_job_state_swallows_db_errors():
-    from services import metrics_exporter as mx
+    from poindexter.services import metrics_exporter as mx
 
     class _BrokenPool:
         def acquire(self):
@@ -122,14 +122,14 @@ async def test_refresh_scheduler_job_state_swallows_db_errors():
 @pytest.mark.asyncio
 class TestRefreshMetrics:
     async def test_worker_up_always_set(self):
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # fetchval queue: SELECT 1, heartbeat-epoch (#524), pg_stat_activity,
         # max_connections, embeddings-gap, approval-queue, auto-cancelled,
         # applied-migrations.
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
         with patch(
-            "services.metrics_exporter.httpx.AsyncClient"
+            "poindexter.services.metrics_exporter.httpx.AsyncClient"
         ) as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("no ollama")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -144,8 +144,8 @@ class TestRefreshMetrics:
         with the cap, dashboards, and MCP get_budget that all read the same
         seam, and axis-named surfaces (console spend chart) get real per-axis
         series. Per-window: day and month."""
-        from services import cost_ledger
-        from services import metrics_exporter as mx
+        from poindexter.services import cost_ledger
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
 
@@ -159,7 +159,7 @@ class TestRefreshMetrics:
             )
 
         with patch(
-            "services.metrics_exporter.httpx.AsyncClient"
+            "poindexter.services.metrics_exporter.httpx.AsyncClient"
         ) as mock_http_cls, patch.object(
             cost_ledger, "get_spend", new=_fake_get_spend
         ):
@@ -174,7 +174,7 @@ class TestRefreshMetrics:
         assert mx.MONTHLY_ELECTRICITY_SPEND_USD._value.get() == 25.0  # type: ignore[attr-defined]
 
     async def test_postgres_latency_recorded_on_success(self):
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # Capture the current observation count so we can assert that
         # refresh_metrics observed exactly one more sample. Reading via
@@ -190,7 +190,7 @@ class TestRefreshMetrics:
         before = _latency_count()
 
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -199,7 +199,7 @@ class TestRefreshMetrics:
         assert mx.POSTGRES_CONNECTED._value.get() == 1  # type: ignore[attr-defined]
 
     async def test_postgres_connected_zero_on_query_failure(self):
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # SELECT 1 raises — downstream queries still get to run via
         # their own try/except.
@@ -212,14 +212,14 @@ class TestRefreshMetrics:
         ctx.__aexit__ = AsyncMock(return_value=None)
         pool.acquire = MagicMock(return_value=ctx)
 
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
         assert mx.POSTGRES_CONNECTED._value.get() == 0  # type: ignore[attr-defined]
 
     async def test_ollama_model_count_set_from_api_tags(self):
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
 
@@ -234,7 +234,7 @@ class TestRefreshMetrics:
         fake_ctx.__aenter__ = AsyncMock(return_value=fake_client)
         fake_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("services.metrics_exporter.httpx.AsyncClient", return_value=fake_ctx):
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient", return_value=fake_ctx):
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
         assert mx.OLLAMA_REACHABLE._value.get() == 1  # type: ignore[attr-defined]
@@ -242,7 +242,7 @@ class TestRefreshMetrics:
 
     async def test_ollama_model_count_zero_when_tags_empty(self):
         """"Ollama up but no models" — the scenario Gitea #238 flagged."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
 
@@ -255,27 +255,27 @@ class TestRefreshMetrics:
         fake_ctx.__aenter__ = AsyncMock(return_value=fake_client)
         fake_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("services.metrics_exporter.httpx.AsyncClient", return_value=fake_ctx):
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient", return_value=fake_ctx):
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
         assert mx.OLLAMA_REACHABLE._value.get() == 1  # type: ignore[attr-defined]
         assert mx.OLLAMA_MODEL_COUNT._value.get() == 0  # type: ignore[attr-defined]
 
     async def test_embeddings_missing_posts_reflects_gap(self):
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # fetchval queue: SELECT 1 → 1, heartbeat-epoch (#524),
         # pg_stat_activity → 50, max_connections → 300, embeddings-gap → 5,
         # queue → 2, auto-cancelled → 0, applied-migrations → 0.
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 5, 2, 0, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
         assert mx.EMBEDDINGS_MISSING_POSTS._value.get() == 5  # type: ignore[attr-defined]
 
     async def test_approval_queue_length_reflects_count(self):
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # fetchval queue (post-rebase, GH-90 + GH-92 + GH-227):
         #   SELECT 1 → 1
@@ -286,7 +286,7 @@ class TestRefreshMetrics:
         #   auto-cancelled → 0 (GH-90)
         #   applied-migrations → 0 (GH-227)
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 7, 0, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -303,7 +303,7 @@ class TestRefreshMetrics:
         labeled gauge keeps ``published`` and ``archived`` as distinct
         series so a correct consumer can never conflate them.
         """
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         def _posts_total_label(status: str) -> float:
             """Read poindexter_posts_total{status=...} via collect() so we
@@ -327,7 +327,7 @@ class TestRefreshMetrics:
             [1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0],
             [[], posts_rows],
         )
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -344,7 +344,7 @@ class TestRefreshMetrics:
         that drops to zero rows must be cleared or its series freezes at the
         last value. Verify a status present in refresh #1 disappears in
         refresh #2 once it has no rows."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         def _has_label(status: str) -> bool:
             for family in mx.POSTS_TOTAL.collect():
@@ -358,7 +358,7 @@ class TestRefreshMetrics:
             [1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0],
             [[], [{"status": "published", "n": 90}, {"status": "draft", "n": 5}]],
         )
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mc:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mc:
             mc.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool1, "http://localhost:11434")
         assert _has_label("draft") is True
@@ -368,7 +368,7 @@ class TestRefreshMetrics:
             [1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0],
             [[], [{"status": "published", "n": 95}]],
         )
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mc:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mc:
             mc.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool2, "http://localhost:11434")
 
@@ -382,13 +382,13 @@ class TestRefreshMetrics:
         (poindexter#366 phase 2 moved this off pipeline_events) —
         persistent across worker restarts so short-window rate()
         queries stay useful."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # fetchval queue (8 values, current refresh_metrics order):
         #   SELECT 1, heartbeat-epoch (#524), pg_used, pg_max,
         #   embeddings-gap, queue, cancelled=42, applied-migrations=0.
         pool, _ = _make_pool([1, 1_700_000_000.0, 0, 100, 0, 0, 42, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -398,13 +398,13 @@ class TestRefreshMetrics:
         """GH-92: Prometheus scrape must surface server-side connection
         utilization so the 80%-threshold alert can fire before the pool
         exhausts ``max_connections``."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # 8-value fetchval queue: SELECT 1, heartbeat-epoch (#524),
         # pg_used=127, pg_max=300, gap=0, queue=0, cancelled=0,
         # applied-migrations=0.
         pool, _ = _make_pool([1, 1_700_000_000.0, 127, 300, 0, 0, 0, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -415,7 +415,7 @@ class TestRefreshMetrics:
         """If pg_stat_activity or current_setting() raise (unlikely but
         possible on a permission-stripped role), /metrics must not 500 —
         we just leave the gauge at its last-known value."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool = MagicMock()
         conn = MagicMock()
@@ -443,7 +443,7 @@ class TestRefreshMetrics:
         mx.PG_CONNECTIONS_USED.set(42)
         mx.PG_CONNECTIONS_MAX.set(100)
 
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             # Should NOT raise even when pg_stat_activity fails.
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -455,10 +455,10 @@ class TestRefreshMetrics:
     async def test_pg_connections_metrics_appear_in_exposition(self):
         """Smoke-check that the new gauges actually render in the
         ``/metrics`` text body consumed by Prometheus."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _make_pool([1, 1_700_000_000.0, 88, 300, 0, 0, 0, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -472,8 +472,8 @@ class TestRefreshMetrics:
         files, the gauge sits at 0 (clean steady state)."""
         from pathlib import Path
 
-        from services import metrics_exporter as mx
-        from services import migrations as _migrations_pkg
+        from poindexter.services import metrics_exporter as mx
+        from poindexter.services import migrations as _migrations_pkg
 
         # Match the actual on-disk count so the gauge converges to 0.
         migrations_dir = Path(_migrations_pkg.__file__).parent
@@ -484,7 +484,7 @@ class TestRefreshMetrics:
         # 8-value queue: SELECT 1, heartbeat-epoch (#524), pg_used, pg_max,
         # gap, queue, cancelled, applied=on_disk.
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, on_disk], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -495,8 +495,8 @@ class TestRefreshMetrics:
         Alertmanager can alert that the worker is on a stale schema."""
         from pathlib import Path
 
-        from services import metrics_exporter as mx
-        from services import migrations as _migrations_pkg
+        from poindexter.services import metrics_exporter as mx
+        from poindexter.services import migrations as _migrations_pkg
 
         migrations_dir = Path(_migrations_pkg.__file__).parent
         on_disk = sum(
@@ -510,7 +510,7 @@ class TestRefreshMetrics:
         # order (SELECT 1, heartbeat-epoch (#524), pg_used, pg_max, gap,
         # queue, cancelled, applied).
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, applied], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -522,8 +522,8 @@ class TestRefreshMetrics:
         not "ghost rows"."""
         from pathlib import Path
 
-        from services import metrics_exporter as mx
-        from services import migrations as _migrations_pkg
+        from poindexter.services import metrics_exporter as mx
+        from poindexter.services import migrations as _migrations_pkg
 
         migrations_dir = Path(_migrations_pkg.__file__).parent
         on_disk = sum(
@@ -536,7 +536,7 @@ class TestRefreshMetrics:
         pool, _ = _make_pool(
             [1, 1_700_000_000.0, 50, 300, 0, 0, 0, applied_inflated], [[], []]
         )
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -545,10 +545,10 @@ class TestRefreshMetrics:
     async def test_unapplied_migrations_metric_appears_in_exposition(self):
         """Smoke-check that the new gauge actually renders in the
         ``/metrics`` exposition text Prometheus scrapes."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -571,7 +571,7 @@ class TestMetricsRefreshErrorCounter:
     def test_note_refresh_error_increments_phase(self):
         from prometheus_client import REGISTRY
 
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         name = "poindexter_metrics_refresh_errors_total"
         before = REGISTRY.get_sample_value(name, {"phase": "unit_probe"}) or 0.0
@@ -585,7 +585,7 @@ class TestMetricsRefreshErrorCounter:
         # this fails loudly here, instead of the alert silently going dead.
         from prometheus_client import REGISTRY
 
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         mx._note_refresh_error("name_probe", ValueError("x"))
         assert (
@@ -600,7 +600,7 @@ class TestMetricsRefreshErrorCounter:
     async def test_failing_phase_increments_counter(self):
         from prometheus_client import REGISTRY
 
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         name = "poindexter_metrics_refresh_errors_total"
         before = REGISTRY.get_sample_value(name, {"phase": "postgres"}) or 0.0
@@ -614,7 +614,7 @@ class TestMetricsRefreshErrorCounter:
         ctx.__aexit__ = AsyncMock(return_value=None)
         pool.acquire = MagicMock(return_value=ctx)
 
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("no ollama")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -644,13 +644,13 @@ class TestBrainCycleHeartbeat:
     """
 
     async def test_gauge_set_from_latest_heartbeat_epoch(self):
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         epoch = 1_700_000_123.0
         # fetchval order: SELECT 1, heartbeat-epoch, pg_used, pg_max, gap,
         # queue, cancelled, applied.
         pool, _ = _make_pool([1, epoch, 50, 300, 0, 0, 0, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -672,10 +672,10 @@ class TestBrainCycleHeartbeat:
         fires a CONSTANT false alarm. (This caught a real bug in the original
         implementation, which mocked fetchval and never hit the schema.)
         """
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, conn = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -690,14 +690,14 @@ class TestBrainCycleHeartbeat:
     async def test_gauge_absent_when_no_heartbeat_row(self):
         """No brain.cycle_heartbeat row yet → MAX("timestamp") is NULL →
         the series must be cleared so absent() fires (not emitted as 0)."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # Pre-seed a value to prove it gets cleared on the None result.
         mx.BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.labels(source="audit_log").set(123.0)
 
         # heartbeat fetchval → None (no rows).
         pool, _ = _make_pool([1, None, 50, 300, 0, 0, 0, 0], [[], []])
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -718,7 +718,7 @@ class TestBrainCycleHeartbeat:
     async def test_gauge_absent_on_db_error(self):
         """If the heartbeat query raises, the series must be cleared (not
         left at a stale value) so the dead-man's switch can fire."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         mx.BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.labels(source="audit_log").set(999.0)
 
@@ -735,7 +735,7 @@ class TestBrainCycleHeartbeat:
         ctx.__aexit__ = AsyncMock(return_value=None)
         pool.acquire = MagicMock(return_value=ctx)
 
-        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
@@ -778,7 +778,7 @@ class TestQaRailSkipRatio:
     async def test_ratio_is_one_when_rail_skipped_every_pass(self):
         """Synthetic 'alert fires' case: ragas_eval skipped in all 20 of the
         last 20 passes → ratio 1.0 → QaRailFullySkipped fires."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _skip_pool([
             {"reviewer": "ragas_eval", "skips": 20.0, "passes": 20},
@@ -787,7 +787,7 @@ class TestQaRailSkipRatio:
         assert _skip_ratio_value(mx, "ragas_eval") == 1.0
 
     async def test_partial_skip_ratio(self):
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _skip_pool([
             {"reviewer": "deepeval_faithfulness", "skips": 5.0, "passes": 20},
@@ -798,7 +798,7 @@ class TestQaRailSkipRatio:
     async def test_ratio_capped_at_one(self):
         """More skips than passes (an in-flight pass's skip lands in the
         window) must clamp to 1.0, never exceed it."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _skip_pool([
             {"reviewer": "ragas_eval", "skips": 25.0, "passes": 20},
@@ -809,7 +809,7 @@ class TestQaRailSkipRatio:
     async def test_no_passes_emits_no_series(self):
         """No qa_pass_completed rows in the window → no denominator → no
         series (can't have a 100% skip rate with nothing to measure)."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _skip_pool([])
         await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
@@ -818,7 +818,7 @@ class TestQaRailSkipRatio:
     async def test_recovered_rail_series_cleared(self):
         """A rail that stopped skipping must lose its series so the alert
         resolves — the gauge is cleared each refresh."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _skip_pool([{"reviewer": "ragas_eval", "skips": 20.0, "passes": 20}])
         await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
@@ -831,7 +831,7 @@ class TestQaRailSkipRatio:
     async def test_window_size_read_from_app_settings_with_default(self):
         """window_passes defaults to the app_settings key; an empty-string
         sentinel (app_settings.value is NOT NULL) falls back to 20."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # '' is the unset sentinel — must NOT crash int(), must default to 20.
         pool, conn = _skip_pool([], window_val="")
@@ -844,7 +844,7 @@ class TestQaRailSkipRatio:
         event types and the quoted ``timestamp`` column (audit_log has no
         created_at). A wrong column silently errors every scrape → the
         gauge is always empty → the alert can never fire."""
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, conn = _skip_pool([{"reviewer": "ragas_eval", "skips": 1.0, "passes": 1}])
         await mx.refresh_qa_rail_skip_ratio(pool, window_passes=10)
@@ -866,7 +866,7 @@ class TestQaRailSkipRatio:
         filter eliminates all master-flag-off skips for a disabled rail,
         matching what prod returns for ragas_eval / guardrails_* today.
         """
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         # DB returns nothing for a fully-disabled rail (all its skips had
         # reason='ragas_enabled=false (master rail flag off ...)' — filtered by SQL).
@@ -890,7 +890,7 @@ class TestQaRailSkipRatio:
         from modules.content.multi_model_qa import (
             SKIP_TYPES_EXCLUDED_FROM_RATIO,
         )
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, conn = _skip_pool([{"reviewer": "ragas_eval", "skips": 1.0, "passes": 1}])
         await mx.refresh_qa_rail_skip_ratio(pool, window_passes=10)
@@ -903,7 +903,7 @@ class TestQaRailSkipRatio:
             )
 
     async def test_appears_in_exposition(self):
-        from services import metrics_exporter as mx
+        from poindexter.services import metrics_exporter as mx
 
         pool, _ = _skip_pool([{"reviewer": "ragas_eval", "skips": 20.0, "passes": 20}])
         await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
@@ -915,7 +915,7 @@ class TestQaRailSkipRatio:
 def test_render_exposition_returns_text_format():
     """Smoke check: /metrics endpoint returns bytes + the standard
     Prometheus text content-type so Alertmanager can scrape it."""
-    from services.metrics_exporter import render_exposition
+    from poindexter.services.metrics_exporter import render_exposition
 
     body, content_type = render_exposition()
     assert isinstance(body, bytes)
@@ -969,7 +969,7 @@ class _ModThatRaises:
 
 @pytest.mark.unit
 async def test_module_metrics_loop_invokes_async_and_awaitable_hooks():
-    from services import metrics_exporter as mx
+    from poindexter.services import metrics_exporter as mx
 
     async_mod = _ModWithAsyncHook()
     sync_mod = _ModWithSyncAwaitableHook()
@@ -984,7 +984,7 @@ async def test_module_metrics_loop_invokes_async_and_awaitable_hooks():
 
 @pytest.mark.unit
 async def test_module_metrics_loop_skips_modules_without_hook():
-    from services import metrics_exporter as mx
+    from poindexter.services import metrics_exporter as mx
 
     good = _ModWithAsyncHook()
     pool = MagicMock()
@@ -1002,7 +1002,7 @@ async def test_module_metrics_loop_skips_modules_without_hook():
 async def test_module_metrics_loop_isolates_a_failing_hook():
     """One module raising must not abort the loop nor propagate — /metrics
     must keep serving."""
-    from services import metrics_exporter as mx
+    from poindexter.services import metrics_exporter as mx
 
     good = _ModWithAsyncHook()
     pool = MagicMock()
@@ -1020,7 +1020,7 @@ async def test_module_metrics_loop_isolates_a_failing_hook():
 
 @pytest.mark.unit
 async def test_module_metrics_loop_tolerates_registry_failure():
-    from services import metrics_exporter as mx
+    from poindexter.services import metrics_exporter as mx
 
     pool = MagicMock()
     with patch("plugins.registry.get_modules", side_effect=RuntimeError("nope")):
@@ -1039,10 +1039,10 @@ async def test_spend_throttle_gauges_reflect_state(monkeypatch):
     order in ``refresh_metrics`` changes — the spend-throttle block reads
     ``get_state()``, not the pool.
     """
-    from services import cost_ledger, spend_throttle
-    from services import metrics_exporter as mx
-    from services.cost_ledger import SpendBreakdown
-    from services.site_config import SiteConfig
+    from poindexter.services import cost_ledger, spend_throttle
+    from poindexter.services import metrics_exporter as mx
+    from poindexter.services.cost_ledger import SpendBreakdown
+    from poindexter.services.site_config import SiteConfig
 
     # Engage the throttle: daily total ($3.50) over the $3.00 cap.
     spend_throttle.reset_for_tests()
@@ -1069,7 +1069,7 @@ async def test_spend_throttle_gauges_reflect_state(monkeypatch):
     pool.fetch = AsyncMock(return_value=[])
     pool.fetchval = AsyncMock(return_value=0)
 
-    with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+    with patch("poindexter.services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
         mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
         await mx.refresh_metrics(pool, "http://localhost:11434")
 

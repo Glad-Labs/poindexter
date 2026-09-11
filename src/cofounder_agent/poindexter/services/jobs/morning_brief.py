@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from plugins.job import JobResult
-from services.integrations.operator_notify import notify_operator
+from poindexter.services.integrations.operator_notify import notify_operator
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,7 @@ class MorningBriefJob:
         data["open_prs"] = await _gather_open_prs()
 
         # ---- Format (operator-local date header; store-UTC/present-local) ----
-        from services.clock import get_operator_tz
+        from poindexter.services.clock import get_operator_tz
 
         tz = await get_operator_tz(pool)
         message = _format_brief(data, lookback_hours, site_url, max_chars, tz)
@@ -468,7 +468,7 @@ async def _gather_open_prs() -> list[dict[str, Any]]:
 def _format_brief(
     data: dict[str, Any], lookback_hours: int, site_url: str, max_chars: int, tz: Any,
 ) -> str:
-    from services.clock import today_local
+    from poindexter.services.clock import today_local
 
     today = today_local(tz).strftime("%Y-%m-%d")
     lines: list[str] = [f"\U0001F305 **Morning brief — {today}**", ""]

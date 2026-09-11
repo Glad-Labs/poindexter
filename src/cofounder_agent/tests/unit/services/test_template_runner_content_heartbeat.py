@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 
-from services import template_runner as tr
+from poindexter.services import template_runner as tr
 
 pytestmark = pytest.mark.asyncio
 
@@ -142,7 +142,7 @@ class TestPipelineTaskHeartbeat:
 
     async def test_fires_during_long_ainvoke(self, monkeypatch):
         monkeypatch.setattr(
-            "services.tasks_db.TasksDatabase", _FakeTasksDatabase,
+            "poindexter.services.tasks_db.TasksDatabase", _FakeTasksDatabase,
         )
 
         result = await tr._ainvoke_with_content_heartbeat(
@@ -157,7 +157,7 @@ class TestPipelineTaskHeartbeat:
 
     async def test_no_heartbeat_when_task_id_none(self, monkeypatch):
         monkeypatch.setattr(
-            "services.tasks_db.TasksDatabase", _FakeTasksDatabase,
+            "poindexter.services.tasks_db.TasksDatabase", _FakeTasksDatabase,
         )
 
         result = await tr._ainvoke_with_content_heartbeat(
@@ -170,7 +170,7 @@ class TestPipelineTaskHeartbeat:
 
     async def test_torn_down_on_exception(self, monkeypatch):
         monkeypatch.setattr(
-            "services.tasks_db.TasksDatabase", _FakeTasksDatabase,
+            "poindexter.services.tasks_db.TasksDatabase", _FakeTasksDatabase,
         )
 
         with pytest.raises(RuntimeError, match="graph boom"):
@@ -193,7 +193,7 @@ class TestPipelineTaskHeartbeat:
 
         monkeypatch.setattr(tr.live_activity, "update", fake_update)
         monkeypatch.setattr(
-            "services.tasks_db.TasksDatabase", _FakeTasksDatabase,
+            "poindexter.services.tasks_db.TasksDatabase", _FakeTasksDatabase,
         )
 
         result = await tr._ainvoke_with_content_heartbeat(

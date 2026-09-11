@@ -158,7 +158,7 @@ async def record_task_outcome(
 
     # --- 1. atom_runs backfill (covers approve AND reject) -----------------
     try:
-        from services.atom_runs import record_atom_run_outcome
+        from poindexter.services.atom_runs import record_atom_run_outcome
 
         backfilled = await record_atom_run_outcome(
             pool,

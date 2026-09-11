@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs import media_feed_reconciliation as job_mod
-from services.media_feed_rebuild import FeedReconcileResult
+from poindexter.services.jobs import media_feed_reconciliation as job_mod
+from poindexter.services.media_feed_rebuild import FeedReconcileResult
 
 
 def _site_config(enabled: bool = True) -> MagicMock:

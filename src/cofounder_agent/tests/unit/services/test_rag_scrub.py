@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from services import rag_scrub
+from poindexter.services import rag_scrub
 
 # Synthetic GitHub App installation tokens — never real, never minted.
 # _CLASSIC is the opaque ghs_ + 36-alphanumeric shape; _STATELESS is the

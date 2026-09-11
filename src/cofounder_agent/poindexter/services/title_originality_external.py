@@ -71,7 +71,7 @@ from difflib import SequenceMatcher
 
 import httpx
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 

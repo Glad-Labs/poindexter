@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import services.telemetry as telemetry
+import poindexter.services.telemetry as telemetry
 
 
 @pytest.mark.asyncio

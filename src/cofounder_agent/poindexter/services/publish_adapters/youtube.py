@@ -51,7 +51,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from plugins.publish_adapter import PublishResult
-from services.cost_guard import CostGuard
+from poindexter.services.cost_guard import CostGuard
 
 logger = logging.getLogger(__name__)
 

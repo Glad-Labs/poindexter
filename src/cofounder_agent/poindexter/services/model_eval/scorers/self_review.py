@@ -28,7 +28,7 @@ import logging
 import time
 from typing import Any, Protocol
 
-from services.model_eval.types import GoldenSet, MetricResult
+from poindexter.services.model_eval.types import GoldenSet, MetricResult
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class SelfReviewScorer:
         if self._detect_fn is not None:
             return self._detect_fn
 
-        from services.self_review import detect_contradictions
+        from poindexter.services.self_review import detect_contradictions
 
         async def _detect(*, draft: str, title: str, topic: str, model: str) -> str | None:
             # The model under test is applied by overriding the DETECT pin

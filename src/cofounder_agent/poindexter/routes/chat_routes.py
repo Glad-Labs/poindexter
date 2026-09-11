@@ -19,9 +19,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from middleware.api_token_auth import verify_api_token
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
@@ -76,7 +76,7 @@ async def list_tools(
     capability list). Same gate as the rest of the surface.
     """
     _require_enabled(site_config)
-    from services.chat_tools import CHAT_TOOLS
+    from poindexter.services.chat_tools import CHAT_TOOLS
 
     persona = str(site_config.get("agent_persona_name", "Poindexter") or "Poindexter")
     try:
@@ -107,7 +107,7 @@ async def create_conversation(
     site_config: SiteConfig = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     _require_enabled(site_config)
-    from services import chat_conversation_store as store
+    from poindexter.services import chat_conversation_store as store
 
     return await store.create_conversation(
         db_service.pool, title=body.title, brain=body.brain,
@@ -122,7 +122,7 @@ async def list_conversations(
     site_config: SiteConfig = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     _require_enabled(site_config)
-    from services import chat_conversation_store as store
+    from poindexter.services import chat_conversation_store as store
 
     await store.repair_stale_turns(
         db_service.pool, None, stale_after_seconds=_stale_after_seconds(site_config),
@@ -140,7 +140,7 @@ async def get_conversation(
     site_config: SiteConfig = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     _require_enabled(site_config)
-    from services import chat_conversation_store as store
+    from poindexter.services import chat_conversation_store as store
 
     conversation = await _load_conversation(store, db_service, conversation_id)
     await store.repair_stale_turns(
@@ -163,7 +163,7 @@ async def archive_conversation(
     site_config: SiteConfig = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     _require_enabled(site_config)
-    from services import chat_conversation_store as store
+    from poindexter.services import chat_conversation_store as store
 
     await _load_conversation(store, db_service, conversation_id)
     archived = await store.archive_conversation(db_service.pool, conversation_id)
@@ -186,8 +186,8 @@ async def send_message(
     HTTP errors (403 disabled, 404 unknown conversation, 409 busy).
     """
     _require_enabled(site_config)
-    from services import chat_conversation_store as store
-    from services.chat_agent import run_turn
+    from poindexter.services import chat_conversation_store as store
+    from poindexter.services.chat_agent import run_turn
 
     conversation = await _load_conversation(store, db_service, conversation_id)
     if conversation.get("status") != "active":
@@ -249,7 +249,7 @@ async def _resolve(
     db_service: DatabaseService, site_config: SiteConfig,
 ) -> dict[str, Any]:
     _require_enabled(site_config)
-    from services.chat_approvals import resolve_approval
+    from poindexter.services.chat_approvals import resolve_approval
 
     try:
         return await resolve_approval(
@@ -285,7 +285,7 @@ async def run_plan_route(
 ) -> dict[str, Any]:
     """One-shot: run an architect plan card (creates the pipeline task)."""
     _require_enabled(site_config)
-    from services.chat_plans import run_plan
+    from poindexter.services.chat_plans import run_plan
 
     try:
         return await run_plan(
@@ -315,7 +315,7 @@ async def watch(
 ) -> dict[str, Any]:
     """Slim run-progress snapshot the activity rail polls (~5s while live)."""
     _require_enabled(site_config)
-    from services.chat_watch import watch_task
+    from poindexter.services.chat_watch import watch_task
 
     snapshot = await watch_task(db_service.pool, task_id)
     if snapshot is None:

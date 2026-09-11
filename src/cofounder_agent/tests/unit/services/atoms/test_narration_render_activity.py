@@ -41,7 +41,7 @@ async def test_narration_opens_media_row_and_synthesizes():
 
     fake_svc = SimpleNamespace(synthesize=AsyncMock(return_value=("/tmp/n.mp3", 12.0)))
     with patch.object(_narration_render.live_activity, "track", fake_track), patch(
-        "services.podcast_service.PodcastService", return_value=fake_svc
+        "poindexter.services.podcast_service.PodcastService", return_value=fake_svc
     ):
         out = await _narration_render.render_narration(
             script="hello world",
@@ -81,7 +81,7 @@ async def test_synth_failure_fail_softs_to_empty():
     pool-less config so begin() swallows to a no-op — proving the ledger is
     never load-bearing on the failure path."""
     fake_svc = SimpleNamespace(synthesize=AsyncMock(side_effect=RuntimeError("tts down")))
-    with patch("services.podcast_service.PodcastService", return_value=fake_svc):
+    with patch("poindexter.services.podcast_service.PodcastService", return_value=fake_svc):
         out = await _narration_render.render_narration(
             script="hello",
             cta_key="media.cta.podcast",
@@ -96,7 +96,7 @@ async def test_best_effort_when_ledger_cannot_open():
     """With the real track()/begin swallowing (pool-less), a successful synth
     still returns its path — the ledger no-op never breaks the render."""
     fake_svc = SimpleNamespace(synthesize=AsyncMock(return_value=("/tmp/n.mp3", 3.0)))
-    with patch("services.podcast_service.PodcastService", return_value=fake_svc):
+    with patch("poindexter.services.podcast_service.PodcastService", return_value=fake_svc):
         out = await _narration_render.render_narration(
             script="hello",
             cta_key="media.cta.podcast",

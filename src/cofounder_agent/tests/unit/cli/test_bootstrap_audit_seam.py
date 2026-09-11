@@ -25,9 +25,9 @@ from unittest.mock import patch
 
 import pytest
 
-import services.audit_log as audit_mod
+import poindexter.services.audit_log as audit_mod
 from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
-from services.audit_log import get_audit_logger, init_global_audit_logger
+from poindexter.services.audit_log import get_audit_logger, init_global_audit_logger
 from utils.findings import emit_finding
 
 # ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ class TestOpenCliPool:
     async def test_returns_pool_even_when_audit_attach_fails(self):
         fake = _FakePool()
         with _patch_create_pool(fake), patch(
-            "services.audit_log.init_global_audit_logger",
+            "poindexter.services.audit_log.init_global_audit_logger",
             side_effect=RuntimeError("boom"),
         ):
             pool = await open_cli_pool("postgresql://x")
@@ -181,7 +181,7 @@ class TestCloseCliPool:
             pool = await open_cli_pool("postgresql://x")
 
         with patch(
-            "services.audit_log.drain_pending_writes",
+            "poindexter.services.audit_log.drain_pending_writes",
             side_effect=RuntimeError("drain exploded"),
         ):
             await close_cli_pool(pool)

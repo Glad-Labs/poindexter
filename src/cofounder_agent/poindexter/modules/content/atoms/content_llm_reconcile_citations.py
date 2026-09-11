@@ -34,7 +34,7 @@ from modules.content.atoms._citation_match import (
 )
 from modules.content.atoms._pool import resolve_pool
 from plugins.atom import AtomMeta, FieldSpec
-from services.llm_text import ollama_chat_text, resolve_structured_model
+from poindexter.services.llm_text import ollama_chat_text, resolve_structured_model
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -193,7 +193,7 @@ ARTICLE:
 def _resolve_prompt(*, sources: str, content: str) -> str:
     """Langfuse/SKILL.md-configurable prompt, inline fallback for bootstrap/test."""
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(
             _PROMPT_KEY, sources=sources, content=content,
         )

@@ -9,7 +9,7 @@ from datetime import datetime
 
 import pytest
 
-from services.websocket_manager import WebSocketManager, WebSocketMessage
+from poindexter.services.websocket_manager import WebSocketManager, WebSocketMessage
 
 # ---------------------------------------------------------------------------
 # WebSocketMessage (dataclass kept for compat)

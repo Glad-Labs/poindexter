@@ -12,7 +12,7 @@ pytestmark = [
 
 
 async def test_watch_task_queries_execute_on_real_schema(test_pool):
-    from services.chat_watch import watch_task
+    from poindexter.services.chat_watch import watch_task
 
     task_id = f"watchtest-{uuid.uuid4().hex[:12]}"
     await test_pool.execute(

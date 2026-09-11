@@ -32,8 +32,8 @@ import uuid as uuid_lib
 from datetime import datetime, timezone
 from typing import Any
 
-from services import chat_conversation_store as store
-from services.logger_config import get_logger
+from poindexter.services import chat_conversation_store as store
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -118,7 +118,7 @@ async def create_plan(
     spec: dict[str, Any],
 ) -> dict[str, Any]:
     """Cache the composed spec and insert the plan row; returns card fields."""
-    from services.pipeline_architect import cache_template
+    from poindexter.services.pipeline_architect import cache_template
 
     safe_spec = ensure_terminal(namespace_spec(spec))
     slug = await cache_template(pool, safe_spec)
@@ -368,8 +368,8 @@ async def _audit(
     pool: Any, *, plan_id: str, conversation_id: str, slug: str, task_id: str,
 ) -> None:
     try:
-        from services.audit_event_schemas import validate_event_details
-        from services.audit_log import AuditLogger
+        from poindexter.services.audit_event_schemas import validate_event_details
+        from poindexter.services.audit_log import AuditLogger
 
         details = validate_event_details("chat_plan_run", {
             "schema_version": 1,

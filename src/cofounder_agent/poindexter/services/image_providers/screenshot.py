@@ -177,7 +177,7 @@ class ScreenshotProvider:
             f"Screenshot of the {target_key} surface"
         )
 
-        from services.preview_screenshot import capture_preview_screenshot
+        from poindexter.services.preview_screenshot import capture_preview_screenshot
 
         png = await capture_preview_screenshot(
             url,
@@ -248,7 +248,7 @@ async def _upload(path: str, target_key: str, *, site_config: Any) -> str:
     full-page dashboard capture arrives as a ~150 KB image rather than a 1 MB
     PNG.
     """
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
 
     if site_config is None:
         raise RuntimeError(

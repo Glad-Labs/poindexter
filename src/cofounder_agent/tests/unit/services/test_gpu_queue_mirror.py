@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import services.gpu_queue_mirror as mirror
-from services.gpu_scheduler import GpuLockTimeoutError, GPUScheduler
+import poindexter.services.gpu_queue_mirror as mirror
+from poindexter.services.gpu_scheduler import GpuLockTimeoutError, GPUScheduler
 
 pytestmark = pytest.mark.asyncio
 
@@ -152,7 +152,7 @@ async def test_timeout_still_dequeues(monkeypatch):
     gpu = _quiet(GPUScheduler())
     # 1s acquire ceiling so the test is fast.
     monkeypatch.setattr(
-        "services.gpu_scheduler._cfg_int", lambda key, default: 1
+        "poindexter.services.gpu_scheduler._cfg_int", lambda key, default: 1
     )
 
     entered = asyncio.Event()

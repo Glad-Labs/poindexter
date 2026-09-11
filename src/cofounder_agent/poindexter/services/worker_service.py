@@ -15,8 +15,8 @@ import socket
 from datetime import datetime, timezone
 from typing import Any
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 

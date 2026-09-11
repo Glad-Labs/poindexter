@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from services.prompt_manager import (
+from poindexter.services.prompt_manager import (
     PromptCategory,
     PromptMetadata,
     PromptVersion,

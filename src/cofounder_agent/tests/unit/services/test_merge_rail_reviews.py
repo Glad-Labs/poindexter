@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.template_runner import _merge_rail_reviews
+from poindexter.services.template_runner import _merge_rail_reviews
 
 
 @pytest.mark.unit

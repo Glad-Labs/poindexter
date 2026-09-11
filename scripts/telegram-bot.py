@@ -231,7 +231,7 @@ _BOT_SITE_CONFIG = _BotSiteConfig({**_tg_cfg, **_passthrough_extra})
 async def _maybe_handle_cli(text: str, chat_id: str) -> str | None:
     """Route /cli messages to the passthrough; return reply text or None."""
     try:
-        from services.integrations.telegram_cli_passthrough import handle_cli_message
+        from poindexter.services.integrations.telegram_cli_passthrough import handle_cli_message
     except Exception as e:
         print(f"[CLI] Passthrough import failed: {e}")
         return None

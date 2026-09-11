@@ -20,7 +20,7 @@ def _make_pool(execute_result: str = "DELETE 3"):
 @pytest.mark.asyncio
 async def test_posts_orphan_deletes_and_returns_count():
     """posts handler runs a LEFT JOIN DELETE and returns deleted count."""
-    from services.integrations.handlers.retention_embeddings_orphan_prune import (
+    from poindexter.services.integrations.handlers.retention_embeddings_orphan_prune import (
         embeddings_orphan_prune,
     )
 
@@ -42,7 +42,7 @@ async def test_posts_orphan_deletes_and_returns_count():
 
 @pytest.mark.asyncio
 async def test_audit_handler_joins_audit_log():
-    from services.integrations.handlers.retention_embeddings_orphan_prune import (
+    from poindexter.services.integrations.handlers.retention_embeddings_orphan_prune import (
         embeddings_orphan_prune,
     )
 
@@ -58,7 +58,7 @@ async def test_audit_handler_joins_audit_log():
 
 @pytest.mark.asyncio
 async def test_brain_handler_uses_compound_key():
-    from services.integrations.handlers.retention_embeddings_orphan_prune import (
+    from poindexter.services.integrations.handlers.retention_embeddings_orphan_prune import (
         embeddings_orphan_prune,
     )
 
@@ -75,7 +75,7 @@ async def test_brain_handler_uses_compound_key():
 
 @pytest.mark.asyncio
 async def test_unknown_source_raises():
-    from services.integrations.handlers.retention_embeddings_orphan_prune import (
+    from poindexter.services.integrations.handlers.retention_embeddings_orphan_prune import (
         embeddings_orphan_prune,
     )
 
@@ -88,7 +88,7 @@ async def test_unknown_source_raises():
 
 @pytest.mark.asyncio
 async def test_missing_source_table_raises():
-    from services.integrations.handlers.retention_embeddings_orphan_prune import (
+    from poindexter.services.integrations.handlers.retention_embeddings_orphan_prune import (
         embeddings_orphan_prune,
     )
 
@@ -102,7 +102,7 @@ async def test_missing_source_table_raises():
 @pytest.mark.asyncio
 async def test_default_batch_size_used_when_not_specified():
     """config without batch_size uses the default of 1000."""
-    from services.integrations.handlers.retention_embeddings_orphan_prune import (
+    from poindexter.services.integrations.handlers.retention_embeddings_orphan_prune import (
         _DEFAULT_BATCH_SIZE,
         embeddings_orphan_prune,
     )

@@ -32,7 +32,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -134,7 +134,7 @@ async def _get_task(ctx: ChatToolContext, *, task_id: str) -> str:
 
 
 async def _get_budget(ctx: ChatToolContext) -> str:
-    from services.cost_aggregation_service import CostAggregationService
+    from poindexter.services.cost_aggregation_service import CostAggregationService
 
     svc = CostAggregationService(ctx.db_service)  # type: ignore[no-untyped-call]
     status = await svc.get_budget_status()
@@ -178,7 +178,7 @@ async def _memory_search_text(
     # is a locator — enough for the model to decide what to read next — so the
     # chars should be the ones that MATCHED. A chunk runs to 6000 characters
     # and its opening frequently says nothing about why it came back.
-    from services.rag_excerpt import excerpt_around_query
+    from poindexter.services.rag_excerpt import excerpt_around_query
     lines = [
         f"- [{h.source_table}/{str(h.source_id)[:12]}] "
         f"(sim {h.similarity:.2f}) "
@@ -189,7 +189,7 @@ async def _memory_search_text(
 
 
 async def _get_audit_summary(ctx: ChatToolContext, *, hours: int = 24) -> str:
-    from services.audit_log import query_summary
+    from poindexter.services.audit_log import query_summary
 
     hours = max(1, min(int(hours), 720))
     rows = await query_summary(ctx.pool, hours=hours)
@@ -222,11 +222,11 @@ async def _create_post(
     niche_slug: str = "",
     force: bool = False,
 ) -> str:
-    from schemas.task_schemas import UnifiedTaskRequest
-    from services.blog_task_creation import (
+    from poindexter.services.blog_task_creation import (
         BlogTaskCreationError,
         create_blog_post_task,
     )
+    from schemas.task_schemas import UnifiedTaskRequest
 
     fields: dict[str, Any] = {
         "task_type": "blog_post",
@@ -258,7 +258,7 @@ async def _create_post(
 
 
 async def _set_setting(ctx: ChatToolContext, *, key: str, value: str) -> str:
-    from services.settings_service import SettingsService
+    from poindexter.services.settings_service import SettingsService
 
     key = key.strip()
     row = await ctx.pool.fetchrow(
@@ -281,7 +281,7 @@ async def _set_setting(ctx: ChatToolContext, *, key: str, value: str) -> str:
 
 
 async def _restart_service(ctx: ChatToolContext, *, container: str) -> str:
-    from services.service_restart_requests import (
+    from poindexter.services.service_restart_requests import (
         InvalidContainerName,
         SelfDefeatingRestart,
         create_restart_request,
@@ -333,8 +333,8 @@ async def _plan_pipeline(
     ``max_attempts=2`` keeps the FIX-retry loop inside the chat turn's
     deadline (the full 3-attempt budget belongs to offline callers).
     """
-    from services.chat_plans import create_plan
-    from services.pipeline_architect import compose
+    from poindexter.services.chat_plans import create_plan
+    from poindexter.services.pipeline_architect import compose
 
     result = await compose(
         intent,

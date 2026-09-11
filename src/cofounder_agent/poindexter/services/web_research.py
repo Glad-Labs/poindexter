@@ -10,7 +10,7 @@ Sources:
 3. Falls back gracefully if search or fetch fails
 
 Usage:
-    from services.web_research import WebResearcher
+    from poindexter.services.web_research import WebResearcher
     researcher = WebResearcher(site_config=site_config)
     results = await researcher.search("FastAPI best practices 2026")
     # Returns list of {title, url, snippet, content} dicts
@@ -32,9 +32,9 @@ import random
 import httpx
 from bs4 import BeautifulSoup
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
-from services.url_scraper import URLScrapeError, _safe_get
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.url_scraper import URLScrapeError, _safe_get
 from utils.crawler_ua import build_crawler_ua
 
 logger = get_logger(__name__)

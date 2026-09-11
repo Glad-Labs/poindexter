@@ -74,7 +74,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     database_service = state.get("database_service")
     pool = getattr(database_service, "pool", None) if database_service else None
 
-    from services.self_review import revise_contradictions
+    from poindexter.services.self_review import revise_contradictions
 
     try:
         revised_text, stats = await revise_contradictions(

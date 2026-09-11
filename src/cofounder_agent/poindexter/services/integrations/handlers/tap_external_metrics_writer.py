@@ -68,7 +68,7 @@ import json
 import logging
 from typing import Any
 
-from services.integrations.registry import register_handler
+from poindexter.services.integrations.registry import register_handler
 
 logger = logging.getLogger(__name__)
 

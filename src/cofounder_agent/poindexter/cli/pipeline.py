@@ -65,7 +65,9 @@ from poindexter.cli._event_loop import (
     ensure_selector_event_loop_on_windows as _ensure_selector_event_loop_on_windows,
 )
 from poindexter.cli._prefix import resolve_uuid_prefix
-from services import tasks_mcp  # cheap: services/__init__ is empty, tasks_mcp imports only typing
+from poindexter.services import (
+    tasks_mcp,  # cheap: services/__init__ is empty, tasks_mcp imports only typing
+)
 
 
 def _quiet_service_logging() -> None:
@@ -122,8 +124,8 @@ async def _build_resume_handles(site_config: Any) -> tuple[Any, Any]:
     ``LOCAL_DATABASE_URL``), so one pool over ``_dsn()`` backs every delegate.
     The caller owns ``await database_service.close()``.
     """
-    from services.database_service import DatabaseService
-    from services.di_wiring import build_platform_for_subprocess
+    from poindexter.services.database_service import DatabaseService
+    from poindexter.services.di_wiring import build_platform_for_subprocess
 
     database_service = DatabaseService(database_url=_dsn(), site_config=site_config)
     await database_service.initialize()
@@ -148,7 +150,7 @@ async def _make_pool():
 
 
 async def _make_site_config(pool):
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     cfg = SiteConfig(pool=pool)
     try:
@@ -426,7 +428,7 @@ async def _resume_one(task_id: str, feedback: str | None) -> dict[str, Any]:
         # resolver that just built the pool, so it is guaranteed set here.
         checkpointer_dsn = _dsn()
 
-        from services.template_runner import (
+        from poindexter.services.template_runner import (
             TemplateRunner,
             has_resumable_checkpoint,
         )
@@ -460,8 +462,8 @@ async def _resume_one(task_id: str, feedback: str | None) -> dict[str, Any]:
             original_artifact = row.get("gate_artifact")
             original_paused_at = row.get("gate_paused_at")
 
-            from services.approval_service import approve as approve_service
-            from services.approval_service import rollback_resume_approval
+            from poindexter.services.approval_service import approve as approve_service
+            from poindexter.services.approval_service import rollback_resume_approval
 
             approval = await approve_service(
                 task_id=task_id_str,
@@ -509,7 +511,7 @@ async def _resume_one(task_id: str, feedback: str | None) -> dict[str, Any]:
         # awaiting_gate is NULL. If the task is an operator-driven resume
         # that died past the gate (in_progress + intact checkpoint + a
         # prior approval), continue from the checkpoint without re-approving.
-        from services.approval_service import latest_approved_gate
+        from poindexter.services.approval_service import latest_approved_gate
 
         approved_gate = await latest_approved_gate(pool, task_id_str)
         resumable = (
@@ -771,11 +773,11 @@ def regen_command(
             db_service, platform = await _build_resume_handles(site_config)
             checkpointer_dsn = _dsn()  # see resume_command for why this is explicit
 
-            from services.approval_service import (
+            from poindexter.services.approval_service import (
                 RegenCapReachedError,
                 regen_at_gate,
             )
-            from services.template_runner import TemplateRunner
+            from poindexter.services.template_runner import TemplateRunner
 
             # Set the pending flag + bump the counter BEFORE resuming. On cap,
             # leave the task paused so the operator must approve or reject.

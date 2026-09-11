@@ -28,8 +28,8 @@ import logging
 import re
 from typing import Any
 
-from services.integrations.operator_notify import notify_operator
-from services.site_config import SiteConfig
+from poindexter.services.integrations.operator_notify import notify_operator
+from poindexter.services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def _resolve_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
     a restart.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(key, **kwargs)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -272,7 +272,7 @@ async def _prepare(
             # the routing above) would then carry an Ollama-only param and drag
             # the VRAM clamp's local ``/api/show`` into every Anthropic call.
             # Pinned by ``tests/unit/services/test_self_review_num_ctx.py``.
-            from services.llm_providers.dispatcher import dispatch_complete
+            from poindexter.services.llm_providers.dispatcher import dispatch_complete
             return await dispatch_complete(
                 pool,
                 messages,
@@ -361,7 +361,7 @@ async def detect_contradictions(
     # video-director paths do, and measured here it took glm's detection from
     # 4/4 to 0/4. Thinking is load-bearing for THIS task, so budget for it the
     # way the critic does rather than switching it off.
-    from services.llm_providers.thinking_models import (
+    from poindexter.services.llm_providers.thinking_models import (
         is_thinking_model,
         resolve_thinking_substrings,
     )
@@ -460,7 +460,7 @@ async def revise_contradictions(
             # Substrate reaches content through the api adapter, never a deep
             # import (the modules/content/api.py boundary).
             from modules.content.api import strip_leaked_planning_scaffold
-            from services.llm_providers.thinking_models import (
+            from poindexter.services.llm_providers.thinking_models import (
                 strip_reasoning_artifacts,
             )
 

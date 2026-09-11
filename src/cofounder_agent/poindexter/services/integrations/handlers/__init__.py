@@ -51,7 +51,7 @@ def load_all() -> None:
     #                      retention_summarize_to_table, retention_ttl_prune
     # tap.* surface: tap_builtin_topic_source, tap_corsair_csv,
     #                tap_external_metrics_writer, tap_singer_subprocess
-    from services.integrations.handlers import (  # noqa: F401
+    from poindexter.services.integrations.handlers import (  # noqa: F401
         outbound_apprise,
         outbound_vercel_isr,
         publishing_youtube,

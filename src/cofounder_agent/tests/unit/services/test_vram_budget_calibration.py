@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.vram_budget import (
+from poindexter.services.vram_budget import (
     ModelArch,
     effective_kv_ctx,
     estimate_kv_cache_gb,

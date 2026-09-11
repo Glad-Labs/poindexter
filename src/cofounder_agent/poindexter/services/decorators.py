@@ -33,7 +33,7 @@ Settings consumed (all from ``site_config``):
     enable_query_monitoring: Enable/disable query monitoring (default: true)
 
 Usage:
-    from services.decorators import log_query_performance
+    from poindexter.services.decorators import log_query_performance
 
     @log_query_performance(operation="get_tasks", category="task_retrieval")
     async def get_tasks_paginated(self, offset, limit):
@@ -46,8 +46,8 @@ import time
 from collections.abc import Callable, Coroutine
 from typing import Any, ParamSpec, TypeVar
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 

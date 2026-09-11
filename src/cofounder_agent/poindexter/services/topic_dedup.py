@@ -27,7 +27,7 @@ tell why).
 
 Usage::
 
-    from services.topic_dedup import TopicDeduplicator
+    from poindexter.services.topic_dedup import TopicDeduplicator
 
     dedup = TopicDeduplicator(pool=pool, site_config=site_config)
     await dedup.mark_duplicates(topics)
@@ -40,7 +40,7 @@ import re
 from collections.abc import Iterable
 from typing import Any, Protocol
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

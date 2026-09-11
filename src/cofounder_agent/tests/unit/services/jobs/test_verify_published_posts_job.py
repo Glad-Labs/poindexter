@@ -12,11 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.jobs.verify_published_posts import VerifyPublishedPostsJob
+from poindexter.services.jobs.verify_published_posts import VerifyPublishedPostsJob
 
 
 def _sc(site_url: str = "https://gladlabs.io") -> MagicMock:
-    """Mock SiteConfig — replaces patch("services.jobs.verify_published_posts.site_config.get").
+    """Mock SiteConfig — replaces patch("poindexter.services.jobs.verify_published_posts.site_config.get").
 
     Job migrated to DI seam in glad-labs-stack#330; tests pass it via
     config dict instead.
@@ -107,7 +107,7 @@ class TestRun:
             "https://gladlabs.io/posts/t2": 200,
         })
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ):
             job = VerifyPublishedPostsJob()
@@ -126,10 +126,10 @@ class TestRun:
         ])
         client = _patched_client({"https://gladlabs.io/posts/vanished": 404})
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.emit_finding",
+            "poindexter.services.jobs.verify_published_posts.emit_finding",
             new=MagicMock(),
         ) as mock_gitea:
             job = VerifyPublishedPostsJob()
@@ -149,10 +149,10 @@ class TestRun:
             "https://gladlabs.io/posts/no-dns": httpx.ConnectError("dns fail"),
         })
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.emit_finding",
+            "poindexter.services.jobs.verify_published_posts.emit_finding",
             new=MagicMock(),
         ):
             job = VerifyPublishedPostsJob()
@@ -165,7 +165,7 @@ class TestRun:
         pool, _ = _make_pool([{"id": "p1", "title": "T", "slug": "t"}])
         client = _patched_client({"https://site.io/posts/t": 200})
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ):
             job = VerifyPublishedPostsJob()
@@ -183,10 +183,10 @@ class TestRun:
         conn.execute = AsyncMock(side_effect=RuntimeError("audit_log missing"))
         client = _patched_client({"https://gladlabs.io/posts/failed": 500})
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.emit_finding",
+            "poindexter.services.jobs.verify_published_posts.emit_finding",
             new=MagicMock(),
         ):
             job = VerifyPublishedPostsJob()
@@ -200,10 +200,10 @@ class TestRun:
         client = _patched_client({"https://gladlabs.io/posts/bad": 503})
         mock_gitea = MagicMock()
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.emit_finding",
+            "poindexter.services.jobs.verify_published_posts.emit_finding",
             new=mock_gitea,
         ):
             job = VerifyPublishedPostsJob()
@@ -233,10 +233,10 @@ class TestEdgeChallenge:
         })
         finds = MagicMock()
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.emit_finding", new=finds,
+            "poindexter.services.jobs.verify_published_posts.emit_finding", new=finds,
         ):
             job = VerifyPublishedPostsJob()
             result = await job.run(pool, {"_site_config": _sc()})
@@ -259,10 +259,10 @@ class TestEdgeChallenge:
         })
         finds = MagicMock()
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.emit_finding", new=finds,
+            "poindexter.services.jobs.verify_published_posts.emit_finding", new=finds,
         ):
             job = VerifyPublishedPostsJob()
             result = await job.run(pool, {"_site_config": _sc()})
@@ -285,7 +285,7 @@ class TestUserAgent:
         client = _patched_client({"https://gladlabs.io/posts/t1": 200})
         mock_cls = MagicMock(return_value=client)
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient", mock_cls,
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient", mock_cls,
         ):
             job = VerifyPublishedPostsJob()
             await job.run(
@@ -307,7 +307,7 @@ class TestUserAgent:
         }.get(k, d)
         mock_cls = MagicMock(return_value=client)
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient", mock_cls,
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient", mock_cls,
         ):
             job = VerifyPublishedPostsJob()
             await job.run(
@@ -333,10 +333,10 @@ class TestUserAgent:
         })
         finds = MagicMock()
         with patch(
-            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            "poindexter.services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.emit_finding", new=finds,
+            "poindexter.services.jobs.verify_published_posts.emit_finding", new=finds,
         ):
             job = VerifyPublishedPostsJob()
             await job.run(pool, {"_site_config": _sc()})

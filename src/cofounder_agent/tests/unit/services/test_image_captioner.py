@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.image_captioner import caption_image
+from poindexter.services.image_captioner import caption_image
 
 
 class _Result:
@@ -15,8 +15,8 @@ class _Result:
 @pytest.mark.asyncio
 async def test_caption_image_happy_path_strips_image_of_prefix():
     png = base64.b64encode(b"\x89PNG\r\n").decode()
-    with patch("services.image_captioner._fetch_b64", AsyncMock(return_value=png)), patch(
-        "services.image_captioner.dispatch_complete",
+    with patch("poindexter.services.image_captioner._fetch_b64", AsyncMock(return_value=png)), patch(
+        "poindexter.services.image_captioner.dispatch_complete",
         AsyncMock(return_value=_Result("Image of a teal glass cube on blueprint paper.")),
     ) as disp:
         alt = await caption_image(
@@ -45,7 +45,7 @@ async def test_caption_image_happy_path_strips_image_of_prefix():
 
 @pytest.mark.asyncio
 async def test_caption_image_fail_soft_returns_none_on_fetch_error():
-    with patch("services.image_captioner._fetch_b64", AsyncMock(return_value=None)):
+    with patch("poindexter.services.image_captioner._fetch_b64", AsyncMock(return_value=None)):
         alt = await caption_image(
             image_url="https://r2/x.png",
             topic="CAD",
@@ -59,8 +59,8 @@ async def test_caption_image_fail_soft_returns_none_on_fetch_error():
 @pytest.mark.asyncio
 async def test_caption_image_fail_soft_on_dispatch_error():
     png = base64.b64encode(b"x").decode()
-    with patch("services.image_captioner._fetch_b64", AsyncMock(return_value=png)), patch(
-        "services.image_captioner.dispatch_complete",
+    with patch("poindexter.services.image_captioner._fetch_b64", AsyncMock(return_value=png)), patch(
+        "poindexter.services.image_captioner.dispatch_complete",
         AsyncMock(side_effect=RuntimeError("ollama down")),
     ):
         alt = await caption_image(
@@ -78,8 +78,8 @@ async def test_caption_image_fail_soft_on_dispatch_error():
 async def test_caption_image_skips_when_no_model_configured():
     """poindexter#716: no model configured (vision_alt_model unset) → None, no dispatch."""
     png = base64.b64encode(b"\x89PNG\r\n").decode()
-    with patch("services.image_captioner._fetch_b64", AsyncMock(return_value=png)), patch(
-        "services.image_captioner.dispatch_complete",
+    with patch("poindexter.services.image_captioner._fetch_b64", AsyncMock(return_value=png)), patch(
+        "poindexter.services.image_captioner.dispatch_complete",
         AsyncMock(return_value=_Result("some alt")),
     ) as disp:
         alt = await caption_image(

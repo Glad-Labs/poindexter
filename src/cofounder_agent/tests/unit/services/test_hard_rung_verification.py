@@ -21,8 +21,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import services.gpu_scheduler as gs
-from services.gpu_scheduler import GPUScheduler
+import poindexter.services.gpu_scheduler as gs
+from poindexter.services.gpu_scheduler import GPUScheduler
 
 
 class _SC:
@@ -109,10 +109,10 @@ class TestVerifierRespectsTheDecline:
         that correctly reported it had nothing to free."""
         s = _sched()
         created = AsyncMock()
-        with patch("services.gpu_scheduler._sc", return_value=_SC()), \
-             patch("services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
              patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=11.7)), \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             await s._verify_reclaim_or_restart(
                 service="wan", container="poindexter-wan-server",
                 before_gb=11.7, declined=True,
@@ -124,11 +124,11 @@ class TestVerifierRespectsTheDecline:
         back, the exit did NOT actually happen."""
         s = _sched()
         created = AsyncMock(return_value={"id": "r1"})
-        with patch("services.gpu_scheduler._sc", return_value=_SC()), \
-             patch("services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
              patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=11.7)), \
              patch("asyncio.sleep", new=AsyncMock()), \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             await s._verify_reclaim_or_restart(
                 service="stable-audio", container="poindexter-stable-audio",
                 before_gb=11.7, declined=False,
@@ -139,11 +139,11 @@ class TestVerifierRespectsTheDecline:
     async def test_a_working_unload_is_left_alone(self):
         s = _sched()
         created = AsyncMock()
-        with patch("services.gpu_scheduler._sc", return_value=_SC()), \
-             patch("services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
              patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=22.7)), \
              patch("asyncio.sleep", new=AsyncMock()), \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             await s._verify_reclaim_or_restart(
                 service="wan", container="poindexter-wan-server",
                 before_gb=11.7, declined=False,
@@ -159,11 +159,11 @@ class TestCooldownIsPerContainer:
         stable-audio's — the ladder evicts several services per pass."""
         s = _sched()
         created = AsyncMock(return_value={"id": "r"})
-        with patch("services.gpu_scheduler._sc", return_value=_SC()), \
-             patch("services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
              patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=11.7)), \
              patch("asyncio.sleep", new=AsyncMock()), \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             for svc, ctr in (
                 ("wan", "poindexter-wan-server"),
                 ("stable-audio", "poindexter-stable-audio"),
@@ -182,11 +182,11 @@ class TestCooldownIsPerContainer:
     async def test_the_same_container_is_still_rate_limited(self):
         s = _sched()
         created = AsyncMock(return_value={"id": "r"})
-        with patch("services.gpu_scheduler._sc", return_value=_SC()), \
-             patch("services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
              patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=11.7)), \
              patch("asyncio.sleep", new=AsyncMock()), \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             for _ in range(3):
                 await s._verify_reclaim_or_restart(
                     service="wan", container="poindexter-wan-server",
@@ -202,8 +202,8 @@ class TestEveryHardRungIsWired:
     (poindexter#999) — so assert all four actually call the verifier."""
 
     @pytest.mark.parametrize("method,url_patch,container", [
-        ("_unload_wan", "services.video_providers.wan2_1._resolve_server_url", "poindexter-wan-server"),
-        ("_unload_stable_audio", "services.audio_gen_providers.stable_audio_open._resolve_server_url", "poindexter-stable-audio"),
+        ("_unload_wan", "poindexter.services.video_providers.wan2_1._resolve_server_url", "poindexter-wan-server"),
+        ("_unload_stable_audio", "poindexter.services.audio_gen_providers.stable_audio_open._resolve_server_url", "poindexter-stable-audio"),
     ])
     async def test_self_exit_rungs_verify(self, method, url_patch, container):
         s = _sched()
@@ -232,7 +232,7 @@ class TestEveryHardRungIsWired:
             seen.update(kw)
 
         with patch.object(s, "_get_http_client", return_value=client), \
-             patch("services.gpu_scheduler._sc_get", return_value="http://img:9836"), \
+             patch("poindexter.services.gpu_scheduler._sc_get", return_value="http://img:9836"), \
              patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=11.7)), \
              patch.object(s, "_verify_reclaim_or_restart", _verify):
             await s._unload_image_gen(hard=True)
@@ -245,7 +245,7 @@ class TestEveryHardRungIsWired:
         client.post = AsyncMock(return_value=_resp(200, {"status": "unloaded"}))
         verify = AsyncMock()
         with patch.object(s, "_get_http_client", return_value=client), \
-             patch("services.video_providers.wan2_1._resolve_server_url", return_value="http://w:9840"), \
+             patch("poindexter.services.video_providers.wan2_1._resolve_server_url", return_value="http://w:9840"), \
              patch.object(s, "_verify_reclaim_or_restart", verify):
             await s._unload_wan(hard=False)
         verify.assert_not_awaited()

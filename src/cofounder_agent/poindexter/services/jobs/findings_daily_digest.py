@@ -41,7 +41,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.integrations.operator_notify import notify_operator
+from poindexter.services.integrations.operator_notify import notify_operator
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)

@@ -22,7 +22,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from services.model_eval.runner import EvalReport
+from poindexter.services.model_eval.runner import EvalReport
 
 logger = logging.getLogger(__name__)
 

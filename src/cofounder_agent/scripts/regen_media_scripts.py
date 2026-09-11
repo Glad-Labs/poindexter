@@ -36,11 +36,11 @@ async def _main() -> int:
     args = parser.parse_args()
 
     from modules.content.media_regen import regen_video_scripts
-    from services.di_wiring import (
+    from poindexter.services.di_wiring import (
         build_and_wire_subprocess_with_container,
         build_platform_for_subprocess,
     )
-    from services.flows.content_generation import _build_default_database_service
+    from poindexter.services.flows.content_generation import _build_default_database_service
 
     # A REAL DatabaseService (not a bare pool): its initialize() also sets the
     # global AuditLogger, without which build_platform_for_subprocess returns

@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.findings_daily_digest import FindingsDailyDigestJob
+from poindexter.services.jobs.findings_daily_digest import FindingsDailyDigestJob
 
 # ---------------------------------------------------------------------------
 # Pool fake — settings reads go through pool.fetchrow (get_secret); the
@@ -96,7 +96,7 @@ class TestGuards:
     async def test_disabled_short_circuits_without_sending(self):
         pool = _make_pool(settings={"findings_daily_digest_enabled": "false", **_WEBHOOK})
         notify = AsyncMock()
-        with patch("services.jobs.findings_daily_digest.notify_operator", new=notify):
+        with patch("poindexter.services.jobs.findings_daily_digest.notify_operator", new=notify):
             result = await FindingsDailyDigestJob().run(pool, {})
         assert result.ok is True
         assert result.detail == "disabled"
@@ -107,7 +107,7 @@ class TestGuards:
     async def test_missing_webhook_fails_loud(self):
         pool = _make_pool(settings={"findings_daily_digest_enabled": "true"})  # no webhook
         notify = AsyncMock()
-        with patch("services.jobs.findings_daily_digest.notify_operator", new=notify):
+        with patch("poindexter.services.jobs.findings_daily_digest.notify_operator", new=notify):
             result = await FindingsDailyDigestJob().run(pool, {})
         assert result.ok is False
         assert "discord_ops_webhook_url" in result.detail
@@ -129,7 +129,7 @@ class TestHappyPath:
             pending=0,
         )
         notify = AsyncMock()
-        with patch("services.jobs.findings_daily_digest.notify_operator", new=notify):
+        with patch("poindexter.services.jobs.findings_daily_digest.notify_operator", new=notify):
             result = await FindingsDailyDigestJob().run(pool, {})
 
         assert result.ok is True
@@ -159,7 +159,7 @@ class TestHappyPath:
             pending=2,
         )
         notify = AsyncMock()
-        with patch("services.jobs.findings_daily_digest.notify_operator", new=notify):
+        with patch("poindexter.services.jobs.findings_daily_digest.notify_operator", new=notify):
             await FindingsDailyDigestJob().run(pool, {})
         body = notify.await_args.args[0]
         assert "brand_new_kind ×3 (route)" in body
@@ -177,7 +177,7 @@ class TestHappyPath:
             deliveries={},
         )
         notify = AsyncMock()
-        with patch("services.jobs.findings_daily_digest.notify_operator", new=notify):
+        with patch("poindexter.services.jobs.findings_daily_digest.notify_operator", new=notify):
             await FindingsDailyDigestJob().run(pool, {})
         body = notify.await_args.args[0]
         assert "a ×10" in body and "b ×5" in body
@@ -195,7 +195,7 @@ class TestEmpty:
             pending=0,
         )
         notify = AsyncMock()
-        with patch("services.jobs.findings_daily_digest.notify_operator", new=notify):
+        with patch("poindexter.services.jobs.findings_daily_digest.notify_operator", new=notify):
             result = await FindingsDailyDigestJob().run(pool, {})
         assert result.ok is True
         body = notify.await_args.args[0]

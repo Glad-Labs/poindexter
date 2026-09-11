@@ -25,7 +25,7 @@ from uuid import uuid4
 
 import pytest
 
-from services.jobs.rollup_post_performance import RollupPostPerformanceJob
+from poindexter.services.jobs.rollup_post_performance import RollupPostPerformanceJob
 
 # ---------------------------------------------------------------------------
 # Metadata (no DB needed)

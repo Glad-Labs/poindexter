@@ -54,7 +54,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
-from services.title_searchability import STOPWORDS as _TITLE_STOPWORDS
+from poindexter.services.title_searchability import STOPWORDS as _TITLE_STOPWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -444,7 +444,7 @@ class WikipediaDemandScorer:
         """True when the lifespan wired ``services.http_client`` — the sweep
         skips lookups entirely (factor 1.0, views None) when it did not."""
         try:
-            from services import http_client as _hc
+            from poindexter.services import http_client as _hc
 
             return _hc.http_client is not None
         except Exception:  # noqa: BLE001
@@ -457,7 +457,7 @@ class WikipediaDemandScorer:
         client = self._client
         if client is None:
             try:
-                from services.http_client import get_shared_http_client
+                from poindexter.services.http_client import get_shared_http_client
 
                 client = get_shared_http_client()
             except Exception:  # noqa: BLE001 — outside the lifespan (CLI / tests)

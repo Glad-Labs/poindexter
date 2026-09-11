@@ -7,7 +7,7 @@ the full-article section-heading skeleton (2026-07-24 topic-label titling fix).
 
 from __future__ import annotations
 
-from services.title_generation import (
+from poindexter.services.title_generation import (
     DEFAULT_TITLE_EXCERPT_CHARS,
     build_title_grounding_digest,
 )

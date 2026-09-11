@@ -74,7 +74,7 @@ def resolve_voice_prompt(key: str, **kwargs: Any) -> str:
     (e.g. ``surface="local mic"``).
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         return get_prompt_manager().get_prompt(key, **kwargs)
     except Exception as exc:  # noqa: BLE001 — registry down must not silence voice

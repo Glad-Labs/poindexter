@@ -1,9 +1,9 @@
 """TemplateRunner.run refuses a drifted graph_def at load time (poindexter#755)."""
 import pytest
 
-import services.template_runner as tr
-from services.pipeline_architect import GraphContractError
-from services.site_config import SiteConfig
+import poindexter.services.template_runner as tr
+from poindexter.services.pipeline_architect import GraphContractError
+from poindexter.services.site_config import SiteConfig
 
 
 def _runner():
@@ -24,12 +24,12 @@ async def test_run_refuses_drifted_graph_def(monkeypatch):
     async def _fake_load(pool, slug):
         return drifted
 
-    monkeypatch.setattr("services.pipeline_templates.load_active_graph_def", _fake_load)
+    monkeypatch.setattr("poindexter.services.pipeline_templates.load_active_graph_def", _fake_load)
 
     def _boom(spec):
         raise GraphContractError("FIX: drift")
 
-    monkeypatch.setattr("services.pipeline_architect.assert_graph_def_current", _boom)
+    monkeypatch.setattr("poindexter.services.pipeline_architect.assert_graph_def_current", _boom)
 
     # Isolate the gate wiring from the notification side-effect.
     async def _noop_emit(*a, **k):
@@ -53,9 +53,9 @@ async def test_run_notifies_operator_on_drift(monkeypatch):
     async def _fake_load(pool, slug):
         return drifted
 
-    monkeypatch.setattr("services.pipeline_templates.load_active_graph_def", _fake_load)
+    monkeypatch.setattr("poindexter.services.pipeline_templates.load_active_graph_def", _fake_load)
     monkeypatch.setattr(
-        "services.pipeline_architect.assert_graph_def_current",
+        "poindexter.services.pipeline_architect.assert_graph_def_current",
         lambda spec: (_ for _ in ()).throw(GraphContractError("FIX: drift")),
     )
 

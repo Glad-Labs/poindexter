@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from services.atom_registry import discover, get_atom_meta
-from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
-from services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
+from poindexter.services.atom_registry import discover, get_atom_meta
+from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+from poindexter.services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
 
 # The single node dev_diary is allowed to own: its writer. A build-in-public
 # status report is narrated from a PR/commit bundle, not researched, so there is
@@ -98,7 +98,7 @@ class TestQaRailsStayOff:
 
 class TestSpecIsStructurallySound:
     def test_validates_against_the_live_registry(self):
-        import services.pipeline_architect as pa
+        import poindexter.services.pipeline_architect as pa
 
         discover()
         ok, errors = pa._validate_spec(DEV_DIARY_GRAPH_DEF)
@@ -133,7 +133,7 @@ class TestSeedMigrationMatchesTheSpec:
         import importlib
 
         mod = importlib.import_module(
-            "services.migrations."
+            "poindexter.services.migrations."
             "20260809_180123_reseed_dev_diary_graph_def_onto_shared_canonical_atoms"
         )
         # down() must restore a spec that is NOT the current one, else the

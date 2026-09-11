@@ -285,7 +285,7 @@ def test_build_platform_for_subprocess_scopes_to_content(monkeypatch) -> None:
     # its own handle. The helper returns content's *scoped* handle (audit only),
     # mirroring how the subprocess rebuilds site_config.
     from plugins.module import ModuleManifest
-    from services import di_wiring
+    from poindexter.services import di_wiring
 
     class _AuditLogger:
         async def log(self, *a: Any, **k: Any) -> None: ...
@@ -302,10 +302,10 @@ def test_build_platform_for_subprocess_scopes_to_content(monkeypatch) -> None:
         def bind_platform(self, platform: object) -> None: ...
 
     monkeypatch.setattr(
-        "services.audit_log.get_audit_logger", lambda: _AuditLogger()
+        "poindexter.services.audit_log.get_audit_logger", lambda: _AuditLogger()
     )
     monkeypatch.setattr(
-        "services.llm_providers.dispatcher.dispatch_complete", _dispatch
+        "poindexter.services.llm_providers.dispatcher.dispatch_complete", _dispatch
     )
     monkeypatch.setattr(
         "plugins.registry.get_modules", lambda: [_ContentLike()]
@@ -329,9 +329,9 @@ def test_build_platform_for_subprocess_returns_none_without_audit_logger(
     # Best-effort: if the subprocess has no global AuditLogger, the helper
     # returns None (audit telemetry quietly drops) rather than raising — a
     # telemetry seam must never break content generation.
-    from services import di_wiring
+    from poindexter.services import di_wiring
 
-    monkeypatch.setattr("services.audit_log.get_audit_logger", lambda: None)
+    monkeypatch.setattr("poindexter.services.audit_log.get_audit_logger", lambda: None)
 
     assert (
         di_wiring.build_platform_for_subprocess(

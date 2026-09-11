@@ -30,9 +30,9 @@ import pytest
 
 @pytest.mark.unit
 def test_social_twitter_resolver_uses_prompt_manager():
-    from services import social_poster
+    from poindexter.services import social_poster
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm:
         mock_pm.return_value.get_prompt.return_value = "PM tweet"
         result = social_poster._resolve_social_prompt(
             "social.twitter_promote",
@@ -49,10 +49,10 @@ def test_social_twitter_resolver_uses_prompt_manager():
 
 @pytest.mark.unit
 def test_social_twitter_resolver_falls_back_on_pm_failure():
-    from services import social_poster
+    from poindexter.services import social_poster
 
     with patch(
-        "services.prompt_manager.get_prompt_manager",
+        "poindexter.services.prompt_manager.get_prompt_manager",
         side_effect=RuntimeError("pm broken"),
     ):
         result = social_poster._resolve_social_prompt(
@@ -74,10 +74,10 @@ def test_social_twitter_resolver_falls_back_on_pm_failure():
 
 @pytest.mark.unit
 def test_social_linkedin_resolver_falls_back_on_pm_failure():
-    from services import social_poster
+    from poindexter.services import social_poster
 
     with patch(
-        "services.prompt_manager.get_prompt_manager",
+        "poindexter.services.prompt_manager.get_prompt_manager",
         side_effect=RuntimeError("pm broken"),
     ):
         result = social_poster._resolve_social_prompt(
@@ -101,7 +101,7 @@ def test_social_linkedin_resolver_falls_back_on_pm_failure():
 def test_collapse_summary_prompt_constant_has_required_placeholders():
     """The inline summary prompt in the collapse handler must contain the
     three format placeholders used by build_summary_text_via_llm."""
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         _DEFAULT_SUMMARY_PROMPT,
     )
 

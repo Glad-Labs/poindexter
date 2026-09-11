@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.r2_upload_service import (
+from poindexter.services.r2_upload_service import (
     _CONTENT_TYPES,
     _IMAGE_CACHE_CONTROL,
     R2UploadService,
@@ -284,8 +284,8 @@ class TestContainerExposesService:
     """
 
     def test_container_property_returns_r2_upload_service(self):
-        from services.container import AppContainer
-        from services.site_config import SiteConfig
+        from poindexter.services.container import AppContainer
+        from poindexter.services.site_config import SiteConfig
 
         site_config = SiteConfig()
         container = AppContainer(site_config=site_config, pool=MagicMock())
@@ -511,7 +511,7 @@ class TestWebpUploadBehavior:
         with (
             patch.dict("sys.modules", {"boto3": mock_boto3}),
             patch(
-                "services.r2_upload_service._convert_to_webp",
+                "poindexter.services.r2_upload_service._convert_to_webp",
                 return_value=None,
             ) as mock_convert,
         ):
@@ -536,7 +536,7 @@ class TestWebpUploadBehavior:
         svc = _make_service(self._full_config())
 
         with patch.dict("sys.modules", {"boto3": mock_boto3}), \
-             patch("services.r2_upload_service._convert_to_webp", return_value=None):
+             patch("poindexter.services.r2_upload_service._convert_to_webp", return_value=None):
             result = await svc.upload_to_r2(
                 str(png), "images/inline/nopillow.png", content_type="image/png",
             )
@@ -635,7 +635,7 @@ class TestListObjectsAndGetObjectText:
 
 
 def test_convert_to_webp_emits_finding_on_failure(tmp_path, monkeypatch):
-    from services import r2_upload_service
+    from poindexter.services import r2_upload_service
 
     calls = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: calls.append(kw))

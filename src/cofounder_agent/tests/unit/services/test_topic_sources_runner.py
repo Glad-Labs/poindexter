@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.topic_source import DiscoveredTopic
-from services.topic_sources.runner import RunnerSummary, SourceStats, run_all
+from poindexter.services.topic_sources.runner import RunnerSummary, SourceStats, run_all
 
 
 class _StubSource:

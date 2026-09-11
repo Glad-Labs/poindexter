@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.topic_proposal_service import (
+from poindexter.services.topic_proposal_service import (
     DEFAULT_MAX_PENDING,
     propose_topic,
     resolve_max_pending,
@@ -129,7 +129,7 @@ class TestTopicSanityGate:
 
     @pytest.mark.asyncio
     async def test_dots_topic_raises_before_insert(self):
-        from services.topic_sanity import TopicSanityError
+        from poindexter.services.topic_sanity import TopicSanityError
 
         pool = _make_pool()
         with pytest.raises(TopicSanityError):
@@ -172,7 +172,7 @@ class TestGateDisabled:
         pool = _make_pool()
 
         with patch(
-            "services.topic_proposal_service.pause_at_gate",
+            "poindexter.services.topic_proposal_service.pause_at_gate",
             AsyncMock(),
         ) as mock_pause:
             result = await propose_topic(
@@ -196,7 +196,7 @@ class TestGateDisabled:
         pool = _make_pool()
 
         with patch(
-            "services.topic_proposal_service.pause_at_gate",
+            "poindexter.services.topic_proposal_service.pause_at_gate",
             AsyncMock(),
         ):
             result = await propose_topic(
@@ -224,7 +224,7 @@ class TestGateEnabled:
             return {"ok": True, "paused_at": "x", "notify": {"sent": True}}
 
         with patch(
-            "services.topic_proposal_service.pause_at_gate",
+            "poindexter.services.topic_proposal_service.pause_at_gate",
             AsyncMock(side_effect=_fake_pause),
         ):
             result = await propose_topic(
@@ -255,7 +255,7 @@ class TestGateEnabled:
         pool = _make_pool(pending_count=0)
 
         with patch(
-            "services.topic_proposal_service.pause_at_gate",
+            "poindexter.services.topic_proposal_service.pause_at_gate",
             AsyncMock(return_value={"ok": True, "paused_at": "x", "notify": {}}),
         ):
             result = await propose_topic(
@@ -287,7 +287,7 @@ class TestTargetLengthVariation:
         site_cfg = _make_site_config({})
         pool = _make_pool()
         with patch(
-            "services.topic_proposal_service.pause_at_gate",
+            "poindexter.services.topic_proposal_service.pause_at_gate",
             AsyncMock(),
         ):
             await propose_topic(
@@ -306,13 +306,13 @@ class TestTargetLengthVariation:
         site_cfg = _make_site_config({})
         pool = _make_pool()
         with patch(
-            "services.topic_proposal_service.pause_at_gate",
+            "poindexter.services.topic_proposal_service.pause_at_gate",
             AsyncMock(),
         ):
             # Force the shared picker to a deterministic value so the test
             # asserts the wiring, not the RNG.
             with patch(
-                "services.topic_length.pick_target_length",
+                "poindexter.services.topic_length.pick_target_length",
                 return_value=637,
             ):
                 await propose_topic(
@@ -326,12 +326,12 @@ class TestTargetLengthVariation:
 
     @pytest.mark.asyncio
     async def test_none_length_lands_in_a_default_bucket(self):
-        from services.topic_length import DEFAULT_LENGTH_WEIGHTS
+        from poindexter.services.topic_length import DEFAULT_LENGTH_WEIGHTS
 
         site_cfg = _make_site_config({})
         pool = _make_pool()
         with patch(
-            "services.topic_proposal_service.pause_at_gate",
+            "poindexter.services.topic_proposal_service.pause_at_gate",
             AsyncMock(),
         ):
             await propose_topic(
@@ -375,7 +375,7 @@ class TestQueueCap:
         pool = _make_pool(pending_count=3)  # at cap
 
         with patch(
-            "services.topic_proposal_service.pause_at_gate",
+            "poindexter.services.topic_proposal_service.pause_at_gate",
             AsyncMock(),
         ) as mock_pause:
             result = await propose_topic(
@@ -405,7 +405,7 @@ class TestQueueCap:
         pool = _make_pool(pending_count=999)
 
         with patch(
-            "services.topic_proposal_service.pause_at_gate",
+            "poindexter.services.topic_proposal_service.pause_at_gate",
             AsyncMock(),
         ):
             result = await propose_topic(

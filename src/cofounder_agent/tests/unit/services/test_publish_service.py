@@ -25,13 +25,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.publish_service import (
+from poindexter.services.publish_service import (
     PublishResult,
     _calculate_scheduled_publish_time,
     _parse_json_field,
     publish_post_from_task,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2g: publish_service's module-level ``site_config`` global +
 # ``set_site_config`` (and the ``_resolve_site_config`` fallback) were
@@ -177,15 +177,15 @@ def _stub_lazy_imports():
 
     return {
         "utils.json_encoder": json_encoder_mod,
-        "services.default_author": default_author_mod,
-        "services.category_resolver": category_resolver_mod,
-        "services.webhook_delivery_service": webhook_mod,
-        "services.social_poster": social_mod,
-        "services.devto_service": devto_mod,
-        "services.revalidation_service": reval_mod,
+        "poindexter.services.default_author": default_author_mod,
+        "poindexter.services.category_resolver": category_resolver_mod,
+        "poindexter.services.webhook_delivery_service": webhook_mod,
+        "poindexter.services.social_poster": social_mod,
+        "poindexter.services.devto_service": devto_mod,
+        "poindexter.services.revalidation_service": reval_mod,
         "routes.revalidate_routes": legacy_reval_routes,
-        "services.integrations.operator_notify": operator_notify_mod,
-        "services.podcast_service": podcast_mod,
+        "poindexter.services.integrations.operator_notify": operator_notify_mod,
+        "poindexter.services.podcast_service": podcast_mod,
     }
 
 
@@ -296,10 +296,10 @@ class TestPublishHappyPath:
     """publish_post_from_task with valid data creates a post and returns success."""
 
     @pytest.mark.asyncio
-    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_creates_post_with_correct_fields(self, mock_sched, mock_ping, mock_hooks, mock_export):
         db = _make_db()
         task = _make_task(
@@ -341,10 +341,10 @@ class TestPublishHappyPath:
         assert post_data["featured_image_data"] == {}
 
     @pytest.mark.asyncio
-    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_threads_featured_image_data_from_task_result(self, mock_sched, mock_ping, mock_hooks, mock_export):
         """image-gen reproducibility blob flows task.result → post_data.
 
@@ -395,10 +395,10 @@ class TestPublishHappyPath:
         assert post_data["featured_image_data"] == gen_blob
 
     @pytest.mark.asyncio
-    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_featured_image_data_coerces_non_dict_to_empty(self, mock_sched, mock_ping, mock_hooks, mock_export):
         """A legacy non-dict featured_image_data on the task is coerced safely.
 
@@ -431,10 +431,10 @@ class TestPublishHappyPath:
         assert post_data["featured_image_data"] == {}
 
     @pytest.mark.asyncio
-    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_metadata_pipeline_task_id_stamped_on_insert(
         self, mock_sched, mock_ping, mock_hooks, mock_export,
     ):
@@ -473,10 +473,10 @@ class TestPublishHappyPath:
         )
 
     @pytest.mark.asyncio
-    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_metadata_pipeline_task_id_preserves_existing_keys(
         self, mock_sched, mock_ping, mock_hooks, mock_export,
     ):
@@ -530,7 +530,7 @@ class TestPublishHappyPath:
         db.create_post.assert_not_awaited()  # No new post created
 
     @pytest.mark.asyncio
-    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("poindexter.services.static_export_service.export_post", new_callable=AsyncMock)
     async def test_promote_existing_approved_revalidates(self, mock_export):
         """Glad-Labs/poindexter#575: promoting an existing *approved* post to
         published must ISR-revalidate (not only static-export), so the post
@@ -552,7 +552,7 @@ class TestPublishHappyPath:
 
         reval_mod = MagicMock()
         reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
-        with _LazyImportContext(overrides={"services.revalidation_service": reval_mod}):
+        with _LazyImportContext(overrides={"poindexter.services.revalidation_service": reval_mod}):
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id=task_id, queue_social=False,
                 site_config=_TEST_SC,
@@ -568,9 +568,9 @@ class TestPublishHappyPath:
         db.create_post.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_updates_task_status_to_published(self, mock_sched, mock_ping, mock_hooks):
         db = _make_db()
         task = _make_task()
@@ -587,9 +587,9 @@ class TestPublishHappyPath:
         assert call_args[0][1] == "published"
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_slug_format(self, mock_sched, mock_ping, mock_hooks):
         """Slug is lowercase, hyphenated, with task_id suffix."""
         db = _make_db()
@@ -642,9 +642,9 @@ class TestPublishMissingContent:
         assert "Missing content or topic" in result.error
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_content_from_result_fallback(self, mock_sched, mock_ping, mock_hooks):
         """Content found in result.draft_content when task.content is empty."""
         db = _make_db()
@@ -674,9 +674,9 @@ class TestPublishDbFailure:
     """create_post raising an exception returns a clean error."""
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_create_post_exception_returns_error(self, mock_sched, mock_ping, mock_hooks):
         db = _make_db()
         db.create_post = AsyncMock(side_effect=RuntimeError("connection lost"))
@@ -819,7 +819,7 @@ class TestSearchEnginePing:
     async def test_ping_failure_does_not_raise(self):
         """Even if httpx calls fail, the function completes silently."""
 
-        from services.publish_service import _ping_search_engines
+        from poindexter.services.publish_service import _ping_search_engines
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=Exception("network down"))
@@ -834,7 +834,7 @@ class TestSearchEnginePing:
     @pytest.mark.asyncio
     async def test_ping_success_completes(self):
         """Successful pings complete without error."""
-        from services.publish_service import _ping_search_engines
+        from poindexter.services.publish_service import _ping_search_engines
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=MagicMock(status_code=200))
@@ -859,9 +859,9 @@ class TestDevtoCrossPost:
     """Dev.to cross-post failure doesn't break the publish flow."""
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_devto_import_failure_still_succeeds(self, mock_sched, mock_ping, mock_hooks):
         """If DevToCrossPostService init fails, publish still succeeds."""
         db = _make_db()
@@ -871,7 +871,7 @@ class TestDevtoCrossPost:
         devto_mod = MagicMock()
         devto_mod.DevToCrossPostService = MagicMock(side_effect=ImportError("no devto"))
 
-        with _LazyImportContext(overrides={"services.devto_service": devto_mod}):
+        with _LazyImportContext(overrides={"poindexter.services.devto_service": devto_mod}):
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-devto", queue_social=False,
                 site_config=_TEST_SC,
@@ -890,8 +890,8 @@ class TestScheduledPublishApplied:
     """When scheduling returns a future time, it gets set on the post."""
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
     async def test_scheduled_time_set_on_post_data(self, mock_ping, mock_hooks):
         # honor_pacing=True opts into the scheduling path. The default
         # changed to False in commit 3f60ec4c because human approval is
@@ -902,7 +902,7 @@ class TestScheduledPublishApplied:
 
         with (
             patch(
-                "services.publish_service._calculate_scheduled_publish_time",
+                "poindexter.services.publish_service._calculate_scheduled_publish_time",
                 new_callable=AsyncMock, return_value=future_time,
             ),
             _LazyImportContext(),
@@ -918,15 +918,15 @@ class TestScheduledPublishApplied:
         assert post_data["published_at"] == future_time
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
     async def test_no_schedule_means_no_published_at_key(self, mock_ping, mock_hooks):
         db = _make_db()
         task = _make_task()
 
         with (
             patch(
-                "services.publish_service._calculate_scheduled_publish_time",
+                "poindexter.services.publish_service._calculate_scheduled_publish_time",
                 new_callable=AsyncMock, return_value=None,
             ),
             _LazyImportContext(),
@@ -951,9 +951,9 @@ class TestWebhookNonBlocking:
     """Webhook failure doesn't break publish."""
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_webhook_failure_still_succeeds(self, mock_sched, mock_ping, mock_hooks):
         db = _make_db()
         task = _make_task()
@@ -961,7 +961,7 @@ class TestWebhookNonBlocking:
         webhook_mod = MagicMock()
         webhook_mod.emit_webhook_event = AsyncMock(side_effect=RuntimeError("webhook dead"))
 
-        with _LazyImportContext(overrides={"services.webhook_delivery_service": webhook_mod}):
+        with _LazyImportContext(overrides={"poindexter.services.webhook_delivery_service": webhook_mod}):
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-webhook", queue_social=False,
                 site_config=_TEST_SC,
@@ -980,9 +980,9 @@ class TestRevalidation:
     """ISR revalidation behavior."""
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_revalidation_success_reflected_in_result(self, mock_sched, mock_ping, mock_hooks):
         db = _make_db()
         task = _make_task()
@@ -995,7 +995,7 @@ class TestRevalidation:
         reval_mod.trigger_nextjs_revalidation = AsyncMock(return_value=True)
         reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
 
-        with _LazyImportContext(overrides={"services.revalidation_service": reval_mod}):
+        with _LazyImportContext(overrides={"poindexter.services.revalidation_service": reval_mod}):
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-reval",
                 trigger_revalidation=True, queue_social=False,
@@ -1006,9 +1006,9 @@ class TestRevalidation:
         assert result.revalidation_success is True
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_revalidation_skipped_when_disabled(self, mock_sched, mock_ping, mock_hooks):
         db = _make_db()
         task = _make_task()
@@ -1049,16 +1049,16 @@ class TestSyncPublishedPost:
     """
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
     async def test_skips_when_not_running_local(self, _hooks):
-        from services.publish_service import _sync_published_post
+        from poindexter.services.publish_service import _sync_published_post
         # Should silently no-op — no exception, no work
         await _sync_published_post("post-1")
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
     async def test_pushes_to_cloud_when_local(self, _hooks):
-        from services.publish_service import _sync_published_post
+        from poindexter.services.publish_service import _sync_published_post
         sync_instance = AsyncMock()
         sync_instance.push_post = AsyncMock(return_value=True)
         sync_instance.__aenter__ = AsyncMock(return_value=sync_instance)
@@ -1067,29 +1067,29 @@ class TestSyncPublishedPost:
         sync_mod = MagicMock()
         sync_mod.SyncService = MagicMock(return_value=sync_instance)
 
-        with patch.dict(sys.modules, {"services.sync_service": sync_mod}):
+        with patch.dict(sys.modules, {"poindexter.services.sync_service": sync_mod}):
             await _sync_published_post("post-xyz")
 
         sync_instance.push_post.assert_awaited_once_with("post-xyz")
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
     async def test_swallows_sync_exception(self, _hooks):
         """Sync failure must NOT propagate — the post is already published locally."""
-        from services.publish_service import _sync_published_post
+        from poindexter.services.publish_service import _sync_published_post
 
         sync_mod = MagicMock()
         sync_mod.SyncService = MagicMock(side_effect=RuntimeError("cloud unreachable"))
 
-        with patch.dict(sys.modules, {"services.sync_service": sync_mod}):
+        with patch.dict(sys.modules, {"poindexter.services.sync_service": sync_mod}):
             # Must not raise
             await _sync_published_post("post-fail")
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
     async def test_logs_warning_on_push_returns_false(self, _hooks):
         """push_post returning False is logged but doesn't raise."""
-        from services.publish_service import _sync_published_post
+        from poindexter.services.publish_service import _sync_published_post
         sync_instance = AsyncMock()
         sync_instance.push_post = AsyncMock(return_value=False)
         sync_instance.__aenter__ = AsyncMock(return_value=sync_instance)
@@ -1098,7 +1098,7 @@ class TestSyncPublishedPost:
         sync_mod = MagicMock()
         sync_mod.SyncService = MagicMock(return_value=sync_instance)
 
-        with patch.dict(sys.modules, {"services.sync_service": sync_mod}):
+        with patch.dict(sys.modules, {"poindexter.services.sync_service": sync_mod}):
             await _sync_published_post("post-fail")  # no raise
 
 
@@ -1116,7 +1116,7 @@ class TestEmbedPublishedPost:
 
     @pytest.mark.asyncio
     async def test_skips_when_embeddings_db_unavailable(self):
-        from services.publish_service import _embed_published_post
+        from poindexter.services.publish_service import _embed_published_post
         db = MagicMock()
         db.embeddings = None
         # Should no-op silently
@@ -1124,7 +1124,7 @@ class TestEmbedPublishedPost:
 
     @pytest.mark.asyncio
     async def test_skips_when_ollama_provider_not_registered(self):
-        from services.publish_service import _embed_published_post
+        from poindexter.services.publish_service import _embed_published_post
         db = MagicMock()
         db.embeddings = MagicMock()
 
@@ -1134,13 +1134,13 @@ class TestEmbedPublishedPost:
 
         with patch.dict(sys.modules, {
             "plugins.registry": registry_mod,
-            "services.embedding_service": embed_svc_mod,
+            "poindexter.services.embedding_service": embed_svc_mod,
         }):
             await _embed_published_post(db, {"id": "p", "title": "t", "content": "c"})
 
     @pytest.mark.asyncio
     async def test_happy_path_embeds_post(self):
-        from services.publish_service import _embed_published_post
+        from poindexter.services.publish_service import _embed_published_post
         db = MagicMock()
         db.embeddings = MagicMock()
 
@@ -1157,7 +1157,7 @@ class TestEmbedPublishedPost:
         post = {"id": "p1", "title": "Title", "content": "body"}
         with patch.dict(sys.modules, {
             "plugins.registry": registry_mod,
-            "services.embedding_service": embed_svc_mod,
+            "poindexter.services.embedding_service": embed_svc_mod,
         }):
             await _embed_published_post(db, post)
 
@@ -1166,7 +1166,7 @@ class TestEmbedPublishedPost:
     @pytest.mark.asyncio
     async def test_swallows_embedding_exception(self):
         """Embedding failure is non-fatal — the published post is already live."""
-        from services.publish_service import _embed_published_post
+        from poindexter.services.publish_service import _embed_published_post
         db = MagicMock()
         db.embeddings = MagicMock()
 
@@ -1176,7 +1176,7 @@ class TestEmbedPublishedPost:
 
         with patch.dict(sys.modules, {
             "plugins.registry": registry_mod,
-            "services.embedding_service": embed_svc_mod,
+            "poindexter.services.embedding_service": embed_svc_mod,
         }):
             # Must not raise
             await _embed_published_post(db, {"id": "p", "title": "t", "content": "c"})
@@ -1248,7 +1248,7 @@ class TestFirePostDistributionHooks:
 
     @pytest.mark.asyncio
     async def test_returns_post_not_found_when_select_returns_none(self):
-        from services.publish_service import fire_post_distribution_hooks
+        from poindexter.services.publish_service import fire_post_distribution_hooks
         # fetchrow (post lookup) → None
         conn = AsyncMock()
         conn.fetchrow = AsyncMock(side_effect=[None])
@@ -1266,9 +1266,9 @@ class TestFirePostDistributionHooks:
         assert result == {"fired": False, "reason": "post_not_found"}
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
     async def test_happy_path_flips_status_and_fires_devto(self, _hooks):
-        from services.publish_service import fire_post_distribution_hooks
+        from poindexter.services.publish_service import fire_post_distribution_hooks
         post_row = _make_post_row()
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=True)
         db = MagicMock()
@@ -1287,10 +1287,10 @@ class TestFirePostDistributionHooks:
         reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
 
         with patch.dict(sys.modules, {
-            "services.social_poster": social_mod,
-            "services.devto_service": devto_mod,
-            "services.static_export_service": export_mod,
-            "services.revalidation_service": reval_mod,
+            "poindexter.services.social_poster": social_mod,
+            "poindexter.services.devto_service": devto_mod,
+            "poindexter.services.static_export_service": export_mod,
+            "poindexter.services.revalidation_service": reval_mod,
         }):
             result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
@@ -1306,12 +1306,12 @@ class TestFirePostDistributionHooks:
         assert "search_engines" in result["hooks"]
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
     async def test_no_status_flip_when_post_already_published(self, _hooks):
         """If the UPDATE returns 'UPDATE 0' (post not in awaiting_gates),
         status_flipped is NOT in the response and static_export/ISR don't fire
         (since they're inside the UPDATE-1 branch)."""
-        from services.publish_service import fire_post_distribution_hooks
+        from poindexter.services.publish_service import fire_post_distribution_hooks
         post_row = _make_post_row()
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
         db = MagicMock()
@@ -1325,8 +1325,8 @@ class TestFirePostDistributionHooks:
         ))
 
         with patch.dict(sys.modules, {
-            "services.social_poster": social_mod,
-            "services.devto_service": devto_mod,
+            "poindexter.services.social_poster": social_mod,
+            "poindexter.services.devto_service": devto_mod,
         }):
             result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
@@ -1340,12 +1340,12 @@ class TestFirePostDistributionHooks:
         assert "devto" in result["hooks"]
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
     async def test_does_not_fire_media_generation_on_distribution_trigger(self, _hooks):
         """Media generation is the gate driver's job (poindexter#24) —
         fire_post_distribution_hooks must NOT (re)generate podcast/video/short,
         only re-fire distribution (social/devto/static)."""
-        from services.publish_service import fire_post_distribution_hooks
+        from poindexter.services.publish_service import fire_post_distribution_hooks
 
         post_row = _make_post_row(media=["podcast", "video", "short"])
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
@@ -1360,8 +1360,8 @@ class TestFirePostDistributionHooks:
         ))
 
         with patch.dict(sys.modules, {
-            "services.social_poster": social_mod,
-            "services.devto_service": devto_mod,
+            "poindexter.services.social_poster": social_mod,
+            "poindexter.services.devto_service": devto_mod,
         }):
             result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
@@ -1375,10 +1375,10 @@ class TestFirePostDistributionHooks:
         assert "devto" in result["hooks"]
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
     async def test_swallows_individual_hook_failures(self, _hooks):
         """Each hook is wrapped in try/except — one failure doesn't kill the rest."""
-        from services.publish_service import fire_post_distribution_hooks
+        from poindexter.services.publish_service import fire_post_distribution_hooks
         post_row = _make_post_row()
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
         db = MagicMock()
@@ -1395,7 +1395,7 @@ class TestFirePostDistributionHooks:
         )
 
         with patch.dict(sys.modules, {
-            "services.devto_service": devto_mod,
+            "poindexter.services.devto_service": devto_mod,
         }):
             result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
@@ -1404,10 +1404,10 @@ class TestFirePostDistributionHooks:
         assert "search_engines" in result["hooks"]
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
     async def test_uses_cloud_pool_when_present(self, _hooks):
         """If db_service has a cloud_pool, that's the pool used (not db.pool)."""
-        from services.publish_service import fire_post_distribution_hooks
+        from poindexter.services.publish_service import fire_post_distribution_hooks
         post_row = _make_post_row()
         cloud_pool, _conn = _make_pool_for_fire(post_row, pending_gates=False)
 
@@ -1426,8 +1426,8 @@ class TestFirePostDistributionHooks:
         ))
 
         with patch.dict(sys.modules, {
-            "services.social_poster": social_mod,
-            "services.devto_service": devto_mod,
+            "poindexter.services.social_poster": social_mod,
+            "poindexter.services.devto_service": devto_mod,
         }):
             result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
@@ -1447,7 +1447,7 @@ class TestPingSearchEnginesEmptyConfig:
     @pytest.mark.asyncio
     async def test_empty_indexnow_url_skips_indexnow(self):
         """indexnow_ping_url='' → IndexNow ping is skipped."""
-        from services.publish_service import _ping_search_engines
+        from poindexter.services.publish_service import _ping_search_engines
 
         sc = MagicMock()
         # IndexNow disabled, sitemap ping disabled too
@@ -1487,12 +1487,12 @@ class TestMediaSpawnRespectsPolicy:
     """
 
     @pytest.mark.asyncio
-    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
-    @patch("services.publish_service._spawn_background")
-    @patch("services.podcast_service.generate_podcast_episode", new_callable=AsyncMock)
+    @patch("poindexter.services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._spawn_background")
+    @patch("poindexter.services.podcast_service.generate_podcast_episode", new_callable=AsyncMock)
     async def test_dev_diary_post_skips_all_media_spawns(
         self,
         mock_podcast, mock_spawn,
@@ -1549,11 +1549,11 @@ class TestMediaSpawnRespectsPolicy:
             assert "short_video" not in nm
 
     @pytest.mark.asyncio
-    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
-    @patch("services.publish_service._spawn_background")
+    @patch("poindexter.services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._spawn_background")
     async def test_glad_labs_post_resolves_media_but_spawns_none(
         self, mock_spawn, mock_sched, mock_ping, mock_hooks, mock_export,
     ):
@@ -1620,7 +1620,7 @@ class TestStorageDelayKeyName:
     def test_reads_storage_agnostic_delay_key(self):
         import inspect
 
-        import services.publish_service as ps
+        import poindexter.services.publish_service as ps
 
         src = inspect.getsource(ps)
         # Phase-1 DI shim (#272) renamed the receiver from the module

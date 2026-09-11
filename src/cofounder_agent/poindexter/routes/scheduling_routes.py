@@ -17,8 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -72,7 +72,7 @@ async def list_scheduled(
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict[str, Any]:
     """Return all scheduled posts, defaulting to future-only."""
-    from services.scheduling_service import list_scheduled as _list
+    from poindexter.services.scheduling_service import list_scheduled as _list
 
     result = await _list(pool=db_service.pool, upcoming_only=upcoming_only)
     return _result_to_dict(result)
@@ -91,7 +91,7 @@ async def show_scheduled(
 ) -> dict[str, Any]:
     """Return the schedule detail for one post. Returns ``ok=false`` when
     the post is not found rather than 404 to match the service contract."""
-    from services.scheduling_service import show_scheduled as _show
+    from poindexter.services.scheduling_service import show_scheduled as _show
 
     result = await _show(post_id, pool=db_service.pool)
     return _result_to_dict(result)
@@ -114,7 +114,7 @@ async def assign_batch(
     ``interval`` and ``start`` are duration / datetime strings as accepted
     by ``scheduling_service.parse_duration`` and ``parse_when``.
     """
-    from services.scheduling_service import assign_batch as _assign_batch
+    from poindexter.services.scheduling_service import assign_batch as _assign_batch
 
     try:
         result = await _assign_batch(
@@ -150,7 +150,7 @@ async def assign_slot(
     ``when`` is a datetime string accepted by ``scheduling_service.parse_when``.
     Pass ``force=true`` to overwrite an existing schedule.
     """
-    from services.scheduling_service import assign_slot as _assign
+    from poindexter.services.scheduling_service import assign_slot as _assign
 
     try:
         result = await _assign(
@@ -182,7 +182,7 @@ async def shift(
     ``by_delta`` is a duration string (e.g. ``"1h30m"``).
     When ``post_ids`` is omitted every still-future scheduled post is shifted.
     """
-    from services.scheduling_service import shift as _shift
+    from poindexter.services.scheduling_service import shift as _shift
 
     try:
         result = await _shift(
@@ -212,7 +212,7 @@ async def clear(
 
     When ``post_ids`` is omitted every future-dated scheduled post is cleared.
     """
-    from services.scheduling_service import clear as _clear
+    from poindexter.services.scheduling_service import clear as _clear
 
     result = await _clear(
         post_ids=post_ids,

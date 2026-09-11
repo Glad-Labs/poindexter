@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 def test_timezone_from_config():

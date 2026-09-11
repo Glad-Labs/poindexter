@@ -28,7 +28,7 @@ import sys
 import click
 
 from poindexter.cli._dataplane import dump_row, render_table, run_service
-from services import remediation_rules_service as svc
+from poindexter.services import remediation_rules_service as svc
 
 _COLUMNS = [
     ("id", "ID", 5, None),

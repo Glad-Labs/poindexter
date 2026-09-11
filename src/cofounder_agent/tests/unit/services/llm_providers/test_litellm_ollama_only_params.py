@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.llm_providers.litellm_provider import (
+from poindexter.services.llm_providers.litellm_provider import (
     _OLLAMA_ONLY_PARAMS,
     LiteLLMProvider,
 )

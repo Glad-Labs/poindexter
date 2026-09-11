@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.settings_service import _SECRET_MASK, SettingsService
+from poindexter.services.settings_service import _SECRET_MASK, SettingsService
 
 
 def _make_pool(rows=None):
@@ -312,7 +312,7 @@ class TestReadTelemetry:
     def setup_method(self):
         # The sink is module-global; start each test from empty so reads from
         # other tests (or other files) can't bleed into the assertions.
-        from services import settings_read_sink
+        from poindexter.services import settings_read_sink
 
         settings_read_sink.drain_read_keys()
 
@@ -320,7 +320,7 @@ class TestReadTelemetry:
         """A key read via SettingsService.get must land in the shared sink so
         the flush job can stamp last_read_at — otherwise every qa_* weight and
         pipeline_*_model read this way looks 'never read' to the probe."""
-        from services import settings_read_sink
+        from poindexter.services import settings_read_sink
 
         pool = _make_pool([_row("pipeline_critic_model", "ollama/phi4:14b")])
         svc = SettingsService(pool)
@@ -328,7 +328,7 @@ class TestReadTelemetry:
         assert "pipeline_critic_model" in settings_read_sink.drain_read_keys()
 
     def test_get_records_the_ask_even_on_default_miss(self):
-        from services import settings_read_sink
+        from poindexter.services import settings_read_sink
 
         pool = _make_pool([])
         svc = SettingsService(pool)
@@ -341,7 +341,7 @@ class TestReadTelemetry:
         """get_all backs the settings admin UI; recording every key it touches
         would stamp the entire table as 'read' and blind the zero-reader probe
         permanently."""
-        from services import settings_read_sink
+        from poindexter.services import settings_read_sink
 
         pool = _make_pool([_row("a", "1"), _row("b", "2")])
         svc = SettingsService(pool)
@@ -349,7 +349,7 @@ class TestReadTelemetry:
         assert settings_read_sink.drain_read_keys() == []
 
     def test_get_by_category_does_not_record(self):
-        from services import settings_read_sink
+        from poindexter.services import settings_read_sink
 
         pool = _make_pool([_row("a", "1", category="social")])
         svc = SettingsService(pool)

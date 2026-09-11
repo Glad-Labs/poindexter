@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from services.text_utils import (
+from poindexter.services.text_utils import (
     DEFAULT_TRUSTED_DOMAINS,
     normalize_text,
     scrub_fabricated_links,

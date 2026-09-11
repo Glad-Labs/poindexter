@@ -36,7 +36,7 @@ async def test_hydrates_content_title_and_target_query():
     assert out["topic"] == "Old Title"                  # topic seeds the optimizer fallback
 
 def test_atom_meta_keys_subset_of_pipeline_state():
-    from services.template_runner import PipelineState
+    from poindexter.services.template_runner import PipelineState
     keys = set(PipelineState.__annotations__)
     assert set(atom.ATOM_META.produces) <= keys
     assert set(atom.ATOM_META.requires) <= keys

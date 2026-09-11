@@ -864,7 +864,7 @@ class TestResolveSystemPrompt:
         mock_mgr.get_prompt_resolution.side_effect = _fake_get_resolution
 
         with patch(
-            "services.prompt_manager.get_prompt_manager",
+            "poindexter.services.prompt_manager.get_prompt_manager",
             return_value=mock_mgr,
         ):
             text, key, version = _resolve_system_prompt(site_config)
@@ -900,7 +900,7 @@ class TestResolveSystemPrompt:
         mock_mgr.get_prompt_resolution.side_effect = _raise
 
         with patch(
-            "services.prompt_manager.get_prompt_manager",
+            "poindexter.services.prompt_manager.get_prompt_manager",
             return_value=mock_mgr,
         ):
             with caplog.at_level(logging.ERROR, logger="poindexter.modules.content.atoms.narrate_bundle"):

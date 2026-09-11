@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from plugins.topic_source import TopicSource
-from services.topic_sources.knowledge import KnowledgeSource
+from poindexter.services.topic_sources.knowledge import KnowledgeSource
 
 
 def _make_pool(

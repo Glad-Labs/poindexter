@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from services.llm_providers import dispatcher as _dispatcher
-from services.llm_providers.thinking_models import resolve_judge_num_predict
-from services.site_config import SiteConfig
+from poindexter.services.llm_providers import dispatcher as _dispatcher
+from poindexter.services.llm_providers.thinking_models import resolve_judge_num_predict
+from poindexter.services.site_config import SiteConfig
 
 THINKING = "ollama/qwen3-vl:30b"
 
@@ -34,7 +34,7 @@ class _Completion:
 def _judge(monkeypatch, texts: list[str], **cfg_over):
     """Build the dispatcher judge with a scripted sequence of completions;
     returns (model, captured_kwargs_list)."""
-    deepeval_rails = pytest.importorskip("services.deepeval_rails")
+    deepeval_rails = pytest.importorskip("poindexter.services.deepeval_rails")
     seen: list[dict] = []
     script = list(texts)
 
@@ -43,7 +43,7 @@ def _judge(monkeypatch, texts: list[str], **cfg_over):
         return _Completion(script.pop(0) if script else texts[-1])
 
     monkeypatch.setattr(_dispatcher, "dispatch_complete", fake_dispatch_complete)
-    monkeypatch.setattr("services.gpu_scheduler.qa_rail_wait_budget_s", lambda: 1.0, raising=False)
+    monkeypatch.setattr("poindexter.services.gpu_scheduler.qa_rail_wait_budget_s", lambda: 1.0, raising=False)
     model = deepeval_rails._build_dispatcher_judge_model(
         THINKING, pool=object(), site_config=_cfg(**cfg_over),
     )
@@ -102,7 +102,7 @@ class TestEmptyContentRetry:
 
 @pytest.mark.unit
 def test_settings_are_seeded():
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     for k in ("deepeval_judge_empty_retries", "ragas_job_timeout_seconds", "ragas_max_workers"):
         assert k in DEFAULTS and k in METADATA, k

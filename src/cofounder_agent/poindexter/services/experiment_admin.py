@@ -230,7 +230,7 @@ async def create_experiment(
     """
     import asyncpg
 
-    from services.niche_service import NicheService
+    from poindexter.services.niche_service import NicheService
 
     n = await NicheService(pool).get_by_slug(niche_slug)
     if not n:

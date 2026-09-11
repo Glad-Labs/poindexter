@@ -11,13 +11,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.publish_service import (
+from poindexter.services.publish_service import (
     PublishResult,
     _niche_allowlist_block,
     _parse_publish_inputs,
     _promote_or_skip_existing,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from tests.unit.services._gate_fakes import FakeConn, FakePool
 
 pytestmark = pytest.mark.unit
@@ -147,7 +147,7 @@ class TestPromoteOrSkipExisting:
         # export_post is the only site_config consumer on the promote path;
         # patch it so the test asserts the promote UPDATEs deterministically.
         with patch(
-            "services.static_export_service.export_post", new=AsyncMock(return_value=True)
+            "poindexter.services.static_export_service.export_post", new=AsyncMock(return_value=True)
         ):
             out = await _promote_or_skip_existing(
                 pool, "task1", stage_only=False, draft_mode=False,
@@ -172,14 +172,14 @@ _ENFORCED = SiteConfig(initial_config={"enforce_niche_allowlist": "true"})
 
 def _patch_known(slugs):
     return patch(
-        "services.niche_service.get_known_niche_slugs",
+        "poindexter.services.niche_service.get_known_niche_slugs",
         new=AsyncMock(return_value=set(slugs)),
     )
 
 
 def _patch_notify():
     return patch(
-        "services.integrations.operator_notify.notify_operator",
+        "poindexter.services.integrations.operator_notify.notify_operator",
         new=AsyncMock(),
     )
 

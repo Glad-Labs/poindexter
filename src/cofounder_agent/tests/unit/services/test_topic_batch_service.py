@@ -12,9 +12,9 @@ from uuid import uuid4
 
 import pytest
 
-from services.niche_service import Niche, NicheGoal, NicheService, NicheSource
-from services.site_config import SiteConfig
-from services.topic_batch_service import BatchSnapshot, CandidateView, TopicBatchService
+from poindexter.services.niche_service import Niche, NicheGoal, NicheService, NicheSource
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_batch_service import BatchSnapshot, CandidateView, TopicBatchService
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -26,7 +26,7 @@ def _clear_goal_vec_cache():
     second test inherits the first test's monkeypatched-fake vectors —
     or worse, a real production vector that bled in from another module.
     """
-    from services.topic_ranking import _GOAL_VEC_CACHE
+    from poindexter.services.topic_ranking import _GOAL_VEC_CACHE
     _GOAL_VEC_CACHE.clear()
     yield
     _GOAL_VEC_CACHE.clear()
@@ -42,7 +42,7 @@ def _no_recent_coverage(monkeypatch):
     re-patch with their own return value / side effect.
     """
     monkeypatch.setattr(
-        "services.topic_recent_coverage.check_recent_coverage",
+        "poindexter.services.topic_recent_coverage.check_recent_coverage",
         AsyncMock(return_value=None),
     )
 
@@ -68,7 +68,7 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
     # AND mutually word-disjoint (so the intra-batch dedup pass keeps them —
     # fuzzy matching only skips single-content-word titles).
     from plugins.topic_source import DiscoveredTopic
-    from services.topic_pool import insert_pooled_topics
+    from poindexter.services.topic_pool import insert_pooled_topics
 
     titles = [
         "Async worker pools explained",
@@ -96,9 +96,9 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed_text)
     monkeypatch.setattr(
-        "services.topic_ranking._embed_text_cached", fake_embed_text,
+        "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
     async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
@@ -112,7 +112,7 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
             result[c.id] = c
         return result
 
-    monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
+    monkeypatch.setattr("poindexter.services.topic_ranking.llm_final_score", fake_llm_score)
 
     svc = TopicBatchService(db_pool, site_config=SiteConfig())
     batch = await svc.run_sweep(niche_id=n.id)
@@ -169,7 +169,7 @@ async def test_run_sweep_mixes_external_and_internal_pool_rows(db_pool, monkeypa
     sweep, so that failure mode is structurally impossible here.)
     """
     from plugins.topic_source import DiscoveredTopic
-    from services.topic_pool import insert_pooled_topics
+    from poindexter.services.topic_pool import insert_pooled_topics
 
     nsvc = NicheService(db_pool)
     n = await nsvc.create(
@@ -205,9 +205,9 @@ async def test_run_sweep_mixes_external_and_internal_pool_rows(db_pool, monkeypa
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed_text)
     monkeypatch.setattr(
-        "services.topic_ranking._embed_text_cached", fake_embed_text,
+        "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
     async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
@@ -218,7 +218,7 @@ async def test_run_sweep_mixes_external_and_internal_pool_rows(db_pool, monkeypa
             result[c.id] = c
         return result
 
-    monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
+    monkeypatch.setattr("poindexter.services.topic_ranking.llm_final_score", fake_llm_score)
 
     svc = TopicBatchService(db_pool, site_config=SiteConfig())
     batch = await svc.run_sweep(niche_id=n.id)
@@ -288,9 +288,9 @@ async def test_run_sweep_dedupes_duplicate_candidates(db_pool, monkeypatch):
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed_text)
     monkeypatch.setattr(
-        "services.topic_ranking._embed_text_cached", fake_embed_text,
+        "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
     async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
@@ -301,7 +301,7 @@ async def test_run_sweep_dedupes_duplicate_candidates(db_pool, monkeypatch):
             result[c.id] = c
         return result
 
-    monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
+    monkeypatch.setattr("poindexter.services.topic_ranking.llm_final_score", fake_llm_score)
 
     svc = TopicBatchService(db_pool, site_config=SiteConfig())
     batch = await svc.run_sweep(niche_id=n.id)
@@ -338,7 +338,7 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
     # Multi-word, word-disjoint titles: survive the topic-sanity intake
     # filter and the intra-batch dedup pass.
     from plugins.topic_source import DiscoveredTopic
-    from services.topic_pool import insert_pooled_topics
+    from poindexter.services.topic_pool import insert_pooled_topics
 
     async with db_pool.acquire() as conn:
         await insert_pooled_topics(
@@ -359,9 +359,9 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed_text)
     monkeypatch.setattr(
-        "services.topic_ranking._embed_text_cached", fake_embed_text,
+        "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
     async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
@@ -372,7 +372,7 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
             result[c.id] = c
         return result
 
-    monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
+    monkeypatch.setattr("poindexter.services.topic_ranking.llm_final_score", fake_llm_score)
 
     svc = TopicBatchService(db_pool, site_config=SiteConfig())
     first = await svc.run_sweep(niche_id=n.id)
@@ -417,7 +417,7 @@ async def test_run_sweep_suppresses_empty_batch_when_nothing_ranks(
     # the LLM scorer — the guard under test is about SCORER emptiness, not
     # upstream filtering).
     from plugins.topic_source import DiscoveredTopic
-    from services.topic_pool import insert_pooled_topics
+    from poindexter.services.topic_pool import insert_pooled_topics
 
     async with db_pool.acquire() as conn:
         await insert_pooled_topics(
@@ -439,16 +439,16 @@ async def test_run_sweep_suppresses_empty_batch_when_nothing_ranks(
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed_text)
     monkeypatch.setattr(
-        "services.topic_ranking._embed_text_cached", fake_embed_text,
+        "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
     # … but the LLM final-scorer returns nothing usable → ranked == [].
     async def empty_llm_score(candidates, weights, *, model=None, site_config=None):
         return {}
 
-    monkeypatch.setattr("services.topic_ranking.llm_final_score", empty_llm_score)
+    monkeypatch.setattr("poindexter.services.topic_ranking.llm_final_score", empty_llm_score)
 
     svc = TopicBatchService(db_pool, site_config=SiteConfig())
     result = await svc.run_sweep(niche_id=n.id)
@@ -645,7 +645,7 @@ async def test_resolve_batch_advances_winner_and_marks_resolved(db_pool, monkeyp
         )
 
     monkeypatch.setattr(
-        "services.topic_batch_service.TopicBatchService._handoff_to_pipeline",
+        "poindexter.services.topic_batch_service.TopicBatchService._handoff_to_pipeline",
         fake_handoff,
     )
 
@@ -1083,7 +1083,7 @@ class TestHandoffTemplateSlugResolution:
         let the operator see the misconfig instead of a queue of
         pre-failed tasks (which was finding #3 of the jank audit).
         """
-        from services.template_slug_resolver import TemplateSlugUnresolvable
+        from poindexter.services.template_slug_resolver import TemplateSlugUnresolvable
 
         captured: list[str] = []
 
@@ -1128,12 +1128,12 @@ class TestHandoffTopicSanityGate:
     finding (per ``feedback_no_silent_defaults``)."""
 
     async def test_dots_topic_blocked_before_any_insert(self):
-        from services.topic_sanity import TopicSanityError
+        from poindexter.services.topic_sanity import TopicSanityError
 
         pool, conn = _make_mock_pool()
         svc = TopicBatchService(pool, site_config=SiteConfig())
 
-        with patch("services.topic_batch_service.emit_finding") as emit:
+        with patch("poindexter.services.topic_batch_service.emit_finding") as emit:
             with pytest.raises(TopicSanityError):
                 await svc._handoff_to_pipeline(
                     winner=_make_candidate(title=DOTS_TOPIC),
@@ -1195,7 +1195,7 @@ class TestHandoffRecentCoverageGate:
     before any DB write, with a ``topic_duplicate_rejected`` finding."""
 
     def _match(self):
-        from services.topic_recent_coverage import RecentCoverageMatch
+        from poindexter.services.topic_recent_coverage import RecentCoverageMatch
 
         return RecentCoverageMatch(
             kind="published_post",
@@ -1206,16 +1206,16 @@ class TestHandoffRecentCoverageGate:
         )
 
     async def test_near_duplicate_blocked_before_any_insert(self, monkeypatch):
-        from services.topic_recent_coverage import RecentCoverageError
+        from poindexter.services.topic_recent_coverage import RecentCoverageError
 
         monkeypatch.setattr(
-            "services.topic_recent_coverage.check_recent_coverage",
+            "poindexter.services.topic_recent_coverage.check_recent_coverage",
             AsyncMock(return_value=self._match()),
         )
         pool, conn = _make_mock_pool()
         svc = TopicBatchService(pool, site_config=SiteConfig())
 
-        with patch("services.topic_batch_service.emit_finding") as emit:
+        with patch("poindexter.services.topic_batch_service.emit_finding") as emit:
             with pytest.raises(RecentCoverageError) as exc_info:
                 await svc._handoff_to_pipeline(
                     winner=_make_candidate(
@@ -1245,7 +1245,7 @@ class TestHandoffRecentCoverageGate:
             return None
 
         monkeypatch.setattr(
-            "services.topic_recent_coverage.check_recent_coverage", _check,
+            "poindexter.services.topic_recent_coverage.check_recent_coverage", _check,
         )
         pool, conn = _make_mock_pool()
         svc = TopicBatchService(pool, site_config=SiteConfig())
@@ -1310,7 +1310,7 @@ class TestDedupeCandidatesRecentCoverage:
             return deduper
 
         monkeypatch.setattr(
-            "services.topic_dedup_semantic.get_deduplicator", _get_deduper,
+            "poindexter.services.topic_dedup_semantic.get_deduplicator", _get_deduper,
         )
         pool, _conn = _make_mock_pool()
         svc = TopicBatchService(pool, site_config=SiteConfig())
@@ -1327,7 +1327,7 @@ class TestDedupeCandidatesRecentCoverage:
             }},
         ]
 
-        with patch("services.topic_batch_service.emit_finding") as emit:
+        with patch("poindexter.services.topic_batch_service.emit_finding") as emit:
             kept_ext, kept_int = await svc._dedupe_candidates(
                 external, internal, niche=_make_niche("glad-labs"),
             )
@@ -1362,13 +1362,13 @@ class TestDedupeCandidatesRecentCoverage:
                 return wrappers
 
         monkeypatch.setattr(
-            "services.topic_dedup_semantic.get_deduplicator",
+            "poindexter.services.topic_dedup_semantic.get_deduplicator",
             lambda pool, *, site_config, niche_slug=None: _Anon(),
         )
         pool, _conn = _make_mock_pool()
         svc = TopicBatchService(pool, site_config=SiteConfig())
 
-        with patch("services.topic_batch_service.emit_finding") as emit:
+        with patch("poindexter.services.topic_batch_service.emit_finding") as emit:
             kept_ext, _ = await svc._dedupe_candidates(
                 [{"kind": "external", "data": {"title": "T", "summary": ""}}],
                 [],
@@ -1399,7 +1399,7 @@ class TestDropContentlessCandidates:
             {"kind": "internal", "data": {"distilled_topic": "Pipeline design lessons", "distilled_angle": "a"}},
         ]
 
-        with patch("services.topic_batch_service.emit_finding") as emit:
+        with patch("poindexter.services.topic_batch_service.emit_finding") as emit:
             kept_ext, kept_int = svc._drop_contentless_candidates(
                 _make_niche(), external, internal,
             )
@@ -1419,7 +1419,7 @@ class TestDropContentlessCandidates:
             {"row": {"title": "A perfectly good headline"}, "decay_factor": 0.7},
         ]
 
-        with patch("services.topic_batch_service.emit_finding"):
+        with patch("poindexter.services.topic_batch_service.emit_finding"):
             kept_ext, kept_int = svc._drop_contentless_candidates(
                 _make_niche(), external, [],
             )
@@ -1437,7 +1437,7 @@ class TestDropContentlessCandidates:
             {"kind": "internal", "data": {"distilled_topic": "QA rails as hard gates"}},
         ]
 
-        with patch("services.topic_batch_service.emit_finding") as emit:
+        with patch("poindexter.services.topic_batch_service.emit_finding") as emit:
             kept_ext, kept_int = svc._drop_contentless_candidates(
                 _make_niche(), external, internal,
             )
@@ -1481,9 +1481,9 @@ async def test_run_sweep_drops_contentless_candidates_at_intake(db_pool, monkeyp
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed_text)
     monkeypatch.setattr(
-        "services.topic_ranking._embed_text_cached", fake_embed_text,
+        "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
     async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
@@ -1494,7 +1494,7 @@ async def test_run_sweep_drops_contentless_candidates_at_intake(db_pool, monkeyp
             result[c.id] = c
         return result
 
-    monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
+    monkeypatch.setattr("poindexter.services.topic_ranking.llm_final_score", fake_llm_score)
 
     svc = TopicBatchService(db_pool, site_config=SiteConfig())
     batch = await svc.run_sweep(niche_id=n.id)
@@ -1547,7 +1547,7 @@ class TestHandoffTargetLength:
         # Pin the picker to a sentinel so the assertion is deterministic
         # (the real picker draws a random length from the weighted buckets).
         monkeypatch.setattr(
-            "services.topic_batch_service.pick_target_length",
+            "poindexter.services.topic_batch_service.pick_target_length",
             lambda site_config: 2345,
             raising=False,
         )
@@ -1579,7 +1579,7 @@ class TestHandoffTargetLength:
             return 1234
 
         monkeypatch.setattr(
-            "services.topic_batch_service.pick_target_length",
+            "poindexter.services.topic_batch_service.pick_target_length",
             _fake_pick,
             raising=False,
         )
@@ -1620,14 +1620,14 @@ async def _grounding_niche(db_pool, slug):
 async def test_ungrounded_external_gets_penalty(db_pool, monkeypatch):
     """An ungrounded external candidate's pre-rank score is multiplied by the
     penalty factor, the similarity is recorded, and a finding is emitted."""
-    from services import topic_batch_service as tbs
-    from services.topic_grounding import GroundingResult
+    from poindexter.services import topic_batch_service as tbs
+    from poindexter.services.topic_grounding import GroundingResult
 
     async def fake_embed(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
-    monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking._embed_text_cached", fake_embed)
 
     grounded_flag = {"grounded": True}
 
@@ -1660,14 +1660,14 @@ async def test_ungrounded_external_gets_penalty(db_pool, monkeypatch):
 
 
 async def test_grounded_external_no_penalty_and_match_stashed(db_pool, monkeypatch):
-    from services import topic_batch_service as tbs
-    from services.topic_grounding import GroundingMatch, GroundingResult
+    from poindexter.services import topic_batch_service as tbs
+    from poindexter.services.topic_grounding import GroundingMatch, GroundingResult
 
     async def fake_embed(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
-    monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking._embed_text_cached", fake_embed)
 
     match = GroundingMatch("posts", "p1", "we shipped X", 0.9)
 
@@ -1686,13 +1686,13 @@ async def test_grounded_external_no_penalty_and_match_stashed(db_pool, monkeypat
 
 
 async def test_grounding_disabled_is_noop(db_pool, monkeypatch):
-    from services import topic_batch_service as tbs
+    from poindexter.services import topic_batch_service as tbs
 
     async def fake_embed(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
-    monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking._embed_text_cached", fake_embed)
 
     async def fake_grounding(pool, vec, *, site_config):
         raise AssertionError("must not be called when disabled")
@@ -1710,13 +1710,13 @@ async def test_grounding_disabled_is_noop(db_pool, monkeypatch):
 
 
 async def test_internal_candidates_never_grounding_penalized(db_pool, monkeypatch):
-    from services import topic_batch_service as tbs
+    from poindexter.services import topic_batch_service as tbs
 
     async def fake_embed(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
-    monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking._embed_text_cached", fake_embed)
 
     async def fake_grounding(pool, vec, *, site_config):
         raise AssertionError("grounding must not run for internal candidates")
@@ -1810,7 +1810,7 @@ class TestOpenTopicDecisionGate:
     async def test_notifies_operator_as_non_critical(self, monkeypatch):
         notify_mock = AsyncMock()
         monkeypatch.setattr(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         )
         niche = _make_niche(slug="test-niche")
@@ -1828,7 +1828,7 @@ class TestOpenTopicDecisionGate:
     ):
         notify_mock = AsyncMock()
         monkeypatch.setattr(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,
         )
         niche = _make_niche(slug="widget-reviews")

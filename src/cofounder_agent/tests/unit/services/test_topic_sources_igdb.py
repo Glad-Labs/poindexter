@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.topic_source import TopicSource
-from services.topic_sources import igdb as igdb_mod
-from services.topic_sources.igdb import IGDBSource
+from poindexter.services.topic_sources import igdb as igdb_mod
+from poindexter.services.topic_sources.igdb import IGDBSource
 
 
 def _make_pool() -> Any:

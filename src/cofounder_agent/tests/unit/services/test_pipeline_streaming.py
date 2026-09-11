@@ -23,12 +23,12 @@ from unittest.mock import AsyncMock
 import pytest
 from langgraph.graph import END, StateGraph
 
-from services.pipeline_streaming import (
+from poindexter.services.pipeline_streaming import (
     _TelegramStreamCallback,
     make_streaming_callback,
 )
-from services.site_config import SiteConfig
-from services.template_runner import PipelineState, TemplateRunner
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.template_runner import PipelineState, TemplateRunner
 
 # ---------------------------------------------------------------------------
 # 1. TemplateRunner.run on_event threading.
@@ -53,7 +53,7 @@ class TestTemplateRunnerOnEvent:
 
         # Route through build_graph_from_spec so _wrap_atom wraps each node
         # and emits node_started/node_completed with on_event threaded.
-        from services import pipeline_architect
+        from poindexter.services import pipeline_architect
 
         captured = {}
 
@@ -75,7 +75,7 @@ class TestTemplateRunnerOnEvent:
             }),
         )
 
-        import services.pipeline_templates as pt
+        import poindexter.services.pipeline_templates as pt
 
         async def fake_load(pool, slug):
             return {"name": slug, "entry": "x", "nodes": [], "edges": []}
@@ -100,14 +100,14 @@ class TestTemplateRunnerOnEvent:
 
     async def test_raising_callback_never_breaks_run(self, monkeypatch):
         """A callback that raises must not fail the pipeline run."""
-        from services import pipeline_architect
+        from poindexter.services import pipeline_architect
 
         def fake_build(spec, *, pool, record_sink=None, on_event=None):
             return _wrap_two_atoms(record_sink, on_event)
 
         monkeypatch.setattr(pipeline_architect, "build_graph_from_spec", fake_build)
 
-        import services.pipeline_templates as pt
+        import poindexter.services.pipeline_templates as pt
 
         async def fake_load(pool, slug):
             return {"name": slug, "entry": "x", "nodes": [], "edges": []}
@@ -136,7 +136,7 @@ class TestTemplateRunnerOnEvent:
 def _wrap_two_atoms(record_sink, on_event):
     """Build a 2-node graph whose nodes are wrapped via _wrap_atom so the
     atom-node progress-emit path (#361 STEP 2) executes for real."""
-    from services.pipeline_architect import _wrap_atom
+    from poindexter.services.pipeline_architect import _wrap_atom
 
     async def atom_one(state):
         return {"one": True}
@@ -196,7 +196,7 @@ class TestChannelRouting:
             "pipeline_streaming_min_edit_interval_s": "5",
         })
         # Patch TelegramConfig.get_telegram_bot_token (async secret read).
-        from services import telegram_config as tc
+        from poindexter.services import telegram_config as tc
 
         async def fake_token(self):
             return "BOT:TOKEN"
@@ -231,7 +231,7 @@ class TestTelegramStreamCallback:
     ):
         send = AsyncMock(return_value={"message_id": 4242})
         edit = AsyncMock(return_value={"message_id": 4242})
-        import services.integrations.handlers.outbound_telegram as ot
+        import poindexter.services.integrations.handlers.outbound_telegram as ot
         monkeypatch.setattr(ot, "send_telegram_message", send)
         monkeypatch.setattr(ot, "edit_telegram_message", edit)
 
@@ -255,7 +255,7 @@ class TestTelegramStreamCallback:
     ):
         send = AsyncMock(return_value={"message_id": 7})
         edit = AsyncMock(return_value={"message_id": 7})
-        import services.integrations.handlers.outbound_telegram as ot
+        import poindexter.services.integrations.handlers.outbound_telegram as ot
         monkeypatch.setattr(ot, "send_telegram_message", send)
         monkeypatch.setattr(ot, "edit_telegram_message", edit)
 
@@ -276,7 +276,7 @@ class TestTelegramStreamCallback:
     async def test_halt_and_failure_bypass_throttle(self, monkeypatch):
         send = AsyncMock(return_value={"message_id": 7})
         edit = AsyncMock(return_value={"message_id": 7})
-        import services.integrations.handlers.outbound_telegram as ot
+        import poindexter.services.integrations.handlers.outbound_telegram as ot
         monkeypatch.setattr(ot, "send_telegram_message", send)
         monkeypatch.setattr(ot, "edit_telegram_message", edit)
 
@@ -288,7 +288,7 @@ class TestTelegramStreamCallback:
 
     async def test_callback_swallows_bot_api_errors(self, monkeypatch):
         send = AsyncMock(side_effect=RuntimeError("telegram down"))
-        import services.integrations.handlers.outbound_telegram as ot
+        import poindexter.services.integrations.handlers.outbound_telegram as ot
         monkeypatch.setattr(ot, "send_telegram_message", send)
 
         cb = self._cb(min_interval_s=0)
@@ -300,7 +300,7 @@ class TestTelegramStreamCallback:
     async def test_identical_text_not_resent(self, monkeypatch):
         send = AsyncMock(return_value={"message_id": 7})
         edit = AsyncMock(return_value={"message_id": 7})
-        import services.integrations.handlers.outbound_telegram as ot
+        import poindexter.services.integrations.handlers.outbound_telegram as ot
         monkeypatch.setattr(ot, "send_telegram_message", send)
         monkeypatch.setattr(ot, "edit_telegram_message", edit)
 

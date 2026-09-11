@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from services.gpu_lease_stats import LeaseStats
+from poindexter.services.gpu_lease_stats import LeaseStats
 
 
 class GpuBusyError(RuntimeError):

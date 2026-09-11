@@ -32,7 +32,7 @@ import time
 from collections import OrderedDict
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
@@ -271,7 +271,7 @@ async def send_failure_alert(
         f"task_id: {str(task_id)[:8]}"
     )
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         await notify_operator(msg, critical=(severity == "telegram"))
         out["sent"] = True
         out["reason"] = f"Routed to {severity}"

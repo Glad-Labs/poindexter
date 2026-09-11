@@ -24,13 +24,13 @@ import pytest
 @pytest.mark.asyncio
 async def test_total_delivery_failure_escalates_to_error(caplog):
     """Framework path unavailable + legacy webhook raises → logger.error fires."""
-    from services.integrations import operator_notify
+    from poindexter.services.integrations import operator_notify
 
     with patch(
-        "services.integrations.shared_context.get_database_service",
+        "poindexter.services.integrations.shared_context.get_database_service",
         return_value=None,  # dispatcher path skipped → fall through to legacy
     ), patch(
-        "services.integrations.operator_notify._legacy_discord_webhook",
+        "poindexter.services.integrations.operator_notify._legacy_discord_webhook",
         new=AsyncMock(side_effect=RuntimeError("discord webhook 500")),
     ):
         with caplog.at_level(logging.WARNING):
@@ -54,19 +54,19 @@ async def test_successful_delivery_does_not_log_error(caplog):
     fix that screams on every call)."""
     from unittest.mock import MagicMock
 
-    from services.integrations import operator_notify
+    from poindexter.services.integrations import operator_notify
 
     db_service = MagicMock()
     db_service.pool = MagicMock()
 
     with patch(
-        "services.integrations.shared_context.get_database_service",
+        "poindexter.services.integrations.shared_context.get_database_service",
         return_value=db_service,
     ), patch(
-        "services.integrations.operator_notify._resolve_site_config",
+        "poindexter.services.integrations.operator_notify._resolve_site_config",
         return_value=MagicMock(),
     ), patch(
-        "services.integrations.outbound_dispatcher.deliver",
+        "poindexter.services.integrations.outbound_dispatcher.deliver",
         new=AsyncMock(),
     ):
         with caplog.at_level(logging.ERROR):

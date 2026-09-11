@@ -69,7 +69,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
-from services.logger_config import StructuredLogger, get_logger
+from poindexter.services.logger_config import StructuredLogger, get_logger
 from utils.route_utils import get_database_dependency
 
 logger: StructuredLogger = get_logger(__name__)
@@ -129,7 +129,7 @@ async def verify_alertmanager_token(
     # speaking to this endpoint.
     if _looks_like_jwt(submitted):
         try:
-            from services.auth.oauth_issuer import InvalidToken, verify_token
+            from poindexter.services.auth.oauth_issuer import InvalidToken, verify_token
             try:
                 verify_token(submitted)
                 return  # OAuth JWT accepted.

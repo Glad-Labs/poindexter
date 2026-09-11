@@ -17,8 +17,8 @@ Tests cover:
 import os
 from unittest.mock import MagicMock
 
-import services.telemetry as telemetry_mod
-from services.telemetry import setup_telemetry
+import poindexter.services.telemetry as telemetry_mod
+from poindexter.services.telemetry import setup_telemetry
 
 # ---------------------------------------------------------------------------
 # When OpenTelemetry is not available

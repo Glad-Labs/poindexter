@@ -78,13 +78,13 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services.integrations.handlers.retention_embeddings_collapse import (
+from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
     build_summary_text,
     build_summary_text_via_llm,
 )
-from services.integrations.operator_notify import notify_operator
-from services.integrations.registry import register_handler
-from services.settings_read_sink import record_read
+from poindexter.services.integrations.operator_notify import notify_operator
+from poindexter.services.integrations.registry import register_handler
+from poindexter.services.settings_read_sink import record_read
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +241,7 @@ def _resolve_summary_prompt_template() -> str:
     self_review + self_consistency_rail pattern, ``feedback_prompts_must_be_db_configurable``).
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         # Raw-template fetch (no placeholders filled) via the manager's
         # resolution seam. _resolve_template_with_meta honors the

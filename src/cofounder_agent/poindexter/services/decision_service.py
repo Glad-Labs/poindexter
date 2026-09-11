@@ -10,7 +10,7 @@ This is the foundation for self-improving AI. Outcomes feed back
 into future decisions — the system gets smarter over time.
 
 Usage:
-    from services.decision_service import log_decision, record_outcome, get_past_decisions
+    from poindexter.services.decision_service import log_decision, record_outcome, get_past_decisions
 
     # Log a decision
     decision_id = await log_decision(
@@ -42,7 +42,7 @@ Usage:
 import json
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

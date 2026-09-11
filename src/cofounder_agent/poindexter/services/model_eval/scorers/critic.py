@@ -26,8 +26,8 @@ from collections.abc import Awaitable, Callable
 from statistics import median
 from typing import Any
 
-from services.logger_config import get_logger
-from services.model_eval.types import GoldenSet, MetricResult
+from poindexter.services.logger_config import get_logger
+from poindexter.services.model_eval.types import GoldenSet, MetricResult
 
 logger = get_logger(__name__)
 

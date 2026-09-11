@@ -7,7 +7,7 @@ value (e.g. a 5000-char draft) never buries the other small keys.
 """
 from __future__ import annotations
 
-from services.pipeline_architect import _preview, _preview_max_bytes
+from poindexter.services.pipeline_architect import _preview, _preview_max_bytes
 
 
 def test_preview_truncates_large_values_but_keeps_small_keys():

@@ -6,7 +6,7 @@ import pytest
 
 
 def test_job_has_required_attrs():
-    from services.jobs.measure_seo_refresh_outcomes import MeasureSeoRefreshOutcomesJob
+    from poindexter.services.jobs.measure_seo_refresh_outcomes import MeasureSeoRefreshOutcomesJob
 
     job = MeasureSeoRefreshOutcomesJob()
     assert job.name == "measure_seo_refresh_outcomes"
@@ -32,7 +32,7 @@ class _SC:
 
 @pytest.mark.asyncio
 async def test_measures_due_rows_and_writes_outcome(monkeypatch):
-    from services.jobs import measure_seo_refresh_outcomes as mod
+    from poindexter.services.jobs import measure_seo_refresh_outcomes as mod
 
     due = [
         {
@@ -90,7 +90,7 @@ async def test_measures_due_rows_and_writes_outcome(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_skips_post_with_no_perf_snapshot(monkeypatch):
-    from services.jobs import measure_seo_refresh_outcomes as mod
+    from poindexter.services.jobs import measure_seo_refresh_outcomes as mod
 
     due = [
         {

@@ -359,7 +359,7 @@ class ClaudeCodeSessionsTap:
                     skipped_empty += 1
                     continue
 
-                from services.rag_scrub import scrub_rag_text
+                from poindexter.services.rag_scrub import scrub_rag_text
 
                 text = scrub_rag_text(text, extra_patterns=scrub_patterns)
 

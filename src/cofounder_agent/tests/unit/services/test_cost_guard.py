@@ -12,14 +12,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services import cost_ledger
-from services.cost_guard import (
+from poindexter.services import cost_ledger
+from poindexter.services.cost_guard import (
     CostEstimate,
     CostGuard,
     CostGuardExhausted,
     is_local_base_url,
 )
-from services.cost_ledger import SpendBreakdown
+from poindexter.services.cost_ledger import SpendBreakdown
 
 # ---------------------------------------------------------------------------
 # is_local_base_url helper
@@ -501,7 +501,7 @@ class TestSoftAlertBothAxes:
         # though paid spend is low.
         guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
                             daily_electricity=2.0, total_budget=3.0)
-        with patch("services.cost_guard.emit_finding") as emit:
+        with patch("poindexter.services.cost_guard.emit_finding") as emit:
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
             ))
@@ -517,7 +517,7 @@ class TestSoftAlertBothAxes:
         # api+electricity=0.7 = 23% of the $3 throttle budget → below 80%.
         guard = _make_guard(daily=0.2, monthly=1.0, daily_limit=2.0,
                             daily_electricity=0.5, total_budget=3.0)
-        with patch("services.cost_guard.emit_finding") as emit:
+        with patch("poindexter.services.cost_guard.emit_finding") as emit:
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
             ))
@@ -529,7 +529,7 @@ class TestSoftAlertBothAxes:
         # only: preflight returns without raising.
         guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
                             daily_electricity=2.4, total_budget=3.0)
-        with patch("services.cost_guard.emit_finding"):
+        with patch("poindexter.services.cost_guard.emit_finding"):
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
             ))  # no raise
@@ -538,7 +538,7 @@ class TestSoftAlertBothAxes:
     async def test_check_budget_alert_keys_on_total(self) -> None:
         guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
                             daily_electricity=2.0, total_budget=3.0)
-        with patch("services.cost_guard.emit_finding") as emit:
+        with patch("poindexter.services.cost_guard.emit_finding") as emit:
             await guard.check_budget(
                 provider="openai", model="gpt-4o", estimated_cost_usd=0.05,
             )
@@ -549,7 +549,7 @@ class TestSoftAlertBothAxes:
     async def test_check_budget_no_finding_below_threshold(self) -> None:
         guard = _make_guard(daily=0.2, monthly=1.0, daily_limit=2.0,
                             daily_electricity=0.3, total_budget=3.0)
-        with patch("services.cost_guard.emit_finding") as emit:
+        with patch("poindexter.services.cost_guard.emit_finding") as emit:
             await guard.check_budget(
                 provider="openai", model="gpt-4o", estimated_cost_usd=0.05,
             )
@@ -575,7 +575,7 @@ class TestSoftAlertMeasuresTotalAgainstThrottleBudget:
         # of the correct $3 throttle budget → must stay silent.
         guard = _make_guard(daily=0.4135, monthly=2.0, daily_limit=2.0,
                             daily_electricity=1.5003, total_budget=3.0)
-        with patch("services.cost_guard.emit_finding") as emit:
+        with patch("poindexter.services.cost_guard.emit_finding") as emit:
             await guard.check_budget(
                 provider="anthropic", model="claude-sonnet-5",
                 estimated_cost_usd=0.01,
@@ -593,7 +593,7 @@ class TestSoftAlertMeasuresTotalAgainstThrottleBudget:
         for api_cap in (2.0, 10.0):
             guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=api_cap,
                                 daily_electricity=2.0, total_budget=3.0)
-            with patch("services.cost_guard.emit_finding") as emit:
+            with patch("poindexter.services.cost_guard.emit_finding") as emit:
                 await guard.check_budget(
                     provider="openai", model="gpt-4o", estimated_cost_usd=0.05,
                 )
@@ -605,7 +605,7 @@ class TestSoftAlertMeasuresTotalAgainstThrottleBudget:
         ``spend_throttle`` uses for the same key."""
         guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
                             daily_electricity=99.0, total_budget=0.0)
-        with patch("services.cost_guard.emit_finding") as emit:
+        with patch("poindexter.services.cost_guard.emit_finding") as emit:
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
             ))
@@ -617,7 +617,7 @@ class TestSoftAlertMeasuresTotalAgainstThrottleBudget:
         code — so both figures and both ceilings appear in the finding."""
         guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
                             daily_electricity=2.0, total_budget=3.0)
-        with patch("services.cost_guard.emit_finding") as emit:
+        with patch("poindexter.services.cost_guard.emit_finding") as emit:
             # Non-zero: check_budget short-circuits on a $0 estimate before it
             # ever reaches the alert.
             await guard.check_budget(
@@ -662,7 +662,7 @@ class TestSoftAlertMeasuresTotalAgainstThrottleBudget:
         # 2.5 is 83% of the $3.00 default → trips. Against a $4 default it
         # would be 62% and stay silent, and the emitted ceiling below pins the
         # exact figure.
-        with patch("services.cost_guard.emit_finding") as emit:
+        with patch("poindexter.services.cost_guard.emit_finding") as emit:
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
             ))
@@ -679,7 +679,7 @@ class TestRecordAuditFallback:
         pool.execute = AsyncMock(side_effect=RuntimeError("DB down"))
         guard = CostGuard(pool=pool)
 
-        with patch("services.audit_log.audit_log_bg") as audit_mock:
+        with patch("poindexter.services.audit_log.audit_log_bg") as audit_mock:
             await guard.record(provider="openai", model="gpt-4o", cost_usd=0.1)
         audit_mock.assert_called_once()
         kwargs = audit_mock.call_args.kwargs
@@ -692,7 +692,7 @@ class TestRecordAuditFallback:
         pool.execute = AsyncMock(side_effect=RuntimeError("DB down"))
         guard = CostGuard(pool=pool)
 
-        with patch("services.audit_log.audit_log_bg",
+        with patch("poindexter.services.audit_log.audit_log_bg",
                    side_effect=RuntimeError("audit also broken")):
             # Should not raise.
             await guard.record(provider="openai", model="gpt-4o", cost_usd=0.1)

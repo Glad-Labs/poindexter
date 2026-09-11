@@ -15,10 +15,10 @@ import asyncpg
 import pytest
 
 from plugins import Tap
-from services.taps.audit import AuditTap
-from services.taps.brain_decisions import BrainDecisionsTap
-from services.taps.brain_knowledge import BrainKnowledgeTap
-from services.taps.published_posts import PostsTap
+from poindexter.services.taps.audit import AuditTap
+from poindexter.services.taps.brain_decisions import BrainDecisionsTap
+from poindexter.services.taps.brain_knowledge import BrainKnowledgeTap
+from poindexter.services.taps.published_posts import PostsTap
 from tests.integration.conftest import requires_real_services
 
 # asyncio mark dropped — ``asyncio_mode = "auto"`` (pyproject.toml) auto-marks

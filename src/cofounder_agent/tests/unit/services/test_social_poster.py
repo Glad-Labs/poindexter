@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
-from services.social_poster import (
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.social_poster import (
     SocialPost,
     _build_linkedin_prompt,
     _build_twitter_prompt,
@@ -53,7 +53,7 @@ def _autopatch_resolve_social_model():
     resolver branches.
     """
     with patch(
-        "services.social_poster._resolve_social_model",
+        "poindexter.services.social_poster._resolve_social_model",
         AsyncMock(return_value="ollama/gemma3:27b"),
     ):
         yield
@@ -655,10 +655,10 @@ class TestGenerateSocialTextDispatchPath:
         completion.text = "Great AI post! #LLM"
 
         with patch(
-            "services.social_poster.dispatch_complete",
+            "poindexter.services.social_poster.dispatch_complete",
             new=AsyncMock(return_value=completion),
         ) as mock_dispatch, patch(
-            "services.social_poster.OllamaClient",
+            "poindexter.services.social_poster.OllamaClient",
         ) as mock_ollama_cls:
             result = await _generate_social_text(
                 "test prompt", 280, "twitter", site_config=self._sc_with_pool()
@@ -678,7 +678,7 @@ class TestGenerateSocialTextDispatchPath:
         completion.text = "Tweet text"
 
         with patch(
-            "services.social_poster.dispatch_complete",
+            "poindexter.services.social_poster.dispatch_complete",
             new=AsyncMock(return_value=completion),
         ) as mock_dispatch:
             await _generate_social_text(
@@ -697,7 +697,7 @@ class TestGenerateSocialTextDispatchPath:
         sc_with_pool = self._sc_with_pool()
 
         with patch(
-            "services.social_poster.dispatch_complete",
+            "poindexter.services.social_poster.dispatch_complete",
             new=AsyncMock(),
         ) as mock_dispatch:
             result = await _generate_social_text(
@@ -711,7 +711,7 @@ class TestGenerateSocialTextDispatchPath:
     async def test_dispatch_error_returns_empty(self):
         """Errors from dispatch_complete are caught; empty string returned."""
         with patch(
-            "services.social_poster.dispatch_complete",
+            "poindexter.services.social_poster.dispatch_complete",
             new=AsyncMock(side_effect=RuntimeError("provider offline")),
         ):
             result = await _generate_social_text(
@@ -730,7 +730,7 @@ class TestGenerateSocialTextDispatchPath:
         completion.text = "<think>analysis...</think>Clean tweet #AI"
 
         with patch(
-            "services.social_poster.dispatch_complete",
+            "poindexter.services.social_poster.dispatch_complete",
             new=AsyncMock(return_value=completion),
         ):
             result = await _generate_social_text(

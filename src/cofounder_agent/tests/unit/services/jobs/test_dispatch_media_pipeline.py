@@ -16,10 +16,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs import dispatch_media_pipeline as dmp
-from services.jobs.dispatch_media_pipeline import DispatchMediaPipelineJob
-from services.media_infra_health import MediaInfraHealth
-from services.site_config import SiteConfig
+from poindexter.services.jobs import dispatch_media_pipeline as dmp
+from poindexter.services.jobs.dispatch_media_pipeline import DispatchMediaPipelineJob
+from poindexter.services.media_infra_health import MediaInfraHealth
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**overrides):
@@ -322,7 +322,7 @@ async def test_attempt_vram_reclaim_calls_ollama_evict_and_hard_image_gen_unload
     """_attempt_vram_reclaim must evict Ollama then hard-unload image-gen
     (PR 2, 2026-07-12) — the two reclaimable VRAM sources identified in the
     root-cause investigation."""
-    from services.gpu_scheduler import gpu as real_gpu
+    from poindexter.services.gpu_scheduler import gpu as real_gpu
 
     ollama_mock = AsyncMock()
     image_gen_mock = AsyncMock()
@@ -346,7 +346,7 @@ async def test_attempt_vram_reclaim_also_unloads_chatterbox():
 
     Soft, not hard: what it holds is the model, not a wedged CUDA context, so
     there's no reason to bounce the process and pay a cold reload."""
-    from services.gpu_scheduler import gpu as real_gpu
+    from poindexter.services.gpu_scheduler import gpu as real_gpu
 
     chatterbox_mock = AsyncMock()
     with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
@@ -368,7 +368,7 @@ async def test_attempt_vram_reclaim_hard_unloads_wan():
     container. Hard, because only a process exit returns the reserved pool;
     the server declines (nothing_to_reclaim) below its floor, so repeat
     reclaims are cheap."""
-    from services.gpu_scheduler import gpu as real_gpu
+    from poindexter.services.gpu_scheduler import gpu as real_gpu
 
     wan_mock = AsyncMock()
     with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
@@ -389,7 +389,7 @@ async def test_attempt_vram_reclaim_frees_comfyui():
     (#962) and stable-audio (#999) each did before earning their seats. The
     rung itself declines while a render is in flight (#3094 posture) and
     no-ops when the profile-gated sidecar isn't running."""
-    from services.gpu_scheduler import gpu as real_gpu
+    from poindexter.services.gpu_scheduler import gpu as real_gpu
 
     comfyui_mock = AsyncMock()
     with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
@@ -410,7 +410,7 @@ async def test_attempt_vram_reclaim_survives_a_failing_lever():
     This is load-bearing for the lever ORDER: chatterbox runs last, so before
     the levers were isolated a stray error in the Ollama evict would silently
     skip it — costing exactly the reclaim this path was extended to gain."""
-    from services.gpu_scheduler import gpu as real_gpu
+    from poindexter.services.gpu_scheduler import gpu as real_gpu
 
     image_gen_mock = AsyncMock()
     chatterbox_mock = AsyncMock()
@@ -842,7 +842,7 @@ async def test_attempt_vram_reclaim_hard_unloads_stable_audio():
     Hard, not soft: what squats is the caching-allocator pool + CUDA context,
     which only a process exit returns (that is the 3 MiB vs 10.96 GiB above).
     """
-    from services.gpu_scheduler import gpu as real_gpu
+    from poindexter.services.gpu_scheduler import gpu as real_gpu
 
     stable_audio_mock = AsyncMock()
     with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
@@ -862,7 +862,7 @@ async def test_reclaim_lever_isolation_covers_stable_audio():
     2026-08-15), so they are the levers most exposed to that bug — and the
     ones carrying the most VRAM. Pin it: every earlier lever raising must
     still leave both called."""
-    from services.gpu_scheduler import gpu as real_gpu
+    from poindexter.services.gpu_scheduler import gpu as real_gpu
 
     stable_audio_mock = AsyncMock()
     comfyui_mock = AsyncMock()

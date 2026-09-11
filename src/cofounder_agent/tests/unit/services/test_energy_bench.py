@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services import energy_bench
+from poindexter.services import energy_bench
 
 # ---------------------------------------------------------------------------
 # joules_per_token

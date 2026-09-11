@@ -241,7 +241,7 @@ async def _evaluate(
     if not chunks or pool is None:
         return _decide(max_similarity=0.0, threshold=threshold, nearest_slug=None)
 
-    from services.topic_ranking import embed_text
+    from poindexter.services.topic_ranking import embed_text
 
     best_sim = 0.0
     best_slug: str | None = None

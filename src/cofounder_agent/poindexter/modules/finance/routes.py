@@ -49,8 +49,8 @@ from modules.finance.mercury_client import (
     MercuryAuthError,
     MercuryClient,
 )
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)

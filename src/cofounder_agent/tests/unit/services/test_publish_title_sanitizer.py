@@ -6,7 +6,7 @@ leaked to the live site (112-117 char titles). Strip them at publish time
 so they can never reach a live title again. Conservative: only date / batch /
 overnight markers are stripped; legit parentheticals are preserved.
 """
-from services.publish_service import sanitize_published_title
+from poindexter.services.publish_service import sanitize_published_title
 
 
 def test_strips_date_overnight_suffix():

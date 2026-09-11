@@ -198,8 +198,8 @@ async def _run_trigger(lookback_hours: int) -> None:
         # The dev_diary source + creator handle their own SiteConfig
         # construction inline — no preloading needed from the CLI side.
 
-        from services.jobs.run_dev_diary_post import _create_dev_diary_task
-        from services.topic_sources.dev_diary_source import DevDiarySource
+        from poindexter.services.jobs.run_dev_diary_post import _create_dev_diary_task
+        from poindexter.services.topic_sources.dev_diary_source import DevDiarySource
 
         source = DevDiarySource()
         ctx = await source.gather_context(

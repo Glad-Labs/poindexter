@@ -22,8 +22,8 @@ import pytest
 
 # The real dispatcher statement, so this test fails if the upsert and the key
 # ever drift apart.
-from services.jobs.dispatch_handles import _RECORD_DISTRIBUTION_SQL
-from services.pipeline_db import SITE_TARGET as _SITE_TARGET
+from poindexter.services.jobs.dispatch_handles import _RECORD_DISTRIBUTION_SQL
+from poindexter.services.pipeline_db import SITE_TARGET as _SITE_TARGET
 
 pytestmark = [
     pytest.mark.integration_db,

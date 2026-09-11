@@ -20,6 +20,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
+from poindexter.services.logger_config import get_logger
+from poindexter.services.module_paths import resolve_module_path
 from routes.task_routes import _check_task_ownership, _normalize_seo_keywords_in_task
 from schemas.model_converter import ModelConverter
 from schemas.task_status_schemas import (
@@ -28,10 +32,6 @@ from schemas.task_status_schemas import (
     TaskStatusUpdateResponse,
 )
 from schemas.unified_task_response import UnifiedTaskResponse
-from services.database_service import DatabaseService
-from services.enhanced_status_change_service import EnhancedStatusChangeService
-from services.logger_config import get_logger
-from services.module_paths import resolve_module_path
 from utils.deprecation import deprecation_headers
 from utils.route_utils import get_database_dependency
 from utils.task_status import TaskStatus, get_allowed_transitions, is_terminal, is_valid_transition
@@ -485,7 +485,7 @@ async def get_task_status_history(
 
         # Get status history directly from database service which is more reliable
         # than the enhanced service dependency injection
-        from services.tasks_db import TasksDatabase
+        from poindexter.services.tasks_db import TasksDatabase
 
         task_db = TasksDatabase(db_service.pool)
         history = await task_db.get_status_history(task_id, limit, offset)

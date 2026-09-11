@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.numeric_fidelity import (
+from poindexter.services.numeric_fidelity import (
     DEFAULT_ATTRIBUTION_MARKERS,
     extract_claims,
     extract_corpus_numbers,

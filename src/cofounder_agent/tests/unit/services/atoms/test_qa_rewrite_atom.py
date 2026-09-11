@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from modules.content.atoms import qa_rewrite
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 def _site_config():
@@ -29,7 +29,7 @@ class TestQaRewriteAtom:
             assert "ORIGINAL DRAFT" in prompt or "CURRENT DRAFT" in prompt
             return "# Revised\n\nMuch better body now.\n"
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
 
         state = {
             "task_id": "t1",
@@ -62,7 +62,7 @@ class TestQaRewriteAtom:
             seen["prompt"] = prompt
             return "revised body."
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         state = {
             "task_id": "t2",
             "content": "draft",
@@ -87,7 +87,7 @@ class TestQaRewriteAtom:
         async def _fake_chat(prompt, **kw):
             return "   "  # whitespace -> treated as empty
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         state = {
             "task_id": "t3",
             "content": "# Original\n\nkeep me.\n",
@@ -109,7 +109,7 @@ class TestQaRewriteAtom:
         async def _fake_chat(prompt, **kw):
             raise RuntimeError("dispatch boom")
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         state = {
             "task_id": "t4",
             "content": "# Original\n\nkeep me.\n",
@@ -140,7 +140,7 @@ class TestQaRewriteAtom:
             seen["model"] = kw.get("model")
             return "revised body."
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         sc = SiteConfig(initial_config={
             "pipeline_writer_model": "glm-writer",
             "qa_rewrite_model": "ollama/gemma-reviser",
@@ -164,7 +164,7 @@ class TestQaRewriteAtom:
             seen["model"] = kw.get("model")
             return "revised body."
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         sc = SiteConfig(initial_config={
             "pipeline_writer_model": "glm-writer",
             "qa_rewrite_model": "",
@@ -219,7 +219,7 @@ class TestQaRewriteBriefingLeakStrip:
         async def _fake_chat(prompt, **kw):
             return self._BRIEFING_ECHO
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         state = {
             "task_id": "t-leak",
             "content": "# Draft\n\nweak body.\n",
@@ -241,7 +241,7 @@ class TestQaRewriteBriefingLeakStrip:
         async def _fake_chat(prompt, **kw):
             return self._BARE_BRIEFING_ECHO
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         state = {
             "task_id": "t-bare-leak",
             "content": "# Draft\n\nweak body.\n",
@@ -264,7 +264,7 @@ class TestQaRewriteBriefingLeakStrip:
         async def _fake_chat(prompt, **kw):
             return "## Clean Heading\n\nNo scaffold here, just prose.\n"
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         state = {
             "task_id": "t-clean",
             "content": "# Draft\n\nweak body.\n",
@@ -300,7 +300,7 @@ class TestQaRewriteTruncationGuard:
             return "## Revised\n\nreplicas solve read scaling, but th"
 
         findings = []
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         monkeypatch.setattr(
             "utils.findings.emit_finding",
             lambda **kw: findings.append(kw),
@@ -320,7 +320,7 @@ class TestQaRewriteTruncationGuard:
         async def _fake_chat(prompt, **kw):
             return "## Revised\n\nReplicas solve read scaling properly now."
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         state = {
             **self._STATE,
             "content": "# Original\n\ndraft.\n",
@@ -336,7 +336,7 @@ class TestQaRewriteTruncationGuard:
             seen.update(kw)
             return "revised body."
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         state = {
             **self._STATE,
             "content": "draft.",
@@ -383,7 +383,7 @@ class TestQaRewritePlaceholderScrub:
                 "Also read [posts/kept-link](/posts/kept-link) here.\n"
             )
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         out = await qa_rewrite.run(self._state())
         # The bare placeholder is stripped…
         assert "[posts/older-article]" not in out["content"]
@@ -403,7 +403,7 @@ class TestQaRewritePlaceholderScrub:
         async def _fake_chat(prompt, **kw):
             return "[posts/one] [posts/two]"
 
-        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         monkeypatch.setattr("utils.findings.emit_finding", _fake_emit)
         out = await qa_rewrite.run(self._state())
         # Nothing but placeholders scrubs down to empty — same degrade path as

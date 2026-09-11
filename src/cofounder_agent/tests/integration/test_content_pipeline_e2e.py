@@ -73,7 +73,7 @@ def _ollama_base_url() -> str:
     divergence unrepresentable: if the resolution chain changes, the guard
     follows it.
     """
-    from services.ollama_client import _default_base_url
+    from poindexter.services.ollama_client import _default_base_url
 
     return _reachable_from_here(_default_base_url()).rstrip("/")
 
@@ -117,7 +117,7 @@ def _make_client(**kwargs):
     Every direct-client test goes through here so "the guard checked it"
     and "the client called it" cannot drift apart again.
     """
-    from services.ollama_client import OllamaClient
+    from poindexter.services.ollama_client import OllamaClient
 
     return OllamaClient(base_url=_ollama_base_url(), **kwargs)
 
@@ -153,7 +153,7 @@ def ollama_site_config():
     SiteConfig rather than taking a ``base_url``, so seeding it here is how
     those paths join the same agreement.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     return SiteConfig(initial_config={"ollama_base_url": _ollama_base_url()})
 
@@ -363,7 +363,7 @@ def _dispatcher_pinned_to_probed_ollama():
     Patching the read keeps ONE rewrite rule for the whole module and
     never writes to the operator's database.
     """
-    from services.llm_providers import dispatcher
+    from poindexter.services.llm_providers import dispatcher
 
     real = dispatcher.get_provider_config
 
@@ -433,10 +433,10 @@ async def platform_stack():
     except Exception as exc:
         pytest.skip(f"Postgres unreachable: {type(exc).__name__}: {exc}")
 
-    from services.audit_log import init_global_audit_logger, reset_global_audit_logger
-    from services.di_wiring import build_platform_for_subprocess
-    from services.settings_service import SettingsService
-    from services.site_config import SiteConfig
+    from poindexter.services.audit_log import init_global_audit_logger, reset_global_audit_logger
+    from poindexter.services.di_wiring import build_platform_for_subprocess
+    from poindexter.services.settings_service import SettingsService
+    from poindexter.services.site_config import SiteConfig
 
     try:
         site_config = SiteConfig(pool=pool)
@@ -550,7 +550,7 @@ class TestQAReview:
         the ``/api/tags`` call back at import time — the exact thing #994
         moved into a setup-time fixture.
         """
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         if not _ollama_has_model("gemma3:27b"):
             pytest.skip("gemma3:27b not installed in Ollama")
@@ -595,7 +595,7 @@ class TestSEOMetadata:
 
     def test_seo_assets_from_content(self, ollama_site_config):
         """ContentMetadataGenerator produces seo_title, meta_description, meta_keywords."""
-        from services.seo_content_generator import ContentMetadataGenerator
+        from poindexter.services.seo_content_generator import ContentMetadataGenerator
 
         gen = ContentMetadataGenerator(site_config=ollama_site_config)
         seo = gen.generate_seo_assets(
@@ -617,7 +617,7 @@ class TestSEOMetadata:
 
     def test_seo_slug_generation(self, ollama_site_config):
         """Slug is URL-friendly: lowercase, no special chars, dashes for spaces."""
-        from services.seo_content_generator import ContentMetadataGenerator
+        from poindexter.services.seo_content_generator import ContentMetadataGenerator
 
         gen = ContentMetadataGenerator(site_config=ollama_site_config)
         seo = gen.generate_seo_assets(
@@ -632,7 +632,7 @@ class TestSEOMetadata:
 
     def test_reading_time_and_word_count(self, ollama_site_config):
         """Reading time and word count calculations work correctly."""
-        from services.seo_content_generator import ContentMetadataGenerator
+        from poindexter.services.seo_content_generator import ContentMetadataGenerator
 
         gen = ContentMetadataGenerator(site_config=ollama_site_config)
         reading_time = gen.calculate_reading_time(SAMPLE_BLOG_CONTENT)
@@ -640,7 +640,7 @@ class TestSEOMetadata:
 
     def test_category_and_tags(self, ollama_site_config):
         """Category and tag suggestions are generated from content."""
-        from services.seo_content_generator import ContentMetadataGenerator
+        from poindexter.services.seo_content_generator import ContentMetadataGenerator
 
         gen = ContentMetadataGenerator(site_config=ollama_site_config)
         org = gen.generate_category_and_tags(SAMPLE_BLOG_CONTENT, "unit testing")
@@ -654,7 +654,7 @@ class TestSEOMetadata:
 
         Pins a non-thinking model for reliable short-form generation.
         """
-        from services.seo_content_generator import ContentMetadataGenerator
+        from poindexter.services.seo_content_generator import ContentMetadataGenerator
 
         model = _require_small_model()
         max_tokens = 500
@@ -831,7 +831,7 @@ class TestThinkingModels:
         chain-of-thought reasoning consumes tokens before visible output starts.
         With complex prompts, qwen3.5 may use 4000+ tokens on reasoning alone.
         """
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         qwen_model = _find_ollama_model("qwen3.5")
         if not qwen_model:

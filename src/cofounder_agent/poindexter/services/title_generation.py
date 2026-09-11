@@ -29,8 +29,8 @@ import string
 from difflib import SequenceMatcher
 from typing import Any
 
-from services.llm_providers.thinking_models import strip_think_blocks
-from services.site_config import SiteConfig
+from poindexter.services.llm_providers.thinking_models import strip_think_blocks
+from poindexter.services.site_config import SiteConfig
 from utils.text_utils import strip_title_label
 
 logger = logging.getLogger(__name__)
@@ -642,7 +642,7 @@ async def generate_canonical_title(
     """
     _sc = site_config
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         pm = get_prompt_manager()
         # The local ``ollama_native`` provider is only needed for the no-pool
         # fallback. With a pool we defer provider selection to
@@ -684,7 +684,7 @@ async def generate_canonical_title(
         if not model:
             model = (_sc.get("pipeline_writer_model") or "").removeprefix("ollama/")
         if not model:
-            from services.integrations.operator_notify import notify_operator
+            from poindexter.services.integrations.operator_notify import notify_operator
             await notify_operator(
                 "title_generation: pipeline_title_model and "
                 "pipeline_writer_model are both empty — title regen aborted",
@@ -724,7 +724,7 @@ async def generate_canonical_title(
                 # cost_guard-gated); a local writer stays local + free. This is
                 # the #2194-class fix: the old hardcoded ollama_native call
                 # POSTed a cloud model name to local Ollama and 404'd every post.
-                from services.llm_providers.dispatcher import dispatch_complete
+                from poindexter.services.llm_providers.dispatcher import dispatch_complete
                 result = await dispatch_complete(
                     pool,
                     messages,
@@ -925,7 +925,7 @@ async def check_title_originality(
     # early-return would have made disabling the web check silently disable
     # duplicate detection against our own posts.
     if pool is not None:
-        from services.title_avoidance import check_internal_similarity
+        from poindexter.services.title_avoidance import check_internal_similarity
 
         internal = await check_internal_similarity(
             pool, title, site_config=_sc, exclude_task_id=exclude_task_id,
@@ -953,7 +953,7 @@ async def check_title_originality(
         return result
 
     try:
-        from services.web_research import WebResearcher
+        from poindexter.services.web_research import WebResearcher
         researcher = WebResearcher(site_config=_sc)
         search_results = await researcher.search_simple(
             f'"{title}"', num_results=8,
@@ -1010,7 +1010,7 @@ async def check_title_originality(
     # above so a WebResearcher failure doesn't short-circuit the DDG HTML
     # path (and vice versa).
     try:
-        from services.title_originality_external import (
+        from poindexter.services.title_originality_external import (
             TitleOriginalityExternalChecker,
         )
         ext = await TitleOriginalityExternalChecker(

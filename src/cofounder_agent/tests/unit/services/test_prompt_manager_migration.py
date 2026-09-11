@@ -26,9 +26,9 @@ import pytest
 def test_self_review_resolver_uses_prompt_manager():
     """When UnifiedPromptManager resolves the key, the resolver returns
     its template (formatted with kwargs) — NOT the inline fallback."""
-    from services import self_review
+    from poindexter.services import self_review
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm:
         mock_pm.return_value.get_prompt.return_value = (
             "PM: title=Hello topic=AI draft=Body"
         )
@@ -50,10 +50,10 @@ def test_self_review_resolver_uses_prompt_manager():
 def test_self_review_resolver_falls_back_when_pm_raises():
     """Bootstrap / test paths where UnifiedPromptManager is unavailable
     must keep working — the inline fallback gets ``.format(**kwargs)``'d."""
-    from services import self_review
+    from poindexter.services import self_review
 
     with patch(
-        "services.prompt_manager.get_prompt_manager",
+        "poindexter.services.prompt_manager.get_prompt_manager",
         side_effect=RuntimeError("no DB pool"),
     ):
         result = self_review._resolve_prompt(
@@ -68,9 +68,9 @@ def test_self_review_resolver_falls_back_when_pm_raises():
 
 @pytest.mark.unit
 def test_self_consistency_resolver_uses_prompt_manager():
-    from services import self_consistency_rail
+    from poindexter.services import self_consistency_rail
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm:
         mock_pm.return_value.get_prompt.return_value = "PM SUMMARY: topic=t content=c"
         result = self_consistency_rail._resolve_summary_prompt(
             topic="t", content="c",
@@ -83,10 +83,10 @@ def test_self_consistency_resolver_uses_prompt_manager():
 
 @pytest.mark.unit
 def test_self_consistency_resolver_falls_back_on_pm_failure():
-    from services import self_consistency_rail
+    from poindexter.services import self_consistency_rail
 
     with patch(
-        "services.prompt_manager.get_prompt_manager",
+        "poindexter.services.prompt_manager.get_prompt_manager",
         side_effect=RuntimeError("pm broken"),
     ):
         result = self_consistency_rail._resolve_summary_prompt(
@@ -104,9 +104,9 @@ def test_retention_resolver_returns_raw_template_from_prompt_manager():
     *raw* template (with {bucket_start_iso}/{row_count} unfilled) so the
     handler can apply the per-bucket replacements before handing it to
     ``build_summary_text_via_llm`` for the remaining placeholders."""
-    from services.integrations.handlers import retention_summarize_to_table
+    from poindexter.services.integrations.handlers import retention_summarize_to_table
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm:
         # poindexter#825: the resolver goes through the gated
         # _resolve_template_with_meta seam (raw template + provenance)
         # instead of hand-rolling _fetch_from_langfuse + prompts-dict —
@@ -127,10 +127,10 @@ def test_retention_resolver_returns_raw_template_from_prompt_manager():
 def test_retention_resolver_falls_back_when_pm_unavailable():
     """When prompt_manager import / lookup fails, the inline fallback
     template is returned — handler keeps working without Langfuse / YAML."""
-    from services.integrations.handlers import retention_summarize_to_table
+    from poindexter.services.integrations.handlers import retention_summarize_to_table
 
     with patch(
-        "services.prompt_manager.get_prompt_manager",
+        "poindexter.services.prompt_manager.get_prompt_manager",
         side_effect=ImportError("module missing"),
     ):
         result = retention_summarize_to_table._resolve_summary_prompt_template()

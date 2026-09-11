@@ -174,7 +174,7 @@ async def claim_best_pooled_topic(
     pool holds nothing sane (caller fails loud — the taps haven't
     deposited, which is an ingestion problem to surface, not paper over).
     """
-    from services.topic_sanity import (
+    from poindexter.services.topic_sanity import (
         evaluate_topic_sanity,
         resolve_min_alpha_words,
     )

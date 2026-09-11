@@ -15,8 +15,8 @@ appear on www.gladlabs.io.
 
 import asyncio
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
@@ -203,7 +203,7 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
                             _nl_excerpt = ""
                         if _nl_slug:
                             try:
-                                from services.publish_service import (
+                                from poindexter.services.publish_service import (
                                     _send_post_newsletter_bg,
                                     _spawn_background,
                                 )
@@ -299,8 +299,8 @@ async def _maybe_park_due_posts_at_gate(pool, *, site_config: SiteConfig) -> Non
     Best-effort: any failure is logged at WARNING and swallowed so the publish
     loop keeps running (a crash here would wedge every subsequent due post).
     """
-    from services.approval_service import is_gate_enabled
-    from services.posts_approval_service import (
+    from poindexter.services.approval_service import is_gate_enabled
+    from poindexter.services.posts_approval_service import (
         FINAL_PUBLISH_GATE,
         pause_post_at_gate,
     )
@@ -395,7 +395,7 @@ async def _revalidate_for_row(row, *, site_config: SiteConfig) -> None:
         # SiteConfig DI migration (#272 leaf batch 3): the revalidation
         # helpers now require an explicit site_config. Pass this module's
         # lifespan-bound instance (caller-bridge).
-        from services.revalidation_service import trigger_isr_revalidate
+        from poindexter.services.revalidation_service import trigger_isr_revalidate
         ok = await trigger_isr_revalidate(slug, site_config=_sc)
         if ok:
             logger.info(

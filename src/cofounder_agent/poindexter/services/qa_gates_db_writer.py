@@ -32,7 +32,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)

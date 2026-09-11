@@ -48,7 +48,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BACKEND = REPO_ROOT / "src" / "cofounder_agent"
 sys.path.insert(0, str(BACKEND))
 
-from services.settings_defaults import DEFAULTS, METADATA  # noqa: E402
+from poindexter.services.settings_defaults import DEFAULTS, METADATA  # noqa: E402
 
 # Paths that name keys without consuming them.
 EXCLUDE = re.compile(

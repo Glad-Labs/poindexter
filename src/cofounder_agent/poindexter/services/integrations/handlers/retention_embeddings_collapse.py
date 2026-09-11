@@ -70,7 +70,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services.integrations.registry import register_handler
+from poindexter.services.integrations.registry import register_handler
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +261,7 @@ def _resolve_summary_prompt_template() -> str:
     ``feedback_prompts_must_be_db_configurable``.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         pm = get_prompt_manager()
         return pm._resolve_template_with_meta(_SUMMARY_PROMPT_KEY)[0]
@@ -324,7 +324,7 @@ async def build_summary_text_via_llm(
     )
 
     try:
-        from services.llm_providers.dispatcher import dispatch_complete
+        from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
         completion = await dispatch_complete(
             pool=pool,

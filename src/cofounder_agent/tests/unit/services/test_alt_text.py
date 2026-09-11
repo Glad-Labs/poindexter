@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.alt_text import (
+from poindexter.services.alt_text import (
     assert_alt_text_clean,
     iter_img_alts,
     looks_like_image_gen_prompt,

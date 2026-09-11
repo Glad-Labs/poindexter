@@ -18,7 +18,7 @@ def mock_pool():
 
 @pytest.fixture
 def service(mock_pool):
-    from services.worker_service import WorkerService
+    from poindexter.services.worker_service import WorkerService
 
     pool, _ = mock_pool
     return WorkerService(pool, worker_type="test")
@@ -49,8 +49,8 @@ class TestCapabilities:
         assert caps1 is caps2
 
     def test_image_gen_detected_from_site_config(self):
-        from services.site_config import SiteConfig
-        from services.worker_service import WorkerService
+        from poindexter.services.site_config import SiteConfig
+        from poindexter.services.worker_service import WorkerService
 
         pool = MagicMock()
         sc = SiteConfig(initial_config={"image_gen_api_url": "http://localhost:9836"})
@@ -129,7 +129,7 @@ class TestHeartbeatQueryShape:
             service._running = False
 
         service._running = True
-        with patch("services.worker_service.asyncio.sleep", _stop_after_first):
+        with patch("poindexter.services.worker_service.asyncio.sleep", _stop_after_first):
             await service._heartbeat_loop()
 
         assert conn.execute.called
@@ -179,8 +179,8 @@ class TestHeartbeatLoopErrorVisibility:
         # which renders exc_info into the message string before the stdlib
         # LogRecord is built — so we check the call directly.
         mock_logger = MagicMock()
-        with patch("services.worker_service.logger", mock_logger), patch(
-            "services.worker_service.asyncio.sleep", _stop_after_first
+        with patch("poindexter.services.worker_service.logger", mock_logger), patch(
+            "poindexter.services.worker_service.asyncio.sleep", _stop_after_first
         ):
             await service._heartbeat_loop()
 
@@ -221,7 +221,7 @@ class TestHeartbeatLoopErrorVisibility:
                 service._running = False
 
         service._running = True
-        with patch("services.worker_service.asyncio.sleep", _sleep_two_iters):
+        with patch("poindexter.services.worker_service.asyncio.sleep", _sleep_two_iters):
             await service._heartbeat_loop()
 
         # Two execute() calls = the loop survived the first exception and
@@ -236,8 +236,8 @@ class TestHangWatchdog:
     all thread stacks if a heartbeat tick stalls past the timeout."""
 
     def _service_with_setting(self, value):
-        from services.site_config import SiteConfig
-        from services.worker_service import WorkerService
+        from poindexter.services.site_config import SiteConfig
+        from poindexter.services.worker_service import WorkerService
 
         return WorkerService(
             MagicMock(),
@@ -255,7 +255,7 @@ class TestHangWatchdog:
         assert self._service_with_setting("not-a-number")._hang_dump_seconds() == 300.0
 
     def test_arm_schedules_dump(self, service):
-        with patch("services.worker_service.faulthandler") as fh:
+        with patch("poindexter.services.worker_service.faulthandler") as fh:
             fh.is_enabled.return_value = False
             service._arm_hang_watchdog()
         fh.enable.assert_called_once()
@@ -264,19 +264,19 @@ class TestHangWatchdog:
 
     def test_arm_disabled_when_zero(self):
         svc = self._service_with_setting("0")
-        with patch("services.worker_service.faulthandler") as fh:
+        with patch("poindexter.services.worker_service.faulthandler") as fh:
             svc._arm_hang_watchdog()
         fh.dump_traceback_later.assert_not_called()
 
     def test_arm_never_raises(self, service):
         """A faulthandler failure must be swallowed — diagnostics can't break
         the worker (e.g. no stderr fileno under captured output)."""
-        with patch("services.worker_service.faulthandler") as fh:
+        with patch("poindexter.services.worker_service.faulthandler") as fh:
             fh.is_enabled.return_value = True
             fh.dump_traceback_later.side_effect = RuntimeError("no fileno")
             service._arm_hang_watchdog()  # must not raise
 
     def test_disarm_cancels(self, service):
-        with patch("services.worker_service.faulthandler") as fh:
+        with patch("poindexter.services.worker_service.faulthandler") as fh:
             service._disarm_hang_watchdog()
         fh.cancel_dump_traceback_later.assert_called_once()

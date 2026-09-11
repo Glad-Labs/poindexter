@@ -15,7 +15,7 @@ import pytest
 
 from modules.content.content_validator import ValidationIssue, ValidationResult
 from modules.content.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from tests.unit._fake_platform import FakePlatform
 
 
@@ -1336,10 +1336,10 @@ class TestDeepEvalBrandFabricationGate:
         # Patch the rail's evaluate fn so the test doesn't need deepeval
         # actually loaded. Same shape: (passed, score_unit, reason).
         with patch(
-            "services.deepeval_rails.evaluate_brand_fabrication",
+            "poindexter.services.deepeval_rails.evaluate_brand_fabrication",
             return_value=(True, 1.0, "No fabrication patterns matched"),
         ), patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ):
             result = qa._check_deepeval_brand(GOOD_CONTENT, GOOD_TOPIC)
 
@@ -1353,10 +1353,10 @@ class TestDeepEvalBrandFabricationGate:
     def test_fabrication_detected_returns_score_0_rejected(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.evaluate_brand_fabrication",
+            "poindexter.services.deepeval_rails.evaluate_brand_fabrication",
             return_value=(False, 0.0, "1 fabrication(s) detected: fake_quote: 'foo'"),
         ), patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ):
             result = qa._check_deepeval_brand(BAD_CONTENT, BAD_TITLE)
 
@@ -1370,9 +1370,9 @@ class TestDeepEvalBrandFabricationGate:
         before the metric runs (avoids loading deepeval / spending CPU)."""
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.is_enabled", return_value=False,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=False,
         ), patch(
-            "services.deepeval_rails.evaluate_brand_fabrication",
+            "poindexter.services.deepeval_rails.evaluate_brand_fabrication",
         ) as eval_mock:
             result = qa._check_deepeval_brand(GOOD_CONTENT, GOOD_TOPIC)
 
@@ -1385,10 +1385,10 @@ class TestDeepEvalBrandFabricationGate:
         return values like 0.73 that should land at 73.0."""
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.evaluate_brand_fabrication",
+            "poindexter.services.deepeval_rails.evaluate_brand_fabrication",
             return_value=(True, 0.73, "graded score"),
         ), patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ):
             result = qa._check_deepeval_brand("body text", "topic")
 
@@ -1409,7 +1409,7 @@ class TestDeepEvalGEvalGate:
         a "rail skipped" no-op. Patch the resolver to return a sentinel
         so the rail proceeds along its happy path."""
         with patch(
-            "services.deepeval_rails._resolve_judge_model",
+            "poindexter.services.deepeval_rails._resolve_judge_model",
             new=AsyncMock(return_value="test-judge-model"),
         ):
             yield
@@ -1418,10 +1418,10 @@ class TestDeepEvalGEvalGate:
     async def test_high_score_returns_approved(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.evaluate_g_eval",
+            "poindexter.services.deepeval_rails.evaluate_g_eval",
             new=AsyncMock(return_value=(True, 0.9, "well grounded")),
         ), patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ):
             result = await qa._check_deepeval_g_eval(GOOD_CONTENT, GOOD_TOPIC)
 
@@ -1435,10 +1435,10 @@ class TestDeepEvalGEvalGate:
     async def test_low_score_returns_rejected(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.evaluate_g_eval",
+            "poindexter.services.deepeval_rails.evaluate_g_eval",
             new=AsyncMock(return_value=(False, 0.4, "vague claims")),
         ), patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ):
             result = await qa._check_deepeval_g_eval("body", "topic")
 
@@ -1451,9 +1451,9 @@ class TestDeepEvalGEvalGate:
     async def test_returns_none_when_rail_disabled(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.is_enabled", return_value=False,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=False,
         ), patch(
-            "services.deepeval_rails.evaluate_g_eval",
+            "poindexter.services.deepeval_rails.evaluate_g_eval",
         ) as judge_mock:
             result = await qa._check_deepeval_g_eval(GOOD_CONTENT, GOOD_TOPIC)
 
@@ -1471,10 +1471,10 @@ class TestDeepEvalGEvalGate:
         qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         with patch(
-            "services.deepeval_rails.evaluate_g_eval",
+            "poindexter.services.deepeval_rails.evaluate_g_eval",
             new=AsyncMock(return_value=(True, 0.9, "ok")),
         ) as judge_mock, patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ):
             await qa._check_deepeval_g_eval("body", "topic")
 
@@ -1496,10 +1496,10 @@ class TestDeepEvalGEvalGate:
         qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         with patch(
-            "services.deepeval_rails.evaluate_g_eval",
+            "poindexter.services.deepeval_rails.evaluate_g_eval",
             return_value=(True, 0.9, "ok"),
         ) as judge_mock, patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ):
             await qa._check_deepeval_g_eval("body", "topic")
 
@@ -1518,7 +1518,7 @@ class TestDeepEvalFaithfulnessGate:
     def _stub_resolve_judge_model(self):
         # See TestDeepEvalGEvalGate — same fail-loud-but-skip pattern.
         with patch(
-            "services.deepeval_rails._resolve_judge_model",
+            "poindexter.services.deepeval_rails._resolve_judge_model",
             new=AsyncMock(return_value="test-judge-model"),
         ):
             yield
@@ -1527,9 +1527,9 @@ class TestDeepEvalFaithfulnessGate:
     async def test_skips_without_research(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.evaluate_faithfulness",
+            "poindexter.services.deepeval_rails.evaluate_faithfulness",
         ) as judge_mock, patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ):
             result = await qa._check_deepeval_faithfulness(
                 "body", research_sources=None,
@@ -1542,10 +1542,10 @@ class TestDeepEvalFaithfulnessGate:
     async def test_grounded_post_passes(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.evaluate_faithfulness",
+            "poindexter.services.deepeval_rails.evaluate_faithfulness",
             new=AsyncMock(return_value=(True, 0.95, "all claims attributable")),
         ) as judge_mock, patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ):
             result = await qa._check_deepeval_faithfulness(
                 "FastAPI uses uvicorn.",
@@ -1566,9 +1566,9 @@ class TestDeepEvalFaithfulnessGate:
     async def test_returns_none_when_rail_disabled(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.is_enabled", return_value=False,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=False,
         ), patch(
-            "services.deepeval_rails.evaluate_faithfulness",
+            "poindexter.services.deepeval_rails.evaluate_faithfulness",
         ) as judge_mock:
             result = await qa._check_deepeval_faithfulness(
                 "body", "research bundle text",
@@ -1589,10 +1589,10 @@ class TestDeepEvalFaithfulnessGate:
         qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         with patch(
-            "services.deepeval_rails.evaluate_faithfulness",
+            "poindexter.services.deepeval_rails.evaluate_faithfulness",
             new=AsyncMock(return_value=(True, 0.95, "ok")),
         ) as judge_mock, patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ), caplog.at_level("WARNING"):
             await qa._check_deepeval_faithfulness(
                 "body", research_sources="some research text",
@@ -1627,7 +1627,7 @@ class TestCitationsThresholdReads:
         # Short-circuit before the citation_verifier work — the threshold
         # warnings fire during the settings reads earlier in the function.
         with caplog.at_level("WARNING"), patch(
-            "services.citation_verifier.CitationVerifier.verify_citations",
+            "poindexter.services.citation_verifier.CitationVerifier.verify_citations",
             new=AsyncMock(side_effect=RuntimeError("stop here")),
         ):
             await qa._check_citations("body with no urls")
@@ -1649,7 +1649,7 @@ class TestCitationsThresholdReads:
         # Short-circuit before the citation_verifier work — the threshold
         # warnings fire during the settings reads earlier in the function.
         with caplog.at_level("WARNING"), patch(
-            "services.citation_verifier.CitationVerifier.verify_citations",
+            "poindexter.services.citation_verifier.CitationVerifier.verify_citations",
             new=AsyncMock(side_effect=RuntimeError("stop here")),
         ):
             await qa._check_citations("body with no urls")
@@ -1671,7 +1671,7 @@ class TestCitationsThresholdReads:
         # Short-circuit before the citation_verifier work — the threshold
         # warnings fire during the settings reads earlier in the function.
         with caplog.at_level("WARNING"), patch(
-            "services.citation_verifier.CitationVerifier.verify_citations",
+            "poindexter.services.citation_verifier.CitationVerifier.verify_citations",
             new=AsyncMock(side_effect=RuntimeError("stop here")),
         ):
             await qa._check_citations("body with no urls")
@@ -1697,10 +1697,10 @@ class TestGuardrailsBrandGate:
     async def test_clean_content_returns_score_100(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails.run_brand_guard",
+            "poindexter.services.guardrails_rails.run_brand_guard",
             return_value=(True, None),
         ), patch(
-            "services.guardrails_rails.is_enabled", return_value=True,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=True,
         ):
             result = await qa._check_guardrails_brand(GOOD_CONTENT)
 
@@ -1714,10 +1714,10 @@ class TestGuardrailsBrandGate:
     async def test_fabrication_detected_returns_score_0(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails.run_brand_guard",
+            "poindexter.services.guardrails_rails.run_brand_guard",
             return_value=(False, "fake_quote: 'Bill Gates said...'"),
         ), patch(
-            "services.guardrails_rails.is_enabled", return_value=True,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=True,
         ):
             result = await qa._check_guardrails_brand("body text")
 
@@ -1730,9 +1730,9 @@ class TestGuardrailsBrandGate:
     async def test_returns_none_when_disabled(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails.is_enabled", return_value=False,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=False,
         ), patch(
-            "services.guardrails_rails.run_brand_guard",
+            "poindexter.services.guardrails_rails.run_brand_guard",
         ) as run_mock:
             result = await qa._check_guardrails_brand(GOOD_CONTENT)
 
@@ -1753,12 +1753,12 @@ class TestGuardrailsCompetitorGate:
     async def test_skips_with_empty_competitor_list(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails._resolve_competitors",
+            "poindexter.services.guardrails_rails._resolve_competitors",
             return_value=[],
         ), patch(
-            "services.guardrails_rails.is_enabled", return_value=True,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=True,
         ), patch(
-            "services.guardrails_rails.run_competitor_guard",
+            "poindexter.services.guardrails_rails.run_competitor_guard",
         ) as run_mock:
             result = await qa._check_guardrails_competitor("body")
 
@@ -1769,13 +1769,13 @@ class TestGuardrailsCompetitorGate:
     async def test_clean_content_with_list_passes(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails._resolve_competitors",
+            "poindexter.services.guardrails_rails._resolve_competitors",
             return_value=["Acme", "Foo"],
         ), patch(
-            "services.guardrails_rails.run_competitor_guard",
+            "poindexter.services.guardrails_rails.run_competitor_guard",
             return_value=(True, None),
         ), patch(
-            "services.guardrails_rails.is_enabled", return_value=True,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=True,
         ):
             result = await qa._check_guardrails_competitor(
                 "Post about FastAPI and uvicorn.",
@@ -1790,13 +1790,13 @@ class TestGuardrailsCompetitorGate:
     async def test_competitor_mention_fails(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails._resolve_competitors",
+            "poindexter.services.guardrails_rails._resolve_competitors",
             return_value=["Acme"],
         ), patch(
-            "services.guardrails_rails.run_competitor_guard",
+            "poindexter.services.guardrails_rails.run_competitor_guard",
             return_value=(False, "Competitor-mention validator flagged 1 brand(s): Acme"),
         ), patch(
-            "services.guardrails_rails.is_enabled", return_value=True,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=True,
         ):
             result = await qa._check_guardrails_competitor(
                 "We've been using Acme for years.",
@@ -1811,9 +1811,9 @@ class TestGuardrailsCompetitorGate:
     async def test_returns_none_when_rail_disabled(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails.is_enabled", return_value=False,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=False,
         ), patch(
-            "services.guardrails_rails.run_competitor_guard",
+            "poindexter.services.guardrails_rails.run_competitor_guard",
         ) as run_mock:
             result = await qa._check_guardrails_competitor("body")
 
@@ -1835,9 +1835,9 @@ class TestRagasEvalGate:
     async def test_skips_without_research(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.evaluate_sample",
+            "poindexter.services.ragas_eval.evaluate_sample",
         ) as eval_mock, patch(
-            "services.ragas_eval.is_enabled", return_value=True,
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
         ):
             result = await qa._check_ragas_eval(
                 "body", "topic", research_sources=None,
@@ -1850,9 +1850,9 @@ class TestRagasEvalGate:
     async def test_skips_when_disabled(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.is_enabled", return_value=False,
+            "poindexter.services.ragas_eval.is_enabled", return_value=False,
         ), patch(
-            "services.ragas_eval.evaluate_sample",
+            "poindexter.services.ragas_eval.evaluate_sample",
         ) as eval_mock:
             result = await qa._check_ragas_eval(
                 "body", "topic", "research bundle",
@@ -1865,14 +1865,14 @@ class TestRagasEvalGate:
     async def test_averages_three_scores(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.evaluate_sample",
+            "poindexter.services.ragas_eval.evaluate_sample",
             new=AsyncMock(return_value={
                 "faithfulness": 0.9,
                 "answer_relevancy": 0.8,
                 "context_precision": 0.7,
             }),
         ), patch(
-            "services.ragas_eval.is_enabled", return_value=True,
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
         ):
             result = await qa._check_ragas_eval(
                 "body", "topic", "ctx1\n\nctx2",
@@ -1895,14 +1895,14 @@ class TestRagasEvalGate:
         sentinel and average just the valid metrics."""
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.evaluate_sample",
+            "poindexter.services.ragas_eval.evaluate_sample",
             new=AsyncMock(return_value={
                 "faithfulness": 0.9,
                 "answer_relevancy": -1.0,  # judge errored on this metric
                 "context_precision": 0.7,
             }),
         ), patch(
-            "services.ragas_eval.is_enabled", return_value=True,
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
         ):
             result = await qa._check_ragas_eval(
                 "body", "topic", "ctx",
@@ -1916,14 +1916,14 @@ class TestRagasEvalGate:
     async def test_returns_none_when_all_metrics_failed(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.evaluate_sample",
+            "poindexter.services.ragas_eval.evaluate_sample",
             new=AsyncMock(return_value={
                 "faithfulness": -1.0,
                 "answer_relevancy": -1.0,
                 "context_precision": -1.0,
             }),
         ), patch(
-            "services.ragas_eval.is_enabled", return_value=True,
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
         ):
             result = await qa._check_ragas_eval(
                 "body", "topic", "ctx",
@@ -1935,14 +1935,14 @@ class TestRagasEvalGate:
     async def test_low_score_marks_unapproved(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.evaluate_sample",
+            "poindexter.services.ragas_eval.evaluate_sample",
             new=AsyncMock(return_value={
                 "faithfulness": 0.3,
                 "answer_relevancy": 0.4,
                 "context_precision": 0.5,
             }),
         ), patch(
-            "services.ragas_eval.is_enabled", return_value=True,
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
         ):
             result = await qa._check_ragas_eval(
                 "body", "topic", "ctx",
@@ -2022,7 +2022,7 @@ class TestReviewerFailureWiredIntoRails:
         # sentinel and let the rail proceed to the call that's mocked
         # to raise.
         with patch(
-            "services.deepeval_rails._resolve_judge_model",
+            "poindexter.services.deepeval_rails._resolve_judge_model",
             new=AsyncMock(return_value="test-judge-model"),
         ):
             yield
@@ -2031,10 +2031,10 @@ class TestReviewerFailureWiredIntoRails:
     async def test_deepeval_g_eval_failure_surfaces(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.evaluate_g_eval",
+            "poindexter.services.deepeval_rails.evaluate_g_eval",
             side_effect=RuntimeError("judge unreachable"),
         ), patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:
@@ -2048,10 +2048,10 @@ class TestReviewerFailureWiredIntoRails:
     async def test_deepeval_faithfulness_failure_surfaces(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.evaluate_faithfulness",
+            "poindexter.services.deepeval_rails.evaluate_faithfulness",
             side_effect=RuntimeError("judge unreachable"),
         ), patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:
@@ -2065,10 +2065,10 @@ class TestReviewerFailureWiredIntoRails:
     async def test_guardrails_brand_failure_surfaces(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails.run_brand_guard",
+            "poindexter.services.guardrails_rails.run_brand_guard",
             side_effect=RuntimeError("validator import failure"),
         ), patch(
-            "services.guardrails_rails.is_enabled", return_value=True,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=True,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:
@@ -2082,13 +2082,13 @@ class TestReviewerFailureWiredIntoRails:
     async def test_guardrails_competitor_failure_surfaces(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails._resolve_competitors",
+            "poindexter.services.guardrails_rails._resolve_competitors",
             return_value=["Acme"],
         ), patch(
-            "services.guardrails_rails.run_competitor_guard",
+            "poindexter.services.guardrails_rails.run_competitor_guard",
             side_effect=RuntimeError("validator threw"),
         ), patch(
-            "services.guardrails_rails.is_enabled", return_value=True,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=True,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:
@@ -2102,10 +2102,10 @@ class TestReviewerFailureWiredIntoRails:
     async def test_ragas_eval_failure_surfaces(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.evaluate_sample",
+            "poindexter.services.ragas_eval.evaluate_sample",
             new=AsyncMock(side_effect=RuntimeError("ragas exploded")),
         ), patch(
-            "services.ragas_eval.is_enabled", return_value=True,
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:

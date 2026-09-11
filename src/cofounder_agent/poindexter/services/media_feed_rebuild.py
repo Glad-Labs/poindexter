@@ -143,7 +143,7 @@ async def _fetch_rendered_feed(site_config: Any, route: str) -> str | None:
     try:
         import httpx
 
-        from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
+        from poindexter.services.bootstrap_defaults import DEFAULT_WORKER_API_URL
 
         api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
         async with httpx.AsyncClient(
@@ -163,7 +163,7 @@ async def _upload_feed(
 ) -> bool:
     """Write ``body`` to a temp file and upload it to R2 ``r2_path``."""
     try:
-        from services.r2_upload_service import R2UploadService
+        from poindexter.services.r2_upload_service import R2UploadService
 
         fd, feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-feed-")
         try:
@@ -196,7 +196,7 @@ async def _read_published_feed(site_config: Any, r2_path: str) -> str | None:
     would manufacture phantom drift (and an R2 write) on every cycle.
     """
     try:
-        from services.r2_upload_service import R2UploadService
+        from poindexter.services.r2_upload_service import R2UploadService
 
         return await R2UploadService(site_config=site_config).get_object_text(r2_path)
     except Exception as exc:  # noqa: BLE001 — absent object is a valid answer

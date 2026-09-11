@@ -36,7 +36,7 @@ from modules.content.atoms._qa_rail_common import (
     resolve_gate_states,
 )
 from plugins.atom import AtomMeta, FieldSpec
-from services.audit_event_schemas import validate_event_details
+from poindexter.services.audit_event_schemas import validate_event_details
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -517,7 +517,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     pool = resolve_pool(state, atom="qa.aggregate")
     if pool is not None:
         try:
-            from services.qa_gates_db_writer import record_chain_run
+            from poindexter.services.qa_gates_db_writer import record_chain_run
             await record_chain_run(pool, reviews)
         except Exception as exc:  # noqa: BLE001
             # WARNING for the same reason as the qa_pass_completed write

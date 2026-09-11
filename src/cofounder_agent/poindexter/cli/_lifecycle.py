@@ -41,9 +41,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from services.bootstrap import build_container
-from services.container import AppContainer
-from services.logger_config import get_logger
+from poindexter.services.bootstrap import build_container
+from poindexter.services.container import AppContainer
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

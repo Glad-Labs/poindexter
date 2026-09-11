@@ -10,7 +10,7 @@ Uses httpx + beautifulsoup4 (already deps). Respects timeouts, user-agent,
 and returns a structured dict compatible with DiscoveredTopic.
 
 Usage:
-    from services.url_scraper import URLScraper
+    from poindexter.services.url_scraper import URLScraper
 
     scraper = URLScraper(site_config=site_config)
     result = await scraper.scrape_url("https://example.com/post")
@@ -39,7 +39,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 

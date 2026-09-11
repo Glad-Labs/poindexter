@@ -8,7 +8,7 @@ handle_error() helper. All tests are pure-function — zero DB or network calls.
 import pytest
 from fastapi import status
 
-from services.error_handler import (
+from poindexter.services.error_handler import (
     AppError,
     AppTimeoutError,
     ConflictError,
@@ -194,7 +194,7 @@ class TestHandleError:
 @pytest.mark.unit
 class TestCreateErrorResponse:
     def test_app_error_passes_through_request_id(self):
-        from services.error_handler import create_error_response
+        from poindexter.services.error_handler import create_error_response
 
         err = ValidationError("bad field")
         response = create_error_response(err, request_id="req-42")
@@ -203,7 +203,7 @@ class TestCreateErrorResponse:
         assert response.error_code == ErrorCode.VALIDATION_ERROR.value
 
     def test_generic_exception_converted_via_handle_error(self):
-        from services.error_handler import create_error_response
+        from poindexter.services.error_handler import create_error_response
 
         exc = RuntimeError("crash")
         response = create_error_response(exc, request_id="req-1")
@@ -217,7 +217,7 @@ class TestCreateErrorResponse:
         )
 
     def test_request_id_optional(self):
-        from services.error_handler import create_error_response
+        from poindexter.services.error_handler import create_error_response
 
         err = NotFoundError("task missing", resource_type="task")
         response = create_error_response(err)
@@ -227,7 +227,7 @@ class TestCreateErrorResponse:
 
     def test_app_error_request_id_is_overwritten(self):
         """If the AppError already had a request_id, create_error_response should set the new one."""
-        from services.error_handler import create_error_response
+        from poindexter.services.error_handler import create_error_response
 
         err = ValidationError("bad", request_id="old-req")
         response = create_error_response(err, request_id="new-req")

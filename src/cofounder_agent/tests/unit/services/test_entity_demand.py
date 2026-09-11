@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services import entity_demand as ed
+from poindexter.services import entity_demand as ed
 
 # ---------------------------------------------------------------------------
 # Pure math + guards
@@ -70,7 +70,7 @@ def test_article_match_requires_a_shared_content_token():
 
 @pytest.mark.asyncio
 async def test_no_client_outside_lifespan_is_unknown_not_egress(monkeypatch):
-    from services import http_client as hc
+    from poindexter.services import http_client as hc
 
     monkeypatch.setattr(hc, "http_client", None)
     assert ed.WikipediaDemandScorer.shared_client_available() is False
@@ -182,8 +182,8 @@ def test_settings_from_site_config_reads_every_key_and_tolerates_stubs():
 
 
 def test_defaults_are_seeded_and_categorised():
-    from services.settings_categories import resolve_category
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_categories import resolve_category
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     for k in (ed.ENABLED_KEY, ed.MIN_VIEWS_KEY, ed.MAX_FACTOR_KEY, ed.LANG_KEY,
               ed.CACHE_DAYS_KEY, ed.TIMEOUT_KEY, ed.DUAL_FACTOR_KEY,

@@ -545,7 +545,7 @@ async def _maybe_run_preview_qa(
         # MultiModelQA needs a settings_service kwarg so we resolve
         # one if the caller didn't pass it in.
         from modules.content.api import MultiModelQA
-        from services.container import get_service
+        from poindexter.services.container import get_service
 
         _settings_svc = settings_service or get_service("settings")
         # Resolve preview URL to one reachable from inside the worker
@@ -682,7 +682,7 @@ async def _notify_operator(
     msg += f"Approve: /approve-post {task_id[:8]}"
 
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         await notify_operator(msg, critical=True, site_config=site_config)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -763,7 +763,7 @@ async def _notify_operator_rejected(
     msg += f"Task {task_id[:8]} — rejected at the QA gate, no action needed."
 
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         await notify_operator(msg, critical=False, site_config=site_config)
     except Exception as exc:  # noqa: BLE001
         logger.warning(

@@ -11,7 +11,7 @@ This module is a pure **copy generator**. Distribution is owned elsewhere:
 which are then approved and pushed to each platform through Postiz
 (``services.social_drafts`` / ``services.integrations.postiz_client``).
 
-    from services.social_poster import generate_social_posts
+    from poindexter.services.social_poster import generate_social_posts
 
     posts = await generate_social_posts(
         title="Why Local LLMs Beat Cloud APIs",
@@ -33,12 +33,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from services.distribution_ref import tag_for
-from services.integrations.operator_notify import notify_operator
-from services.llm_providers.dispatcher import dispatch_complete
-from services.llm_providers.thinking_models import strip_think_blocks
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.distribution_ref import tag_for
+from poindexter.services.integrations.operator_notify import notify_operator
+from poindexter.services.llm_providers.dispatcher import dispatch_complete
+from poindexter.services.llm_providers.thinking_models import strip_think_blocks
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 # SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
 # ``set_site_config`` setter were removed. Injection is mandatory — the
@@ -171,7 +171,7 @@ def _resolve_social_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
     ``feedback_prompts_must_be_db_configurable``.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(key, **kwargs)
     except Exception as exc:  # noqa: BLE001
         logger.error(

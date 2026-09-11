@@ -49,7 +49,7 @@ async def _run(*, render_result, fanout_mock, sc, pool=None):
             "modules.content.stages.source_featured_image._upload_featured_to_r2",
             new=AsyncMock(return_value="https://r2.example/img.webp"),
         ) as upload,
-        patch("services.image_fanout.run_featured_fanout", fanout_mock),
+        patch("poindexter.services.image_fanout.run_featured_fanout", fanout_mock),
     ):
         result = await _try_image_gen_featured(
             subject="a stuck task in a queue",

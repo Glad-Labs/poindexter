@@ -15,9 +15,9 @@ import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-import services.jobs.findings_alert_router as router_mod
+import poindexter.services.jobs.findings_alert_router as router_mod
 from plugins.job import JobResult
-from services.jobs.findings_alert_router import (
+from poindexter.services.jobs.findings_alert_router import (
     _AUTOFIX_JOBS,
     _SEV_RANK,
     FindingsAlertRouterJob,
@@ -26,10 +26,10 @@ from services.jobs.findings_alert_router import (
     _delivery_for,
     _normalize_severity,
 )
-from services.jobs.fix_broken_external_links import FixBrokenExternalLinksJob as _FBEL
-from services.jobs.fix_broken_internal_links import FixBrokenInternalLinksJob as _FBIL
-from services.jobs.fix_missing_seo import FixMissingSeoJob as _FMSEO
-from services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob as _FUP
+from poindexter.services.jobs.fix_broken_external_links import FixBrokenExternalLinksJob as _FBEL
+from poindexter.services.jobs.fix_broken_internal_links import FixBrokenInternalLinksJob as _FBIL
+from poindexter.services.jobs.fix_missing_seo import FixMissingSeoJob as _FMSEO
+from poindexter.services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob as _FUP
 
 # No module-level ``pytestmark = pytest.mark.asyncio``: the project runs
 # ``asyncio_mode = "auto"`` (pyproject.toml), so coroutine tests are
@@ -186,7 +186,7 @@ async def test_run_skips_info_severity():
     job side: even if the fetch somehow returned an info row, the SQL
     is what blocks it (verified via the literal ``_ROUTABLE_SEVERITIES``
     tuple)."""
-    from services.jobs.findings_alert_router import _ROUTABLE_SEVERITIES
+    from poindexter.services.jobs.findings_alert_router import _ROUTABLE_SEVERITIES
     assert "info" not in _ROUTABLE_SEVERITIES
     assert set(_ROUTABLE_SEVERITIES) == {"warn", "warning", "critical"}
 
@@ -464,7 +464,7 @@ async def test_run_auto_fix_triggers_mapped_job(monkeypatch):
             return JobResult(ok=True, detail="fixed 2", changes_made=2)
 
     monkeypatch.setattr(
-        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        "poindexter.services.jobs.findings_alert_router._AUTOFIX_JOBS",
         {"broken_external_link": _FakeFixJob},
     )
     pool, conn = _pool_with(
@@ -489,7 +489,7 @@ async def test_run_auto_fix_fallback_routes_when_job_returns_not_ok(monkeypatch)
             return JobResult(ok=False, detail="nothing to fix", changes_made=0)
 
     monkeypatch.setattr(
-        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        "poindexter.services.jobs.findings_alert_router._AUTOFIX_JOBS",
         {"broken_external_link": _FailFixJob},
     )
     pool, conn = _pool_with(
@@ -513,7 +513,7 @@ async def test_run_auto_fix_log_only_fallback_suppresses_when_job_not_ok(monkeyp
             return JobResult(ok=False, detail="nothing", changes_made=0)
 
     monkeypatch.setattr(
-        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        "poindexter.services.jobs.findings_alert_router._AUTOFIX_JOBS",
         {"broken_external_link": _FailFixJob},
     )
     pool, conn = _pool_with(
@@ -654,7 +654,7 @@ async def test_github_issue_defaults_to_finding_label_only(monkeypatch):
 
 async def test_run_github_issue_counts_filed(monkeypatch):
     monkeypatch.setattr(
-        "services.jobs.findings_alert_router._dispatch_github_issue",
+        "poindexter.services.jobs.findings_alert_router._dispatch_github_issue",
         AsyncMock(return_value=True),
     )
     pool, conn = _pool_with(
@@ -755,7 +755,7 @@ async def test_deliver_fallback_telegram_carries_force_channel(monkeypatch):
             return JobResult(ok=False, detail="nope", changes_made=0)
 
     monkeypatch.setattr(
-        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        "poindexter.services.jobs.findings_alert_router._AUTOFIX_JOBS",
         {"broken_external_link": _FailFixJob},
     )
     rows = [{"id": 403, "source": "lc", "severity": "warn",
@@ -789,7 +789,7 @@ async def test_run_critical_auto_fix_log_only_fallback_still_routes(monkeypatch)
             return JobResult(ok=False, detail="nothing", changes_made=0)
 
     monkeypatch.setattr(
-        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        "poindexter.services.jobs.findings_alert_router._AUTOFIX_JOBS",
         {"broken_external_link": _FailFixJob},
     )
     rows = [{"id": 410, "source": "lc", "severity": "critical",

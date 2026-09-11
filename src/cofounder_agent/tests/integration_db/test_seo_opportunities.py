@@ -46,7 +46,7 @@ async def test_seo_opportunities_table_exists_with_expected_columns(test_pool):
 
 
 async def test_analyze_classifies_and_upserts(test_pool):
-    from services.seo.striking_distance import DEFAULT_THRESHOLDS, analyze_and_upsert
+    from poindexter.services.seo.striking_distance import DEFAULT_THRESHOLDS, analyze_and_upsert
 
     post_id = uuid4()
     slug = f"seo-test-{post_id.hex[:8]}"
@@ -105,7 +105,7 @@ async def test_analyze_classifies_and_upserts(test_pool):
 async def test_upsert_preserves_non_open_status(test_pool):
     """A queued/refreshed/dismissed row must NOT be flipped back to 'open' by the
     daily analyzer upsert, or auto-enqueue would re-refresh it forever (#763)."""
-    from services.seo.striking_distance import DEFAULT_THRESHOLDS, analyze_and_upsert
+    from poindexter.services.seo.striking_distance import DEFAULT_THRESHOLDS, analyze_and_upsert
 
     post_id = uuid4()
     slug = f"seo-latch-{post_id.hex[:8]}"

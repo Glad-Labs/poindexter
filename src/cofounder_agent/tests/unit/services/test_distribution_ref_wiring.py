@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import pytest
 
-from services.devto_service import DevToCrossPostService, _append_origin_backlink
-from services.jobs.youtube_payload import _build_youtube_description
-from services.site_config import SiteConfig
-from services.social_drafts import _ensure_post_url
+from poindexter.services.devto_service import DevToCrossPostService, _append_origin_backlink
+from poindexter.services.jobs.youtube_payload import _build_youtube_description
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.social_drafts import _ensure_post_url
 
 SITE_URL = "https://www.gladlabs.io"
 SLUG = "a-morse-code-headline-28431849"

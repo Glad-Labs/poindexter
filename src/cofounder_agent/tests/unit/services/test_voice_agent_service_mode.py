@@ -241,7 +241,7 @@ _ensure_pipecat_stubs()
 
 
 # Now that stubs are in place, importing the module is safe.
-from services import voice_agent_livekit  # noqa: E402
+from poindexter.services import voice_agent_livekit  # noqa: E402
 
 
 class _FakeSiteConfig:
@@ -286,7 +286,7 @@ def fake_pool_and_config(monkeypatch):
     # real codebase; replace it with a swappable handle for the test.
     site_cfg_holder: dict[str, _FakeSiteConfig] = {"cfg": _FakeSiteConfig({})}
 
-    fake_site_config_module = types.ModuleType("services.site_config")
+    fake_site_config_module = types.ModuleType("poindexter.services.site_config")
 
     class _SwappableSiteConfig:
         def __init__(self):
@@ -299,7 +299,7 @@ def fake_pool_and_config(monkeypatch):
             return None
 
     fake_site_config_module.SiteConfig = _SwappableSiteConfig
-    monkeypatch.setitem(sys.modules, "services.site_config", fake_site_config_module)
+    monkeypatch.setitem(sys.modules, "poindexter.services.site_config", fake_site_config_module)
 
     return site_cfg_holder
 

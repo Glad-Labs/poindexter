@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from services import agent_permissions
+from poindexter.services import agent_permissions
 
 pytestmark = [
     pytest.mark.integration_db,

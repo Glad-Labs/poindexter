@@ -65,7 +65,7 @@ async def _run_podcast_pipeline(pool: Any, site_config: Any, task_id: str) -> No
     """Run the ``podcast_pipeline`` graph for one source task under a
     podcast-scoped ``thread_id`` so its checkpoint never collides with the
     source ``canonical_blog`` or the video ``media_pipeline`` run."""
-    from services.template_runner import TemplateRunner
+    from poindexter.services.template_runner import TemplateRunner
 
     runner = TemplateRunner(pool, site_config=site_config)
     await runner.run(

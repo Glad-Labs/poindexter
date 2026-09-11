@@ -14,7 +14,7 @@ See docs/architecture/business-os-endgame.md.
 
 from __future__ import annotations
 
-from services.prompt_manager import UnifiedPromptManager
+from poindexter.services.prompt_manager import UnifiedPromptManager
 
 _VIDEO_KEYS = ("video.short_form_narration",)
 

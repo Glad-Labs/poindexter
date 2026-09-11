@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.topic_source import DiscoveredTopic
-from services.integrations.handlers.tap_builtin_topic_source import builtin_topic_source
+from poindexter.services.integrations.handlers.tap_builtin_topic_source import builtin_topic_source
 
 
 def _make_pool():
@@ -55,17 +55,17 @@ async def test_dispatches_single_source_with_niche_context_and_inserts():
     src.extract = AsyncMock(side_effect=_extract)
 
     with patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
         return_value=[src],
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.NicheService",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.NicheService",
     ) as NS, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
         AsyncMock(return_value=SimpleNamespace(config={})),
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
     ) as GD, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
         AsyncMock(return_value=1),
     ) as INS:
         NS.return_value.get_by_id = AsyncMock(return_value=_niche())
@@ -110,20 +110,20 @@ async def test_ingest_sanity_gate_drops_contentless_topics_and_emits_finding():
     site_config.get_int = MagicMock(return_value=2)
 
     with patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
         return_value=[src],
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.NicheService",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.NicheService",
     ) as NS, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
         AsyncMock(return_value=SimpleNamespace(config={})),
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
     ) as GD, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
         AsyncMock(return_value=1),
     ) as INS, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.emit_finding",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.emit_finding",
     ) as EMIT:
         NS.return_value.get_by_id = AsyncMock(return_value=_niche())
         GD.return_value.mark_duplicates = AsyncMock(return_value=None)
@@ -161,20 +161,20 @@ async def test_ingest_sanity_gate_noop_when_all_topics_sane():
     site_config.get_int = MagicMock(return_value=2)
 
     with patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
         return_value=[src],
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.NicheService",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.NicheService",
     ) as NS, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
         AsyncMock(return_value=SimpleNamespace(config={})),
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
     ) as GD, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
         AsyncMock(return_value=1),
     ) as INS, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.emit_finding",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.emit_finding",
     ) as EMIT:
         NS.return_value.get_by_id = AsyncMock(return_value=_niche())
         GD.return_value.mark_duplicates = AsyncMock(return_value=None)
@@ -196,10 +196,10 @@ async def test_ingest_sanity_gate_noop_when_all_topics_sane():
 async def test_unregistered_source_fails_loud():
     pool, _ = _make_pool()
     with patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
         return_value=[],
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.NicheService",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.NicheService",
     ) as NS:
         NS.return_value.get_by_id = AsyncMock(return_value=_niche())
         with pytest.raises(ValueError):
@@ -248,20 +248,20 @@ async def test_self_reference_gate_drops_own_site_and_emits_finding():
     }.get(k, d))
 
     with patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
         return_value=[src],
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.NicheService",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.NicheService",
     ) as NS, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
         AsyncMock(return_value=SimpleNamespace(config={})),
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
     ) as GD, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
         AsyncMock(return_value=1),
     ) as INS, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.emit_finding",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.emit_finding",
     ) as EMIT:
         NS.return_value.get_by_id = AsyncMock(return_value=_niche())
         GD.return_value.mark_duplicates = AsyncMock(return_value=None)
@@ -309,20 +309,20 @@ async def test_self_reference_gate_inert_when_site_url_unset():
     site_config.get = MagicMock(side_effect=lambda k, d=None: d)
 
     with patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
         return_value=[src],
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.NicheService",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.NicheService",
     ) as NS, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
         AsyncMock(return_value=SimpleNamespace(config={})),
     ), patch(
-        "services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
     ) as GD, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
         AsyncMock(return_value=1),
     ) as INS, patch(
-        "services.integrations.handlers.tap_builtin_topic_source.emit_finding",
+        "poindexter.services.integrations.handlers.tap_builtin_topic_source.emit_finding",
     ) as EMIT:
         NS.return_value.get_by_id = AsyncMock(return_value=_niche())
         GD.return_value.mark_duplicates = AsyncMock(return_value=None)

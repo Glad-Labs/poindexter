@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import services.content_router_service as crs
+import poindexter.services.content_router_service as crs
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -48,7 +48,7 @@ _RESULT = {
 async def test_experiment_outcome_failure_emits_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.pipeline_experiment_hook.record_pipeline_outcome",
+        "poindexter.services.pipeline_experiment_hook.record_pipeline_outcome",
         AsyncMock(side_effect=RuntimeError("record_outcome boom")),
     )
 
@@ -70,7 +70,7 @@ async def test_experiment_outcome_failure_emits_finding(monkeypatch):
 async def test_experiment_outcome_success_emits_no_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.pipeline_experiment_hook.record_pipeline_outcome",
+        "poindexter.services.pipeline_experiment_hook.record_pipeline_outcome",
         AsyncMock(return_value=None),
     )
 

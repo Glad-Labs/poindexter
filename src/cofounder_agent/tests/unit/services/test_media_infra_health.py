@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services import media_infra_health as mih
-from services.site_config import SiteConfig
+from poindexter.services import media_infra_health as mih
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**overrides):
@@ -75,7 +75,7 @@ class TestVramGate:
     async def test_insufficient_vram_defers(self):
         factory = _client_factory({_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200})
         with patch(
-            "services.render_vram.render_gpu_free_vram_gb",
+            "poindexter.services.render_vram.render_gpu_free_vram_gb",
             new=AsyncMock(return_value=20.0),
         ):
             out = await mih.check_media_infra_health(
@@ -93,7 +93,7 @@ class TestVramGate:
     async def test_sufficient_vram_is_healthy(self):
         factory = _client_factory({_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200})
         with patch(
-            "services.render_vram.render_gpu_free_vram_gb",
+            "poindexter.services.render_vram.render_gpu_free_vram_gb",
             new=AsyncMock(return_value=27.0),
         ):
             out = await mih.check_media_infra_health(
@@ -110,7 +110,7 @@ class TestVramGate:
     async def test_unreadable_vram_fails_closed(self):
         factory = _client_factory({_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200})
         with patch(
-            "services.render_vram.render_gpu_free_vram_gb",
+            "poindexter.services.render_vram.render_gpu_free_vram_gb",
             new=AsyncMock(return_value=None),
         ):
             out = await mih.check_media_infra_health(
@@ -124,7 +124,7 @@ class TestVramGate:
     async def test_gate_disabled_skips_vram_probe(self):
         factory = _client_factory({_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200})
         probe = AsyncMock(return_value=1.0)
-        with patch("services.render_vram.render_gpu_free_vram_gb", new=probe):
+        with patch("poindexter.services.render_vram.render_gpu_free_vram_gb", new=probe):
             out = await mih.check_media_infra_health(
                 _sc(media_render_vram_gate_enabled="false"),
                 http_client_factory=factory,

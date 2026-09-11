@@ -17,7 +17,7 @@ from middleware.api_token_auth import verify_api_token
 from tests.unit.routes.conftest import make_mock_db
 from utils.route_utils import get_database_dependency
 
-_SVC = "services.declarative_config_service"
+_SVC = "poindexter.services.declarative_config_service"
 
 
 def _app(mock_db=None):
@@ -88,7 +88,7 @@ class TestDataPlaneRoutes:
 
     def test_upsert_validation_error_returns_400(self):
         app, _ = _app()
-        from services.declarative_config_service import SurfaceValidationError
+        from poindexter.services.declarative_config_service import SurfaceValidationError
 
         with patch(
             f"{_SVC}.upsert_row",

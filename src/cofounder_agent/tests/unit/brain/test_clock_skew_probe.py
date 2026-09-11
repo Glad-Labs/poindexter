@@ -252,7 +252,7 @@ def test_seeded_defaults_match_in_code_fallback():
     """settings_defaults.py seeds and the in-code DEFAULT_* constants must
     agree — else a fresh install (seed) and a broken-settings fallback
     (in-code) behave differently."""
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["clock_skew_probe_enabled"] == "true"
     assert DEFAULTS["clock_skew_reference_url"] == DEFAULT_REFERENCE_URL

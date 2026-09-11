@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.prompt_manager import UnifiedPromptManager
+from poindexter.services.prompt_manager import UnifiedPromptManager
 
 # --------------------------------------------------------------------------- #
 # _init_langfuse_client — lazy build, fail-safe when prerequisites missing

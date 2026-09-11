@@ -11,7 +11,7 @@ brain_queue was dropped in migration 0080 (2026-04-21); not referenced here.
 from fastapi import APIRouter, Depends
 
 from middleware.api_token_auth import verify_api_token
-from services.brain_stats import get_brain_stats
+from poindexter.services.brain_stats import get_brain_stats
 from utils.route_utils import get_database_dependency
 
 router = APIRouter(

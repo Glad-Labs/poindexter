@@ -22,7 +22,7 @@ import modules.content.auto_publish_gate as auto_publish_gate
 import modules.content.internal_link_coherence as internal_link_coherence
 import modules.content.stages.source_featured_image as source_featured_image
 from modules.content.multi_model_qa import MultiModelQA
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 pytestmark = pytest.mark.unit
 
@@ -114,7 +114,7 @@ async def test_check_rendered_preview_emits_finding_on_import_failure(monkeypatc
     )
     qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
     # Force the deferred import to fail without touching the real module.
-    monkeypatch.setitem(sys.modules, "services.preview_screenshot", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.preview_screenshot", None)
 
     result = await qa._check_rendered_preview(
         "Some Title", "some topic", "https://preview.example/post",
@@ -134,7 +134,7 @@ async def test_record_featured_image_asset_emits_finding_on_import_failure(
     monkeypatch,
 ):
     calls = _capture(monkeypatch)
-    monkeypatch.setitem(sys.modules, "services.media_asset_recorder", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.media_asset_recorder", None)
 
     result = await source_featured_image._record_featured_image_asset(
         site_config=object(),

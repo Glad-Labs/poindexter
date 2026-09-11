@@ -24,7 +24,7 @@ import pytest
 class TestSocialPosterResolveModel:
     @pytest.mark.asyncio
     async def test_returns_pin(self):
-        from services.social_poster import _resolve_social_model
+        from poindexter.services.social_poster import _resolve_social_model
 
         sc = MagicMock()
         sc.get = MagicMock(return_value="ollama/llama3:latest")
@@ -33,12 +33,12 @@ class TestSocialPosterResolveModel:
 
     @pytest.mark.asyncio
     async def test_raises_when_pin_unset(self):
-        from services.social_poster import _resolve_social_model
+        from poindexter.services.social_poster import _resolve_social_model
 
         notify = AsyncMock()
         sc = MagicMock()
         sc.get = MagicMock(return_value=None)
-        with patch("services.social_poster.notify_operator", notify):
+        with patch("poindexter.services.social_poster.notify_operator", notify):
             with pytest.raises(RuntimeError):
                 await _resolve_social_model(site_config=sc)
         assert notify.await_count == 1
@@ -69,7 +69,7 @@ class TestAIContentGeneratorResolveRAGModel:
         sc = MagicMock()
         sc.get = MagicMock(return_value="")
         with patch(
-            "services.integrations.operator_notify.notify_operator", notify,
+            "poindexter.services.integrations.operator_notify.notify_operator", notify,
         ):
             with pytest.raises(RuntimeError):
                 await _resolve_rag_writer_model(site_config=sc)
@@ -85,7 +85,7 @@ class TestAIContentGeneratorResolveRAGModel:
 class TestRagasEvalResolveJudgeModel:
     @pytest.mark.asyncio
     async def test_returns_pin_keeps_prefix(self):
-        from services.ragas_eval import _resolve_judge_model
+        from poindexter.services.ragas_eval import _resolve_judge_model
 
         sc = MagicMock()
         sc.get = MagicMock(return_value="ollama/gemma3:27b-it-qat")
@@ -96,13 +96,13 @@ class TestRagasEvalResolveJudgeModel:
 
     @pytest.mark.asyncio
     async def test_raises_when_pin_unset(self):
-        from services.ragas_eval import _resolve_judge_model
+        from poindexter.services.ragas_eval import _resolve_judge_model
 
         sc = MagicMock()
         sc.get = MagicMock(return_value="")
         notify = AsyncMock()
         with patch(
-            "services.integrations.operator_notify.notify_operator", notify,
+            "poindexter.services.integrations.operator_notify.notify_operator", notify,
         ):
             with pytest.raises(RuntimeError):
                 await _resolve_judge_model(sc)
@@ -111,11 +111,11 @@ class TestRagasEvalResolveJudgeModel:
 
     @pytest.mark.asyncio
     async def test_no_site_config_raises(self):
-        from services.ragas_eval import _resolve_judge_model
+        from poindexter.services.ragas_eval import _resolve_judge_model
 
         notify = AsyncMock()
         with patch(
-            "services.integrations.operator_notify.notify_operator", notify,
+            "poindexter.services.integrations.operator_notify.notify_operator", notify,
         ):
             with pytest.raises(RuntimeError):
                 await _resolve_judge_model(None)

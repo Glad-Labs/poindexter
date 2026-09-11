@@ -44,10 +44,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from services.logger_config import get_logger
-from services.model_eval.golden_sets.retrieval import LEGACY_PREVIEW_CHARS
-from services.model_eval.metrics import mrr, ndcg_at_k, recall_at_k
-from services.model_eval.types import GoldenSet, MetricResult
+from poindexter.services.logger_config import get_logger
+from poindexter.services.model_eval.golden_sets.retrieval import LEGACY_PREVIEW_CHARS
+from poindexter.services.model_eval.metrics import mrr, ndcg_at_k, recall_at_k
+from poindexter.services.model_eval.types import GoldenSet, MetricResult
 
 logger = get_logger(__name__)
 
@@ -151,7 +151,7 @@ async def score_retrieval(
     document is a real, useful hit for every consumer, and penalising it would
     measure chunk-boundary luck instead of retrieval.
     """
-    from services.rag_engine import get_rag_retriever
+    from poindexter.services.rag_engine import get_rag_retriever
 
     # Explicit override wins so this is runnable from the HOST, where the
     # DB-configured host.docker.internal does not resolve (the same split

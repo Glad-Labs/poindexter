@@ -10,8 +10,8 @@ from typing import Any
 import click
 
 from poindexter.cli._dataplane import run_service
-from services.site_config import SiteConfig
-from services.social_drafts import SocialDraftsService
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.social_drafts import SocialDraftsService
 
 _svc = SocialDraftsService()
 

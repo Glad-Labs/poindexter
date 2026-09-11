@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 from utils.text_utils import extract_keywords_from_text
 
 from .prompt_manager import get_prompt_manager

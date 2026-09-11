@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 _TEST_SC = SiteConfig(initial_config={"site_url": "https://www.test-site.example.com"})
 
@@ -48,14 +48,14 @@ def _make_pool(post_row, *, flip="UPDATE 1"):
 class TestUnpublishPost:
     @pytest.mark.asyncio
     async def test_unpublishes_published_post_and_retires_slug(self):
-        from services.publish_service import unpublish_post
+        from poindexter.services.publish_service import unpublish_post
 
         pool, conn = _make_pool(
             {"id": "post-1", "slug": "bad-post", "status": "published"},
             flip="UPDATE 1",
         )
         with patch(
-            "services.static_export_service._retire_slug",
+            "poindexter.services.static_export_service._retire_slug",
             new=AsyncMock(),
         ) as retire:
             result = await unpublish_post(pool, "post-1", site_config=_TEST_SC)
@@ -70,11 +70,11 @@ class TestUnpublishPost:
 
     @pytest.mark.asyncio
     async def test_post_not_found_returns_reason_and_skips_retire(self):
-        from services.publish_service import unpublish_post
+        from poindexter.services.publish_service import unpublish_post
 
         pool, conn = _make_pool(None)
         with patch(
-            "services.static_export_service._retire_slug",
+            "poindexter.services.static_export_service._retire_slug",
             new=AsyncMock(),
         ) as retire:
             result = await unpublish_post(pool, "ghost", site_config=_TEST_SC)
@@ -86,7 +86,7 @@ class TestUnpublishPost:
 
     @pytest.mark.asyncio
     async def test_not_currently_published_is_idempotent_noop(self):
-        from services.publish_service import unpublish_post
+        from poindexter.services.publish_service import unpublish_post
 
         # Row exists but the guarded UPDATE (... WHERE status='published')
         # matches nothing because the post is already draft.
@@ -95,7 +95,7 @@ class TestUnpublishPost:
             flip="UPDATE 0",
         )
         with patch(
-            "services.static_export_service._retire_slug",
+            "poindexter.services.static_export_service._retire_slug",
             new=AsyncMock(),
         ) as retire:
             result = await unpublish_post(pool, "post-2", site_config=_TEST_SC)
@@ -106,14 +106,14 @@ class TestUnpublishPost:
 
     @pytest.mark.asyncio
     async def test_retire_failure_is_non_fatal(self):
-        from services.publish_service import unpublish_post
+        from poindexter.services.publish_service import unpublish_post
 
         pool, _conn = _make_pool(
             {"id": "post-3", "slug": "flaky", "status": "published"},
             flip="UPDATE 1",
         )
         with patch(
-            "services.static_export_service._retire_slug",
+            "poindexter.services.static_export_service._retire_slug",
             new=AsyncMock(side_effect=RuntimeError("R2 down")),
         ):
             result = await unpublish_post(pool, "post-3", site_config=_TEST_SC)

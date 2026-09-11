@@ -42,7 +42,7 @@ class TestPreview:
         video_file.write_bytes(b"\x00\x00\x00\x18ftypmp42" * 10)
 
         with patch(
-            "services.media_approval_service.get_asset_storage_path",
+            "poindexter.services.media_approval_service.get_asset_storage_path",
             new=AsyncMock(return_value=str(video_file)),
         ):
             resp = TestClient(_build_app()).get(
@@ -58,7 +58,7 @@ class TestPreview:
         audio_file.write_bytes(b"ID3" + b"\x00" * 50)
 
         with patch(
-            "services.media_approval_service.get_asset_storage_path",
+            "poindexter.services.media_approval_service.get_asset_storage_path",
             new=AsyncMock(return_value=str(audio_file)),
         ):
             resp = TestClient(_build_app()).get(
@@ -73,7 +73,7 @@ class TestPreview:
         video_file.write_bytes(b"\x00" * 20)
 
         with patch(
-            "services.media_approval_service.get_asset_storage_path",
+            "poindexter.services.media_approval_service.get_asset_storage_path",
             new=AsyncMock(return_value=str(video_file)),
         ):
             resp = TestClient(_build_app()).get(
@@ -85,7 +85,7 @@ class TestPreview:
 
     def test_404_when_no_asset_row(self):
         with patch(
-            "services.media_approval_service.get_asset_storage_path",
+            "poindexter.services.media_approval_service.get_asset_storage_path",
             new=AsyncMock(return_value=None),
         ):
             resp = TestClient(_build_app()).get(
@@ -96,7 +96,7 @@ class TestPreview:
 
     def test_404_when_file_missing_on_disk(self):
         with patch(
-            "services.media_approval_service.get_asset_storage_path",
+            "poindexter.services.media_approval_service.get_asset_storage_path",
             new=AsyncMock(return_value="/nonexistent/path/ghost.mp4"),
         ):
             resp = TestClient(_build_app()).get(
@@ -110,7 +110,7 @@ class TestPreview:
         video_file.write_bytes(b"\x00" * 20)
 
         with patch(
-            "services.media_approval_service.get_asset_storage_path",
+            "poindexter.services.media_approval_service.get_asset_storage_path",
             new=AsyncMock(return_value=str(video_file)),
         ):
             resp = TestClient(_build_app(authed=False)).get(

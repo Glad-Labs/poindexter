@@ -24,11 +24,11 @@ from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
 from modules.content.api import EditResult, PostEditService, enqueue_image_rebuild
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.image_markers import strip_unresolved_image_markers
+from poindexter.services.logger_config import get_logger
 from schemas.model_converter import ModelConverter
 from schemas.unified_task_response import UnifiedTaskResponse
-from services.database_service import DatabaseService
-from services.image_markers import strip_unresolved_image_markers
-from services.logger_config import get_logger
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 from utils.uuid_prefix import resolve_task_id_prefix
@@ -282,7 +282,7 @@ async def approve_task(
                 ),
             )
 
-        from services.scheduling_service import parse_when
+        from poindexter.services.scheduling_service import parse_when
 
         try:
             publish_at_dt = parse_when(publish_at, tz=site_config_dep.timezone)
@@ -477,7 +477,7 @@ async def approve_task(
         # approve path. Best-effort — wrapped so the learning loop can never
         # break the operator's approve/reject.
         try:
-            from services.router_outcome_feedback import record_task_outcome
+            from poindexter.services.router_outcome_feedback import record_task_outcome
 
             _rfb_quality = merged_result.get("quality_score")
             try:
@@ -539,7 +539,7 @@ async def approve_task(
                 task_id,
             )
             try:
-                from services.publish_service import publish_post_from_task
+                from poindexter.services.publish_service import publish_post_from_task
 
                 stage_result = await publish_post_from_task(
                     db_service, task, task_id,  # type: ignore[arg-type]
@@ -578,7 +578,7 @@ async def approve_task(
             # was created moments ago by the call above — there is no
             # operator-set slot here that we could be clobbering.
             if publish_at_dt and merged_result.get("post_id"):
-                from services.scheduling_service import assign_slot
+                from poindexter.services.scheduling_service import assign_slot
 
                 try:
                     slot_result = await assign_slot(
@@ -612,7 +612,7 @@ async def approve_task(
         if approved and auto_publish:
             logger.info("Publishing approved task %s (approve → go-live)", task_id)
             try:
-                from services.publish_service import publish_post_from_task
+                from poindexter.services.publish_service import publish_post_from_task
 
                 pub_result = await publish_post_from_task(
                     db_service, task, task_id,  # type: ignore[arg-type]
@@ -632,7 +632,7 @@ async def approve_task(
                     # non-NULL. The view pulls from pipeline_distributions
                     # where target is the own-site sentinel.
                     try:
-                        from services.pipeline_db import SITE_TARGET, PipelineDB
+                        from poindexter.services.pipeline_db import SITE_TARGET, PipelineDB
                         await PipelineDB(db_service.pool).add_distribution(
                             task_id=task_id,
                             target=SITE_TARGET,
@@ -825,7 +825,7 @@ async def publish_task(
 
         # Publish via shared service (post creation, ISR, social, sync, embed)
         logger.info("Publishing task %s", task_id)
-        from services.publish_service import publish_post_from_task
+        from poindexter.services.publish_service import publish_post_from_task
 
         pub_result = await publish_post_from_task(
             db_service, task, task_id,  # type: ignore[arg-type]
@@ -855,7 +855,7 @@ async def publish_task(
         # Record the distribution so `content_tasks` view resolves
         # post_id / post_slug / published_at non-NULL.
         try:
-            from services.pipeline_db import SITE_TARGET, PipelineDB
+            from poindexter.services.pipeline_db import SITE_TARGET, PipelineDB
             await PipelineDB(db_service.pool).add_distribution(
                 task_id=task_id,
                 target=SITE_TARGET,
@@ -987,7 +987,7 @@ async def go_live(
     # revalidation block — when the resolution chain drifted, posts
     # went live in the DB but stuck on the 5-minute ISR window.
     try:
-        from services.revalidation_service import trigger_isr_revalidate
+        from poindexter.services.revalidation_service import trigger_isr_revalidate
         reval_ok = await trigger_isr_revalidate(
             row["slug"],
             paths=["/archive/1"],  # legacy paginated index, not in canonical set
@@ -1003,7 +1003,7 @@ async def go_live(
     # Queue social/podcast/video (they check for existing files)
     if _should_run_post_publish_hooks():
         try:
-            from services.integrations.operator_notify import notify_operator
+            from poindexter.services.integrations.operator_notify import notify_operator
             _site_url = site_config_dep.require("site_url")
             await notify_operator(
                 f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}",
@@ -1267,7 +1267,7 @@ async def generate_task_image(
             try:
                 from pathlib import Path
 
-                from services.image_service import ImageService
+                from poindexter.services.image_service import ImageService
 
                 image_service = ImageService(site_config=site_config_dep)
 
@@ -1489,7 +1489,7 @@ def _build_edit_service(
     image_service = None
     if need_image:
         try:
-            from services.image_service import get_image_service
+            from poindexter.services.image_service import get_image_service
 
             image_service = get_image_service(site_config=site_config)
         except Exception:  # noqa: BLE001 — regen returns a 503 if the image svc is unavailable

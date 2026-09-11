@@ -170,7 +170,7 @@ async def test_record_inline_image_asset_emits_finding_on_import_failure(monkeyp
     # A ``None`` entry in sys.modules makes ``from services.media_asset_recorder
     # import record_media_asset`` raise ImportError — simulating a broken /
     # missing module without uninstalling anything. monkeypatch restores it.
-    monkeypatch.setitem(sys.modules, "services.media_asset_recorder", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.media_asset_recorder", None)
 
     result = await image_helpers._record_inline_image_asset(
         site_config=object(),

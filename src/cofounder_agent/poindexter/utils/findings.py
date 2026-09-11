@@ -41,8 +41,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.audit_event_schemas import validate_event_details
-from services.audit_log import audit_log_bg
+from poindexter.services.audit_event_schemas import validate_event_details
+from poindexter.services.audit_log import audit_log_bg
 
 # "warning" is a drifted spelling of "warn" that crept into ~7 call sites
 # (copy-pasted from Prometheus/Alertmanager conventions) before this

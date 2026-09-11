@@ -20,9 +20,9 @@ import inspect
 
 import pytest
 
-import services.blog_task_creation as blog_task_creation
-from services.blog_task_creation import BlogTaskCreationError
-from services.chat_tools import (
+import poindexter.services.blog_task_creation as blog_task_creation
+from poindexter.services.blog_task_creation import BlogTaskCreationError
+from poindexter.services.chat_tools import (
     CHAT_TOOLS,
     ChatToolContext,
     ChatToolError,

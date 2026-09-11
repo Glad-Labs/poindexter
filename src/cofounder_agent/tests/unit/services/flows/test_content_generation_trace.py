@@ -56,7 +56,7 @@ def _db_double_capturing(row):
 class TestClaimSelectsTraceContext:
     @pytest.mark.asyncio
     async def test_claim_select_includes_trace_context_column(self):
-        from services.flows.content_generation import claim_pending_task
+        from poindexter.services.flows.content_generation import claim_pending_task
 
         row = {
             "task_id": "t1", "topic": "AI", "style": None, "tone": None,
@@ -77,12 +77,12 @@ class TestClaimSelectsTraceContext:
 
 class TestParentContextFromClaimed:
     def test_none_claimed_returns_none(self):
-        from services.flows.content_generation import _parent_context_from_claimed
+        from poindexter.services.flows.content_generation import _parent_context_from_claimed
 
         assert _parent_context_from_claimed(None) is None
 
     def test_claimed_without_trace_context_returns_none(self):
-        from services.flows.content_generation import _parent_context_from_claimed
+        from poindexter.services.flows.content_generation import _parent_context_from_claimed
 
         assert _parent_context_from_claimed({"task_id": "t1"}) is None
 
@@ -91,7 +91,7 @@ class TestParentContextFromClaimed:
         from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
         from plugins.tracing import inject_trace_context
-        from services.flows.content_generation import _parent_context_from_claimed
+        from poindexter.services.flows.content_generation import _parent_context_from_claimed
 
         sc = SpanContext(
             trace_id=_TRACE_ID, span_id=_SPAN_ID, is_remote=False,

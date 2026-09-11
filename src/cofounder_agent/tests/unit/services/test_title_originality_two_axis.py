@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.title_generation import check_title_originality, originality_rank
+from poindexter.services.title_generation import check_title_originality, originality_rank
 
 
 class _StubSiteConfig:
@@ -79,9 +79,9 @@ def _no_web():
         )()
     )
     return (
-        patch("services.web_research.WebResearcher", return_value=researcher),
+        patch("poindexter.services.web_research.WebResearcher", return_value=researcher),
         patch(
-            "services.title_originality_external.TitleOriginalityExternalChecker",
+            "poindexter.services.title_originality_external.TitleOriginalityExternalChecker",
             return_value=ext,
         ),
     )

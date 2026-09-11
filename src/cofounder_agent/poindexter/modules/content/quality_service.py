@@ -33,8 +33,8 @@ Critical Floor = 50/100 — if clarity, readability, or relevance falls below th
 import re
 from typing import Any
 
-from services.logger_config import get_logger
-from services.quality_models import (
+from poindexter.services.logger_config import get_logger
+from poindexter.services.quality_models import (
     EvaluationMethod,
     QualityAssessment,
     QualityDimensions,
@@ -48,46 +48,46 @@ from services.quality_models import (
 # and the factory helpers pass their wired config. The
 # ``_score_llm_patterns`` staticmethod likewise requires an explicit
 # ``site_config`` param (the instance caller passes ``self._site_config``).
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     check_keywords as _check_keywords_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     count_syllables as _count_syllables_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     detect_truncation as _detect_truncation_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     flesch_kincaid_grade_level as _fk_grade_level_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     generate_feedback as _generate_feedback_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     generate_suggestions as _generate_suggestions_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     qa_cfg as _qa_cfg_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     score_accuracy as _score_accuracy_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     score_clarity as _score_clarity_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     score_completeness as _score_completeness_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     score_engagement as _score_engagement_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     score_readability as _score_readability_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     score_relevance as _score_relevance_fn,
 )
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     score_seo as _score_seo_fn,
 )
 

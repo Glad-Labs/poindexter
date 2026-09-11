@@ -89,7 +89,7 @@ def _resolve_wan_health_url(site_config: Any) -> str:
     """Wan health endpoint — same URL resolution chain as ``Wan21Provider``
     (per-install ``wan_server_url`` → plugin namespace → default ``:9840``),
     so the probe watches the exact server the render will hit."""
-    from services.video_providers.wan2_1 import _resolve_server_url
+    from poindexter.services.video_providers.wan2_1 import _resolve_server_url
 
     return _resolve_server_url({}, site_config).rstrip("/") + "/health"
 
@@ -223,7 +223,7 @@ async def check_media_infra_health(
     # configured choice, and the gate must not brick that install.
     tts_probe: tuple[str, str] | None = None
     if site_config.get_bool("media_tts_gate_enabled", True):
-        from services.tts_service import is_tts_enabled
+        from poindexter.services.tts_service import is_tts_enabled
 
         if is_tts_enabled(site_config):
             engine, tts_url = resolve_tts_health_url(site_config)
@@ -260,7 +260,7 @@ async def check_media_infra_health(
     # (which freezes the desktop). Fail-closed: an unreadable reading defers.
     vram_insufficient = False
     if site_config.get_bool("media_render_vram_gate_enabled", True):
-        from services.render_vram import render_gpu_free_vram_gb
+        from poindexter.services.render_vram import render_gpu_free_vram_gb
 
         min_gb = site_config.get_float("media_render_min_free_vram_gb", 25.0) or 25.0
         free = await render_gpu_free_vram_gb(

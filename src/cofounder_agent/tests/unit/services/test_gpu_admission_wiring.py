@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.gpu_admission import AdmissionDecision, GpuBusyError
-from services.gpu_scheduler import GPUScheduler
+from poindexter.services.gpu_admission import AdmissionDecision, GpuBusyError
+from poindexter.services.gpu_scheduler import GPUScheduler
 
 
 def _quiet(gpu: GPUScheduler) -> GPUScheduler:
@@ -43,9 +43,9 @@ def _cfg_bool_map(**over):
 @pytest.mark.asyncio
 async def test_flag_off_never_consults_decide_even_with_budget():
     gpu = _quiet(GPUScheduler())
-    with patch("services.gpu_admission.decide") as spy:
+    with patch("poindexter.services.gpu_admission.decide") as spy:
         with patch(
-            "services.gpu_scheduler._cfg_bool",
+            "poindexter.services.gpu_scheduler._cfg_bool",
             _cfg_bool_map(gpu_sched_enabled=False),
         ):
             async with gpu.lock("ollama", model="m", max_wait_s=30.0):
@@ -56,9 +56,9 @@ async def test_flag_off_never_consults_decide_even_with_budget():
 @pytest.mark.asyncio
 async def test_no_budget_never_consults_decide_even_with_flag_on():
     gpu = _quiet(GPUScheduler())
-    with patch("services.gpu_admission.decide") as spy:
+    with patch("poindexter.services.gpu_admission.decide") as spy:
         with patch(
-            "services.gpu_scheduler._cfg_bool",
+            "poindexter.services.gpu_scheduler._cfg_bool",
             _cfg_bool_map(gpu_sched_enabled=True),
         ):
             async with gpu.lock("ollama", model="m"):
@@ -77,13 +77,13 @@ async def test_reject_raises_pre_wait_and_emits_finding():
     gpu._assemble_admission_inputs = AsyncMock()  # inputs irrelevant — decide stubbed
     gpu._emit_admission_rejected_finding = MagicMock()
     with patch(
-        "services.gpu_admission.decide",
+        "poindexter.services.gpu_admission.decide",
         return_value=AdmissionDecision(
             action="reject", reason="eta_exceeds_budget", eta_seconds=412.0
         ),
     ):
         with patch(
-            "services.gpu_scheduler._cfg_bool",
+            "poindexter.services.gpu_scheduler._cfg_bool",
             _cfg_bool_map(gpu_sched_enabled=True),
         ):
             with pytest.raises(GpuBusyError) as exc_info:
@@ -129,11 +129,11 @@ async def test_grant_after_unload_calls_eviction_helper():
     gpu = _quiet(GPUScheduler())
     gpu._assemble_admission_inputs = AsyncMock()
     with patch(
-        "services.gpu_admission.decide",
+        "poindexter.services.gpu_admission.decide",
         return_value=AdmissionDecision(action="grant_after_unload"),
     ):
         with patch(
-            "services.gpu_scheduler._cfg_bool",
+            "poindexter.services.gpu_scheduler._cfg_bool",
             _cfg_bool_map(gpu_sched_enabled=True),
         ):
             async with gpu.lock("ollama", model="big-writer", max_wait_s=30.0):
@@ -145,11 +145,11 @@ async def test_plain_grant_does_not_evict_for_ollama_owner():
     gpu = _quiet(GPUScheduler())
     gpu._assemble_admission_inputs = AsyncMock()
     with patch(
-        "services.gpu_admission.decide",
+        "poindexter.services.gpu_admission.decide",
         return_value=AdmissionDecision(action="grant"),
     ):
         with patch(
-            "services.gpu_scheduler._cfg_bool",
+            "poindexter.services.gpu_scheduler._cfg_bool",
             _cfg_bool_map(gpu_sched_enabled=True),
         ):
             async with gpu.lock("ollama", model="m", max_wait_s=30.0):
@@ -165,7 +165,7 @@ async def test_plain_grant_does_not_evict_for_ollama_owner():
 async def test_budget_caps_wait_when_flag_on():
     """Holder present; admission grants (stubbed); a 0.1s budget must time the
     wait out far below the 900s operator ceiling."""
-    from services.gpu_scheduler import GpuLockTimeoutError
+    from poindexter.services.gpu_scheduler import GpuLockTimeoutError
 
     gpu = _quiet(GPUScheduler())
     gpu._assemble_admission_inputs = AsyncMock()
@@ -173,11 +173,11 @@ async def test_budget_caps_wait_when_flag_on():
     await gpu._lock.acquire()  # simulate a holder
     try:
         with patch(
-            "services.gpu_admission.decide",
+            "poindexter.services.gpu_admission.decide",
             return_value=AdmissionDecision(action="grant"),
         ):
             with patch(
-                "services.gpu_scheduler._cfg_bool",
+                "poindexter.services.gpu_scheduler._cfg_bool",
                 _cfg_bool_map(gpu_sched_enabled=True),
             ):
                 with pytest.raises(GpuLockTimeoutError):
@@ -196,7 +196,7 @@ async def test_budget_does_not_cap_wait_when_flag_off():
     gpu = _quiet(GPUScheduler())
     await gpu._lock.acquire()
     with patch(
-        "services.gpu_scheduler._cfg_bool",
+        "poindexter.services.gpu_scheduler._cfg_bool",
         _cfg_bool_map(gpu_sched_enabled=False),
     ):
         async def _try():
@@ -220,7 +220,7 @@ async def test_priority_reaches_queue_mirror():
     gpu = _quiet(GPUScheduler())
     await gpu._lock.acquire()
     enq = AsyncMock(return_value=None)
-    with patch("services.gpu_queue_mirror.enqueue", enq):
+    with patch("poindexter.services.gpu_queue_mirror.enqueue", enq):
         async def _try():
             async with gpu.lock("ollama", model="m", priority="background"):
                 pass
@@ -371,10 +371,10 @@ async def test_assembly_reads_every_configured_card_with_per_card_headroom():
     reg = _FakeRegistry(free={0: 13.5, 1: 3.1}, evictable={0: 0.0, 1: 0.0})
     gpu._registry = reg
     with patch(
-        "services.gpu_scheduler._sc",
+        "poindexter.services.gpu_scheduler._sc",
         lambda: _fake_sc({"ollama_gpu_indexes": "0,1"}),
     ), patch(
-        "services.gpu_scheduler._cfg_float",
+        "poindexter.services.gpu_scheduler._cfg_float",
         _cfg_num_map({"gpu0_headroom_gb": 6.0, "gpu1_headroom_gb": 4.5}),
     ):
         inputs = await gpu._assemble_admission_inputs(model=None, max_wait_s=60.0)
@@ -393,9 +393,9 @@ async def test_unset_indexes_falls_back_to_single_pipeline_gpu():
     reg = _FakeRegistry(free={0: 10.0}, evictable={0: 2.0})
     gpu._registry = reg
     with patch(
-        "services.gpu_scheduler._sc", lambda: _fake_sc({}),
+        "poindexter.services.gpu_scheduler._sc", lambda: _fake_sc({}),
     ), patch(
-        "services.gpu_scheduler._cfg_int",
+        "poindexter.services.gpu_scheduler._cfg_int",
         _cfg_num_map({"pipeline_gpu_index": 0}),
     ):
         inputs = await gpu._assemble_admission_inputs(model=None, max_wait_s=60.0)
@@ -406,7 +406,7 @@ async def test_unset_indexes_falls_back_to_single_pipeline_gpu():
 def test_garbage_index_entries_are_skipped_not_fatal():
     gpu = GPUScheduler()
     with patch(
-        "services.gpu_scheduler._sc",
+        "poindexter.services.gpu_scheduler._sc",
         lambda: _fake_sc({"ollama_gpu_indexes": "0, x, 1,"}),
     ):
         assert gpu._admission_gpu_indexes() == [0, 1]
@@ -415,10 +415,10 @@ def test_garbage_index_entries_are_skipped_not_fatal():
 def test_all_garbage_falls_back_to_pipeline_gpu_index():
     gpu = GPUScheduler()
     with patch(
-        "services.gpu_scheduler._sc",
+        "poindexter.services.gpu_scheduler._sc",
         lambda: _fake_sc({"ollama_gpu_indexes": "x,,y"}),
     ), patch(
-        "services.gpu_scheduler._cfg_int",
+        "poindexter.services.gpu_scheduler._cfg_int",
         _cfg_num_map({"pipeline_gpu_index": 0}),
     ):
         assert gpu._admission_gpu_indexes() == [0]
@@ -431,27 +431,27 @@ async def test_estimate_includes_a_kv_term_at_the_assumed_context():
     gpu = GPUScheduler()
     gpu._registry = _FakeRegistry(free={0: 30.0}, evictable={0: 0.0})
 
-    from services.vram_budget import ModelArch
+    from poindexter.services.vram_budget import ModelArch
 
     arch = ModelArch(
         n_layers=48, n_kv_heads=8, head_dim=128,
         weight_bytes=int(18.5 * (1024 ** 3)), sliding_window=0,
     )
     with patch(
-        "services.gpu_scheduler._sc",
+        "poindexter.services.gpu_scheduler._sc",
         lambda: _fake_sc({"ollama_kv_cache_type": "q8_0"}),
     ), patch(
-        "services.gpu_scheduler._cfg_int",
+        "poindexter.services.gpu_scheduler._cfg_int",
         _cfg_num_map({"gpu_admission_assumed_num_ctx": 8192}),
     ), patch(
-        "services.llm_providers.dispatcher._read_arch_for_budget",
+        "poindexter.services.llm_providers.dispatcher._read_arch_for_budget",
         AsyncMock(return_value=arch),
     ):
         inputs = await gpu._assemble_admission_inputs(
             model="big-model", max_wait_s=60.0,
         )
 
-    from services.vram_budget import estimate_model_vram_gb
+    from poindexter.services.vram_budget import estimate_model_vram_gb
 
     weights_only = estimate_model_vram_gb(arch, 0.0)
     assert inputs.model_estimate_gb is not None

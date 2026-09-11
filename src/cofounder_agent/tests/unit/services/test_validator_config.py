@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from services import validator_config as vc
-from services.site_config import SiteConfig
+from poindexter.services import validator_config as vc
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**overrides) -> SiteConfig:

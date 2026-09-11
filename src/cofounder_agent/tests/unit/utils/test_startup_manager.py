@@ -171,7 +171,7 @@ class TestInitializeDatabase:
         mock_db_cls = MagicMock(return_value=mock_db)
 
         with patch.dict(
-            "sys.modules", {"services.database_service": MagicMock(DatabaseService=mock_db_cls)}
+            "sys.modules", {"poindexter.services.database_service": MagicMock(DatabaseService=mock_db_cls)}
         ):
             _run(mgr._initialize_database())
 
@@ -189,7 +189,7 @@ class TestInitializeDatabase:
         mock_db_cls = MagicMock(return_value=mock_db)
 
         with patch.dict(
-            "sys.modules", {"services.database_service": MagicMock(DatabaseService=mock_db_cls)}
+            "sys.modules", {"poindexter.services.database_service": MagicMock(DatabaseService=mock_db_cls)}
         ):
             with pytest.raises(SystemExit):
                 _run(mgr._initialize_database())
@@ -201,7 +201,7 @@ class TestInitializeDatabase:
         mock_db_cls = MagicMock(return_value=mock_db)
 
         with patch.dict(
-            "sys.modules", {"services.database_service": MagicMock(DatabaseService=mock_db_cls)}
+            "sys.modules", {"poindexter.services.database_service": MagicMock(DatabaseService=mock_db_cls)}
         ):
             with pytest.raises(SystemExit):
                 _run(mgr._initialize_database())
@@ -235,8 +235,8 @@ class TestRunMigrations:
         with patch.dict(
             "sys.modules",
             {
-                "services.migrations": mock_migrations,
-                "services.content_router_service": mock_content,
+                "poindexter.services.migrations": mock_migrations,
+                "poindexter.services.content_router_service": mock_content,
             },
         ):
             _run(mgr._run_migrations())
@@ -257,8 +257,8 @@ class TestRunMigrations:
         with patch.dict(
             "sys.modules",
             {
-                "services.migrations": mock_migrations,
-                "services.content_router_service": mock_content,
+                "poindexter.services.migrations": mock_migrations,
+                "poindexter.services.content_router_service": mock_content,
             },
         ):
             _run(mgr._run_migrations())  # False = skip, must not raise
@@ -278,8 +278,8 @@ class TestRunMigrations:
         with patch.dict(
             "sys.modules",
             {
-                "services.migrations": mock_migrations,
-                "services.content_router_service": mock_content,
+                "poindexter.services.migrations": mock_migrations,
+                "poindexter.services.content_router_service": mock_content,
                 "brain.operator_notifier": MagicMock(notify_operator=MagicMock()),
             },
         ):
@@ -298,8 +298,8 @@ class TestRunMigrations:
         with patch.dict(
             "sys.modules",
             {
-                "services.migrations": mock_migrations,
-                "services.content_router_service": mock_content,
+                "poindexter.services.migrations": mock_migrations,
+                "poindexter.services.content_router_service": mock_content,
             },
         ):
             _run(mgr._run_migrations())  # Must not raise
@@ -319,9 +319,9 @@ class TestRunMigrations:
         with patch.dict(
             "sys.modules",
             {
-                "services.migrations": mock_migrations,
-                "services.content_router_service": mock_content,
-                "services.settings_defaults": mock_seeder,
+                "poindexter.services.migrations": mock_migrations,
+                "poindexter.services.content_router_service": mock_content,
+                "poindexter.services.settings_defaults": mock_seeder,
             },
         ):
             _run(mgr._run_migrations())
@@ -345,9 +345,9 @@ class TestRunMigrations:
         with patch.dict(
             "sys.modules",
             {
-                "services.migrations": mock_migrations,
-                "services.content_router_service": mock_content,
-                "services.settings_defaults": mock_seeder,
+                "poindexter.services.migrations": mock_migrations,
+                "poindexter.services.content_router_service": mock_content,
+                "poindexter.services.settings_defaults": mock_seeder,
             },
         ):
             _run(mgr._run_migrations())  # Must not raise
@@ -367,9 +367,9 @@ class TestRunMigrations:
         with patch.dict(
             "sys.modules",
             {
-                "services.migrations": mock_migrations,
-                "services.content_router_service": mock_content,
-                "services.settings_defaults": mock_seeder,
+                "poindexter.services.migrations": mock_migrations,
+                "poindexter.services.content_router_service": mock_content,
+                "poindexter.services.settings_defaults": mock_seeder,
             },
         ):
             _run(mgr._run_migrations())
@@ -402,7 +402,7 @@ class TestEnsureActiveGraphDefsStamped:
         mock_pa = MagicMock()
         mock_pa.ensure_active_graph_defs_stamped = AsyncMock(return_value=2)
 
-        with patch.dict("sys.modules", {"services.pipeline_architect": mock_pa}):
+        with patch.dict("sys.modules", {"poindexter.services.pipeline_architect": mock_pa}):
             _run(mgr._ensure_active_graph_defs_stamped())
 
         mock_pa.ensure_active_graph_defs_stamped.assert_awaited_once()
@@ -417,7 +417,7 @@ class TestEnsureActiveGraphDefsStamped:
         mock_pa = MagicMock()
         mock_pa.ensure_active_graph_defs_stamped = AsyncMock()
 
-        with patch.dict("sys.modules", {"services.pipeline_architect": mock_pa}):
+        with patch.dict("sys.modules", {"poindexter.services.pipeline_architect": mock_pa}):
             _run(mgr._ensure_active_graph_defs_stamped())
 
         mock_pa.ensure_active_graph_defs_stamped.assert_not_awaited()
@@ -437,7 +437,7 @@ class TestEnsureActiveGraphDefsStamped:
             side_effect=RuntimeError("registry exploded")
         )
 
-        with patch.dict("sys.modules", {"services.pipeline_architect": mock_pa}):
+        with patch.dict("sys.modules", {"poindexter.services.pipeline_architect": mock_pa}):
             _run(mgr._ensure_active_graph_defs_stamped())  # Must not raise
 
     def test_import_unavailable_no_op(self):
@@ -447,7 +447,7 @@ class TestEnsureActiveGraphDefsStamped:
 
         # A None sys.modules entry makes ``from services.pipeline_architect
         # import ...`` raise ImportError — the import-guard must swallow it.
-        with patch.dict("sys.modules", {"services.pipeline_architect": None}):
+        with patch.dict("sys.modules", {"poindexter.services.pipeline_architect": None}):
             _run(mgr._ensure_active_graph_defs_stamped())  # Must not raise
 
 
@@ -466,7 +466,7 @@ class TestSetupRedisCache:
         mock_redis_cls.create = AsyncMock(return_value=mock_cache)
         mock_module = MagicMock(RedisCache=mock_redis_cls)
 
-        with patch.dict("sys.modules", {"services.redis_cache": mock_module}):
+        with patch.dict("sys.modules", {"poindexter.services.redis_cache": mock_module}):
             _run(mgr._setup_redis_cache())
 
         assert mgr.redis_cache is mock_cache
@@ -479,7 +479,7 @@ class TestSetupRedisCache:
         mock_redis_cls.create = AsyncMock(return_value=mock_cache)
         mock_module = MagicMock(RedisCache=mock_redis_cls)
 
-        with patch.dict("sys.modules", {"services.redis_cache": mock_module}):
+        with patch.dict("sys.modules", {"poindexter.services.redis_cache": mock_module}):
             _run(mgr._setup_redis_cache())
 
         assert mgr.redis_cache is mock_cache
@@ -490,7 +490,7 @@ class TestSetupRedisCache:
         mock_redis_cls.create = AsyncMock(side_effect=Exception("connection refused"))
         mock_module = MagicMock(RedisCache=mock_redis_cls)
 
-        with patch.dict("sys.modules", {"services.redis_cache": mock_module}):
+        with patch.dict("sys.modules", {"poindexter.services.redis_cache": mock_module}):
             _run(mgr._setup_redis_cache())  # Must not raise
 
         assert mgr.redis_cache is None

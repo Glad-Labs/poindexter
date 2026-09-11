@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.fix_missing_seo import FixMissingSeoJob
+from poindexter.services.jobs.fix_missing_seo import FixMissingSeoJob
 
 
 def _make_pool(
@@ -71,7 +71,7 @@ class TestRun:
         ])
         job = FixMissingSeoJob()
         with patch(
-            "services.jobs.fix_missing_seo.emit_finding",
+            "poindexter.services.jobs.fix_missing_seo.emit_finding",
             new=MagicMock(),
         ) as mock_emitter:
             result = await job.run(pool, {})
@@ -93,7 +93,7 @@ class TestRun:
             }
         ])
         with patch(
-            "services.jobs.fix_missing_seo.emit_finding",
+            "poindexter.services.jobs.fix_missing_seo.emit_finding",
             new=MagicMock(),
         ):
             result = await FixMissingSeoJob().run(pool, {})
@@ -120,7 +120,7 @@ class TestRun:
         ])
         mock_emitter = MagicMock()
         with patch(
-            "services.jobs.fix_missing_seo.emit_finding",
+            "poindexter.services.jobs.fix_missing_seo.emit_finding",
             new=mock_emitter,
         ):
             result = await FixMissingSeoJob().run(pool, {"file_gitea_issue": False})

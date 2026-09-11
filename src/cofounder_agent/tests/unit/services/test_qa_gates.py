@@ -21,8 +21,8 @@ from unittest.mock import MagicMock, patch
 
 from modules.content.content_validator import ValidationResult
 from modules.content.multi_model_qa import MultiModelQA
-from services.qa_gates_db import QAGateSpec, load_qa_gate_chain
-from services.site_config import SiteConfig
+from poindexter.services.qa_gates_db import QAGateSpec, load_qa_gate_chain
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers

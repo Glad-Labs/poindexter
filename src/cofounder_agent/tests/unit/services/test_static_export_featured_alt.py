@@ -2,7 +2,7 @@
 og:image:alt (issue A4 / inline+featured alt accuracy work)."""
 import datetime
 
-from services.static_export_service import _post_full, _post_summary
+from poindexter.services.static_export_service import _post_full, _post_summary
 
 _ROW = {
     "id": "11111111-1111-1111-1111-111111111111",

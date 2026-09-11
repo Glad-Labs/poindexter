@@ -18,8 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -74,7 +74,7 @@ async def show_batch(
     site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Return the unified, ranked view of the batch and all candidates."""
-    from services.topic_batch_service import TopicBatchService
+    from poindexter.services.topic_batch_service import TopicBatchService
 
     bid = _parse_batch_id(batch_id)
     svc = TopicBatchService(pool=db_service.pool, site_config=site_config)
@@ -99,7 +99,7 @@ async def rank_batch(
     site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Assign operator ranks to candidates in the order provided."""
-    from services.topic_batch_service import TopicBatchService
+    from poindexter.services.topic_batch_service import TopicBatchService
 
     bid = _parse_batch_id(batch_id)
     svc = TopicBatchService(pool=db_service.pool, site_config=site_config)
@@ -124,7 +124,7 @@ async def edit_winner(
     site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Edit the operator_edited_topic / operator_edited_angle on the rank-1 candidate."""
-    from services.topic_batch_service import TopicBatchService
+    from poindexter.services.topic_batch_service import TopicBatchService
 
     bid = _parse_batch_id(batch_id)
     svc = TopicBatchService(pool=db_service.pool, site_config=site_config)
@@ -148,7 +148,7 @@ async def resolve_batch(
     site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Resolve the batch: queue the rank-1 candidate as a pipeline task."""
-    from services.topic_batch_service import TopicBatchService
+    from poindexter.services.topic_batch_service import TopicBatchService
 
     bid = _parse_batch_id(batch_id)
     svc = TopicBatchService(pool=db_service.pool, site_config=site_config)
@@ -173,7 +173,7 @@ async def reject_batch(
     site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Reject the batch — sets status to ``expired``."""
-    from services.topic_batch_service import TopicBatchService
+    from poindexter.services.topic_batch_service import TopicBatchService
 
     bid = _parse_batch_id(batch_id)
     svc = TopicBatchService(pool=db_service.pool, site_config=site_config)

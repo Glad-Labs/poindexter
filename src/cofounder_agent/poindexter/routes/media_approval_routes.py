@@ -15,9 +15,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from middleware.api_token_auth import get_operator_identity, verify_api_token
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
 from schemas.task_schemas import MediaApprovalListResponse
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -47,7 +47,7 @@ async def list_pending(
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> MediaApprovalListResponse:
     """Return pending media rows joined with post title/slug."""
-    from services.media_approval_service import list_pending as _list_pending
+    from poindexter.services.media_approval_service import list_pending as _list_pending
 
     rows = await _list_pending(db_service.pool, medium=medium, limit=limit)
     # Convert datetime objects for JSON serialisation
@@ -89,7 +89,7 @@ async def decide(
     matching R2 RSS feed (via ``site_config``) so the approval propagates to
     Apple/Spotify/the video feed immediately — non-fatal.
     """
-    from services.media_approval_service import decide as _decide
+    from poindexter.services.media_approval_service import decide as _decide
 
     operator = get_operator_identity()
     decided_by = operator.get("id") or "operator:http"
@@ -144,7 +144,7 @@ async def preview(
     machine to an unauthenticated audience — it's reachable only by an
     operator already holding a valid token, exactly like approve/reject.
     """
-    from services.media_approval_service import get_asset_storage_path
+    from poindexter.services.media_approval_service import get_asset_storage_path
 
     storage_path = await get_asset_storage_path(db_service.pool, post_id, medium)
     if not storage_path or not Path(storage_path).is_file():

@@ -10,9 +10,9 @@ import logging
 from typing import Any
 
 from plugins.atom import AtomMeta
-from services.integrations.operator_notify import notify_operator
-from services.social_drafts import SocialDraftsService
-from services.social_poster import generate_social_posts
+from poindexter.services.integrations.operator_notify import notify_operator
+from poindexter.services.social_drafts import SocialDraftsService
+from poindexter.services.social_poster import generate_social_posts
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # ``{site_url}/posts/`` index URL (social-drafts linking bug).
     slug: str = state.get("post_slug") or ""
     if not slug:
-        from services.publish_service import derive_publish_identity
+        from poindexter.services.publish_service import derive_publish_identity
 
         _title, _content, slug = derive_publish_identity(
             state.get("content") or "",
@@ -199,8 +199,8 @@ async def _generate_reddit_copy(
     site_config: Any,
     pool: Any,
 ) -> str:
-    from services.llm_text import ollama_chat_text
-    from services.prompt_manager import UnifiedPromptManager
+    from poindexter.services.llm_text import ollama_chat_text
+    from poindexter.services.prompt_manager import UnifiedPromptManager
 
     model = site_config.get("social_poster_fallback_model", "")
     if not model:

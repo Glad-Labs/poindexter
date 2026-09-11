@@ -8,7 +8,7 @@ importing ``services/ollama_client.py`` directly.
 
 .. code:: python
 
-    from services.llm_providers.dispatcher import get_provider
+    from poindexter.services.llm_providers.dispatcher import get_provider
 
     provider = await get_provider(pool, tier="standard")
     result = await provider.complete(
@@ -55,12 +55,12 @@ from typing import TYPE_CHECKING, Any
 
 from plugins.config import PluginConfig
 from plugins.registry import get_all_llm_providers
-from services.gpu_scheduler import gpu
-from services.task_context import current_task_id
+from poindexter.services.gpu_scheduler import gpu
+from poindexter.services.task_context import current_task_id
 from utils.exception_format import describe_exception
 
 if TYPE_CHECKING:
-    from services.vram_budget import ModelArch
+    from poindexter.services.vram_budget import ModelArch
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +112,8 @@ def _is_paid_llm_call(model: str, provider_config: dict[str, Any] | None) -> boo
     is unambiguously non-local — so a misclassification can never block a free
     local call.
     """
-    from services.cost_guard import is_local_base_url
-    from services.llm_providers.litellm_provider import _LOCAL_MODEL_PREFIXES
+    from poindexter.services.cost_guard import is_local_base_url
+    from poindexter.services.llm_providers.litellm_provider import _LOCAL_MODEL_PREFIXES
 
     model = (model or "").strip()
     cfg = provider_config or {}
@@ -150,7 +150,7 @@ def _routes_to_pinned_endpoint(
     failure) returns False so the call keeps the pre-existing lock behaviour.
     """
     try:
-        from services.llm_providers.litellm_provider import pinned_api_base_for
+        from poindexter.services.llm_providers.litellm_provider import pinned_api_base_for
 
         return pinned_api_base_for(model, provider_config) is not None
     except Exception:  # silent-ok: a routing read must never break dispatch;
@@ -185,7 +185,7 @@ def _gpu_serialize_local_dispatch(
         return False
     pinned = _routes_to_pinned_endpoint(model, provider_config)
     try:
-        from services.container_registry import get_container
+        from poindexter.services.container_registry import get_container
 
         container = get_container()
         if container is None:
@@ -224,8 +224,8 @@ async def _budget_inputs(provider_config: dict[str, Any]) -> tuple[float, float,
     Falls back to the seeded defaults when no container is bootstrapped
     (CLI, tests).
     """
-    from services.container_registry import get_container
-    from services.vram_budget import kv_bytes_per_elem
+    from poindexter.services.container_registry import get_container
+    from poindexter.services.vram_budget import kv_bytes_per_elem
 
     container = get_container()
     if container is None:
@@ -272,8 +272,8 @@ async def _read_arch_for_budget(model: str) -> ModelArch | None:
     None when unreachable so the clamp fails open."""
     import httpx
 
-    from services.container_registry import get_container
-    from services.vram_budget import read_model_arch
+    from poindexter.services.container_registry import get_container
+    from poindexter.services.vram_budget import read_model_arch
 
     base = "http://host.docker.internal:11434"
     container = get_container()
@@ -293,7 +293,7 @@ async def _clamp_num_ctx_to_budget(
     (the no-sysmem-fallback driver setting is the backstop). Emits a ``warn``
     finding when it actually clamps so the operator sees the budget pressure.
     """
-    from services.vram_budget import (
+    from poindexter.services.vram_budget import (
         estimate_kv_cache_gb,
         estimate_model_vram_gb,
         fits,
@@ -343,8 +343,8 @@ def _resolve_default_num_ctx(
     """
     if _is_paid_llm_call(model, provider_config):
         return None
-    from services.container_registry import get_container
-    from services.ollama_client import resolve_num_ctx
+    from poindexter.services.container_registry import get_container
+    from poindexter.services.ollama_client import resolve_num_ctx
 
     container = get_container()
     site_config = container.site_config if container is not None else None
@@ -374,7 +374,7 @@ def _local_fallback_or_reraise(
     ``CostGuardExhausted``'s docstring warns about: never silently retry against
     a different PAID provider.
     """
-    from services.container_registry import get_container
+    from poindexter.services.container_registry import get_container
 
     container = get_container()
     site_config = container.site_config if container is not None else None
@@ -437,7 +437,7 @@ def _vram_guard_enabled() -> bool:
     """Master switch for the clamp. Default ON; a config-read failure leaves the
     guard ON (its clamp fails open anyway) rather than blocking the dispatch."""
     try:
-        from services.container_registry import get_container
+        from poindexter.services.container_registry import get_container
 
         container = get_container()
         if container is None:
@@ -471,11 +471,11 @@ async def _enforce_budget_if_paid(
     """
     if not _is_paid_llm_call(model, provider_config):
         return
-    from services.cost_guard import CostGuard
+    from poindexter.services.cost_guard import CostGuard
 
     site_config = None
     try:
-        from services.integrations.shared_context import get_site_config
+        from poindexter.services.integrations.shared_context import get_site_config
 
         site_config = get_site_config()
     except Exception:  # noqa: BLE001 — DI seam optional; CostGuard uses defaults
@@ -719,7 +719,7 @@ async def dispatch_complete(
         provider_config: dict[str, Any] | None = None
         # Local import matches ``_enforce_budget_if_paid``'s idiom for the same
         # module; needed by name in the except clause below.
-        from services.cost_guard import CostGuardExhausted
+        from poindexter.services.cost_guard import CostGuardExhausted
 
         try:
             provider = await get_provider(pool, tier)
@@ -960,11 +960,11 @@ async def _record_dispatch_cost(
         electricity_kwh: float | None = None
         if cost_usd == 0.0:
             try:
-                from services.cost_guard import CostGuard
+                from poindexter.services.cost_guard import CostGuard
 
                 site_config = None
                 try:
-                    from services.integrations.shared_context import get_site_config
+                    from poindexter.services.integrations.shared_context import get_site_config
                     site_config = get_site_config()
                 except Exception:  # noqa: BLE001 — silent-ok: best-effort site_config fetch; on failure it stays None and CostGuard runs with defaults for the electricity estimate below (attribution-only, never the API cost axis)
                     pass

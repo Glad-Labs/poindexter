@@ -177,7 +177,7 @@ class TestOAuthJWT:
             "plugins.secrets.get_secret",
             new=AsyncMock(side_effect=_boom),
         ), patch(
-            "services.auth.oauth_issuer.verify_token",
+            "poindexter.services.auth.oauth_issuer.verify_token",
             return_value=AsyncMock(),
         ), patch(
             "routes.alertmanager_webhook_routes._ensure_table",
@@ -197,7 +197,7 @@ class TestOAuthJWT:
         static credentials in the same request — which is silly, but
         also semantically wrong: a JWT-shaped payload is an OAuth
         client claim and a failed verify is a real auth failure."""
-        from services.auth.oauth_issuer import InvalidToken
+        from poindexter.services.auth.oauth_issuer import InvalidToken
 
         client = _build_app()
 
@@ -212,7 +212,7 @@ class TestOAuthJWT:
             "plugins.secrets.get_secret",
             new=AsyncMock(side_effect=_boom),
         ), patch(
-            "services.auth.oauth_issuer.verify_token",
+            "poindexter.services.auth.oauth_issuer.verify_token",
             side_effect=InvalidToken("bad signature"),
         ):
             resp = client.post(

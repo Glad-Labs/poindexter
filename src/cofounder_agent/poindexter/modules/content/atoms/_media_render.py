@@ -40,10 +40,10 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from poindexter.services import live_activity
+from poindexter.services.gpu_scheduler import gpu
+from poindexter.services.video_renderers.shot_list_renderer import render_shot_list
 from schemas.video_shot_list import VideoShotList
-from services import live_activity
-from services.gpu_scheduler import gpu
-from services.video_renderers.shot_list_renderer import render_shot_list
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 

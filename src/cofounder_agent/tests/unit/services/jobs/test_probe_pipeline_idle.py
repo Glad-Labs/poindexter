@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from services.jobs.probe_pipeline_idle import ProbePipelineIdleJob, build_idle_body
+from poindexter.services.jobs.probe_pipeline_idle import ProbePipelineIdleJob, build_idle_body
 
 
 class _SC:
@@ -75,7 +75,7 @@ def _batch(open_hours=46.0):
 
 async def _run(job, conn, cfg=None, emitted: list | None = None, monkeypatch=None):
     if emitted is not None:
-        import services.jobs.probe_pipeline_idle as mod
+        import poindexter.services.jobs.probe_pipeline_idle as mod
         monkeypatch.setattr(mod, "emit_finding", lambda **kw: emitted.append(kw))
     return await job.run(_Pool(conn), {"_site_config": _SC(cfg or {})})
 

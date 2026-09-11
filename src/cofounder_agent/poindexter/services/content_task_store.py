@@ -21,9 +21,9 @@ import json
 import logging
 from typing import Any
 
+from poindexter.services.audit_log import audit_log_bg
+from poindexter.services.database_service import DatabaseService
 from schemas.typed_records import TaskRecord
-from services.audit_log import audit_log_bg
-from services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

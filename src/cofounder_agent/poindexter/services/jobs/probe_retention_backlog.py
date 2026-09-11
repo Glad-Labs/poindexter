@@ -72,7 +72,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.integrations.retention_backlog import BacklogResult, measure_all
+from poindexter.services.integrations.retention_backlog import BacklogResult, measure_all
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 

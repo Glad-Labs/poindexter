@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.triage.derive_labels import derive_type
+from poindexter.services.triage.derive_labels import derive_type
 
 PRIORITIES = ("P0-critical", "P1-high", "P2-medium", "P3-low")
 TYPES = ("bug", "feature", "enhancement", "improvement", "chore",

@@ -22,7 +22,7 @@ import pytest
 from modules.content.atoms import _media_render
 from modules.content.atoms.media_render_long_video import run as run_long
 from modules.content.atoms.media_render_short_video import run as run_short
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 class _FakeLock:

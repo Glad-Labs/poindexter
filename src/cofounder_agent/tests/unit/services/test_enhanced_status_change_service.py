@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.enhanced_status_change_service import EnhancedStatusChangeService
+from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
 
 # ---------------------------------------------------------------------------
 # Helpers

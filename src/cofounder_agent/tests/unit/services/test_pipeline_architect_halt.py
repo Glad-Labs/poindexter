@@ -20,8 +20,8 @@ from unittest.mock import patch
 import pytest
 
 from plugins.atom import AtomMeta
-from services import pipeline_architect
-from services.template_runner import PipelineState
+from poindexter.services import pipeline_architect
+from poindexter.services.template_runner import PipelineState
 
 # ---------------------------------------------------------------------------
 # Helpers

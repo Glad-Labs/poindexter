@@ -76,17 +76,17 @@ from typing import Any
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport
 
-from services.voice_agent import build_voice_pipeline_task
-from services.voice_pipecat import (
+from poindexter.services.voice_agent import build_voice_pipeline_task
+from poindexter.services.voice_pipecat import (
     mint_livekit_token as _shared_mint_livekit_token,
 )
-from services.voice_pipecat import (
+from poindexter.services.voice_pipecat import (
     resolve_livekit_creds as _shared_resolve_livekit_creds,
 )
-from services.voice_pipecat import (
+from poindexter.services.voice_pipecat import (
     resolve_livekit_creds_async as _shared_resolve_livekit_creds_async,
 )
-from services.voice_prompts import CLAUDE_BRIDGE_TTS_KEY, resolve_voice_prompt
+from poindexter.services.voice_prompts import CLAUDE_BRIDGE_TTS_KEY, resolve_voice_prompt
 from utils.crawler_ua import build_crawler_ua
 
 logging.basicConfig(level=logging.INFO)
@@ -1175,7 +1175,7 @@ async def run_bot(
     import asyncpg
 
     from brain.bootstrap import require_database_url
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     # Bootstrap a tiny pool just to read voice_agent_livekit_url before
     # we mint the token. The "real" pool used by build_voice_pipeline_task
@@ -1252,7 +1252,7 @@ async def run_bot(
         # Grafana flame-graph panel. Best-effort — any failure is
         # logged inside setup_pyroscope, never raised.
         try:
-            from services.profiling import setup_pyroscope
+            from poindexter.services.profiling import setup_pyroscope
             setup_pyroscope(
                 service_name="poindexter-voice-livekit",
                 site_config=site_config,
@@ -1263,8 +1263,8 @@ async def run_bot(
         if resolved_brain == "claude-code":
             import uuid as _uuid
 
-            from services.admin_db import AdminDatabase
-            from services.voice_agent_claude_code import ClaudeCodeBridgeLLMService
+            from poindexter.services.admin_db import AdminDatabase
+            from poindexter.services.voice_agent_claude_code import ClaudeCodeBridgeLLMService
 
             extra = os.environ.get("CLAUDE_BOT_EXTRA_ARGS", "").split()
 
@@ -1470,7 +1470,7 @@ async def run_service(profile: str = "default") -> int:
     import asyncpg
 
     from brain.bootstrap import require_database_url
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     dsn = require_database_url(source=f"voice_agent_livekit_service[{profile}]")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)

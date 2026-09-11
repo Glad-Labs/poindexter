@@ -27,7 +27,7 @@ import time
 import httpx
 import pytest
 
-from services.auth.oauth_client import (
+from poindexter.services.auth.oauth_client import (
     OAuthClient,
     _decode_jwt_exp,
     oauth_client_from_secret_reader,
@@ -101,23 +101,23 @@ class TestTokenIsFresh:
     can't prove they're usable, so we force a re-mint)."""
 
     def test_future_exp_is_fresh(self):
-        from services.auth.oauth_client import token_is_fresh
+        from poindexter.services.auth.oauth_client import token_is_fresh
 
         assert token_is_fresh(_make_jwt(exp_offset=3600)) is True
 
     def test_expired_is_not_fresh(self):
-        from services.auth.oauth_client import token_is_fresh
+        from poindexter.services.auth.oauth_client import token_is_fresh
 
         assert token_is_fresh(_make_jwt(exp_offset=-10)) is False
 
     def test_within_skew_window_is_not_fresh(self):
-        from services.auth.oauth_client import EXPIRY_SKEW_SECONDS, token_is_fresh
+        from poindexter.services.auth.oauth_client import EXPIRY_SKEW_SECONDS, token_is_fresh
 
         # exp is in the future but inside the skew window → treat as stale.
         assert token_is_fresh(_make_jwt(exp_offset=EXPIRY_SKEW_SECONDS - 5)) is False
 
     def test_undecodable_is_not_fresh(self):
-        from services.auth.oauth_client import token_is_fresh
+        from poindexter.services.auth.oauth_client import token_is_fresh
 
         assert token_is_fresh("plaintext-not-a-jwt") is False
 

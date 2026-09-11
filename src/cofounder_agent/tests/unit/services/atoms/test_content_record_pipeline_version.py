@@ -33,7 +33,7 @@ def _capture_upserts() -> list[dict]:
     async def _upsert(task_id, data):
         calls.append(data)
 
-    import services.pipeline_db as _pdb
+    import poindexter.services.pipeline_db as _pdb
     _pdb.PipelineDB = lambda *_a, **_k: SimpleNamespace(upsert_version=_upsert)
     return calls
 

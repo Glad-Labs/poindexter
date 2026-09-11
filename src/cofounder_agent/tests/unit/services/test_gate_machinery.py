@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services.gate_machinery import (
+from poindexter.services.gate_machinery import (
     GateServiceError,
     coerce_artifact,
     ensure_gate_match,
@@ -107,7 +107,7 @@ class TestIsoOrNone:
 
 class TestGateCatalog:
     def test_catalog_has_the_five_known_gates(self):
-        from services.gate_machinery import GATE_CATALOG
+        from poindexter.services.gate_machinery import GATE_CATALOG
 
         names = {g.name for g in GATE_CATALOG}
         assert names == {
@@ -119,7 +119,7 @@ class TestGateCatalog:
         }
 
     def test_mechanism_and_wiring_are_accurate(self):
-        from services.gate_machinery import GATE_CATALOG_BY_NAME
+        from poindexter.services.gate_machinery import GATE_CATALOG_BY_NAME
 
         fpa = GATE_CATALOG_BY_NAME["final_publish_approval"]
         assert fpa.mechanism == "imperative-hold"

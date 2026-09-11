@@ -50,7 +50,7 @@ from typing import Any
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 # Reuse the audit-era ffprobe/subprocess helpers rather than reinventing them.
-from services.media_quality_service import _probe_duration, _run_argv
+from poindexter.services.media_quality_service import _probe_duration, _run_argv
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -284,7 +284,7 @@ async def _detect_human_in_frame(
     ]
 
     # GPU coordination — qwen3-vl is ~19.6 GB; serialize against image-gen/writer.
-    from services.gpu_scheduler import gpu
+    from poindexter.services.gpu_scheduler import gpu
 
     try:
         async with gpu.lock(

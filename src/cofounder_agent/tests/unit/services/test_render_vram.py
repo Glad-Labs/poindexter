@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from services.render_vram import render_gpu_free_vram_gb
-from services.site_config import SiteConfig
+from poindexter.services.render_vram import render_gpu_free_vram_gb
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**overrides):

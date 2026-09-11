@@ -28,8 +28,8 @@ import pytest
 import pytest_asyncio
 
 from plugins.topic_source import TopicSource
-from services.site_config import SiteConfig
-from services.topic_sources.dev_diary_source import (
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_sources.dev_diary_source import (
     _CC_RE,
     _NOTABLE_COMMIT_PREFIXES,
     DevDiaryContext,
@@ -856,9 +856,9 @@ class TestGatherContextDB:
             return []
 
         with (
-            patch("services.topic_sources.dev_diary_source._collect_merged_prs",
+            patch("poindexter.services.topic_sources.dev_diary_source._collect_merged_prs",
                   _empty_collector),
-            patch("services.topic_sources.dev_diary_source._collect_notable_commits",
+            patch("poindexter.services.topic_sources.dev_diary_source._collect_notable_commits",
                   _empty_collector),
         ):
             ctx = await DevDiarySource().gather_context(
@@ -886,9 +886,9 @@ class TestGatherContextDB:
             return []
 
         with (
-            patch("services.topic_sources.dev_diary_source._collect_merged_prs",
+            patch("poindexter.services.topic_sources.dev_diary_source._collect_merged_prs",
                   _empty_collector),
-            patch("services.topic_sources.dev_diary_source._collect_notable_commits",
+            patch("poindexter.services.topic_sources.dev_diary_source._collect_notable_commits",
                   _empty_collector),
         ):
             ctx = await DevDiarySource().gather_context(
@@ -947,9 +947,9 @@ class TestGatherContextDB:
             return []
 
         with (
-            patch("services.topic_sources.dev_diary_source._collect_merged_prs",
+            patch("poindexter.services.topic_sources.dev_diary_source._collect_merged_prs",
                   _empty_collector),
-            patch("services.topic_sources.dev_diary_source._collect_notable_commits",
+            patch("poindexter.services.topic_sources.dev_diary_source._collect_notable_commits",
                   _empty_collector),
         ):
             ctx = await DevDiarySource().gather_context(
@@ -987,9 +987,9 @@ class TestGatherContextDB:
             return []
 
         with (
-            patch("services.topic_sources.dev_diary_source._collect_merged_prs",
+            patch("poindexter.services.topic_sources.dev_diary_source._collect_merged_prs",
                   _empty_collector),
-            patch("services.topic_sources.dev_diary_source._collect_notable_commits",
+            patch("poindexter.services.topic_sources.dev_diary_source._collect_notable_commits",
                   _empty_collector),
         ):
             ctx = await DevDiarySource().gather_context(
@@ -1130,11 +1130,11 @@ class TestGatherContextWiring:
 
         with (
             patch(
-                "services.topic_sources.dev_diary_source._collect_merged_prs",
+                "poindexter.services.topic_sources.dev_diary_source._collect_merged_prs",
                 fake_collect_prs,
             ),
             patch(
-                "services.topic_sources.dev_diary_source._collect_notable_commits",
+                "poindexter.services.topic_sources.dev_diary_source._collect_notable_commits",
                 fake_collect_commits,
             ),
         ):
@@ -1165,11 +1165,11 @@ class TestGatherContextWiring:
 
         with (
             patch(
-                "services.topic_sources.dev_diary_source._collect_merged_prs",
+                "poindexter.services.topic_sources.dev_diary_source._collect_merged_prs",
                 fake_collect_prs,
             ),
             patch(
-                "services.topic_sources.dev_diary_source._collect_notable_commits",
+                "poindexter.services.topic_sources.dev_diary_source._collect_notable_commits",
                 fake_collect_commits,
             ),
         ):
@@ -1206,11 +1206,11 @@ class TestGatherContextWiring:
         fake_sc = _FakeSiteConfig()
         with (
             patch(
-                "services.topic_sources.dev_diary_source._collect_merged_prs",
+                "poindexter.services.topic_sources.dev_diary_source._collect_merged_prs",
                 fake_collect_prs,
             ),
             patch(
-                "services.topic_sources.dev_diary_source._collect_notable_commits",
+                "poindexter.services.topic_sources.dev_diary_source._collect_notable_commits",
                 fake_collect_commits,
             ),
         ):
@@ -1235,11 +1235,11 @@ class TestGatherContextWiring:
 
         with (
             patch(
-                "services.topic_sources.dev_diary_source._collect_merged_prs",
+                "poindexter.services.topic_sources.dev_diary_source._collect_merged_prs",
                 fake_collect_prs,
             ),
             patch(
-                "services.topic_sources.dev_diary_source._collect_notable_commits",
+                "poindexter.services.topic_sources.dev_diary_source._collect_notable_commits",
                 fake_collect_commits,
             ),
         ):
@@ -1331,7 +1331,7 @@ class TestContextSourceFailureVisibility:
     ):
         calls: list[dict] = []
         monkeypatch.setattr(
-            "services.topic_sources.dev_diary_source.emit_finding",
+            "poindexter.services.topic_sources.dev_diary_source.emit_finding",
             lambda **kw: calls.append(kw),
         )
 
@@ -1361,7 +1361,7 @@ class TestContextSourceFailureVisibility:
     ):
         calls: list[dict] = []
         monkeypatch.setattr(
-            "services.topic_sources.dev_diary_source.emit_finding",
+            "poindexter.services.topic_sources.dev_diary_source.emit_finding",
             lambda **kw: calls.append(kw),
         )
 
@@ -1382,7 +1382,7 @@ class TestContextSourceFailureVisibility:
         not a failure, so it must NOT emit a finding."""
         calls: list[dict] = []
         monkeypatch.setattr(
-            "services.topic_sources.dev_diary_source.emit_finding",
+            "poindexter.services.topic_sources.dev_diary_source.emit_finding",
             lambda **kw: calls.append(kw),
         )
 

@@ -293,7 +293,7 @@ class MemoryClient:
         assert self._http is not None  # for type checker
 
         try:
-            from services.llm_providers.dispatcher import dispatch_embed
+            from poindexter.services.llm_providers.dispatcher import dispatch_embed
         except ImportError:
             dispatch_embed = None
 
@@ -787,7 +787,7 @@ class MemoryClient:
         # is acceptable — the WARNING above already fired and the
         # operator notification below still runs.
         try:
-            from services.audit_log import audit_log_bg
+            from poindexter.services.audit_log import audit_log_bg
             audit_log_bg(
                 "rag_engine_fallback",
                 "memory_client",
@@ -805,7 +805,7 @@ class MemoryClient:
         # to Telegram on the next failure window via the existing
         # notify_operator dedup. Never let notify itself raise.
         try:
-            from services.integrations.operator_notify import notify_operator
+            from poindexter.services.integrations.operator_notify import notify_operator
             await notify_operator(
                 f"⚠️ rag_engine fallback fired — {type(exc).__name__}: "
                 f"{str(exc)[:160]}. Search reverted to legacy path. "
@@ -933,7 +933,7 @@ class MemoryClient:
         path serviced the query. ``writer`` and ``origin_path`` survive
         the round-trip via the retriever's metadata payload.
         """
-        from services.rag_engine import get_rag_retriever
+        from poindexter.services.rag_engine import get_rag_retriever
 
         pool = await self._require_pool()
         # 2026-05-27: explicitly pass `hybrid` + `rerank` so the retriever

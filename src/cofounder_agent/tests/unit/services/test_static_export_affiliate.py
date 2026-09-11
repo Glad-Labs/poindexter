@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import json
 
-import services.static_export_service as ses
-from services.site_config import SiteConfig
+import poindexter.services.static_export_service as ses
+from poindexter.services.site_config import SiteConfig
 
 _DISCLOSURE = "Some links are affiliate links — Glad Labs may earn a commission."
 

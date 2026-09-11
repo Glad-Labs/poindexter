@@ -232,7 +232,7 @@ async def reclaim_stale_inprogress_tasks(
         )
         logger.warning(msg)
         try:
-            from services.integrations.operator_notify import notify_operator
+            from poindexter.services.integrations.operator_notify import notify_operator
 
             await notify_operator(msg)
         except Exception:  # noqa: BLE001 — notification is best-effort
@@ -358,8 +358,8 @@ async def _run_content_generation_flow(
     # Lazy-import to keep flow-module import cheap (Prefect imports
     # the module to register flows during deployment-time discovery
     # but doesn't need the heavy database/services tree).
-    from services.content_router_service import process_content_generation_task
-    from services.di_wiring import build_and_wire_subprocess_with_container
+    from poindexter.services.content_router_service import process_content_generation_task
+    from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
 
     # poindexter#477: Prefect spawns this flow inside a fresh Python
     # subprocess that never runs ``main.py``'s lifespan. Without the
@@ -399,7 +399,7 @@ async def _run_content_generation_flow(
     # configure_langfuse_callback has its own module-level guard).
     if _wired_site_config is not None:
         try:
-            from services.telemetry import setup_telemetry as _setup_telemetry
+            from poindexter.services.telemetry import setup_telemetry as _setup_telemetry
             _setup_telemetry(
                 app=None,
                 site_config=_wired_site_config,
@@ -412,7 +412,7 @@ async def _run_content_generation_flow(
                 exc_info=True,
             )
         try:
-            from services.llm_providers.litellm_provider import (
+            from poindexter.services.llm_providers.litellm_provider import (
                 configure_langfuse_callback,
             )
             await configure_langfuse_callback(_wired_site_config)
@@ -429,7 +429,7 @@ async def _run_content_generation_flow(
         # Same fail-soft posture as the blocks above; empty secret rows
         # are the normal local-only state and stamp nothing.
         try:
-            from services.llm_providers.litellm_provider import (
+            from poindexter.services.llm_providers.litellm_provider import (
                 configure_cloud_api_keys,
             )
             await configure_cloud_api_keys(_wired_site_config)
@@ -449,7 +449,7 @@ async def _run_content_generation_flow(
         # for non-FastAPI entry points; the FastAPI-specific integrations hook
         # globally via the SDK, not via the app instance.
         try:
-            from services.sentry_integration import SentryIntegration
+            from poindexter.services.sentry_integration import SentryIntegration
             SentryIntegration.initialize(
                 None,  # type: ignore[arg-type]
                 _wired_site_config,
@@ -470,7 +470,7 @@ async def _run_content_generation_flow(
     # quietly drop their telemetry, never breaking generation).
     _platform: Any = None
     if _wired_site_config is not None and _pool is not None:
-        from services.di_wiring import build_platform_for_subprocess
+        from poindexter.services.di_wiring import build_platform_for_subprocess
         _platform = build_platform_for_subprocess(_pool, _wired_site_config)
 
     # Reclaim pipeline_tasks stranded in_progress by a previous killed/crashed
@@ -504,7 +504,7 @@ async def _run_content_generation_flow(
         # one (see the "no .pool" warning above). No pool means no settings
         # read is possible, and claim_pending_task will itself return None a
         # few lines down — so skip the gate rather than crash the flow.
-        from services import game_mode
+        from poindexter.services import game_mode
 
         _gm = (
             await game_mode.status(_pool)
@@ -532,7 +532,7 @@ async def _run_content_generation_flow(
         # Fails OPEN (a dead DB never becomes a content outage). The per-LLM-call
         # HARD stop is cost_guard; this is the gentle "stop starting new work".
         # Operator-triggered runs (explicit task_id/topic) bypass this gate.
-        from services import spend_throttle
+        from poindexter.services import spend_throttle
 
         _throttle = await spend_throttle.should_throttle(
             _pool, site_config=_wired_site_config
@@ -684,7 +684,7 @@ async def _run_content_generation_flow(
         # Send a deduped, severity-routed operator alert. Best-effort —
         # never raises, never blocks the re-raise below.
         try:
-            from services.task_failure_alerts import send_failure_alert
+            from poindexter.services.task_failure_alerts import send_failure_alert
 
             _pool = getattr(getattr(database_service, "database_service", database_service), "pool", None)
 
@@ -745,7 +745,7 @@ async def _run_content_generation_flow(
             else "awaiting_approval"
         )
         if final_status != "failed" and task_id is not None:
-            from services.post_pipeline_actions import run_post_pipeline_actions
+            from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
 
             await run_post_pipeline_actions(
                 database_service=database_service,
@@ -769,7 +769,7 @@ def _is_registry_unavailable_error(exc: BaseException) -> bool:
     """True when ``exc`` is the atom-registry-empty infra fault (lazy import
     so the flow module stays light for Prefect's deployment discovery)."""
     try:
-        from services.atom_registry import AtomRegistryUnavailableError
+        from poindexter.services.atom_registry import AtomRegistryUnavailableError
     except ImportError:
         return False
     return isinstance(exc, AtomRegistryUnavailableError)
@@ -974,8 +974,8 @@ async def _build_default_database_service() -> Any:
     container, the host shell, or the Prefect worker pool.
     """
     from brain.bootstrap import resolve_database_url
-    from services.database_service import DatabaseService
-    from services.site_config import SiteConfig
+    from poindexter.services.database_service import DatabaseService
+    from poindexter.services.site_config import SiteConfig
 
     dsn = resolve_database_url()
     # #272 Phase-2g: DatabaseService takes a REQUIRED site_config. This path

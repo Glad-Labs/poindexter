@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.title_generation import (
+from poindexter.services.title_generation import (
     choose_canonical_title,
     extract_h1_title,
     generate_canonical_title,
@@ -57,7 +57,7 @@ async def test_uses_pipeline_writer_model_pin():
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI trends",
@@ -86,7 +86,7 @@ async def test_pin_without_prefix_passed_through():
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",
@@ -114,9 +114,9 @@ async def test_pages_operator_when_pin_empty():
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm, \
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm, \
          patch(
-             "services.integrations.operator_notify.notify_operator",
+             "poindexter.services.integrations.operator_notify.notify_operator",
              new=notify,
          ):
         pm.return_value.get_prompt.return_value = "PROMPT"
@@ -163,7 +163,7 @@ async def test_disables_thinking_for_short_copy_title():
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI trends", primary_keyword="AI", content_excerpt="x",
@@ -299,7 +299,7 @@ async def test_returns_none_when_ollama_native_provider_missing():
              "plugins.registry.get_all_llm_providers",
              return_value=[other],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",
@@ -333,7 +333,7 @@ async def test_returns_none_when_sanitizer_rejects_llm_output():
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",
@@ -369,7 +369,7 @@ async def test_topic_is_passed_to_get_prompt():
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.side_effect = _get_prompt
         await generate_canonical_title(
             topic="How embeddings rank similarity",
@@ -410,7 +410,7 @@ async def test_existing_titles_appended_to_avoidance_prompt():
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "BASE PROMPT"
         out = await generate_canonical_title(
             topic="AI",
@@ -457,7 +457,7 @@ async def test_avoidance_block_supersedes_legacy_existing_titles():
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "BASE PROMPT"
         out = await generate_canonical_title(
             topic="AI",

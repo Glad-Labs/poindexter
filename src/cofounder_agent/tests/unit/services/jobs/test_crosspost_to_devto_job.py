@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.crosspost_to_devto import (
+from poindexter.services.jobs.crosspost_to_devto import (
     CrosspostToDevtoJob,
     _parse_content_types,
     _parse_min_quality,
@@ -100,7 +100,7 @@ class TestRun:
         pool, _ = _make_pool([])
         svc = _patched_svc(api_key="")
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
@@ -116,7 +116,7 @@ class TestRun:
         pool, _ = _make_pool([])
         svc = _patched_svc(api_key_raises=RuntimeError("db missing"))
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
@@ -129,7 +129,7 @@ class TestRun:
         pool, _ = _make_pool([])
         svc = _patched_svc()
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
@@ -151,7 +151,7 @@ class TestRun:
             },
         )
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
@@ -177,7 +177,7 @@ class TestRun:
             },
         )
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
@@ -191,7 +191,7 @@ class TestRun:
         pool, conn = _make_pool([])
         svc = _patched_svc()
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
@@ -209,10 +209,10 @@ class TestRun:
         )
         mock_gitea = MagicMock(return_value=None)  # emit_finding is sync
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ), patch(
-            "services.jobs.crosspost_to_devto.emit_finding",
+            "poindexter.services.jobs.crosspost_to_devto.emit_finding",
             new=mock_gitea,
         ):
             job = CrosspostToDevtoJob()
@@ -228,10 +228,10 @@ class TestRun:
         svc = _patched_svc(post_return_map={"p1": RuntimeError("rate")})
         mock_gitea = MagicMock(return_value=None)  # emit_finding is sync
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ), patch(
-            "services.jobs.crosspost_to_devto.emit_finding",
+            "poindexter.services.jobs.crosspost_to_devto.emit_finding",
             new=mock_gitea,
         ):
             job = CrosspostToDevtoJob()
@@ -243,7 +243,7 @@ class TestRun:
         pool, _ = _make_pool(fetch_raises=RuntimeError("pool closed"))
         svc = _patched_svc()
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
@@ -261,7 +261,7 @@ class TestRun:
         pool, conn = _make_pool([])
         svc = _patched_svc()
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
@@ -291,7 +291,7 @@ class TestRun:
             },
         )
         with patch(
-            "services.devto_service.DevToCrossPostService",
+            "poindexter.services.devto_service.DevToCrossPostService",
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
@@ -307,7 +307,7 @@ class TestGate:
     async def test_empty_allowlist_short_circuits_no_fetch(self):
         pool, conn = _make_pool([])
         svc = _patched_svc()
-        with patch("services.devto_service.DevToCrossPostService", return_value=svc):
+        with patch("poindexter.services.devto_service.DevToCrossPostService", return_value=svc):
             job = CrosspostToDevtoJob()
             result = await job.run(pool, _cfg(content_types=""))
         assert result.ok is True
@@ -319,7 +319,7 @@ class TestGate:
     async def test_gate_sql_and_params(self):
         pool, conn = _make_pool([])
         svc = _patched_svc()
-        with patch("services.devto_service.DevToCrossPostService", return_value=svc):
+        with patch("poindexter.services.devto_service.DevToCrossPostService", return_value=svc):
             job = CrosspostToDevtoJob()
             await job.run(pool, _cfg(content_types="ai-ml,dev_diary", min_quality="80"))
         sql = conn.fetch.call_args.args[0]
@@ -334,8 +334,8 @@ class TestGate:
         svc = _patched_svc()
         emit = MagicMock()
         with patch(
-            "services.devto_service.DevToCrossPostService", return_value=svc
-        ), patch("services.jobs.crosspost_to_devto.emit_finding", new=emit):
+            "poindexter.services.devto_service.DevToCrossPostService", return_value=svc
+        ), patch("poindexter.services.jobs.crosspost_to_devto.emit_finding", new=emit):
             job = CrosspostToDevtoJob()
             result = await job.run(pool, _cfg(min_quality="high"))
         assert result.ok is True
@@ -349,7 +349,7 @@ class TestGate:
         # fetchval returns universe (5) then eligible (3) on successive calls.
         conn.fetchval = AsyncMock(side_effect=[5, 3])
         svc = _patched_svc(post_return_map={"p1": "https://dev.to/g/s"})
-        with patch("services.devto_service.DevToCrossPostService", return_value=svc):
+        with patch("poindexter.services.devto_service.DevToCrossPostService", return_value=svc):
             result = await CrosspostToDevtoJob().run(pool, _cfg())
         assert result.metrics["gate_universe"] == 5
         assert result.metrics["gate_eligible"] == 3

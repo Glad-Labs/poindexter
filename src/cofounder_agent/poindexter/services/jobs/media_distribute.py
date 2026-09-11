@@ -49,12 +49,12 @@ import os
 from typing import Any
 
 from plugins.job import JobResult
-from services.jobs.dispatch_handles import (
+from poindexter.services.jobs.dispatch_handles import (
     PlatformDispatchResult,
     claim_media_dispatch,
     persist_platform_handles,
 )
-from services.media_approval_service import record_dispatched, record_pending
+from poindexter.services.media_approval_service import record_dispatched, record_pending
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -194,9 +194,9 @@ async def _dispatch_asset(
     # Reuse the pure YouTube-payload helpers — they compose the description
     # (SEO excerpt + canonical back-link + stripped body, ≤4800 chars) and parse
     # seo_keywords into capped tags. (Shared home: services/jobs/youtube_payload.)
-    from services.integrations import registry
-    from services.integrations.handlers import load_all
-    from services.jobs.youtube_payload import (
+    from poindexter.services.integrations import registry
+    from poindexter.services.integrations.handlers import load_all
+    from poindexter.services.jobs.youtube_payload import (
         _build_youtube_description,
         _build_youtube_title,
         _parse_seo_keywords,
@@ -531,7 +531,7 @@ class MediaDistributeJob:
         # no RSS surface. media_feed_reconciliation is the backstop that catches
         # whatever this still misses.
         if rss_dispatched:
-            from services.media_feed_rebuild import rebuild_video_feed
+            from poindexter.services.media_feed_rebuild import rebuild_video_feed
 
             await rebuild_video_feed(sc)
 

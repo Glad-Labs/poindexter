@@ -42,7 +42,7 @@ except ImportError as exc:  # pragma: no cover - only hit if upstream moves the 
 
 # Must exist — the patch shipped in PR #1626. A missing symbol is a real
 # regression, not a reason to skip.
-from services.langfuse_shim import _install_cycle_safe_serializer_patch  # noqa: E402
+from poindexter.services.langfuse_shim import _install_cycle_safe_serializer_patch  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

@@ -7,7 +7,7 @@ fabricated quotes, and company fact validation.
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 _SC = SiteConfig()
 

@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import pytest
 
-from services.model_eval.golden_sets.retrieval import (
+from poindexter.services.model_eval.golden_sets.retrieval import (
     _DEICTIC,
     _META,
     LEGACY_PREVIEW_CHARS,
     _pick_span,
     build_retrieval_golden_set,
 )
-from services.model_eval.metrics import recall_at_k
-from services.model_eval.types import GoldenCase, GoldenSet
-from services.retrieval_eval import _contains_span, score_retrieval
+from poindexter.services.model_eval.metrics import recall_at_k
+from poindexter.services.model_eval.types import GoldenCase, GoldenSet
+from poindexter.services.retrieval_eval import _contains_span, score_retrieval
 
 
 # --------------------------------------------------------------------------
@@ -282,7 +282,7 @@ class TestScoreRetrieval:
         async def fake_get(*a, **k):
             return _FakeRetriever([_NWS(node)])
 
-        monkeypatch.setattr("services.rag_engine.get_rag_retriever", fake_get)
+        monkeypatch.setattr("poindexter.services.rag_engine.get_rag_retriever", fake_get)
         res = await score_retrieval(
             pool=None, site_config=_Cfg(),
             golden_set=GoldenSet("t", 1, [gold_case]),
@@ -304,7 +304,7 @@ class TestScoreRetrieval:
         async def fake_get(*a, **k):
             return _FakeRetriever([_NWS(node)])
 
-        monkeypatch.setattr("services.rag_engine.get_rag_retriever", fake_get)
+        monkeypatch.setattr("poindexter.services.rag_engine.get_rag_retriever", fake_get)
         res = await score_retrieval(
             pool=None, site_config=_Cfg(), golden_set=GoldenSet("t", 1, [gold_case])
         )
@@ -320,7 +320,7 @@ class TestScoreRetrieval:
         async def fake_get(*a, **k):
             return _FakeRetriever([], raises=True)
 
-        monkeypatch.setattr("services.rag_engine.get_rag_retriever", fake_get)
+        monkeypatch.setattr("poindexter.services.rag_engine.get_rag_retriever", fake_get)
         res = await score_retrieval(
             pool=None, site_config=_Cfg(), golden_set=GoldenSet("t", 1, [gold_case])
         )
@@ -338,7 +338,7 @@ class TestScoreRetrieval:
         async def fake_get(*a, **k):
             return _FakeRetriever([_NWS(node)])
 
-        monkeypatch.setattr("services.rag_engine.get_rag_retriever", fake_get)
+        monkeypatch.setattr("poindexter.services.rag_engine.get_rag_retriever", fake_get)
         res = await score_retrieval(
             pool=None, site_config=_Cfg(), golden_set=GoldenSet("t", 1, [gold_case])
         )
@@ -356,7 +356,7 @@ class TestScoreRetrieval:
         async def fake_get(*a, **k):
             return _FakeRetriever([_NWS(node)])
 
-        monkeypatch.setattr("services.rag_engine.get_rag_retriever", fake_get)
+        monkeypatch.setattr("poindexter.services.rag_engine.get_rag_retriever", fake_get)
         res = await score_retrieval(
             pool=None, site_config=_Cfg(),
             golden_set=GoldenSet("t", 1, [gold_case, head]),

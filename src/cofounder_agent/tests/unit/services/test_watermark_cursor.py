@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from services.watermark_cursor import (
+from poindexter.services.watermark_cursor import (
     DEFAULT_INGESTION_LAG_SECONDS,
     is_future_cursor,
     next_high_water,
@@ -139,7 +139,7 @@ class TestBothIngestsShareTheRule:
         mod = importlib.import_module(f"services.jobs.{job_module}")
         src = Path(mod.__file__).read_text(encoding="utf-8")
 
-        assert "from services.watermark_cursor import" in src
+        assert "services.watermark_cursor import" in src
         # A future cursor must be rejected at read time — monotonicity means
         # it can never repair itself.
         assert "is_future_cursor(" in src

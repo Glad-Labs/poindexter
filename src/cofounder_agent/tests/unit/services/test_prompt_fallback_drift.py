@@ -24,9 +24,9 @@ from unittest.mock import patch
 
 import pytest
 
-from services.prompt_manager import UnifiedPromptManager
+from poindexter.services.prompt_manager import UnifiedPromptManager
 
-_PATCH_TARGET = "services.prompt_manager.get_prompt_manager"
+_PATCH_TARGET = "poindexter.services.prompt_manager.get_prompt_manager"
 
 
 def _qa_rewrite():
@@ -47,7 +47,7 @@ def _narrate():
 
 
 def _architect():
-    from services import pipeline_architect as m
+    from poindexter.services import pipeline_architect as m
 
     # _resolve_system_prompt(site_config) renders the {site_name} placeholder in
     # a SINGLE .format pass (registry up: get_prompt's format pass; registry
@@ -61,7 +61,7 @@ def _architect():
 
 
 def _social_twitter():
-    from services import social_poster as m
+    from poindexter.services import social_poster as m
 
     return m._resolve_social_prompt(
         "social.twitter_promote", fallback=m._TWITTER_PROMPT_FALLBACK,
@@ -72,7 +72,7 @@ def _social_twitter():
 
 
 def _social_linkedin():
-    from services import social_poster as m
+    from poindexter.services import social_poster as m
 
     return m._resolve_social_prompt(
         "social.linkedin_promote", fallback=m._LINKEDIN_PROMPT_FALLBACK,
@@ -83,31 +83,31 @@ def _social_linkedin():
 
 
 def _ops_triage():
-    from services import firefighter_service as m
+    from poindexter.services import firefighter_service as m
 
     return m._resolve_system_prompt()
 
 
 def _image_caption():
-    from services import image_captioner as m
+    from poindexter.services import image_captioner as m
 
     return m._prompt(budget=125)
 
 
 def _g_eval_criterion():
-    from services import deepeval_rails as m
+    from poindexter.services import deepeval_rails as m
 
     return m._resolve_g_eval_criterion()
 
 
 def _collapse():
-    from services.integrations.handlers import retention_embeddings_collapse as m
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse as m
 
     return m._resolve_summary_prompt_template()
 
 
 def _retention_summarize():
-    from services.integrations.handlers import retention_summarize_to_table as m
+    from poindexter.services.integrations.handlers import retention_summarize_to_table as m
 
     return m._resolve_summary_prompt_template()
 

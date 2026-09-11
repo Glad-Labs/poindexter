@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-from services import podcast_sting_mixer as m
+from poindexter.services import podcast_sting_mixer as m
 
 
 class _Cfg:

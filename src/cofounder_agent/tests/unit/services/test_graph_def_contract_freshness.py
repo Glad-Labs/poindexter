@@ -33,15 +33,15 @@ from pathlib import Path
 
 import pytest
 
-import services.pipeline_architect as pa
+import poindexter.services.pipeline_architect as pa
 from plugins.atom import AtomMeta, FieldSpec
-from services.atom_registry import discover
-from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
-from services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
-from services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
-from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
-from services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
-from services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
+from poindexter.services.atom_registry import discover
+from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+from poindexter.services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
+from poindexter.services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
+from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+from poindexter.services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
+from poindexter.services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
 
 # Committed snapshot of per-atom contract fingerprints, keyed by atom name.
 # Regenerate after an INTENTIONAL atom-contract change (see module docstring).

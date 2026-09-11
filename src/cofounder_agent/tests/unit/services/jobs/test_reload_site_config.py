@@ -27,10 +27,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.bootstrap import build_container
-from services.container_registry import set_container
-from services.jobs.reload_site_config import ReloadSiteConfigJob
-from services.site_config import SiteConfig
+from poindexter.services.bootstrap import build_container
+from poindexter.services.container_registry import set_container
+from poindexter.services.jobs.reload_site_config import ReloadSiteConfigJob
+from poindexter.services.site_config import SiteConfig
 from utils.route_utils import get_site_config_dependency
 
 

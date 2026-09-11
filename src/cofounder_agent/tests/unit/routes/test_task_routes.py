@@ -67,7 +67,7 @@ def _stub_topic_dedup_guard(monkeypatch):
     These tests cover the HTTP contract of task creation; dedup has its own
     tests in tests/unit/services/test_topic_dedup_guard.py.
     """
-    import services.topic_dedup_guard as guard
+    import poindexter.services.topic_dedup_guard as guard
 
     async def _allow(*_a, **_kw):
         return None
@@ -471,7 +471,7 @@ class TestCreateTaskQueueFull:
         mock_db.add_task = AsyncMock(return_value="queued-task-id")
         # create_task queries throttle via services.pipeline_throttle.is_queue_full
         throttle_patch = patch(
-            "services.pipeline_throttle.is_queue_full",
+            "poindexter.services.pipeline_throttle.is_queue_full",
             AsyncMock(
                 return_value=(queue_size >= queue_limit, queue_size, queue_limit)
             ),
@@ -534,7 +534,7 @@ class TestCreateTaskQueueFull:
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="resilient-task-id")
         with patch(
-            "services.pipeline_throttle.is_queue_full",
+            "poindexter.services.pipeline_throttle.is_queue_full",
             AsyncMock(side_effect=RuntimeError("db meltdown")),
         ):
             client = TestClient(_build_app(mock_db))
@@ -571,7 +571,7 @@ class TestCreateTaskDedup:
         lazily, so the patched attribute is resolved at call time)."""
         import types
 
-        import services.topic_dedup_guard as topic_dedup_guard
+        import poindexter.services.topic_dedup_guard as topic_dedup_guard
 
         calls: dict = {}
 
@@ -651,8 +651,8 @@ class TestCreateTaskDedup:
         poindexter#947 (shared with the chat agent's create_post tool), so
         the niche stub targets the service module, not the route wrapper.
         """
-        import services.blog_task_creation as btc
-        import services.topic_pool as tp
+        import poindexter.services.blog_task_creation as btc
+        import poindexter.services.topic_pool as tp
 
         niche = MagicMock()
         niche.slug = "test-niche"
@@ -735,7 +735,7 @@ class TestDiscoverTopicsEndpoint:
         return niche
 
     def test_triggers_sweep_and_returns_batch(self, monkeypatch):
-        import services.topic_batch_service as tbs
+        import poindexter.services.topic_batch_service as tbs
 
         self._patch_niche(monkeypatch)
         batch = MagicMock()
@@ -759,7 +759,7 @@ class TestDiscoverTopicsEndpoint:
         assert body["status"] == "open"
 
     def test_skipped_sweep_reports_detail(self, monkeypatch):
-        import services.topic_batch_service as tbs
+        import poindexter.services.topic_batch_service as tbs
 
         self._patch_niche(monkeypatch)
         svc = MagicMock()
@@ -810,7 +810,7 @@ class TestCreateTaskSeedURL:
         ``.fetch_seed_url(...)`` on it. Patching the unbound method on the
         class makes every per-request instance use our fake — no real HTTP.
         """
-        from services.seed_url_fetcher import SeedURLFetcher
+        from poindexter.services.seed_url_fetcher import SeedURLFetcher
 
         async def _fake_fetch(self, url, **kwargs):  # noqa: ARG001 — bound-method shim
             if error is not None:
@@ -820,7 +820,7 @@ class TestCreateTaskSeedURL:
         monkeypatch.setattr(SeedURLFetcher, "fetch_seed_url", _fake_fetch)
 
     def test_seed_url_only_extracts_title_as_topic(self, monkeypatch):
-        from services.seed_url_fetcher import SeedURLResult
+        from poindexter.services.seed_url_fetcher import SeedURLResult
 
         self._patch_fetch(
             monkeypatch,
@@ -862,7 +862,7 @@ class TestCreateTaskSeedURL:
     def test_seed_url_and_topic_combined_preserves_callers_topic(self, monkeypatch):
         """When both fields are present, the caller's topic wins but the
         URL is still attributed in the research context (AC#1)."""
-        from services.seed_url_fetcher import SeedURLResult
+        from poindexter.services.seed_url_fetcher import SeedURLResult
 
         self._patch_fetch(
             monkeypatch,
@@ -902,7 +902,7 @@ class TestCreateTaskSeedURL:
         assert "https://example.com/news" in metadata["research_context"]
 
     def test_seed_url_404_returns_400_with_clear_reason(self, monkeypatch):
-        from services.seed_url_fetcher import SeedURLError
+        from poindexter.services.seed_url_fetcher import SeedURLError
 
         self._patch_fetch(
             monkeypatch,
@@ -934,7 +934,7 @@ class TestCreateTaskSeedURL:
         assert not mock_db.add_task.called
 
     def test_seed_url_login_wall_returns_400_with_login_wall_reason(self, monkeypatch):
-        from services.seed_url_fetcher import SeedURLError
+        from poindexter.services.seed_url_fetcher import SeedURLError
 
         self._patch_fetch(
             monkeypatch,
@@ -975,7 +975,7 @@ class TestCreateTaskSeedURL:
     def test_seed_url_truncated_response_still_succeeds(self, monkeypatch):
         """The fetcher truncates oversize pages internally and returns a
         valid SeedURLResult; the route should queue the task normally."""
-        from services.seed_url_fetcher import SeedURLResult
+        from poindexter.services.seed_url_fetcher import SeedURLResult
 
         self._patch_fetch(
             monkeypatch,
@@ -1370,7 +1370,7 @@ class TestCreateTaskTargetLength:
 
     def test_omitted_length_routes_through_picker(self, monkeypatch):
         monkeypatch.setattr(
-            "services.blog_task_creation.pick_target_length", lambda _cfg: 2718
+            "poindexter.services.blog_task_creation.pick_target_length", lambda _cfg: 2718
         )
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="task-id")
@@ -1388,7 +1388,7 @@ class TestCreateTaskTargetLength:
         # Pins the actual defect: the picker's value must reach the row even
         # when it differs from the retired literal.
         monkeypatch.setattr(
-            "services.blog_task_creation.pick_target_length", lambda _cfg: 431
+            "poindexter.services.blog_task_creation.pick_target_length", lambda _cfg: 431
         )
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="task-id")
@@ -1403,7 +1403,7 @@ class TestCreateTaskTargetLength:
 
     def test_explicit_target_length_wins_over_picker(self, monkeypatch):
         monkeypatch.setattr(
-            "services.blog_task_creation.pick_target_length", lambda _cfg: 2718
+            "poindexter.services.blog_task_creation.pick_target_length", lambda _cfg: 2718
         )
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="task-id")
@@ -1425,7 +1425,7 @@ class TestCreateTaskTargetLength:
         # content_constraints overrides top-level fields (#1250) — that
         # precedence must survive the picker re-wire.
         monkeypatch.setattr(
-            "services.blog_task_creation.pick_target_length", lambda _cfg: 2718
+            "poindexter.services.blog_task_creation.pick_target_length", lambda _cfg: 2718
         )
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="task-id")

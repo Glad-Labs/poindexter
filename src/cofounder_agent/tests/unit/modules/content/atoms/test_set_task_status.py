@@ -150,8 +150,8 @@ def test_valid_statuses_match_db_constraint():
     import re
     from pathlib import Path
 
-    import services
     from modules.content.atoms.set_task_status import _VALID_STATUSES
+    from poindexter import services
 
     schema = (
         Path(services.__file__).parent / "migrations" / "0000_baseline.schema.sql"
@@ -165,7 +165,7 @@ def test_valid_statuses_match_db_constraint():
     )
 
     mig = importlib.import_module(
-        "services.migrations."
+        "poindexter.services.migrations."
         "20260816_021929_add_expired_and_dismissed_to_pipeline_tasks_status_check"
     )
     live_statuses = frozenset(mig.PIPELINE_TASK_STATUSES)

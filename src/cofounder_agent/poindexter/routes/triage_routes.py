@@ -60,9 +60,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from middleware.api_token_auth import verify_api_token
-from services.firefighter_service import build_triage_context, run_triage
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.firefighter_service import build_triage_context, run_triage
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
@@ -190,8 +190,8 @@ class _DefaultModelRouter:
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
         del model_class, max_tokens  # tier→model resolution is the writer-model setting
-        from services.llm_providers.thinking_models import strip_think_blocks
-        from services.llm_text import ollama_chat_text, resolve_local_writer_model
+        from poindexter.services.llm_providers.thinking_models import strip_think_blocks
+        from poindexter.services.llm_text import ollama_chat_text, resolve_local_writer_model
 
         triage_model = ""
         try:
@@ -308,7 +308,7 @@ async def _cost_guard_check(site_config: SiteConfig) -> None:
     swallowed — a broken cost_guard MUST NOT silently block triage.
     """
     try:
-        from services.cost_guard import (
+        from poindexter.services.cost_guard import (
             CostEstimate,
             CostGuard,
             CostGuardExhausted,

@@ -39,7 +39,7 @@ def is_audio_gen_enabled(site_config: Any) -> bool:
     try:
         engine = str(site_config.get("audio_gen_engine", "") or "").strip()
     except Exception as exc:
-        from services.logger_config import get_logger
+        from poindexter.services.logger_config import get_logger
         get_logger(__name__).warning(
             "[audio_gen] is_audio_gen_enabled failed to read audio_gen_engine "
             "from site_config: %s: %s — treating audio gen as disabled",

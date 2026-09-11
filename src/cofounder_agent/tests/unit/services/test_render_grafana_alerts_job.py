@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from plugins.job import Job
-from services.jobs.render_grafana_alerts import RenderGrafanaAlertsJob, _reload_grafana
+from poindexter.services.jobs.render_grafana_alerts import RenderGrafanaAlertsJob, _reload_grafana
 
 # ---------------------------------------------------------------------------
 # Protocol / metadata
@@ -56,7 +56,7 @@ class TestRun:
             return "groups: []\n"
 
         monkeypatch.setattr(
-            "services.jobs.render_grafana_alerts.build_current", fake_build
+            "poindexter.services.jobs.render_grafana_alerts.build_current", fake_build
         )
         j = RenderGrafanaAlertsJob()
         result = await j.run(
@@ -81,7 +81,7 @@ class TestRun:
             return "groups: []\n"
 
         monkeypatch.setattr(
-            "services.jobs.render_grafana_alerts.build_current", fake_build
+            "poindexter.services.jobs.render_grafana_alerts.build_current", fake_build
         )
         j = RenderGrafanaAlertsJob()
         result = await j.run(
@@ -115,13 +115,13 @@ class TestRun:
             return (True, "grafana alerting reloaded")
 
         monkeypatch.setattr(
-            "services.jobs.render_grafana_alerts.build_current", fake_build
+            "poindexter.services.jobs.render_grafana_alerts.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_grafana_alerts._get_grafana_token", fake_token
+            "poindexter.services.jobs.render_grafana_alerts._get_grafana_token", fake_token
         )
         monkeypatch.setattr(
-            "services.jobs.render_grafana_alerts._reload_grafana", fake_reload
+            "poindexter.services.jobs.render_grafana_alerts._reload_grafana", fake_reload
         )
         j = RenderGrafanaAlertsJob()
         result = await j.run(
@@ -149,10 +149,10 @@ class TestRun:
             return ""
 
         monkeypatch.setattr(
-            "services.jobs.render_grafana_alerts.build_current", fake_build
+            "poindexter.services.jobs.render_grafana_alerts.build_current", fake_build
         )
         monkeypatch.setattr(
-            "services.jobs.render_grafana_alerts._get_grafana_token", fake_token
+            "poindexter.services.jobs.render_grafana_alerts._get_grafana_token", fake_token
         )
         j = RenderGrafanaAlertsJob()
         result = await j.run(
@@ -199,7 +199,7 @@ class _FakeAsyncClient:
 @pytest.mark.asyncio
 class TestReloadGrafana:
     async def test_success(self, monkeypatch):
-        import services.jobs.render_grafana_alerts as job_module
+        import poindexter.services.jobs.render_grafana_alerts as job_module
 
         client = _FakeAsyncClient(200)
         monkeypatch.setattr(job_module.httpx, "AsyncClient", lambda **kw: client)
@@ -209,7 +209,7 @@ class TestReloadGrafana:
         assert client.calls[0]["url"].endswith("/reload")
 
     async def test_non_200_returns_false(self, monkeypatch):
-        import services.jobs.render_grafana_alerts as job_module
+        import poindexter.services.jobs.render_grafana_alerts as job_module
 
         client = _FakeAsyncClient(403)
         monkeypatch.setattr(job_module.httpx, "AsyncClient", lambda **kw: client)
@@ -220,7 +220,7 @@ class TestReloadGrafana:
     async def test_http_error_returns_false(self, monkeypatch):
         import httpx
 
-        import services.jobs.render_grafana_alerts as job_module
+        import poindexter.services.jobs.render_grafana_alerts as job_module
 
         class _ErrorClient:
             async def __aenter__(self):

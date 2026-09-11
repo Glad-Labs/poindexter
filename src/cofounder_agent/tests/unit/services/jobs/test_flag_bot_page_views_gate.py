@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.jobs.flag_bot_page_views import FlagBotPageViewsJob, _rowcount
+from poindexter.services.jobs.flag_bot_page_views import FlagBotPageViewsJob, _rowcount
 
 
 def test_rowcount_parses_command_tags():

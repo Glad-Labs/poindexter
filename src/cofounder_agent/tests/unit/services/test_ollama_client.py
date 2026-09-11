@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.ollama_client import (
+from poindexter.services.ollama_client import (
     OllamaClient,
     _default_base_url,
     _default_model,
@@ -578,7 +578,7 @@ class TestResolveModel:
             {"name": "matt-favorite:latest", "size": 8000000000},
             {"name": "gemma3:27b", "size": 16000000000},
         ])
-        with patch("services.ollama_client._sc_get", return_value="matt-favorite:latest"):
+        with patch("poindexter.services.ollama_client._sc_get", return_value="matt-favorite:latest"):
             result = await c.resolve_model("auto")
         assert result == "matt-favorite:latest"
         # Cached for next call
@@ -593,7 +593,7 @@ class TestResolveModel:
             {"name": "gemma3:27b", "size": 16000000000},
             {"name": "nomic-embed-text", "size": 274000000},
         ])
-        with patch("services.ollama_client._sc_get", return_value=""):
+        with patch("poindexter.services.ollama_client._sc_get", return_value=""):
             result = await c.resolve_model("auto")
         # Largest (gemma3:27b at 16GB), embedding model excluded
         assert result == "gemma3:27b"
@@ -607,7 +607,7 @@ class TestResolveModel:
             {"name": "nomic-embed-text", "size": 999999999999},  # huge
             {"name": "qwen3:8b", "size": 5000000000},
         ])
-        with patch("services.ollama_client._sc_get", return_value=""):
+        with patch("poindexter.services.ollama_client._sc_get", return_value=""):
             result = await c.resolve_model("auto")
         assert result == "qwen3:8b"
 
@@ -616,7 +616,7 @@ class TestResolveModel:
         c = OllamaClient()
         c._resolved_default = None
         c.list_models = AsyncMock(side_effect=RuntimeError("api down"))
-        with patch("services.ollama_client._sc_get", return_value=""):
+        with patch("poindexter.services.ollama_client._sc_get", return_value=""):
             result = await c.resolve_model("auto")
         assert result == "llama3:latest"
 
@@ -625,7 +625,7 @@ class TestResolveModel:
         c = OllamaClient()
         c._resolved_default = None
         c.list_models = AsyncMock(return_value=[])
-        with patch("services.ollama_client._sc_get", return_value=""):
+        with patch("poindexter.services.ollama_client._sc_get", return_value=""):
             result = await c.resolve_model("auto")
         assert result == "llama3:latest"
 
@@ -679,7 +679,7 @@ class TestEmbed:
 
     @pytest.mark.asyncio
     async def test_empty_embeddings_raises_ollama_error(self):
-        from services.ollama_client import OllamaError
+        from poindexter.services.ollama_client import OllamaError
 
         c = OllamaClient()
         mock_resp = MagicMock()
@@ -725,7 +725,7 @@ class TestEmbedBatch:
 
     @pytest.mark.asyncio
     async def test_count_mismatch_raises_ollama_error(self):
-        from services.ollama_client import OllamaError
+        from poindexter.services.ollama_client import OllamaError
 
         c = OllamaClient()
         mock_resp = MagicMock()
@@ -766,8 +766,8 @@ def test_resolve_num_ctx_precedence():
     """Per-phase context: <phase>_num_ctx wins, else the global ollama_num_ctx,
     else the 8192 hard default. Lets writer/RAG phases run long while title/SEO
     stay small."""
-    from services.ollama_client import resolve_num_ctx
-    from services.site_config import SiteConfig
+    from poindexter.services.ollama_client import resolve_num_ctx
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={
         "ollama_num_ctx": "8192",

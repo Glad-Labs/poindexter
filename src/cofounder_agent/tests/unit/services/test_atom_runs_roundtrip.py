@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from services.atom_runs import persist_atom_runs
-from services.pipeline_architect import _wrap_atom
+from poindexter.services.atom_runs import persist_atom_runs
+from poindexter.services.pipeline_architect import _wrap_atom
 
 
 class _Conn:
@@ -52,29 +52,29 @@ class TestStatusOf:
     """Unit tests for the _status_of precedence chain."""
 
     def test_skipped_beats_halted_and_error(self):
-        from services.atom_runs import _status_of
-        from services.template_runner import TemplateRunRecord
+        from poindexter.services.atom_runs import _status_of
+        from poindexter.services.template_runner import TemplateRunRecord
 
         r = TemplateRunRecord(name="x", ok=False, halted=True, skipped=True)
         assert _status_of(r) == "skipped"
 
     def test_halted_beats_error(self):
-        from services.atom_runs import _status_of
-        from services.template_runner import TemplateRunRecord
+        from poindexter.services.atom_runs import _status_of
+        from poindexter.services.template_runner import TemplateRunRecord
 
         r = TemplateRunRecord(name="x", ok=False, halted=True)
         assert _status_of(r) == "halted"
 
     def test_not_ok_without_halt_is_error(self):
-        from services.atom_runs import _status_of
-        from services.template_runner import TemplateRunRecord
+        from poindexter.services.atom_runs import _status_of
+        from poindexter.services.template_runner import TemplateRunRecord
 
         r = TemplateRunRecord(name="x", ok=False)
         assert _status_of(r) == "error"
 
     def test_ok_record_is_ok(self):
-        from services.atom_runs import _status_of
-        from services.template_runner import TemplateRunRecord
+        from poindexter.services.atom_runs import _status_of
+        from poindexter.services.template_runner import TemplateRunRecord
 
         r = TemplateRunRecord(name="x", ok=True)
         assert _status_of(r) == "ok"
@@ -83,8 +83,8 @@ class TestStatusOf:
 @pytest.mark.unit
 class TestPersistAtomRunsEdgeCases:
     async def test_returns_zero_when_pool_is_none(self):
-        from services.atom_runs import persist_atom_runs
-        from services.template_runner import TemplateRunRecord
+        from poindexter.services.atom_runs import persist_atom_runs
+        from poindexter.services.template_runner import TemplateRunRecord
 
         records = [TemplateRunRecord(name="atoms.demo", ok=True)]
         n = await persist_atom_runs(None, run_id="r1", task_id="t1",
@@ -92,7 +92,7 @@ class TestPersistAtomRunsEdgeCases:
         assert n == 0
 
     async def test_returns_zero_when_records_empty(self):
-        from services.atom_runs import persist_atom_runs
+        from poindexter.services.atom_runs import persist_atom_runs
 
         pool = _Pool()
         n = await persist_atom_runs(pool, run_id="r1", task_id="t1",
@@ -101,8 +101,8 @@ class TestPersistAtomRunsEdgeCases:
         assert pool.executed == []
 
     async def test_returns_zero_when_capture_disabled(self):
-        from services.atom_runs import persist_atom_runs
-        from services.template_runner import TemplateRunRecord
+        from poindexter.services.atom_runs import persist_atom_runs
+        from poindexter.services.template_runner import TemplateRunRecord
 
         class _FakeConfig:
             def get(self, key, default=None):
@@ -119,8 +119,8 @@ class TestPersistAtomRunsEdgeCases:
         assert pool.executed == []
 
     async def test_swallows_db_exception_and_returns_zero(self):
-        from services.atom_runs import persist_atom_runs
-        from services.template_runner import TemplateRunRecord
+        from poindexter.services.atom_runs import persist_atom_runs
+        from poindexter.services.template_runner import TemplateRunRecord
 
         class _ErrConn:
             async def execute(self, *a, **kw):
@@ -148,8 +148,8 @@ class TestPersistAtomRunsEdgeCases:
         assert n == 0
 
     async def test_multiple_records_returns_count(self):
-        from services.atom_runs import persist_atom_runs
-        from services.template_runner import TemplateRunRecord
+        from poindexter.services.atom_runs import persist_atom_runs
+        from poindexter.services.template_runner import TemplateRunRecord
 
         records = [
             TemplateRunRecord(name="atoms.a", ok=True,
@@ -171,7 +171,7 @@ class TestWrapAtomExceptionPath:
     """_wrap_atom must catch atom errors and emit a halted record."""
 
     async def test_exception_in_run_fn_writes_halted_record(self):
-        from services.pipeline_architect import _wrap_atom
+        from poindexter.services.pipeline_architect import _wrap_atom
 
         sink: list = []
 
@@ -188,8 +188,8 @@ class TestWrapAtomExceptionPath:
         assert sink[0].halted is True
 
     async def test_exception_record_persists_with_halted_status(self):
-        from services.atom_runs import persist_atom_runs
-        from services.pipeline_architect import _wrap_atom
+        from poindexter.services.atom_runs import persist_atom_runs
+        from poindexter.services.pipeline_architect import _wrap_atom
 
         sink: list = []
 

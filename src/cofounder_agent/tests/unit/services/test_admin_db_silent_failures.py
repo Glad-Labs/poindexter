@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import services.admin_db as admin_db
+import poindexter.services.admin_db as admin_db
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 

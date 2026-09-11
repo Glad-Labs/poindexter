@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from services.qa_gates_db_writer import record_chain_run
+from poindexter.services.qa_gates_db_writer import record_chain_run
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 

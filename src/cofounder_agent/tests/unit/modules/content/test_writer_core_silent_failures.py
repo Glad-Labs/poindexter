@@ -106,7 +106,7 @@ def test_build_real_slug_allowlist_emits_finding_when_cache_unreadable(monkeypat
 async def test_snapshot_initial_draft_emits_finding_on_logger_failure(monkeypatch):
     calls = _capture(monkeypatch)
     # Force the deferred import to fail without touching the real module.
-    monkeypatch.setitem(sys.modules, "services.content_revisions_logger", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.content_revisions_logger", None)
 
     await writer_core._snapshot_initial_draft(
         None,
@@ -164,7 +164,7 @@ async def test_fetch_recent_titles_emits_finding_on_db_error(monkeypatch):
     ``services.title_avoidance.fetch_recent_titles``. The finding contract is
     unchanged: degraded, never fatal, and never silent.
     """
-    from services.title_avoidance import fetch_recent_titles
+    from poindexter.services.title_avoidance import fetch_recent_titles
 
     calls = _capture(monkeypatch)
 

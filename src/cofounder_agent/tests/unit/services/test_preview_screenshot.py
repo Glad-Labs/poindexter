@@ -80,7 +80,7 @@ class TestCapturePreviewScreenshot:
         mock_pw_cm, mock_browser, mock_page, _, _ = _build_playwright_mocks()
 
         with patch(
-            "services.preview_screenshot.async_playwright",
+            "poindexter.services.preview_screenshot.async_playwright",
             create=True,
         ):
             # We need to patch the import inside the function.
@@ -90,7 +90,7 @@ class TestCapturePreviewScreenshot:
                 "sys.modules",
                 {"playwright": MagicMock(), "playwright.async_api": MagicMock()},
             ):
-                import services.preview_screenshot as mod
+                import poindexter.services.preview_screenshot as mod
 
                 # Patch the import within the function by replacing the whole
                 # function's import mechanism. Simpler: just call the function
@@ -123,7 +123,7 @@ class TestCapturePreviewScreenshot:
         try:
             builtins.__import__ = _fail_playwright
             # Re-import to get a fresh module
-            import services.preview_screenshot as mod
+            import poindexter.services.preview_screenshot as mod
             result = await mod.capture_preview_screenshot(PREVIEW_URL)
             assert result is None
         finally:
@@ -142,7 +142,7 @@ class TestCapturePreviewScreenshot:
                 "playwright.async_api.async_playwright",
                 return_value=mock_pw_cm,
             ):
-                import services.preview_screenshot as mod
+                import poindexter.services.preview_screenshot as mod
                 result = await mod.capture_preview_screenshot(PREVIEW_URL)
         assert result is None
 
@@ -158,7 +158,7 @@ class TestCapturePreviewScreenshot:
                 "playwright.async_api.async_playwright",
                 return_value=mock_pw_cm,
             ):
-                import services.preview_screenshot as mod
+                import poindexter.services.preview_screenshot as mod
                 result = await mod.capture_preview_screenshot(PREVIEW_URL)
         # Navigation error is caught; browser.close() is called in finally
         assert result is None
@@ -174,7 +174,7 @@ class TestCapturePreviewScreenshot:
                 "playwright.async_api.async_playwright",
                 return_value=mock_pw_cm,
             ):
-                import services.preview_screenshot as mod
+                import poindexter.services.preview_screenshot as mod
                 await mod.capture_preview_screenshot(PREVIEW_URL)
         mock_browser.close.assert_awaited_once()
 
@@ -188,7 +188,7 @@ class TestCapturePreviewScreenshot:
                 "playwright.async_api.async_playwright",
                 return_value=mock_pw_cm,
             ):
-                import services.preview_screenshot as mod
+                import poindexter.services.preview_screenshot as mod
                 await mod.capture_preview_screenshot(
                     PREVIEW_URL,
                     viewport_width=1920,
@@ -208,7 +208,7 @@ class TestCapturePreviewScreenshot:
                 "playwright.async_api.async_playwright",
                 return_value=mock_pw_cm,
             ):
-                import services.preview_screenshot as mod
+                import poindexter.services.preview_screenshot as mod
                 await mod.capture_preview_screenshot(
                     PREVIEW_URL, full_page=False
                 )
@@ -226,7 +226,7 @@ class TestCapturePreviewScreenshot:
                 "playwright.async_api.async_playwright",
                 return_value=mock_pw_cm,
             ):
-                import services.preview_screenshot as mod
+                import poindexter.services.preview_screenshot as mod
                 await mod.capture_preview_screenshot(
                     PREVIEW_URL, wait_after_load_ms=0
                 )
@@ -243,7 +243,7 @@ class TestCapturePreviewScreenshot:
                 "playwright.async_api.async_playwright",
                 return_value=mock_pw_cm,
             ):
-                import services.preview_screenshot as mod
+                import poindexter.services.preview_screenshot as mod
                 await mod.capture_preview_screenshot(
                     PREVIEW_URL, timeout_ms=15000
                 )
@@ -262,7 +262,7 @@ class TestCapturePreviewScreenshot:
                 "playwright.async_api.async_playwright",
                 return_value=mock_pw_cm,
             ):
-                import services.preview_screenshot as mod
+                import poindexter.services.preview_screenshot as mod
                 await mod.capture_preview_screenshot(PREVIEW_URL)
         mock_chromium.launch.assert_awaited_once()
         call_kwargs = mock_chromium.launch.call_args[1]
@@ -276,5 +276,5 @@ class TestModuleExports:
     """Verify __all__ is correct."""
 
     async def test_all_exports(self):
-        import services.preview_screenshot as mod
+        import poindexter.services.preview_screenshot as mod
         assert mod.__all__ == ["capture_preview_screenshot"]

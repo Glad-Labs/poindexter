@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.guardrails_rails import (
+from poindexter.services.guardrails_rails import (
     _resolve_competitors,
     is_enabled,
     run_brand_guard,
@@ -32,7 +32,7 @@ from services.guardrails_rails import (
 @pytest.mark.unit
 class TestNoThirdPartyDep:
     def test_module_has_no_guardrails_ai_import(self):
-        import services.guardrails_rails as gr
+        import poindexter.services.guardrails_rails as gr
 
         source = __import__("inspect").getsource(gr)
         assert "from guardrails" not in source
@@ -154,7 +154,7 @@ class TestRunBrandGuardFabrication:
     def test_never_raises_on_validator_error(self, monkeypatch):
         # If content_validator blows up, the rail must fail-open to a
         # clean pass rather than propagate the exception.
-        import services.guardrails_rails as gr
+        import poindexter.services.guardrails_rails as gr
 
         def boom(*args, **kwargs):
             raise RuntimeError("validator exploded")

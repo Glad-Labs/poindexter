@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.llm_providers.ollama_unload import (
+from poindexter.services.llm_providers.ollama_unload import (
     maybe_unload_writer_before_image_gen,
     unload_loaded_ollama_models,
 )
@@ -114,10 +114,10 @@ async def test_unload_posts_keep_alive_zero_for_each_loaded_model():
     sleep_mock = AsyncMock()
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
@@ -150,10 +150,10 @@ async def test_unload_skips_grace_sleep_when_no_models_loaded():
     sleep_mock = AsyncMock()
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
@@ -180,10 +180,10 @@ async def test_unload_logs_warning_and_returns_empty_when_ollama_unreachable(cap
     sleep_mock = AsyncMock()
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ), caplog.at_level("WARNING", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
@@ -208,7 +208,7 @@ async def test_unload_logs_warning_on_non_200_ps_status(caplog):
     client = _mock_http_client(ps_response=ps_resp)
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), caplog.at_level("WARNING", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await unload_loaded_ollama_models(
@@ -241,10 +241,10 @@ async def test_unload_continues_after_individual_model_failure(caplog):
     ])
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
     ), caplog.at_level("WARNING", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
@@ -272,10 +272,10 @@ async def test_unload_uses_resolved_base_url():
     client = _mock_http_client(ps_response=ps_resp)
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
     ):
         await unload_loaded_ollama_models(
             site_config=_site_config(base_url=custom_url),
@@ -306,7 +306,7 @@ async def test_maybe_unload_no_ops_when_gate_disabled():
     client = _mock_http_client(ps_response=MagicMock())
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ):
         unloaded = await maybe_unload_writer_before_image_gen(
@@ -331,10 +331,10 @@ async def test_maybe_unload_runs_when_gate_enabled(caplog):
     client.get = AsyncMock(side_effect=[ps_resp, _resp([])])
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
     ), caplog.at_level("INFO", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await maybe_unload_writer_before_image_gen(
             site_config=_site_config(unload_enabled=True),
@@ -368,10 +368,10 @@ async def test_maybe_unload_default_stage_label_uses_current_marker(caplog):
     client.get = AsyncMock(side_effect=[ps_resp, _resp([])])
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
     ), caplog.at_level("INFO", logger="poindexter.services.llm_providers.ollama_unload"):
         # No stage_label kwarg — exercise the default.
         unloaded = await maybe_unload_writer_before_image_gen(
@@ -397,10 +397,10 @@ async def test_maybe_unload_threads_grace_seconds_from_settings():
     sleep_mock = AsyncMock()
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
         await maybe_unload_writer_before_image_gen(
             site_config=_site_config(
@@ -421,7 +421,7 @@ async def test_maybe_unload_defaults_to_on_when_site_config_missing():
     client = _mock_http_client(ps_response=ps_resp)
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ):
         unloaded = await maybe_unload_writer_before_image_gen(
@@ -457,10 +457,10 @@ async def test_confirm_returns_as_soon_as_ps_reports_empty():
     sleep_mock = AsyncMock()
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(), grace_seconds=2.0, confirm=True,
@@ -485,10 +485,10 @@ async def test_confirm_polls_until_model_evicted():
     sleep_mock = AsyncMock()
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
@@ -512,10 +512,10 @@ async def test_confirm_warns_and_proceeds_when_model_never_evicts(caplog):
     sleep_mock = AsyncMock()
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ), caplog.at_level("WARNING", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
@@ -540,10 +540,10 @@ async def test_confirm_false_uses_blind_grace_sleep():
     sleep_mock = AsyncMock()
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(), grace_seconds=2.0, confirm=False,
@@ -564,10 +564,10 @@ async def test_maybe_unload_threads_confirm_settings_from_site_config():
     sleep_mock = AsyncMock()
 
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
         unloaded = await maybe_unload_writer_before_image_gen(
             site_config=_site_config(
@@ -607,10 +607,10 @@ async def test_pinned_model_is_skipped_by_the_sweep():
     reclaim needs room and costs an ~18-20 GB reload over a x4 slot."""
     client = _mock_http_client(ps_response=_ps_with_pin())
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
     ):
         unloaded = await unload_loaded_ollama_models(site_config=_site_config())
 
@@ -628,10 +628,10 @@ async def test_pin_respect_can_be_turned_off():
     for an operator whose pin IS on the render card."""
     client = _mock_http_client(ps_response=_ps_with_pin())
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
     ):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(respect_keep_alive_pin=False),
@@ -650,10 +650,10 @@ async def test_models_without_expires_at_are_still_swept():
     resp.json = MagicMock(return_value={"models": [{"name": "phi4:14b"}]})
     client = _mock_http_client(ps_response=resp)
     with patch(
-        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        "poindexter.services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ), patch(
-        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+        "poindexter.services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
     ):
         unloaded = await unload_loaded_ollama_models(site_config=_site_config())
 

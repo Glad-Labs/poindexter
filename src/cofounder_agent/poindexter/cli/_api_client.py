@@ -246,7 +246,7 @@ class WorkerClient:
         # Lazy import so the CLI doesn't hard-depend on the worker module
         # graph at parse time. (services.auth.oauth_client only imports
         # ``services.logger_config`` + httpx — both safe.)
-        from services.auth.oauth_client import OAuthClient
+        from poindexter.services.auth.oauth_client import OAuthClient
 
         if (
             self._explicit_client_id is not None

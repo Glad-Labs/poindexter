@@ -20,9 +20,9 @@ from __future__ import annotations
 from typing import Any
 
 from plugins.job import JobResult
-from services.chat_watch import TERMINAL_STATUSES
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.chat_watch import TERMINAL_STATUSES
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
@@ -96,7 +96,7 @@ class ChatTaskWatchJob:
     async def _notify_one(
         self, pool: Any, site_config: SiteConfig, row: Any,
     ) -> None:
-        from services import chat_conversation_store as store
+        from poindexter.services import chat_conversation_store as store
 
         conversation_id = str(row["conversation_id"])
         task_id = row["task_id"]
@@ -154,7 +154,7 @@ class ChatTaskWatchJob:
         console_url = str(site_config.get("console_public_url", "") or "").strip()
         link = f" {console_url}/console/#trace/{task_id}" if console_url else ""
         try:
-            from services.integrations.operator_notify import notify_operator
+            from poindexter.services.integrations.operator_notify import notify_operator
 
             await notify_operator(
                 f"[cofounder] {text}{link}",

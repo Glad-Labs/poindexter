@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.image_provider import ImageProvider, ImageResult
-from services.image_providers.pexels import PexelsProvider, build_semantic_pexels_query
+from poindexter.services.image_providers.pexels import PexelsProvider, build_semantic_pexels_query
 
 
 def _make_pexels_client(photos: list[dict], status: int = 200):
@@ -67,7 +67,7 @@ class TestFetch:
     async def test_empty_api_key_returns_empty_list(self):
         provider = PexelsProvider()
         # Container has no DatabaseService → load_api_key returns ""
-        with patch("services.container.get_service", return_value=None):
+        with patch("poindexter.services.container.get_service", return_value=None):
             results = await provider.fetch("query", config={})
         assert results == []
 
@@ -261,7 +261,7 @@ class TestBuildSemanticPexelsQuery:
         sc = _site_config("anthropic/claude-sonnet-5", pool=object())
 
         with patch(
-                 "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+                 "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
              ), \
              patch(
                  "plugins.registry.get_all_llm_providers", return_value=[local],
@@ -291,7 +291,7 @@ class TestBuildSemanticPexelsQuery:
         sc = _site_config("ollama/gemma3:27b", pool=object())
 
         with patch(
-                 "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+                 "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
              ), \
              patch(
                  "plugins.registry.get_all_llm_providers", return_value=[local],
@@ -314,7 +314,7 @@ class TestBuildSemanticPexelsQuery:
         sc = _site_config("ollama/gemma3:27b", pool=None)
 
         with patch(
-                 "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+                 "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
              ), \
              patch(
                  "plugins.registry.get_all_llm_providers", return_value=[local],
@@ -337,10 +337,10 @@ class TestBuildSemanticPexelsQuery:
         dispatch = AsyncMock()
 
         with patch(
-                 "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+                 "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
              ), \
              patch(
-                 "services.integrations.operator_notify.notify_operator",
+                 "poindexter.services.integrations.operator_notify.notify_operator",
                  new=AsyncMock(),
              ):
             out = await build_semantic_pexels_query("Any topic", site_config=sc)

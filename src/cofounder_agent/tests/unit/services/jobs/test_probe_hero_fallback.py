@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.jobs.probe_hero_fallback import ProbeHeroFallbackJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs.probe_hero_fallback import ProbeHeroFallbackJob
+from poindexter.services.site_config import SiteConfig
 
 
 class _FakePool:
@@ -54,7 +54,7 @@ class TestProbeHeroFallback:
     async def test_cluster_emits_finding_with_reason(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_hero_fallback.emit_finding",
+            "poindexter.services.jobs.probe_hero_fallback.emit_finding",
             lambda **kw: findings.append(kw),
         )
         pool = _FakePool(10, 1, "wan provider returned no result")
@@ -76,7 +76,7 @@ class TestProbeHeroFallback:
         """One-off fallbacks are normal — the still is a good outcome."""
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_hero_fallback.emit_finding",
+            "poindexter.services.jobs.probe_hero_fallback.emit_finding",
             lambda **kw: findings.append(kw),
         )
         pool = _FakePool(2, 1, "wan provider returned no result")
@@ -90,7 +90,7 @@ class TestProbeHeroFallback:
         """Hero health must be graphable while it is fine, not only when it
         breaks — the job_run audit sink reads JobResult.metrics."""
         monkeypatch.setattr(
-            "services.jobs.probe_hero_fallback.emit_finding", lambda **kw: None,
+            "poindexter.services.jobs.probe_hero_fallback.emit_finding", lambda **kw: None,
         )
         result = await ProbeHeroFallbackJob().run(_FakePool(0, 0, None), _cfg())
 
@@ -100,7 +100,7 @@ class TestProbeHeroFallback:
     async def test_thresholds_are_operator_tunable(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_hero_fallback.emit_finding",
+            "poindexter.services.jobs.probe_hero_fallback.emit_finding",
             lambda **kw: findings.append(kw),
         )
         pool = _FakePool(4, 2, "CUDA out of memory")
@@ -115,7 +115,7 @@ class TestProbeHeroFallback:
 
     async def test_disabled_via_settings(self, monkeypatch):
         monkeypatch.setattr(
-            "services.jobs.probe_hero_fallback.emit_finding",
+            "poindexter.services.jobs.probe_hero_fallback.emit_finding",
             lambda **kw: pytest.fail("must not emit when disabled"),
         )
         result = await ProbeHeroFallbackJob().run(
@@ -132,7 +132,7 @@ class TestProbeHeroFallback:
         produce a usable page."""
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_hero_fallback.emit_finding",
+            "poindexter.services.jobs.probe_hero_fallback.emit_finding",
             lambda **kw: findings.append(kw),
         )
         await ProbeHeroFallbackJob().run(_FakePool(5, 3, None), _cfg())

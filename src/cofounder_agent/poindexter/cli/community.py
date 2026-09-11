@@ -12,7 +12,7 @@ import click
 
 from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
-from services.community_drafts import (
+from poindexter.services.community_drafts import (
     SubredditProfile,
     add_profile,
     discard_draft,
@@ -28,7 +28,7 @@ from services.community_drafts import (
     set_profile_enabled,
     suggest_subreddits_for_post,
 )
-from services.subreddit_import import export_csv, import_csv
+from poindexter.services.subreddit_import import export_csv, import_csv
 
 
 async def _connect():
@@ -41,7 +41,7 @@ async def _connect():
 
 
 async def _make_site_config(pool):
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     site_config = SiteConfig(pool=pool)
     # Fail loud. The only caller is `draft reddit`, which needs the writer model

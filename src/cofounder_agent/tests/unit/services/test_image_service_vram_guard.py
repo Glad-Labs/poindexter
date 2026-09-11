@@ -21,11 +21,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services import gpu_scheduler as gpu_scheduler_mod
-from services.gpu_admission import GpuBusyError
-from services.gpu_scheduler import GpuLockTimeoutError
-from services.image_service import ImageGenOutcome, ImageService, _server_error_detail
-from services.site_config import SiteConfig
+from poindexter.services import gpu_scheduler as gpu_scheduler_mod
+from poindexter.services.gpu_admission import GpuBusyError
+from poindexter.services.gpu_scheduler import GpuLockTimeoutError
+from poindexter.services.image_service import ImageGenOutcome, ImageService, _server_error_detail
+from poindexter.services.site_config import SiteConfig
 
 # No pytestmark: asyncio_mode="auto" already runs the async tests, and marking
 # the sync ones here only produces PytestWarnings.

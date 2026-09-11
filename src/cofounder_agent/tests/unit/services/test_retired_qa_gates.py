@@ -20,7 +20,7 @@ RETIRED = ("guardrails_brand", "guardrails_competitor", "url_verifier")
 
 
 def _repo_root() -> pathlib.Path:
-    import services
+    from poindexter import services
     return pathlib.Path(services.__file__).resolve().parents[2]  # src/cofounder_agent
 
 
@@ -33,7 +33,7 @@ def test_no_atom_wires_a_retired_rail():
 
 
 def test_retired_rails_are_absent_from_the_canonical_blog_graph():
-    from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+    from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
 
     atoms = {n["atom"] for n in CANONICAL_BLOG_GRAPH_DEF["nodes"]}
     for bad in ("qa.guardrails", "qa.url_verifier"):
@@ -42,7 +42,7 @@ def test_retired_rails_are_absent_from_the_canonical_blog_graph():
 
 def test_the_master_switch_ships_off():
     """`guardrails_enabled=true` with no consumer is the lie one level up."""
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["guardrails_enabled"] == "false"
 

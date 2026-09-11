@@ -83,21 +83,23 @@ class GenerateContentStage:
         # sidesteps any circular-import risk with content_router_service
         # during the Phase E transition.
         from modules.content.ai_content_generator import get_content_generator
-        from services.model_preferences import parse_model_preferences as _parse_model_preferences
-        from services.text_utils import normalize_text, scrub_fabricated_links
-        from services.title_generation import (
+        from poindexter.services.model_preferences import (
+            parse_model_preferences as _parse_model_preferences,
+        )
+        from poindexter.services.text_utils import normalize_text, scrub_fabricated_links
+        from poindexter.services.title_generation import (
             check_title_originality as _check_title_originality,
         )
-        from services.title_generation import (
+        from poindexter.services.title_generation import (
             choose_canonical_title as _choose_canonical_title,
         )
-        from services.title_generation import (
+        from poindexter.services.title_generation import (
             generate_canonical_title as _generate_canonical_title,
         )
-        from services.title_generation import (
+        from poindexter.services.title_generation import (
             originality_rank as _originality_rank,
         )
-        from services.writing_style_context import (
+        from poindexter.services.writing_style_context import (
             build_writing_style_context as _build_writing_style_context,
         )
 
@@ -215,7 +217,7 @@ class GenerateContentStage:
                 f"Address this feedback in your draft.\n\n"
                 + (style or "")
             ).strip() if regen_steering else style
-            from services.gpu_scheduler import gpu
+            from poindexter.services.gpu_scheduler import gpu
             async with gpu.lock(
                 "ollama", model=preferred_model,
                 task_id=task_id, phase="generate_content",
@@ -282,7 +284,7 @@ class GenerateContentStage:
         # Generate canonical title with recent-titles avoidance prompt.
         logger.info("Generating title from content...")
         from modules.content.atoms._seo_common import resolve_primary_keyword
-        from services.title_generation import (
+        from poindexter.services.title_generation import (
             DEFAULT_TITLE_EXCERPT_CHARS,
             build_title_grounding_digest,
         )
@@ -313,7 +315,7 @@ class GenerateContentStage:
         # Variety guidance = the recent corpus's HABITS, not its titles. The
         # atom-path twin lives in content.generate_title; see
         # services.title_avoidance for why the old dump primed the pattern.
-        from services.title_avoidance import build_avoidance_block_for_pool
+        from poindexter.services.title_avoidance import build_avoidance_block_for_pool
 
         avoidance_block = await build_avoidance_block_for_pool(
             pool,
@@ -590,7 +592,7 @@ class GenerateContentStage:
         # attachment (the seed-URL "Source article:" block from
         # routes/task_routes.py) carries no sentinel, so first-run seed-URL and
         # niche tasks still get fresh research layered on below.
-        from services.research_service import (
+        from poindexter.services.research_service import (
             RESEARCH_RENDER_SENTINEL,
             ResearchService,
         )
@@ -620,7 +622,7 @@ class GenerateContentStage:
 
         # 3. RAG context via pgvector similarity search.
         try:
-            from services.research_context import build_rag_context
+            from poindexter.services.research_context import build_rag_context
             # GH-88: pass source_tags + source_category so the coherence
             # filter can reject off-topic candidates (e.g. CadQuery pinned
             # as "related" on an asyncio or AI-engineering post).
@@ -980,7 +982,7 @@ class GenerateContentStage:
         variant = None
         if niche_slug:
             try:
-                from services import experiment_runner
+                from poindexter.services import experiment_runner
                 variant = await experiment_runner.pick_variant(
                     pool, niche_slug, str(task_id),
                 )
@@ -1065,8 +1067,8 @@ class GenerateContentStage:
         # prefix strip). The GPU lock label uses the same resolved
         # value so observability + scheduling match the model the
         # variant actually exercises.
-        from services.gpu_scheduler import gpu
-        from services.llm_text import resolve_writer_model
+        from poindexter.services.gpu_scheduler import gpu
+        from poindexter.services.llm_text import resolve_writer_model
         variant_model_override = (
             variant.writer_model if variant is not None else None
         )
@@ -1238,7 +1240,7 @@ async def _snapshot_initial_draft(
     rather than swallowing it. Never blocks the writer.
     """
     try:
-        from services.content_revisions_logger import log_revision
+        from poindexter.services.content_revisions_logger import log_revision
         await log_revision(
             pool,
             task_id=task_id,

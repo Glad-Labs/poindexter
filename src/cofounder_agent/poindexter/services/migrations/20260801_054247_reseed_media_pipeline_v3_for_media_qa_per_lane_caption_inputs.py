@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 async def up(pool) -> None:
     """Re-seed media_pipeline so its stamp matches the new media.qa contract."""
-    from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+    from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
 
     async with pool.acquire() as conn:
         tag = await conn.execute(
@@ -46,7 +46,7 @@ async def up(pool) -> None:
     )
 
     try:
-        from services.pipeline_architect import (
+        from poindexter.services.pipeline_architect import (
             ensure_active_graph_defs_stamped,
         )
     except ImportError as exc:

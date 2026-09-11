@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.topic_dedup_content import (
+from poindexter.services.topic_dedup_content import (
     DEFAULT_EXISTING_THRESHOLD,
     ContentEmbeddingDeduplicator,
 )
@@ -185,7 +185,7 @@ class TestRecentCoveragePass:
         load = AsyncMock(return_value=index)
         fake = _FakeMem()  # content search finds nothing
         with patch("poindexter.memory.MemoryClient", lambda: fake), \
-             patch("services.topic_recent_coverage.RecentCoverageIndex.load", load):
+             patch("poindexter.services.topic_recent_coverage.RecentCoverageIndex.load", load):
             await dedup.mark_against_existing([topic])
         assert topic.is_duplicate is True
         assert topic.duplicate_of["title"] == "The Shift to Native Telemetry"
@@ -207,7 +207,7 @@ class TestRecentCoveragePass:
         index = _FakeCoverageIndex(match_on="<nothing>", match=None)
         with patch("poindexter.memory.MemoryClient", lambda: _FakeMem()), \
              patch(
-                 "services.topic_recent_coverage.RecentCoverageIndex.load",
+                 "poindexter.services.topic_recent_coverage.RecentCoverageIndex.load",
                  AsyncMock(return_value=index),
              ):
             await dedup.mark_against_existing([topic])
@@ -223,7 +223,7 @@ class TestRecentCoveragePass:
         fake = _FakeMem(hits_by_title={title: [{"title": "The VRAM Currency Problem"}]})
         with patch("poindexter.memory.MemoryClient", lambda: fake), \
              patch(
-                 "services.topic_recent_coverage.RecentCoverageIndex.load",
+                 "poindexter.services.topic_recent_coverage.RecentCoverageIndex.load",
                  AsyncMock(return_value=None),
              ):
             await dedup.mark_against_existing(topics)
@@ -236,7 +236,7 @@ class TestRecentCoveragePass:
         )
         load = AsyncMock(return_value=None)
         with patch("poindexter.memory.MemoryClient", lambda: _FakeMem()), \
-             patch("services.topic_recent_coverage.RecentCoverageIndex.load", load):
+             patch("poindexter.services.topic_recent_coverage.RecentCoverageIndex.load", load):
             await dedup.mark_against_existing([_Topic("Anything at all")])
         assert load.call_args.kwargs["niche_slug"] == "glad-labs"
 
@@ -258,7 +258,7 @@ class TestMarkIntraBatch:
 @pytest.mark.unit
 class TestEngineSelector:
     def test_content_embedding_engine_selected(self):
-        from services.topic_dedup_semantic import get_deduplicator
+        from poindexter.services.topic_dedup_semantic import get_deduplicator
 
         for val in ("content", "content_embedding"):
             sc = _site_config({"topic_dedup_engine": val})
@@ -266,6 +266,6 @@ class TestEngineSelector:
             assert isinstance(engine, ContentEmbeddingDeduplicator)
 
     def test_seeded_default_is_content_embedding(self):
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         assert DEFAULTS["topic_dedup_engine"] == "content_embedding"

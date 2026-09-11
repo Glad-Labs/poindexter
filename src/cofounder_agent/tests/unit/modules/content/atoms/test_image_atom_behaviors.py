@@ -67,7 +67,7 @@ class TestPlanImageMarkersVramGuard:
         unload_mock = AsyncMock(return_value=["gemma3:27b"])
 
         with patch(
-            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             new=unload_mock,
         ):
             result = await content_plan_image_markers.run({
@@ -90,7 +90,7 @@ class TestPlanImageMarkersVramGuard:
         unload_mock = AsyncMock(return_value=[])
 
         with patch(
-            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             new=unload_mock,
         ):
             result = await content_plan_image_markers.run({
@@ -111,7 +111,7 @@ class TestPlanImageMarkersVramGuard:
         unload_mock = AsyncMock(return_value=[])
 
         with patch(
-            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             new=unload_mock,
         ):
             await content_plan_image_markers.run({
@@ -143,7 +143,7 @@ class TestPlanImageMarkersAgentFailure:
             return content, {"agent_error": "Timeout: 300 s"}
 
         with patch(
-            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             new=AsyncMock(return_value=[]),
         ), patch(
             "modules.content.atoms._image_helpers.plan_and_inject_placeholders",
@@ -185,7 +185,7 @@ class TestPlanImageMarkersAgentFailure:
             return content + "\n\n[IMAGE-1: a cat]\n", None
 
         with patch(
-            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             new=fake_unload,
         ), patch(
             "modules.content.atoms._image_helpers.plan_and_inject_placeholders",
@@ -381,7 +381,7 @@ class TestRecordInlineImageAssetContract:
         from modules.content.atoms._image_helpers import record_inline_image_asset
 
         recorder = AsyncMock(return_value="asset-uuid")
-        with patch("services.media_asset_recorder.record_media_asset", recorder):
+        with patch("poindexter.services.media_asset_recorder.record_media_asset", recorder):
             await record_inline_image_asset(
                 site_config=SimpleNamespace(_pool=object()),
                 post_id="post-uuid-1",
@@ -404,7 +404,7 @@ class TestRecordInlineImageAssetContract:
         from modules.content.atoms._image_helpers import record_inline_image_asset
 
         recorder = AsyncMock()
-        with patch("services.media_asset_recorder.record_media_asset", recorder):
+        with patch("poindexter.services.media_asset_recorder.record_media_asset", recorder):
             await record_inline_image_asset(
                 site_config=SimpleNamespace(_pool=object()),
                 post_id=None,

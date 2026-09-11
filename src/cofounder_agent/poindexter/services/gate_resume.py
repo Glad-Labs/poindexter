@@ -55,16 +55,16 @@ import asyncio
 import logging
 from typing import Any
 
-from services.approval_service import (
+from poindexter.services.approval_service import (
     ApprovalServiceError,
     TaskNotFoundError,
     TaskNotPausedError,
     rollback_resume_approval,
 )
-from services.approval_service import (
+from poindexter.services.approval_service import (
     approve as approve_service,
 )
-from services.audit_log import audit_log_bg
+from poindexter.services.audit_log import audit_log_bg
 
 logger = logging.getLogger(__name__)
 
@@ -310,8 +310,8 @@ async def _run_resume(
     Imports are lazy so the route/service import stays light — langgraph and
     the capability plugins only load when an operator actually clears a gate.
     """
-    from services.di_wiring import build_platform_for_subprocess
-    from services.template_runner import TemplateRunner
+    from poindexter.services.di_wiring import build_platform_for_subprocess
+    from poindexter.services.template_runner import TemplateRunner
 
     platform = build_platform_for_subprocess(db_service.pool, site_config)
     runner = TemplateRunner(
@@ -403,7 +403,7 @@ async def _rollback_and_notify(
 async def _notify(msg: str, site_config: Any) -> None:
     """Best-effort routine (Discord-tier) operator note. Never raises."""
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
 
         await notify_operator(msg, critical=False, site_config=site_config)
     except Exception as exc:  # noqa: BLE001  # silent-ok: notify_operator logs its own delivery failures; a notify miss must not mask the audit trail above

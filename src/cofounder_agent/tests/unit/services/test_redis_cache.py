@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.redis_cache import CacheConfig, RedisCache, cached
-from services.site_config import SiteConfig
+from poindexter.services.redis_cache import CacheConfig, RedisCache, cached
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -499,13 +499,13 @@ class TestCreate:
     @pytest.mark.asyncio
     async def test_create_disabled_via_site_config(self):
         sc = SiteConfig(initial_config={"redis_enabled": "false"})
-        with patch("services.redis_cache.REDIS_AVAILABLE", True):
+        with patch("poindexter.services.redis_cache.REDIS_AVAILABLE", True):
             instance = await RedisCache.create(site_config=sc)
             assert instance._enabled is False
 
     @pytest.mark.asyncio
     async def test_create_when_redis_not_available(self, site_config):
-        with patch("services.redis_cache.REDIS_AVAILABLE", False):
+        with patch("poindexter.services.redis_cache.REDIS_AVAILABLE", False):
             instance = await RedisCache.create(site_config=site_config)
             assert instance._enabled is False
             assert instance._instance is None
@@ -515,8 +515,8 @@ class TestCreate:
         sc = SiteConfig(initial_config={"redis_enabled": "true"})
         mock_aioredis = MagicMock()
         mock_aioredis.from_url = AsyncMock(side_effect=ConnectionError("refused"))
-        with patch("services.redis_cache.REDIS_AVAILABLE", True):
-            with patch("services.redis_cache.aioredis", mock_aioredis):
+        with patch("poindexter.services.redis_cache.REDIS_AVAILABLE", True):
+            with patch("poindexter.services.redis_cache.aioredis", mock_aioredis):
                 instance = await RedisCache.create(site_config=sc)
                 assert instance._enabled is False
 
@@ -527,8 +527,8 @@ class TestCreate:
         mock_redis_inst.ping = AsyncMock()
         mock_aioredis = MagicMock()
         mock_aioredis.from_url = AsyncMock(return_value=mock_redis_inst)
-        with patch("services.redis_cache.REDIS_AVAILABLE", True):
-            with patch("services.redis_cache.aioredis", mock_aioredis):
+        with patch("poindexter.services.redis_cache.REDIS_AVAILABLE", True):
+            with patch("poindexter.services.redis_cache.aioredis", mock_aioredis):
                 instance = await RedisCache.create(site_config=sc)
                 assert instance._enabled is True
                 assert instance._instance is mock_redis_inst

@@ -76,7 +76,7 @@ async def _rail_evaluate(
     *, content: str, topic: str, site_config: Any
 ) -> tuple[bool, float | None, str]:
     """Thin indirection so tests can monkeypatch without touching the rail."""
-    from services.self_consistency_rail import evaluate
+    from poindexter.services.self_consistency_rail import evaluate
     return await evaluate(content=content, topic=topic, site_config=site_config)
 
 
@@ -86,7 +86,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not content or site_config is None:
         return {}
 
-    from services.self_consistency_rail import is_enabled
+    from poindexter.services.self_consistency_rail import is_enabled
     if not is_enabled(site_config):
         return {}
 

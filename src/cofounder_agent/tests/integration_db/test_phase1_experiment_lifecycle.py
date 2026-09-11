@@ -133,7 +133,7 @@ async def _seed_2_variant_experiment(
 # production path stays on niche defaults (the runner returns None).
 # ---------------------------------------------------------------------------
 async def test_draft_experiment_returns_none_from_pick_variant(test_txn) -> None:
-    from services.experiment_runner import pick_variant
+    from poindexter.services.experiment_runner import pick_variant
 
     _exp_id, _vids = await _seed_2_variant_experiment(test_txn, status="draft")
     pool = _ConnAsPool(test_txn)
@@ -155,7 +155,7 @@ async def test_draft_experiment_returns_none_from_pick_variant(test_txn) -> None
 async def test_activating_draft_makes_pick_variant_start_serving(
     test_txn,
 ) -> None:
-    from services.experiment_runner import ExperimentVariant, pick_variant
+    from poindexter.services.experiment_runner import ExperimentVariant, pick_variant
 
     exp_id, variant_ids = await _seed_2_variant_experiment(
         test_txn, status="draft",
@@ -249,7 +249,7 @@ async def test_second_active_experiment_for_same_niche_violates_unique_index(
 async def test_concluding_active_experiment_stops_serving_and_persists_winner(
     test_txn,
 ) -> None:
-    from services.experiment_runner import ExperimentVariant, pick_variant
+    from poindexter.services.experiment_runner import ExperimentVariant, pick_variant
 
     exp_id, _vids = await _seed_2_variant_experiment(
         test_txn, status="active",
@@ -311,7 +311,7 @@ async def test_concluding_active_experiment_stops_serving_and_persists_winner(
 async def test_new_experiment_activates_after_old_one_concluded(
     test_txn,
 ) -> None:
-    from services.experiment_runner import ExperimentVariant, pick_variant
+    from poindexter.services.experiment_runner import ExperimentVariant, pick_variant
 
     # Old experiment — straight to active.
     old_id, _ = await _seed_2_variant_experiment(

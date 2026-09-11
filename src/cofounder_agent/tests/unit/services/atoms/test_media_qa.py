@@ -93,7 +93,7 @@ def _neutralize_gpu_lock():
     infrastructure. See ``test_human_detect_isolated_from_real_gpu_lock`` for the
     regression tripwire.
     """
-    with patch("services.gpu_scheduler.gpu.lock", _noop_gpu_lock):
+    with patch("poindexter.services.gpu_scheduler.gpu.lock", _noop_gpu_lock):
         yield
 
 
@@ -563,7 +563,7 @@ async def test_human_detect_isolated_from_real_gpu_lock(tmp_path, monkeypatch):
     GpuLockTimeoutError → "unavailable" and fails loudly in CI — no live-worker
     contention required to reproduce the flake.
     """
-    from services import gpu_scheduler
+    from poindexter.services import gpu_scheduler
 
     async def _sabotaged_acquire(self, *_args, **_kwargs):
         # Stand in for a contended cross-process holder (the live worker on the

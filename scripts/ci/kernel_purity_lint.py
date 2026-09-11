@@ -126,15 +126,22 @@ def _modules_targets(node: ast.stmt) -> list[str]:
     ``import modules.content.api``        -> ``["modules.content.api"]``
     Relative imports (``node.module is None``) never match.
     """
+    # poindexter#1046 step 3: imports spell `poindexter.modules.x`; targets (and the
+    # baseline keys built from them) stay in the bare `modules.x` form, whichever
+    # spelling reached the import, so the ratchet cannot loosen across the rewrite.
+    def _norm(name: str) -> str:
+        return name.removeprefix("poindexter.")
+
     if isinstance(node, ast.ImportFrom):
-        if node.module and (node.module == "modules" or node.module.startswith("modules.")):
-            return [node.module]
+        m = _norm(node.module) if node.module else ""
+        if m == "modules" or m.startswith("modules."):
+            return [m]
         return []
     if isinstance(node, ast.Import):
         return [
-            alias.name
+            _norm(alias.name)
             for alias in node.names
-            if alias.name == "modules" or alias.name.startswith("modules.")
+            if _norm(alias.name) == "modules" or _norm(alias.name).startswith("modules.")
         ]
     return []
 

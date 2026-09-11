@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.media_orphan_sweep import (
+from poindexter.services.jobs.media_orphan_sweep import (
     MediaOrphanSweepJob,
     _build_reference_haystack,
     _is_referenced,
     _select_orphans,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 NOW = datetime(2026, 7, 11, tzinfo=timezone.utc)
 

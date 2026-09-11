@@ -116,7 +116,7 @@ def _today_topic_pool(count: int) -> list[str]:
 async def _dispatch(pool, topics: list[str]) -> list[str]:
     """Insert tasks via the production tasks_db.add_task path so they
     pick up the default_template_slug routing. Returns task_ids."""
-    from services.tasks_db import TasksDatabase
+    from poindexter.services.tasks_db import TasksDatabase
 
     db = TasksDatabase(pool)
     task_ids: list[str] = []

@@ -57,7 +57,7 @@ def mock_site_config() -> MagicMock:
 
 async def test_missing_site_config_raises(mock_cloudinary: MagicMock) -> None:
     """Cloudinary upload requires site_config — DI seam is mandatory."""
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     with pytest.raises(RuntimeError, match="requires site_config"):
         await upload_to_cloudinary(
@@ -76,7 +76,7 @@ async def test_secret_credentials_use_get_secret(
     Sync .get() returns ciphertext for is_secret=true rows
     (Glad-Labs/poindexter#334). Only get_secret decrypts.
     """
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     await upload_to_cloudinary(
         "/tmp/x.png",
@@ -95,7 +95,7 @@ async def test_provider_tag_lands_in_cloudinary_tags(
     mock_cloudinary: MagicMock, mock_site_config: MagicMock,
 ) -> None:
     """provider_tag identifies the source provider in Cloudinary."""
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     await upload_to_cloudinary(
         "/tmp/x.png",
@@ -115,7 +115,7 @@ async def test_empty_secure_url_raises(
     """Silent upload-failure guard — empty secure_url is a failure mode."""
     mock_cloudinary.return_value = {"secure_url": ""}
 
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     with pytest.raises(RuntimeError, match="empty secure_url"):
         await upload_to_cloudinary(
@@ -134,7 +134,7 @@ async def test_returns_secure_url(
         "secure_url": "https://res.cloudinary.com/test/abc123.png",
     }
 
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     url = await upload_to_cloudinary(
         "/tmp/x.png",
@@ -150,7 +150,7 @@ async def test_prompt_truncated_in_alt_context(
     mock_cloudinary: MagicMock, mock_site_config: MagicMock,
 ) -> None:
     """Prompts > 200 chars get truncated for Cloudinary's context field."""
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     long_prompt = "x" * 500
     await upload_to_cloudinary(
@@ -173,7 +173,7 @@ async def test_cloud_name_uses_sync_get_not_get_secret(
     too. That's wasteful (extra DB hit per upload) and architecturally
     wrong: only ``is_secret=true`` rows go through ``get_secret``.
     """
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     await upload_to_cloudinary(
         "/tmp/x.png",
@@ -200,7 +200,7 @@ async def test_secret_values_propagate_to_cloudinary_config(
     """
     import cloudinary  # type: ignore[import-not-found]
 
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     await upload_to_cloudinary(
         "/tmp/x.png",
@@ -225,7 +225,7 @@ async def test_upload_kwargs_pin_folder_and_resource_type(
     A refactor that flips either silently would scatter assets across
     the operator's Cloudinary account.
     """
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     await upload_to_cloudinary(
         "/tmp/x.png",
@@ -251,7 +251,7 @@ async def test_missing_secure_url_key_raises(
     """
     mock_cloudinary.return_value = {"public_id": "x", "version": 1}
 
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     with pytest.raises(RuntimeError, match="empty secure_url"):
         await upload_to_cloudinary(
@@ -269,7 +269,7 @@ async def test_short_prompt_passed_intact_to_alt(
 
     Boundary check at 200 chars: should pass through untouched.
     """
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     prompt_200 = "y" * 200
     await upload_to_cloudinary(
@@ -292,7 +292,7 @@ async def test_empty_prompt_does_not_crash(
     The logger.debug at the end takes ``prompt[:40]`` — needs to be
     safe on empty strings.
     """
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     url = await upload_to_cloudinary(
         "/tmp/x.png",
@@ -316,7 +316,7 @@ async def test_path_passed_as_first_positional_arg(
     a future refactor from accidentally moving it to a keyword arg
     (Cloudinary's SDK has no ``path=`` kwarg — that would silently break).
     """
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     await upload_to_cloudinary(
         "/path/with/spaces and unicode-é.png",

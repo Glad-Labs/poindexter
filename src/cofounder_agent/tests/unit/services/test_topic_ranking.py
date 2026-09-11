@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.niche_service import NicheGoal
-from services.site_config import SiteConfig
-from services.topic_ranking import (
+from poindexter.services.niche_service import NicheGoal
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_ranking import (
     GOAL_DESCRIPTIONS,
     goal_vector_for,
     weighted_cosine_score,
@@ -35,7 +35,7 @@ async def test_goal_vector_caches_embeddings(monkeypatch):
     async def fake_embed(text, *, site_config=None):
         calls.append(text)
         return [0.1] * 768
-    monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
+    monkeypatch.setattr("poindexter.services.topic_ranking._embed_text_cached", fake_embed)
     v1 = await goal_vector_for("TRAFFIC", site_config=_SC)
     v2 = await goal_vector_for("TRAFFIC", site_config=_SC)
     assert v1 == v2
@@ -56,13 +56,13 @@ async def test_weighted_cosine_score_combines_per_goal_signals():
 
 
 async def test_llm_final_score_returns_score_per_candidate(monkeypatch):
-    from services.topic_ranking import ScoredCandidate, llm_final_score
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
 
     async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
         # Simulated JSON response from glm-4.7-5090
         return '{"c1": {"score": 87.5, "breakdown": {"TRAFFIC": 0.5, "EDUCATION": 0.375}},'  \
                ' "c2": {"score": 42.0, "breakdown": {"TRAFFIC": 0.2, "EDUCATION": 0.22}}}'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_ollama_chat)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake_ollama_chat)
 
     candidates = [
         ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.6),
@@ -78,7 +78,7 @@ async def test_llm_final_score_returns_score_per_candidate(monkeypatch):
 
 
 def test_apply_decay_multiplies_score():
-    from services.topic_ranking import apply_decay
+    from poindexter.services.topic_ranking import apply_decay
     assert apply_decay(score=80, decay_factor=1.0) == 80
     assert apply_decay(score=80, decay_factor=0.7) == pytest.approx(56)
     assert apply_decay(score=80, decay_factor=0.49) == pytest.approx(39.2)
@@ -90,12 +90,12 @@ def test_apply_decay_multiplies_score():
 
 
 def test_cosine_similarity_identical_vectors_returns_one():
-    from services.topic_ranking import cosine_similarity
+    from poindexter.services.topic_ranking import cosine_similarity
     assert cosine_similarity([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == pytest.approx(1.0)
 
 
 def test_cosine_similarity_orthogonal_vectors_returns_zero():
-    from services.topic_ranking import cosine_similarity
+    from poindexter.services.topic_ranking import cosine_similarity
     assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
 
 
@@ -104,7 +104,7 @@ def test_cosine_similarity_mismatched_lengths_returns_zero():
     rather than raise. Without this branch, callers that cross provider
     boundaries (different embedding models with different dimensions)
     would 500 instead of degrading gracefully."""
-    from services.topic_ranking import cosine_similarity
+    from poindexter.services.topic_ranking import cosine_similarity
     assert cosine_similarity([1.0, 0.0, 0.0], [1.0, 0.0]) == 0.0
 
 
@@ -112,13 +112,13 @@ def test_cosine_similarity_zero_vector_returns_zero():
     """Both 'a is zero' and 'b is zero' branches — division-by-zero
     guard. A zero embedding can come from a provider that failed
     silently or an empty-string embed; we must not propagate NaN."""
-    from services.topic_ranking import cosine_similarity
+    from poindexter.services.topic_ranking import cosine_similarity
     assert cosine_similarity([0.0, 0.0, 0.0], [1.0, 2.0, 3.0]) == 0.0
     assert cosine_similarity([1.0, 2.0, 3.0], [0.0, 0.0, 0.0]) == 0.0
 
 
 def test_cosine_similarity_anti_aligned_returns_negative_one():
-    from services.topic_ranking import cosine_similarity
+    from poindexter.services.topic_ranking import cosine_similarity
     assert cosine_similarity([1.0, 0.0], [-1.0, 0.0]) == pytest.approx(-1.0)
 
 
@@ -132,7 +132,7 @@ async def test_goal_vector_for_unknown_goal_type_raises(monkeypatch):
     """Goals come from operator-set niche_goals rows; if a stale row
     references a retired goal_type the caller must see ValueError, not
     silently embed an arbitrary string."""
-    from services import topic_ranking
+    from poindexter.services import topic_ranking
     # Clear cache so a prior test's 'TRAFFIC' fill doesn't accidentally
     # short-circuit before the goal_type check.
     monkeypatch.setattr(topic_ranking, "_GOAL_VEC_CACHE", {})
@@ -155,7 +155,7 @@ def test_weighted_cosine_score_skips_goals_missing_from_vec_map():
     embed (None in goal_vecs), it must be skipped — not crash, not
     contribute. Otherwise an embedding-provider hiccup nukes the whole
     rerank pass."""
-    from services.topic_ranking import weighted_cosine_score
+    from poindexter.services.topic_ranking import weighted_cosine_score
     candidate = [1.0, 0.0]
     goal_vecs = {"TRAFFIC": [1.0, 0.0]}  # EDUCATION absent
     weights = [NicheGoal("TRAFFIC", 60), NicheGoal("EDUCATION", 40)]
@@ -167,7 +167,7 @@ def test_weighted_cosine_score_skips_goals_missing_from_vec_map():
 
 
 def test_weighted_cosine_score_empty_weights_returns_zero():
-    from services.topic_ranking import weighted_cosine_score
+    from poindexter.services.topic_ranking import weighted_cosine_score
     score, breakdown = weighted_cosine_score([1.0, 0.0], {"TRAFFIC": [1.0, 0.0]}, [])
     assert score == 0.0
     assert breakdown == {}
@@ -183,12 +183,12 @@ async def test_llm_final_score_falls_back_when_llm_omits_candidate(monkeypatch):
     """When the LLM scorer's JSON skips a candidate (truncated output,
     hallucinated keys), we must NOT drop it — it gets backfilled with
     embedding_score * 100. Verifies the warn-and-recover branch."""
-    from services.topic_ranking import ScoredCandidate, llm_final_score
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
 
     async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
         # 'present' is scored; 'missing' is omitted entirely.
         return '{"present": {"score": 91.0, "breakdown": {"TRAFFIC": 0.91}}}'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_ollama_chat)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake_ollama_chat)
 
     candidates = [
         ScoredCandidate(id="present", title="A", summary="x", embedding_score=0.5),
@@ -225,13 +225,13 @@ async def test_llm_final_score_recovers_from_truncated_json(monkeypatch):
     recovers the entries the model completed before derailing, so only the
     genuinely-unscored tail falls back to the embedding pre-rank.
     """
-    from services.topic_ranking import ScoredCandidate, llm_final_score
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
 
     async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
         # Valid JSON prefix that stops mid-object — exactly the shape that
         # raised "Unterminated string starting at ... char 758" in prod.
         return '{"c1": {"score": 87.5, "breakdown": {"TRAFFIC": 0.5}}, "c2": {"score": 42.0, "breakd'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_ollama_chat)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake_ollama_chat)
 
     candidates = [
         ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.6),
@@ -255,11 +255,11 @@ async def test_llm_final_score_recovers_from_non_object_json(monkeypatch):
     instead of the expected ``{id: {...}}`` object) must degrade the same way
     as a parse error — otherwise ``parsed.get(...)`` raises ``AttributeError``
     and sinks the sweep. Same embedding-pre-rank fallback."""
-    from services.topic_ranking import ScoredCandidate, llm_final_score
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
 
     async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
         return '[{"score": 50.0}]'  # a JSON array — parses, but has no .get(id)
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_ollama_chat)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake_ollama_chat)
 
     candidates = [ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.55)]
     weights = [NicheGoal("TRAFFIC", 100)]
@@ -286,7 +286,7 @@ async def test_llm_final_score_raises_value_error_when_no_model_configured(monke
     masked misconfiguration as an opaque "model not found" at LLM
     call time. Now it raises ``ValueError`` at resolution time.
     """
-    from services.topic_ranking import ScoredCandidate, llm_final_score
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
 
     # Clean SiteConfig with no model setting and no cost_tier fallback —
     # mirrors a misconfigured fork. The resolver must NOT silently
@@ -313,7 +313,7 @@ async def test_llm_final_score_raises_value_error_when_no_model_configured(monke
 
 
 def test_apply_decay_zero_factor_zeroes_score():
-    from services.topic_ranking import apply_decay
+    from poindexter.services.topic_ranking import apply_decay
     assert apply_decay(score=80, decay_factor=0.0) == 0.0
     # decay_factor > 1 (theoretically a re-promotion) still multiplies
     assert apply_decay(score=50, decay_factor=1.2) == pytest.approx(60.0)
@@ -357,10 +357,10 @@ def test_topic_chain_imports_without_pyyaml():
         builtins.__import__ = _no_yaml
 
         # Must succeed with PyYAML unavailable.
-        import services.topic_batch_service  # noqa: F401
+        import poindexter.services.topic_batch_service  # noqa: F401
 
         # And prompt_manager must not have been pulled in transitively.
-        assert "services.prompt_manager" not in sys.modules, (
+        assert "poindexter.services.prompt_manager" not in sys.modules, (
             "prompt_manager (PyYAML-bearing) must stay a lazy import "
             "in topic_ranking.llm_final_score"
         )
@@ -390,7 +390,7 @@ def test_topic_chain_imports_without_pyyaml():
 
 
 def _cands():
-    from services.topic_ranking import ScoredCandidate
+    from poindexter.services.topic_ranking import ScoredCandidate
     return [
         ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.60),
         ScoredCandidate(id="c2", title="B", summary="y", embedding_score=0.40),
@@ -402,11 +402,11 @@ _WEIGHTS = [NicheGoal("TRAFFIC", 60), NicheGoal("EDUCATION", 40)]
 
 async def test_flat_score_shape_is_the_current_contract(monkeypatch):
     """The prompt now asks for {"<id>": <score>} — no nested breakdown."""
-    from services.topic_ranking import llm_final_score
+    from poindexter.services.topic_ranking import llm_final_score
 
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '{"c1": 87.5, "c2": 42}'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
 
     scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
     assert scored["c1"].llm_score == 87.5
@@ -419,11 +419,11 @@ async def test_calculated_breakdown_is_not_overwritten(monkeypatch):
     It used to be clobbered by the LLM's invented goal names on every
     successful call — feedback_machine_rules: calculated beats generated.
     """
-    from services.topic_ranking import ScoredCandidate, llm_final_score
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
 
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '{"c1": 90}'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
 
     pre_rank = {"TRAFFIC": 0.42, "EDUCATION": 0.18, "_grounding": 0.87}
     cand = ScoredCandidate(
@@ -438,11 +438,11 @@ async def test_calculated_breakdown_is_not_overwritten(monkeypatch):
 async def test_legacy_nested_shape_still_scores(monkeypatch):
     """A Langfuse override or customised pack pinned to the old prompt must
     keep working rather than silently degrading every candidate."""
-    from services.topic_ranking import llm_final_score
+    from poindexter.services.topic_ranking import llm_final_score
 
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '{"c1": {"score": 71, "breakdown": {"TRAFFIC": 0.4}}}'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
 
     scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
     assert scored["c1"].llm_score == 71.0
@@ -450,11 +450,11 @@ async def test_legacy_nested_shape_still_scores(monkeypatch):
 
 async def test_truncated_response_salvages_complete_entries(monkeypatch):
     """A derailed response keeps the candidates it managed to score."""
-    from services.topic_ranking import llm_final_score
+    from poindexter.services.topic_ranking import llm_final_score
 
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '{"c1": 88, "c2": '
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: None)
 
     scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
@@ -463,11 +463,11 @@ async def test_truncated_response_salvages_complete_entries(monkeypatch):
 
 
 async def test_total_degrade_emits_finding(monkeypatch):
-    from services.topic_ranking import llm_final_score
+    from poindexter.services.topic_ranking import llm_final_score
 
     async def fake(prompt, *, model, pool=None, site_config=None):
         return "Let me re-evaluate the candidates and calculate scores."
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     seen = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
 
@@ -485,11 +485,11 @@ async def test_total_degrade_emits_finding(monkeypatch):
 
 async def test_partial_omission_emits_partial_finding(monkeypatch):
     """Parsed fine but the model skipped an id — a different degrade class."""
-    from services.topic_ranking import llm_final_score
+    from poindexter.services.topic_ranking import llm_final_score
 
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '{"c1": 88}'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     seen = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
 
@@ -501,11 +501,11 @@ async def test_partial_omission_emits_partial_finding(monkeypatch):
 
 
 async def test_clean_response_emits_no_finding(monkeypatch):
-    from services.topic_ranking import llm_final_score
+    from poindexter.services.topic_ranking import llm_final_score
 
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '{"c1": 88, "c2": 44}'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     seen = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
 
@@ -515,11 +515,11 @@ async def test_clean_response_emits_no_finding(monkeypatch):
 
 async def test_non_numeric_score_counts_as_omitted(monkeypatch):
     """A JSON `true`/null/garbage value must not become a 0.0 score."""
-    from services.topic_ranking import llm_final_score
+    from poindexter.services.topic_ranking import llm_final_score
 
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '{"c1": true, "c2": null}'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: None)
 
     scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
@@ -532,11 +532,11 @@ async def test_wrong_shape_is_a_total_degrade_not_partial(monkeypatch):
     walk — but it keys on nothing we asked about. That is a total degrade,
     and mislabelling it 'partial' would understate it on the Findings board.
     """
-    from services.topic_ranking import llm_final_score
+    from poindexter.services.topic_ranking import llm_final_score
 
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '[{"score": 50.0}]'
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     seen = []
     monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
 

@@ -150,7 +150,7 @@ class TestRenderContainsTransientFailures:
         client.__aexit__ = AsyncMock(return_value=False)
 
         with (
-            patch("services.gpu_scheduler.gpu", gpu),
+            patch("poindexter.services.gpu_scheduler.gpu", gpu),
             patch("httpx.AsyncClient", return_value=client),
         ):
             path, meta = await _render_image_gen(
@@ -178,7 +178,7 @@ class TestRenderContainsTransientFailures:
         client.__aexit__ = AsyncMock(return_value=False)
 
         with (
-            patch("services.gpu_scheduler.gpu", gpu),
+            patch("poindexter.services.gpu_scheduler.gpu", gpu),
             patch("httpx.AsyncClient", return_value=client),
         ):
             path, meta = await _render_image_gen(

@@ -169,7 +169,7 @@ class BackfillVideoShotListsJob:
         from modules.content.stages.generate_video_shot_list import (
             GenerateVideoShotListStage,
         )
-        from services.di_wiring import build_platform_for_subprocess
+        from poindexter.services.di_wiring import build_platform_for_subprocess
 
         platform = build_platform_for_subprocess(pool, site_config)
         if platform is None:

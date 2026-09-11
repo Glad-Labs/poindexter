@@ -102,12 +102,12 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from plugins.llm_provider import Completion, Token
-from services.cost_guard import is_local_base_url
-from services.llm_providers.coldload_guard import maybe_reclaim_before_coldload
-from services.llm_providers.ollama_timings import (
+from poindexter.services.cost_guard import is_local_base_url
+from poindexter.services.llm_providers.coldload_guard import maybe_reclaim_before_coldload
+from poindexter.services.llm_providers.ollama_timings import (
     extract_timings as extract_ollama_timings,
 )
-from services.llm_providers.thinking_models import strip_reasoning_artifacts
+from poindexter.services.llm_providers.thinking_models import strip_reasoning_artifacts
 
 # Refuse to import when the backing SDK is absent, so ``plugins.registry``
 # excludes this provider instead of registering one that cannot run. Every
@@ -1078,7 +1078,7 @@ class LiteLLMProvider:
 
         import litellm
 
-        from services.llm_providers.ollama_timings import install_ollama_timing_capture
+        from poindexter.services.llm_providers.ollama_timings import install_ollama_timing_capture
 
         install_ollama_timing_capture()
 

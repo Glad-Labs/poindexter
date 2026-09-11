@@ -23,8 +23,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.content_db import ContentDatabase
-from services.error_handler import DatabaseError
+from poindexter.services.content_db import ContentDatabase
+from poindexter.services.error_handler import DatabaseError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -717,7 +717,7 @@ class TestCacheHelpers:
         db = _make_db()
         # Use controlled timestamps instead of time.sleep which can be flaky
         # under parallel test execution.
-        with patch("services.content_db.time") as mock_time:
+        with patch("poindexter.services.content_db.time") as mock_time:
             mock_time.monotonic = lambda: 1000.0
             db._cache_set("key", "v1")
             first_ts = db._cache["key"][1]
@@ -736,7 +736,7 @@ class TestCacheHelpers:
         db = _make_db()
         db._cache_set("key", "value")
         frozen_now = time.monotonic() + 61
-        with patch("services.content_db.time") as mock_time:
+        with patch("poindexter.services.content_db.time") as mock_time:
             mock_time.monotonic = lambda: frozen_now
             assert db._cache_get("key") is None
 
@@ -746,7 +746,7 @@ class TestCacheHelpers:
         db = _make_db()
         db._cache_set("key", "value")
         within_ttl = time.monotonic() + 30
-        with patch("services.content_db.time") as mock_time:
+        with patch("poindexter.services.content_db.time") as mock_time:
             mock_time.monotonic = lambda: within_ttl
             assert db._cache_get("key") == "value"
 

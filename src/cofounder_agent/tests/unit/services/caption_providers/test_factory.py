@@ -21,38 +21,38 @@ class _Cfg:
 
 
 def test_default_returns_speaches():
-    from services.caption_providers import get_caption_provider
-    from services.caption_providers.speaches import SpeachesCaptionProvider
+    from poindexter.services.caption_providers import get_caption_provider
+    from poindexter.services.caption_providers.speaches import SpeachesCaptionProvider
 
     assert isinstance(get_caption_provider(_Cfg()), SpeachesCaptionProvider)
 
 
 def test_none_site_config_returns_speaches():
-    from services.caption_providers import get_caption_provider
-    from services.caption_providers.speaches import SpeachesCaptionProvider
+    from poindexter.services.caption_providers import get_caption_provider
+    from poindexter.services.caption_providers.speaches import SpeachesCaptionProvider
 
     assert isinstance(get_caption_provider(None), SpeachesCaptionProvider)
 
 
 def test_whisper_local_when_configured():
-    from services.caption_providers import get_caption_provider
-    from services.caption_providers.whisper_local import WhisperLocalCaptionProvider
+    from poindexter.services.caption_providers import get_caption_provider
+    from poindexter.services.caption_providers.whisper_local import WhisperLocalCaptionProvider
 
     provider = get_caption_provider(_Cfg({"video_caption_engine": "whisper_local"}))
     assert isinstance(provider, WhisperLocalCaptionProvider)
 
 
 def test_speaches_when_configured():
-    from services.caption_providers import get_caption_provider
-    from services.caption_providers.speaches import SpeachesCaptionProvider
+    from poindexter.services.caption_providers import get_caption_provider
+    from poindexter.services.caption_providers.speaches import SpeachesCaptionProvider
 
     provider = get_caption_provider(_Cfg({"video_caption_engine": "speaches"}))
     assert isinstance(provider, SpeachesCaptionProvider)
 
 
 def test_unknown_engine_falls_back_to_speaches():
-    from services.caption_providers import get_caption_provider
-    from services.caption_providers.speaches import SpeachesCaptionProvider
+    from poindexter.services.caption_providers import get_caption_provider
+    from poindexter.services.caption_providers.speaches import SpeachesCaptionProvider
 
     provider = get_caption_provider(_Cfg({"video_caption_engine": "bogus"}))
     assert isinstance(provider, SpeachesCaptionProvider)
@@ -61,7 +61,7 @@ def test_unknown_engine_falls_back_to_speaches():
 def test_provider_receives_site_config():
     """The factory must thread site_config into the provider so it can read
     its ``plugin.caption_provider.*`` settings."""
-    from services.caption_providers import get_caption_provider
+    from poindexter.services.caption_providers import get_caption_provider
 
     cfg = _Cfg({"video_caption_engine": "speaches"})
     provider = get_caption_provider(cfg)

@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from services.image_providers.screenshot import (
+from poindexter.services.image_providers.screenshot import (
     ScreenshotProvider,
     ScreenshotTargetError,
     parse_targets,
@@ -99,7 +99,7 @@ async def test_fetch_unknown_target_returns_empty_without_capturing(monkeypatch)
         return _PNG_1X1
 
     monkeypatch.setattr(
-        "services.preview_screenshot.capture_preview_screenshot", _capture,
+        "poindexter.services.preview_screenshot.capture_preview_screenshot", _capture,
     )
     out = await ScreenshotProvider().fetch(
         "http://169.254.169.254/latest/meta-data/",
@@ -119,7 +119,7 @@ async def test_fetch_captures_allowlisted_target(monkeypatch):
         return _png_with_size(1600, 1150)
 
     monkeypatch.setattr(
-        "services.preview_screenshot.capture_preview_screenshot", _capture,
+        "poindexter.services.preview_screenshot.capture_preview_screenshot", _capture,
     )
     targets = json.dumps({
         "qa-rails": {
@@ -150,7 +150,7 @@ async def test_fetch_reads_real_dimensions_for_full_page(monkeypatch):
         return _png_with_size(1600, 4320)  # full page, far taller than viewport
 
     monkeypatch.setattr(
-        "services.preview_screenshot.capture_preview_screenshot", _capture,
+        "poindexter.services.preview_screenshot.capture_preview_screenshot", _capture,
     )
     targets = json.dumps({
         "console": {"url": "http://c/", "width": 1600, "height": 1000,
@@ -169,7 +169,7 @@ async def test_fetch_returns_empty_when_capture_fails(monkeypatch):
         return None
 
     monkeypatch.setattr(
-        "services.preview_screenshot.capture_preview_screenshot", _capture,
+        "poindexter.services.preview_screenshot.capture_preview_screenshot", _capture,
     )
     out = await ScreenshotProvider().fetch(
         "qa-rails", {"targets": '{"qa-rails": "http://g/d/qa"}'},
@@ -186,7 +186,7 @@ async def test_fetch_malformed_allowlist_is_inert_not_fatal(monkeypatch):
         return _PNG_1X1
 
     monkeypatch.setattr(
-        "services.preview_screenshot.capture_preview_screenshot", _capture,
+        "poindexter.services.preview_screenshot.capture_preview_screenshot", _capture,
     )
     out = await ScreenshotProvider().fetch("qa-rails", {"targets": "{not json"})
     assert out == []

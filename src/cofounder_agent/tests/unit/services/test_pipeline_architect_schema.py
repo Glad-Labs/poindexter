@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pytest
 
 from plugins.atom import AtomMeta
-from services import pipeline_architect
+from poindexter.services import pipeline_architect
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -212,7 +212,7 @@ def test_build_graph_from_spec_calls_schema_validation(monkeypatch):
     monkeypatch.setattr(pipeline_architect, "_validate_graph_schema", _recording_validate)
 
     # Use the approval_gate atom — it's real and has all keys declared.
-    from services.atom_registry import discover
+    from poindexter.services.atom_registry import discover
     discover()
 
     spec = {
@@ -230,7 +230,7 @@ def test_build_graph_from_spec_calls_schema_validation(monkeypatch):
 def test_build_graph_from_spec_raises_on_undeclared_produces(monkeypatch):
     """build_graph_from_spec raises ValueError when an atom produces an
     undeclared PipelineState key — the key error is propagated to the caller."""
-    from services.atom_registry import discover
+    from poindexter.services.atom_registry import discover
     discover()
 
     original_meta = pipeline_architect.get_atom_meta
@@ -270,8 +270,8 @@ def test_real_registered_atoms_all_produce_declared_keys():
     """Every registered atom's produces list must reference a declared
     PipelineState key. This is the core regression guard for #753 — any
     future atom that produces an undeclared key will fail here immediately."""
-    from services.atom_registry import discover, list_atoms
-    from services.template_runner import PipelineState
+    from poindexter.services.atom_registry import discover, list_atoms
+    from poindexter.services.template_runner import PipelineState
 
     discover()
     state_keys = frozenset(PipelineState.__annotations__)

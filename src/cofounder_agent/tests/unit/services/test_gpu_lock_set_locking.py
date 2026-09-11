@@ -20,9 +20,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services import gpu_scheduler as gs
-from services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUScheduler
-from services.site_config import SiteConfig
+from poindexter.services import gpu_scheduler as gs
+from poindexter.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUScheduler
+from poindexter.services.site_config import SiteConfig
 
 
 def _scheduler():
@@ -292,7 +292,7 @@ class _FakeConn:
 
 async def _record_acquire(gpu, keys):
     conn = _FakeConn()
-    import services.gpu_scheduler as _gs
+    import poindexter.services.gpu_scheduler as _gs
 
     async def _connect(dsn):
         return conn

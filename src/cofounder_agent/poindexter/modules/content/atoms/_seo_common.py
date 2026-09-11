@@ -14,8 +14,8 @@ import re
 from typing import Any
 
 from modules.content.atoms._pool import resolve_pool
-from services.llm_text import ollama_chat_text
-from services.prompt_manager import get_prompt_manager
+from poindexter.services.llm_text import ollama_chat_text
+from poindexter.services.prompt_manager import get_prompt_manager
 from utils.text_utils import extract_keywords_from_text
 from utils.title_utils import derive_seo_title
 
@@ -138,7 +138,7 @@ def degraded(field: str, exc: Exception) -> None:
     the floor; a best-effort metric is emitted if the exporter exposes one."""
     logger.warning("[seo.%s] LLM failed, degraded to programmatic: %s", field, exc)
     try:
-        from services.metrics_exporter import increment_seo_degraded  # type: ignore
+        from poindexter.services.metrics_exporter import increment_seo_degraded  # type: ignore
 
         increment_seo_degraded(field)
     except Exception:  # noqa: BLE001 - silent-ok: the metric is a duplicate

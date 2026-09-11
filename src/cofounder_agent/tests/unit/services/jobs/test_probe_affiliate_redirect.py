@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from prometheus_client import REGISTRY
 
-from services.jobs.probe_affiliate_redirect import (
+from poindexter.services.jobs.probe_affiliate_redirect import (
     ProbeAffiliateRedirectJob,
     build_probe_url,
 )
@@ -152,7 +152,7 @@ class TestCheapTier:
 
     async def test_503_is_an_outage_not_a_normal_fallback(self) -> None:
         fake, _ = _fake_httpx([_resp(503)])
-        with patch("services.jobs.probe_affiliate_redirect.emit_finding") as ef:
+        with patch("poindexter.services.jobs.probe_affiliate_redirect.emit_finding") as ef:
             res = await _run(ProbeAffiliateRedirectJob(), _pool(), _sc(), fake)
         assert res.ok  # probe ran; the Worker is what's broken
         assert "UNHEALTHY" in res.detail
@@ -161,14 +161,14 @@ class TestCheapTier:
 
     async def test_502_map_unloadable_is_an_outage(self) -> None:
         fake, _ = _fake_httpx([_resp(502)])
-        with patch("services.jobs.probe_affiliate_redirect.emit_finding"):
+        with patch("poindexter.services.jobs.probe_affiliate_redirect.emit_finding"):
             res = await _run(ProbeAffiliateRedirectJob(), _pool(), _sc(), fake)
         assert "UNHEALTHY" in res.detail
         assert REGISTRY.get_sample_value(_GAUGE) == 0
 
     async def test_transport_failure_is_an_outage(self) -> None:
         fake, _ = _fake_httpx([RuntimeError("connection refused")])
-        with patch("services.jobs.probe_affiliate_redirect.emit_finding"):
+        with patch("poindexter.services.jobs.probe_affiliate_redirect.emit_finding"):
             await _run(ProbeAffiliateRedirectJob(), _pool(), _sc(), fake)
         assert REGISTRY.get_sample_value(_GAUGE) == 0
 
@@ -205,7 +205,7 @@ class TestDeepTier:
         the case an unknown-slug probe cannot see."""
         fake, _ = _fake_httpx([_resp(302, _SITE + "/"), _resp(302, _SITE + "/")])
         pool = _pool({"code": "mercury", "url": _MERCHANT})
-        with patch("services.jobs.probe_affiliate_redirect.emit_finding") as ef:
+        with patch("poindexter.services.jobs.probe_affiliate_redirect.emit_finding") as ef:
             res = await _run(
                 ProbeAffiliateRedirectJob(), pool, _sc(deep_hours="24"), fake
             )

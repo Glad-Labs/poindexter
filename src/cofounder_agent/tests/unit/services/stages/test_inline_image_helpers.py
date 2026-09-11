@@ -82,7 +82,7 @@ async def test_try_image_gen_threads_task_id_to_both_gpu_locks():
     with patch(
         "modules.content.atoms._image_helpers.gpu", recorder, create=True,
     ), patch(
-        "services.gpu_scheduler.gpu", recorder,
+        "poindexter.services.gpu_scheduler.gpu", recorder,
     ), patch(
         "modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
@@ -157,7 +157,7 @@ async def test_batch_generate_inline_image_urls_uses_two_locks_for_n_images():
     with patch(
         "modules.content.atoms._image_helpers.gpu", recorder, create=True,
     ), patch(
-        "services.gpu_scheduler.gpu", recorder,
+        "poindexter.services.gpu_scheduler.gpu", recorder,
     ), patch(
         "modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
@@ -240,7 +240,7 @@ async def test_batch_generate_inline_image_urls_per_image_failure_is_isolated():
     with patch(
         "modules.content.atoms._image_helpers.gpu", recorder, create=True,
     ), patch(
-        "services.gpu_scheduler.gpu", recorder,
+        "poindexter.services.gpu_scheduler.gpu", recorder,
     ), patch(
         "modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
@@ -302,7 +302,7 @@ async def test_batch_skips_empty_description_without_using_topic():
     with patch(
         "modules.content.atoms._image_helpers.gpu", recorder, create=True,
     ), patch(
-        "services.gpu_scheduler.gpu", recorder,
+        "poindexter.services.gpu_scheduler.gpu", recorder,
     ), patch(
         "modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
@@ -343,7 +343,7 @@ async def test_gpu_task_session_recorded_with_task_id():
     """
     from datetime import datetime, timezone
 
-    from services.gpu_scheduler import GPUScheduler
+    from poindexter.services.gpu_scheduler import GPUScheduler
 
     scheduler = GPUScheduler()
     scheduler._get_gpu_utilization = AsyncMock(return_value=42.0)

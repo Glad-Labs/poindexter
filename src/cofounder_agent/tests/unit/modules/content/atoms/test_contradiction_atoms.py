@@ -56,7 +56,7 @@ class TestAtomMetadata:
 class TestDetect:
     async def test_passes_review_text_through_the_channel(self):
         with patch(
-            "services.self_review.detect_contradictions",
+            "poindexter.services.self_review.detect_contradictions",
             new=AsyncMock(return_value=("1. A conflicts with B", {"contradictions_found": 1})),
         ):
             out = await detect_atom.run(_state())
@@ -64,7 +64,7 @@ class TestDetect:
 
     async def test_clean_draft_yields_empty_channel(self):
         with patch(
-            "services.self_review.detect_contradictions",
+            "poindexter.services.self_review.detect_contradictions",
             new=AsyncMock(return_value=(None, {"contradictions_found": 0})),
         ):
             out = await detect_atom.run(_state())
@@ -73,7 +73,7 @@ class TestDetect:
     async def test_never_edits_the_draft(self):
         """Detection is read-only — the whole point of splitting it out."""
         with patch(
-            "services.self_review.detect_contradictions",
+            "poindexter.services.self_review.detect_contradictions",
             new=AsyncMock(return_value=("1. x", {})),
         ):
             out = await detect_atom.run(_state())
@@ -86,7 +86,7 @@ class TestDetect:
     async def test_exception_is_non_fatal(self):
         """Mirrors the deleted stage's halts_on_failure=False."""
         with patch(
-            "services.self_review.detect_contradictions",
+            "poindexter.services.self_review.detect_contradictions",
             new=AsyncMock(side_effect=RuntimeError("model down")),
         ):
             out = await detect_atom.run(_state())
@@ -99,7 +99,7 @@ class TestRevise:
     async def test_accepted_revision_updates_content_and_length(self):
         revised = "y" * 880
         with patch(
-            "services.self_review.revise_contradictions",
+            "poindexter.services.self_review.revise_contradictions",
             new=AsyncMock(return_value=(revised, {"revised": True})),
         ):
             out = await revise_atom.run(_state(contradiction_review="1. x"))
@@ -110,7 +110,7 @@ class TestRevise:
         """The contract rejected it, so the ORIGINAL draft must survive — the
         atom must not write back the discarded text."""
         with patch(
-            "services.self_review.revise_contradictions",
+            "poindexter.services.self_review.revise_contradictions",
             new=AsyncMock(return_value=("orig", {"revised": False,
                                                  "rejected_reason": "too long"})),
         ):
@@ -121,14 +121,14 @@ class TestRevise:
         """Empty channel = detect found nothing, so revise must not call an LLM.
         This is what lets the node sit unconditionally on the graph."""
         called = AsyncMock()
-        with patch("services.self_review.revise_contradictions", new=called):
+        with patch("poindexter.services.self_review.revise_contradictions", new=called):
             out = await revise_atom.run(_state(contradiction_review=""))
         assert out == {}
         called.assert_not_awaited()
 
     async def test_exception_is_non_fatal(self):
         with patch(
-            "services.self_review.revise_contradictions",
+            "poindexter.services.self_review.revise_contradictions",
             new=AsyncMock(side_effect=RuntimeError("model down")),
         ):
             out = await revise_atom.run(_state(contradiction_review="1. x"))

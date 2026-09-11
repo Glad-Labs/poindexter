@@ -35,7 +35,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.self_review import self_review_and_revise
+from poindexter.services.self_review import self_review_and_revise
 
 # Draft must exceed the 500-char floor so the self-review path actually runs.
 _DRAFT = "This draft has enough substance for a cross-section review. " * 15
@@ -91,12 +91,12 @@ async def test_cloud_self_review_model_routes_through_dispatch_not_local_ollama(
     local = _make_local_provider()
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out, stats = await self_review_and_revise(
             _DRAFT,
@@ -132,12 +132,12 @@ async def test_local_self_review_model_with_pool_also_routes_through_dispatch():
     local = _make_local_provider()
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out, stats = await self_review_and_revise(
             _DRAFT, "T", "Topic",
@@ -160,12 +160,12 @@ async def test_no_pool_falls_back_to_local_ollama_provider():
     local = _make_local_provider()
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
-         patch("services.prompt_manager.get_prompt_manager") as pm:
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         out, stats = await self_review_and_revise(
             _DRAFT, "T", "Topic",

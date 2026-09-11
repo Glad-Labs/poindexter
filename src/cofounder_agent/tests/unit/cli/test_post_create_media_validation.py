@@ -77,7 +77,7 @@ def fake_asyncpg(fake_dsn):
 
 
 def _patch_site_config(initial: dict[str, str] | None = None):
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     class _StubSiteConfig(SiteConfig):
         def __init__(self, *_args, pool=None, **_kwargs):
@@ -86,7 +86,7 @@ def _patch_site_config(initial: dict[str, str] | None = None):
         async def load(self, _pool):
             return 0
 
-    return patch("services.site_config.SiteConfig", _StubSiteConfig)
+    return patch("poindexter.services.site_config.SiteConfig", _StubSiteConfig)
 
 
 def _run_create(runner, fake_asyncpg, media_arg: str):
@@ -97,7 +97,7 @@ def _run_create(runner, fake_asyncpg, media_arg: str):
     piped via stdin (now required) and the dedup guard is no-op'd so the
     only DB op is the INSERT.
     """
-    import services.topic_dedup_guard as guard
+    import poindexter.services.topic_dedup_guard as guard
 
     new_conn = _make_conn(fetchrow_results=[
         {

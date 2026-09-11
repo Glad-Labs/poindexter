@@ -131,7 +131,7 @@ def scan_source(source: str, *, check_sibling_atoms: bool = True) -> list[tuple[
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                name = alias.name
+                name = alias.name.removeprefix("poindexter.")  # #1046 step 3: both spellings
                 if _is_stage_module(name):
                     if not _node_has_override(node, lines):
                         out.append((node.lineno, f"imports stage module {name}"))
@@ -140,7 +140,7 @@ def scan_source(source: str, *, check_sibling_atoms: bool = True) -> list[tuple[
                     if seg and not _node_has_override(node, lines):
                         out.append((node.lineno, f"imports sibling atom {seg}"))
         elif isinstance(node, ast.ImportFrom) and node.module:
-            module = node.module
+            module = node.module.removeprefix("poindexter.")  # #1046 step 3: both spellings
             if _is_stage_module(module):
                 if not _node_has_override(node, lines):
                     out.append((node.lineno, f"imports stage module {module}"))

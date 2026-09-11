@@ -24,7 +24,7 @@ class TestConsumeImageGenResponse:
 
     @pytest.mark.asyncio
     async def test_image_bytes_branch_writes_directly(self, tmp_path):
-        from services.video_service import _consume_image_gen_response
+        from poindexter.services.video_service import _consume_image_gen_response
 
         resp = MagicMock()
         resp.status_code = 200
@@ -41,7 +41,7 @@ class TestConsumeImageGenResponse:
     @pytest.mark.asyncio
     async def test_json_branch_fetches_from_images_endpoint(self, tmp_path):
         """JSON shape with filename → GET <image-gen-server>/images/<filename> → write bytes."""
-        from services.video_service import _consume_image_gen_response
+        from poindexter.services.video_service import _consume_image_gen_response
 
         primary_resp = MagicMock()
         primary_resp.status_code = 200
@@ -63,7 +63,7 @@ class TestConsumeImageGenResponse:
 
         out = str(tmp_path / "frame.png")
         with patch(
-            "services.video_service.httpx.AsyncClient",
+            "poindexter.services.video_service.httpx.AsyncClient",
             return_value=fetch_client,
         ):
             got = await _consume_image_gen_response(
@@ -81,7 +81,7 @@ class TestConsumeImageGenResponse:
 
     @pytest.mark.asyncio
     async def test_json_branch_falls_back_to_image_path_when_filename_missing(self, tmp_path):
-        from services.video_service import _consume_image_gen_response
+        from poindexter.services.video_service import _consume_image_gen_response
 
         primary_resp = MagicMock()
         primary_resp.status_code = 200
@@ -99,7 +99,7 @@ class TestConsumeImageGenResponse:
         fetch_client.get = AsyncMock(return_value=fetch_resp)
 
         with patch(
-            "services.video_service.httpx.AsyncClient",
+            "poindexter.services.video_service.httpx.AsyncClient",
             return_value=fetch_client,
         ):
             got = await _consume_image_gen_response(
@@ -114,7 +114,7 @@ class TestConsumeImageGenResponse:
 
     @pytest.mark.asyncio
     async def test_json_branch_returns_none_when_filename_missing(self, tmp_path):
-        from services.video_service import _consume_image_gen_response
+        from poindexter.services.video_service import _consume_image_gen_response
         resp = MagicMock()
         resp.status_code = 200
         resp.headers = {"content-type": "application/json"}
@@ -128,7 +128,7 @@ class TestConsumeImageGenResponse:
 
     @pytest.mark.asyncio
     async def test_non_2xx_returns_none(self, tmp_path):
-        from services.video_service import _consume_image_gen_response
+        from poindexter.services.video_service import _consume_image_gen_response
         resp = MagicMock()
         resp.status_code = 500
         resp.text = "internal error"

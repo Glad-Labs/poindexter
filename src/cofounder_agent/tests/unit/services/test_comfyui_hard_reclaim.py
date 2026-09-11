@@ -30,8 +30,8 @@ def _client(queue_json, post_status=200):
 
 
 def _scheduler():
-    import services.gpu_scheduler as gs
-    from services.gpu_scheduler import GPUScheduler
+    import poindexter.services.gpu_scheduler as gs
+    from poindexter.services.gpu_scheduler import GPUScheduler
 
     gs._LAST_RESTART_REQUEST.clear()  # per-container cooldown is module state
     return GPUScheduler()
@@ -57,15 +57,15 @@ def _run_ctx(scheduler, client, vram_readings, pool=None, sc=None):
 
     return (
         patch.object(scheduler, "_get_http_client", return_value=client),
-        patch("services.video_providers.comfyui._resolve_server_url",
+        patch("poindexter.services.video_providers.comfyui._resolve_server_url",
               return_value="http://comfyui:8188"),
         patch.object(scheduler, "_render_free_vram_gb", side_effect=_read),
-        patch("services.gpu_scheduler._sc", return_value=sc or _SC({
+        patch("poindexter.services.gpu_scheduler._sc", return_value=sc or _SC({
             "vram_reclaim_settle_seconds": 0.0,
             "vram_reclaim_min_freed_gb": 1.0,
             "vram_reclaim_restart_cooldown_minutes": 30.0,
         })),
-        patch("services.gpu_scheduler._container_pool", return_value=pool),
+        patch("poindexter.services.gpu_scheduler._container_pool", return_value=pool),
         patch("asyncio.sleep", new=AsyncMock()),
     )
 
@@ -80,7 +80,7 @@ class TestRestartsWhenFreeDidNothing:
         created = AsyncMock(return_value={"id": "req-1"})
         ctxs = _run_ctx(s, client, [11.7, 11.7], pool=MagicMock())
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             await s._unload_comfyui(hard=True)
         created.assert_awaited_once()
         assert created.await_args.args[1] == "poindexter-comfyui"
@@ -92,7 +92,7 @@ class TestRestartsWhenFreeDidNothing:
         created = AsyncMock()
         ctxs = _run_ctx(s, client, [11.7, 31.5], pool=MagicMock())
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             await s._unload_comfyui(hard=True)
         created.assert_not_awaited()
 
@@ -103,7 +103,7 @@ class TestRestartsWhenFreeDidNothing:
         created = AsyncMock()
         ctxs = _run_ctx(s, client, [11.7, 11.7], pool=MagicMock())
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             await s._unload_comfyui(hard=False)
         created.assert_not_awaited()
         client.post.assert_awaited_once()  # /free still fired
@@ -120,7 +120,7 @@ class TestFailSafes:
         created = AsyncMock()
         ctxs = _run_ctx(s, client, [None], pool=MagicMock())
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             await s._unload_comfyui(hard=True)
         created.assert_not_awaited()
 
@@ -137,7 +137,7 @@ class TestFailSafes:
         created = AsyncMock()
         ctxs = _run_ctx(s, client, [11.7, 11.7], pool=MagicMock())
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], \
-             patch("services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
             await s._unload_comfyui(hard=True)
         created.assert_not_awaited()
 
@@ -149,7 +149,7 @@ class TestFailSafes:
             client = _client({"queue_running": [], "queue_pending": []})
             ctxs = _run_ctx(s, client, [11.7, 11.7], pool=MagicMock())
             with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], \
-                 patch("services.service_restart_requests.create_restart_request", created):
+                 patch("poindexter.services.service_restart_requests.create_restart_request", created):
                 await s._unload_comfyui(hard=True)
         assert created.await_count == 1, "three passes, one restart"
 
@@ -176,7 +176,7 @@ class TestSquatFindingSeverity:
         pool = MagicMock()
         ctxs = _run_ctx(s, client, [11.7, 11.7], pool=pool)
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], patch(
-            "services.service_restart_requests.create_restart_request",
+            "poindexter.services.service_restart_requests.create_restart_request",
             AsyncMock(return_value={"id": "rr-1"}),
         ), patch("utils.findings.emit_finding") as finding:
             await s._unload_comfyui(hard=True)

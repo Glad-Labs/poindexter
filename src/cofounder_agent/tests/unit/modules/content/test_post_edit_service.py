@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from modules.content.post_edit_service import EditResult, PostEditService
-from services.image_service import ImageGenOutcome
+from poindexter.services.image_service import ImageGenOutcome
 
 
 class _FakeAuditCap:
@@ -299,7 +299,7 @@ async def test_sync_published_post_featured_updates_posts_row(monkeypatch):
         return {"success": True}
 
     monkeypatch.setattr(
-        "services.static_export_service.export_full_rebuild", _fake_rebuild,
+        "poindexter.services.static_export_service.export_full_rebuild", _fake_rebuild,
     )
 
     svc = PostEditService(pool=pool)  # no site_config → warns, no rebuild
@@ -334,9 +334,9 @@ async def test_sync_published_post_featured_triggers_rebuild(monkeypatch):
         rebuild_calls.append(site_config)
         return {"success": True}
 
-    monkeypatch.setattr("services.static_export_service.export_full_rebuild", _fake_rebuild)
+    monkeypatch.setattr("poindexter.services.static_export_service.export_full_rebuild", _fake_rebuild)
 
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={})
     svc = PostEditService(pool=pool, site_config=sc)
@@ -358,9 +358,9 @@ async def test_regen_image_propagates_warnings_from_published_post(monkeypatch):
     async def _fake_rebuild(p, *, site_config):
         return {"success": True}
 
-    monkeypatch.setattr("services.static_export_service.export_full_rebuild", _fake_rebuild)
+    monkeypatch.setattr("poindexter.services.static_export_service.export_full_rebuild", _fake_rebuild)
 
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={})
     svc = PostEditService(pool=pool, image_service=_FakeImageSvc(), site_config=sc)
@@ -587,7 +587,7 @@ class _RetitlePool:
 
 
 def _slug(title, task_id):
-    from services.publish_service import build_post_slug
+    from poindexter.services.publish_service import build_post_slug
     return build_post_slug(title, task_id)
 
 

@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from services.topic_dedup import (
+from poindexter.services.topic_dedup import (
     TopicDeduplicator,
     _content_words,
     _word_overlap_match,

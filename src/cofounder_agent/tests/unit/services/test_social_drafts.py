@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from services.social_drafts import (
+from poindexter.services.social_drafts import (
     _KEY_HELD_STATUSES,
     _LIVE_STATUSES,
     SocialDraftsService,
@@ -146,7 +146,7 @@ async def test_create_draft_skips_when_active_or_posted_draft_exists():
     and returns the existing draft's id instead of stacking a duplicate."""
     pool, conn = _make_pool()
     conn.fetchval.side_effect = [None, "existing-1"]
-    with patch("services.social_drafts.SOCIAL_DRAFT_CREATED_TOTAL") as metric:
+    with patch("poindexter.services.social_drafts.SOCIAL_DRAFT_CREATED_TOTAL") as metric:
         svc = SocialDraftsService()
         result = await svc.create_draft(
             pipeline_task_id="task-1",
@@ -163,7 +163,7 @@ async def test_create_draft_skips_when_active_or_posted_draft_exists():
 @pytest.mark.asyncio
 async def test_create_draft_increments_metric_only_on_real_insert():
     pool, conn = _make_pool(fetchval="new-1")
-    with patch("services.social_drafts.SOCIAL_DRAFT_CREATED_TOTAL") as metric:
+    with patch("poindexter.services.social_drafts.SOCIAL_DRAFT_CREATED_TOTAL") as metric:
         svc = SocialDraftsService()
         result = await svc.create_draft(
             pipeline_task_id="task-1",
@@ -592,7 +592,7 @@ async def test_approve_draft_success():
         "postiz_api_url": "http://postiz:3000",
     })
     with patch(
-        "services.social_drafts.PostizClient.create_post",
+        "poindexter.services.social_drafts.PostizClient.create_post",
         new_callable=AsyncMock,
         return_value={"success": True, "post_id": "pz-1", "error": None},
     ):
@@ -615,7 +615,7 @@ async def test_approve_draft_passes_api_key_to_postiz():
         "postiz_api_url": "http://postiz:3000",
         "postiz_api_key": "org-secret-key",
     })
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         instance = mock_cls.return_value
         instance.create_post = AsyncMock(
             return_value={"success": True, "post_id": "pz-2", "error": None}
@@ -639,7 +639,7 @@ async def test_approve_draft_sets_made_with_ai_for_x():
         "postiz_api_url": "http://postiz:3000",
         "social_x_made_with_ai": "true",
     })
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         instance = mock_cls.return_value
         instance.create_post = AsyncMock(
             return_value={"success": True, "post_id": "p", "error": None}
@@ -662,7 +662,7 @@ async def test_approve_draft_made_with_ai_disabled_by_setting():
         "postiz_api_url": "http://postiz:3000",
         "social_x_made_with_ai": "false",
     })
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         instance = mock_cls.return_value
         instance.create_post = AsyncMock(
             return_value={"success": True, "post_id": "p", "error": None}
@@ -685,7 +685,7 @@ async def test_approve_draft_bluesky_maps_type_and_integration():
         "postiz_integration_id_bluesky": "uuid-bsky",
         "postiz_api_url": "http://postiz:3000",
     })
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         instance = mock_cls.return_value
         instance.create_post = AsyncMock(
             return_value={"success": True, "post_id": "p", "error": None}
@@ -787,7 +787,7 @@ async def test_concurrent_approve_posts_only_once():
         return {"success": True, "post_id": "pz-dup", "error": None}
 
     with patch(
-        "services.social_drafts.PostizClient.create_post",
+        "poindexter.services.social_drafts.PostizClient.create_post",
         new_callable=AsyncMock,
         side_effect=_slow_create_post,
     ) as create_post:
@@ -821,7 +821,7 @@ async def test_lock_contention_skips_postiz_entirely():
         "postiz_integration_id_twitter": "uuid-abc",
         "postiz_api_url": "http://postiz:3000",
     })
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         svc = SocialDraftsService()
         result = await svc.approve_draft("held-1", pool, sc)
 
@@ -889,7 +889,7 @@ async def test_approve_draft_blocked_when_post_missing():
     conn.fetchrow.side_effect = [_draft_row(), None]
     sc = _make_site_config({"postiz_integration_id_twitter": "uuid-abc"})
 
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         svc = SocialDraftsService()
         result = await svc.approve_draft("d-1", pool, sc)
 
@@ -909,7 +909,7 @@ async def test_approve_draft_blocked_when_post_not_live():
     conn.fetchrow.side_effect = [_draft_row(), _post_row(status="approved")]
     sc = _make_site_config({"postiz_integration_id_twitter": "uuid-abc"})
 
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         svc = SocialDraftsService()
         result = await svc.approve_draft("d-1", pool, sc)
 
@@ -937,7 +937,7 @@ async def test_approve_draft_repairs_dead_url():
         "site_url": "https://gladlabs.io",
     })
 
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         instance = mock_cls.return_value
         instance.create_post = AsyncMock(
             return_value={"success": True, "post_id": "pz-9", "error": None}
@@ -971,7 +971,7 @@ async def test_approve_draft_appends_url_when_missing():
         "site_url": "https://gladlabs.io",
     })
 
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         instance = mock_cls.return_value
         instance.create_post = AsyncMock(
             return_value={"success": True, "post_id": "pz-10", "error": None}
@@ -1128,7 +1128,7 @@ async def test_approve_draft_stamps_post_id_and_approved_at():
         "site_url": "https://gladlabs.io",
     })
 
-    with patch("services.social_drafts.PostizClient") as mock_cls:
+    with patch("poindexter.services.social_drafts.PostizClient") as mock_cls:
         instance = mock_cls.return_value
         instance.create_post = AsyncMock(
             return_value={"success": True, "post_id": "pz-11", "error": None}
@@ -1155,7 +1155,7 @@ def _sched_site_config(**overrides) -> MagicMock:
     settings = {"operator_timezone": "America/New_York"}
     settings.update(overrides)
     sc = _make_site_config(settings)
-    from services.clock import resolve_operator_tz
+    from poindexter.services.clock import resolve_operator_tz
 
     sc.timezone = resolve_operator_tz(settings["operator_timezone"])
     return sc
@@ -1410,7 +1410,7 @@ async def test_auto_schedule_pauses_on_malformed_quiet_hours():
 def test_parse_offsets_keeps_good_pairs_and_drops_bad_ones():
     import datetime as _dt
 
-    from services.social_drafts import parse_offsets
+    from poindexter.services.social_drafts import parse_offsets
 
     parsed = parse_offsets(
         "twitter=0m, linkedin=3h, nosuchplatform=1h, reddit=notaduration, "
@@ -1425,7 +1425,7 @@ def test_parse_offsets_keeps_good_pairs_and_drops_bad_ones():
 
 
 def test_parse_offsets_empty_means_auto_slot_nothing():
-    from services.social_drafts import parse_offsets
+    from poindexter.services.social_drafts import parse_offsets
 
     assert parse_offsets("") == {}
     assert parse_offsets("   ") == {}
@@ -1443,7 +1443,7 @@ def test_parse_offsets_empty_means_auto_slot_nothing():
 def test_parse_prime_times_keeps_good_entries_and_drops_bad_ones():
     import datetime as _dt
 
-    from services.social_drafts import parse_prime_times
+    from poindexter.services.social_drafts import parse_prime_times
 
     parsed = parse_prime_times(
         "twitter=09:00,12:30; nosuchplatform=09:00; reddit=25:00; "
@@ -1464,7 +1464,7 @@ def test_parse_prime_times_keeps_good_entries_and_drops_bad_ones():
 def test_parse_prime_times_sorts_and_dedups():
     import datetime as _dt
 
-    from services.social_drafts import parse_prime_times
+    from poindexter.services.social_drafts import parse_prime_times
 
     assert parse_prime_times("twitter=17:00,09:00,12:30,09:00") == {
         "twitter": [_dt.time(9, 0), _dt.time(12, 30), _dt.time(17, 0)]
@@ -1475,7 +1475,7 @@ def test_next_prime_slot_rolls_a_night_publish_to_the_morning():
     """The headline case: publish at 11pm, promote at 9am."""
     import datetime as _dt
 
-    from services.social_drafts import next_prime_slot
+    from poindexter.services.social_drafts import next_prime_slot
 
     ny = ZoneInfo("America/New_York")
     floor = _dt.datetime(2026, 8, 9, 23, 0, tzinfo=ny)
@@ -1489,7 +1489,7 @@ def test_next_prime_slot_takes_the_same_day_when_one_is_still_ahead():
     """A 10am publish shouldn't wait until tomorrow for a 12:30 slot."""
     import datetime as _dt
 
-    from services.social_drafts import next_prime_slot
+    from poindexter.services.social_drafts import next_prime_slot
 
     ny = ZoneInfo("America/New_York")
     floor = _dt.datetime(2026, 8, 11, 10, 0, tzinfo=ny)
@@ -1507,7 +1507,7 @@ def test_next_prime_slot_spreads_collisions_across_the_listed_hours():
     """
     import datetime as _dt
 
-    from services.social_drafts import next_prime_slot
+    from poindexter.services.social_drafts import next_prime_slot
 
     ny = ZoneInfo("America/New_York")
     times = [_dt.time(9, 0), _dt.time(12, 30), _dt.time(17, 0)]
@@ -1530,7 +1530,7 @@ def test_next_prime_slot_spreads_collisions_across_the_listed_hours():
 def test_next_prime_slot_rolls_to_the_next_day_when_a_day_fills_up():
     import datetime as _dt
 
-    from services.social_drafts import next_prime_slot
+    from poindexter.services.social_drafts import next_prime_slot
 
     ny = ZoneInfo("America/New_York")
     times = [_dt.time(9, 0)]
@@ -1545,7 +1545,7 @@ def test_next_prime_slot_returns_none_with_no_times():
     """Caller falls back to the offset slot rather than dropping the draft."""
     import datetime as _dt
 
-    from services.social_drafts import next_prime_slot
+    from poindexter.services.social_drafts import next_prime_slot
 
     assert next_prime_slot(
         _dt.datetime(2026, 8, 9, 23, 0, tzinfo=timezone.utc), [], set()

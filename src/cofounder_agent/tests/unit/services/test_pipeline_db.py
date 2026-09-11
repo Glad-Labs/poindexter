@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.pipeline_db import (
+from poindexter.services.pipeline_db import (
     LEGACY_SITE_TARGETS,
     SITE_TARGET,
     SITE_TARGETS,

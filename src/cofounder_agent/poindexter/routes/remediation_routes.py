@@ -35,9 +35,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from middleware.api_token_auth import verify_api_token
-from services.firefighter_service import select_remediation_action
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.firefighter_service import select_remediation_action
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
@@ -94,8 +94,8 @@ class _SelectorModelRouter:
         self, *, model_class: str, system: str, user: str, max_tokens: int | None = None
     ) -> dict[str, Any]:
         del model_class, max_tokens  # model is the ops_firefighter_model setting
-        from services.llm_providers.thinking_models import strip_think_blocks
-        from services.llm_text import ollama_chat_text, resolve_local_writer_model
+        from poindexter.services.llm_providers.thinking_models import strip_think_blocks
+        from poindexter.services.llm_text import ollama_chat_text, resolve_local_writer_model
 
         configured = (self._site_config.get("ops_firefighter_model", "") or "").strip()
         # Remediation selection is a SATELLITE phase (it names a docker/sweep

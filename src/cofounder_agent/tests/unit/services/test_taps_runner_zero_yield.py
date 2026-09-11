@@ -20,7 +20,7 @@ from unittest import mock
 
 import pytest
 
-from services.taps.runner import TapStats, _emit_zero_yield_finding, is_zero_yield
+from poindexter.services.taps.runner import TapStats, _emit_zero_yield_finding, is_zero_yield
 
 
 class TestIsZeroYield:

@@ -6,7 +6,7 @@ import dataclasses
 
 import pytest
 
-from services.model_eval.types import GoldenCase, GoldenSet, MetricResult, Scorer
+from poindexter.services.model_eval.types import GoldenCase, GoldenSet, MetricResult, Scorer
 
 
 def test_metric_result_carries_provenance() -> None:

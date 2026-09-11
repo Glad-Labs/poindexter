@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.tasks_db import (
+from poindexter.services.tasks_db import (
     TasksDatabase,
     _parse_rowcount,
     serialize_value_for_postgres,
@@ -507,7 +507,7 @@ class TestAddTaskTemplateSlug:
         pool = _make_pool()
         db = _make_db(pool)
         with patch(
-            "services.tasks_db._resolve_default_template_slug",
+            "poindexter.services.tasks_db._resolve_default_template_slug",
             new=AsyncMock(return_value="canonical_blog"),
         ) as resolver_mock:
             await db.add_task({
@@ -549,7 +549,7 @@ class TestAddTaskTraceContext:
             "traceparent": "00-0af7651916cd43dd8448eb211c80319c-00f067aa0ba902b7-01"
         }
         monkeypatch.setattr(
-            "services.tasks_db.inject_trace_context", lambda *a, **k: carrier
+            "poindexter.services.tasks_db.inject_trace_context", lambda *a, **k: carrier
         )
 
         pool = _make_pool()
@@ -573,7 +573,7 @@ class TestAddTaskTraceContext:
             return "INSERT 0 1"
 
         monkeypatch.setattr(
-            "services.tasks_db.inject_trace_context", lambda *a, **k: None
+            "poindexter.services.tasks_db.inject_trace_context", lambda *a, **k: None
         )
 
         pool = _make_pool()
@@ -2014,7 +2014,7 @@ class TestAddTaskAgainstRealDb:
     """
 
     async def test_add_task_writes_row_visible_via_view(self, db_pool):
-        from services.tasks_db import TasksDatabase
+        from poindexter.services.tasks_db import TasksDatabase
 
         db = TasksDatabase(pool=db_pool)
         task_id = await db.add_task({
@@ -2058,7 +2058,7 @@ class TestAddTaskAgainstRealDb:
             await conn.execute("DELETE FROM pipeline_tasks WHERE task_id = $1", task_id)
 
     async def test_bulk_add_tasks_writes_rows_visible_via_view(self, db_pool):
-        from services.tasks_db import TasksDatabase
+        from poindexter.services.tasks_db import TasksDatabase
 
         db = TasksDatabase(pool=db_pool)
         ids = await db.bulk_add_tasks([
@@ -2092,7 +2092,7 @@ class TestAddTaskAgainstRealDb:
         """
         import asyncpg
 
-        from services.tasks_db import TasksDatabase
+        from poindexter.services.tasks_db import TasksDatabase
 
         db = TasksDatabase(pool=db_pool)
         try:

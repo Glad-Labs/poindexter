@@ -166,7 +166,7 @@ REJECT_PAYLOAD = {
 _OPERATOR_IDENTITY_APPROVAL = "routes.approval_routes.get_operator_identity"
 _CHECK_OWNERSHIP = "routes.task_publishing_routes._check_task_ownership"
 _REVALIDATION = "routes.revalidate_routes.trigger_nextjs_revalidation"
-_WEBHOOK = "services.webhook_delivery_service.emit_webhook_event"
+_WEBHOOK = "poindexter.services.webhook_delivery_service.emit_webhook_event"
 
 
 def _approve_patches():

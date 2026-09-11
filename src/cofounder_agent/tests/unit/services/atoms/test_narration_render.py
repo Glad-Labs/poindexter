@@ -52,7 +52,7 @@ async def test_appends_cta_and_synthesizes(monkeypatch):
             seen["text"], seen["key"] = text, key
             return "/tmp/out.mp3", 12.0
 
-    monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+    monkeypatch.setattr("poindexter.services.podcast_service.PodcastService", _PS)
     out = await _narration_render.render_narration(
         script="Real narration content.", cta_key="media.cta.video",
         site_config=_SC({"media.cta.video": "Like and subscribe."}),
@@ -75,7 +75,7 @@ async def test_no_cta_synthesizes_bare_script(monkeypatch):
             seen["text"] = text
             return "/tmp/out.mp3", 1.0
 
-    monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+    monkeypatch.setattr("poindexter.services.podcast_service.PodcastService", _PS)
     out = await _narration_render.render_narration(
         script="Body only.", cta_key="media.cta.video",
         site_config=_SC({}), task_id="t1", key="t1_long",
@@ -93,7 +93,7 @@ async def test_tts_exception_is_failsoft(monkeypatch):
         async def synthesize(self, text, *, key):
             raise RuntimeError("speaches down")
 
-    monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+    monkeypatch.setattr("poindexter.services.podcast_service.PodcastService", _PS)
     out = await _narration_render.render_narration(
         script="The pipeline shipped a silent video.", cta_key="media.cta.video",
         site_config=_SC({}), task_id="t1", key="t1_long",
@@ -123,7 +123,7 @@ class TestNarrationFailureFinding:
             async def synthesize(self, text, *, key):
                 raise RuntimeError("speaches down")
 
-        monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+        monkeypatch.setattr("poindexter.services.podcast_service.PodcastService", _PS)
         seen = []
         monkeypatch.setattr(
             _narration_render, "emit_finding",
@@ -156,7 +156,7 @@ class TestNarrationFailureFinding:
             async def synthesize(self, text, *, key):
                 return "", 0
 
-        monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+        monkeypatch.setattr("poindexter.services.podcast_service.PodcastService", _PS)
         seen = []
         monkeypatch.setattr(
             _narration_render, "emit_finding",
@@ -219,7 +219,7 @@ class TestNarrationFailureFinding:
             async def synthesize(self, text, *, key):
                 return "/tmp/n.mp3", 12
 
-        monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+        monkeypatch.setattr("poindexter.services.podcast_service.PodcastService", _PS)
         seen = []
         monkeypatch.setattr(
             _narration_render, "emit_finding",
@@ -314,7 +314,7 @@ class TestStripScriptLabels:
                 seen["text"] = text
                 return "/tmp/out.mp3", 5.0
 
-        monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+        monkeypatch.setattr("poindexter.services.podcast_service.PodcastService", _PS)
         out = await _narration_render.render_narration(
             script="Hook\nLocal LLMs are eating the cloud's lunch.",
             cta_key="media.cta.video",
@@ -381,7 +381,7 @@ class TestComposeNarrationText:
                 seen["text"] = text
                 return "/tmp/out.mp3", 5.0
 
-        monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+        monkeypatch.setattr("poindexter.services.podcast_service.PodcastService", _PS)
         sc = _SC({"media.cta.video": "Subscribe now."})
         script = "Opening Hook\nReal narration body."
         await _narration_render.render_narration(

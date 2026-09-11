@@ -28,24 +28,24 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
-from services.citation_verifier import CitationVerifier
-from services.gpu_registry import GPURegistry
-from services.r2_upload_service import R2UploadService
-from services.redis_cache import RedisCache
-from services.research_quality_service import ResearchQualityService
-from services.retention_janitor import RetentionJanitor
-from services.revalidation_service import RevalidationService
-from services.seed_url_fetcher import SeedURLFetcher
-from services.seo_content_generator import ContentMetadataGenerator
-from services.site_config import SiteConfig
-from services.telegram_config import TelegramConfig
-from services.title_originality_external import TitleOriginalityExternalChecker
-from services.url_scraper import URLScraper
-from services.url_validator import URLValidator
-from services.web_research import WebResearcher
+from poindexter.services.citation_verifier import CitationVerifier
+from poindexter.services.gpu_registry import GPURegistry
+from poindexter.services.r2_upload_service import R2UploadService
+from poindexter.services.redis_cache import RedisCache
+from poindexter.services.research_quality_service import ResearchQualityService
+from poindexter.services.retention_janitor import RetentionJanitor
+from poindexter.services.revalidation_service import RevalidationService
+from poindexter.services.seed_url_fetcher import SeedURLFetcher
+from poindexter.services.seo_content_generator import ContentMetadataGenerator
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.telegram_config import TelegramConfig
+from poindexter.services.title_originality_external import TitleOriginalityExternalChecker
+from poindexter.services.url_scraper import URLScraper
+from poindexter.services.url_validator import URLValidator
+from poindexter.services.web_research import WebResearcher
 
 if TYPE_CHECKING:
-    from services.decorators import Decorators
+    from poindexter.services.decorators import Decorators
 
 
 class ServiceContainer:
@@ -185,7 +185,7 @@ class AppContainer:
         container is built — which happens once per entry-point boot.
         Subsequent containers (test fixtures, etc.) overwrite the pin.
         """
-        from services.decorators import Decorators, set_default_decorators
+        from poindexter.services.decorators import Decorators, set_default_decorators
 
         instance = Decorators(site_config=self.site_config)
         set_default_decorators(instance)

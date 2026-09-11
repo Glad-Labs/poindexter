@@ -9,7 +9,7 @@ candidate.
 
 from __future__ import annotations
 
-from services.rag_engine import _retrieval_text
+from poindexter.services.rag_engine import _retrieval_text
 
 
 class TestRetrievalText:

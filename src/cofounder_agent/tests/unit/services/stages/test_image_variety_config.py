@@ -21,7 +21,7 @@ from modules.content.stages.source_featured_image import (
     _load_recent_published_styles,
     _resolve_image_prompt,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.mark.unit
@@ -94,7 +94,7 @@ def test_image_render_params_are_db_seeded():
     against accidental removal. #image-zimage-and-variety."""
     # image_generation_model is seeded in 0000_baseline.seeds.sql (not DEFAULTS),
     # so it's excluded here; everything else lives in settings_defaults.
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     for key in (
         "image_prompt_temperature",

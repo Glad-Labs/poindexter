@@ -21,8 +21,8 @@ from __future__ import annotations
 import pytest
 
 from poindexter.memory.client import MemoryHit
-from services.site_config import SiteConfig
-from services.topic_dedup_guard import (
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_dedup_guard import (
     DuplicateTopicError,
     assert_topic_not_duplicate,
 )

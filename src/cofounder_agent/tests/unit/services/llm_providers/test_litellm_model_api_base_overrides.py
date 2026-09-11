@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.llm_providers.litellm_provider import LiteLLMProvider
+from poindexter.services.llm_providers.litellm_provider import LiteLLMProvider
 
 _DEFAULT_BASE = "http://host.docker.internal:11434"
 _VISION_BASE = "http://host.docker.internal:11435"

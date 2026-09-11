@@ -231,7 +231,7 @@ class TestDraftEditingRoutes:
         monkeypatch.setattr(_pub_mod, "enqueue_image_rebuild", fake_enqueue)
         # Keep regen from building the real (image-gen) image service.
         monkeypatch.setattr(
-            "services.image_service.get_image_service",
+            "poindexter.services.image_service.get_image_service",
             lambda site_config=None: object(),
         )
         return TestClient(_build_app(mock_db))
@@ -363,7 +363,7 @@ class TestDraftEditingRoutes:
 
         monkeypatch.setattr(_pub_mod, "PostEditService", FailSvc)
         monkeypatch.setattr(
-            "services.image_service.get_image_service",
+            "poindexter.services.image_service.get_image_service",
             lambda site_config=None: object(),
         )
         client = TestClient(_build_app(mock_db))
@@ -641,17 +641,17 @@ class TestApproveTask:
         app = _build_app(mock_db)
         with (
             patch(
-                "services.default_author.get_or_create_default_author",
+                "poindexter.services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
                 return_value="author-1",
             ),
             patch(
-                "services.category_resolver.select_category_for_topic",
+                "poindexter.services.category_resolver.select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
             patch(
-                "services.integrations.operator_notify.notify_operator",
+                "poindexter.services.integrations.operator_notify.notify_operator",
                 new_callable=AsyncMock,
             ),
         ):
@@ -722,7 +722,7 @@ class TestPublishTask:
             revalidation_success=True,
         )
         with patch(
-            "services.publish_service.publish_post_from_task",
+            "poindexter.services.publish_service.publish_post_from_task",
             new_callable=AsyncMock,
             return_value=mock_result,
         ):
@@ -741,12 +741,12 @@ class TestPublishTask:
         app = _build_app(mock_db)
         with (
             patch(
-                "services.default_author.get_or_create_default_author",
+                "poindexter.services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
                 return_value="author-1",
             ),
             patch(
-                "services.category_resolver.select_category_for_topic",
+                "poindexter.services.category_resolver.select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
@@ -846,12 +846,12 @@ class TestPublishTask:
         app = _build_app(mock_db)
         with (
             patch(
-                "services.default_author.get_or_create_default_author",
+                "poindexter.services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
                 return_value="author-1",
             ),
             patch(
-                "services.category_resolver.select_category_for_topic",
+                "poindexter.services.category_resolver.select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
@@ -889,12 +889,12 @@ class TestPublishTask:
         app = _build_app(mock_db)
         with (
             patch(
-                "services.default_author.get_or_create_default_author",
+                "poindexter.services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
                 return_value="author-1",
             ),
             patch(
-                "services.category_resolver.select_category_for_topic",
+                "poindexter.services.category_resolver.select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
@@ -926,7 +926,7 @@ class TestPublishTask:
         app = _build_app(mock_db)
         # Overrides the autouse success=True mock for this test only.
         with patch(
-            "services.publish_service.publish_post_from_task",
+            "poindexter.services.publish_service.publish_post_from_task",
             new_callable=AsyncMock,
             return_value=failed,
         ):
@@ -1071,7 +1071,7 @@ class TestPublishTaskIdempotency:
             revalidation_success=True,
         )
         with patch(
-            "services.publish_service.publish_post_from_task",
+            "poindexter.services.publish_service.publish_post_from_task",
             new_callable=AsyncMock,
             return_value=mock_result,
         ):
@@ -1105,7 +1105,7 @@ class TestPublishTaskIdempotency:
 
         app = _build_app(mock_db)
         with patch(
-            "services.publish_service.publish_post_from_task",
+            "poindexter.services.publish_service.publish_post_from_task",
             new_callable=AsyncMock,
         ) as mock_pub:
             client = TestClient(app)
@@ -1414,8 +1414,8 @@ class TestApproveTaskScheduled:
         app = _build_app(mock_db)
 
         with (
-            patch("services.publish_service.publish_post_from_task", stage),
-            patch("services.scheduling_service.assign_slot", assign),
+            patch("poindexter.services.publish_service.publish_post_from_task", stage),
+            patch("poindexter.services.scheduling_service.assign_slot", assign),
         ):
             resp = self._approve(
                 TestClient(app),
@@ -1444,11 +1444,11 @@ class TestApproveTaskScheduled:
         app = _build_app(mock_db)
         with (
             patch(
-                "services.publish_service.publish_post_from_task",
+                "poindexter.services.publish_service.publish_post_from_task",
                 AsyncMock(return_value=self._staged()),
             ),
             patch(
-                "services.scheduling_service.assign_slot",
+                "poindexter.services.scheduling_service.assign_slot",
                 AsyncMock(return_value=self._slot_ok()),
             ),
         ):
@@ -1479,11 +1479,11 @@ class TestApproveTaskScheduled:
         app = _build_app(mock_db)
         with (
             patch(
-                "services.publish_service.publish_post_from_task",
+                "poindexter.services.publish_service.publish_post_from_task",
                 AsyncMock(return_value=self._staged()),
             ),
             patch(
-                "services.scheduling_service.assign_slot",
+                "poindexter.services.scheduling_service.assign_slot",
                 AsyncMock(return_value=refused),
             ),
         ):
@@ -1517,10 +1517,10 @@ class TestApproveTaskScheduled:
         app = _build_app(mock_db)
         with (
             patch(
-                "services.publish_service.publish_post_from_task",
+                "poindexter.services.publish_service.publish_post_from_task",
                 AsyncMock(return_value=failed),
             ),
-            patch("services.scheduling_service.assign_slot", assign),
+            patch("poindexter.services.scheduling_service.assign_slot", assign),
         ):
             resp = self._approve(
                 TestClient(app),
@@ -1545,7 +1545,7 @@ class TestApproveTaskScheduled:
 
         stage = AsyncMock()
         app = _build_app(mock_db)
-        with patch("services.publish_service.publish_post_from_task", stage):
+        with patch("poindexter.services.publish_service.publish_post_from_task", stage):
             resp = self._approve(
                 TestClient(app), approved=True, publish_at="next tuseday"
             )
@@ -1565,10 +1565,10 @@ class TestApproveTaskScheduled:
         app = _build_app(mock_db)
         with (
             patch(
-                "services.publish_service.publish_post_from_task",
+                "poindexter.services.publish_service.publish_post_from_task",
                 AsyncMock(return_value=self._staged()),
             ),
-            patch("services.scheduling_service.assign_slot", assign),
+            patch("poindexter.services.scheduling_service.assign_slot", assign),
         ):
             resp = self._approve(
                 TestClient(app), approved=True, publish_at="tomorrow 9am"
@@ -1589,7 +1589,7 @@ class TestApproveTaskScheduled:
         """
         from zoneinfo import ZoneInfo
 
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
         from utils.route_utils import get_site_config_dependency
 
         mock_db = make_mock_db()
@@ -1604,10 +1604,10 @@ class TestApproveTaskScheduled:
 
         with (
             patch(
-                "services.publish_service.publish_post_from_task",
+                "poindexter.services.publish_service.publish_post_from_task",
                 AsyncMock(return_value=self._staged()),
             ),
-            patch("services.scheduling_service.assign_slot", assign),
+            patch("poindexter.services.scheduling_service.assign_slot", assign),
         ):
             resp = self._approve(
                 TestClient(app), approved=True, publish_at="2026-09-01 09:00"
@@ -1621,7 +1621,7 @@ class TestApproveTaskScheduled:
 
     def test_explicit_offset_overrides_the_operator_timezone(self):
         """An absolute instant is honoured as sent — the console's path."""
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
         from utils.route_utils import get_site_config_dependency
 
         mock_db = make_mock_db()
@@ -1637,10 +1637,10 @@ class TestApproveTaskScheduled:
 
         with (
             patch(
-                "services.publish_service.publish_post_from_task",
+                "poindexter.services.publish_service.publish_post_from_task",
                 AsyncMock(return_value=self._staged()),
             ),
-            patch("services.scheduling_service.assign_slot", assign),
+            patch("poindexter.services.scheduling_service.assign_slot", assign),
         ):
             resp = self._approve(
                 TestClient(app),
@@ -1684,8 +1684,8 @@ class TestApproveTaskScheduled:
         assign = AsyncMock()
         app = _build_app(mock_db)
         with (
-            patch("services.publish_service.publish_post_from_task", stage),
-            patch("services.scheduling_service.assign_slot", assign),
+            patch("poindexter.services.publish_service.publish_post_from_task", stage),
+            patch("poindexter.services.scheduling_service.assign_slot", assign),
         ):
             resp = self._approve(TestClient(app), approved=True, auto_publish=False)
 

@@ -100,7 +100,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     image_service = state.get("image_service")
     if image_service is None:
         try:
-            from services.image_service import get_image_service
+            from poindexter.services.image_service import get_image_service
             image_service = get_image_service(site_config=site_config)  # type: ignore[arg-type]
         except Exception as exc:
             logger.warning(

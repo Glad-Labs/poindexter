@@ -63,8 +63,8 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-from services.integrations.registry import register_handler
-from services.integrations.retention_backlog import BacklogQuery, register_backlog
+from poindexter.services.integrations.registry import register_handler
+from poindexter.services.integrations.retention_backlog import BacklogQuery, register_backlog
 
 logger = logging.getLogger(__name__)
 

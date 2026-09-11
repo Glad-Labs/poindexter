@@ -18,7 +18,7 @@ caller — or a new Cloudinary feature (eager transformations, signed
 URLs, etc.) — happens in one place.
 
 Usage:
-    from services.cloudinary_upload_service import upload_to_cloudinary
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
 
     url = await upload_to_cloudinary(
         "/path/to/file.png",
@@ -39,7 +39,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

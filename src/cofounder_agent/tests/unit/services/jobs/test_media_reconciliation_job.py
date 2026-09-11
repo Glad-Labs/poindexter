@@ -25,8 +25,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.jobs.media_reconciliation import MediaReconciliationJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs.media_reconciliation import MediaReconciliationJob
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -154,7 +154,7 @@ class TestMediaReconciliation:
         )
         with _patch_head(podcast_status=200, video_status=200), \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
             result = await MediaReconciliationJob().run(pool, config={})
         assert result.ok is True
@@ -184,10 +184,10 @@ class TestMediaReconciliation:
         ])
         with _patch_head(podcast_status=200, video_status=200), \
              patch(
-                 "services.podcast_service.generate_podcast_episode",
+                 "poindexter.services.podcast_service.generate_podcast_episode",
              ) as gen_pod, \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
             result = await MediaReconciliationJob().run(pool, config={})
         assert result.ok is True
@@ -250,10 +250,10 @@ class TestMediaReconciliation:
         sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
-                 "services.podcast_service.generate_podcast_episode", new=gen,
+                 "poindexter.services.podcast_service.generate_podcast_episode", new=gen,
              ), \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
             result = await MediaReconciliationJob().run(
                 pool, config={"_site_config": sc},
@@ -292,10 +292,10 @@ class TestMediaReconciliation:
         sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
-                 "services.podcast_service.generate_podcast_episode", new=gen,
+                 "poindexter.services.podcast_service.generate_podcast_episode", new=gen,
              ), \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ):
             result = await MediaReconciliationJob().run(
                 pool,
@@ -335,10 +335,10 @@ class TestMediaReconciliation:
         sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
-                 "services.podcast_service.generate_podcast_episode", new=gen,
+                 "poindexter.services.podcast_service.generate_podcast_episode", new=gen,
              ), \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
             result = await MediaReconciliationJob().run(
                 pool, config={"_site_config": sc},
@@ -372,10 +372,10 @@ class TestMediaReconciliation:
         sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
-                 "services.podcast_service.generate_podcast_episode", new=gen,
+                 "poindexter.services.podcast_service.generate_podcast_episode", new=gen,
              ), \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
             result = await MediaReconciliationJob().run(
                 pool, config={"_site_config": sc},
@@ -409,7 +409,7 @@ class TestMediaReconciliation:
         pool.acquire = MagicMock(return_value=ctx)
 
         with patch(
-            "services.jobs.media_reconciliation.emit_finding"
+            "poindexter.services.jobs.media_reconciliation.emit_finding"
         ) as emit_mock:
             result = await MediaReconciliationJob().run(pool, config={})
 
@@ -549,7 +549,7 @@ class TestMediaToGenerateFilter:
         """SELECT must not return a post with empty media_to_generate.
         Even if the slug-prefix exclude doesn't match, an empty policy
         means 'no media expected'."""
-        from services.jobs.media_reconciliation import MediaReconciliationJob
+        from poindexter.services.jobs.media_reconciliation import MediaReconciliationJob
 
         conn = MagicMock()
 
@@ -595,7 +595,7 @@ class TestMediaToGenerateFilter:
         """``_check_post_media`` directly. A row whose
         ``media_to_generate`` is empty must report podcast_missing=False
         AND video_missing=False — and the HTTP client must NOT be hit."""
-        from services.jobs.media_reconciliation import MediaReconciliationJob
+        from poindexter.services.jobs.media_reconciliation import MediaReconciliationJob
 
         client = AsyncMock()
         client.head = AsyncMock()  # Should NEVER be called.
@@ -616,7 +616,7 @@ class TestMediaToGenerateFilter:
     async def test_check_post_media_only_heads_requested_types(self):
         """A row with ``media_to_generate=['podcast']`` should HEAD the
         podcast URL but NOT the video URL."""
-        from services.jobs.media_reconciliation import MediaReconciliationJob
+        from poindexter.services.jobs.media_reconciliation import MediaReconciliationJob
 
         # Stub HEAD to return 200 OK for any URL.
         async def _head(url, **kw):
@@ -768,7 +768,7 @@ class TestRecordMediaAssetSeedsApprovalGate:
         medium='podcast' via record_pending."""
         pool, _conn = _make_pool([])
         with patch(
-            "services.media_approval_service.record_pending",
+            "poindexter.services.media_approval_service.record_pending",
             new=AsyncMock(return_value="pending"),
         ) as rp:
             await MediaReconciliationJob()._record_media_asset(
@@ -790,7 +790,7 @@ class TestRecordMediaAssetSeedsApprovalGate:
         'video' maps to the media_approvals 'video' medium verbatim)."""
         pool, _conn = _make_pool([])
         with patch(
-            "services.media_approval_service.record_pending",
+            "poindexter.services.media_approval_service.record_pending",
             new=AsyncMock(return_value="pending"),
         ) as rp:
             await MediaReconciliationJob()._record_media_asset(
@@ -812,7 +812,7 @@ class TestRecordMediaAssetSeedsApprovalGate:
         try/except.)"""
         pool, conn = _make_pool([])
         with patch(
-            "services.media_approval_service.record_pending",
+            "poindexter.services.media_approval_service.record_pending",
             new=AsyncMock(side_effect=RuntimeError("approvals DB down")),
         ):
             # Must not raise.
@@ -833,7 +833,7 @@ class TestRecordMediaAssetSeedsApprovalGate:
         pool = MagicMock()
         pool.acquire = MagicMock(side_effect=RuntimeError("pool exhausted"))
         with patch(
-            "services.media_approval_service.record_pending",
+            "poindexter.services.media_approval_service.record_pending",
             new=AsyncMock(),
         ) as rp:
             # Stamp fails but the method swallows it (non-fatal contract).
@@ -987,7 +987,7 @@ class TestVideoCapReset:
         return job
 
     def _health(self, healthy: bool, detail: str = ""):
-        from services.media_infra_health import MediaInfraHealth
+        from poindexter.services.media_infra_health import MediaInfraHealth
 
         return AsyncMock(return_value=MediaInfraHealth(healthy, detail))
 
@@ -996,10 +996,10 @@ class TestVideoCapReset:
         pool = TestVideoRedispatch._RedispatchPool(dict(self._AT_CAP_ROW))
         emit = MagicMock()
         with patch(
-            "services.media_infra_health.check_media_infra_health",
+            "poindexter.services.media_infra_health.check_media_infra_health",
             self._health(True, "ok"),
         ), patch(
-            "services.jobs.media_reconciliation.emit_finding", emit,
+            "poindexter.services.jobs.media_reconciliation.emit_finding", emit,
         ):
             ok = await job._redispatch_video(pool, {"id": "post-1"})
         assert ok is True
@@ -1015,7 +1015,7 @@ class TestVideoCapReset:
         job = self._job()
         pool = TestVideoRedispatch._RedispatchPool(dict(self._AT_CAP_ROW))
         with patch(
-            "services.media_infra_health.check_media_infra_health",
+            "poindexter.services.media_infra_health.check_media_infra_health",
             self._health(False, "wan-server unreachable"),
         ):
             ok = await job._redispatch_video(pool, {"id": "post-1"})
@@ -1027,7 +1027,7 @@ class TestVideoCapReset:
         pool = TestVideoRedispatch._RedispatchPool(dict(self._AT_CAP_ROW))
         health = self._health(True, "ok")
         with patch(
-            "services.media_infra_health.check_media_infra_health", health,
+            "poindexter.services.media_infra_health.check_media_infra_health", health,
         ):
             ok = await job._redispatch_video(pool, {"id": "post-1"})
         assert ok is False
@@ -1043,10 +1043,10 @@ class TestVideoCapReset:
         )
         emit = MagicMock()
         with patch(
-            "services.media_infra_health.check_media_infra_health",
+            "poindexter.services.media_infra_health.check_media_infra_health",
             self._health(True, "ok"),
         ), patch(
-            "services.jobs.media_reconciliation.emit_finding", emit,
+            "poindexter.services.jobs.media_reconciliation.emit_finding", emit,
         ):
             ok = await job._redispatch_video(pool, {"id": "post-1"})
         assert ok is False
@@ -1061,7 +1061,7 @@ class TestVideoCapReset:
         )
         health = self._health(True, "ok")
         with patch(
-            "services.media_infra_health.check_media_infra_health", health,
+            "poindexter.services.media_infra_health.check_media_infra_health", health,
         ):
             ok = await job._redispatch_video(pool, {"id": "post-1"})
         assert ok is True
@@ -1074,9 +1074,9 @@ class TestVideoCapReset:
         job = self._job()
         health = self._health(True, "ok")
         with patch(
-            "services.media_infra_health.check_media_infra_health", health,
+            "poindexter.services.media_infra_health.check_media_infra_health", health,
         ), patch(
-            "services.jobs.media_reconciliation.emit_finding", MagicMock(),
+            "poindexter.services.jobs.media_reconciliation.emit_finding", MagicMock(),
         ):
             for post in ("post-1", "post-2"):
                 pool = TestVideoRedispatch._RedispatchPool(dict(self._AT_CAP_ROW))
@@ -1112,10 +1112,10 @@ class TestVideoCapReset:
         )
         emit = MagicMock()
         with patch(
-            "services.media_infra_health.check_media_infra_health",
+            "poindexter.services.media_infra_health.check_media_infra_health",
             self._health(True, "ok"),
         ), patch(
-            "services.jobs.media_reconciliation.emit_finding", emit,
+            "poindexter.services.jobs.media_reconciliation.emit_finding", emit,
         ):
             ok = await job._redispatch_video(pool, {"id": "post-1"})
         assert ok is False
@@ -1218,9 +1218,9 @@ class TestPodcastRedeliver:
         r2.upload_to_r2 = upload
         gen = AsyncMock()
         with patch(
-            "services.r2_upload_service.R2UploadService", return_value=r2,
+            "poindexter.services.r2_upload_service.R2UploadService", return_value=r2,
         ), patch(
-            "services.podcast_service.generate_podcast_episode", new=gen,
+            "poindexter.services.podcast_service.generate_podcast_episode", new=gen,
         ):
             ok = await job._redeliver_podcast(
                 {"id": "p-gone", "podcast_asset": {"storage_path": str(render)}},
@@ -1266,13 +1266,13 @@ class TestPodcastRedeliver:
         sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
-                 "services.r2_upload_service.R2UploadService", return_value=r2,
+                 "poindexter.services.r2_upload_service.R2UploadService", return_value=r2,
              ), \
              patch(
-                 "services.podcast_service.generate_podcast_episode", new=gen,
+                 "poindexter.services.podcast_service.generate_podcast_episode", new=gen,
              ), \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
             result = await MediaReconciliationJob().run(
                 pool, config={"_site_config": sc},
@@ -1307,13 +1307,13 @@ class TestPodcastRedeliver:
         sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
-                 "services.r2_upload_service.R2UploadService", return_value=r2,
+                 "poindexter.services.r2_upload_service.R2UploadService", return_value=r2,
              ), \
              patch(
-                 "services.podcast_service.generate_podcast_episode", new=gen,
+                 "poindexter.services.podcast_service.generate_podcast_episode", new=gen,
              ), \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ):
             result = await MediaReconciliationJob().run(
                 pool, config={"_site_config": sc},
@@ -1374,13 +1374,13 @@ class TestNeverAuthorsPodcast:
         sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
-                 "services.r2_upload_service.R2UploadService", return_value=r2,
+                 "poindexter.services.r2_upload_service.R2UploadService", return_value=r2,
              ), \
              patch(
-                 "services.podcast_service.generate_podcast_episode", new=gen,
+                 "poindexter.services.podcast_service.generate_podcast_episode", new=gen,
              ), \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ):
             result = await MediaReconciliationJob().run(
                 pool, config={"_site_config": sc},
@@ -1407,7 +1407,7 @@ class TestDriftFingerprintGating:
         """_make_pool variant whose app_settings reads/writes for the
         drift fingerprint hit a real dict, so state survives across runs."""
         pool, conn = _make_pool(rows, existing_assets=existing_assets)
-        from services.jobs.media_reconciliation import _DRIFT_FINGERPRINT_KEY
+        from poindexter.services.jobs.media_reconciliation import _DRIFT_FINGERPRINT_KEY
 
         async def _fetchrow(query, *args, **kwargs):  # noqa: ANN001, ARG001
             if args and args[0] == _DRIFT_FINGERPRINT_KEY:
@@ -1438,7 +1438,7 @@ class TestDriftFingerprintGating:
         )
         with _patch_head(podcast_status=200, video_status=video_status), \
              patch(
-                 "services.jobs.media_reconciliation.emit_finding"
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
             result = await MediaReconciliationJob().run(
                 pool, config={"_site_config": sc},

@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.jobs.probe_rescue_yield import ProbeRescueYieldJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs.probe_rescue_yield import ProbeRescueYieldJob
+from poindexter.services.site_config import SiteConfig
 
 
 class _FakePool:
@@ -44,7 +44,7 @@ class TestProbeRescueYield:
     async def test_zero_yield_past_min_attempts_emits_finding(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_rescue_yield.emit_finding",
+            "poindexter.services.jobs.probe_rescue_yield.emit_finding",
             lambda **kw: findings.append(kw),
         )
         result = await ProbeRescueYieldJob().run(_FakePool(12, 0), _cfg())
@@ -58,7 +58,7 @@ class TestProbeRescueYield:
     async def test_nonzero_yield_is_quiet_with_metrics(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_rescue_yield.emit_finding",
+            "poindexter.services.jobs.probe_rescue_yield.emit_finding",
             lambda **kw: findings.append(kw),
         )
         result = await ProbeRescueYieldJob().run(_FakePool(10, 3), _cfg())
@@ -73,7 +73,7 @@ class TestProbeRescueYield:
     async def test_below_min_attempts_never_pages(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "services.jobs.probe_rescue_yield.emit_finding",
+            "poindexter.services.jobs.probe_rescue_yield.emit_finding",
             lambda **kw: findings.append(kw),
         )
         # 0-for-3 is not yet a streak worth paging about (default min 8).

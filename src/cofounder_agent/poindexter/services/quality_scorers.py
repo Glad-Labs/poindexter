@@ -25,8 +25,8 @@ graph_def runs no QA rails at all.
 import re
 from typing import Any
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 # Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
 # shim were removed. ``qa_cfg`` + every ``score_*`` function now require an
@@ -209,7 +209,7 @@ def score_accuracy(
     # table (migration 0135). The legacy CSV `qa_allow_first_person_niches` is
     # still honored inside `is_validator_enabled` for backwards compatibility
     # with PR #160.
-    from services.validator_config import is_validator_enabled
+    from poindexter.services.validator_config import is_validator_enabled
 
     _post_niche = (context.get("niche") or context.get("category") or "")
     _post_niche = str(_post_niche).strip().lower() or None

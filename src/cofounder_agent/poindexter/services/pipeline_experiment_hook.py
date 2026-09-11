@@ -189,7 +189,7 @@ async def assign_pipeline_variant(
         return no_op
 
     try:
-        from services.langfuse_experiments import (
+        from poindexter.services.langfuse_experiments import (
             LangfuseExperimentService as ExperimentService,
         )
     except Exception as e:
@@ -288,7 +288,7 @@ async def record_pipeline_outcome(
         return
 
     try:
-        from services.langfuse_experiments import (
+        from poindexter.services.langfuse_experiments import (
             LangfuseExperimentService as ExperimentService,
         )
     except Exception as e:

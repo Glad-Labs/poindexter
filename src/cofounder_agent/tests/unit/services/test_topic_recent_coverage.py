@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.topic_recent_coverage import (
+from poindexter.services.topic_recent_coverage import (
     DEFAULT_LOOKBACK_DAYS,
     DEFAULT_THRESHOLD,
     RecentCoverageError,
@@ -238,7 +238,7 @@ def _index_with_one_ref(
     *, threshold: float = DEFAULT_THRESHOLD, vectors: dict, raise_on=None,
 ) -> RecentCoverageIndex:
     mem = _FakeMem(vectors, raise_on=raise_on)
-    from services.topic_recent_coverage import CoverageRef
+    from poindexter.services.topic_recent_coverage import CoverageRef
 
     ref = CoverageRef(
         kind="published_post",
@@ -395,7 +395,7 @@ class TestContracts:
         assert isinstance(err, ValueError)
 
     async def test_defaults_seeded_in_settings(self):
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         assert DEFAULTS["topic_recent_coverage_enabled"] == "true"
         assert float(DEFAULTS["topic_recent_coverage_threshold"]) == DEFAULT_THRESHOLD
@@ -413,7 +413,7 @@ class TestContracts:
 
 
 def _ref(title, vec, ref_id="r", kind="in_flight_task"):
-    from services.topic_recent_coverage import CoverageRef
+    from poindexter.services.topic_recent_coverage import CoverageRef
     return CoverageRef(kind=kind, ref_id=ref_id, title=title, niche_slug="glad-labs",
                        published_at=None, text=title, embedding=vec)
 
@@ -426,14 +426,14 @@ _FAR = [1.0, 1.0]       # 0.707: under both
 @pytest.mark.unit
 class TestDistinctiveBigrams:
     def test_drops_generic_and_short_tokens(self):
-        from services.topic_recent_coverage import distinctive_bigrams
+        from poindexter.services.topic_recent_coverage import distinctive_bigrams
         assert distinctive_bigrams("The Search Autocomplete Dilemma") == {
             ("search", "autocomplete"), ("autocomplete", "dilemma"),
         }
         assert distinctive_bigrams("Why We Do It") == set()
 
     def test_title_of_takes_the_composite_head(self):
-        from services.topic_recent_coverage import compose_text, title_of
+        from poindexter.services.topic_recent_coverage import compose_text, title_of
         text = compose_text("The Search Autocomplete Mystery", "an angle")
         assert title_of(text) == "The Search Autocomplete Mystery"
         assert title_of("no separator") == "no separator"
@@ -487,7 +487,7 @@ class TestSharedPhraseRule:
     async def test_retitled_post_still_matches_through_its_task_topic(self):
         # The published title lost the phrase at approval; the composite keeps
         # the source-task topic, which is where the duplicate still overlaps.
-        from services.topic_recent_coverage import CoverageRef, compose_text
+        from poindexter.services.topic_recent_coverage import CoverageRef, compose_text
         ref = CoverageRef(
             kind="published_post", ref_id="p", niche_slug="glad-labs", published_at=None,
             title="Our Google Autocomplete Topic Source Ran for 6 Weeks",
@@ -511,7 +511,7 @@ class TestSharedPhraseRule:
     async def test_pass_logs_the_near_miss(self, caplog):
         import logging
 
-        from services.topic_recent_coverage import _log_pass
+        from poindexter.services.topic_recent_coverage import _log_pass
         mem = _FakeMem({"The Stuck Task — angle": _NEAR})
         index = RecentCoverageIndex(
             [_ref("The Search Autocomplete Dilemma", [1.0, 0.0])], threshold=0.80, embed=mem.embed,
@@ -526,7 +526,7 @@ class TestSharedPhraseRule:
         )
 
     def test_settings_seeded(self):
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
         assert DEFAULTS["topic_recent_coverage_shared_phrase_threshold"] == "0.75"
         assert DEFAULTS["topic_recent_coverage_shared_phrase_max_df"] == "1"
         assert "topic_recent_coverage_shared_phrase_threshold" in METADATA

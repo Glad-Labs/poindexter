@@ -41,7 +41,7 @@ pytestmark = [
 # return shape is verified.
 # ---------------------------------------------------------------------------
 async def test_pick_variant_returns_active_variant(test_txn) -> None:
-    from services.experiment_runner import ExperimentVariant, pick_variant
+    from poindexter.services.experiment_runner import ExperimentVariant, pick_variant
 
     exp_id = await test_txn.fetchval(
         """

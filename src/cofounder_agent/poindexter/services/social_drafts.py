@@ -13,10 +13,10 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from services.distribution_ref import tag_for
-from services.integrations.operator_notify import notify_operator
-from services.integrations.postiz_client import PostizClient
-from services.site_config import SiteConfig
+from poindexter.services.distribution_ref import tag_for
+from poindexter.services.integrations.operator_notify import notify_operator
+from poindexter.services.integrations.postiz_client import PostizClient
+from poindexter.services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 
@@ -508,7 +508,7 @@ class SocialDraftsService:
         sweep) — a past slot is nearly always a typo'd year or a forgotten
         am/pm, and silently posting immediately is the wrong recovery.
         """
-        from services.scheduling_service import parse_when
+        from poindexter.services.scheduling_service import parse_when
 
         tz = site_config.timezone
         try:
@@ -757,7 +757,7 @@ class SocialDraftsService:
                 "detail": "social_schedule_offsets/prime_times empty",
             }
 
-        from services.scheduling_service import (
+        from poindexter.services.scheduling_service import (
             next_allowed_time,
             parse_quiet_hours,
         )
@@ -1204,7 +1204,7 @@ def parse_offsets(spec: str) -> dict[str, timedelta]:
 
     Empty/blank spec returns ``{}`` — the documented "auto-slot nothing".
     """
-    from services.scheduling_service import parse_duration
+    from poindexter.services.scheduling_service import parse_duration
 
     out: dict[str, timedelta] = {}
     if not spec or not spec.strip():

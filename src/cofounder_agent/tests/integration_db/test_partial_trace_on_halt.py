@@ -24,10 +24,10 @@ from unittest.mock import patch
 import pytest
 
 from plugins.atom import AtomMeta
-from services import pipeline_architect
-from services.atom_runs import persist_one_atom_run
-from services.pipeline_architect import _RecordingSink
-from services.template_runner import PipelineState
+from poindexter.services import pipeline_architect
+from poindexter.services.atom_runs import persist_one_atom_run
+from poindexter.services.pipeline_architect import _RecordingSink
+from poindexter.services.template_runner import PipelineState
 
 pytestmark = [
     pytest.mark.integration_db,

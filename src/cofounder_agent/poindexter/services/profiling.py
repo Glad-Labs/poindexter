@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ def setup_pyroscope(
         # explicit instance. Production callers (main.py lifespan,
         # brain daemon) thread the loaded SiteConfig through.
         try:
-            from services.site_config import SiteConfig
+            from poindexter.services.site_config import SiteConfig
         except Exception as e:
             logger.debug("[PYROSCOPE] site_config unavailable: %s — skipping", e)
             from utils.findings import emit_finding

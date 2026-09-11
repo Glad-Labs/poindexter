@@ -1,6 +1,6 @@
 """Phase-2 seo_refresh settings must be seeded (SEO Harvest Loop #763)."""
 
-from services.settings_defaults import DEFAULTS
+from poindexter.services.settings_defaults import DEFAULTS
 
 
 def test_seo_refresh_settings_seeded():

@@ -17,7 +17,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ class RetryFailedSocialDraftsJob:
         if not rows:
             return JobResult(ok=True, detail="no retryable failed drafts")
 
-        from services.social_drafts import SocialDraftsService
+        from poindexter.services.social_drafts import SocialDraftsService
 
         svc = SocialDraftsService()
         succeeded = 0

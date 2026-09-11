@@ -16,10 +16,10 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.jobs.probe_zero_reader_settings import ProbeZeroReaderSettingsJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs.probe_zero_reader_settings import ProbeZeroReaderSettingsJob
+from poindexter.services.site_config import SiteConfig
 
-_MODULE = "services.jobs.probe_zero_reader_settings"
+_MODULE = "poindexter.services.jobs.probe_zero_reader_settings"
 
 
 def _make_pool(rows: list[dict] | None = None) -> Any:

@@ -29,7 +29,7 @@ async def main() -> int:
         dsn = resolve_database_url()
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
     try:
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         sc = SiteConfig(pool=pool)
         await sc.load(pool)

@@ -79,7 +79,7 @@ def _load_operator_leak_patterns() -> list[tuple[re.Pattern[str], str]]:
     usernames, mangled/lowercase paths, bare private-repo refs).
     """
     try:
-        from services.operator_leak_patterns import (
+        from poindexter.services.operator_leak_patterns import (
             OPERATOR_SCRUB_EXTRA_PATTERNS,
             OPERATOR_SCRUB_PATTERNS,
         )

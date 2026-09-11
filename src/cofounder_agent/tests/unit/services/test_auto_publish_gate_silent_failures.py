@@ -40,7 +40,7 @@ def _capture(monkeypatch) -> list[dict]:
 async def test_backfill_failure_emits_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.atom_runs.record_atom_run_outcome",
+        "poindexter.services.atom_runs.record_atom_run_outcome",
         AsyncMock(side_effect=RuntimeError("atom_runs backfill boom")),
     )
 
@@ -56,7 +56,7 @@ async def test_backfill_failure_emits_finding(monkeypatch):
 async def test_backfill_success_emits_no_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.atom_runs.record_atom_run_outcome",
+        "poindexter.services.atom_runs.record_atom_run_outcome",
         AsyncMock(return_value=None),
     )
 

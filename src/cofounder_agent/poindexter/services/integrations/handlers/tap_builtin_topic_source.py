@@ -17,12 +17,12 @@ from typing import Any
 
 from plugins.config import PluginConfig
 from plugins.registry import get_topic_sources
-from services.integrations.registry import register_handler
-from services.niche_service import NicheService
-from services.topic_dedup_semantic import get_deduplicator
-from services.topic_pool import insert_pooled_topics
-from services.topic_sanity import evaluate_topic_sanity, resolve_min_alpha_words
-from services.topic_self_reference import is_self_referential, resolve_owned_hosts
+from poindexter.services.integrations.registry import register_handler
+from poindexter.services.niche_service import NicheService
+from poindexter.services.topic_dedup_semantic import get_deduplicator
+from poindexter.services.topic_pool import insert_pooled_topics
+from poindexter.services.topic_sanity import evaluate_topic_sanity, resolve_min_alpha_words
+from poindexter.services.topic_self_reference import is_self_referential, resolve_owned_hosts
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ async def builtin_topic_source(
     # Resolve the single source. internal_rag isn't an entry-point plugin —
     # branch to its service class (same as _discover_internal does).
     if source_name == "internal_rag":
-        from services.internal_rag_source import InternalRagSource
+        from poindexter.services.internal_rag_source import InternalRagSource
 
         source: Any = InternalRagSource(pool, site_config=site_config)
     else:

@@ -15,7 +15,7 @@ import textwrap
 
 import pytest
 
-from services.skill_frontmatter import (
+from poindexter.services.skill_frontmatter import (
     SkillFrontmatterError,
     extract_section,
     parse_frontmatter,

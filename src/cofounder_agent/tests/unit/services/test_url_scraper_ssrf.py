@@ -28,8 +28,8 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from services import url_scraper
-from services.url_scraper import (
+from poindexter.services import url_scraper
+from poindexter.services.url_scraper import (
     MAX_REDIRECTS,
     SSRFBlockedError,
     URLScrapeError,
@@ -120,7 +120,7 @@ def _mock_getaddrinfo(monkeypatch, mapping: dict[str, list[str]]):
                 return results
         raise socket.gaierror(f"no fake mapping for {host}")
 
-    monkeypatch.setattr("services.url_scraper.socket.getaddrinfo", _fake)
+    monkeypatch.setattr("poindexter.services.url_scraper.socket.getaddrinfo", _fake)
 
 
 # ---------------------------------------------------------------------------

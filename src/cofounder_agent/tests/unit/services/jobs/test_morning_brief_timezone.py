@@ -4,8 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from services import clock
-from services.jobs import morning_brief as mb
+from poindexter.services import clock
+from poindexter.services.jobs import morning_brief as mb
 
 
 def test_brief_date_header_uses_operator_local_day(monkeypatch):

@@ -1,7 +1,7 @@
 """Unit tests for content-type match + draft CRUD (fake pool)."""
 from __future__ import annotations
 
-from services.community_drafts import (
+from poindexter.services.community_drafts import (
     create_draft,
     discard_draft,
     edit_draft,

@@ -91,7 +91,7 @@ async def _generate_png(prompt: str) -> bytes | None:
 
 async def _upload(png: bytes, key_suffix: str, site_config) -> str | None:
     sys.path.insert(0, "/app")
-    from services.r2_upload_service import R2UploadService  # type: ignore
+    from poindexter.services.r2_upload_service import R2UploadService  # type: ignore
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp.write(png)
@@ -161,7 +161,7 @@ async def main() -> int:
 
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
     sys.path.insert(0, "/app")
-    from services.site_config import SiteConfig  # type: ignore
+    from poindexter.services.site_config import SiteConfig  # type: ignore
     site_config = SiteConfig()
     await site_config.load(pool)
 

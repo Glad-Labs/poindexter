@@ -6,7 +6,7 @@ decision, and event.  All writes are non-blocking (asyncio.create_task) so
 the audit log never slows down the content pipeline.
 
 Usage:
-    from services.audit_log import AuditLogger, audit_log_bg
+    from poindexter.services.audit_log import AuditLogger, audit_log_bg
 
     # With an explicit instance (preferred when you have the pool):
     audit = AuditLogger(local_pool)
@@ -24,7 +24,7 @@ from typing import Any, Optional
 
 from asyncpg import Pool
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -321,7 +321,7 @@ class AuditLogger:
         ordering surprises) and never raises.
         """
         try:
-            from services.integrations.operator_notify import notify_operator
+            from poindexter.services.integrations.operator_notify import notify_operator
 
             title = details.get("title") if isinstance(details, dict) else None
             message = (

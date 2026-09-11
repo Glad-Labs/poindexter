@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.image_providers.image_gen import ImageGenProvider
+from poindexter.services.image_providers.image_gen import ImageGenProvider
 
 
 @pytest.mark.unit
@@ -53,7 +53,7 @@ class TestImageGenProviderFetch:
 
         with patch.dict(
             "sys.modules",
-            {"services.image_service": fake_image_service},
+            {"poindexter.services.image_service": fake_image_service},
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx):
             results = await ImageGenProvider().fetch("a cinematic scene", {})
@@ -80,7 +80,7 @@ class TestImageGenProviderFetch:
 
         with patch.dict(
             "sys.modules",
-            {"services.image_service": fake_image_service},
+            {"poindexter.services.image_service": fake_image_service},
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx), \
              patch("os.path.exists", return_value=False):
@@ -104,7 +104,7 @@ class TestImageGenProviderFetch:
 
         with patch.dict(
             "sys.modules",
-            {"services.image_service": fake_image_service},
+            {"poindexter.services.image_service": fake_image_service},
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx):
             results = await ImageGenProvider().fetch("a scene", {})
@@ -128,7 +128,7 @@ class TestImageGenProviderFetch:
 
         with patch.dict(
             "sys.modules",
-            {"services.image_service": fake_image_service},
+            {"poindexter.services.image_service": fake_image_service},
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx):
             await ImageGenProvider().fetch("x", {"negative_prompt": "no watermark"})
@@ -154,11 +154,11 @@ class TestImageGenProviderFetch:
 
         with patch.dict(
             "sys.modules",
-            {"services.image_service": fake_image_service},
+            {"poindexter.services.image_service": fake_image_service},
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx), \
              patch(
-                "services.cloudinary_upload_service.upload_to_cloudinary",
+                "poindexter.services.cloudinary_upload_service.upload_to_cloudinary",
                 new=AsyncMock(return_value="https://cdn.cloudinary/x.png"),
              ) as up:
             results = await ImageGenProvider().fetch("x", {"upload_to": "cloudinary"})
@@ -169,6 +169,6 @@ class TestImageGenProviderFetch:
     async def test_image_service_missing_returns_empty(self, tmp_path):
         """If services.image_service can't be imported (torch missing etc.),
         the provider must return [] instead of raising."""
-        with patch.dict("sys.modules", {"services.image_service": None}):
+        with patch.dict("sys.modules", {"poindexter.services.image_service": None}):
             results = await ImageGenProvider().fetch("x", {})
         assert results == []

@@ -137,7 +137,7 @@ class MediaOrphanSweepJob:
                 ok=False, detail=f"DB query failed: {describe_exception(e)}", changes_made=0,
             )
 
-        from services.r2_upload_service import R2UploadService
+        from poindexter.services.r2_upload_service import R2UploadService
 
         r2 = R2UploadService(site_config=site_config)
 

@@ -14,8 +14,8 @@ from uuid import uuid4
 
 import pytest
 
-from services.jobs.run_niche_topic_sweep import RunNicheTopicSweepJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs.run_niche_topic_sweep import RunNicheTopicSweepJob
+from poindexter.services.site_config import SiteConfig
 
 
 def _niche(slug: str = "glad-labs"):
@@ -51,7 +51,7 @@ class TestRun:
         job = RunNicheTopicSweepJob()
         ns_cls = MagicMock()
         ns_cls.return_value.list_active = AsyncMock(return_value=[])
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = await job.run(MagicMock(), {"_site_config": SiteConfig()})
         assert result.ok is True
         assert result.changes_made == 0
@@ -66,8 +66,8 @@ class TestRun:
         svc_cls = MagicMock()
         svc_cls.return_value.run_sweep = AsyncMock(return_value=None)
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
         ):
             result = await job.run(MagicMock(), {"notify_on_new_batch": False, "_site_config": SiteConfig()})
         assert result.ok is True
@@ -90,9 +90,9 @@ class TestRun:
         svc_cls = MagicMock()
         svc_cls.return_value.run_sweep = AsyncMock(return_value=snap)
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
-            patch("services.jobs.run_niche_topic_sweep._notify_new_batch", fake_notify),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.jobs.run_niche_topic_sweep._notify_new_batch", fake_notify),
         ):
             result = await job.run(MagicMock(), {"notify_on_new_batch": True, "_site_config": SiteConfig()})
 
@@ -116,9 +116,9 @@ class TestRun:
             notify_calls.append("called")
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
-            patch("services.jobs.run_niche_topic_sweep._notify_new_batch", fake_notify),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.jobs.run_niche_topic_sweep._notify_new_batch", fake_notify),
         ):
             result = await job.run(MagicMock(), {"notify_on_new_batch": False, "_site_config": SiteConfig()})
 
@@ -144,10 +144,10 @@ class TestRun:
         svc_cls.return_value.run_sweep = AsyncMock(side_effect=_run_sweep)
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
             patch(
-                "services.jobs.run_niche_topic_sweep._notify_new_batch",
+                "poindexter.services.jobs.run_niche_topic_sweep._notify_new_batch",
                 new_callable=AsyncMock,
             ),
         ):
@@ -172,9 +172,9 @@ class TestRun:
             raise RuntimeError("telegram down")
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
-            patch("services.jobs.run_niche_topic_sweep._notify_new_batch", boom),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.jobs.run_niche_topic_sweep._notify_new_batch", boom),
         ):
             result = await job.run(MagicMock(), {"notify_on_new_batch": True, "_site_config": SiteConfig()})
 

@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.posts_approval_service import (
+from poindexter.services.posts_approval_service import (
     PostGateMismatchError,
     PostNotFoundError,
     PostNotPausedError,
@@ -169,14 +169,14 @@ def fake_pool():
 
 @pytest.fixture
 def patched_audit():
-    with patch("services.posts_approval_service.audit_log_bg") as m:
+    with patch("poindexter.services.posts_approval_service.audit_log_bg") as m:
         yield m
 
 
 @pytest.fixture
 def patched_notify():
     with patch(
-        "services.posts_approval_service._notify_publish_gate_tripped",
+        "poindexter.services.posts_approval_service._notify_publish_gate_tripped",
     ) as m:
         async def _ok(**kwargs):
             return {"sent": True, "reason": "ok"}

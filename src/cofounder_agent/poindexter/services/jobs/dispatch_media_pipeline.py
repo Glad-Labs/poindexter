@@ -60,7 +60,7 @@ import time
 from typing import Any
 
 from plugins.job import JobResult
-from services.media_infra_health import check_media_infra_health
+from poindexter.services.media_infra_health import check_media_infra_health
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -224,7 +224,7 @@ async def _run_media_pipeline(pool: Any, site_config: Any, task_id: str) -> None
     Awaiting the run inline serialises media renders (the job is
     ``idempotent=False`` so the scheduler won't overlap instances).
     """
-    from services.template_runner import TemplateRunner
+    from poindexter.services.template_runner import TemplateRunner
 
     runner = TemplateRunner(pool, site_config=site_config)
     await runner.run(
@@ -280,7 +280,7 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
     between the media gate and the LLM guard. Rung isolation (an exception
     in an early lever must not skip the later ones) lives there too.
     """
-    from services.gpu_scheduler import gpu
+    from poindexter.services.gpu_scheduler import gpu
 
     await gpu.reclaim_render_vram(include_ollama=True)
 

@@ -6,11 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.model_eval.harness import InMemoryEvalHarness
-from services.model_eval.runner import run_slot_eval
-from services.model_eval.scorers.critic import CriticScorer
-from services.model_eval.types import GoldenCase, GoldenSet
-from services.site_config import SiteConfig
+from poindexter.services.model_eval.harness import InMemoryEvalHarness
+from poindexter.services.model_eval.runner import run_slot_eval
+from poindexter.services.model_eval.scorers.critic import CriticScorer
+from poindexter.services.model_eval.types import GoldenCase, GoldenSet
+from poindexter.services.site_config import SiteConfig
 
 
 def _case(kind: str, expected: str, i: int = 0) -> GoldenCase:

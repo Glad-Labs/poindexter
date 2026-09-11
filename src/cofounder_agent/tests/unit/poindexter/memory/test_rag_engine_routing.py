@@ -161,9 +161,9 @@ class TestSearchRoutingThroughRagEngine:
         ), patch.object(
             client, "embed", new=AsyncMock(return_value=[0.0] * 768),
         ), patch(
-            "services.audit_log.audit_log_bg",
+            "poindexter.services.audit_log.audit_log_bg",
         ) as audit_mock, patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=notify_mock,
         ):
             # Should not raise — fall through to legacy path which
@@ -199,10 +199,10 @@ class TestSearchRoutingThroughRagEngine:
         ), patch.object(
             client, "embed", new=AsyncMock(return_value=[0.0] * 768),
         ), patch(
-            "services.audit_log.audit_log_bg",
+            "poindexter.services.audit_log.audit_log_bg",
             side_effect=RuntimeError("audit not initialised"),
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=notify_mock,
         ):
             result = await client.search("query", limit=5)
@@ -223,9 +223,9 @@ class TestSearchRoutingThroughRagEngine:
         ), patch.object(
             client, "embed", new=AsyncMock(return_value=[0.0] * 768),
         ), patch(
-            "services.audit_log.audit_log_bg",
+            "poindexter.services.audit_log.audit_log_bg",
         ), patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(side_effect=RuntimeError("discord webhook down")),
         ):
             # Must not raise.
@@ -261,7 +261,7 @@ class TestRagEngineHitConversion:
             aretrieve=AsyncMock(return_value=[nws]),
         )
         with patch(
-            "services.rag_engine.get_rag_retriever",
+            "poindexter.services.rag_engine.get_rag_retriever",
             new=AsyncMock(return_value=retriever),
         ):
             hits = await client._search_via_rag_engine(
@@ -288,7 +288,7 @@ class TestRagEngineHitConversion:
         client = _make_client_with_pool(_FakePoolWithSetting("true"))
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
         with patch(
-            "services.rag_engine.get_rag_retriever",
+            "poindexter.services.rag_engine.get_rag_retriever",
             new=AsyncMock(return_value=retriever),
         ):
             hits = await client._search_via_rag_engine(
@@ -304,7 +304,7 @@ class TestRagEngineHitConversion:
         client = _make_client_with_pool(_FakePoolWithSetting("true"))
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
         get_mock = AsyncMock(return_value=retriever)
-        with patch("services.rag_engine.get_rag_retriever", new=get_mock):
+        with patch("poindexter.services.rag_engine.get_rag_retriever", new=get_mock):
             await client._search_via_rag_engine(
                 "query",
                 source_table="posts",
@@ -494,7 +494,7 @@ class TestRagEmbedBaseUrlRead:
         )
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
         get_mock = AsyncMock(return_value=retriever)
-        with patch("services.rag_engine.get_rag_retriever", new=get_mock):
+        with patch("poindexter.services.rag_engine.get_rag_retriever", new=get_mock):
             await client._search_via_rag_engine(
                 "query", source_table="posts", min_similarity=0.3, limit=5,
             )
@@ -519,7 +519,7 @@ class TestExtrasFlagsThreadedIntoRetriever:
         }))
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
         get_mock = AsyncMock(return_value=retriever)
-        with patch("services.rag_engine.get_rag_retriever", new=get_mock):
+        with patch("poindexter.services.rag_engine.get_rag_retriever", new=get_mock):
             await client._search_via_rag_engine(
                 "query",
                 source_table=None,
@@ -539,7 +539,7 @@ class TestExtrasFlagsThreadedIntoRetriever:
         }))
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
         get_mock = AsyncMock(return_value=retriever)
-        with patch("services.rag_engine.get_rag_retriever", new=get_mock):
+        with patch("poindexter.services.rag_engine.get_rag_retriever", new=get_mock):
             await client._search_via_rag_engine(
                 "query",
                 source_table=None,
@@ -629,7 +629,7 @@ class TestRerankDisplaySimilarity:
         nws = SimpleNamespace(node=node, score=-7.86)
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[nws]))
         with patch(
-            "services.rag_engine.get_rag_retriever",
+            "poindexter.services.rag_engine.get_rag_retriever",
             new=AsyncMock(return_value=retriever),
         ):
             hits = await client._search_via_rag_engine(
@@ -657,7 +657,7 @@ class TestRerankDisplaySimilarity:
         nws = SimpleNamespace(node=node, score=0.87)
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[nws]))
         with patch(
-            "services.rag_engine.get_rag_retriever",
+            "poindexter.services.rag_engine.get_rag_retriever",
             new=AsyncMock(return_value=retriever),
         ):
             hits = await client._search_via_rag_engine(
@@ -752,14 +752,14 @@ class TestEmbedFailureTripsFallback:
             )
         )
         with patch(
-            "services.rag_engine.get_rag_retriever",
+            "poindexter.services.rag_engine.get_rag_retriever",
             new=AsyncMock(return_value=raising_retriever),
         ), patch.object(
             client, "embed", new=AsyncMock(return_value=[0.1] * 768),
         ), patch(
-            "services.audit_log.audit_log_bg",
+            "poindexter.services.audit_log.audit_log_bg",
         ) as audit_mock, patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=notify_mock,
         ):
             result = await client.search("query", source_table="posts", limit=5)
@@ -785,12 +785,12 @@ class TestEmbedFailureTripsFallback:
         notify_mock = AsyncMock()
         empty_retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
         with patch(
-            "services.rag_engine.get_rag_retriever",
+            "poindexter.services.rag_engine.get_rag_retriever",
             new=AsyncMock(return_value=empty_retriever),
         ), patch(
-            "services.audit_log.audit_log_bg",
+            "poindexter.services.audit_log.audit_log_bg",
         ) as audit_mock, patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=notify_mock,
         ):
             result = await client.search("query", source_table="posts", limit=5)

@@ -50,7 +50,7 @@ def test_taps_list_renders_rows():
         "total_runs": 3, "total_records": 10, "last_error": None,
     }]
     with patch("poindexter.cli.taps.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.list_rows",
+        "poindexter.services.declarative_config_service.list_rows",
         new=AsyncMock(return_value=rows),
     ):
         result = CliRunner().invoke(taps_group, ["list"])
@@ -62,7 +62,7 @@ def test_taps_enable_missing_reports_and_exits():
     from poindexter.cli.taps import taps_group
 
     with patch("poindexter.cli.taps.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=None),
     ):
         result = CliRunner().invoke(taps_group, ["enable", "ghost"])
@@ -83,13 +83,13 @@ def test_taps_run_loads_handlers_before_dispatch():
 
     async def _fake_run_all(pool, site_config=None, only_names=None):
         calls.append("run_all")
-        from services.integrations.tap_runner import RunSummary
+        from poindexter.services.integrations.tap_runner import RunSummary
         return RunSummary(taps=[], total_records=0, total_failed=0)
 
     with (
         patch("poindexter.cli.taps.run_service", _fake_run_service),
-        patch("services.integrations.handlers.load_all", _fake_load_all),
-        patch("services.integrations.tap_runner.run_all", _fake_run_all),
+        patch("poindexter.services.integrations.handlers.load_all", _fake_load_all),
+        patch("poindexter.services.integrations.tap_runner.run_all", _fake_run_all),
     ):
         result = CliRunner().invoke(taps_group, ["run", "rss"])
 
@@ -105,19 +105,19 @@ def test_taps_run_passes_site_config_for_secret_resolution():
     secret_fields set (gsc_main, ga4_main) failed every manual CLI run even
     though the scheduled job path (services/jobs/run_taps.py) worked fine."""
     from poindexter.cli.taps import taps_group
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     captured: dict = {}
 
     async def _fake_run_all(pool, site_config=None, only_names=None):
         captured["site_config"] = site_config
-        from services.integrations.tap_runner import RunSummary
+        from poindexter.services.integrations.tap_runner import RunSummary
         return RunSummary(taps=[], total_records=0, total_failed=0)
 
     with (
         patch("poindexter.cli.taps.run_service", _fake_run_service),
-        patch("services.integrations.handlers.load_all", lambda: None),
-        patch("services.integrations.tap_runner.run_all", _fake_run_all),
+        patch("poindexter.services.integrations.handlers.load_all", lambda: None),
+        patch("poindexter.services.integrations.tap_runner.run_all", _fake_run_all),
     ):
         result = CliRunner().invoke(taps_group, ["run", "gsc_main"])
 
@@ -136,9 +136,9 @@ def test_taps_enable_existing_upserts_enabled_true():
 
     existing = {"name": "rss", "enabled": False, "config": {}, "metadata": {}}
     with patch("poindexter.cli.taps.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=existing),
-    ), patch("services.declarative_config_service.upsert_row", new=_fake_upsert):
+    ), patch("poindexter.services.declarative_config_service.upsert_row", new=_fake_upsert):
         result = CliRunner().invoke(taps_group, ["enable", "rss"])
     assert result.exit_code == 0
     assert captured["name"] == "rss"
@@ -163,7 +163,7 @@ def test_retention_list_renders_rows():
         "total_runs": 5, "total_deleted": 100,
     }]
     with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.list_rows",
+        "poindexter.services.declarative_config_service.list_rows",
         new=AsyncMock(return_value=rows),
     ):
         result = CliRunner().invoke(retention_group, ["list"])
@@ -175,7 +175,7 @@ def test_retention_enable_missing_reports_and_exits():
     from poindexter.cli.retention import retention_group
 
     with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=None),
     ):
         result = CliRunner().invoke(retention_group, ["enable", "ghost"])
@@ -198,13 +198,13 @@ def test_retention_run_loads_handlers_before_dispatch():
 
     async def _fake_run_all(pool, only_names=None):
         calls.append("run_all")
-        from services.integrations.retention_runner import RunSummary
+        from poindexter.services.integrations.retention_runner import RunSummary
         return RunSummary(policies=[], total_deleted=0, total_summarized=0, total_failed=0)
 
     with (
         patch("poindexter.cli.retention.run_service", _fake_run_service),
-        patch("services.integrations.handlers.load_all", _fake_load_all),
-        patch("services.integrations.retention_runner.run_all", _fake_run_all),
+        patch("poindexter.services.integrations.handlers.load_all", _fake_load_all),
+        patch("poindexter.services.integrations.retention_runner.run_all", _fake_run_all),
     ):
         result = CliRunner().invoke(retention_group, ["run", "embeddings.collapse.claude_sessions"])
 
@@ -217,7 +217,7 @@ def test_retention_config_show_prints_config_json():
 
     row = {"name": "p", "config": {"batch_size": 500, "source_table": "posts"}, "metadata": {}}
     with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=row),
     ):
         result = CliRunner().invoke(retention_group, ["config", "show", "p"])
@@ -231,7 +231,7 @@ def test_retention_config_show_missing_exits_1():
     from poindexter.cli.retention import retention_group
 
     with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=None),
     ):
         result = CliRunner().invoke(retention_group, ["config", "show", "ghost"])
@@ -250,9 +250,9 @@ def test_retention_config_set_patches_config_keys():
         return {**payload}
 
     with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=existing),
-    ), patch("services.declarative_config_service.upsert_row", new=_fake_upsert):
+    ), patch("poindexter.services.declarative_config_service.upsert_row", new=_fake_upsert):
         result = CliRunner().invoke(
             retention_group, ["config", "set", "p", "batch_size=500", "dry_run=true"]
         )
@@ -279,7 +279,7 @@ def test_retention_config_set_missing_policy_exits_1():
     from poindexter.cli.retention import retention_group
 
     with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=None),
     ):
         result = CliRunner().invoke(
@@ -294,7 +294,7 @@ def test_retention_config_set_bad_pair_format_exits():
 
     existing = {"name": "p", "config": {}, "metadata": {}}
     with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=existing),
     ):
         result = CliRunner().invoke(
@@ -321,7 +321,7 @@ def test_webhooks_list_renders_rows():
         "last_success_at": None, "total_success": 9, "total_failure": 0, "last_error": None,
     }]
     with patch("poindexter.cli.webhooks.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.list_rows",
+        "poindexter.services.declarative_config_service.list_rows",
         new=AsyncMock(return_value=rows),
     ):
         result = CliRunner().invoke(webhooks_group, ["list"])
@@ -334,7 +334,7 @@ def test_webhooks_set_secret_without_ref_errors():
 
     row = {"name": "ls-hook", "secret_key_ref": None}
     with patch("poindexter.cli.webhooks.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=row),
     ):
         result = CliRunner().invoke(
@@ -365,7 +365,7 @@ def test_qa_gates_list_orders_by_execution_order():
          "total_rejections": 0, "last_error": None},
     ]
     with patch("poindexter.cli.qa_gates.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.list_rows",
+        "poindexter.services.declarative_config_service.list_rows",
         new=AsyncMock(return_value=rows),
     ):
         result = CliRunner().invoke(qa_gates_group, ["list"])
@@ -385,9 +385,9 @@ def test_qa_gates_reorder_upserts_execution_order():
 
     existing = {"name": "qa.critic", "execution_order": 10, "config": {}, "metadata": {}}
     with patch("poindexter.cli.qa_gates.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=existing),
-    ), patch("services.declarative_config_service.upsert_row", new=_fake_upsert):
+    ), patch("poindexter.services.declarative_config_service.upsert_row", new=_fake_upsert):
         result = CliRunner().invoke(qa_gates_group, ["reorder", "qa.critic", "5"])
     assert result.exit_code == 0
     assert captured["execution_order"] == 5
@@ -409,9 +409,9 @@ def test_qa_gates_require_upserts_required_to_pass_true():
         "total_runs": 7, "total_rejections": 2, "config": {}, "metadata": {},
     }
     with patch("poindexter.cli.qa_gates.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=existing),
-    ), patch("services.declarative_config_service.upsert_row", new=_fake_upsert):
+    ), patch("poindexter.services.declarative_config_service.upsert_row", new=_fake_upsert):
         result = CliRunner().invoke(qa_gates_group, ["require", "qa.vision"])
     assert result.exit_code == 0
     assert captured["required_to_pass"] is True
@@ -434,9 +434,9 @@ def test_qa_gates_advisory_upserts_required_to_pass_false():
         "config": {}, "metadata": {},
     }
     with patch("poindexter.cli.qa_gates.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=existing),
-    ), patch("services.declarative_config_service.upsert_row", new=_fake_upsert):
+    ), patch("poindexter.services.declarative_config_service.upsert_row", new=_fake_upsert):
         result = CliRunner().invoke(qa_gates_group, ["advisory", "qa.vision"])
     assert result.exit_code == 0
     assert captured["required_to_pass"] is False
@@ -447,7 +447,7 @@ def test_qa_gates_require_missing_reports_and_exits():
     from poindexter.cli.qa_gates import qa_gates_group
 
     with patch("poindexter.cli.qa_gates.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=None),
     ):
         result = CliRunner().invoke(qa_gates_group, ["require", "ghost"])
@@ -473,7 +473,7 @@ def test_publishers_list_renders_rows():
         "last_error": None,
     }]
     with patch("poindexter.cli.publishers.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.list_rows",
+        "poindexter.services.declarative_config_service.list_rows",
         new=AsyncMock(return_value=rows),
     ):
         result = CliRunner().invoke(publishers_group, ["list"])
@@ -486,7 +486,7 @@ def test_publishers_set_secret_prefix_mismatch_errors():
 
     row = {"name": "bluesky_main", "credentials_ref": "bluesky_"}
     with patch("poindexter.cli.publishers.run_service", _fake_run_service), patch(
-        "services.declarative_config_service.get_row",
+        "poindexter.services.declarative_config_service.get_row",
         new=AsyncMock(return_value=row),
     ):
         result = CliRunner().invoke(

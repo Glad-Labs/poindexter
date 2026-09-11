@@ -26,8 +26,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 # 2026-05-29 — SiteConfig DI migration (#272 leaf batch 5) converted this
 # module from the module-level ``site_config`` singleton + ``set_site_config``
@@ -188,8 +188,8 @@ class InternalRagSource:
         sink a discovery sweep.
         """
         try:
-            from services.niche_service import NicheService
-            from services.topic_ranking import goal_vector_for
+            from poindexter.services.niche_service import NicheService
+            from poindexter.services.topic_ranking import goal_vector_for
 
             svc = NicheService(self._pool)
             niche = await svc.get_by_id(
@@ -357,15 +357,15 @@ class InternalRagSource:
         reasoning writer model (``glm-4.7-5090``) returns empty ``content``
         under ``response_format=json_object``.
         """
-        from services.topic_ranking import _ollama_chat_json
+        from poindexter.services.topic_ranking import _ollama_chat_json
 
         snippet_max = self._site_config.get_int(
             "niche_internal_rag_snippet_max_chars", 600,
         )
-        from services.llm_text import resolve_structured_model
+        from poindexter.services.llm_text import resolve_structured_model
         model = resolve_structured_model(site_config=self._site_config)
         joined = "\n---\n".join(s[:snippet_max] for s in snippets if s)
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         prompt = get_prompt_manager().get_prompt(
             "research.distill_topic_angle",
             joined=joined,
@@ -420,7 +420,7 @@ class InternalRagSource:
         # proposed blog post topic and unique angle from the provided
         # snippets. 1. Topic: ..."). strip_reasoning_artifacts alone can't
         # fix this — the surrounding prose IS the leak.
-        from services.topic_sanity import detect_leaked_reasoning
+        from poindexter.services.topic_sanity import detect_leaked_reasoning
         for field_name, field_value in (("topic", topic), ("angle", angle)):
             leak_reason = detect_leaked_reasoning(field_value)
             if leak_reason:

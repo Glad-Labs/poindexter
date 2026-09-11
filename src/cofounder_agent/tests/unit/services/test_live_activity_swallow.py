@@ -1,7 +1,7 @@
 """live_activity writes swallow their own errors — never break the caller."""
 import pytest
 
-from services import live_activity
+from poindexter.services import live_activity
 
 pytestmark = pytest.mark.asyncio
 

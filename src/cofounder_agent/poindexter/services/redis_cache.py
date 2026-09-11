@@ -38,8 +38,8 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 try:
     import redis.asyncio as aioredis  # type: ignore[import-untyped]

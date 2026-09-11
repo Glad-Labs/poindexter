@@ -41,7 +41,7 @@ from pathlib import Path
 
 import pytest
 
-from services import module_paths as mp
+from poindexter.services import module_paths as mp
 
 # The package root that holds services/, plugins/, ... -- derived from the resolver
 # itself so it follows the tree (src/cofounder_agent/poindexter since step 2).
@@ -311,10 +311,15 @@ def _assert_importable(spec: str, *, where: str) -> None:
 def test_wired_string_path_imports_under_both_spellings(rel: str, lineno: int, spec: str):
     where = f"{rel}:{lineno}"
     _assert_importable(spec, where=where)
+    # Since step 3 the literals are canonical; derive BOTH spellings from the flat
+    # form so the test keeps exercising each, whichever one is written down.
     module_part, sep, attr = spec.partition(":")
-    prefixed = f"{mp.FUTURE_ROOT}.{module_part}" + (f":{attr}" if sep else "")
-    _assert_importable(prefixed, where=where + " (prefixed)")
-    assert mp.resolve_module_path(prefixed.split(":")[0]) == mp.resolve_module_path(module_part)
+    tail = f":{attr}" if sep else ""
+    flat = mp.flat_module_path(module_part)
+    prefixed = f"{mp.FUTURE_ROOT}.{flat}"
+    _assert_importable(flat + tail, where=where + " (flat)")
+    _assert_importable(prefixed + tail, where=where + " (prefixed)")
+    assert mp.resolve_module_path(prefixed) == mp.resolve_module_path(flat) == mp.resolve_module_path(module_part)
 
 
 @pytest.mark.unit

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.fixture
@@ -299,7 +299,7 @@ class TestGetSecret:
         Loki-only warning — otherwise a transient DB blip silently returns the
         default and callers treat an alerting webhook/token as 'not configured',
         silently disabling a notification channel (audit M2)."""
-        import services.site_config as sc_mod
+        import poindexter.services.site_config as sc_mod
 
         pool = AsyncMock()
         acquire_ctx = AsyncMock()

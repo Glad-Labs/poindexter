@@ -62,7 +62,7 @@ class ImageGenProvider:
         # Delegate to the in-process ImageService — it owns the torch/
         # diffusers pipeline and GPU cache. We just hand it a path.
         try:
-            from services.image_service import get_image_service
+            from poindexter.services.image_service import get_image_service
         except Exception as e:
             logger.warning("[ImageGenProvider] image_service unavailable: %s", e)
             return []
@@ -94,7 +94,7 @@ class ImageGenProvider:
 
         if upload_target == "cloudinary":
             try:
-                from services.cloudinary_upload_service import (
+                from poindexter.services.cloudinary_upload_service import (
                     upload_to_cloudinary,
                 )
                 url = await upload_to_cloudinary(
@@ -144,7 +144,7 @@ class ImageGenProvider:
 
 async def _upload_to_r2(path: str, prompt: str, *, site_config: Any) -> str:
     """Upload a generated PNG to R2 via the shared r2_upload_service."""
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
 
     if site_config is None:
         raise RuntimeError(

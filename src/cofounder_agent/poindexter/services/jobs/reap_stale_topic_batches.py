@@ -90,7 +90,7 @@ from typing import Any
 from uuid import UUID
 
 from plugins.job import JobResult
-from services.settings_read_sink import record_read
+from poindexter.services.settings_read_sink import record_read
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -166,7 +166,7 @@ class ReapStaleTopicBatchesJob:
         # the operator's max_approval_queue applies (the bare-pool call
         # falls back to a hardcoded 3 — the phantom cap the 2026-07-25
         # alarm audit dug out of topic_auto_resolve).
-        from services.pipeline_throttle import is_queue_full
+        from poindexter.services.pipeline_throttle import is_queue_full
         queue_full, queue_size, queue_limit = await is_queue_full(
             pool, site_config=config.get("_site_config"),
         )
@@ -176,7 +176,7 @@ class ReapStaleTopicBatchesJob:
         # of the run-bound site_config being present.
         svc = None
         if reaper_enabled:
-            from services.topic_batch_service import TopicBatchService
+            from poindexter.services.topic_batch_service import TopicBatchService
             svc = TopicBatchService(pool, site_config=config["_site_config"])
 
         reaped = 0

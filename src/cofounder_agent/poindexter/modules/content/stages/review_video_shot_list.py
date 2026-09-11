@@ -32,9 +32,9 @@ from modules.content.stages.generate_video_shot_list import (
     _tolerant_json_loads,
 )
 from plugins.stage import StageResult
+from poindexter.services.gpu_admission import GpuBusyError
+from poindexter.services.gpu_scheduler import media_wait_budget_s
 from schemas.video_shot_list import VideoShotList
-from services.gpu_admission import GpuBusyError
-from services.gpu_scheduler import media_wait_budget_s
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +98,8 @@ class ReviewVideoShotListStage:
         max_retries: int = 0,
     ) -> dict[str, Any] | None:
         """Render the review prompt, dispatch, validate. ``None`` on any failure."""
-        from services.gpu_scheduler import gpu
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.gpu_scheduler import gpu
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         try:
             pm = get_prompt_manager()

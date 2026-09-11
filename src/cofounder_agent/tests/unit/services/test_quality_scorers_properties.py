@@ -30,7 +30,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from services.quality_scorers import (
+from poindexter.services.quality_scorers import (
     check_keywords,
     count_syllables,
     detect_truncation,

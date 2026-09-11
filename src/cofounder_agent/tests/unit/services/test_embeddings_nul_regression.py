@@ -39,7 +39,7 @@ import pytest
 
 from plugins.tap import Document
 from poindexter.memory import MemoryClient
-from services.taps.runner import run_tap
+from poindexter.services.taps.runner import run_tap
 
 # ---------------------------------------------------------------------------
 # Fakes — capture asyncpg interactions without a real DB.
@@ -209,7 +209,7 @@ async def test_run_tap_records_store_failure_detail():
 @pytest.mark.asyncio
 async def test_run_tap_failure_samples_capped():
     """A tap failing on many docs must not balloon TapStats.failures."""
-    from services.taps.runner import _MAX_FAILURE_SAMPLES
+    from poindexter.services.taps.runner import _MAX_FAILURE_SAMPLES
 
     class _ManyDocTap:
         name = "manyfail"

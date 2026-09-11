@@ -29,9 +29,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from services import chat_conversation_store as store
-from services.chat_tools import ChatToolContext, ChatToolError, get_tool
-from services.logger_config import get_logger
+from poindexter.services import chat_conversation_store as store
+from poindexter.services.chat_tools import ChatToolContext, ChatToolError, get_tool
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -264,8 +264,8 @@ async def _audit(
     executed_ok: bool | None,
 ) -> None:
     try:
-        from services.audit_event_schemas import validate_event_details
-        from services.audit_log import AuditLogger
+        from poindexter.services.audit_event_schemas import validate_event_details
+        from poindexter.services.audit_log import AuditLogger
 
         details = validate_event_details("chat_approval_resolved", {
             "schema_version": 1,

@@ -125,8 +125,8 @@ def register_client(
         from mcp.shared.auth import OAuthClientInformationFull
         from pydantic import AnyUrl
 
-        from services.auth.oauth_issuer import generate_client_id, generate_client_secret
-        from services.auth.oauth_provider import PoindexterOAuthProvider
+        from poindexter.services.auth.oauth_issuer import generate_client_id, generate_client_secret
+        from poindexter.services.auth.oauth_provider import PoindexterOAuthProvider
 
         client_id = generate_client_id()
         client_secret = generate_client_secret()
@@ -313,8 +313,8 @@ def mint_token(client_id: str, client_secret: str, scopes: str) -> None:
     async def _impl():
         import hmac
 
-        from services.auth.oauth_issuer import InvalidScope, issue_token
-        from services.auth.oauth_provider import PoindexterOAuthProvider
+        from poindexter.services.auth.oauth_issuer import InvalidScope, issue_token
+        from poindexter.services.auth.oauth_provider import PoindexterOAuthProvider
 
         pool = await _pool()
         try:
@@ -380,8 +380,8 @@ async def _provision_consumer_client(
     from pydantic import AnyUrl
 
     from plugins.secrets import set_secret
-    from services.auth.oauth_issuer import generate_client_id, generate_client_secret
-    from services.auth.oauth_provider import PoindexterOAuthProvider
+    from poindexter.services.auth.oauth_issuer import generate_client_id, generate_client_secret
+    from poindexter.services.auth.oauth_provider import PoindexterOAuthProvider
 
     client_id = generate_client_id()
     client_secret = generate_client_secret()
@@ -785,7 +785,7 @@ def mint_grafana_token(ttl_str: str, scopes: str, name: str, persist: bool) -> N
 
     async def _impl():
         from plugins.secrets import get_secret, set_secret
-        from services.auth.oauth_issuer import (
+        from poindexter.services.auth.oauth_issuer import (
             InvalidScope,
             issue_token,
         )

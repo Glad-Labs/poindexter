@@ -36,7 +36,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from middleware.api_token_auth import verify_api_token
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)

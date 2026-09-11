@@ -170,7 +170,7 @@ def _make_row(*, source_table: str = "claude_sessions", **config_overrides: Any)
 
 @pytest.mark.asyncio
 async def test_missing_source_table_raises():
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         embeddings_collapse,
     )
 
@@ -183,7 +183,7 @@ async def test_missing_source_table_raises():
 @pytest.mark.asyncio
 async def test_insufficient_candidates_returns_zeros():
     """A single candidate row is not clustered — clustering needs >= 2."""
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         embeddings_collapse,
     )
 
@@ -200,7 +200,7 @@ async def test_insufficient_candidates_returns_zeros():
 
 @pytest.mark.asyncio
 async def test_empty_candidates_returns_zeros():
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         embeddings_collapse,
     )
 
@@ -217,7 +217,7 @@ async def test_empty_candidates_returns_zeros():
 async def test_two_clusters_writes_summaries_and_deletes_originals():
     """8 rows in two clear directions, cluster_size=4 (target rows/cluster)
     → 8 // 4 = 2 clusters → 2 summary writes + 8 deletes."""
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         embeddings_collapse,
     )
 
@@ -249,7 +249,7 @@ async def test_cluster_count_scales_with_volume_not_capped_at_cluster_size():
     (40 // 4), never the old buggy behaviour of capping at cluster_size=4
     total clusters regardless of how many rows exist.
     """
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         embeddings_collapse,
     )
 
@@ -272,7 +272,7 @@ async def test_cluster_count_scales_with_volume_not_capped_at_cluster_size():
 async def test_batch_size_limits_candidate_fetch():
     """config.batch_size must reach the SQL LIMIT clause, and the returned
     dict must echo it back for observability."""
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         embeddings_collapse,
     )
 
@@ -290,7 +290,7 @@ async def test_batch_size_limits_candidate_fetch():
 
 @pytest.mark.asyncio
 async def test_batch_size_defaults_when_unset():
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         _DEFAULT_BATCH_SIZE,
         embeddings_collapse,
     )
@@ -322,7 +322,7 @@ async def test_batch_size_defaults_when_unset():
     ],
 )
 def test_choose_cluster_count(n, cluster_size, expected):
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         _choose_cluster_count,
     )
 
@@ -337,7 +337,7 @@ async def test_policy_row_prompt_template_reaches_llm_summarizer(monkeypatch):
     catalog default)."""
     from unittest.mock import AsyncMock
 
-    from services.integrations.handlers import retention_embeddings_collapse as mod
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse as mod
 
     low = [_embedding_row(i, f"low-{i}", _vec("A", jitter=i * 0.001)) for i in range(4)]
     pool = FakePool(candidate_rows=low)
@@ -368,7 +368,7 @@ async def test_no_prompt_template_config_passes_none_to_llm_summarizer(monkeypat
     catalog default resolves downstream in build_summary_text_via_llm."""
     from unittest.mock import AsyncMock
 
-    from services.integrations.handlers import retention_embeddings_collapse as mod
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse as mod
 
     low = [_embedding_row(i, f"low-{i}", _vec("A", jitter=i * 0.001)) for i in range(4)]
     pool = FakePool(candidate_rows=low)
@@ -392,7 +392,7 @@ async def test_no_prompt_template_config_passes_none_to_llm_summarizer(monkeypat
 @pytest.mark.asyncio
 async def test_transaction_rollback_on_verify_failure_leaves_rows():
     """Verify failure inside the transaction must roll back — no committed writes."""
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         embeddings_collapse,
     )
 
@@ -416,7 +416,7 @@ async def test_transaction_rollback_on_verify_failure_leaves_rows():
 
 
 def test_kmeans_separates_two_obvious_clusters():
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         kmeans_cluster,
     )
 
@@ -432,7 +432,7 @@ def test_kmeans_separates_two_obvious_clusters():
 
 
 def test_build_summary_text_truncates_long_preview():
-    from services.integrations.handlers.retention_embeddings_collapse import (
+    from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
         build_summary_text,
     )
 
@@ -458,7 +458,7 @@ class TestSummaryViaLLMDispatch:
         from types import SimpleNamespace
         from unittest.mock import AsyncMock, patch
 
-        from services.integrations.handlers.retention_embeddings_collapse import (
+        from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
             build_summary_text_via_llm,
         )
 
@@ -466,7 +466,7 @@ class TestSummaryViaLLMDispatch:
             return_value=SimpleNamespace(text="A dense factual summary."),
         )
         with patch(
-            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
         ):
             out = await build_summary_text_via_llm(
                 ["preview one", "preview two"],
@@ -486,13 +486,13 @@ class TestSummaryViaLLMDispatch:
     async def test_no_pool_skips_llm(self):
         from unittest.mock import AsyncMock, patch
 
-        from services.integrations.handlers.retention_embeddings_collapse import (
+        from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
             build_summary_text_via_llm,
         )
 
         dispatch_mock = AsyncMock()
         with patch(
-            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
         ):
             out = await build_summary_text_via_llm(
                 ["preview"], source_table="brain", model="m", timeout_s=30,
@@ -505,12 +505,12 @@ class TestSummaryViaLLMDispatch:
     async def test_dispatch_error_returns_none(self):
         from unittest.mock import AsyncMock, patch
 
-        from services.integrations.handlers.retention_embeddings_collapse import (
+        from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
             build_summary_text_via_llm,
         )
 
         with patch(
-            "services.llm_providers.dispatcher.dispatch_complete",
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete",
             AsyncMock(side_effect=RuntimeError("provider down")),
         ):
             out = await build_summary_text_via_llm(

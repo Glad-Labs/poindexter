@@ -23,7 +23,7 @@ import asyncpg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
 
-from services import declarative_config_service as dcs  # noqa: E402
+from poindexter.services import declarative_config_service as dcs  # noqa: E402
 
 _SURFACE = "taps"
 _TAP_NAME = "gsc_main"

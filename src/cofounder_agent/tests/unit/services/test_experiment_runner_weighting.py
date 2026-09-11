@@ -20,8 +20,8 @@ from typing import Any
 
 import pytest
 
-from services import experiment_runner
-from services.experiment_runner import _weighted_choice, pick_variant
+from poindexter.services import experiment_runner
+from poindexter.services.experiment_runner import _weighted_choice, pick_variant
 
 
 class _Row(dict):

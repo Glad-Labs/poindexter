@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from services import settings_read_sink
+from poindexter.services import settings_read_sink
 
 
 @pytest.mark.unit

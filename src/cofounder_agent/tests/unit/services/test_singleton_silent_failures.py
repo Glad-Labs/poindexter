@@ -23,15 +23,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services import live_activity
-from services.pipeline_experiment_hook import (
+from poindexter.services import live_activity
+from poindexter.services.pipeline_experiment_hook import (
     assign_pipeline_variant,
     record_pipeline_outcome,
 )
-from services.prompt_manager import UnifiedPromptManager
-from services.research_service import ResearchService
-from services.site_config import SiteConfig
-from services.template_runner import TemplateRunner
+from poindexter.services.prompt_manager import UnifiedPromptManager
+from poindexter.services.research_service import ResearchService
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.template_runner import TemplateRunner
 
 pytestmark = pytest.mark.unit
 
@@ -134,7 +134,7 @@ async def test_assign_emits_finding_when_service_import_fails(monkeypatch):
     acquire_ctx.__aexit__ = AsyncMock(return_value=None)
     db.pool.acquire = MagicMock(return_value=acquire_ctx)
 
-    monkeypatch.setitem(sys.modules, "services.langfuse_experiments", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.langfuse_experiments", None)
     result = await assign_pipeline_variant(
         task_id="task-import-blip",
         database_service=db,
@@ -150,7 +150,7 @@ async def test_assign_emits_finding_when_service_import_fails(monkeypatch):
 async def test_record_outcome_emits_finding_when_service_import_fails(monkeypatch):
     calls = _capture(monkeypatch)
     db = SimpleNamespace(pool=MagicMock())
-    monkeypatch.setitem(sys.modules, "services.langfuse_experiments", None)
+    monkeypatch.setitem(sys.modules, "poindexter.services.langfuse_experiments", None)
     await record_pipeline_outcome(
         assignment={"experiment_key": "exp-1", "variant_key": "variant-a"},
         task_id="task-import-blip",
@@ -213,7 +213,7 @@ def test_init_langfuse_client_emits_finding_when_site_config_unavailable(
     calls = _capture(monkeypatch)
     mgr = UnifiedPromptManager(site_config=SiteConfig())
     mgr._site_config = None
-    import services.prompt_manager as pm_module
+    import poindexter.services.prompt_manager as pm_module
 
     monkeypatch.setattr(
         pm_module, "_sc", MagicMock(side_effect=RuntimeError("no container")),
@@ -269,7 +269,7 @@ async def test_web_search_emits_finding_on_researcher_failure(monkeypatch):
     svc = ResearchService(pool=None, site_config=SiteConfig())
 
     with patch(
-        "services.web_research.WebResearcher",
+        "poindexter.services.web_research.WebResearcher",
         side_effect=RuntimeError("duckduckgo unreachable"),
     ):
         result = await svc._web_search("some topic")

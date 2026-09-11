@@ -42,7 +42,7 @@ import server  # noqa: E402
 
 @pytest.mark.asyncio
 async def test_failed_site_config_load_is_visible(caplog, monkeypatch):
-    import services.site_config as sc_mod
+    import poindexter.services.site_config as sc_mod
 
     class _BrokenSiteConfig:
         def __init__(self, *_a, **_k):

@@ -18,7 +18,7 @@ from modules.content.content_validator import (
     detect_truncated_content,
     validate_content,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 _SC = SiteConfig()
 

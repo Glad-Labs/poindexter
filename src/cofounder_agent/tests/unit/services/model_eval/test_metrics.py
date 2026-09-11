@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 
-from services.model_eval.metrics import mrr, ndcg_at_k
+from poindexter.services.model_eval.metrics import mrr, ndcg_at_k
 
 
 def test_ndcg_perfect_ranking_is_1() -> None:

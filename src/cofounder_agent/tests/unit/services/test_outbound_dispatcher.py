@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from services.integrations import outbound_dispatcher
-from services.integrations import registry as registry_module
+from poindexter.services.integrations import outbound_dispatcher
+from poindexter.services.integrations import registry as registry_module
 
 
 class _FakePool:

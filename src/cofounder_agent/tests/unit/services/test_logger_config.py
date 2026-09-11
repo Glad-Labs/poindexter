@@ -13,7 +13,7 @@ import logging
 
 import pytest
 
-import services.logger_config as lc
+import poindexter.services.logger_config as lc
 
 # ---------------------------------------------------------------------------
 # _safe_int_env

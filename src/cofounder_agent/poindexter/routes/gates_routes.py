@@ -21,9 +21,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
 from schemas.task_schemas import GateListResponse, GatePausedListResponse
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -64,7 +64,7 @@ async def list_gates(
 ) -> GateListResponse:
     """Return every gate the system has ever heard of, plus its enabled state
     and the number of tasks currently paused on it."""
-    from services.approval_service import list_gates as _list_gates
+    from poindexter.services.approval_service import list_gates as _list_gates
 
     gates = await _list_gates(pool=db_service.pool, site_config=site_config)
     # Canonical offset envelope (poindexter#745): `gates` → `items`. This is a
@@ -92,7 +92,7 @@ async def set_gate_enabled(
     site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Toggle the ``pipeline_gate_<gate_name>`` app_settings row."""
-    from services.approval_service import set_gate_enabled as _set_gate_enabled
+    from poindexter.services.approval_service import set_gate_enabled as _set_gate_enabled
 
     return await _set_gate_enabled(
         gate_name=gate_name,
@@ -115,7 +115,7 @@ async def list_pending(
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> GatePausedListResponse:
     """Return every task currently paused at any gate (or one gate)."""
-    from services.approval_service import list_pending as _list_pending
+    from poindexter.services.approval_service import list_pending as _list_pending
 
     tasks = await _list_pending(pool=db_service.pool, gate_name=gate_name, limit=limit)
     # Canonical offset envelope (poindexter#745): `tasks` → `items`. The list is
@@ -150,12 +150,12 @@ async def approve_pending(
     console's next poll picks it up); the operator gets a Discord note either
     way. HTTP mirror of ``poindexter pipeline resume <task_id>``.
     """
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         ApprovalServiceError,
         TaskNotFoundError,
         TaskNotPausedError,
     )
-    from services.gate_resume import (
+    from poindexter.services.gate_resume import (
         ResumeInFlightError,
         approve_and_schedule_resume,
     )
@@ -194,12 +194,12 @@ async def reject_pending(
     reject``). Per-gate rejection handlers fire — for ``seo_refresh_gate``
     that dismisses the linked ``seo_opportunities`` row so it is never
     re-proposed."""
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         GateMismatchError,
         TaskNotFoundError,
         TaskNotPausedError,
     )
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         reject as _reject,
     )
 
@@ -230,12 +230,12 @@ async def show_pending(
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict[str, Any]:
     """Return the gate state and artifact for a single paused task."""
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         GateMismatchError,
         TaskNotFoundError,
         TaskNotPausedError,
     )
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         show_pending as _show_pending,
     )
 

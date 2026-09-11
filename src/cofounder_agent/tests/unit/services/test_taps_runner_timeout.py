@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.taps import runner as runner_mod
+from poindexter.services.taps import runner as runner_mod
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -46,7 +46,7 @@ def _patch_discovery(monkeypatch, taps):
     """Make run_all see exactly ``taps`` and nothing from the real registry."""
     monkeypatch.setattr(runner_mod, "get_taps", lambda: list(taps))
     monkeypatch.setattr(runner_mod, "get_core_samples", lambda: {"taps": []})
-    monkeypatch.setattr("services.site_config.SiteConfig", _FakeSiteConfig)
+    monkeypatch.setattr("poindexter.services.site_config.SiteConfig", _FakeSiteConfig)
 
 
 class TestPerTapTimeout:

@@ -44,7 +44,7 @@ def _capture(monkeypatch) -> list[dict]:
 def test_sources_append_failure_emits_finding_and_returns_original(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.citation_verifier.extract_urls",
+        "poindexter.services.citation_verifier.extract_urls",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("extract boom")),
     )
 
@@ -60,10 +60,10 @@ def test_sources_append_failure_emits_finding_and_returns_original(monkeypatch):
 def test_sources_append_success_emits_no_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.citation_verifier.extract_urls", lambda *a, **k: ["https://x.test"]
+        "poindexter.services.citation_verifier.extract_urls", lambda *a, **k: ["https://x.test"]
     )
     monkeypatch.setattr(
-        "services.citation_verifier.append_sources_section",
+        "poindexter.services.citation_verifier.append_sources_section",
         lambda content, urls: content + "\n\n## Sources\n- https://x.test",
     )
 
@@ -82,7 +82,7 @@ def test_sources_append_success_emits_no_finding(monkeypatch):
 async def test_final_snapshot_failure_emits_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.content_revisions_logger.log_revision",
+        "poindexter.services.content_revisions_logger.log_revision",
         AsyncMock(side_effect=RuntimeError("log_revision boom")),
     )
 
@@ -107,7 +107,7 @@ async def test_final_snapshot_failure_emits_finding(monkeypatch):
 async def test_final_snapshot_success_emits_no_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.content_revisions_logger.log_revision", AsyncMock(return_value=None)
+        "poindexter.services.content_revisions_logger.log_revision", AsyncMock(return_value=None)
     )
 
     await ft._snapshot_final_revision(

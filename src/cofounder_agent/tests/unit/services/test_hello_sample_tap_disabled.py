@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from services.settings_defaults import DEFAULTS
+from poindexter.services.settings_defaults import DEFAULTS
 
 _MIGRATION_FILE = (
     Path(__file__).resolve().parents[3]

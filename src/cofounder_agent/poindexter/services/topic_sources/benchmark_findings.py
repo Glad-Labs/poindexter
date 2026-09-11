@@ -49,7 +49,7 @@ import logging
 from typing import Any
 
 from plugins.topic_source import DiscoveredTopic
-from services.benchmark_findings import KIND_NEW_MODEL, build_findings, measure_models
+from poindexter.services.benchmark_findings import KIND_NEW_MODEL, build_findings, measure_models
 
 logger = logging.getLogger(__name__)
 

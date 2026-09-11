@@ -169,7 +169,7 @@ class TestMigrateUp:
             "poindexter.cli.migrate._ensure_migrations_table",
             AsyncMock(return_value=None),
         ), patch(
-            "services.migrations.run_migrations", run_migrations_stub,
+            "poindexter.services.migrations.run_migrations", run_migrations_stub,
         ):
             result = runner.invoke(migrate_group, ["up"])
 
@@ -194,7 +194,7 @@ class TestMigrateUp:
             "poindexter.cli.migrate._ensure_migrations_table",
             AsyncMock(return_value=None),
         ), patch(
-            "services.migrations.run_migrations",
+            "poindexter.services.migrations.run_migrations",
             AsyncMock(return_value=True),
         ):
             result = runner.invoke(migrate_group, ["up"])

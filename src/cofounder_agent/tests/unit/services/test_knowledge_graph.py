@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.knowledge_graph import (
+from poindexter.services.knowledge_graph import (
     Edge,
     build_edges,
     build_post_edges,
@@ -286,7 +286,7 @@ class TestBuildPostEdges:
     def test_memory_and_post_origins_are_distinct(self):
         """replace_edges scopes its delete by origin, so the two extractors
         must never share one — a memory rebuild would wipe the post edges."""
-        from services.knowledge_graph import ORIGIN_MEMORY, ORIGIN_POST
+        from poindexter.services.knowledge_graph import ORIGIN_MEMORY, ORIGIN_POST
 
         assert ORIGIN_MEMORY != ORIGIN_POST
 
@@ -303,7 +303,7 @@ class TestRerankDeviceMisconfigIsLoud:
     regression an operator has no reason to suspect — it must page."""
 
     def _retriever(self, device):
-        from services.rag_engine import _build_rerank_retriever_class
+        from poindexter.services.rag_engine import _build_rerank_retriever_class
 
         cls = _build_rerank_retriever_class()
 

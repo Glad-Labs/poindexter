@@ -196,7 +196,7 @@ def test_seeded_default_matches_in_code_fallback():
     """The settings_defaults.py seed and DEFAULT_FEEDS must describe the
     same feeds — otherwise a fresh install (seed) and a broken-settings
     fallback (in-code) watch different things."""
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     seeded = _parse_feeds(DEFAULTS["data_freshness_feeds"])
     fallback = _parse_feeds("")

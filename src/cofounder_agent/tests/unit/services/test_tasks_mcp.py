@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 
-from services import tasks_mcp
+from poindexter.services import tasks_mcp
 
 
 def _build_pool(conn: MagicMock) -> MagicMock:

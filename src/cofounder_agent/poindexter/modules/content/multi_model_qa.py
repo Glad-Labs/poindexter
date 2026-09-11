@@ -27,12 +27,12 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from modules.content.content_validator import ValidationResult, validate_content
-from services.audit_event_schemas import validate_event_details
-from services.integrations.operator_notify import notify_operator
-from services.langfuse_shim import observe  # type: ignore[attr-defined]
-from services.logger_config import get_logger
-from services.prompt_manager import get_prompt_manager
-from services.qa_gates_db import load_qa_gate_chain
+from poindexter.services.audit_event_schemas import validate_event_details
+from poindexter.services.integrations.operator_notify import notify_operator
+from poindexter.services.langfuse_shim import observe  # type: ignore[attr-defined]
+from poindexter.services.logger_config import get_logger
+from poindexter.services.prompt_manager import get_prompt_manager
+from poindexter.services.qa_gates_db import load_qa_gate_chain
 from utils.exception_format import describe_exception
 
 if TYPE_CHECKING:
@@ -1189,7 +1189,7 @@ class MultiModelQA:
         # showing every gate as last_run_at=NEVER. Best-effort — never
         # fail the chain because telemetry write hiccupped.
         try:
-            from services.qa_gates_db_writer import record_chain_run
+            from poindexter.services.qa_gates_db_writer import record_chain_run
             await record_chain_run(self.pool, reviews)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[MULTI_QA] qa_gates counter update skipped: %s", exc)
@@ -1481,10 +1481,10 @@ class MultiModelQA:
                     site="critic",
                 )
             ollama_model = resolved_model.removeprefix("ollama/")
-            from services.llm_providers.thinking_models import (
+            from poindexter.services.llm_providers.thinking_models import (
                 is_thinking_model as _is_thinking_model,
             )
-            from services.llm_providers.thinking_models import (
+            from poindexter.services.llm_providers.thinking_models import (
                 resolve_thinking_substrings,
             )
             _is_thinking = _is_thinking_model(
@@ -1725,7 +1725,7 @@ class MultiModelQA:
         We rescale to 0–100 to match the rest of the QA reviewers.
         """
         try:
-            from services import deepeval_rails
+            from poindexter.services import deepeval_rails
         except ImportError as exc:
             # Module itself missing — should never happen since
             # services/deepeval_rails.py ships with the worker.
@@ -1801,7 +1801,7 @@ class MultiModelQA:
         SKILL.md catalog (``qa.deepeval_g_eval_criterion``).
         """
         try:
-            from services import deepeval_rails
+            from poindexter.services import deepeval_rails
         except ImportError as exc:
             self._surface_reviewer_skip(
                 "deepeval_g_eval",
@@ -1922,7 +1922,7 @@ class MultiModelQA:
         corpus to ground against — the metric cannot run without context.
         """
         try:
-            from services import deepeval_rails
+            from poindexter.services import deepeval_rails
         except ImportError as exc:
             self._surface_reviewer_skip(
                 "deepeval_faithfulness",
@@ -2063,7 +2063,7 @@ class MultiModelQA:
         matching, so we wrap in ``asyncio.to_thread`` only as a
         defensive measure — the call typically returns in <1ms.
         """
-        from services import guardrails_rails
+        from poindexter.services import guardrails_rails
         try:
             if not guardrails_rails.is_enabled(self._site_config):
                 self._surface_reviewer_skip(
@@ -2121,7 +2121,7 @@ class MultiModelQA:
           qa_reviewer_failure)
         """
         try:
-            from services import ragas_eval
+            from poindexter.services import ragas_eval
         except ImportError as exc:
             self._surface_reviewer_skip(
                 "ragas_eval",
@@ -2237,7 +2237,7 @@ class MultiModelQA:
         regex (the ``guardrails-ai`` wrapper was dropped after
         CVE-2026-45758; ``services/guardrails_rails`` owns it natively).
         """
-        from services import guardrails_rails
+        from poindexter.services import guardrails_rails
         try:
             if not guardrails_rails.is_enabled(self._site_config):
                 self._surface_reviewer_skip(
@@ -2352,7 +2352,7 @@ class MultiModelQA:
             site_url = await self.settings.get("site_url") or None
 
         try:
-            from services.citation_verifier import (
+            from poindexter.services.citation_verifier import (
                 CitationVerifier,
                 verdict_from_report,
             )
@@ -2449,7 +2449,7 @@ class MultiModelQA:
         Non-thinking vision models keep ``base``; an already-larger ``base`` is
         never lowered (``max``).
         """
-        from services.llm_providers.thinking_models import (
+        from poindexter.services.llm_providers.thinking_models import (
             is_thinking_model,
             resolve_thinking_substrings,
         )
@@ -2860,7 +2860,7 @@ class MultiModelQA:
             return None
 
         try:
-            from services.preview_screenshot import capture_preview_screenshot
+            from poindexter.services.preview_screenshot import capture_preview_screenshot
         except Exception as e:
             from utils.findings import emit_finding
 
@@ -2979,7 +2979,7 @@ class MultiModelQA:
         import re
 
         try:
-            from services.web_research import WebResearcher
+            from poindexter.services.web_research import WebResearcher
 
             # Fact-check heuristics — DB-tunable via qa_web_factcheck_*; the
             # literals are the fallback when the app_settings row is unset.

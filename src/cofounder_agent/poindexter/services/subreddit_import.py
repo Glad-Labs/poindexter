@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from services.community_drafts import (
+from poindexter.services.community_drafts import (
     SubredditProfile,
     add_profile,
     list_profiles,

@@ -16,8 +16,8 @@ def test_specs_contain_qa_audio_node_and_are_raw():
     Raw (no ``_contract_fp`` on any node) is the shape the boot self-heal
     accepts — a pre-stamped spec could not un-stick a stale stamp.
     """
-    from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
-    from services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
+    from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+    from poindexter.services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
 
     for spec in (MEDIA_PIPELINE_GRAPH_DEF, PODCAST_PIPELINE_GRAPH_DEF):
         nodes = spec["nodes"]

@@ -3,7 +3,7 @@
 The qa block's first node is qa_programmatic (the programmatic anti-hallucination
 gate); caption_images feeds into it. (Pre-C1 this fed qa_critic directly.)
 """
-from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF as S
+from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF as S
 
 
 def test_caption_images_node_present():

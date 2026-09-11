@@ -103,10 +103,10 @@ async def main() -> int:
         ap.error("nothing to do — pass --build and/or --run")
 
     import asyncpg
-    from services.model_eval.golden_sets.retrieval import build_retrieval_golden_set
-    from services.model_eval.types import GoldenCase, GoldenSet
-    from services.retrieval_eval import persist_result, score_retrieval
-    from services.site_config import SiteConfig
+    from poindexter.services.model_eval.golden_sets.retrieval import build_retrieval_golden_set
+    from poindexter.services.model_eval.types import GoldenCase, GoldenSet
+    from poindexter.services.retrieval_eval import persist_result, score_retrieval
+    from poindexter.services.site_config import SiteConfig
 
     dsn = os.getenv("DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL")
     if not dsn:

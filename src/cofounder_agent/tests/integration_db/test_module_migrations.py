@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from services.module_runner import run_module_migrations
+from poindexter.services.module_runner import run_module_migrations
 
 pytestmark = [
     pytest.mark.integration_db,

@@ -54,7 +54,7 @@ def _patch_site_config(tz_name: str = "UTC"):
     attribute would sail into ``parse_when`` as the tzinfo and blow up
     somewhere far from the cause.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     return patch(
         "poindexter.cli.schedule._load_site_config",
@@ -71,7 +71,7 @@ class TestScheduleShow:
         with _patch_with_pool(), patch(
             "poindexter.cli.schedule.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
-        ), patch("services.scheduling_service.show_scheduled", new=fake_show):
+        ), patch("poindexter.services.scheduling_service.show_scheduled", new=fake_show):
             result = runner.invoke(schedule_group, ["show", "6bf91cc3"])
 
         assert result.exit_code == 0, result.output
@@ -82,7 +82,7 @@ class TestScheduleShow:
         with _patch_with_pool(), patch(
             "poindexter.cli.schedule.resolve_uuid_prefix",
             new=AsyncMock(return_value=None),
-        ), patch("services.scheduling_service.show_scheduled", new=fake_show):
+        ), patch("poindexter.services.scheduling_service.show_scheduled", new=fake_show):
             result = runner.invoke(schedule_group, ["show", "deadbeef"])
 
         # service still saw the original token, and its not-ok → exit 1.
@@ -109,7 +109,7 @@ class TestScheduleShift:
         with _patch_with_pool(), _patch_site_config(), patch(
             "poindexter.cli.schedule.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
-        ), patch("services.scheduling_service.shift", new=fake_shift):
+        ), patch("poindexter.services.scheduling_service.shift", new=fake_shift):
             result = runner.invoke(schedule_group, ["shift", "6bf91cc3", "--by", "1h"])
 
         assert result.exit_code == 0, result.output
@@ -120,7 +120,7 @@ class TestScheduleShift:
         spy_resolve = AsyncMock(return_value=FULL)
         with _patch_with_pool(), _patch_site_config(), patch(
             "poindexter.cli.schedule.resolve_uuid_prefix", new=spy_resolve,
-        ), patch("services.scheduling_service.shift", new=fake_shift):
+        ), patch("poindexter.services.scheduling_service.shift", new=fake_shift):
             result = runner.invoke(schedule_group, ["shift", "--all", "--by", "1h"])
 
         assert result.exit_code == 0, result.output
@@ -135,7 +135,7 @@ class TestScheduleClear:
         with _patch_with_pool(), _patch_site_config(), patch(
             "poindexter.cli.schedule.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
-        ), patch("services.scheduling_service.clear", new=fake_clear):
+        ), patch("poindexter.services.scheduling_service.clear", new=fake_clear):
             result = runner.invoke(schedule_group, ["clear", "6bf91cc3"])
 
         assert result.exit_code == 0, result.output
@@ -149,7 +149,7 @@ class TestPublishAt:
         with _patch_with_pool(), _patch_site_config(), patch(
             "poindexter.cli.schedule.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
-        ), patch("services.scheduling_service.assign_slot", new=fake_assign):
+        ), patch("poindexter.services.scheduling_service.assign_slot", new=fake_assign):
             result = runner.invoke(publish_at_command, ["6bf91cc3", "now"])
 
         assert result.exit_code == 0, result.output

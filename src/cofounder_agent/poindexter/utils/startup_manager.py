@@ -21,7 +21,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -312,7 +312,7 @@ class StartupManager:
                 # is now a ``RetentionJanitor`` class. Build one per-call from
                 # the lifespan-bound SiteConfig (caller-bridge) until
                 # startup_manager itself reaches for the AppContainer.
-                from services.retention_janitor import RetentionJanitor
+                from poindexter.services.retention_janitor import RetentionJanitor
                 if self.database_service and self.database_service.pool:
                     _janitor = RetentionJanitor(site_config=self._site_config)
                     asyncio.create_task(
@@ -371,7 +371,7 @@ class StartupManager:
 
         try:
             from config import get_config
-            from services.database_service import DatabaseService
+            from poindexter.services.database_service import DatabaseService
 
             config = get_config()
             # #272 Phase-2g: DatabaseService takes a REQUIRED site_config.
@@ -381,7 +381,7 @@ class StartupManager:
             # pool-size reads in ``initialize()`` use defaults exactly as
             # before. A bare-boot path with no injected SiteConfig falls
             # back to a fresh env-fallback instance.
-            from services.site_config import SiteConfig
+            from poindexter.services.site_config import SiteConfig
             self.database_service = DatabaseService(
                 local_database_url=config.local_database_url,
                 site_config=self._site_config or SiteConfig(),
@@ -465,7 +465,7 @@ class StartupManager:
         """
         logger.info("  [INFO] Running database migrations...")
         try:
-            from services.migrations import run_migrations
+            from poindexter.services.migrations import run_migrations
 
             await run_migrations(self.database_service)
             logger.info("   [OK] Database migrations completed successfully")
@@ -498,7 +498,7 @@ class StartupManager:
         # Best-effort — a failure here doesn't abort startup; the lazy
         # SettingsService default path still works as a fallback.
         try:
-            from services.settings_defaults import seed_all_defaults
+            from poindexter.services.settings_defaults import seed_all_defaults
 
             if self.database_service and self.database_service.pool:
                 inserted = await seed_all_defaults(self.database_service.pool)
@@ -522,7 +522,7 @@ class StartupManager:
         # settings over the public OSS defaults (no-op on OSS installs, where the
         # private services.operator_overrides module is stripped from the mirror).
         try:
-            from services.settings_defaults import apply_operator_overrides
+            from poindexter.services.settings_defaults import apply_operator_overrides
 
             if self.database_service and self.database_service.pool:
                 overridden = await apply_operator_overrides(
@@ -544,7 +544,7 @@ class StartupManager:
         # once the table has any row, so runtime `community profiles` CRUD stays
         # authoritative and a deleted profile never resurrects on boot.
         try:
-            from services.settings_defaults import (
+            from poindexter.services.settings_defaults import (
                 seed_operator_subreddit_profiles,
             )
 
@@ -573,7 +573,7 @@ class StartupManager:
             from pathlib import Path
 
             from plugins.registry import get_modules
-            from services.module_runner import run_module_migrations
+            from poindexter.services.module_runner import run_module_migrations
 
             modules = get_modules()
             if not modules:
@@ -634,7 +634,7 @@ class StartupManager:
 
         # Initialize JWT blocklist service (issue #721 — server-side token invalidation)
         try:
-            from services.jwt_blocklist_service import jwt_blocklist
+            from poindexter.services.jwt_blocklist_service import jwt_blocklist
 
             await jwt_blocklist.initialize(self.database_service.pool)
             # Purge any expired rows carried over from previous runs
@@ -660,7 +660,7 @@ class StartupManager:
             logger.debug("[graph_def_stamp] no DB pool — skipping")
             return
         try:
-            from services.pipeline_architect import (
+            from poindexter.services.pipeline_architect import (
                 ensure_active_graph_defs_stamped,
             )
         except Exception as exc:  # noqa: BLE001 — stack unavailable ⇒ no-op
@@ -703,8 +703,8 @@ class StartupManager:
         """
         logger.info("  [INFO] Initializing Redis cache for query optimization...")
         try:
-            from services.redis_cache import RedisCache
-            from services.site_config import SiteConfig
+            from poindexter.services.redis_cache import RedisCache
+            from poindexter.services.site_config import SiteConfig
 
             sc = self._site_config if self._site_config is not None else SiteConfig()
             self.redis_cache = await RedisCache.create(site_config=sc)
@@ -857,8 +857,8 @@ class StartupManager:
 
         # Prefer the lifespan-bound shared client; create a per-call client
         # only when one has not been wired yet (early-boot / tests).
-        from services.integrations import operator_notify as _on_mod
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations import operator_notify as _on_mod
+        from poindexter.services.integrations.operator_notify import notify_operator
         _shared = getattr(_on_mod, "http_client", None)
 
         installed_names: set[str] = set()
@@ -1078,8 +1078,8 @@ class StartupManager:
             logger.info("  🎨 Warming up image-gen models (this may take 20-30 seconds)...")
             import tempfile
 
-            from services.image_service import ImageService
-            from services.site_config import SiteConfig
+            from poindexter.services.image_service import ImageService
+            from poindexter.services.site_config import SiteConfig
 
             # Create image service
             image_service = ImageService(sc or SiteConfig())

@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
-from services.site_config import SiteConfig
-from services.topic_batch_service import TopicBatchService
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_batch_service import TopicBatchService
 
 _NICHE_ID = UUID("00000000-0000-0000-0000-000000000001")
 _BATCH_ID = UUID("00000000-0000-0000-0000-000000000002")

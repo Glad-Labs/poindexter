@@ -23,8 +23,8 @@ All configuration is DB-first via app_settings keys:
 import asyncio
 from typing import Any
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)

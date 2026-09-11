@@ -13,7 +13,7 @@ the page-views ingest and tested in
 binds the shared rule rather than growing its own copy.
 """
 
-from services.jobs.sync_affiliate_clicks import (
+from poindexter.services.jobs.sync_affiliate_clicks import (
     _DEFAULT_BOT_UA_PATTERN,
     _classify_bot,
     _row_to_click,
@@ -63,7 +63,7 @@ def test_row_to_click_empty_optional_fields_become_none():
 
 
 def test_emit_bad_timestamp_finding_aggregates(monkeypatch):
-    from services.jobs import sync_affiliate_clicks as m
+    from poindexter.services.jobs import sync_affiliate_clicks as m
 
     calls = []
     monkeypatch.setattr(m, "emit_finding", lambda **kw: calls.append(kw))

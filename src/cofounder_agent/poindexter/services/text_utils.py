@@ -174,7 +174,7 @@ def scrub_fabricated_links(
     lifespan-bound instance through.
     """
     if site_config is None:
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
         site_config = SiteConfig()
 
     trusted = _resolve_trusted_domains(site_config)

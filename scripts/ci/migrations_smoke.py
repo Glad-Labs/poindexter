@@ -127,7 +127,7 @@ async def _run(allow_historical: bool = False) -> int:
     # load) so importing this script stays light — keeps the migrations-smoke
     # CI env minimal and lets unit tests import it under a fake BACKEND_ROOT.
     sys.path.insert(0, str(BACKEND_ROOT))
-    from services.migrations import run_migrations
+    from poindexter.services.migrations import run_migrations
 
     files = _migration_files()
     expected = len(files)

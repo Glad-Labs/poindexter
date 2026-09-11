@@ -21,9 +21,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from services.jobs.topic_auto_resolve import TopicAutoResolveJob
-from services.niche_service import NicheService
-from services.site_config import SiteConfig
+from poindexter.services.jobs.topic_auto_resolve import TopicAutoResolveJob
+from poindexter.services.niche_service import NicheService
+from poindexter.services.site_config import SiteConfig
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -102,7 +102,7 @@ def _no_queue_throttle(monkeypatch):
     async def _not_full(pool, **kwargs):
         return (False, 0, 100)
 
-    monkeypatch.setattr("services.pipeline_throttle.is_queue_full", _not_full)
+    monkeypatch.setattr("poindexter.services.pipeline_throttle.is_queue_full", _not_full)
 
 
 @pytest.fixture
@@ -117,7 +117,7 @@ def _fake_handoff(monkeypatch):
         calls.append((winner.id, niche.slug, str(batch_id)))
 
     monkeypatch.setattr(
-        "services.topic_batch_service.TopicBatchService._handoff_to_pipeline",
+        "poindexter.services.topic_batch_service.TopicBatchService._handoff_to_pipeline",
         _handoff,
     )
     return calls
@@ -148,7 +148,7 @@ async def test_queue_check_receives_di_site_config(db_pool, monkeypatch):
         # is about the call contract, not the resolve path.
         return (True, 3, 3)
 
-    monkeypatch.setattr("services.pipeline_throttle.is_queue_full", _spy)
+    monkeypatch.setattr("poindexter.services.pipeline_throttle.is_queue_full", _spy)
     cfg = SiteConfig()
 
     result = await TopicAutoResolveJob().run(db_pool, {"_site_config": cfg})
@@ -318,7 +318,7 @@ async def test_near_duplicate_winner_expires_batch_instead_of_wedging(
     embeds); the gate wiring inside the REAL ``_handoff_to_pipeline`` is
     what's under test.
     """
-    from services.topic_recent_coverage import RecentCoverageMatch
+    from poindexter.services.topic_recent_coverage import RecentCoverageMatch
 
     match = RecentCoverageMatch(
         kind="published_post",
@@ -332,7 +332,7 @@ async def test_near_duplicate_winner_expires_batch_instead_of_wedging(
         return match
 
     monkeypatch.setattr(
-        "services.topic_recent_coverage.check_recent_coverage",
+        "poindexter.services.topic_recent_coverage.check_recent_coverage",
         _match_everything,
     )
 

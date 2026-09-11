@@ -64,7 +64,7 @@ async def _load_site_config(pool):
     not here. Falls back to an empty config if the DB is unreachable so
     operator CLI-flag overrides still flow through.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     cfg = SiteConfig(pool=pool)
     try:
@@ -210,7 +210,7 @@ def schedule_batch(
     --interval, etc. Slots inside the quiet-hours window are skipped
     forward to the next allowed time.
     """
-    from services.scheduling_service import assign_batch
+    from poindexter.services.scheduling_service import assign_batch
 
     async def _impl():
         async def _run_with_pool(pool):
@@ -250,7 +250,7 @@ def schedule_batch(
 @click.option("--json", "json_output", is_flag=True)
 def schedule_list(show_all: bool, json_output: bool) -> None:
     """List scheduled posts in publish-time order."""
-    from services.scheduling_service import list_scheduled
+    from poindexter.services.scheduling_service import list_scheduled
 
     async def _impl():
         async def _run_with_pool(pool):
@@ -285,7 +285,7 @@ def schedule_list(show_all: bool, json_output: bool) -> None:
 @click.option("--json", "json_output", is_flag=True)
 def schedule_show(post_id: str, json_output: bool) -> None:
     """Show schedule detail for a single post."""
-    from services.scheduling_service import show_scheduled
+    from poindexter.services.scheduling_service import show_scheduled
 
     async def _impl():
         async def _run_with_pool(pool):
@@ -337,7 +337,7 @@ def schedule_shift(
         )
         sys.exit(2)
 
-    from services.scheduling_service import shift as shift_fn
+    from poindexter.services.scheduling_service import shift as shift_fn
 
     async def _impl():
         async def _run_with_pool(pool):
@@ -395,7 +395,7 @@ def schedule_clear(
         )
         sys.exit(2)
 
-    from services.scheduling_service import clear as clear_fn
+    from poindexter.services.scheduling_service import clear as clear_fn
 
     async def _impl():
         async def _run_with_pool(pool):
@@ -459,7 +459,7 @@ def publish_at_command(
     """Single-post scheduling shortcut."""
     from datetime import datetime, timezone
 
-    from services.scheduling_service import (
+    from poindexter.services.scheduling_service import (
         assign_slot,
         parse_duration,
         parse_when,

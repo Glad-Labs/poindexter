@@ -9,14 +9,14 @@ All tests are pure / synchronous — no LLM calls.
 
 from unittest.mock import MagicMock
 
-from services.seo_content_generator import (
+from poindexter.services.seo_content_generator import (
     ContentMetadata,
     ContentMetadataGenerator,
     EnhancedBlogPost,
     SEOOptimizedContentGenerator,
     get_seo_content_generator,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # ContentMetadata

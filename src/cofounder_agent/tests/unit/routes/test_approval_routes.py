@@ -170,7 +170,7 @@ class TestRejectTask:
             async def clear_qa_approved_snapshot(self, task_id):
                 cleared.append(task_id)
 
-        with patch("services.pipeline_db.PipelineDB", _FakePipelineDB):
+        with patch("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB):
             resp = client.post(
                 "/api/tasks/task-001/reject",
                 json={
@@ -362,7 +362,7 @@ class TestRejectFinalizeEscalation:
         client = TestClient(_build_app(mock_db))
 
         with patch(
-            "services.router_outcome_feedback.record_task_outcome",
+            "poindexter.services.router_outcome_feedback.record_task_outcome",
             new=AsyncMock(),
         ) as mock_outcome:
             resp = client.post("/api/tasks/task-001/reject", json=FINAL_BODY)
@@ -379,7 +379,7 @@ class TestRejectFinalizeEscalation:
         client = TestClient(_build_app(mock_db))
 
         with patch(
-            "services.router_outcome_feedback.record_task_outcome",
+            "poindexter.services.router_outcome_feedback.record_task_outcome",
             new=AsyncMock(),
         ) as mock_outcome:
             resp = client.post("/api/tasks/task-001/reject", json=RETRY_BODY)
@@ -460,7 +460,7 @@ class TestUnapproveTask:
         client = TestClient(_build_app(mock_db))
 
         with patch(
-            "services.publish_service.unapprove_task",
+            "poindexter.services.publish_service.unapprove_task",
             new=AsyncMock(return_value={
                 "ok": True, "new_status": "awaiting_approval",
                 "posts_row_removed": True, "reason": None,
@@ -480,7 +480,7 @@ class TestUnapproveTask:
         client = TestClient(_build_app(mock_db))
 
         with patch(
-            "services.publish_service.unapprove_task",
+            "poindexter.services.publish_service.unapprove_task",
             new=AsyncMock(return_value={
                 "ok": True, "new_status": "rejected_final",
                 "posts_row_removed": False, "reason": None,
@@ -531,7 +531,7 @@ class TestUnapproveTask:
         client = TestClient(_build_app(mock_db))
 
         with patch(
-            "services.publish_service.unapprove_task",
+            "poindexter.services.publish_service.unapprove_task",
             new=AsyncMock(return_value={
                 "ok": False, "new_status": "awaiting_approval",
                 "posts_row_removed": False, "reason": "not_approved",

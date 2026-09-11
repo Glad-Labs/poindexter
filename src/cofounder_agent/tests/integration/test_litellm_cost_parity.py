@@ -49,8 +49,8 @@ import os
 import httpx
 import pytest
 
-from services.cost_lookup import estimate_cost, get_model_cost_per_1k
-from services.llm_providers.litellm_provider import LiteLLMProvider
+from poindexter.services.cost_lookup import estimate_cost, get_model_cost_per_1k
+from poindexter.services.llm_providers.litellm_provider import LiteLLMProvider
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -179,7 +179,7 @@ async def _call_via_ollama_client(base_url: str) -> dict:
     response shape it produces is reconstructed below to match the
     Completion dataclass surface.
     """
-    from services.ollama_client import OllamaClient
+    from poindexter.services.ollama_client import OllamaClient
 
     # OllamaClient is dependency-injected via base_url so we can point
     # at the test environment's Ollama without depending on the

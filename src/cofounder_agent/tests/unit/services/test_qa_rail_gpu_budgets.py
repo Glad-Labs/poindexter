@@ -27,8 +27,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.gpu_admission import GpuBusyError
-from services.site_config import SiteConfig
+from poindexter.services.gpu_admission import GpuBusyError
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Budget resolution
@@ -38,7 +38,7 @@ from services.site_config import SiteConfig
 def _with_settings(**cfg):
     """Register a SiteConfig on the process container gpu_scheduler reads."""
     return patch(
-        "services.gpu_scheduler._sc",
+        "poindexter.services.gpu_scheduler._sc",
         return_value=SiteConfig(initial_config=cfg),
     )
 
@@ -51,7 +51,7 @@ def test_budget_defaults_between_llm_and_render_holds():
     Soak p90s that bracket it: writer_self_review 35.1s, title_generation
     34.5s (must be waitable) vs featured_image 228.7s, inline_image_batch
     222.9s (must be skippable)."""
-    from services.gpu_scheduler import qa_rail_wait_budget_s
+    from poindexter.services.gpu_scheduler import qa_rail_wait_budget_s
 
     with _with_settings():
         budget = qa_rail_wait_budget_s()
@@ -64,7 +64,7 @@ def test_budget_defaults_between_llm_and_render_holds():
 @pytest.mark.unit
 def test_budget_zero_restores_legacy_unbounded_contract():
     """The escape hatch: 0 means None, which is the legacy no-admission path."""
-    from services.gpu_scheduler import qa_rail_wait_budget_s
+    from poindexter.services.gpu_scheduler import qa_rail_wait_budget_s
 
     with _with_settings(gpu_sched_qa_rail_max_wait_s="0"):
         assert qa_rail_wait_budget_s() is None
@@ -72,7 +72,7 @@ def test_budget_zero_restores_legacy_unbounded_contract():
 
 @pytest.mark.unit
 def test_budget_is_operator_tunable():
-    from services.gpu_scheduler import qa_rail_wait_budget_s
+    from poindexter.services.gpu_scheduler import qa_rail_wait_budget_s
 
     with _with_settings(gpu_sched_qa_rail_max_wait_s="120"):
         assert qa_rail_wait_budget_s() == 120.0
@@ -88,7 +88,7 @@ def test_budget_is_operator_tunable():
 async def test_dispatch_complete_forwards_budget_to_the_lock():
     """The budget must reach gpu.lock — otherwise the whole migration is a
     no-op that still waits 900s while looking migrated."""
-    from services.llm_providers import dispatcher
+    from poindexter.services.llm_providers import dispatcher
 
     seen = {}
 
@@ -126,7 +126,7 @@ async def test_dispatch_complete_forwards_budget_to_the_lock():
 @pytest.mark.asyncio
 async def test_dispatch_complete_default_stays_legacy():
     """Unmigrated callers must be bit-identical — no budget, pipeline priority."""
-    from services.llm_providers import dispatcher
+    from poindexter.services.llm_providers import dispatcher
 
     seen = {}
 
@@ -165,7 +165,7 @@ async def test_dispatch_complete_default_stays_legacy():
 @pytest.mark.unit
 def test_gpu_busy_skip_uses_its_own_finding_kind_not_degraded():
     """The core triage guard: contention must not look like a broken rail."""
-    from services import ragas_eval
+    from poindexter.services import ragas_eval
 
     emit = MagicMock()
     with patch("utils.findings.emit_finding", emit):
@@ -186,7 +186,7 @@ def test_gpu_busy_skip_uses_its_own_finding_kind_not_degraded():
 def test_deepeval_gpu_busy_uses_the_same_shared_kind():
     """Both rails must report contention identically, or a dashboard filter
     catches one and silently misses the other."""
-    from services import deepeval_rails
+    from poindexter.services import deepeval_rails
 
     emit = MagicMock()
     with patch("utils.findings.emit_finding", emit):
@@ -203,7 +203,7 @@ def test_deepeval_gpu_busy_uses_the_same_shared_kind():
 @pytest.mark.unit
 def test_gpu_busy_finding_emit_never_raises_into_the_rail():
     """Reporting a skip must not become a new failure mode."""
-    from services import deepeval_rails, ragas_eval
+    from poindexter.services import deepeval_rails, ragas_eval
 
     with patch("utils.findings.emit_finding", side_effect=RuntimeError("boom")):
         ragas_eval._surface_gpu_busy_skip(

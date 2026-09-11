@@ -29,7 +29,7 @@ from typing import Any
 
 import pytest
 
-import services.post_pipeline_actions as ppa
+import poindexter.services.post_pipeline_actions as ppa
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 

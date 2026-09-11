@@ -9,8 +9,8 @@ from __future__ import annotations
 import pytest
 
 from plugins.atom import RetryPolicy
-from services.atom_runs import digest_keys
-from services.pipeline_architect import _wrap_atom
+from poindexter.services.atom_runs import digest_keys
+from poindexter.services.pipeline_architect import _wrap_atom
 
 
 @pytest.mark.unit
@@ -54,7 +54,7 @@ class TestAtomCapture:
         mark = AsyncMock()
         # _mark_stage_column is lazily imported inside _wrap_atom, so patch the
         # source before constructing the node.
-        with patch("services.template_runner._mark_stage_column", mark):
+        with patch("poindexter.services.template_runner._mark_stage_column", mark):
             node = _wrap_atom(run_fn, "atoms.fake", "qa.programmatic", sink)
             db = SimpleNamespace(pool=object())
             await node({"task_id": "t-1", "database_service": db}, None)

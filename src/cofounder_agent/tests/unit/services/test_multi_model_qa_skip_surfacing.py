@@ -27,7 +27,7 @@ from modules.content.multi_model_qa import (
     SKIP_TYPE_MISCONFIG,
     MultiModelQA,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from tests.unit._fake_platform import FakePlatform
 
 
@@ -113,7 +113,7 @@ class TestReviewerSkipWiredIntoRails:
     async def test_deepeval_brand_master_rail_off_surfaces_skip(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.is_enabled", return_value=False,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=False,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
@@ -129,7 +129,7 @@ class TestReviewerSkipWiredIntoRails:
     async def test_deepeval_faithfulness_empty_research_surfaces_skip(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.deepeval_rails.is_enabled", return_value=True,
+            "poindexter.services.deepeval_rails.is_enabled", return_value=True,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
@@ -147,7 +147,7 @@ class TestReviewerSkipWiredIntoRails:
     async def test_guardrails_brand_master_rail_off_surfaces_skip(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails.is_enabled", return_value=False,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=False,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
@@ -161,9 +161,9 @@ class TestReviewerSkipWiredIntoRails:
     async def test_guardrails_competitor_empty_list_surfaces_skip(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.guardrails_rails.is_enabled", return_value=True,
+            "poindexter.services.guardrails_rails.is_enabled", return_value=True,
         ), patch(
-            "services.guardrails_rails._resolve_competitors", return_value=[],
+            "poindexter.services.guardrails_rails._resolve_competitors", return_value=[],
         ), patch.object(
             MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
@@ -179,7 +179,7 @@ class TestReviewerSkipWiredIntoRails:
     async def test_ragas_master_rail_off_surfaces_skip(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.is_enabled", return_value=False,
+            "poindexter.services.ragas_eval.is_enabled", return_value=False,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
@@ -193,7 +193,7 @@ class TestReviewerSkipWiredIntoRails:
     async def test_ragas_empty_research_surfaces_skip(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.is_enabled", return_value=True,
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
         ), patch.object(
             MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
@@ -218,9 +218,9 @@ class TestRagasImportBreakageSurfacing:
     async def test_import_error_surfaces_accurate_misconfig_skip(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.is_enabled", return_value=True,
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
         ), patch(
-            "services.ragas_eval.evaluate_sample",
+            "poindexter.services.ragas_eval.evaluate_sample",
             side_effect=ModuleNotFoundError(
                 "No module named 'langchain_community.chat_models.vertexai'"
             ),
@@ -244,9 +244,9 @@ class TestRagasImportBreakageSurfacing:
     async def test_non_import_failure_still_surfaces_reviewer_failure(self):
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
-            "services.ragas_eval.is_enabled", return_value=True,
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
         ), patch(
-            "services.ragas_eval.evaluate_sample",
+            "poindexter.services.ragas_eval.evaluate_sample",
             side_effect=RuntimeError("judge 502"),
         ), patch.object(
             MultiModelQA, "_surface_reviewer_failure",

@@ -621,7 +621,7 @@ async def _upload_to_cloudinary(
 
 async def _upload_to_r2(path: str, prompt: str, site_config: Any) -> str:
     """Upload a generated MP4 to R2 via the shared r2_upload_service."""
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
 
     if site_config is None:
         raise RuntimeError(

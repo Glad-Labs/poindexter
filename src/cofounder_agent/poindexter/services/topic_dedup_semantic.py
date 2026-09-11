@@ -330,7 +330,7 @@ def get_deduplicator(
         engine = "word_overlap"
 
     if engine in ("content", "content_embedding"):
-        from services.topic_dedup_content import ContentEmbeddingDeduplicator
+        from poindexter.services.topic_dedup_content import ContentEmbeddingDeduplicator
 
         return ContentEmbeddingDeduplicator(
             pool, site_config=site_config, niche_slug=niche_slug,
@@ -339,7 +339,7 @@ def get_deduplicator(
     if engine in ("bertopic", "semantic"):
         return SemanticDeduplicator(pool, site_config=site_config)
 
-    from services.topic_dedup import TopicDeduplicator
+    from poindexter.services.topic_dedup import TopicDeduplicator
     return TopicDeduplicator(pool, site_config=site_config)
 
 

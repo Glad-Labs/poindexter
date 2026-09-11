@@ -154,7 +154,7 @@ class ContentEmbeddingDeduplicator:
         published/in-flight composites. Marks + annotates in place; every
         failure path inside is fail-open (the index loader logs + returns
         ``None``)."""
-        from services.topic_recent_coverage import RecentCoverageIndex
+        from poindexter.services.topic_recent_coverage import RecentCoverageIndex
 
         index = await RecentCoverageIndex.load(
             self.pool,
@@ -164,7 +164,7 @@ class ContentEmbeddingDeduplicator:
         )
         if index is None:
             return
-        from services.topic_recent_coverage import compose_text
+        from poindexter.services.topic_recent_coverage import compose_text
 
         for topic in fresh:
             if topic.is_duplicate:
@@ -201,7 +201,7 @@ class ContentEmbeddingDeduplicator:
         """Same-scrape near-duplicate candidates. Candidates have no content
         yet, so delegate to the lexical word-overlap intra-batch pass rather
         than embedding bare titles."""
-        from services.topic_dedup import TopicDeduplicator
+        from poindexter.services.topic_dedup import TopicDeduplicator
 
         # Delegate for the side effect (marks is_duplicate in place). The two
         # engines' structural _TopicLike protocols are identical, so the

@@ -23,7 +23,7 @@ async def _connect():
 
 
 async def _make_site_config(pool):
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     site_config = SiteConfig(pool=pool)
     try:
@@ -42,8 +42,8 @@ async def _republish(pool) -> None:
     already wrote the DB row (the row is the source of truth; a stale
     export self-heals on the next publish or on-demand rebuild).
     """
-    from services.revalidation_service import trigger_nextjs_revalidation
-    from services.static_export_service import republish_affiliate_exports
+    from poindexter.services.revalidation_service import trigger_nextjs_revalidation
+    from poindexter.services.static_export_service import republish_affiliate_exports
 
     try:
         site_config = await _make_site_config(pool)

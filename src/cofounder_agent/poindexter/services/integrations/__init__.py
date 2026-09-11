@@ -21,14 +21,14 @@ Core pieces:
   is imported at framework startup to populate the registry.
 """
 
-from services.integrations.registry import (
+from poindexter.services.integrations.registry import (
     HandlerRegistrationError,
     dispatch,
     lookup,
     register_handler,
     registered_names,
 )
-from services.integrations.secret_resolver import resolve_secret
+from poindexter.services.integrations.secret_resolver import resolve_secret
 
 __all__ = [
     "HandlerRegistrationError",

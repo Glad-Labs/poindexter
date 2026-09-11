@@ -27,7 +27,7 @@ async def test_notify_operator_falls_back_to_lifespan_site_config_when_caller_pa
     causing telegram_post / discord_post handlers to fail auth even when
     the bot token is correctly seeded in ``app_settings``.
     """
-    from services.integrations import operator_notify
+    from poindexter.services.integrations import operator_notify
 
     lifespan_site_config = MagicMock(name="lifespan_site_config")
     db_service = MagicMock(name="db_service")
@@ -36,13 +36,13 @@ async def test_notify_operator_falls_back_to_lifespan_site_config_when_caller_pa
     deliver_mock = AsyncMock()
 
     with patch(
-        "services.integrations.operator_notify._resolve_site_config",
+        "poindexter.services.integrations.operator_notify._resolve_site_config",
         return_value=lifespan_site_config,
     ) as resolve_mock, patch(
-        "services.integrations.shared_context.get_database_service",
+        "poindexter.services.integrations.shared_context.get_database_service",
         return_value=db_service,
     ), patch(
-        "services.integrations.outbound_dispatcher.deliver",
+        "poindexter.services.integrations.outbound_dispatcher.deliver",
         deliver_mock,
     ):
         await operator_notify.notify_operator("test message", critical=False)
@@ -61,7 +61,7 @@ async def test_notify_operator_falls_back_to_lifespan_site_config_when_caller_pa
 @pytest.mark.asyncio
 async def test_notify_operator_does_not_clobber_explicit_caller_supplied_site_config():
     """A caller that passes its own site_config keeps that one (no surprise overwrite)."""
-    from services.integrations import operator_notify
+    from poindexter.services.integrations import operator_notify
 
     explicit_site_config = MagicMock(name="explicit_site_config")
     db_service = MagicMock(name="db_service")
@@ -70,12 +70,12 @@ async def test_notify_operator_does_not_clobber_explicit_caller_supplied_site_co
     deliver_mock = AsyncMock()
 
     with patch(
-        "services.integrations.operator_notify._resolve_site_config",
+        "poindexter.services.integrations.operator_notify._resolve_site_config",
     ) as resolve_mock, patch(
-        "services.integrations.shared_context.get_database_service",
+        "poindexter.services.integrations.shared_context.get_database_service",
         return_value=db_service,
     ), patch(
-        "services.integrations.outbound_dispatcher.deliver",
+        "poindexter.services.integrations.outbound_dispatcher.deliver",
         deliver_mock,
     ):
         await operator_notify.notify_operator(

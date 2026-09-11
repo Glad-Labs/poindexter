@@ -21,8 +21,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services import ollama_client as ollama_client_module
-from services.ollama_client import (
+from poindexter.services import ollama_client as ollama_client_module
+from poindexter.services.ollama_client import (
     OllamaClient,
     OllamaError,
     OllamaModelNotFoundError,

@@ -52,7 +52,7 @@ async def test_claim_returns_pending_row_and_flips_status(test_pool) -> None:
     a row inserted inside an uncommitted transaction. The row is
     removed in the ``finally`` block so the session DB stays clean.
     """
-    from services.flows.content_generation import claim_pending_task
+    from poindexter.services.flows.content_generation import claim_pending_task
 
     task_id = "claim-real-schema-smoke"
     async with test_pool.acquire() as setup:
@@ -118,7 +118,7 @@ async def test_claim_picks_up_rejected_retry_not_rejected_final(test_pool) -> No
     """#541: ``rejected_retry`` is operator-speak for 'regenerate', so the
     claim must pick it up; ``rejected_final`` is terminal and must NOT be
     claimed. Insert one of each and verify only the retry is claimed."""
-    from services.flows.content_generation import claim_pending_task
+    from poindexter.services.flows.content_generation import claim_pending_task
 
     final_id = "claim-rejected-final-541"
     retry_id = "claim-rejected-retry-541"
@@ -171,7 +171,7 @@ async def test_claim_returns_none_when_queue_empty(test_pool) -> None:
     empty (other tests may leave rows mid-run if cleanup races), so we lock
     every claimable row (pending + rejected_retry, #541) FOR UPDATE on a
     separate connection to simulate an empty queue."""
-    from services.flows.content_generation import claim_pending_task
+    from poindexter.services.flows.content_generation import claim_pending_task
 
     async with test_pool.acquire() as locker:
         txn = locker.transaction()

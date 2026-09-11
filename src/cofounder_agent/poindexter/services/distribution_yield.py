@@ -32,8 +32,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from services.distribution_ref import SURFACE_MEDIUM
-from services.pipeline_db import SITE_TARGETS
+from poindexter.services.distribution_ref import SURFACE_MEDIUM
+from poindexter.services.pipeline_db import SITE_TARGETS
 
 # Referrer host → surface, for the pre-tag signal. Matched against the host
 # with any leading ``www.`` removed. Suffix-matched, so ``go.bsky.app`` and

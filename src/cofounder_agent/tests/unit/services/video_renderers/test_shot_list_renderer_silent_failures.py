@@ -26,12 +26,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.video_renderers.shot_list_renderer import (
+from poindexter.services.video_renderers.shot_list_renderer import (
     ShotRenderResult,
     _log_shot_audit,
 )
 
-_LOGGER_NAME = "services.video_renderers.shot_list_renderer"
+_LOGGER_NAME = "poindexter.services.video_renderers.shot_list_renderer"
 
 
 def _audit_warnings(caplog) -> list[str]:

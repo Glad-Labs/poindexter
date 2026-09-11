@@ -47,7 +47,7 @@ from plugins.llm_providers.anthropic import (  # noqa: E402,I001
     _rates_for_model,
     _split_system_and_messages,
 )
-from services.site_config import SiteConfig  # noqa: E402,I001
+from poindexter.services.site_config import SiteConfig  # noqa: E402,I001
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ The Dev.to API key is stored in app_settings (key: devto_api_key). If not
 configured, all operations gracefully skip.
 
 Usage:
-    from services.devto_service import DevToCrossPostService
+    from poindexter.services.devto_service import DevToCrossPostService
 
     svc = DevToCrossPostService(pool)
     result = await svc.cross_post(
@@ -29,8 +29,8 @@ from urllib.parse import urlparse
 
 import httpx
 
-from services.distribution_ref import tag_for
-from services.logger_config import get_logger
+from poindexter.services.distribution_ref import tag_for
+from poindexter.services.logger_config import get_logger
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
@@ -46,7 +46,7 @@ def _resolve_site_config(site_config: Any) -> Any:
     """
     if site_config is not None:
         return site_config
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
     return SiteConfig()
 
 

@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from services import cost_ledger, spend_throttle
-from services.cost_ledger import SpendBreakdown
-from services.site_config import SiteConfig
+from poindexter.services import cost_ledger, spend_throttle
+from poindexter.services.cost_ledger import SpendBreakdown
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.fixture(autouse=True)

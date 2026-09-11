@@ -42,7 +42,7 @@ back to no-ops when langfuse is not installed at all.
 
 ::
 
-    from services.langfuse_shim import observe, langfuse_context
+    from poindexter.services.langfuse_shim import observe, langfuse_context
 
     @observe(as_type="generation", name="my_llm_call")
     async def call_model(prompt, *, model):

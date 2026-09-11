@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.prompt_manager import UnifiedPromptManager
+from poindexter.services.prompt_manager import UnifiedPromptManager
 
 _SOCIAL_KEYS = (
     "social.research_trends",

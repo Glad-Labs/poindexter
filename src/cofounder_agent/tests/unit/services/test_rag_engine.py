@@ -22,7 +22,7 @@ pytest.importorskip(
     "`pip install llama-index llama-index-embeddings-ollama` to run.",
 )
 
-from services.rag_engine import get_rag_retriever  # noqa: E402
+from poindexter.services.rag_engine import get_rag_retriever  # noqa: E402
 
 
 def _site_config(values: dict | None = None) -> MagicMock:
@@ -157,7 +157,7 @@ class TestFactoryDefaults:
 
         retriever = await get_rag_retriever(pool=pool, site_config=sc)
         with patch(
-            "services.rag_engine._get_embed_model", side_effect=_capture_embed,
+            "poindexter.services.rag_engine._get_embed_model", side_effect=_capture_embed,
         ):
             await retriever._aretrieve(QueryBundle(query_str="x"))
 
@@ -184,7 +184,7 @@ class TestRetrieverQuery:
 
         retriever = await get_rag_retriever(pool=pool, top_k=2)
         with patch(
-            "services.rag_engine._get_embed_model",
+            "poindexter.services.rag_engine._get_embed_model",
             return_value=_stub_embed_model(),
         ):
             results = await retriever._aretrieve(QueryBundle(query_str="backend stack"))
@@ -229,7 +229,7 @@ class TestRetrieverQuery:
         retriever = await get_rag_retriever(pool=pool)
         # Patch sleep so the retry budget (glad-labs-stack#876) doesn't add
         # real backoff delay to the test.
-        with patch("services.rag_engine._get_embed_model", return_value=embed), \
+        with patch("poindexter.services.rag_engine._get_embed_model", return_value=embed), \
                 patch("asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(ConnectionError, match="Failed to connect to Ollama"):
                 await retriever._aretrieve(QueryBundle(query_str="x"))
@@ -253,7 +253,7 @@ class TestRetrieverQuery:
 
         pool = MagicMock()
         retriever = await get_rag_retriever(pool=pool)
-        with patch("services.rag_engine._get_embed_model", return_value=embed), \
+        with patch("poindexter.services.rag_engine._get_embed_model", return_value=embed), \
                 patch("asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(ConnectionError):
                 await retriever.aretrieve("x")
@@ -273,7 +273,7 @@ class TestRetrieverQuery:
             _row("posts", "abc-123", "FastAPI is great.", 0.9),
         ])
         retriever = await get_rag_retriever(pool=pool)
-        with patch("services.rag_engine._get_embed_model", return_value=embed), \
+        with patch("poindexter.services.rag_engine._get_embed_model", return_value=embed), \
                 patch("asyncio.sleep", new_callable=AsyncMock):
             results = await retriever._aretrieve(QueryBundle(query_str="x"))
 
@@ -288,7 +288,7 @@ class TestRetrieverQuery:
         pool.fetch = AsyncMock(side_effect=Exception("pg connection lost"))
         retriever = await get_rag_retriever(pool=pool)
         with patch(
-            "services.rag_engine._get_embed_model",
+            "poindexter.services.rag_engine._get_embed_model",
             return_value=_stub_embed_model(),
         ):
             results = await retriever._aretrieve(QueryBundle(query_str="x"))
@@ -311,7 +311,7 @@ class TestRetrieverQuery:
             pool=pool, source_filter=["posts", "brain"],
         )
         with patch(
-            "services.rag_engine._get_embed_model",
+            "poindexter.services.rag_engine._get_embed_model",
             return_value=_stub_embed_model(),
         ):
             await retriever._aretrieve(QueryBundle(query_str="x"))
@@ -394,7 +394,7 @@ class TestHybridRRF:
             },
         ])
 
-        from services.rag_engine import _build_hybrid_retriever_class
+        from poindexter.services.rag_engine import _build_hybrid_retriever_class
         cls = _build_hybrid_retriever_class()
         h = cls(
             vector_retriever=inner, pool=pool, top_k=3,
@@ -464,7 +464,7 @@ class TestCrossEncoderRerank:
         fake_model = MagicMock()
         fake_model.predict = MagicMock(return_value=[0.1, 0.9, 0.5])
 
-        from services.rag_engine import (
+        from poindexter.services.rag_engine import (
             _RERANKER_CACHE,
             _build_rerank_retriever_class,
         )
@@ -510,7 +510,7 @@ class TestCrossEncoderRerank:
 
         fake_model.predict = _predict
 
-        from services.rag_engine import (
+        from poindexter.services.rag_engine import (
             _RERANKER_CACHE,
             _build_rerank_retriever_class,
         )
@@ -542,7 +542,7 @@ class TestCrossEncoderRerank:
         fake_model = MagicMock()
         fake_model.predict = lambda pairs: (seen.update(pairs=pairs), [0.1])[1]
 
-        from services.rag_engine import (
+        from poindexter.services.rag_engine import (
             _RERANKER_CACHE,
             _build_rerank_retriever_class,
         )
@@ -576,7 +576,7 @@ class TestCrossEncoderRerank:
         # Last candidate scores highest after rerank.
         fake_model.predict = MagicMock(return_value=[0.1, 0.2, 0.99])
 
-        from services.rag_engine import (
+        from poindexter.services.rag_engine import (
             _RERANKER_CACHE,
             _build_rerank_retriever_class,
         )
@@ -612,7 +612,7 @@ class TestCrossEncoderRerank:
         inner = MagicMock()
         inner._aretrieve = AsyncMock(return_value=candidates)
 
-        from services.rag_engine import (
+        from poindexter.services.rag_engine import (
             _RERANKER_CACHE,
             _build_rerank_retriever_class,
         )
@@ -674,7 +674,7 @@ def test_reranker_constructs_on_configured_device(monkeypatch):
     import sys
     import types
 
-    import services.rag_engine as rag
+    import poindexter.services.rag_engine as rag
 
     captured: dict = {}
 

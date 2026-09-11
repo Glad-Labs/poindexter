@@ -43,9 +43,9 @@ from typing import Any
 
 from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 from plugins.stage import StageResult
+from poindexter.services.gpu_admission import GpuBusyError
+from poindexter.services.gpu_scheduler import media_wait_budget_s
 from schemas.video_shot_list import VideoShotList
-from services.gpu_admission import GpuBusyError
-from services.gpu_scheduler import media_wait_budget_s
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ def _build_demo_catalog_block(site_config: Any) -> str:
     all (``feedback_no_silent_defaults``).
     """
     try:
-        from services.demo_clips import available_demos
+        from poindexter.services.demo_clips import available_demos
         demos = available_demos(site_config)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[VIDEO_DIRECTOR] demo catalog unavailable: %s", exc)
@@ -205,7 +205,7 @@ def _extract_json_object(text: str) -> str | None:
     # between the opening fence and the FIRST later ``` — truncating at an
     # embedded triple-backtick inside a string value instead of the real
     # closing fence.
-    from services.llm_text import strip_markdown_fence
+    from poindexter.services.llm_text import strip_markdown_fence
 
     stripped = strip_markdown_fence(text.strip())
 
@@ -551,7 +551,7 @@ class GenerateVideoShotListStage:
         # Render the director prompt via UnifiedPromptManager so edits
         # land in Langfuse + the YAML defaults stay in repo control.
         try:
-            from services.prompt_manager import get_prompt_manager
+            from poindexter.services.prompt_manager import get_prompt_manager
             pm = get_prompt_manager()
             rendered_prompt = pm.get_prompt(
                 prompt_key,
@@ -581,7 +581,7 @@ class GenerateVideoShotListStage:
             return None
 
         # Dispatch the LLM call (Seam 1 Wave 3d, #667 — via the handle).
-        from services.gpu_scheduler import gpu
+        from poindexter.services.gpu_scheduler import gpu
 
         # Disable the director model's reasoning channel (default) — a
         # thinking-capable model (the gemma-4-31B-it-qat director) otherwise

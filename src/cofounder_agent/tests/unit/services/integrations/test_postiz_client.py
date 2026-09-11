@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.integrations.postiz_client import PostizClient, _extract_post_id
+from poindexter.services.integrations.postiz_client import PostizClient, _extract_post_id
 
 
 def _mock_http(captured: dict):

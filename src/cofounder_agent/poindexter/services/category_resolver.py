@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 
-from services.database_service import DatabaseService
+from poindexter.services.database_service import DatabaseService
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)

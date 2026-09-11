@@ -789,7 +789,7 @@ async def _transcript_discord_webhook() -> str | None:
     import asyncpg
 
     from brain.bootstrap import resolve_database_url
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     db_url = resolve_database_url()
     if not db_url:

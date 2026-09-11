@@ -263,7 +263,7 @@ async def test_min_commits_behind_is_configurable():
 def test_min_commits_behind_default_is_seeded():
     """The go-forward default ships in settings_defaults (every-tunable-in-
     app_settings rule); the probe's code default is the backstop."""
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["branch_drift_min_commits_behind"] == "3"
     assert int(DEFAULTS["branch_drift_min_commits_behind"]) == bdp.DEFAULT_MIN_COMMITS_BEHIND

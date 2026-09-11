@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from schemas.video_shot_list import Shot
-from services.site_config import SiteConfig
-from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 
 
 def _shot(source="image_gen", prompt="a cyan circuit board, dark navy backdrop"):
@@ -39,7 +39,7 @@ def _sc(**over):
     return SiteConfig(initial_config=cfg)
 
 
-_DISPATCH = "services.llm_providers.dispatcher.dispatch_complete"
+_DISPATCH = "poindexter.services.llm_providers.dispatcher.dispatch_complete"
 
 
 @pytest.mark.asyncio
@@ -150,7 +150,7 @@ async def test_video_frame_is_extracted_before_scoring(tmp_path):
     extracted.write_bytes(b"extracted-png")
     dispatch = AsyncMock(return_value=_completion('{"score": 50, "reason": "ok"}'))
     with patch(
-        "services.video_renderers.shot_vision_qa._extract_video_frame",
+        "poindexter.services.video_renderers.shot_vision_qa._extract_video_frame",
         AsyncMock(return_value=str(extracted)),
     ) as ex, patch(_DISPATCH, dispatch):
         res = await score_shot_frame(

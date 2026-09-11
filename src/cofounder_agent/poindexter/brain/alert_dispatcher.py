@@ -592,7 +592,7 @@ async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
     back to the cross-instance pool registry inside ``brain.notify``.
     """
     try:
-        from services.integrations.operator_notify import (
+        from poindexter.services.integrations.operator_notify import (
             notify_operator,  # type: ignore
         )
         return notify_operator

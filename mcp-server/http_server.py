@@ -238,7 +238,7 @@ def _oauth_jwt_wrapper(
     expired, refresh me" from "I never had a valid token".
     """
     _ensure_poindexter_on_path()
-    from services.auth.oauth_issuer import (  # type: ignore[import-not-found]
+    from poindexter.services.auth.oauth_issuer import (  # type: ignore[import-not-found]
         InvalidToken,
         verify_token,
     )

@@ -49,7 +49,7 @@ from contextlib import suppress
 from typing import Any
 
 from plugins.image_provider import ImageResult
-from services.chart_render import ChartSpec, Series, chart_alt_text, render_chart
+from poindexter.services.chart_render import ChartSpec, Series, chart_alt_text, render_chart
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +209,7 @@ async def _upload(path: str, *, site_config: Any) -> str:
     1920px — still ~1.6x the CSS width the blog displays it at, which keeps
     axis text crisp after the downscale.
     """
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
 
     if site_config is None:
         raise RuntimeError(

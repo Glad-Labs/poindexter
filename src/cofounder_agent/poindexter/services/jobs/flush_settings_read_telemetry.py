@@ -25,7 +25,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services import settings_read_sink
+from poindexter.services import settings_read_sink
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)

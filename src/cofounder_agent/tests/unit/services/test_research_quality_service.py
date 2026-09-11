@@ -8,8 +8,8 @@ recency scoring, deduplication, uniqueness recalculation, and context formatting
 
 import pytest
 
-from services.research_quality_service import ResearchQualityService, ScoredSource
-from services.site_config import SiteConfig
+from poindexter.services.research_quality_service import ResearchQualityService, ScoredSource
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers

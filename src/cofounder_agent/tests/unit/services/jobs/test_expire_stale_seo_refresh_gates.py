@@ -25,7 +25,7 @@ class _SC:
 
 
 def test_job_has_required_attrs():
-    from services.jobs.expire_stale_seo_refresh_gates import (
+    from poindexter.services.jobs.expire_stale_seo_refresh_gates import (
         ExpireStaleSeoRefreshGatesJob,
     )
 
@@ -45,14 +45,14 @@ def test_job_registered_in_core_samples():
 
 
 def test_max_parked_days_seeded_in_defaults():
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS.get("seo.refresh.gate_max_parked_days") == "14"
 
 
 @pytest.mark.asyncio
 async def test_disabled_when_max_days_zero():
-    from services.jobs.expire_stale_seo_refresh_gates import (
+    from poindexter.services.jobs.expire_stale_seo_refresh_gates import (
         ExpireStaleSeoRefreshGatesJob,
     )
 
@@ -68,7 +68,7 @@ async def test_disabled_when_max_days_zero():
 @pytest.mark.asyncio
 async def test_defaults_to_14_days_without_site_config(monkeypatch):
     """No site_config → the code default (14d) applies, sweep still runs."""
-    from services.jobs import expire_stale_seo_refresh_gates as mod
+    from poindexter.services.jobs import expire_stale_seo_refresh_gates as mod
 
     seen_secs = []
 
@@ -95,7 +95,7 @@ async def test_defaults_to_14_days_without_site_config(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_expires_stale_rows_with_automation_kwargs(monkeypatch):
-    from services.jobs import expire_stale_seo_refresh_gates as mod
+    from poindexter.services.jobs import expire_stale_seo_refresh_gates as mod
 
     stale_rows = [
         {
@@ -165,8 +165,8 @@ async def test_expires_stale_rows_with_automation_kwargs(monkeypatch):
 @pytest.mark.asyncio
 async def test_one_contested_row_never_aborts_the_run(monkeypatch):
     """A row approved mid-sweep raises TaskNotPausedError — skip, keep going."""
-    from services.approval_service import TaskNotPausedError
-    from services.jobs import expire_stale_seo_refresh_gates as mod
+    from poindexter.services.approval_service import TaskNotPausedError
+    from poindexter.services.jobs import expire_stale_seo_refresh_gates as mod
 
     stale_rows = [
         {"task_id": "t-contested", "topic": "a", "gate_paused_at": None,
@@ -208,7 +208,7 @@ async def test_one_contested_row_never_aborts_the_run(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_no_stale_rows_emits_no_finding(monkeypatch):
-    from services.jobs import expire_stale_seo_refresh_gates as mod
+    from poindexter.services.jobs import expire_stale_seo_refresh_gates as mod
 
     class _Conn:
         async def fetch(self, sql, *args):

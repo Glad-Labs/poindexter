@@ -24,8 +24,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Protocol, runtime_checkable
 
-from services.logger_config import get_logger
-from services.model_eval.types import GoldenSet, MetricResult
+from poindexter.services.logger_config import get_logger
+from poindexter.services.model_eval.types import GoldenSet, MetricResult
 
 logger = get_logger(__name__)
 

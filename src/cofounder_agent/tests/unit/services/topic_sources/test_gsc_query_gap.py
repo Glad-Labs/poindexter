@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from services.topic_sources.gsc_query_gap import GscQueryGapSource
+from poindexter.services.topic_sources.gsc_query_gap import GscQueryGapSource
 
 
 class _FakeConn:

@@ -32,7 +32,7 @@ import re
 
 import pytest
 
-from services.topic_batch_service import TopicBatchService
+from poindexter.services.topic_batch_service import TopicBatchService
 
 
 @pytest.fixture(scope="module")

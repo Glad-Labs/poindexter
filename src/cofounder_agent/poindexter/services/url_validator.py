@@ -6,7 +6,7 @@ hallucinated references. Designed to run non-blocking alongside the
 content pipeline: warnings are logged but publication is never held up.
 
 Usage:
-    from services.url_validator import URLValidator
+    from poindexter.services.url_validator import URLValidator
 
     validator = URLValidator(site_config=site_config)
     urls = validator.extract_urls(markdown_content)
@@ -30,8 +30,8 @@ import time
 
 import httpx
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.crawler_ua import build_crawler_ua
 
 logger = get_logger(__name__)

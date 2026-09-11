@@ -34,8 +34,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
@@ -89,7 +89,7 @@ async def make_streaming_callback(
     # Telegram edit-streaming opt-in. Resolve credentials up front so a
     # misconfigured opt-in degrades to no-streaming instead of erroring
     # mid-run.
-    from services.telegram_config import TelegramConfig
+    from poindexter.services.telegram_config import TelegramConfig
 
     tg = TelegramConfig(site_config=site_config)
     bot_token = (await tg.get_telegram_bot_token()).strip()
@@ -192,7 +192,7 @@ class _TelegramStreamCallback:
 
     async def _start(self) -> None:
         """Send the initial status message + capture its message_id."""
-        from services.integrations.handlers.outbound_telegram import (
+        from poindexter.services.integrations.handlers.outbound_telegram import (
             send_telegram_message,
         )
 
@@ -231,7 +231,7 @@ class _TelegramStreamCallback:
         if text == self._last_text:
             return  # avoid "message is not modified" rejections
 
-        from services.integrations.handlers.outbound_telegram import (
+        from poindexter.services.integrations.handlers.outbound_telegram import (
             edit_telegram_message,
         )
 

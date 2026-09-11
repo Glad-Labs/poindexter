@@ -60,7 +60,7 @@ import json
 import click
 
 from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
-from services import experiment_admin
+from poindexter.services import experiment_admin
 
 # ---------------------------------------------------------------------------
 # Status / objective constants — kept in lockstep with the CHECK constraints

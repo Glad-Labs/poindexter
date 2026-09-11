@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
-from services.web_research import WebResearcher
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.web_research import WebResearcher
 
 # getaddrinfo result that resolves any hostname to a public IP, so the
 # url_scraper SSRF guard (run before every fetch + after every redirect)
@@ -31,7 +31,7 @@ _PUBLIC_ADDRINFO = [
 class TestSearchSimple:
     async def test_returns_results(self):
         researcher = WebResearcher(site_config=SiteConfig())
-        with patch("services.web_research.WebResearcher._ddg_search") as mock:
+        with patch("poindexter.services.web_research.WebResearcher._ddg_search") as mock:
             mock.return_value = [
                 {"title": "Test", "url": "https://example.com", "snippet": "A test", "content": ""},
             ]
@@ -41,7 +41,7 @@ class TestSearchSimple:
 
     async def test_empty_on_failure(self):
         researcher = WebResearcher(site_config=SiteConfig())
-        with patch("services.web_research.WebResearcher._ddg_search") as mock:
+        with patch("poindexter.services.web_research.WebResearcher._ddg_search") as mock:
             mock.return_value = []
             results = await researcher.search_simple("nonexistent", num_results=3)
             assert results == []
@@ -182,7 +182,7 @@ class TestExtractContentUserAgent:
         researcher = WebResearcher(site_config=SiteConfig())
         captured: dict = {}
         with patch(
-            "services.web_research._safe_get",
+            "poindexter.services.web_research._safe_get",
             new=self._fake_safe_get(captured),
         ):
             await researcher._extract_content("https://example.com/article")
@@ -198,7 +198,7 @@ class TestExtractContentUserAgent:
         }))
         captured: dict = {}
         with patch(
-            "services.web_research._safe_get",
+            "poindexter.services.web_research._safe_get",
             new=self._fake_safe_get(captured),
         ):
             await researcher._extract_content("https://example.com/article")
@@ -388,7 +388,7 @@ class TestExtractContentEdgeCases:
 
     @pytest.mark.asyncio
     async def test_truncates_to_max_chars(self):
-        from services.web_research import MAX_CONTENT_CHARS
+        from poindexter.services.web_research import MAX_CONTENT_CHARS
         researcher = WebResearcher(site_config=SiteConfig())
         long_text = "lorem ipsum " * 1000  # ~12000 chars
         with patch("httpx.AsyncClient") as mock_client:
@@ -422,14 +422,14 @@ class TestAppContainerWiring:
     """``AppContainer.web_research`` returns a memoised WebResearcher (#272 batch 2)."""
 
     def test_app_container_exposes_web_research(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         researcher = container.web_research
         assert isinstance(researcher, WebResearcher)
 
     def test_cached_property_memoises(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         assert container.web_research is container.web_research
@@ -530,7 +530,7 @@ class TestExtractFailedDedupKey:
     """
 
     def test_hosts_extracted_from_failure_strings(self):
-        from services.web_research import _failure_hosts
+        from poindexter.services.web_research import _failure_hosts
 
         assert _failure_hosts(["https://a.example/x: boom"]) == {"a.example"}
         assert _failure_hosts(
@@ -538,7 +538,7 @@ class TestExtractFailedDedupKey:
         ) == {"a.example", "b.example"}
 
     def test_same_host_different_paths_collapse(self):
-        from services.web_research import _failure_hosts
+        from poindexter.services.web_research import _failure_hosts
 
         assert _failure_hosts(
             ["https://a.example/one: boom", "https://a.example/two: boom"]
@@ -547,7 +547,7 @@ class TestExtractFailedDedupKey:
     def test_unparseable_entry_still_separates(self):
         """A malformed entry must not fall back to a shared constant — an ugly
         key still distinguishes two different failures; a constant does not."""
-        from services.web_research import _failure_hosts
+        from poindexter.services.web_research import _failure_hosts
 
         hosts = _failure_hosts(["not a url at all", "also not a url"])
         assert len(hosts) == 2

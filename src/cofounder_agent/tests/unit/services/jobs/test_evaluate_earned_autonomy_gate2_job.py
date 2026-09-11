@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.evaluate_earned_autonomy_gate2 import EvaluateEarnedAutonomyGate2Job
-from services.site_config import SiteConfig
+from poindexter.services.jobs.evaluate_earned_autonomy_gate2 import EvaluateEarnedAutonomyGate2Job
+from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**overrides):
@@ -76,11 +76,11 @@ async def test_promotes_eligible_combo():
         promoted_rows=[{"id": "ap-1", "post_id": "post-1"}],
     )
     with patch(
-        "services.jobs.evaluate_earned_autonomy_gate2._earned_autonomy_check",
+        "poindexter.services.jobs.evaluate_earned_autonomy_gate2._earned_autonomy_check",
         new_callable=AsyncMock,
         return_value=True,
     ), patch(
-        "services.jobs.evaluate_earned_autonomy_gate2.emit_finding",
+        "poindexter.services.jobs.evaluate_earned_autonomy_gate2.emit_finding",
         return_value=None,
     ) as mock_emit:
         out = await job.run(pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")})
@@ -104,7 +104,7 @@ async def test_skips_ineligible_combo():
         combos=[{"niche_slug": "glad-labs", "medium": "video"}],
     )
     with patch(
-        "services.jobs.evaluate_earned_autonomy_gate2._earned_autonomy_check",
+        "poindexter.services.jobs.evaluate_earned_autonomy_gate2._earned_autonomy_check",
         new_callable=AsyncMock,
         return_value=False,
     ):
@@ -134,10 +134,10 @@ async def test_multiple_combos_only_eligible_promoted():
         return eligibility[medium]
 
     with patch(
-        "services.jobs.evaluate_earned_autonomy_gate2._earned_autonomy_check",
+        "poindexter.services.jobs.evaluate_earned_autonomy_gate2._earned_autonomy_check",
         side_effect=_check,
     ), patch(
-        "services.jobs.evaluate_earned_autonomy_gate2.emit_finding",
+        "poindexter.services.jobs.evaluate_earned_autonomy_gate2.emit_finding",
         return_value=None,
     ):
         out = await job.run(pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")})
@@ -167,10 +167,10 @@ async def test_eligibility_check_exception_continues():
         return True
 
     with patch(
-        "services.jobs.evaluate_earned_autonomy_gate2._earned_autonomy_check",
+        "poindexter.services.jobs.evaluate_earned_autonomy_gate2._earned_autonomy_check",
         side_effect=_check,
     ), patch(
-        "services.jobs.evaluate_earned_autonomy_gate2.emit_finding",
+        "poindexter.services.jobs.evaluate_earned_autonomy_gate2.emit_finding",
         return_value=None,
     ):
         out = await job.run(pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")})

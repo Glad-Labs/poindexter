@@ -68,7 +68,7 @@ from typing import Any
 import httpx
 
 from plugins.stage import StageResult
-from services.image_prompt_sanitizer import (
+from poindexter.services.image_prompt_sanitizer import (
     clean_image_prompt,
     subject_fallback_prompt,
 )
@@ -153,7 +153,7 @@ DEFAULT_STAGE_OVERHEAD_SECONDS = 360
 
 
 def _render_timeout_seconds(site_config: Any) -> int:
-    from services.settings_defaults import default_int
+    from poindexter.services.settings_defaults import default_int
 
     fallback = default_int("image_render_timeout_seconds")
     if site_config is None:
@@ -214,7 +214,7 @@ def resolve_stage_timeout_seconds(site_config: Any) -> int:
     # a cold Qwen load can consume most of one) plus up to three judge calls.
     # The floor must cover it or the node wrapper kills the render it asked
     # for — the exact bug this function exists to prevent.
-    from services.image_fanout import fanout_enabled
+    from poindexter.services.image_fanout import fanout_enabled
 
     if fanout_enabled(site_config):
         fanout_render = (
@@ -326,7 +326,7 @@ class SourceFeaturedImageStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.image_service import get_image_service
+        from poindexter.services.image_service import get_image_service
 
         topic = context.get("topic", "")
         tags = context.get("tags") or []
@@ -403,7 +403,7 @@ class SourceFeaturedImageStage:
             # context just builds a fresh one here.
             style_tracker = context.get("image_style_tracker")
             if style_tracker is None:
-                from services.image_style_rotation import ImageStyleTracker
+                from poindexter.services.image_style_rotation import ImageStyleTracker
                 if site_config is not None:
                     style_tracker = ImageStyleTracker(
                         history_size=site_config.get_int("image_style_history_size", 10),
@@ -713,7 +713,7 @@ async def _record_featured_image_asset(
     Glad-Labs/glad-labs-stack#193).
     """
     try:
-        from services.media_asset_recorder import record_media_asset
+        from poindexter.services.media_asset_recorder import record_media_asset
     except Exception as exc:  # noqa: BLE001 — defensive import guard
         from utils.findings import emit_finding
 
@@ -884,7 +884,7 @@ async def _try_image_gen_featured(
         # fall through to the existing no-image path unchanged. The service
         # never imports this stage; the stage composes it (services must not
         # depend on modules/content).
-        from services import image_fanout
+        from poindexter.services import image_fanout
 
         if image_fanout.fanout_enabled(site_config):
             fanout_result = await image_fanout.run_featured_fanout(
@@ -964,7 +964,7 @@ def _resolve_image_prompt(key: str, **kwargs: Any) -> str:
     never hard-fails the image stage. #image-zimage-and-variety.
     """
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
 
         return get_prompt_manager().get_prompt(key, **kwargs)
     except Exception as exc:  # noqa: BLE001 — prompt resolution is best-effort
@@ -1284,8 +1284,8 @@ async def _render_image_gen(
     the caller from ``site_config`` so neither the render cap nor the GPU-session
     attribution is hardcoded to a single model. #image-zimage-and-variety.
     """
-    from services.gpu_admission import GpuBusyError
-    from services.gpu_scheduler import GpuLockTimeoutError, gpu
+    from poindexter.services.gpu_admission import GpuBusyError
+    from poindexter.services.gpu_scheduler import GpuLockTimeoutError, gpu
 
     try:
         async with gpu.lock(
@@ -1345,7 +1345,7 @@ async def _render_image_gen(
         return None, {"transient": True, "failure": f"HTTP {resp.status_code}"}
 
     if resp.status_code != 200:
-        from services.image_ocr_gate import (
+        from poindexter.services.image_ocr_gate import (
             describe_ocr_gate_rejection,
             is_ocr_gate_rejection,
             safe_json,
@@ -1471,7 +1471,7 @@ async def _upload_featured_to_r2(
 ) -> str:
     """Upload the featured image to R2 and return the final URL."""
     try:
-        from services.r2_upload_service import R2UploadService
+        from poindexter.services.r2_upload_service import R2UploadService
         if site_config is None:
             raise RuntimeError(
                 "R2 upload requires site_config; stage execute() must "

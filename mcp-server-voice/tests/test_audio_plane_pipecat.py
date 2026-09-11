@@ -190,8 +190,8 @@ def fake_pipecat(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     voice_pipecat.resolve_livekit_creds = _resolve_creds
     voice_pipecat.resolve_livekit_creds_async = _resolve_creds_async
 
-    monkeypatch.setitem(sys.modules, "services", services_pkg)
-    monkeypatch.setitem(sys.modules, "services.voice_pipecat", voice_pipecat)
+    monkeypatch.setitem(sys.modules, "poindexter.services", services_pkg)
+    monkeypatch.setitem(sys.modules, "poindexter.services.voice_pipecat", voice_pipecat)
 
     # --- pipecat package tree (only the symbols the plane imports) ---
     def _pkg(name: str) -> types.ModuleType:
@@ -384,7 +384,7 @@ class TestConnect:
         self, plane_module: Any, fake_pipecat: dict[str, Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from services import voice_pipecat as vp  # type: ignore[import-not-found]
+        from poindexter.services import voice_pipecat as vp  # type: ignore[import-not-found]
 
         def _empty(_cfg: Any) -> tuple[str, str, str]:
             return ("", "", "")

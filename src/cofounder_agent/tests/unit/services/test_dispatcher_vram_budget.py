@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.llm_providers import dispatcher
-from services.site_config import SiteConfig
+from poindexter.services.llm_providers import dispatcher
+from poindexter.services.site_config import SiteConfig
 
 
 def _container(settings: dict, *, detected: float | None):
@@ -20,7 +20,7 @@ def _container(settings: dict, *, detected: float | None):
 @pytest.mark.asyncio
 async def test_auto_uses_detected_pool():
     container = _container({"gpu_vram_total_gb": "auto"}, detected=55.8)
-    with patch("services.container_registry.get_container", return_value=container):
+    with patch("poindexter.services.container_registry.get_container", return_value=container):
         total, reserve, _kv = await dispatcher._budget_inputs({})
     assert total == pytest.approx(55.8)
     assert reserve == 3.0
@@ -29,7 +29,7 @@ async def test_auto_uses_detected_pool():
 @pytest.mark.asyncio
 async def test_explicit_number_overrides_and_skips_detection():
     container = _container({"gpu_vram_total_gb": "48"}, detected=55.8)
-    with patch("services.container_registry.get_container", return_value=container):
+    with patch("poindexter.services.container_registry.get_container", return_value=container):
         total, _reserve, _kv = await dispatcher._budget_inputs({})
     assert total == 48.0
     container.gpu_registry.total_vram_gb.assert_not_awaited()
@@ -41,7 +41,7 @@ async def test_detection_fail_uses_fallback_and_emits_finding():
         {"gpu_vram_total_gb": "auto", "gpu_vram_autodetect_fallback_gb": "24"},
         detected=None,
     )
-    with patch("services.container_registry.get_container", return_value=container), \
+    with patch("poindexter.services.container_registry.get_container", return_value=container), \
          patch("utils.findings.emit_finding") as mock_emit:
         total, _reserve, _kv = await dispatcher._budget_inputs({})
     assert total == 24.0

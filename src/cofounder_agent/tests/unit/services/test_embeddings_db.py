@@ -19,7 +19,7 @@ def mock_pool():
 
 @pytest.fixture
 def db(mock_pool):
-    from services.embeddings_db import EmbeddingsDatabase
+    from poindexter.services.embeddings_db import EmbeddingsDatabase
 
     pool, _ = mock_pool
     return EmbeddingsDatabase(pool)

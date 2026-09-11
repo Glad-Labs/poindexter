@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 _CORPUS = (
     "RECENT WEB SOURCES (cite if relevant):\n"

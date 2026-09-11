@@ -28,7 +28,7 @@ import shutil
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from services.media_asset_recorder import record_media_asset
+from poindexter.services.media_asset_recorder import record_media_asset
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ def _duration_ms(shot_list: Any) -> int | None:
 async def _probed_duration_ms(path: Any) -> int | None:
     """ffprobe the durable file's REAL duration, ms. None on any failure."""
     try:
-        from services.media_quality_service import _probe_duration
+        from poindexter.services.media_quality_service import _probe_duration
 
         dur_s = await _probe_duration(str(path))
         return int(float(dur_s) * 1000) if dur_s and dur_s > 0 else None
@@ -171,7 +171,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # Durable media dir — imported lazily so this light atom doesn't pull in
     # video_service's generation deps at module load (and so tests can patch
     # services.video_service.VIDEO_DIR).
-    from services.video_service import VIDEO_DIR
+    from poindexter.services.video_service import VIDEO_DIR
 
     # Idempotency guard: skip any flavor this task already recorded so a graph
     # re-execution doesn't strand duplicate task-keyed media_assets rows. See

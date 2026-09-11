@@ -23,8 +23,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.retention_janitor import _JANITOR_TARGETS, RetentionJanitor
-from services.site_config import SiteConfig
+from poindexter.services.retention_janitor import _JANITOR_TARGETS, RetentionJanitor
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -150,14 +150,14 @@ class TestAppContainerWiring:
     """``AppContainer.retention_janitor`` returns a memoised RetentionJanitor."""
 
     def test_app_container_exposes_retention_janitor(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         janitor = container.retention_janitor
         assert isinstance(janitor, RetentionJanitor)
 
     def test_cached_property_memoises(self):
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         assert container.retention_janitor is container.retention_janitor

@@ -22,7 +22,7 @@ from modules.content.content_validator import (
     _is_tech_post,
     validate_content,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2g: content_validator's module-level ``site_config`` global was
 # deleted; injection is mandatory. The density tests own a local SiteConfig

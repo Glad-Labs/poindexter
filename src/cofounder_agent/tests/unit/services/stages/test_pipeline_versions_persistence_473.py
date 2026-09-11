@@ -114,17 +114,17 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         }
 
         with patch(
-            "services.pipeline_db.PipelineDB", return_value=fake_pipeline_db,
+            "poindexter.services.pipeline_db.PipelineDB", return_value=fake_pipeline_db,
         ), patch(
-            "services.text_utils.normalize_text", side_effect=lambda s: s,
+            "poindexter.services.text_utils.normalize_text", side_effect=lambda s: s,
         ), patch(
-            "services.excerpt_generator.generate_excerpt",
+            "poindexter.services.excerpt_generator.generate_excerpt",
             return_value="The hidden costs of 128k context windows...",
         ), patch(
-            "services.title_generation.strip_qa_batch_suffix",
+            "poindexter.services.title_generation.strip_qa_batch_suffix",
             side_effect=lambda s: s.split(" (2026-")[0] if " (2026-" in s else s,
         ), patch(
-            "services.content_revisions_logger.log_revision",
+            "poindexter.services.content_revisions_logger.log_revision",
             new=AsyncMock(),
         ):
             await FinalizeTaskStage().execute(ctx, {})
@@ -196,15 +196,15 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         }
 
         with patch(
-            "services.pipeline_db.PipelineDB", return_value=fake_pipeline_db,
+            "poindexter.services.pipeline_db.PipelineDB", return_value=fake_pipeline_db,
         ), patch(
-            "services.text_utils.normalize_text", side_effect=lambda s: s,
+            "poindexter.services.text_utils.normalize_text", side_effect=lambda s: s,
         ), patch(
-            "services.excerpt_generator.generate_excerpt", return_value="excerpt",
+            "poindexter.services.excerpt_generator.generate_excerpt", return_value="excerpt",
         ), patch(
-            "services.title_generation.strip_qa_batch_suffix", side_effect=lambda s: s,
+            "poindexter.services.title_generation.strip_qa_batch_suffix", side_effect=lambda s: s,
         ), patch(
-            "services.content_revisions_logger.log_revision", new=AsyncMock(),
+            "poindexter.services.content_revisions_logger.log_revision", new=AsyncMock(),
         ):
             await FinalizeTaskStage().execute(ctx, {})
 
@@ -249,17 +249,17 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         }
 
         with patch(
-            "services.pipeline_db.PipelineDB", return_value=fake_pipeline_db,
+            "poindexter.services.pipeline_db.PipelineDB", return_value=fake_pipeline_db,
         ), patch(
-            "services.text_utils.normalize_text", side_effect=lambda s: s,
+            "poindexter.services.text_utils.normalize_text", side_effect=lambda s: s,
         ), patch(
-            "services.excerpt_generator.generate_excerpt",
+            "poindexter.services.excerpt_generator.generate_excerpt",
             return_value="excerpt",
         ), patch(
-            "services.title_generation.strip_qa_batch_suffix",
+            "poindexter.services.title_generation.strip_qa_batch_suffix",
             side_effect=lambda s: s,
         ), patch(
-            "services.content_revisions_logger.log_revision",
+            "poindexter.services.content_revisions_logger.log_revision",
             new=AsyncMock(),
         ):
             result = await FinalizeTaskStage().execute(ctx, {})
@@ -299,17 +299,17 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         }
 
         with patch(
-            "services.pipeline_db.PipelineDB", return_value=fake_pipeline_db,
+            "poindexter.services.pipeline_db.PipelineDB", return_value=fake_pipeline_db,
         ), patch(
-            "services.text_utils.normalize_text", side_effect=lambda s: s,
+            "poindexter.services.text_utils.normalize_text", side_effect=lambda s: s,
         ), patch(
-            "services.excerpt_generator.generate_excerpt",
+            "poindexter.services.excerpt_generator.generate_excerpt",
             return_value="excerpt",
         ), patch(
-            "services.title_generation.strip_qa_batch_suffix",
+            "poindexter.services.title_generation.strip_qa_batch_suffix",
             side_effect=lambda s: s,
         ), patch(
-            "services.content_revisions_logger.log_revision",
+            "poindexter.services.content_revisions_logger.log_revision",
             new=AsyncMock(),
         ):
             result = await FinalizeTaskStage().execute(ctx, {})

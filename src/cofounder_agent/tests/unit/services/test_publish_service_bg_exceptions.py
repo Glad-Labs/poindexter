@@ -22,8 +22,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.publish_service import _spawn_background, _upload_media_to_r2_bg
-from services.site_config import SiteConfig
+from poindexter.services.publish_service import _spawn_background, _upload_media_to_r2_bg
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -76,7 +76,7 @@ async def test_spawn_background_forwards_to_error_tracker():
     fake_sentry_mod = MagicMock()
     fake_sentry_mod.SentryIntegration = mock_tracker
 
-    with patch.dict(sys.modules, {"services.sentry_integration": fake_sentry_mod}):
+    with patch.dict(sys.modules, {"poindexter.services.sentry_integration": fake_sentry_mod}):
         task = _spawn_background(_raise(boom), name="r2_upload(post-xyz)")
         await asyncio.gather(task, return_exceptions=True)
 
@@ -119,7 +119,7 @@ async def test_spawn_background_no_error_log_on_cancel(caplog):
 @pytest.mark.asyncio
 async def test_spawn_background_removes_task_from_strong_ref_set():
     """The _background_tasks strong-ref set is cleaned up on done."""
-    import services.publish_service as ps_mod
+    import poindexter.services.publish_service as ps_mod
 
     initial_size = len(ps_mod._background_tasks)
     task = _spawn_background(_succeed(), name="cleanup_check")
@@ -160,7 +160,7 @@ async def test_upload_media_bg_podcast_failure_does_not_kill_video(caplog):
     fake_r2_mod = MagicMock()
     fake_r2_mod.R2UploadService = MagicMock(return_value=r2)
 
-    with patch.dict(sys.modules, {"services.r2_upload_service": fake_r2_mod}):
+    with patch.dict(sys.modules, {"poindexter.services.r2_upload_service": fake_r2_mod}):
         with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
             await _upload_media_to_r2_bg(_FAST_SC, "post-abc")
 
@@ -185,7 +185,7 @@ async def test_upload_media_bg_video_failure_does_not_kill_podcast(caplog):
     fake_r2_mod = MagicMock()
     fake_r2_mod.R2UploadService = MagicMock(return_value=r2)
 
-    with patch.dict(sys.modules, {"services.r2_upload_service": fake_r2_mod}):
+    with patch.dict(sys.modules, {"poindexter.services.r2_upload_service": fake_r2_mod}):
         with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
             await _upload_media_to_r2_bg(_FAST_SC, "post-def")
 
@@ -213,7 +213,7 @@ async def test_upload_media_bg_both_failures_independent(caplog):
     fake_r2_mod = MagicMock()
     fake_r2_mod.R2UploadService = MagicMock(return_value=r2)
 
-    with patch.dict(sys.modules, {"services.r2_upload_service": fake_r2_mod}):
+    with patch.dict(sys.modules, {"poindexter.services.r2_upload_service": fake_r2_mod}):
         with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
             await _upload_media_to_r2_bg(_FAST_SC, "post-ghi")
 

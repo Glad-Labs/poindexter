@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
-from services.web_research import WebResearcher
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.web_research import WebResearcher
 
 
 class TestWebResearchExceptionLogging:
@@ -41,7 +41,7 @@ class TestWebResearchExceptionLogging:
                 return gather_return
 
             with (
-                patch("services.web_research.asyncio.gather", side_effect=_fake_gather),
+                patch("poindexter.services.web_research.asyncio.gather", side_effect=_fake_gather),
                 caplog.at_level(logging.WARNING, logger="poindexter.services.web_research"),
             ):
                 results = await researcher.search("test query")
@@ -78,7 +78,7 @@ class TestWebResearchExceptionLogging:
             mock_ddg.return_value = ddg_results
 
             with (
-                patch("services.web_research.asyncio.gather", side_effect=_fake_gather),
+                patch("poindexter.services.web_research.asyncio.gather", side_effect=_fake_gather),
                 caplog.at_level(logging.WARNING, logger="poindexter.services.web_research"),
             ):
                 results = await researcher.search("test query")
@@ -111,7 +111,7 @@ class TestWebResearchExceptionLogging:
             mock_ddg.return_value = ddg_results
 
             with (
-                patch("services.web_research.asyncio.gather", side_effect=_fake_gather),
+                patch("poindexter.services.web_research.asyncio.gather", side_effect=_fake_gather),
                 caplog.at_level(logging.WARNING, logger="poindexter.services.web_research"),
             ):
                 results = await researcher.search("test query")

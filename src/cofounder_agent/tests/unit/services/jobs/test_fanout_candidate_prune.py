@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.fanout_candidate_prune import (
+from poindexter.services.jobs.fanout_candidate_prune import (
     _MIN_RETENTION_DAYS,
     _PREFIX,
     FanoutCandidatePruneJob,
@@ -46,7 +46,7 @@ def _svc(objects, *, deleted_ok=True, delete_exc=None):
 
 
 async def _run(svc, **settings):
-    with patch("services.r2_upload_service.R2UploadService",
+    with patch("poindexter.services.r2_upload_service.R2UploadService",
                MagicMock(return_value=svc)):
         return await FanoutCandidatePruneJob().run(
             MagicMock(), {"_site_config": _sc(**settings)})
@@ -168,7 +168,7 @@ async def test_missing_site_config_refuses_rather_than_guessing():
     """No SiteConfig means no resolvable retention window; guessing one is the
     silent default that must never gate a delete."""
     svc = _svc([_obj(f"{_PREFIX}20260101/t1/a-1.png", 400)])
-    with patch("services.r2_upload_service.R2UploadService",
+    with patch("poindexter.services.r2_upload_service.R2UploadService",
                MagicMock(return_value=svc)):
         res = await FanoutCandidatePruneJob().run(MagicMock(), {})
     assert res.ok is False

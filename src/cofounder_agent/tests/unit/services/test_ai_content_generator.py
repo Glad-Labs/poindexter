@@ -926,7 +926,7 @@ class TestLoadGenerationPrompts:
         ``{target_audience}`` and ``{domain}`` placeholders; the call
         site must pass them or KeyError fires inside ``str.format``.
         """
-        from services.prompt_manager import UnifiedPromptManager
+        from poindexter.services.prompt_manager import UnifiedPromptManager
 
         gen = _make_generator()
         real_pm = UnifiedPromptManager()
@@ -962,7 +962,7 @@ class TestLoadGenerationPrompts:
         a visible string the operator can grep for, not an invisible
         empty-substitution.
         """
-        from services.prompt_manager import UnifiedPromptManager
+        from poindexter.services.prompt_manager import UnifiedPromptManager
 
         gen = _make_generator()
         real_pm = UnifiedPromptManager()
@@ -1440,7 +1440,7 @@ class TestTryOllamaDispatcherRouting:
             "target_length": 100, "topic": "t", "attempts": [], "start_time": 0.0,
         }
         with patch(
-            "services.llm_providers.dispatcher.dispatch_complete",
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete",
             dispatch_mock,
         ):
             result = await gen._try_ollama(ctx)
@@ -1543,7 +1543,7 @@ class TestWriterModelPrecedence:
         }.get(k, _d)
         sc._pool = object()
         with patch(
-            "services.integrations.operator_notify.notify_operator", AsyncMock(),
+            "poindexter.services.integrations.operator_notify.notify_operator", AsyncMock(),
         ):
             with pytest.raises(RuntimeError):
                 await _resolve_rag_writer_model(site_config=sc)

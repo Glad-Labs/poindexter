@@ -24,7 +24,7 @@ import textwrap
 
 import pytest
 
-from services.topic_batch_service import TopicBatchService
+from poindexter.services.topic_batch_service import TopicBatchService
 
 
 def _src(fn) -> str:

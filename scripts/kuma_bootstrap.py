@@ -225,7 +225,7 @@ async def main() -> int:
         # SiteConfig handles the pgcrypto envelope for is_secret rows. Reading
         # raw `value` directly returns ciphertext (`enc:v1:...`) — passing that
         # to Kuma's login fails. SiteConfig.get_secret() decrypts on the fly.
-        from services.site_config import SiteConfig  # noqa: WPS433 — runtime path
+        from poindexter.services.site_config import SiteConfig  # noqa: WPS433 — runtime path
 
         sc = SiteConfig(initial_config={})
         await sc.load(pool)

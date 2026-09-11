@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from services.llm_text import ollama_chat_text, resolve_structured_model
+from poindexter.services.llm_text import ollama_chat_text, resolve_structured_model
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class ImportReport:
 
 def _resolve_prompt(*, title: str, description: str) -> str:
     try:
-        from services.prompt_manager import get_prompt_manager
+        from poindexter.services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(
             _PROMPT_KEY, title=title, description=description,
         )

@@ -14,7 +14,7 @@ import asyncio
 
 import pytest
 
-from services.gpu_scheduler import _PriorityGate
+from poindexter.services.gpu_scheduler import _PriorityGate
 
 
 async def _spawn_waiter(gate: _PriorityGate, order: list[str], name: str, rank: int = 0):

@@ -243,8 +243,8 @@ async def _run(db_url: str, *, execute: bool) -> int:
             "change). Ensure ~/.poindexter/bootstrap.toml has poindexter_secret_key.",
         )
     import asyncpg
-    from services.bootstrap import build_container
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.bootstrap import build_container
+    from poindexter.services.r2_upload_service import R2UploadService
 
     host_root = _data_root()
     pool = await asyncpg.create_pool(db_url, min_size=1, max_size=4)

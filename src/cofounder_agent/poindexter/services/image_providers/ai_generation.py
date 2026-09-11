@@ -213,7 +213,7 @@ async def _build_image_gen_prompt(
             # Production path — dispatch through the configured LLM provider
             # so provider-swappability, cost tracking, retries, and Langfuse
             # tracing apply uniformly (poindexter#535).
-            from services.llm_providers.dispatcher import dispatch_complete
+            from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
             completion = await dispatch_complete(
                 pool=pool,

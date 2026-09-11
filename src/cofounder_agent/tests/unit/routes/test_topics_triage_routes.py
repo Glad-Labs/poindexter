@@ -27,8 +27,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.topic_batch_service import BatchView, CandidateView
 from routes.topics_routes import router
-from services.topic_batch_service import BatchView, CandidateView
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 

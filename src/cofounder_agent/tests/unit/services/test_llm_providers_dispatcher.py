@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.llm_providers import dispatcher
+from poindexter.services.llm_providers import dispatcher
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -532,7 +532,7 @@ class TestDispatchCompleteAutoLog:
         guard.estimate_local_kwh.return_value = 0.001
         guard.kwh_to_usd.return_value = 0.00016
         with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
-             patch("services.cost_guard.CostGuard", return_value=guard):
+             patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             await dispatcher.dispatch_complete(
                 pool,
                 messages=[{"role": "user", "content": "hi"}],
@@ -573,7 +573,7 @@ class TestDispatchCompleteAutoLog:
         guard = MagicMock()
         guard.estimate_local_kwh.return_value = 0.001
         with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
-             patch("services.cost_guard.CostGuard", return_value=guard):
+             patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             await dispatcher.dispatch_complete(
                 pool,
                 messages=[{"role": "user", "content": "hi"}],
@@ -610,7 +610,7 @@ class TestDispatchCompleteAutoLog:
         guard.estimate_local_kwh.return_value = 0.001
         guard.kwh_to_usd.return_value = 0.00016
         with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
-             patch("services.cost_guard.CostGuard", return_value=guard):
+             patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             await dispatcher.dispatch_complete(
                 pool, messages=[{"role": "user", "content": "hi"}],
                 model="llama3.2:3b", phase="ollama_chat_text",
@@ -648,7 +648,7 @@ class TestDispatchCompleteAutoLog:
         guard.estimate_local_kwh.return_value = 0.0005
         guard.kwh_to_usd.return_value = 0.00008
         with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
-             patch("services.cost_guard.CostGuard", return_value=guard):
+             patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             with pytest.raises(RuntimeError, match="upstream timeout"):
                 await dispatcher.dispatch_complete(
                     pool, messages=[{"role": "user", "content": "hi"}],
@@ -735,7 +735,7 @@ class TestEnforceBudgetIfPaid:
     async def test_local_call_skips_cost_guard(self):
         """A local model must NOT even construct a CostGuard — zero overhead,
         zero risk to the 99.99% local path."""
-        with patch("services.cost_guard.CostGuard") as CG:
+        with patch("poindexter.services.cost_guard.CostGuard") as CG:
             await dispatcher._enforce_budget_if_paid(
                 pool=MagicMock(), provider=_FakeProvider("ollama_native"),
                 model="gemma3:27b", provider_config={},
@@ -745,7 +745,7 @@ class TestEnforceBudgetIfPaid:
     async def test_paid_call_enforces_budget(self):
         guard = MagicMock()
         guard.check_budget = AsyncMock()
-        with patch("services.cost_guard.CostGuard", return_value=guard):
+        with patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             await dispatcher._enforce_budget_if_paid(
                 pool=MagicMock(), provider=_FakeProvider("litellm"),
                 model="openai/gpt-4o-mini", provider_config={},
@@ -753,13 +753,13 @@ class TestEnforceBudgetIfPaid:
         guard.check_budget.assert_awaited_once()
 
     async def test_paid_call_over_budget_raises(self):
-        from services.cost_guard import CostGuardExhausted
+        from poindexter.services.cost_guard import CostGuardExhausted
 
         guard = MagicMock()
         guard.check_budget = AsyncMock(
             side_effect=CostGuardExhausted("over budget", scope="daily")
         )
-        with patch("services.cost_guard.CostGuard", return_value=guard):
+        with patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             with pytest.raises(CostGuardExhausted):
                 await dispatcher._enforce_budget_if_paid(
                     pool=MagicMock(), provider=_FakeProvider("litellm"),
@@ -772,7 +772,7 @@ class TestDispatchCompleteBudgetGate:
     async def test_paid_call_over_budget_blocks_before_provider(self):
         """End-to-end: dispatch_complete enforces the spend cap BEFORE calling
         the provider, so an over-budget paid call never fires (audit H2)."""
-        from services.cost_guard import CostGuardExhausted
+        from poindexter.services.cost_guard import CostGuardExhausted
 
         pool = _FakePool(setting_value="litellm")
         provider = _FakeProvider(name="litellm")
@@ -783,7 +783,7 @@ class TestDispatchCompleteBudgetGate:
         with patch.object(
             dispatcher, "get_all_llm_providers", return_value=[provider]
         ), patch(
-            "services.cost_guard.CostGuard", return_value=guard
+            "poindexter.services.cost_guard.CostGuard", return_value=guard
         ), patch.object(
             dispatcher, "get_provider_config", AsyncMock(return_value={})
         ):
@@ -806,7 +806,7 @@ class TestDispatchCompleteBudgetGate:
             dispatcher, "get_all_llm_providers", return_value=[provider]
         ), patch.object(
             dispatcher, "get_provider_config", AsyncMock(return_value={})
-        ), patch("services.cost_guard.CostGuard", return_value=guard):
+        ), patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             result = await dispatcher.dispatch_complete(
                 pool, messages=[{"role": "user", "content": "hi"}],
                 model="gemma3:27b",
@@ -842,7 +842,7 @@ class TestLocalElectricityAttribution:
         guard.estimate_local_kwh.return_value = 0.002
         guard.kwh_to_usd.return_value = 0.00032
         with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
-             patch("services.cost_guard.CostGuard", return_value=guard):
+             patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             await dispatcher.dispatch_complete(
                 pool,
                 messages=[{"role": "user", "content": "hi"}],
@@ -870,7 +870,7 @@ class TestLocalElectricityAttribution:
         # _enforce_budget_if_paid also uses CostGuard.check_budget — must be async.
         guard.check_budget = AsyncMock()
         with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
-             patch("services.cost_guard.CostGuard", return_value=guard):
+             patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             await dispatcher.dispatch_complete(
                 pool,
                 messages=[{"role": "user", "content": "hi"}],
@@ -890,7 +890,7 @@ class TestLocalElectricityAttribution:
         guard = MagicMock()
         guard.estimate_local_kwh.side_effect = RuntimeError("gpu metrics unavailable")
         with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
-             patch("services.cost_guard.CostGuard", return_value=guard):
+             patch("poindexter.services.cost_guard.CostGuard", return_value=guard):
             # Must not raise.
             result = await dispatcher.dispatch_complete(
                 pool, messages=[{"role": "user", "content": "hi"}], model="gemma3:27b",
@@ -928,13 +928,13 @@ class TestGpuSerializeLocalDispatch:
         assert dispatcher._gpu_serialize_local_dispatch("openai/gpt-4o", {}) is False
 
     def test_local_call_serializes_by_default(self):
-        with patch("services.container_registry.get_container", return_value=None):
+        with patch("poindexter.services.container_registry.get_container", return_value=None):
             assert dispatcher._gpu_serialize_local_dispatch("gemma3:27b", {}) is True
 
     def test_flag_off_disables_for_local(self):
         container = MagicMock()
         container.site_config.get_bool.return_value = False
-        with patch("services.container_registry.get_container", return_value=container):
+        with patch("poindexter.services.container_registry.get_container", return_value=container):
             assert dispatcher._gpu_serialize_local_dispatch("gemma3:27b", {}) is False
         container.site_config.get_bool.assert_called_once_with(
             "gpu_serialize_llm_dispatch", True,
@@ -979,7 +979,7 @@ class TestDispatchCompleteGpuSerialization:
         with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
              patch.object(dispatcher, "get_provider_config", AsyncMock(return_value={})), \
              patch.object(dispatcher, "_record_dispatch_cost", AsyncMock()), \
-             patch("services.cost_guard.CostGuard", return_value=guard), \
+             patch("poindexter.services.cost_guard.CostGuard", return_value=guard), \
              patch.object(dispatcher, "gpu", tracker):
             await dispatcher.dispatch_complete(
                 pool,
@@ -1124,7 +1124,7 @@ class TestCostLogModelIdentity:
         back to the bare spelling with all tests still green — so assert the
         method exists AND that it namespaces a bare tag.
         """
-        from services.llm_providers.litellm_provider import LiteLLMProvider
+        from poindexter.services.llm_providers.litellm_provider import LiteLLMProvider
 
         resolver = getattr(LiteLLMProvider, "_resolve_model", None)
         assert callable(resolver), "LiteLLMProvider._resolve_model went away"

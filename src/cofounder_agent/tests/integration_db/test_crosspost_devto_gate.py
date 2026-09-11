@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.jobs.crosspost_to_devto import CrosspostToDevtoJob
+from poindexter.services.jobs.crosspost_to_devto import CrosspostToDevtoJob
 
 pytestmark = [
     pytest.mark.integration_db,
@@ -104,7 +104,7 @@ async def test_gate_selects_only_allowlisted_high_quality(test_pool):
 
     svc.cross_post_by_post_id = AsyncMock(side_effect=_cp)
 
-    with patch("services.devto_service.DevToCrossPostService", return_value=svc):
+    with patch("poindexter.services.devto_service.DevToCrossPostService", return_value=svc):
         result = await CrosspostToDevtoJob().run(test_pool, _cfg())
 
     assert result.ok is True

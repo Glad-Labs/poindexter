@@ -49,7 +49,7 @@ def test_gates_list_renders_default_section_and_table():
             new=AsyncMock(return_value=object()),
         ),
         patch(
-            "services.approval_service.list_gates",
+            "poindexter.services.approval_service.list_gates",
             new=AsyncMock(return_value=_canned_rows()),
         ),
     ):
@@ -80,7 +80,7 @@ def test_gates_list_json_is_superset():
             new=AsyncMock(return_value=object()),
         ),
         patch(
-            "services.approval_service.list_gates",
+            "poindexter.services.approval_service.list_gates",
             new=AsyncMock(return_value=_canned_rows()),
         ),
     ):

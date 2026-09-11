@@ -13,8 +13,8 @@ from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 from modules.content.api import PostsService
-from services.image_markers import strip_unresolved_image_markers
-from services.logger_config import get_logger
+from poindexter.services.image_markers import strip_unresolved_image_markers
+from poindexter.services.logger_config import get_logger
 from utils.content_formatting import convert_markdown_to_html  # still used by preview_post
 from utils.error_handler import handle_route_error
 from utils.rate_limiter import limiter
@@ -137,8 +137,8 @@ async def preview_post(
                     if post.get(dt_field):
                         post[dt_field] = post[dt_field].isoformat()
                 # Include podcast/video availability
-                from services.podcast_service import PODCAST_DIR
-                from services.video_service import VIDEO_DIR
+                from poindexter.services.podcast_service import PODCAST_DIR
+                from poindexter.services.video_service import VIDEO_DIR
                 post_id = str(post["id"])
                 post["has_podcast"] = (PODCAST_DIR / f"{post_id}.mp3").exists()
                 post["has_video"] = (VIDEO_DIR / f"{post_id}.mp4").exists()
@@ -163,7 +163,7 @@ async def preview_post(
                 # markdown images never appear. This is what made the preview
                 # diverge from the published output. (#540)
                 if post.get("content"):
-                    from services.llm_text import maybe_unwrap_json
+                    from poindexter.services.llm_text import maybe_unwrap_json
                     post["content"] = convert_markdown_to_html(
                         maybe_unwrap_json(post["content"])
                     )
@@ -196,7 +196,7 @@ async def preview_post(
             # the article — not a raw JSON code block — matching the published
             # output. Then convert markdown to HTML for frontend rendering.
             if task.get("content"):
-                from services.llm_text import maybe_unwrap_json
+                from poindexter.services.llm_text import maybe_unwrap_json
                 task["content"] = convert_markdown_to_html(
                     maybe_unwrap_json(task["content"])
                 )
@@ -548,7 +548,7 @@ async def unpublish_post_route(
     ``unpublished: false`` with a reason. Accepts a full UUID or 8-char prefix.
     """
     try:
-        from services.publish_service import unpublish_post
+        from poindexter.services.publish_service import unpublish_post
 
         pool = await get_db_pool()
         # 404 if the prefix matches no post, 409 if ambiguous; a full UUID
@@ -754,7 +754,7 @@ async def rebuild_static_export(
     pool = getattr(db_service, "cloud_pool", None) or db_service.pool
 
     try:
-        from services.static_export_service import export_full_rebuild
+        from poindexter.services.static_export_service import export_full_rebuild
         # #272 Phase-2d: export_full_rebuild requires an explicit site_config.
         result = await export_full_rebuild(pool, site_config=site_config_dep)
 
@@ -770,7 +770,7 @@ async def rebuild_static_export(
         revalidation_success = False
         if result.get("success"):
             try:
-                from services.revalidation_service import (
+                from poindexter.services.revalidation_service import (
                     trigger_nextjs_revalidation,
                 )
 

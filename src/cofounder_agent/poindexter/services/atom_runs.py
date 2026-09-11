@@ -63,7 +63,7 @@ def _catalog_by_name() -> dict[str, Any]:
     """Best-effort atom catalog for capability_tier stamping (memory hit,
     mirrors capability_outcomes.record_run)."""
     try:
-        from services import atom_registry
+        from poindexter.services import atom_registry
         return {m.name: m for m in atom_registry.list_atoms()}
     except Exception:  # noqa: BLE001
         return {}

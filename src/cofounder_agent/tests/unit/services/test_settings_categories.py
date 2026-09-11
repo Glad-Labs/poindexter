@@ -10,12 +10,12 @@ boot reconcile categorizes them on Matt's DB.
 
 import pytest
 
-from services.settings_categories import (
+from poindexter.services.settings_categories import (
     CATEGORIES,
     CATEGORY_IDS,
     resolve_category,
 )
-from services.settings_defaults import DEFAULTS
+from poindexter.services.settings_defaults import DEFAULTS
 
 
 def test_thirteen_canonical_categories():

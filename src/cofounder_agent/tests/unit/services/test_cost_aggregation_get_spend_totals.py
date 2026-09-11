@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from services import cost_aggregation_service as cas
-from services.cost_ledger import SpendBreakdown
+from poindexter.services import cost_aggregation_service as cas
+from poindexter.services.cost_ledger import SpendBreakdown
 
 
 def _patch_get_spend(monkeypatch, *, month: SpendBreakdown, day: SpendBreakdown):

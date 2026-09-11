@@ -199,7 +199,7 @@ class TestQaAggregateParity:
             def __init__(self, pool): pass
             async def upsert_version(self, task_id, fields): pass
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         state = {
             # rescue disabled (max_attempts=0) — this test pins the hard-reject/halt path
@@ -313,7 +313,7 @@ class TestQaAggregateBumpsGateCounters:
             def __init__(self, pool): pass
             async def upsert_version(self, task_id, fields): pass
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _GateDB()
         state = {
             "platform": FakePlatform(),
@@ -626,7 +626,7 @@ class TestQaAggregateRescueDispatch:
             def __init__(self, pool): pass
             async def upsert_version(self, task_id, fields): pass
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         state = self._critic_reject_state(
             platform=FakePlatform(config={"qa_rewrite_max_attempts": "1"}),
@@ -646,7 +646,7 @@ class TestQaAggregateRescueDispatch:
             def __init__(self, pool): pass
             async def upsert_version(self, task_id, fields): pass
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         state = {
             "platform": FakePlatform(),       # rescue ON (max 1)
@@ -712,7 +712,7 @@ class TestQaAggregateMaxAttemptsDefault:
             def __init__(self, pool): pass
             async def upsert_version(self, task_id, fields): pass
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         out = await qa_aggregate.run(self._critic_reject_state(
             qa_rewrite_attempts=2, database_service=db, models_used_by_phase={},
@@ -803,7 +803,7 @@ class TestQaAggregateKeepBest:
             async def upsert_version(self, task_id, fields):
                 captured["version"] = fields
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         state = {
             "platform": FakePlatform(config={"qa_rewrite_max_attempts": "1"}),
@@ -841,7 +841,7 @@ class TestQaAggregateKeepBest:
             async def upsert_version(self, task_id, fields):
                 captured["version"] = fields
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         state = {
             "platform": FakePlatform(config={"qa_rewrite_max_attempts": "1"}),
@@ -896,7 +896,7 @@ class TestQaAggregateKeepBest:
             def __init__(self, pool): pass
             async def upsert_version(self, task_id, fields): pass
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         state = {
             "platform": FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
@@ -976,7 +976,7 @@ class TestQaAggregateFlagAndContinue:
             def __init__(self, pool): pass
             async def upsert_version(self, task_id, fields): pass
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         out = await qa_aggregate.run(
             self._reject_state(config={"qa_flag_instead_of_reject": "false"},
@@ -1098,7 +1098,7 @@ class TestQaAggregateDurableApproval:
             def __init__(self, pool): pass
             async def upsert_version(self, task_id, fields): pass
 
-        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         out = await qa_aggregate.run(self._approve_state(
             platform=FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
             qa_rail_reviews=[

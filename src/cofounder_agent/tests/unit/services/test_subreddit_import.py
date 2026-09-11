@@ -1,8 +1,8 @@
 """Unit tests for subreddit_profiles CSV import/export."""
 from __future__ import annotations
 
-from services.community_drafts import SubredditProfile
-from services.subreddit_import import (
+from poindexter.services.community_drafts import SubredditProfile
+from poindexter.services.subreddit_import import (
     import_csv,
     parse_content_types_cell,
     profiles_to_csv,
@@ -58,7 +58,7 @@ class _ImpPool:
 
 
 async def test_import_creates_then_skips_without_force(tmp_path, monkeypatch):
-    import services.subreddit_import as si
+    import poindexter.services.subreddit_import as si
     added = []
 
     async def _add(pool, profile):
@@ -79,7 +79,7 @@ async def test_import_creates_then_skips_without_force(tmp_path, monkeypatch):
 
 
 async def test_import_force_updates(tmp_path, monkeypatch):
-    import services.subreddit_import as si
+    import poindexter.services.subreddit_import as si
     updated = []
 
     async def _upd(pool, profile):
@@ -95,7 +95,7 @@ async def test_import_force_updates(tmp_path, monkeypatch):
 
 
 async def test_import_malformed_row_is_error_and_batch_continues(tmp_path, monkeypatch):
-    import services.subreddit_import as si
+    import poindexter.services.subreddit_import as si
 
     async def _add(pool, profile):
         if profile.subreddit == "bad":

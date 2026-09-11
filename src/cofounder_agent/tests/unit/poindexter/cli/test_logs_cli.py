@@ -137,6 +137,6 @@ def test_service_column_hidden_when_filtering_to_one(captured) -> None:
 
 def test_logs_is_allowlisted_for_demo_tapes() -> None:
     """Recording relies on this command being read-only by construction."""
-    from services.demo_clips import READ_ONLY_VERBS
+    from poindexter.services.demo_clips import READ_ONLY_VERBS
 
     assert "logs" in READ_ONLY_VERBS

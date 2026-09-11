@@ -49,7 +49,7 @@ class OllamaNativeProvider:
 
     def _get_client(self):
         if self._client is None:
-            from services.ollama_client import OllamaClient
+            from poindexter.services.ollama_client import OllamaClient
             self._client = OllamaClient()
         return self._client
 

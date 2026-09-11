@@ -20,9 +20,9 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
 from schemas.data_plane_schemas import DataPlaneRowListResponse
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
@@ -48,7 +48,7 @@ async def list_surface(
     """Return all rows for ``surface`` (taps / retention / webhooks /
     publishers / qa-gates / alerts) as the canonical ``{items, total, limit, offset}``
     envelope (poindexter#745)."""
-    from services.declarative_config_service import UnknownSurfaceError, list_rows
+    from poindexter.services.declarative_config_service import UnknownSurfaceError, list_rows
 
     try:
         rows = await list_rows(db_service.pool, surface)
@@ -78,7 +78,7 @@ async def get_surface_row(
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict[str, Any]:
     """Return the single row whose key matches ``key`` (404 if none)."""
-    from services.declarative_config_service import UnknownSurfaceError, get_row
+    from poindexter.services.declarative_config_service import UnknownSurfaceError, get_row
 
     try:
         row = await get_row(db_service.pool, surface, key)
@@ -104,7 +104,7 @@ async def upsert_surface_row(
 ) -> dict[str, Any]:
     """Upsert the row. The path ``key`` is authoritative — it's merged into the
     payload as the surface's key column so the URL and body can't disagree."""
-    from services.declarative_config_service import (
+    from poindexter.services.declarative_config_service import (
         SurfaceValidationError,
         UnknownSurfaceError,
         resolve_surface,
@@ -135,7 +135,7 @@ async def delete_surface_row(
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict[str, Any]:
     """Delete the row (404 if no row matched ``key``)."""
-    from services.declarative_config_service import UnknownSurfaceError, delete_row
+    from poindexter.services.declarative_config_service import UnknownSurfaceError, delete_row
 
     try:
         deleted = await delete_row(db_service.pool, surface, key)

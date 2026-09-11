@@ -213,7 +213,7 @@ def _run_consent_flow(
 
     # Pull scopes from the adapter so we don't drift — single source
     # of truth for "what the operator consented to grant us".
-    from services.publish_adapters.youtube import _SCOPES, _SCOPES_WITH_UPDATE
+    from poindexter.services.publish_adapters.youtube import _SCOPES, _SCOPES_WITH_UPDATE
 
     flow = InstalledAppFlow.from_client_config(
         _build_client_config_dict(client_id, client_secret),
@@ -702,7 +702,7 @@ def youtube_test(
         async def get_secret(self, key: str, default: str = "") -> str:
             return self._secrets.get(key, default)
 
-    from services.publish_adapters.youtube import YouTubePublishAdapter
+    from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
 
     adapter = YouTubePublishAdapter(site_config=_StubSiteConfig(secrets))
 
@@ -775,8 +775,8 @@ def youtube_sync_metadata(selector: str | None, limit: int | None, do_apply: boo
     Re-consent once with `poindexter integrations youtube setup --with-update`.
     """
     from poindexter.cli._dataplane import run_service
-    from services.site_config import SiteConfig
-    from services.youtube_metadata_sync import (
+    from poindexter.services.site_config import SiteConfig
+    from poindexter.services.youtube_metadata_sync import (
         find_unrecorded_uploads,
         sync_youtube_metadata,
     )

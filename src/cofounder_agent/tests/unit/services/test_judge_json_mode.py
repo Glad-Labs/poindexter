@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import pytest
 
-from services.llm_providers import dispatcher as _dispatcher
-from services.llm_providers.thinking_models import judge_json_mode_supported
-from services.site_config import SiteConfig
+from poindexter.services.llm_providers import dispatcher as _dispatcher
+from poindexter.services.llm_providers.thinking_models import judge_json_mode_supported
+from poindexter.services.site_config import SiteConfig
 
 THINKING = "ollama/qwen3-vl:30b"
 PLAIN = "ollama/phi4:14b"
@@ -76,7 +76,7 @@ class TestDeepEvalDispatcherJudge:
 
     @pytest.mark.asyncio
     async def test_thinking_judge_sends_no_response_format(self, captured):
-        deepeval_rails = pytest.importorskip("services.deepeval_rails")
+        deepeval_rails = pytest.importorskip("poindexter.services.deepeval_rails")
 
         class _Schema:
             @staticmethod
@@ -97,7 +97,7 @@ class TestDeepEvalDispatcherJudge:
 
     @pytest.mark.asyncio
     async def test_non_thinking_judge_still_sends_response_format(self, captured):
-        deepeval_rails = pytest.importorskip("services.deepeval_rails")
+        deepeval_rails = pytest.importorskip("poindexter.services.deepeval_rails")
 
         class _Schema:
             @staticmethod
@@ -115,7 +115,7 @@ class TestDeepEvalDispatcherJudge:
     @pytest.mark.asyncio
     async def test_empty_content_names_its_cause(self, monkeypatch):
         """A bare JSONDecodeError read as a malformed judgement for weeks."""
-        deepeval_rails = pytest.importorskip("services.deepeval_rails")
+        deepeval_rails = pytest.importorskip("poindexter.services.deepeval_rails")
 
         async def empty_dispatch(**kwargs):
             return _Completion(text="")
@@ -133,7 +133,7 @@ class TestDeepEvalDispatcherJudge:
 class TestRagasDispatcherJudge:
     @pytest.mark.asyncio
     async def test_thinking_judge_sends_no_response_format(self, captured):
-        ragas_eval = pytest.importorskip("services.ragas_eval")
+        ragas_eval = pytest.importorskip("poindexter.services.ragas_eval")
         from langchain_core.messages import HumanMessage
 
         llm, _emb = ragas_eval._build_dispatcher_ragas_wrappers(
@@ -146,7 +146,7 @@ class TestRagasDispatcherJudge:
 
     @pytest.mark.asyncio
     async def test_non_thinking_judge_still_sends_response_format(self, captured):
-        ragas_eval = pytest.importorskip("services.ragas_eval")
+        ragas_eval = pytest.importorskip("poindexter.services.ragas_eval")
         from langchain_core.messages import HumanMessage
 
         llm, _emb = ragas_eval._build_dispatcher_ragas_wrappers(

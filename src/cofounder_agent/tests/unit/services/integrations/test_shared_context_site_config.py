@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import pytest
 
-from services.integrations import shared_context
-from services.integrations.operator_notify import _resolve_site_config
+from poindexter.services.integrations import shared_context
+from poindexter.services.integrations.operator_notify import _resolve_site_config
 
 
 @pytest.fixture(autouse=True)

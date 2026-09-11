@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 from plugins.job import JobResult
-from services.knowledge_graph import (
+from poindexter.services.knowledge_graph import (
     ORIGIN_MEMORY,
     ORIGIN_POST,
     build_edges,
@@ -30,7 +30,7 @@ from services.knowledge_graph import (
     load_posts,
     replace_edges,
 )
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

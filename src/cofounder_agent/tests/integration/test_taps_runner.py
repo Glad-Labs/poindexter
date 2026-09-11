@@ -15,7 +15,7 @@ import asyncpg
 import pytest
 
 from plugins import Document, PluginConfig
-from services.taps.runner import run_tap
+from poindexter.services.taps.runner import run_tap
 from tests.integration.conftest import requires_real_services
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio, requires_real_services]
@@ -149,7 +149,7 @@ class TestRunTapBasic:
             first = await run_tap(tap, clean_test_tables, mem)
             # Simulate the chunk-0 row now existing — runner's dedup query reads it.
             # Our fake mem doesn't write to the real table, so we insert the hash manually.
-            from services.taps._chunking import content_hash
+            from poindexter.services.taps._chunking import content_hash
             async with clean_test_tables.acquire() as conn:
                 await conn.execute(
                     """

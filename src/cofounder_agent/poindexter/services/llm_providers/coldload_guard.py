@@ -44,7 +44,7 @@ import time
 
 import httpx
 
-from services.cost_guard import is_local_base_url
+from poindexter.services.cost_guard import is_local_base_url
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
@@ -158,7 +158,7 @@ async def maybe_reclaim_before_coldload(
         bare, size / 1e9, base,
     )
     try:
-        from services.gpu_scheduler import gpu
+        from poindexter.services.gpu_scheduler import gpu
 
         await gpu.reclaim_render_vram(include_ollama=False)
     except Exception as exc:  # noqa: BLE001 — reclaim is best-effort

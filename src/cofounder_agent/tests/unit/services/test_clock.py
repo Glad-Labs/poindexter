@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services import clock
+from poindexter.services import clock
 
 
 def test_resolve_valid_name():

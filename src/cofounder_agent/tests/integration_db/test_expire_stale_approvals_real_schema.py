@@ -34,7 +34,7 @@ async def test_expiry_write_passes_constraint_and_stamps_completed_at(
     committed (no ``test_txn`` auto-rollback); cleanup happens in
     ``finally``.
     """
-    from services.jobs.expire_stale_approvals import ExpireStaleApprovalsJob
+    from poindexter.services.jobs.expire_stale_approvals import ExpireStaleApprovalsJob
 
     async with test_pool.acquire() as setup:
         await setup.execute(

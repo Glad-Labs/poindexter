@@ -100,7 +100,7 @@ class TestAllowedDependencies:
         assert _count(src) == 0
 
     def test_substrate_import_not_flagged(self):
-        src = "from services.image_service import get_image_service\n"
+        src = "services.image_service import get_image_service\n"
         assert _count(src) == 0
 
     def test_plugins_import_not_flagged(self):

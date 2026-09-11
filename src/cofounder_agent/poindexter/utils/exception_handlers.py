@@ -21,7 +21,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 
 try:
     import sentry_sdk
@@ -31,7 +31,7 @@ except ImportError:
     sentry_sdk = None  # type: ignore[assignment]
     SENTRY_AVAILABLE = False
 
-from services.error_handler import AppError, create_error_response
+from poindexter.services.error_handler import AppError, create_error_response
 
 logger = get_logger(__name__)
 

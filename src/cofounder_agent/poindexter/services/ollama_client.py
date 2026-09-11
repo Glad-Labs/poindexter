@@ -28,10 +28,10 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from services.langfuse_shim import langfuse_context, observe
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
-from services.telemetry import traced_method
+from poindexter.services.langfuse_shim import langfuse_context, observe
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.telemetry import traced_method
 
 logger = get_logger(__name__)
 
@@ -56,7 +56,7 @@ def _sc() -> SiteConfig:
     Crash-safe — returns ``_FALLBACK_SITE_CONFIG`` (an empty SiteConfig)
     when no container has been registered yet.
     """
-    from services.container_registry import get_container
+    from poindexter.services.container_registry import get_container
 
     container = get_container()
     return container.site_config if container is not None else _FALLBACK_SITE_CONFIG

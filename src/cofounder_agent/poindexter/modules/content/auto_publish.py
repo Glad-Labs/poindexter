@@ -124,7 +124,7 @@ async def auto_publish_task(
     post-pipeline path (``post_pipeline_actions._maybe_auto_publish``)
     passes its run-bound instance.
     """
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     if database_service is None:
         logger.warning(
@@ -281,7 +281,7 @@ async def auto_publish_task(
                 default=str,
             ),
         )
-        from services.pipeline_db import SITE_TARGET, PipelineDB
+        from poindexter.services.pipeline_db import SITE_TARGET, PipelineDB
 
         await PipelineDB(database_service.pool).add_distribution(
             task_id=task_id,
@@ -403,7 +403,7 @@ async def _stage_with_veto_window(
     suppress their own notification on ``True``, same contract as the
     immediate path).
     """
-    from services.publish_service import publish_post_from_task
+    from poindexter.services.publish_service import publish_post_from_task
 
     result = await publish_post_from_task(
         database_service,
@@ -449,7 +449,7 @@ async def _stage_with_veto_window(
         )
         return False
 
-    from services.scheduling_service import assign_slot
+    from poindexter.services.scheduling_service import assign_slot
 
     slot = await assign_slot(
         result.post_id, publish_at, pool=pool, site_config=site_config,
@@ -552,7 +552,7 @@ async def _notify_veto_window(
     topic = str(task.get("topic") or task.get("title") or task_id)
     when_local = publish_at.isoformat()
     try:
-        from services.clock import format_local, get_operator_tz
+        from poindexter.services.clock import format_local, get_operator_tz
 
         tz = await get_operator_tz(pool)
         when_local = format_local(publish_at, tz, "%a %b %d, %I:%M %p %Z")
@@ -569,7 +569,7 @@ async def _notify_veto_window(
         f"(rejecting the task from any surface also cancels the slot)"
     )
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
 
         await notify_operator(msg, critical=True, site_config=site_config)
     except Exception as exc:  # noqa: BLE001

@@ -49,8 +49,8 @@ class RunNicheTopicSweepJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        from services.niche_service import NicheService
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.niche_service import NicheService
+        from poindexter.services.topic_batch_service import TopicBatchService
 
         notify = bool(config.get("notify_on_new_batch", True))
         # #272 Phase-2d: TopicBatchService requires an explicit site_config.
@@ -128,7 +128,7 @@ async def _notify_new_batch(
     #272 Phase-2d: ``site_config`` is threaded from the caller (the job's
     run-bound ``config["_site_config"]``).
     """
-    from services.topic_batch_service import TopicBatchService
+    from poindexter.services.topic_batch_service import TopicBatchService
 
     svc = TopicBatchService(pool, site_config=site_config)
     view = await svc.show_batch(batch_id=snapshot.id)
@@ -166,7 +166,7 @@ async def _send_to_operator_channels(pool: Any, message: str) -> None:
     tests, CLI one-shots).
     """
     try:
-        from services.integrations.operator_notify import notify_operator
+        from poindexter.services.integrations.operator_notify import notify_operator
         await notify_operator(message, critical=False)
     except Exception as e:
         logger.warning("[niche-topic-sweep] no notification path available: %s", describe_exception(e))

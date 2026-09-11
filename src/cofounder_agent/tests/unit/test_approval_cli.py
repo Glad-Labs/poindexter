@@ -23,7 +23,7 @@ from poindexter.cli.approval import (
     reject_command,
     show_pending_command,
 )
-from services.approval_service import (
+from poindexter.services.approval_service import (
     GateMismatchError,
     TaskNotFoundError,
     TaskNotPausedError,
@@ -97,7 +97,7 @@ class TestApproveCommand:
             "poindexter.cli.approval._resolve_task_id_prefix",
             AsyncMock(return_value="t-1"),
         ), patch(
-            "services.approval_service.approve",
+            "poindexter.services.approval_service.approve",
             AsyncMock(side_effect=_ok),
         ) as mock_svc:
             result = runner.invoke(
@@ -122,7 +122,7 @@ class TestApproveCommand:
             "feedback": "",
         }
         with patch(
-            "services.approval_service.approve",
+            "poindexter.services.approval_service.approve",
             AsyncMock(return_value=payload),
         ):
             result = runner.invoke(approve_command, ["t-1", "--json"])
@@ -132,7 +132,7 @@ class TestApproveCommand:
 
     def test_task_not_found_exits_nonzero(self, runner, cli_env):
         with patch(
-            "services.approval_service.approve",
+            "poindexter.services.approval_service.approve",
             AsyncMock(side_effect=TaskNotFoundError("Task t-1 not found")),
         ):
             result = runner.invoke(approve_command, ["t-1"])
@@ -141,7 +141,7 @@ class TestApproveCommand:
 
     def test_gate_mismatch_exits_nonzero(self, runner, cli_env):
         with patch(
-            "services.approval_service.approve",
+            "poindexter.services.approval_service.approve",
             AsyncMock(side_effect=GateMismatchError("wrong gate")),
         ):
             result = runner.invoke(
@@ -157,7 +157,7 @@ class TestApproveCommand:
                     "previous_status": "in_progress", "feedback": ""}
 
         with patch(
-            "services.approval_service.approve",
+            "poindexter.services.approval_service.approve",
             AsyncMock(side_effect=_ok),
         ):
             result = runner.invoke(approve_command, ["t-1"])
@@ -186,7 +186,7 @@ class TestRejectCommand:
             }
 
         with patch(
-            "services.approval_service.reject",
+            "poindexter.services.approval_service.reject",
             AsyncMock(side_effect=_ok),
         ):
             result = runner.invoke(
@@ -205,7 +205,7 @@ class TestRejectCommand:
             "reason": "x",
         }
         with patch(
-            "services.approval_service.reject",
+            "poindexter.services.approval_service.reject",
             AsyncMock(return_value=payload),
         ):
             result = runner.invoke(reject_command, ["t-1", "--json"])
@@ -214,7 +214,7 @@ class TestRejectCommand:
 
     def test_task_not_paused_exits_nonzero(self, runner, cli_env):
         with patch(
-            "services.approval_service.reject",
+            "poindexter.services.approval_service.reject",
             AsyncMock(side_effect=TaskNotPausedError("not paused")),
         ):
             result = runner.invoke(reject_command, ["t-1"])
@@ -233,7 +233,7 @@ class TestListPendingCommand:
 
     def test_empty_human_output(self, runner, cli_env):
         with patch(
-            "services.approval_service.list_pending",
+            "poindexter.services.approval_service.list_pending",
             AsyncMock(return_value=[]),
         ):
             result = runner.invoke(list_pending_command, [])
@@ -253,7 +253,7 @@ class TestListPendingCommand:
             },
         ]
         with patch(
-            "services.approval_service.list_pending",
+            "poindexter.services.approval_service.list_pending",
             AsyncMock(return_value=rows),
         ):
             result = runner.invoke(list_pending_command, ["--json"])
@@ -263,7 +263,7 @@ class TestListPendingCommand:
 
     def test_filter_by_gate(self, runner, cli_env):
         with patch(
-            "services.approval_service.list_pending",
+            "poindexter.services.approval_service.list_pending",
             AsyncMock(return_value=[]),
         ) as mock_svc:
             result = runner.invoke(
@@ -295,7 +295,7 @@ class TestShowPendingCommand:
             "title": "Ti",
         }
         with patch(
-            "services.approval_service.show_pending",
+            "poindexter.services.approval_service.show_pending",
             AsyncMock(return_value=payload),
         ):
             result = runner.invoke(show_pending_command, ["t-1", "--json"])
@@ -313,7 +313,7 @@ class TestShowPendingCommand:
             "title": "Ti",
         }
         with patch(
-            "services.approval_service.show_pending",
+            "poindexter.services.approval_service.show_pending",
             AsyncMock(return_value=payload),
         ):
             result = runner.invoke(show_pending_command, ["t-1"])
@@ -324,7 +324,7 @@ class TestShowPendingCommand:
 
     def test_task_not_found_exits_nonzero(self, runner, cli_env):
         with patch(
-            "services.approval_service.show_pending",
+            "poindexter.services.approval_service.show_pending",
             AsyncMock(side_effect=TaskNotFoundError("nope")),
         ):
             result = runner.invoke(show_pending_command, ["t-1"])
@@ -353,7 +353,7 @@ class TestGatesGroup:
             }
         ]
         with patch(
-            "services.approval_service.list_gates",
+            "poindexter.services.approval_service.list_gates",
             AsyncMock(return_value=rows),
         ):
             result = runner.invoke(gates_group, ["list", "--json"])
@@ -362,7 +362,7 @@ class TestGatesGroup:
 
     def test_list_human_empty(self, runner, cli_env):
         with patch(
-            "services.approval_service.list_gates",
+            "poindexter.services.approval_service.list_gates",
             AsyncMock(return_value=[]),
         ):
             result = runner.invoke(gates_group, ["list"])
@@ -379,7 +379,7 @@ class TestGatesGroup:
             }
 
         with patch(
-            "services.approval_service.set_gate_enabled",
+            "poindexter.services.approval_service.set_gate_enabled",
             AsyncMock(side_effect=_ok),
         ) as mock_svc:
             result = runner.invoke(
@@ -393,7 +393,7 @@ class TestGatesGroup:
 
     def test_set_off(self, runner, cli_env):
         with patch(
-            "services.approval_service.set_gate_enabled",
+            "poindexter.services.approval_service.set_gate_enabled",
             AsyncMock(return_value={
                 "ok": True, "gate_name": "topic_decision",
                 "enabled": False, "key": "pipeline_gate_topic_decision",

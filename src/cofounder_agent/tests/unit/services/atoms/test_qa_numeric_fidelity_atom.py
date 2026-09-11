@@ -136,7 +136,7 @@ class TestSkipsRatherThanGuesses:
         not manufacture a pass either. Absence shows on the dashboard."""
         _patch_gates(monkeypatch)
         monkeypatch.setattr(
-            "services.numeric_fidelity.verify",
+            "poindexter.services.numeric_fidelity.verify",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         out = await atom.run(_state("The study found 90%.", "1 2 3 4 5 6"))

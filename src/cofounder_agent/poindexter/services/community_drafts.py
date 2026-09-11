@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from services.llm_text import ollama_chat_text, resolve_writer_model
+from poindexter.services.llm_text import ollama_chat_text, resolve_writer_model
 
 _PROFILE_COLS = (
     "subreddit, enabled, content_types, post_type, self_promo, flair, "
@@ -313,7 +313,7 @@ def split_title_and_body(raw: str, *, fallback_title: str) -> tuple[str, str]:
 
 
 def _resolve_reddit_prompt(**kwargs: Any) -> str:
-    from services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
     return get_prompt_manager().get_prompt(_REDDIT_PROMPT_KEY, **kwargs)
 
 

@@ -19,8 +19,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.testclient import TestClient
 
-from services.error_handler import AppError, NotFoundError
-from services.error_handler import ValidationError as AppValidationError
+from poindexter.services.error_handler import AppError, NotFoundError
+from poindexter.services.error_handler import ValidationError as AppValidationError
 from utils.exception_handlers import (
     _STATUS_TO_ERROR_CODE,
     app_error_handler,

@@ -223,8 +223,8 @@ async def test_happy_path_persists_shot_list_to_context() -> None:
         ),
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -269,8 +269,8 @@ async def test_long_director_plans_over_video_long_script() -> None:
         ),
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -307,8 +307,8 @@ async def test_long_director_falls_back_to_podcast_script() -> None:
         ),
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -346,8 +346,8 @@ async def test_director_timeout_is_configurable() -> None:
         "platform": platform,
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -375,8 +375,8 @@ async def test_llm_failure_logs_audit_does_not_raise() -> None:
         ),
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -415,8 +415,8 @@ async def test_invalid_json_output_records_failure() -> None:
         ),
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -462,8 +462,8 @@ async def test_invalid_schema_output_records_failure() -> None:
         "platform": _platform_with_dispatch(returns=MagicMock(text=bad_output)),
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -527,8 +527,8 @@ async def test_shot_list_returned_via_context_updates():
     }
 
     gpu = SimpleNamespace(lock=lambda *a, **k: _FakeLock())
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.prompt_manager.get_prompt_manager") as pm, \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.prompt_manager.get_prompt_manager") as pm, \
          patch("modules.content.stages.generate_video_shot_list._log_audit", new=AsyncMock()):
         pm.return_value.get_prompt.return_value = "director prompt"
         result = await GenerateVideoShotListStage().execute(ctx, {})
@@ -617,8 +617,8 @@ async def test_short_shot_list_produced_when_short_script_present() -> None:
         "platform": platform,
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -653,8 +653,8 @@ async def test_short_skipped_when_no_short_script() -> None:
         "platform": platform,
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -688,8 +688,8 @@ async def test_short_failure_does_not_break_long() -> None:
         "platform": platform,
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -724,8 +724,8 @@ async def test_auto_model_skips_gracefully() -> None:
         "platform": platform,
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -997,8 +997,8 @@ async def test_stage_recovers_unquoted_key_dialect_end_to_end() -> None:
         ),
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -1043,8 +1043,8 @@ async def test_stage_recovers_arithmetic_slip_via_reconcile() -> None:
         ),
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -1135,8 +1135,8 @@ async def test_director_dispatch_disables_thinking_by_default() -> None:
         "podcast_script": "script " * 40, "task_id": "task-think",
         "database_service": db_service, "platform": platform,
     }
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -1164,8 +1164,8 @@ async def test_director_dispatch_omits_think_when_flag_off() -> None:
         "podcast_script": "script " * 40, "task_id": "task-think-off",
         "database_service": db_service, "platform": platform,
     }
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -1200,8 +1200,8 @@ async def test_director_dispatch_uses_configured_max_tokens() -> None:
         "podcast_script": "script " * 40, "task_id": "task-maxtok",
         "database_service": db_service, "platform": platform,
     }
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -1232,8 +1232,8 @@ async def test_director_retries_on_empty_extract_and_recovers() -> None:
         "podcast_script": "script " * 40, "task_id": "task-retry",
         "database_service": db_service, "platform": platform,
     }
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -1260,8 +1260,8 @@ async def test_director_fails_after_retries_exhausted() -> None:
         "podcast_script": "script " * 40, "task_id": "task-exhaust",
         "database_service": db_service, "platform": platform,
     }
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -1295,8 +1295,8 @@ async def test_director_dispatch_exception_does_not_retry() -> None:
         "podcast_script": "script " * 40, "task_id": "task-infra",
         "database_service": db_service, "platform": platform,
     }
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
@@ -1333,8 +1333,8 @@ async def test_short_skipped_when_the_script_is_junk() -> None:
         "platform": platform,
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu") as mock_gpu:
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),

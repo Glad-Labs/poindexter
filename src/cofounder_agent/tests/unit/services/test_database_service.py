@@ -22,8 +22,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.database_service import DatabaseService
-from services.site_config import SiteConfig
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.site_config import SiteConfig
 
 
 def _has_brain_module() -> bool:
@@ -203,11 +203,11 @@ class TestDatabaseServiceLifecycle:
 
         with patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool)):
             with (
-                patch("services.database_service.UsersDatabase") as MockUsers,
-                patch("services.database_service.TasksDatabase") as MockTasks,
-                patch("services.database_service.ContentDatabase") as MockContent,
-                patch("services.database_service.AdminDatabase") as MockAdmin,
-                patch("services.database_service.WritingStyleDatabase") as MockWS,
+                patch("poindexter.services.database_service.UsersDatabase") as MockUsers,
+                patch("poindexter.services.database_service.TasksDatabase") as MockTasks,
+                patch("poindexter.services.database_service.ContentDatabase") as MockContent,
+                patch("poindexter.services.database_service.AdminDatabase") as MockAdmin,
+                patch("poindexter.services.database_service.WritingStyleDatabase") as MockWS,
             ):
                 await svc.initialize()
 
@@ -246,12 +246,12 @@ class TestDatabaseServiceLifecycle:
             return mock_pool
 
         with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
-            "services.database_service.UsersDatabase"
+            "poindexter.services.database_service.UsersDatabase"
         ), patch(
-            "services.database_service.TasksDatabase"
-        ), patch("services.database_service.ContentDatabase"), patch(
-            "services.database_service.AdminDatabase"
-        ), patch("services.database_service.WritingStyleDatabase"):
+            "poindexter.services.database_service.TasksDatabase"
+        ), patch("poindexter.services.database_service.ContentDatabase"), patch(
+            "poindexter.services.database_service.AdminDatabase"
+        ), patch("poindexter.services.database_service.WritingStyleDatabase"):
             await svc.initialize()
 
         assert all_calls, "asyncpg.create_pool was never called"
@@ -282,12 +282,12 @@ class TestDatabaseServiceLifecycle:
             return mock_pool
 
         with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
-            "services.database_service.UsersDatabase"
+            "poindexter.services.database_service.UsersDatabase"
         ), patch(
-            "services.database_service.TasksDatabase"
-        ), patch("services.database_service.ContentDatabase"), patch(
-            "services.database_service.AdminDatabase"
-        ), patch("services.database_service.WritingStyleDatabase"):
+            "poindexter.services.database_service.TasksDatabase"
+        ), patch("poindexter.services.database_service.ContentDatabase"), patch(
+            "poindexter.services.database_service.AdminDatabase"
+        ), patch("poindexter.services.database_service.WritingStyleDatabase"):
             await svc.initialize()
 
         # Dev default is 2; prod default is 5. Either way ≤ 5.
@@ -320,12 +320,12 @@ class TestDatabaseServiceLifecycle:
         with patch(
             "asyncpg.connect", new=AsyncMock(return_value=preread_conn)
         ), patch("asyncpg.create_pool", new=_capture_create_pool), patch(
-            "services.database_service.UsersDatabase"
+            "poindexter.services.database_service.UsersDatabase"
         ), patch(
-            "services.database_service.TasksDatabase"
-        ), patch("services.database_service.ContentDatabase"), patch(
-            "services.database_service.AdminDatabase"
-        ), patch("services.database_service.WritingStyleDatabase"):
+            "poindexter.services.database_service.TasksDatabase"
+        ), patch("poindexter.services.database_service.ContentDatabase"), patch(
+            "poindexter.services.database_service.AdminDatabase"
+        ), patch("poindexter.services.database_service.WritingStyleDatabase"):
             await svc.initialize()
 
         assert all_calls[0]["min_size"] == 4
@@ -347,12 +347,12 @@ class TestDatabaseServiceLifecycle:
             return mock_pool
 
         with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
-            "services.database_service.UsersDatabase"
+            "poindexter.services.database_service.UsersDatabase"
         ), patch(
-            "services.database_service.TasksDatabase"
-        ), patch("services.database_service.ContentDatabase"), patch(
-            "services.database_service.AdminDatabase"
-        ), patch("services.database_service.WritingStyleDatabase"):
+            "poindexter.services.database_service.TasksDatabase"
+        ), patch("poindexter.services.database_service.ContentDatabase"), patch(
+            "poindexter.services.database_service.AdminDatabase"
+        ), patch("poindexter.services.database_service.WritingStyleDatabase"):
             await svc.initialize()
 
         assert created_kwargs["min_size"] >= 1  # a sane literal default
@@ -567,7 +567,7 @@ class TestDualPoolInitialize:
     @pytest.mark.asyncio
     async def test_local_database_url_creates_separate_pool(self, monkeypatch):
         """When LOCAL_DATABASE_URL is set, a second pool is created."""
-        from services.database_service import DatabaseService
+        from poindexter.services.database_service import DatabaseService
 
         monkeypatch.setenv("DEPLOYMENT_MODE", "coordinator")
         svc = DatabaseService(
@@ -582,13 +582,13 @@ class TestDualPoolInitialize:
         create_pool = AsyncMock(side_effect=[cloud_pool, local_pool])
 
         with patch("asyncpg.create_pool", create_pool), \
-             patch("services.database_service.UsersDatabase"), \
-             patch("services.database_service.TasksDatabase"), \
-             patch("services.database_service.ContentDatabase"), \
-             patch("services.database_service.AdminDatabase"), \
-             patch("services.database_service.WritingStyleDatabase"), \
-             patch("services.database_service.EmbeddingsDatabase"), \
-             patch("services.database_service.init_global_audit_logger"):
+             patch("poindexter.services.database_service.UsersDatabase"), \
+             patch("poindexter.services.database_service.TasksDatabase"), \
+             patch("poindexter.services.database_service.ContentDatabase"), \
+             patch("poindexter.services.database_service.AdminDatabase"), \
+             patch("poindexter.services.database_service.WritingStyleDatabase"), \
+             patch("poindexter.services.database_service.EmbeddingsDatabase"), \
+             patch("poindexter.services.database_service.init_global_audit_logger"):
             await svc.initialize()
 
         assert create_pool.await_count == 2
@@ -601,7 +601,7 @@ class TestDualPoolInitialize:
     @pytest.mark.asyncio
     async def test_worker_mode_flips_pools(self, monkeypatch):
         """In worker mode, .pool becomes the local pool and .cloud_pool stays cloud."""
-        from services.database_service import DatabaseService
+        from poindexter.services.database_service import DatabaseService
 
         monkeypatch.setenv("DEPLOYMENT_MODE", "worker")
         svc = DatabaseService(
@@ -615,13 +615,13 @@ class TestDualPoolInitialize:
         create_pool = AsyncMock(side_effect=[cloud_pool, local_pool])
 
         with patch("asyncpg.create_pool", create_pool), \
-             patch("services.database_service.UsersDatabase"), \
-             patch("services.database_service.TasksDatabase") as MockTasks, \
-             patch("services.database_service.ContentDatabase") as MockContent, \
-             patch("services.database_service.AdminDatabase"), \
-             patch("services.database_service.WritingStyleDatabase"), \
-             patch("services.database_service.EmbeddingsDatabase"), \
-             patch("services.database_service.init_global_audit_logger"):
+             patch("poindexter.services.database_service.UsersDatabase"), \
+             patch("poindexter.services.database_service.TasksDatabase") as MockTasks, \
+             patch("poindexter.services.database_service.ContentDatabase") as MockContent, \
+             patch("poindexter.services.database_service.AdminDatabase"), \
+             patch("poindexter.services.database_service.WritingStyleDatabase"), \
+             patch("poindexter.services.database_service.EmbeddingsDatabase"), \
+             patch("poindexter.services.database_service.init_global_audit_logger"):
             await svc.initialize()
 
         # In worker mode the assignment is flipped
@@ -635,7 +635,7 @@ class TestDualPoolInitialize:
     @pytest.mark.asyncio
     async def test_no_local_url_single_pool_mode(self, monkeypatch):
         """Without LOCAL_DATABASE_URL, all three pool fields point at the same pool."""
-        from services.database_service import DatabaseService
+        from poindexter.services.database_service import DatabaseService
 
         monkeypatch.delenv("LOCAL_DATABASE_URL", raising=False)
         monkeypatch.setenv("DEPLOYMENT_MODE", "coordinator")
@@ -645,13 +645,13 @@ class TestDualPoolInitialize:
         create_pool = AsyncMock(return_value=only_pool)
 
         with patch("asyncpg.create_pool", create_pool), \
-             patch("services.database_service.UsersDatabase"), \
-             patch("services.database_service.TasksDatabase"), \
-             patch("services.database_service.ContentDatabase"), \
-             patch("services.database_service.AdminDatabase"), \
-             patch("services.database_service.WritingStyleDatabase"), \
-             patch("services.database_service.EmbeddingsDatabase"), \
-             patch("services.database_service.init_global_audit_logger"):
+             patch("poindexter.services.database_service.UsersDatabase"), \
+             patch("poindexter.services.database_service.TasksDatabase"), \
+             patch("poindexter.services.database_service.ContentDatabase"), \
+             patch("poindexter.services.database_service.AdminDatabase"), \
+             patch("poindexter.services.database_service.WritingStyleDatabase"), \
+             patch("poindexter.services.database_service.EmbeddingsDatabase"), \
+             patch("poindexter.services.database_service.init_global_audit_logger"):
             await svc.initialize()
 
         # Only one create_pool call
@@ -663,7 +663,7 @@ class TestDualPoolInitialize:
 
     @pytest.mark.asyncio
     async def test_initialize_failure_propagates(self):
-        from services.database_service import DatabaseService
+        from poindexter.services.database_service import DatabaseService
 
         svc = DatabaseService(database_url="postgresql://bad", site_config=SiteConfig())
 
@@ -675,7 +675,7 @@ class TestDualPoolInitialize:
 class TestCloseDualPool:
     @pytest.mark.asyncio
     async def test_close_closes_both_pools_when_separate(self):
-        from services.database_service import DatabaseService
+        from poindexter.services.database_service import DatabaseService
 
         svc = DatabaseService(database_url="x", site_config=SiteConfig())
         cloud_pool = AsyncMock(name="cloud")
@@ -690,7 +690,7 @@ class TestCloseDualPool:
     @pytest.mark.asyncio
     async def test_close_does_not_double_close_shared_pool(self):
         """When local_pool is the same instance as pool, close it only once."""
-        from services.database_service import DatabaseService
+        from poindexter.services.database_service import DatabaseService
 
         svc = DatabaseService(database_url="x", site_config=SiteConfig())
         shared = AsyncMock(name="shared")
@@ -707,7 +707,7 @@ class TestCloseDualPool:
         writes before closing the pool they run against, else a warn finding
         emitted moments earlier (e.g. the spend-throttle engage finding) races
         pool.close() and dies with InterfaceError('pool is closing')."""
-        from services.database_service import DatabaseService
+        from poindexter.services.database_service import DatabaseService
 
         svc = DatabaseService(database_url="x", site_config=SiteConfig())
         cloud_pool = AsyncMock(name="cloud")
@@ -723,7 +723,7 @@ class TestCloseDualPool:
             order.append("drain")
 
         with patch(
-            "services.database_service.drain_pending_writes",
+            "poindexter.services.database_service.drain_pending_writes",
             new=AsyncMock(side_effect=_record_drain),
         ) as drain:
             await svc.close()

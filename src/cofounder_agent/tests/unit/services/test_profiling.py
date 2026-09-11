@@ -14,22 +14,22 @@ import pytest
 @pytest.mark.unit
 class TestSetupPyroscope:
     def test_skips_when_disabled(self):
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         with patch(
-            "services.profiling.SiteConfig.get",
+            "poindexter.services.profiling.SiteConfig.get",
             return_value="false",
         ):
             # Should exit cleanly without importing pyroscope.
             setup_pyroscope()
 
     def test_warns_when_enabled_but_package_missing(self, caplog):
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": None}):
             with caplog.at_level("WARNING"):
                 setup_pyroscope()
@@ -38,7 +38,7 @@ class TestSetupPyroscope:
         assert "pyroscope-io not installed" in msgs
 
     def test_configure_called_on_enabled_with_package(self):
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
@@ -50,7 +50,7 @@ class TestSetupPyroscope:
                 "environment": "production",
             }.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope("test-service")
 
@@ -61,7 +61,7 @@ class TestSetupPyroscope:
         assert call_kwargs["tags"]["environment"] == "production"
 
     def test_configure_exception_does_not_raise(self):
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock(side_effect=RuntimeError("boom"))
@@ -69,7 +69,7 @@ class TestSetupPyroscope:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             # Must not raise — profiling failure should never kill startup.
             setup_pyroscope()
@@ -87,14 +87,14 @@ class TestEnablePyroscopeParsing:
 
     @pytest.mark.parametrize("value", ["True", "TRUE", "tRuE"])
     def test_case_insensitive_true_enables(self, value):
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
 
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": value}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -105,14 +105,14 @@ class TestEnablePyroscopeParsing:
         """Only the literal string 'true' (case-insensitive) enables.
         Common-but-wrong truthy values must NOT trigger configuration —
         the gate is intentionally strict to avoid surprise on ops."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
 
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": value}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -127,12 +127,12 @@ class TestSiteConfigUnavailable:
         not fail because the profiler couldn't decide whether to run."""
         import builtins
 
-        from services import profiling
+        from poindexter.services import profiling
 
         real_import = builtins.__import__
 
         def _raising_import(name, *args, **kwargs):
-            if name == "services.site_config":
+            if name == "poindexter.services.site_config":
                 raise RuntimeError("site_config explodes")
             return real_import(name, *args, **kwargs)
 
@@ -149,14 +149,14 @@ class TestSiteConfigUnavailable:
 @pytest.mark.unit
 class TestDefaultsAndFallbacks:
     def test_default_service_name_used_when_omitted(self):
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
 
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -169,7 +169,7 @@ class TestDefaultsAndFallbacks:
         """When pyroscope_server_url is not configured, the default
         compose-network address must be used. Drift here would silently
         ship profiles to the wrong host."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
 
@@ -181,7 +181,7 @@ class TestDefaultsAndFallbacks:
             # pyroscope_server_url and environment).
             return default
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -194,7 +194,7 @@ class TestDefaultsAndFallbacks:
         """``site_config.get("environment", "development") or "development"``
         — the trailing ``or`` covers the case where the setting exists
         but is an empty string (or None). Must land on 'development'."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
 
@@ -204,7 +204,7 @@ class TestDefaultsAndFallbacks:
                 "environment": env_value,
             }.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -215,7 +215,7 @@ class TestDefaultsAndFallbacks:
         """The success log line is the operator's confirmation that the
         agent shipped — verify it carries the resolved app/server/env so
         the breadcrumb is actionable, not just a 'configured' marker."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
 
@@ -227,7 +227,7 @@ class TestDefaultsAndFallbacks:
             }.get(key, default)
 
         with caplog.at_level("INFO"):
-            with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+            with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
                  patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
                 setup_pyroscope("brain-daemon")
 
@@ -263,7 +263,7 @@ class TestSetupPyroscopeEdgeCases:
     def test_default_service_name_used_when_omitted(self):
         """Calling setup_pyroscope() with no args must use the default
         application_name 'cofounder-agent' (matches the worker process)."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
@@ -271,7 +271,7 @@ class TestSetupPyroscopeEdgeCases:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -283,7 +283,7 @@ class TestSetupPyroscopeEdgeCases:
         """When ``pyroscope_server_url`` is not in app_settings the fallback
         ``http://pyroscope:4040`` (the docker-compose service hostname)
         must be passed as ``server_address``."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
@@ -292,7 +292,7 @@ class TestSetupPyroscopeEdgeCases:
             # Only enable_pyroscope is set; server URL falls through to default.
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -304,7 +304,7 @@ class TestSetupPyroscopeEdgeCases:
         return an empty string when the key exists but is blank. The
         ``or 'development'`` clause guards that — verify the tag ends
         up as 'development', not ''."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
@@ -315,7 +315,7 @@ class TestSetupPyroscopeEdgeCases:
                 "environment": "",  # explicitly blank — bug-class trap
             }.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -325,7 +325,7 @@ class TestSetupPyroscopeEdgeCases:
     def test_default_environment_is_development_when_unset(self):
         """When ``environment`` is missing entirely the ``get``-default
         path ('development') must apply."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
@@ -333,7 +333,7 @@ class TestSetupPyroscopeEdgeCases:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -344,7 +344,7 @@ class TestSetupPyroscopeEdgeCases:
     def test_mixed_case_true_enables_agent(self, flag_value):
         """The ``.lower() == 'true'`` guard must accept any casing —
         operator config edits are free-form strings."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
@@ -352,7 +352,7 @@ class TestSetupPyroscopeEdgeCases:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": flag_value}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -364,7 +364,7 @@ class TestSetupPyroscopeEdgeCases:
         Pyroscope — '1', 'yes', 'on', or empty must NOT trip configure.
         Avoids accidental truthy interpretations diverging from the
         documented ``enable_pyroscope=true`` contract."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
@@ -372,7 +372,7 @@ class TestSetupPyroscopeEdgeCases:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": flag_value}.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -385,12 +385,12 @@ class TestSetupPyroscopeEdgeCases:
         never block worker startup."""
         import builtins
 
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         real_import = builtins.__import__
 
         def _raising_import(name, *args, **kwargs):
-            if name == "services.site_config":
+            if name == "poindexter.services.site_config":
                 raise RuntimeError("simulated bootstrap failure")
             return real_import(name, *args, **kwargs)
 
@@ -405,7 +405,7 @@ class TestSetupPyroscopeEdgeCases:
     def test_tags_include_both_service_and_environment(self):
         """Both required tag keys must be present — Pyroscope queries
         slice on these in Grafana dashboards (`service`, `environment`)."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
@@ -416,7 +416,7 @@ class TestSetupPyroscopeEdgeCases:
                 "environment": "staging",
             }.get(key, default)
 
-        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+        with patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope("brain-daemon")
 
@@ -430,7 +430,7 @@ class TestSetupPyroscopeEdgeCases:
         """The success path must emit an INFO log so operators can
         confirm Pyroscope wired up at startup (otherwise a silent miss
         looks identical to it being disabled)."""
-        from services.profiling import setup_pyroscope
+        from poindexter.services.profiling import setup_pyroscope
 
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
@@ -443,7 +443,7 @@ class TestSetupPyroscopeEdgeCases:
             }.get(key, default)
 
         with caplog.at_level("INFO", logger="poindexter.services.profiling"), \
-             patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
+             patch("poindexter.services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope("worker-x")
 

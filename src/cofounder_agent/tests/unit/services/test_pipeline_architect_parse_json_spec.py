@@ -12,7 +12,7 @@ JSON object regardless, so the end-to-end result is unchanged either way.
 
 from __future__ import annotations
 
-from services import pipeline_architect
+from poindexter.services import pipeline_architect
 
 
 def test_parse_json_spec_strips_json_tagged_fence() -> None:

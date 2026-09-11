@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from services.gpu_admission import (
+from poindexter.services.gpu_admission import (
     AdmissionDecision,
     AdmissionInputs,
     GpuBusyError,
     decide,
 )
-from services.gpu_lease_stats import LeaseStats
+from poindexter.services.gpu_lease_stats import LeaseStats
 
 
 def _stats(p90_ms: float | None) -> LeaseStats:
@@ -307,7 +307,7 @@ def test_gpu_busy_error_without_eta():
 # weights when no single card holds them — so fit = any one card, or the
 # clamped pool.
 
-from services.gpu_admission import CardVram  # noqa: E402
+from poindexter.services.gpu_admission import CardVram  # noqa: E402
 
 
 def _card(index, free, evictable=0.0, headroom=6.0):

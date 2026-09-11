@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from services.demo_clips import (
+from poindexter.services.demo_clips import (
     DemoTape,
     DemoTapeError,
     assert_commands_exist,
@@ -143,7 +143,7 @@ def test_group_names_are_not_leaf_verbs() -> None:
     ``topics niche`` has ``set``-style children, so allowing ``niche`` would
     pass ``topics niche <anything>`` on the two-word positional check.
     """
-    from services.demo_clips import READ_ONLY_VERBS
+    from poindexter.services.demo_clips import READ_ONLY_VERBS
 
     assert "niche" not in READ_ONLY_VERBS
 

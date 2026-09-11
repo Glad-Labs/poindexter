@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
-from services.static_export_service import (
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.static_export_service import (
     _build_json_feed,
     _build_sitemap,
     _json_serial,
@@ -261,10 +261,10 @@ class TestExportPost:
             fetch_result=[_SAMPLE_POST],
         )
 
-        with patch("services.static_export_service._upload_json", new_callable=AsyncMock) as mock_upload:
+        with patch("poindexter.services.static_export_service._upload_json", new_callable=AsyncMock) as mock_upload:
             mock_upload.return_value = "https://r2.dev/static/test.json"
 
-            from services.static_export_service import export_post
+            from poindexter.services.static_export_service import export_post
             result = await export_post(
                 mock_pool, "test-post-title-abc123", site_config=_seeded_sc(),
             )
@@ -282,11 +282,11 @@ class TestExportPost:
         mock_pool = _make_mock_pool(fetchrow_result=None)
 
         with patch(
-            "services.static_export_service._upload_json", new_callable=AsyncMock
+            "poindexter.services.static_export_service._upload_json", new_callable=AsyncMock
         ), patch(
-            "services.static_export_service._retire_slug", new_callable=AsyncMock
+            "poindexter.services.static_export_service._retire_slug", new_callable=AsyncMock
         ) as retire:
-            from services.static_export_service import export_post
+            from poindexter.services.static_export_service import export_post
             result = await export_post(
                 mock_pool, "nonexistent-slug", site_config=_seeded_sc(),
             )
@@ -433,7 +433,7 @@ class TestExportPostFailurePaths:
         async def fake_upload(*args, **kwargs):
             return None  # signal upload failure
 
-        with patch("services.static_export_service._upload_json", side_effect=fake_upload):
+        with patch("poindexter.services.static_export_service._upload_json", side_effect=fake_upload):
             result = await export_post(
                 mock_pool, "test-post-title-abc123", site_config=_seeded_sc(),
             )
@@ -495,7 +495,7 @@ class TestExportFullRebuild:
         authors = [{"id": "a1", "name": "Matt"}]
         pool = _make_full_rebuild_pool(posts, cats, authors)
 
-        with patch("services.static_export_service._upload_json", new_callable=AsyncMock) as mock_upload:
+        with patch("poindexter.services.static_export_service._upload_json", new_callable=AsyncMock) as mock_upload:
             mock_upload.return_value = "https://r2/x"
             result = await export_full_rebuild(pool, site_config=_seeded_sc())
 
@@ -520,7 +520,7 @@ class TestExportFullRebuild:
                 return None
             return f"https://r2/{key}"
 
-        with patch("services.static_export_service._upload_json", side_effect=fake_upload):
+        with patch("poindexter.services.static_export_service._upload_json", side_effect=fake_upload):
             result = await export_full_rebuild(pool, site_config=_seeded_sc())
 
         assert result["success"] is False

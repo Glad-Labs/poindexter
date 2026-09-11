@@ -184,7 +184,7 @@ async def schema_loaded(test_dsn: str) -> str:
     """
     import asyncpg
 
-    from services.migrations import run_migrations
+    from poindexter.services.migrations import run_migrations
 
     pool = await asyncpg.create_pool(test_dsn, min_size=1, max_size=2)
     try:

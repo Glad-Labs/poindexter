@@ -49,7 +49,7 @@ def _maybe_append_sources_section(content_text: str, platform: Any) -> str:
     finalize). Returns ``content_text`` unchanged on disabled/no-URLs/failure.
     """
     try:
-        from services.citation_verifier import append_sources_section, extract_urls
+        from poindexter.services.citation_verifier import append_sources_section, extract_urls
 
         # Seam 1 Wave 3e (#667): config via capability handle. None-tolerant:
         # missing handle falls back to defaults.
@@ -116,7 +116,7 @@ async def _snapshot_final_revision(
     as the pre-extraction inline block did, rather than raising into finalize.
     """
     try:
-        from services.content_revisions_logger import log_revision
+        from poindexter.services.content_revisions_logger import log_revision
 
         await log_revision(
             database_service.pool,
@@ -161,11 +161,11 @@ class FinalizeTaskStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.text_utils import normalize_text as _normalize_text
+        from poindexter.services.text_utils import normalize_text as _normalize_text
 
         task_id = context.get("task_id")
         database_service = context.get("database_service")
-        from services.quality_models import ensure_quality_assessment
+        from poindexter.services.quality_models import ensure_quality_assessment
         quality_result = ensure_quality_assessment(context.get("quality_result"))
 
         if not task_id or database_service is None:
@@ -214,7 +214,7 @@ class FinalizeTaskStage:
         # just the title repeated — a common degenerate case when the
         # opening paragraph starts with "# <title>". Pass seo_title (what
         # the page actually shows) with topic as the fallback seed.
-        from services.excerpt_generator import generate_excerpt
+        from poindexter.services.excerpt_generator import generate_excerpt
         excerpt_text = generate_excerpt(
             title=seo_title or topic,
             content=content_text,
@@ -304,7 +304,7 @@ class FinalizeTaskStage:
         # (``(YYYY-MM-DD HH:MM #N)``) — stripping it here keeps sitemaps /
         # OG cards / `<title>` tags free of internal tagging conventions
         # even if upstream regresses.
-        from services.title_generation import strip_qa_batch_suffix
+        from poindexter.services.title_generation import strip_qa_batch_suffix
         final_title = (
             context.get("title")
             or seo_title
@@ -390,7 +390,7 @@ class FinalizeTaskStage:
         # re-wiring this write, so every canonical_blog task since
         # 2026-05-10 13:00Z reached awaiting_approval with NULL content.
         try:
-            from services.pipeline_db import PipelineDB
+            from poindexter.services.pipeline_db import PipelineDB
             await PipelineDB(database_service.pool).upsert_version(
                 task_id,
                 {

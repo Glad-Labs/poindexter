@@ -53,7 +53,7 @@ class TestMediaApprovePrefix:
         with _patched_pool(media), patch.object(
             media, "resolve_uuid_prefix", new=fake_resolve,
         ), patch(
-            "services.media_approval_service.decide", new=fake_decide,
+            "poindexter.services.media_approval_service.decide", new=fake_decide,
         ):
             result = runner.invoke(media.media_group, ["approve", "6bf91cc3", "podcast"])
 
@@ -100,7 +100,7 @@ class TestMediaRejectPrefix:
         with _patched_pool(media), patch.object(
             media, "resolve_uuid_prefix", new=AsyncMock(return_value=FULL),
         ), patch(
-            "services.media_approval_service.decide", new=fake_decide,
+            "poindexter.services.media_approval_service.decide", new=fake_decide,
         ):
             result = runner.invoke(
                 media.media_group, ["reject", "6bf91cc3", "video", "--note", "tts glitch"],

@@ -9,7 +9,7 @@ at graph compile time instead.
 Issue: Glad-Labs/poindexter#763 (SEO Harvest Loop Phase 2).
 """
 
-from services.template_runner import PipelineState
+from poindexter.services.template_runner import PipelineState
 
 
 def test_seo_refresh_channels_declared():

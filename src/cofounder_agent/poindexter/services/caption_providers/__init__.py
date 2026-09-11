@@ -45,7 +45,7 @@ def get_caption_provider(site_config: Any = None) -> Any:
             engine = _DEFAULT_ENGINE
 
     if engine == "whisper_local":
-        from services.caption_providers.whisper_local import WhisperLocalCaptionProvider
+        from poindexter.services.caption_providers.whisper_local import WhisperLocalCaptionProvider
 
         return WhisperLocalCaptionProvider(site_config=site_config)
 
@@ -54,6 +54,6 @@ def get_caption_provider(site_config: Any = None) -> Any:
             "[caption_providers] unknown video_caption_engine=%r — falling back to 'speaches'",
             engine,
         )
-    from services.caption_providers.speaches import SpeachesCaptionProvider
+    from poindexter.services.caption_providers.speaches import SpeachesCaptionProvider
 
     return SpeachesCaptionProvider(site_config=site_config)

@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from utils.crawler_ua import build_crawler_ua
 
 logger = logging.getLogger(__name__)

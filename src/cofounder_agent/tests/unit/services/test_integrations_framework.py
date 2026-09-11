@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from services.integrations import (
+from poindexter.services.integrations import (
     HandlerRegistrationError,
     dispatch,
     lookup,
@@ -14,7 +14,7 @@ from services.integrations import (
     registered_names,
     resolve_secret,
 )
-from services.integrations import registry as registry_module
+from poindexter.services.integrations import registry as registry_module
 
 
 @pytest.fixture(autouse=True)

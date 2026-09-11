@@ -96,19 +96,19 @@ def _handle_patches(stack: ExitStack) -> MagicMock:
               new=MagicMock(return_value="postgresql://test/dsn")),
         # The new full-handle builders (resolved via local import at call time,
         # so patch them on their source modules).
-        patch("services.database_service.DatabaseService", new=_FakeDatabaseService),
-        patch("services.di_wiring.build_platform_for_subprocess", new=bp_mock),
-        patch("services.template_runner.TemplateRunner", new=runner_cls),
-        patch("services.template_runner.has_resumable_checkpoint",
+        patch("poindexter.services.database_service.DatabaseService", new=_FakeDatabaseService),
+        patch("poindexter.services.di_wiring.build_platform_for_subprocess", new=bp_mock),
+        patch("poindexter.services.template_runner.TemplateRunner", new=runner_cls),
+        patch("poindexter.services.template_runner.has_resumable_checkpoint",
               new=AsyncMock(return_value=False)),
-        patch("services.approval_service.regen_at_gate",
+        patch("poindexter.services.approval_service.regen_at_gate",
               new=AsyncMock(return_value={"attempts": 1, "max_attempts": 3})),
-        patch("services.approval_service.approve",
+        patch("poindexter.services.approval_service.approve",
               new=AsyncMock(return_value={
                   "ok": True, "task_id": _TID,
                   "gate_name": "preview_gate", "gate_history_id": 7,
               })),
-        patch("services.approval_service.rollback_resume_approval",
+        patch("poindexter.services.approval_service.rollback_resume_approval",
               new=AsyncMock(return_value={"ok": True})),
     ]:
         stack.enter_context(p)

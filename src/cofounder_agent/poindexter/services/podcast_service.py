@@ -16,7 +16,7 @@ podcast routes. A valid podcast RSS feed is generated for Apple Podcasts /
 Spotify distribution.
 
 Usage:
-    from services.podcast_service import PodcastService
+    from poindexter.services.podcast_service import PodcastService
 
     svc = PodcastService(site_config=site_config)
     result = await svc.generate_episode(
@@ -34,9 +34,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from services.image_markers import strip_unresolved_image_markers
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.image_markers import strip_unresolved_image_markers
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 # SiteConfig is now injected exclusively (#272 Phase-2f). The
@@ -796,7 +796,7 @@ async def _build_script_with_llm(
     on prod). Falls back to regex stripping if the LLM call fails OR if
     no pool is available (tests / bootstrap).
     """
-    from services.llm_providers.dispatcher import dispatch_complete
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
     _sc = _resolve_site_config(site_config)
 
@@ -819,7 +819,7 @@ async def _build_script_with_llm(
         # default_ollama_model; page + use the regex script if that's empty too.
         fallback = _sc.get("default_ollama_model") or ""
         if not fallback:
-            from services.integrations.operator_notify import notify_operator
+            from poindexter.services.integrations.operator_notify import notify_operator
             await notify_operator(
                 "podcast_service: podcast_script_model is unset/'auto' AND "
                 "default_ollama_model is empty — falling back to regex "
@@ -830,7 +830,7 @@ async def _build_script_with_llm(
             return _build_script_fallback(title, content, site_config=_sc)
         model = fallback.removeprefix("ollama/")
 
-    from services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
     prompt = get_prompt_manager().get_prompt(
         "podcast.script_rewrite",
         title=title,
@@ -1508,7 +1508,7 @@ class PodcastService:
         if str(sc.get("podcast_sting_mix_enabled", "true") or "").lower() != "true":
             return result
 
-        from services.podcast_sting_mixer import (
+        from poindexter.services.podcast_sting_mixer import (
             mix_intro_outro,
             probe_duration_s,
             resolve_sting_path,
@@ -1643,7 +1643,7 @@ class PodcastService:
                 )
                 return
             sibling_path = self.output_dir / f"{post_id}-narration.mp3"
-            from services import tts_service
+            from poindexter.services import tts_service
             await tts_service.synthesize_speech(
                 body_only,
                 site_config=self._site_config,
@@ -1707,7 +1707,7 @@ class PodcastService:
         ``posts.excerpt`` being ``''`` when null).
         """
         try:
-            from services import media_asset_recorder
+            from poindexter.services import media_asset_recorder
         except Exception as exc:  # noqa: BLE001 — defensive import guard
             logger.debug("[PODCAST] media_asset_recorder unavailable: %s", exc)
             # Same guard as _image_helpers._record_inline_image_asset and
@@ -1769,7 +1769,7 @@ class PodcastService:
         delegates to :func:`_generate_with_chatterbox` (Phase 2 cutover —
         the emotion-capable voice-clone engine).
         """
-        from services import tts_service
+        from poindexter.services import tts_service
 
         # Apply the FULL speech pass at the TTS render boundary (2026-08-01
         # split): model-name collapse + tts_pronunciations + structural pass +
@@ -1830,7 +1830,7 @@ class PodcastService:
         read for the Speaches path only, so tuning them had zero effect on
         Chatterbox, the engine actually live in production.
         """
-        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         sc = self._site_config
         config = {

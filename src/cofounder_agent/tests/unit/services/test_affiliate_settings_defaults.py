@@ -1,6 +1,6 @@
 """Guards the affiliate-injection settings defaults (dark-launched)."""
 
-from services.settings_defaults import DEFAULTS
+from poindexter.services.settings_defaults import DEFAULTS
 
 
 def test_affiliate_defaults_present_and_dark_launched():

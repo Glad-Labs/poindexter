@@ -22,13 +22,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.image_ocr_gate import (
+from poindexter.services.image_ocr_gate import (
     OCR_GATE_REJECTED_STATUS,
     describe_ocr_gate_rejection,
     is_ocr_gate_rejection,
     safe_json,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 _REJECTION_BODY = {
     "detail": {
@@ -189,7 +189,7 @@ async def test_featured_render_flags_a_gate_rejection_in_its_meta():
     lock.__aexit__ = AsyncMock(return_value=False)
 
     with patch.object(sfi.httpx, "AsyncClient", MagicMock(return_value=ctx)), \
-            patch("services.gpu_scheduler.gpu.lock", MagicMock(return_value=lock)):
+            patch("poindexter.services.gpu_scheduler.gpu.lock", MagicMock(return_value=lock)):
         path, meta = await sfi._render_image_gen(
             "http://image-gen:9836", "a server rack", "text, words",
             task_id="t-1", timeout_seconds=5,
@@ -217,7 +217,7 @@ async def test_featured_render_leaves_meta_unflagged_for_other_failures():
     lock.__aexit__ = AsyncMock(return_value=False)
 
     with patch.object(sfi.httpx, "AsyncClient", MagicMock(return_value=ctx)), \
-            patch("services.gpu_scheduler.gpu.lock", MagicMock(return_value=lock)):
+            patch("poindexter.services.gpu_scheduler.gpu.lock", MagicMock(return_value=lock)):
         path, meta = await sfi._render_image_gen(
             "http://image-gen:9836", "a server rack", "text, words",
             task_id="t-1", timeout_seconds=5,

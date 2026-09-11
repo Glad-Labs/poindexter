@@ -14,13 +14,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.model_eval.harness import (
+from poindexter.services.model_eval.harness import (
     InMemoryEvalHarness,
     LangfuseEvalHarness,
     _eval_trace_id,
 )
-from services.model_eval.types import GoldenCase, GoldenSet, MetricResult
-from services.site_config import SiteConfig
+from poindexter.services.model_eval.types import GoldenCase, GoldenSet, MetricResult
+from poindexter.services.site_config import SiteConfig
 
 
 def _results() -> list[MetricResult]:
@@ -247,7 +247,7 @@ async def test_langfuse_harness_uses_get_secret_for_both_keys() -> None:
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-    import services.model_eval.harness as harness_mod
+    import poindexter.services.model_eval.harness as harness_mod
     original = harness_mod.Langfuse
     harness_mod.Langfuse = _FakeLangfuse
     try:

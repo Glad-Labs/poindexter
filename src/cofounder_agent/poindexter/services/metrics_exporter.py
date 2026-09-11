@@ -105,7 +105,7 @@ from prometheus_client import (
 # the default prometheus REGISTRY as soon as ``/metrics`` is first served — not
 # only after the first Postiz draft. (The legacy ``social_poster`` adapter
 # counters were removed 2026-06-29 with the direct social_adapters path.)
-from services.social_drafts import (  # noqa: F401 — imported for metric registration
+from poindexter.services.social_drafts import (  # noqa: F401 — imported for metric registration
     SOCIAL_DRAFT_CREATED_TOTAL,
     SOCIAL_DRAFT_FAILED_TOTAL,
     SOCIAL_DRAFT_POSTED_TOTAL,
@@ -115,7 +115,7 @@ from services.social_drafts import (  # noqa: F401 — imported for metric regis
 # (poindexter#652) at module import. Without this, the histogram only lands on
 # the default prometheus registry after the first pipeline run — leaving the
 # Pipeline dashboard panels "No Data" on a fresh worker restart.
-from services.template_runner import (  # noqa: F401 — imported for metric registration
+from poindexter.services.template_runner import (  # noqa: F401 — imported for metric registration
     NODE_DURATION_SECONDS as _PIPELINE_NODE_DURATION_SECONDS,
 )
 
@@ -881,7 +881,7 @@ async def refresh_metrics(
     try:
         from pathlib import Path
 
-        from services import migrations as _migrations_pkg
+        from poindexter.services import migrations as _migrations_pkg
 
         migrations_dir = Path(_migrations_pkg.__file__).parent
         on_disk = sum(
@@ -912,7 +912,7 @@ async def refresh_metrics(
     # strict=True so a DB error surfaces via _note_refresh_error rather than
     # silently reading $0.
     try:
-        from services.cost_ledger import get_spend
+        from poindexter.services.cost_ledger import get_spend
 
         day = await get_spend(pool, window="day", strict=True)
         month = await get_spend(pool, window="month", strict=True)
@@ -949,7 +949,7 @@ async def refresh_metrics(
 
     # GPU scheduler snapshot.
     try:
-        from services.gpu_scheduler import gpu  # local import — avoid boot cycles
+        from poindexter.services.gpu_scheduler import gpu  # local import — avoid boot cycles
 
         s = gpu.status
         GPU_GAMING_DETECTED.set(1 if s.get("gaming_detected") else 0)
@@ -961,7 +961,7 @@ async def refresh_metrics(
 
     # Pipeline throttle state (GH-89 AC#2).
     try:
-        from services.pipeline_throttle import get_state as _throttle_state
+        from poindexter.services.pipeline_throttle import get_state as _throttle_state
 
         ts = _throttle_state()
         PIPELINE_THROTTLE_ACTIVE.set(1 if ts.get("active") else 0)
@@ -973,7 +973,7 @@ async def refresh_metrics(
 
     # Spend throttle state (P3) — mirrors the pipeline throttle block above.
     try:
-        from services.spend_throttle import get_state as _spend_throttle_state
+        from poindexter.services.spend_throttle import get_state as _spend_throttle_state
 
         ss = _spend_throttle_state()
         SPEND_THROTTLE_ACTIVE.set(1 if ss.get("active") else 0)

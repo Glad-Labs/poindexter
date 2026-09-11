@@ -67,7 +67,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         stock_fallback_enabled,
         try_pexels,
     )
-    from services.image_service import get_image_service
+    from poindexter.services.image_service import get_image_service
 
     topic = state.get("topic", "")
     task_id = state.get("task_id")
@@ -263,7 +263,7 @@ async def _capture_screenshot(
     dashboard.
     """
     from modules.content.atoms._image_helpers import record_inline_image_asset
-    from services.image_providers.screenshot import ScreenshotProvider
+    from poindexter.services.image_providers.screenshot import ScreenshotProvider
 
     config: dict[str, Any] = {"_site_config": site_config}
     if site_config is not None:
@@ -354,7 +354,7 @@ def _build_alt_text(desc: str, topic: str, site_config: Any) -> str:
     """Build alt text from desc or topic."""
     import re
 
-    from services.alt_text import sanitize_alt_text
+    from poindexter.services.alt_text import sanitize_alt_text
     alt = desc if desc else f"{topic} illustration"
     alt = alt.replace("[", "").replace("]", "").replace("\n", " ")
     alt = re.sub(r"^(?:IMAGE|FIGURE|Image|Figure)\s*[-:]\s*", "", alt).strip()
@@ -389,7 +389,7 @@ async def _render_chart(
     branch produces. A wrong chart is worse than no chart.
     """
     from modules.content.atoms._image_helpers import record_inline_image_asset
-    from services.chart_catalog import resolve as resolve_chart
+    from poindexter.services.chart_catalog import resolve as resolve_chart
 
     spec = await resolve_chart(key, pool=pool, site_config=site_config)
     if spec is None:

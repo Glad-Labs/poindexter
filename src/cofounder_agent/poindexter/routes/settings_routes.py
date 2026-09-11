@@ -16,6 +16,10 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
+from poindexter.services.settings_categories import CATEGORY_IDS
+from poindexter.services.site_config import SiteConfig
 from schemas.settings_schemas import (
     SettingCreate,
     SettingDataTypeEnum,
@@ -24,10 +28,6 @@ from schemas.settings_schemas import (
     SettingResponse,
     SettingUpdate,
 )
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
-from services.settings_categories import CATEGORY_IDS
-from services.site_config import SiteConfig
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)

@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from plugins.tap import Document
-from services.taps._chunking import classify_file
+from poindexter.services.taps._chunking import classify_file
 
 logger = logging.getLogger(__name__)
 

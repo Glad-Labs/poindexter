@@ -16,12 +16,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-from services.jobs.sync_prompt_catalog_to_langfuse import (
+from poindexter.services.jobs.sync_prompt_catalog_to_langfuse import (
     SyncPromptCatalogToLangfuseJob,
     _is_sync_owned,
 )
 
-_MODULE = "services.jobs.sync_prompt_catalog_to_langfuse"
+_MODULE = "poindexter.services.jobs.sync_prompt_catalog_to_langfuse"
 
 
 class _StubConfig:

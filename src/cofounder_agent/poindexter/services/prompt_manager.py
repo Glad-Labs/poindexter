@@ -30,9 +30,9 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
-from services.skill_frontmatter import extract_section, parse_frontmatter
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.skill_frontmatter import extract_section, parse_frontmatter
 
 # Process-wide empty-SiteConfig fallback (#272 capstone). Used by the
 # ctor / Langfuse-init path when no SiteConfig is injected AND no
@@ -53,7 +53,7 @@ def _sc() -> SiteConfig:
     its SiteConfig from here. Crash-safe — returns ``_FALLBACK_SITE_CONFIG``
     when no container is registered yet.
     """
-    from services.container_registry import get_container
+    from poindexter.services.container_registry import get_container
 
     container = get_container()
     return container.site_config if container is not None else _FALLBACK_SITE_CONFIG

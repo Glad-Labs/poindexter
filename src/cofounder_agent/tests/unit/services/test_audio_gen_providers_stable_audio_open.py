@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.audio_gen_provider import AudioGenProvider, AudioGenResult
-from services.audio_gen_providers.stable_audio_open import (
+from poindexter.services.audio_gen_providers.stable_audio_open import (
     StableAudioOpenProvider,
     _apply_prompt_template,
     _resolve_duration,
@@ -93,7 +93,7 @@ def _mock_httpx_post(response):
     else:
         client.post = AsyncMock(return_value=response)
     with patch(
-        "services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
+        "poindexter.services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
         return_value=client,
     ):
         yield client
@@ -420,7 +420,7 @@ class TestStableAudioOpenGenerate:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
+            "poindexter.services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
             return_value=client,
         ):
             await StableAudioOpenProvider().generate(
@@ -450,7 +450,7 @@ class TestStableAudioOpenGenerate:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
+            "poindexter.services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
             return_value=client,
         ):
             await StableAudioOpenProvider().generate(
@@ -474,7 +474,7 @@ class TestStableAudioOpenGenerate:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
+            "poindexter.services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
             return_value=client,
         ):
             await StableAudioOpenProvider().generate(
@@ -501,7 +501,7 @@ class TestStableAudioOpenGenerate:
         client.post = AsyncMock(side_effect=capture_post)
 
         with patch(
-            "services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
+            "poindexter.services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
             return_value=client,
         ):
             await StableAudioOpenProvider().generate(

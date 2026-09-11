@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.prompt_manager import PromptCategory, UnifiedPromptManager
+from poindexter.services.prompt_manager import PromptCategory, UnifiedPromptManager
 
 # (key, expected category) pairs — categories must match the original YAML.
 _CONTENT_KEYS = (

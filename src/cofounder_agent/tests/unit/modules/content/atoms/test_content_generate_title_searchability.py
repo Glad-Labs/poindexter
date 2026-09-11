@@ -50,14 +50,14 @@ def _state(**extra: Any) -> dict[str, Any]:
 async def _run(state: dict[str, Any], titles: list[str]):
     """Run the atom with ``generate_canonical_title`` returning ``titles`` in order."""
     gen = AsyncMock(side_effect=list(titles) + [titles[-1]] * 3)
-    with patch("services.title_generation.generate_canonical_title", gen), patch(
-        "services.title_generation.check_title_originality",
+    with patch("poindexter.services.title_generation.generate_canonical_title", gen), patch(
+        "poindexter.services.title_generation.check_title_originality",
         AsyncMock(return_value=dict(_ORIGINAL)),
     ), patch(
-        "services.title_generation.choose_canonical_title",
+        "poindexter.services.title_generation.choose_canonical_title",
         side_effect=lambda topic, content, llm_title=None, **kw: llm_title or topic,
     ), patch(
-        "services.title_avoidance.build_avoidance_block_for_pool",
+        "poindexter.services.title_avoidance.build_avoidance_block_for_pool",
         AsyncMock(return_value="AVOID-BLOCK"),
     ), patch("utils.findings.emit_finding") as finding:
         result = await atom.run(state)

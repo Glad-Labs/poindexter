@@ -78,7 +78,7 @@ def _make_db_service(pool):
 class TestClaimPendingTask:
     @pytest.mark.asyncio
     async def test_returns_none_when_queue_empty(self):
-        from services.flows.content_generation import claim_pending_task
+        from poindexter.services.flows.content_generation import claim_pending_task
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -87,7 +87,7 @@ class TestClaimPendingTask:
 
     @pytest.mark.asyncio
     async def test_returns_claimed_row(self):
-        from services.flows.content_generation import claim_pending_task
+        from poindexter.services.flows.content_generation import claim_pending_task
 
         row = {
             "task_id": "abc-123",
@@ -113,7 +113,7 @@ class TestClaimPendingTask:
     async def test_returns_none_when_pool_missing(self):
         """Defensive: ``database_service.pool=None`` means the worker is
         in a broken bootstrap state. The flow shouldn't crash there."""
-        from services.flows.content_generation import claim_pending_task
+        from poindexter.services.flows.content_generation import claim_pending_task
 
         db = MagicMock()
         db.pool = None
@@ -125,7 +125,7 @@ class TestClaimPendingTask:
         """``UPDATE pipeline_tasks SET status='in_progress'`` runs inside
         the same transaction as the SELECT FOR UPDATE — concurrent flow
         runs see the row as locked and skip it."""
-        from services.flows.content_generation import claim_pending_task
+        from poindexter.services.flows.content_generation import claim_pending_task
 
         row = {
             "task_id": "xyz-789",
@@ -160,7 +160,7 @@ class TestContentGenerationFlow:
     async def test_schedule_driven_empty_queue_exits_clean(self):
         """No args + empty queue → ``{"claimed": False}`` without
         invoking the pipeline."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -171,13 +171,13 @@ class TestContentGenerationFlow:
         # and need a live API server.  Patching at the module level avoids
         # the dependency on prefect_test_harness, which broke in anyio 4.9.
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=None),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
         ) as pipeline_mock:
             result = await content_generation_flow.fn(database_service=db)
 
@@ -187,7 +187,7 @@ class TestContentGenerationFlow:
     @pytest.mark.asyncio
     async def test_schedule_driven_claimed_row_runs_pipeline(self):
         """Claim a row → call pipeline with the row's parameters."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         row = {
             "task_id": "task-claim-1",
@@ -207,13 +207,13 @@ class TestContentGenerationFlow:
 
         pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=row),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
             result = await content_generation_flow.fn(database_service=db)
@@ -236,8 +236,8 @@ class TestContentGenerationFlow:
         returns throttled WITHOUT claiming a pending row or running the
         pipeline, even though a row is available. In-flight work is untouched;
         the flow simply stops starting new work."""
-        from services.flows.content_generation import content_generation_flow
-        from services.spend_throttle import ThrottleDecision
+        from poindexter.services.flows.content_generation import content_generation_flow
+        from poindexter.services.spend_throttle import ThrottleDecision
 
         # A row IS claimable — the throttle must prevent us from taking it.
         row = {"task_id": "task-should-not-run", "topic": "x", "target_length": 1500}
@@ -251,16 +251,16 @@ class TestContentGenerationFlow:
         )
         claim_mock = AsyncMock(return_value=row)
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.spend_throttle.should_throttle",
+            "poindexter.services.spend_throttle.should_throttle",
             new=AsyncMock(return_value=throttled),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=claim_mock,
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
         ) as pipeline_mock:
             result = await content_generation_flow.fn(database_service=db)
 
@@ -275,8 +275,8 @@ class TestContentGenerationFlow:
     async def test_schedule_driven_not_throttled_claims_normally(self):
         """P3 regression guard — when under budget the throttle is transparent:
         the flow claims + runs exactly as before."""
-        from services.flows.content_generation import content_generation_flow
-        from services.spend_throttle import ThrottleDecision
+        from poindexter.services.flows.content_generation import content_generation_flow
+        from poindexter.services.spend_throttle import ThrottleDecision
 
         row = {"task_id": "task-ok", "topic": "y", "target_length": 1500}
         pool = _make_pool(claim_row=row)
@@ -287,16 +287,16 @@ class TestContentGenerationFlow:
         )
         pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.spend_throttle.should_throttle",
+            "poindexter.services.spend_throttle.should_throttle",
             new=AsyncMock(return_value=not_throttled),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=row),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
             result = await content_generation_flow.fn(database_service=db)
@@ -310,17 +310,17 @@ class TestContentGenerationFlow:
         """Caller passes ``task_id`` + ``topic`` directly — flow doesn't
         try to claim from queue, just runs the pipeline. Parity with
         existing CLI / REST entry points."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)  # queue is empty but irrelevant
         db = _make_db_service(pool)
         pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
 
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
             result = await content_generation_flow.fn(
@@ -347,14 +347,14 @@ class TestContentGenerationFlow:
         the queue is empty; the operator-triggered case is the only
         path that should error if topic is missing AND the operator
         explicitly passed task_id without topic."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
 
         # task_id explicitly supplied but topic missing → real error
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), pytest.raises(ValueError, match="requires a topic"):
             await content_generation_flow.fn(
@@ -384,7 +384,7 @@ class TestFlowCrashMarksTaskFailed:
 
     @pytest.mark.asyncio
     async def test_pipeline_crash_marks_task_failed_then_reraises(self):
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -393,10 +393,10 @@ class TestFlowCrashMarksTaskFailed:
         pipeline_mock = AsyncMock(side_effect=boom)
 
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
             with pytest.raises(RuntimeError, match="LLM provider returned 500"):
@@ -431,7 +431,7 @@ class TestFlowCrashMarksTaskFailed:
         while handling the ORIGINAL crash went completely dark. It must
         now log, and still fail open (return the default) rather than
         blocking the alert entirely — we're already in a crash handler."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -457,16 +457,16 @@ class TestFlowCrashMarksTaskFailed:
             assert value == "fallback-value"
 
         with patch(
-            "services.di_wiring.build_and_wire_subprocess_with_container",
+            "poindexter.services.di_wiring.build_and_wire_subprocess_with_container",
             return_value=(site_config, MagicMock()),
         ), patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ), patch(
-            "services.task_failure_alerts.send_failure_alert",
+            "poindexter.services.task_failure_alerts.send_failure_alert",
             new=AsyncMock(side_effect=_fake_send_failure_alert),
         ), caplog.at_level("WARNING"):
             with pytest.raises(RuntimeError, match="LLM provider returned 500"):
@@ -486,7 +486,7 @@ class TestFlowCrashMarksTaskFailed:
     async def test_helper_truncates_error_message(self):
         """The error_message column is bounded; the helper truncates to
         2KB so an attacker-controlled exception text can't bloat the DB."""
-        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+        from poindexter.services.flows.content_generation import _mark_task_failed_on_flow_crash
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -512,7 +512,7 @@ class TestFlowCrashMarksTaskFailed:
         """Schedule-driven retries with an exhausted queue have
         task_id=None at the call site — helper must be a no-op rather
         than crashing or running a NULL UPDATE."""
-        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+        from poindexter.services.flows.content_generation import _mark_task_failed_on_flow_crash
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -538,7 +538,7 @@ class TestFlowCrashMarksTaskFailed:
         safety net. If the helper's UPDATE itself fails (network blip,
         pool exhausted, etc.) it must NOT mask the original pipeline
         exception — log + return so the caller's re-raise propagates."""
-        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+        from poindexter.services.flows.content_generation import _mark_task_failed_on_flow_crash
 
         # Build a DB service whose pool acquire raises
         db = MagicMock()
@@ -564,7 +564,7 @@ class TestFlowCrashMarksTaskFailed:
         regression guard against accidentally re-failing a row that
         already transitioned to ``awaiting_approval`` / ``published``
         between the pipeline call and the cleanup."""
-        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+        from poindexter.services.flows.content_generation import _mark_task_failed_on_flow_crash
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -591,7 +591,7 @@ class TestFlowCrashMarksTaskFailed:
         promotes the row to awaiting_approval — the approved draft is already
         persisted, so failing the task (or letting the sweep re-run it) would
         destroy a QA-approved post over a crash in the SEO/media tail."""
-        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+        from poindexter.services.flows.content_generation import _mark_task_failed_on_flow_crash
 
         pool = _make_pool(claim_row=None)
         async with pool.acquire() as conn:
@@ -622,7 +622,7 @@ class TestFlowCrashMarksTaskFailed:
     async def test_helper_marker_probe_failure_falls_back_to_failed(self):
         """If the marker probe itself errors, the helper must still mark the
         task failed (the sweep's promote bucket remains the safety net)."""
-        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+        from poindexter.services.flows.content_generation import _mark_task_failed_on_flow_crash
 
         pool = _make_pool(claim_row=None)
         async with pool.acquire() as conn:
@@ -659,8 +659,8 @@ class TestRegistryUnavailableReleasesTask:
 
     @pytest.mark.asyncio
     async def test_flow_releases_task_on_registry_unavailable(self):
-        from services.atom_registry import AtomRegistryUnavailableError
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.atom_registry import AtomRegistryUnavailableError
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -669,10 +669,10 @@ class TestRegistryUnavailableReleasesTask:
         pipeline_mock = AsyncMock(side_effect=boom)
 
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
             with pytest.raises(AtomRegistryUnavailableError):
@@ -705,7 +705,7 @@ class TestRegistryUnavailableReleasesTask:
     @pytest.mark.asyncio
     async def test_other_errors_still_mark_failed(self):
         """Non-registry errors keep the existing mark-failed behavior."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -713,10 +713,10 @@ class TestRegistryUnavailableReleasesTask:
         pipeline_mock = AsyncMock(side_effect=RuntimeError("real crash"))
 
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
             with pytest.raises(RuntimeError, match="real crash"):
@@ -737,7 +737,7 @@ class TestRegistryUnavailableReleasesTask:
     async def test_release_helper_bounds_retries_in_sql(self):
         """The release UPDATE must bound the pending reset with a retry_count
         CASE so a persistently-broken registry can't ping-pong a task forever."""
-        from services.flows.content_generation import (
+        from poindexter.services.flows.content_generation import (
             _release_task_on_registry_unavailable,
         )
 
@@ -759,7 +759,7 @@ class TestRegistryUnavailableReleasesTask:
 
     @pytest.mark.asyncio
     async def test_release_helper_noop_when_task_id_none(self):
-        from services.flows.content_generation import (
+        from poindexter.services.flows.content_generation import (
             _release_task_on_registry_unavailable,
         )
 
@@ -773,7 +773,7 @@ class TestRegistryUnavailableReleasesTask:
 
     @pytest.mark.asyncio
     async def test_release_helper_swallows_db_errors(self):
-        from services.flows.content_generation import (
+        from poindexter.services.flows.content_generation import (
             _release_task_on_registry_unavailable,
         )
 
@@ -811,7 +811,7 @@ class TestReclaimStaleInprogress:
     async def test_no_pool_returns_zeros(self):
         """``database_service.pool=None`` → early-exit with zeros; sweep
         not invoked (worker is in broken bootstrap state)."""
-        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+        from poindexter.services.flows.content_generation import reclaim_stale_inprogress_tasks
 
         db = _make_db_service(pool=None)
         db.sweep_stale_tasks = AsyncMock()
@@ -826,7 +826,7 @@ class TestReclaimStaleInprogress:
     async def test_reads_threshold_from_site_config(self):
         """site_config.get returns ``"45"`` → sweep is called with
         ``timeout_minutes=45``."""
-        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+        from poindexter.services.flows.content_generation import reclaim_stale_inprogress_tasks
 
         pool = _make_pool()
         db = _make_db_service(pool)
@@ -842,7 +842,7 @@ class TestReclaimStaleInprogress:
     @pytest.mark.asyncio
     async def test_missing_setting_uses_default_30(self):
         """site_config.get returns ``None`` → default threshold 30 is used."""
-        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+        from poindexter.services.flows.content_generation import reclaim_stale_inprogress_tasks
 
         pool = _make_pool()
         db = _make_db_service(pool)
@@ -858,7 +858,7 @@ class TestReclaimStaleInprogress:
     @pytest.mark.asyncio
     async def test_unparseable_setting_uses_default_30(self):
         """site_config.get returns a non-integer string → default 30 used."""
-        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+        from poindexter.services.flows.content_generation import reclaim_stale_inprogress_tasks
 
         pool = _make_pool()
         db = _make_db_service(pool)
@@ -874,7 +874,7 @@ class TestReclaimStaleInprogress:
     @pytest.mark.asyncio
     async def test_notifies_operator_when_tasks_reclaimed(self):
         """When sweep resets > 0 tasks, notify_operator is called once."""
-        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+        from poindexter.services.flows.content_generation import reclaim_stale_inprogress_tasks
 
         pool = _make_pool()
         db = _make_db_service(pool)
@@ -884,7 +884,7 @@ class TestReclaimStaleInprogress:
         site_config.get = MagicMock(return_value="30")
 
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(),
         ) as mock_notify:
             await reclaim_stale_inprogress_tasks.fn(db, site_config)
@@ -896,7 +896,7 @@ class TestReclaimStaleInprogress:
         """A promoted (QA-approved, crash-recovered) task lands in the
         operator's approval queue without ever completing a flow run —
         notify so it isn't a silent surprise."""
-        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+        from poindexter.services.flows.content_generation import reclaim_stale_inprogress_tasks
 
         pool = _make_pool()
         db = _make_db_service(pool)
@@ -908,7 +908,7 @@ class TestReclaimStaleInprogress:
         site_config.get = MagicMock(return_value="30")
 
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(),
         ) as mock_notify:
             result = await reclaim_stale_inprogress_tasks.fn(db, site_config)
@@ -920,7 +920,7 @@ class TestReclaimStaleInprogress:
     @pytest.mark.asyncio
     async def test_no_notify_when_nothing_reclaimed(self):
         """When sweep returns zeros, notify_operator must NOT be called."""
-        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+        from poindexter.services.flows.content_generation import reclaim_stale_inprogress_tasks
 
         pool = _make_pool()
         db = _make_db_service(pool)
@@ -930,7 +930,7 @@ class TestReclaimStaleInprogress:
         site_config.get = MagicMock(return_value="30")
 
         with patch(
-            "services.integrations.operator_notify.notify_operator",
+            "poindexter.services.integrations.operator_notify.notify_operator",
             new=AsyncMock(),
         ) as mock_notify:
             await reclaim_stale_inprogress_tasks.fn(db, site_config)
@@ -941,7 +941,7 @@ class TestReclaimStaleInprogress:
     async def test_sweep_exception_returns_zeros(self):
         """If sweep_stale_tasks raises, function returns zeros and does
         not re-raise (best-effort contract — must never block the flow)."""
-        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+        from poindexter.services.flows.content_generation import reclaim_stale_inprogress_tasks
 
         pool = _make_pool()
         db = _make_db_service(pool)
@@ -960,19 +960,19 @@ class TestReclaimStaleInprogress:
     async def test_flow_calls_reclaim_before_claim(self):
         """Schedule-driven flow run → reclaim_stale_inprogress_tasks is
         called before claim_pending_task (empty queue exits cleanly)."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
 
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ) as mock_reclaim, patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=None),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
         ):
             await content_generation_flow.fn(database_service=db)
 
@@ -1000,7 +1000,7 @@ class TestPrefectSentryInit:
         """When site_config has a sentry_dsn, SentryIntegration.initialize
         is called exactly once with the wired site_config and the prefect
         service name."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -1016,25 +1016,25 @@ class TestPrefectSentryInit:
         )
 
         with patch(
-            "services.di_wiring.build_and_wire_subprocess_with_container",
+            "poindexter.services.di_wiring.build_and_wire_subprocess_with_container",
             return_value=(site_config, MagicMock()),
         ), patch(
-            "services.sentry_integration.SentryIntegration.initialize",
+            "poindexter.services.sentry_integration.SentryIntegration.initialize",
         ) as mock_sentry_init, patch(
-            "services.telemetry.setup_telemetry",
+            "poindexter.services.telemetry.setup_telemetry",
         ), patch(
-            "services.llm_providers.litellm_provider.configure_langfuse_callback",
+            "poindexter.services.llm_providers.litellm_provider.configure_langfuse_callback",
             new=AsyncMock(),
         ), patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=None),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
         ), patch(
-            "services.di_wiring.build_platform_for_subprocess",
+            "poindexter.services.di_wiring.build_platform_for_subprocess",
             return_value=None,
         ):
             await content_generation_flow.fn(database_service=db)
@@ -1051,22 +1051,22 @@ class TestPrefectSentryInit:
         """When the subprocess SiteConfig wiring fails (no pool), the Sentry
         init block is guarded by ``if _wired_site_config is not None:`` and
         must NOT be attempted."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         # Build a db_service with no pool — causes the wiring guard to skip
         db = MagicMock()
         db.pool = None
 
         with patch(
-            "services.sentry_integration.SentryIntegration.initialize",
+            "poindexter.services.sentry_integration.SentryIntegration.initialize",
         ) as mock_sentry_init, patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=None),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
         ):
             await content_generation_flow.fn(database_service=db)
 
@@ -1077,7 +1077,7 @@ class TestPrefectSentryInit:
         """If SentryIntegration.initialize raises (SDK not installed, bad DSN,
         etc.) the exception is swallowed and the pipeline continues — error
         tracking must never block content generation."""
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
@@ -1086,26 +1086,26 @@ class TestPrefectSentryInit:
         site_config.get = MagicMock(return_value="")
 
         with patch(
-            "services.di_wiring.build_and_wire_subprocess_with_container",
+            "poindexter.services.di_wiring.build_and_wire_subprocess_with_container",
             return_value=(site_config, MagicMock()),
         ), patch(
-            "services.sentry_integration.SentryIntegration.initialize",
+            "poindexter.services.sentry_integration.SentryIntegration.initialize",
             side_effect=RuntimeError("SDK import failed"),
         ), patch(
-            "services.telemetry.setup_telemetry",
+            "poindexter.services.telemetry.setup_telemetry",
         ), patch(
-            "services.llm_providers.litellm_provider.configure_langfuse_callback",
+            "poindexter.services.llm_providers.litellm_provider.configure_langfuse_callback",
             new=AsyncMock(),
         ), patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=None),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
         ), patch(
-            "services.di_wiring.build_platform_for_subprocess",
+            "poindexter.services.di_wiring.build_platform_for_subprocess",
             return_value=None,
         ):
             # Must not raise — Sentry failure is best-effort
@@ -1132,23 +1132,23 @@ class TestFlowOwnsAndClosesItsPool:
 
     @pytest.mark.asyncio
     async def test_closes_pool_it_built(self):
-        from services.flows import content_generation as cg
+        from poindexter.services.flows import content_generation as cg
 
         pool = _make_pool(claim_row=None)
         built = _make_db_service(pool)
         built.close = AsyncMock()
 
         with patch(
-            "services.flows.content_generation._build_default_database_service",
+            "poindexter.services.flows.content_generation._build_default_database_service",
             new=AsyncMock(return_value=built),
         ), patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=None),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
         ):
             # No database_service injected → the flow builds + owns one.
             result = await cg.content_generation_flow.fn()
@@ -1158,20 +1158,20 @@ class TestFlowOwnsAndClosesItsPool:
 
     @pytest.mark.asyncio
     async def test_does_not_close_injected_service(self):
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
         db.close = AsyncMock()
 
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=None),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
         ):
             await content_generation_flow.fn(database_service=db)
 
@@ -1182,20 +1182,20 @@ class TestFlowOwnsAndClosesItsPool:
     async def test_closes_owned_pool_even_when_pipeline_raises(self):
         """The close lives in a finally, so a crashing pipeline still frees
         the flow-owned pool (and the crash still propagates to Prefect)."""
-        from services.flows import content_generation as cg
+        from poindexter.services.flows import content_generation as cg
 
         pool = _make_pool(claim_row=None)
         built = _make_db_service(pool)
         built.close = AsyncMock()
 
         with patch(
-            "services.flows.content_generation._build_default_database_service",
+            "poindexter.services.flows.content_generation._build_default_database_service",
             new=AsyncMock(return_value=built),
         ), patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=AsyncMock(side_effect=RuntimeError("pipeline boom")),
         ):
             with pytest.raises(RuntimeError, match="pipeline boom"):
@@ -1220,7 +1220,7 @@ class TestGameModeDefersClaim:
     async def test_active_game_mode_defers_without_claiming(self):
         from datetime import UTC, datetime, timedelta
 
-        from services.flows.content_generation import content_generation_flow
+        from poindexter.services.flows.content_generation import content_generation_flow
 
         until = (datetime.now(UTC) + timedelta(hours=3)).isoformat()
         # A row IS claimable — game mode must stop us taking it.
@@ -1230,12 +1230,12 @@ class TestGameModeDefersClaim:
 
         claim_mock = AsyncMock(return_value=row)
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.flows.content_generation.claim_pending_task", new=claim_mock,
+            "poindexter.services.flows.content_generation.claim_pending_task", new=claim_mock,
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
         ) as pipeline_mock:
             result = await content_generation_flow.fn(database_service=db)
 
@@ -1250,8 +1250,8 @@ class TestGameModeDefersClaim:
         """Regression guard: a stale window must not keep the pipeline parked."""
         from datetime import UTC, datetime, timedelta
 
-        from services.flows.content_generation import content_generation_flow
-        from services.spend_throttle import ThrottleDecision
+        from poindexter.services.flows.content_generation import content_generation_flow
+        from poindexter.services.spend_throttle import ThrottleDecision
 
         past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
         row = {"task_id": "task-ok", "topic": "y", "target_length": 1500}
@@ -1260,18 +1260,18 @@ class TestGameModeDefersClaim:
 
         pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.spend_throttle.should_throttle",
+            "poindexter.services.spend_throttle.should_throttle",
             new=AsyncMock(return_value=ThrottleDecision(
                 throttled=False, ceiling=None, reason="within budget",
             )),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=row),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
             result = await content_generation_flow.fn(database_service=db)
@@ -1282,8 +1282,8 @@ class TestGameModeDefersClaim:
     @pytest.mark.asyncio
     async def test_game_mode_off_is_transparent(self):
         """The feature must be inert when unused (fetchval returns None)."""
-        from services.flows.content_generation import content_generation_flow
-        from services.spend_throttle import ThrottleDecision
+        from poindexter.services.flows.content_generation import content_generation_flow
+        from poindexter.services.spend_throttle import ThrottleDecision
 
         row = {"task_id": "task-ok", "topic": "z", "target_length": 1500}
         pool = _make_pool(claim_row=row)  # game_mode_until defaults to None
@@ -1291,18 +1291,18 @@ class TestGameModeDefersClaim:
 
         pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
         with patch(
-            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
         ), patch(
-            "services.spend_throttle.should_throttle",
+            "poindexter.services.spend_throttle.should_throttle",
             new=AsyncMock(return_value=ThrottleDecision(
                 throttled=False, ceiling=None, reason="within budget",
             )),
         ), patch(
-            "services.flows.content_generation.claim_pending_task",
+            "poindexter.services.flows.content_generation.claim_pending_task",
             new=AsyncMock(return_value=row),
         ), patch(
-            "services.content_router_service.process_content_generation_task",
+            "poindexter.services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
             result = await content_generation_flow.fn(database_service=db)

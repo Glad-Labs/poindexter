@@ -35,7 +35,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.image_service import ImageService
+from poindexter.services.image_service import ImageService
 
 _QUERY = "data analytics dashboard"
 
@@ -82,7 +82,7 @@ async def test_cloud_query_model_routes_through_dispatch_not_local_ollama():
     svc = ImageService(site_config=_sc("anthropic/claude-sonnet-5", pool=object()))
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],
@@ -113,7 +113,7 @@ async def test_local_query_model_with_pool_also_routes_through_dispatch():
     svc = ImageService(site_config=_sc("ollama/gemma3:27b", pool=object()))
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],
@@ -135,7 +135,7 @@ async def test_no_pool_falls_back_to_local_ollama_provider():
     svc = ImageService(site_config=_sc("ollama/gemma3:27b", pool=None))
 
     with patch(
-             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
              "plugins.registry.get_all_llm_providers", return_value=[local],

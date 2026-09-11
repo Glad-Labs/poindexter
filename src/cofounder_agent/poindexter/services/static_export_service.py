@@ -15,7 +15,7 @@ Output structure on storage:
     static/manifest.json           — export metadata (version, timestamp, counts)
 
 Usage:
-    from services.static_export_service import export_post, export_full_rebuild
+    from poindexter.services.static_export_service import export_post, export_full_rebuild
 
     # Incremental — called on each publish
     await export_post(pool, post_slug)
@@ -31,8 +31,8 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Any
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
 # setter were removed. ``export_post`` / ``export_full_rebuild`` / ``_upload_json``
@@ -73,7 +73,7 @@ async def _upload_json(
     #272 Phase-2d: ``site_config`` is REQUIRED (keyword-only) — the export
     entrypoints thread one config instance through every call.
     """
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
 
     tmp = None
     try:
@@ -385,7 +385,7 @@ _POST_JSON_KEY_RE = _re_markdown.compile(r"(?:^|/)posts/([^/]+)\.json$")
 
 async def _delete_json(key: str, *, site_config: SiteConfig) -> bool:
     """Delete a static JSON object from storage. Mirror of ``_upload_json``."""
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
 
     return await R2UploadService(site_config=site_config).delete_object(
         f"{_STATIC_PREFIX}/{key}",
@@ -402,7 +402,7 @@ async def _retire_slug(slug: str, *, site_config: SiteConfig) -> None:
     """
     await _delete_json(f"posts/{slug}.json", site_config=site_config)
     try:
-        from services.revalidation_service import trigger_isr_revalidate
+        from poindexter.services.revalidation_service import trigger_isr_revalidate
 
         await trigger_isr_revalidate(slug, site_config=site_config)
     except Exception as e:  # noqa: BLE001
@@ -414,7 +414,7 @@ async def _retire_slug(slug: str, *, site_config: SiteConfig) -> None:
 async def _list_exported_post_slugs(*, site_config: SiteConfig) -> list[str]:
     """List slugs that currently have a ``static/posts/<slug>.json`` on
     storage (excludes ``index.json``)."""
-    from services.r2_upload_service import R2UploadService
+    from poindexter.services.r2_upload_service import R2UploadService
 
     keys = await R2UploadService(site_config=site_config).list_keys(
         f"{_STATIC_PREFIX}/posts/",

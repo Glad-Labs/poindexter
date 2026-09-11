@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from services.model_eval.promotion import propose_promotion
-from services.model_eval.runner import EvalReport
-from services.model_eval.types import MetricResult
+from poindexter.services.model_eval.promotion import propose_promotion
+from poindexter.services.model_eval.runner import EvalReport
+from poindexter.services.model_eval.types import MetricResult
 
 
 class _SC:

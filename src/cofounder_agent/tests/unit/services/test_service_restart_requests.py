@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.service_restart_requests import (
+from poindexter.services.service_restart_requests import (
     InvalidContainerName,
     SelfDefeatingRestart,
     create_restart_request,

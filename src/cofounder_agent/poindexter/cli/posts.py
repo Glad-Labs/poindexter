@@ -541,8 +541,8 @@ def post_create(
     import re
     import secrets
 
-    from services.site_config import SiteConfig
-    from services.title_generation import extract_h1_title
+    from poindexter.services.site_config import SiteConfig
+    from poindexter.services.title_generation import extract_h1_title
 
     # --- Resolve body (no DB needed — fail fast before opening a pool) ----
     # --from-file wins; otherwise read piped stdin. An interactive TTY with
@@ -685,7 +685,7 @@ def post_create(
             # already-published post is refused; --force overrides (the same
             # flag that bypasses idempotency above).
             if not force:
-                from services.topic_dedup_guard import (
+                from poindexter.services.topic_dedup_guard import (
                     DuplicateTopicError,
                     assert_topic_not_duplicate,
                 )

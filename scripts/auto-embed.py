@@ -243,7 +243,7 @@ async def main() -> None:
     # initialises it. The drop is logged loudly by services.audit_log, but a
     # detection signal that never leaves the process is no detection at all.
     try:
-        from services.audit_log import init_global_audit_logger
+        from poindexter.services.audit_log import init_global_audit_logger
 
         init_global_audit_logger(pool)
     except Exception as e:  # noqa: BLE001 — observability must not block ingest
@@ -251,7 +251,7 @@ async def main() -> None:
 
     local_conn = None
     try:
-        from services.taps.runner import run_all
+        from poindexter.services.taps.runner import run_all
 
         if not _HAS_MEMORY_CLIENT or MemoryClient is None:
             logger.error(

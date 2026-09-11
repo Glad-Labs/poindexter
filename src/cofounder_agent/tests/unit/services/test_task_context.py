@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from services.task_context import bind_task_id, current_task_id, reset_task_id
+from poindexter.services.task_context import bind_task_id, current_task_id, reset_task_id
 
 
 def test_default_is_none():

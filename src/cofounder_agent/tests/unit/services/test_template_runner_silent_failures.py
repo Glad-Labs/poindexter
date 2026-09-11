@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import services.template_runner as tr
+import poindexter.services.template_runner as tr
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -42,7 +42,7 @@ def _capture(monkeypatch) -> list[dict]:
 async def test_capability_outcomes_write_failure_emits_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.capability_outcomes.record_run",
+        "poindexter.services.capability_outcomes.record_run",
         AsyncMock(side_effect=RuntimeError("capability_outcomes insert boom")),
     )
 
@@ -66,7 +66,7 @@ async def test_capability_outcomes_write_failure_emits_finding(monkeypatch):
 async def test_capability_outcomes_success_emits_no_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.capability_outcomes.record_run", AsyncMock(return_value=3),
+        "poindexter.services.capability_outcomes.record_run", AsyncMock(return_value=3),
     )
     await tr._record_capability_outcomes(
         pool=None, ok=True, template_slug="canonical_blog", halted_at=None,
@@ -78,7 +78,7 @@ async def test_capability_outcomes_success_emits_no_finding(monkeypatch):
 async def test_atom_runs_capture_failure_emits_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.atom_runs.persist_atom_runs",
+        "poindexter.services.atom_runs.persist_atom_runs",
         AsyncMock(side_effect=RuntimeError("atom_runs insert boom")),
     )
 
@@ -100,7 +100,7 @@ async def test_atom_runs_capture_failure_emits_finding(monkeypatch):
 async def test_atom_runs_capture_success_emits_no_finding(monkeypatch):
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        "services.atom_runs.persist_atom_runs", AsyncMock(return_value=5),
+        "poindexter.services.atom_runs.persist_atom_runs", AsyncMock(return_value=5),
     )
     await tr._capture_atom_runs(
         pool=None, run_id="thread-1", task_id="task-1",

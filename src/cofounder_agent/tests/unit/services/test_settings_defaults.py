@@ -30,7 +30,7 @@ def test_ops_triage_defaults_to_small_model_not_heavy_writer():
     ``pipeline_writer_model``, so a triage reloaded the writer into VRAM
     mid-media-render and CUDA-OOM'd the image-gen server (2026-06-21). A fresh
     install now gets a small model (matching ``cost_tier.free.model``)."""
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["ops_triage_writer_model"] == "ollama/granite4.2:3b"
     assert DEFAULTS["ops_triage_writer_model"] != DEFAULTS["pipeline_writer_model"]
@@ -43,7 +43,7 @@ def test_image_direction_defaults_present():
     Matt's rig overlays these onto his private gemma-4-31B fine-tune via
     operator_overrides.OPERATOR_MODEL_PINS. Cloud models stay writer-only.
     """
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert DEFAULTS["writer_max_inline_images"] == "3"
     assert DEFAULTS["image_decision_section_body_chars"] == "500"
@@ -59,7 +59,7 @@ def test_external_grounding_defaults_present():
     """External-candidate internal grounding (poindexter#822) tunables seed
     with sane defaults: soft-penalty on by default, content-bearing corpus,
     provisional 0.55 threshold, 0.6 penalty multiplier."""
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert DEFAULTS["niche_external_grounding_enabled"] == "true"
     assert (
@@ -83,7 +83,7 @@ def test_writer_internal_grounding_default_present():
     """Writer-side prior-work anchor (poindexter#822 consumer half): the master
     switch seeds on-by-default as a boolean, owned by two_pass_writer and
     independent of the discovery-side niche_external_grounding_enabled."""
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert DEFAULTS["writer_internal_grounding_enabled"] == "true"
     meta = METADATA["writer_internal_grounding_enabled"]
@@ -97,7 +97,7 @@ def test_media_layer2_defaults_seeded():
     Model keys default empty → resolved from qa_vision_model / ragas_judge_model
     at read time (empty = "not separately configured"), per the spec's
     no-silent-defaults rule."""
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["media.layer2.enabled"] == "true"
     assert DEFAULTS["media.video.topic_match_frames"] == "3"
@@ -112,7 +112,7 @@ def test_rag_rerank_device_default_is_cpu():
     """The cross-encoder reranker must default to CPU so it stops stacking
     on the resident ~18 GB writer in VRAM (single-GPU stability core). The
     device is DB-tunable via rag_rerank_device."""
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert DEFAULTS["rag_rerank_device"] == "cpu"
     assert METADATA["rag_rerank_device"]["value_type"] == "string"
@@ -124,7 +124,7 @@ def test_electricity_rate_kwh_default_present():
     # forever, if the shared EIA DEMO_KEY is rate-limited). Every other
     # cost_guard-adjacent tunable has a bootstrap default — this one was
     # missing.
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
     assert DEFAULTS["electricity_rate_kwh"] == "0.16"
 
 
@@ -132,7 +132,7 @@ def test_vram_budget_defaults_present():
     """The VRAM budget guard reads four DB-tunable knobs: total VRAM, the
     desktop reserve carved out so the WDDM compositor never starves, the KV
     cache dtype that sets bytes/element, and the on/off switch."""
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     # gpu_vram_total_gb defaults to "auto" — detected from the GPU pool, not
     # hand-set (2026-06-28). Any explicit number still overrides.
@@ -155,7 +155,7 @@ def test_brain_cycle_watchdog_defaults_present():
     merged cycle-watchdog ceiling. The cross-key invariants matter — the
     heartbeat must beat the dead-man's-switch stale threshold, and the hang-dump
     must sit above the cycle ceiling so only a genuine freeze trips it."""
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert DEFAULTS["brain_cycle_timeout_seconds"] == "240"
     assert DEFAULTS["brain_heartbeat_interval_seconds"] == "60"
@@ -181,7 +181,7 @@ def test_brain_cycle_watchdog_defaults_present():
 def test_piece4_video_hero_defaults_present():
     """Video-quality Piece 4: the swappable generative-video model seam and the
     per-video hero-shot budget cap (spec §3.3)."""
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert DEFAULTS["generative_video_model"] == "Wan-AI/Wan2.2-TI2V-5B"
     assert DEFAULTS["video_hero_shots_max"] == "3"
@@ -194,7 +194,7 @@ def test_qa_vision_num_predict_has_headroom_for_thinking_plus_json():
     verdict; the old hardcoded 400 truncated the JSON and the vision rail
     returned None on good images (#563). The default must leave real headroom
     and be int-parseable + DB-tunable."""
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert int(DEFAULTS["qa_vision_num_predict"]) >= 768  # > the broken 400
     assert METADATA["qa_vision_num_predict"]["value_type"] == "integer"
@@ -206,13 +206,13 @@ def test_qa_vision_num_predict_has_headroom_for_thinking_plus_json():
 
 class TestRegistryShape:
     def test_module_imports(self):
-        from services import settings_defaults
+        from poindexter.services import settings_defaults
         assert hasattr(settings_defaults, "DEFAULTS")
         assert hasattr(settings_defaults, "seed_all_defaults")
         assert hasattr(settings_defaults, "keys")
 
     def test_defaults_is_dict_of_strings(self):
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
         assert isinstance(DEFAULTS, dict)
         assert len(DEFAULTS) > 0
         for k, v in DEFAULTS.items():
@@ -223,13 +223,13 @@ class TestRegistryShape:
     def test_video_director_model_is_writer_grade(self):
         # Director + self-critique run on the writer model, not the standard
         # tier (video-quality spec §3.1) — shared video_director_model key.
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
         assert DEFAULTS["video_director_model"] == DEFAULTS["pipeline_writer_model"]
         assert METADATA["video_director_model"]["value_type"] == "model"
 
     def test_video_shot_qa_keys_seeded(self):
         # Per-shot vision-QA render-check loop tunables (video-quality spec §3.2).
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
         assert DEFAULTS["video_shot_qa_enabled"] == "true"
         assert DEFAULTS["video_shot_qa_threshold"] == "60"
         assert DEFAULTS["video_shot_qa_max_retries"] == "2"
@@ -241,7 +241,7 @@ class TestRegistryShape:
         # the flag; the default flip to 'on' is gated on end-to-end verification
         # (plan Task 12). The two caps bound the per-component regen loop (the
         # HITL runaway guard; the surface refuses past them).
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
         assert DEFAULTS["pipeline_gate_preview_gate"] == "off"
         assert DEFAULTS["regen_images_max_attempts"] == "3"
         assert DEFAULTS["regen_text_max_attempts"] == "2"
@@ -255,7 +255,7 @@ class TestRegistryShape:
         # already-running faster-whisper sidecar). The prior hardcoded
         # whisper_local default shelled a whisper-cli binary that was never
         # installed in the worker image, so captions silently never burned in.
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
         assert DEFAULTS["video_caption_engine"] == "speaches"
         assert DEFAULTS["plugin.caption_provider.speaches.enabled"] == "true"
         assert (
@@ -289,19 +289,19 @@ class TestRegistryShape:
         # Python dicts can't actually contain duplicates — but verify that
         # the post-import iteration order is stable and matches the
         # ``keys()`` helper.
-        from services.settings_defaults import DEFAULTS, keys
+        from poindexter.services.settings_defaults import DEFAULTS, keys
         assert sorted(DEFAULTS.keys()) == keys()
         assert len(set(DEFAULTS.keys())) == len(DEFAULTS)
 
     def test_keys_helper_is_sorted_unique(self):
-        from services.settings_defaults import keys
+        from poindexter.services.settings_defaults import keys
         ks = keys()
         assert ks == sorted(ks)
         assert len(ks) == len(set(ks))
 
     def test_registry_size_in_expected_range(self):
         """Sanity floor/ceiling — caught accidental wholesale deletes."""
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
         # ~1202 today (was ~601 when this was written, ~812 at the last
         # bump). The range is meant to be generous — the floor catches a
         # wholesale delete, the ceiling a runaway/double-counting extractor
@@ -345,7 +345,7 @@ SECRET_NAME_PATTERNS = [
 
 class TestNoSecretsInRegistry:
     def test_no_secret_keys_in_defaults(self):
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
         offenders = [
             k for k in DEFAULTS
             if any(p.match(k) for p in SECRET_NAME_PATTERNS)
@@ -357,7 +357,7 @@ class TestNoSecretsInRegistry:
 
     def test_known_secrets_explicitly_absent(self):
         """A handful of known-secret keys we explicitly never want seeded."""
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
         forbidden = {
             "anthropic_api_key",
             "openai_api_key",
@@ -410,7 +410,7 @@ def _make_pool(insert_status: str = "INSERT 0 1"):
 
 class TestSeedAllDefaults:
     def test_no_pool_returns_zero(self):
-        from services.settings_defaults import seed_all_defaults
+        from poindexter.services.settings_defaults import seed_all_defaults
         assert _run(seed_all_defaults(None)) == 0
 
     def test_inserts_count_matches_status_strings(self):
@@ -419,7 +419,7 @@ class TestSeedAllDefaults:
         The total execute() call count is len(DEFAULTS) INSERTs + len(METADATA)
         UPDATE metadata passes (poindexter#756).
         """
-        from services.settings_defaults import DEFAULTS, METADATA, seed_all_defaults
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA, seed_all_defaults
 
         pool, conn = _make_pool("INSERT 0 1")
         n = _run(seed_all_defaults(pool))
@@ -432,7 +432,7 @@ class TestSeedAllDefaults:
         The UPDATE metadata pass still runs (len(METADATA) calls) even when all
         INSERTs conflict — metadata is applied to both new and existing rows.
         """
-        from services.settings_defaults import DEFAULTS, METADATA, seed_all_defaults
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA, seed_all_defaults
 
         pool, conn = _make_pool("INSERT 0 0")
         n = _run(seed_all_defaults(pool))
@@ -447,7 +447,7 @@ class TestSeedAllDefaults:
         and don't have ON CONFLICT DO NOTHING (they're not INSERTs).  Only the
         INSERT calls are checked here.
         """
-        from services.settings_defaults import seed_all_defaults
+        from poindexter.services.settings_defaults import seed_all_defaults
 
         pool, conn = _make_pool("INSERT 0 0")
         _run(seed_all_defaults(pool))
@@ -468,7 +468,7 @@ class TestSeedAllDefaults:
 
     def test_seeds_with_is_secret_false(self):
         """Verify is_secret column is FALSE in the INSERT — never accidentally TRUE."""
-        from services.settings_defaults import seed_all_defaults
+        from poindexter.services.settings_defaults import seed_all_defaults
 
         pool, conn = _make_pool("INSERT 0 1")
         _run(seed_all_defaults(pool))
@@ -499,7 +499,7 @@ class TestGroupingMakesSense:
         """
         from pathlib import Path
 
-        import services.settings_defaults as mod
+        import poindexter.services.settings_defaults as mod
         text = Path(mod.__file__).read_text(encoding="utf-8")
 
         # Restrict to lines inside the DEFAULTS dict only (stop at METADATA).
@@ -639,7 +639,7 @@ class TestNoDanglingModelDefaults:
     """
 
     def test_registry_defaults_have_no_uninstalled_model(self):
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         offenders = {
             k: v for k, v in DEFAULTS.items()
@@ -655,7 +655,7 @@ class TestNoDanglingModelDefaults:
         import re
         from pathlib import Path
 
-        from services import settings_defaults
+        from poindexter.services import settings_defaults
 
         seeds = (
             Path(settings_defaults.__file__).parent
@@ -712,7 +712,7 @@ class TestQaRewriteReviserDefault:
     _THRASH_REVISER = "glm-4.7-5090"
 
     def test_registry_default_not_thrash_reviser(self):
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         val = DEFAULTS.get("qa_rewrite_model", "")
         assert self._THRASH_REVISER not in val, (
@@ -726,7 +726,7 @@ class TestQaRewriteReviserDefault:
         import re
         from pathlib import Path
 
-        from services import settings_defaults
+        from poindexter.services import settings_defaults
 
         seeds = (
             Path(settings_defaults.__file__).parent
@@ -771,7 +771,7 @@ class TestRetiredSettings:
     """
 
     def test_topic_gap_min_severity_absent_from_defaults(self):
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         assert "findings.topic_gap.min_severity" not in DEFAULTS, (
             "findings.topic_gap.min_severity must NOT be seeded — the default "
@@ -797,7 +797,7 @@ class TestDeprecatedSettings:
     def test_nvidia_exporter_url_deprecated(self):
         """nvidia_exporter_url went dead when PR #1827 moved gpu_scheduler onto
         Prometheus (gpu_metrics_prometheus_url); nothing reads it anymore."""
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
         meta = METADATA.get("nvidia_exporter_url")
         assert meta is not None, "nvidia_exporter_url must be marked in METADATA"
@@ -809,7 +809,7 @@ class TestDeprecatedSettings:
     def test_every_deprecated_key_supersedes_a_live_key(self):
         """Invariant guarding all future deprecations: a deprecated key's
         superseded_by must point at a key that still exists in DEFAULTS."""
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
         for key, meta in METADATA.items():
             if not meta.get("deprecated"):
@@ -843,7 +843,7 @@ class TestDataFabricUrlsAreInternalDns:
     }
 
     def test_data_fabric_defaults_use_internal_dns(self):
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         for key, expected in self.EXPECTED.items():
             actual = DEFAULTS.get(key)
@@ -890,7 +890,7 @@ class TestConfigExternalisationAuditKeys:
     }
 
     def test_audit_keys_present_with_expected_defaults(self):
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         for key, val in self.EXPECTED.items():
             assert key in DEFAULTS, f"{key} missing from DEFAULTS (audit regression)"
@@ -901,7 +901,7 @@ class TestConfigExternalisationAuditKeys:
     def test_audit_numeric_defaults_parse(self):
         """Every audit key is consumed via get_int/get_float — the seeded
         string default must parse as the right numeric type."""
-        from services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         float_keys = {"qa_web_factcheck_match_ratio"}
         for key in self.EXPECTED:
@@ -912,7 +912,7 @@ class TestConfigExternalisationAuditKeys:
 
 
 def test_rebuild_images_timeout_default_present():
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["post_edit_rebuild_images_timeout_s"] == "600"
 
@@ -925,7 +925,7 @@ def test_post_edit_image_timeout_default_covers_a_full_corpus_rebuild():
     timeout was already below that, so a successful edit surfaced to the
     operator as a ReadTimeout. Keep enough headroom for corpus growth.
     """
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert float(DEFAULTS["post_edit_image_timeout_s"]) >= 120.0
 
@@ -934,7 +934,7 @@ def test_seed_insert_binds_resolved_category(monkeypatch):
     """The seed INSERT must bind resolve_category(key), never a literal
     'general'. Otherwise every seeded key piles into the 'general' bucket
     (the mess this whole taxonomy work fixes)."""
-    import services.settings_defaults as sd
+    import poindexter.services.settings_defaults as sd
 
     captured: dict = {}
 
@@ -976,7 +976,7 @@ def test_seed_insert_binds_resolved_category(monkeypatch):
 def test_boot_reconcile_restamps_only_wrong_categories(monkeypatch):
     """seed_all_defaults re-stamps rows whose category != resolve_category(key)
     and leaves already-correct rows untouched (0 writes in steady state)."""
-    import services.settings_defaults as sd
+    import poindexter.services.settings_defaults as sd
 
     planted = [
         {"key": "findings_alert_route_watermark", "category": "general"},  # -> observability
@@ -1027,7 +1027,7 @@ def test_caption_display_defaults_seeded():
     the 9:16 short); cues are word-budgeted per lane before the SRT is
     written. All of it must be operator-tunable from the DB.
     """
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert DEFAULTS["media.caption.short_max_cue_words"] == "5"
     assert DEFAULTS["media.caption.long_max_cue_words"] == "14"
@@ -1063,7 +1063,7 @@ def test_video_topic_escalation_defaults_seeded():
     """Off-topic stock escalation (2026-08-27): a stock shot the vision QA
     keeps scoring below threshold is re-rendered as an on-theme AI still
     rather than shipped as unrelated B-roll."""
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert DEFAULTS["video_shot_topic_escalation_enabled"] == "true"
     assert DEFAULTS["video_shot_escalation_styles"] == ""
@@ -1074,7 +1074,7 @@ def test_video_topic_escalation_defaults_seeded():
 def test_video_endcard_defaults_seeded():
     """Branded CTA end-card knobs (2026-08-25): the CTA tail renders over the
     pure-PIL brand card instead of a leftover stock clip."""
-    from services.settings_defaults import DEFAULTS, METADATA
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
     assert DEFAULTS["video_endcard_enabled"] == "true"
     assert DEFAULTS["video_endcard_min_seconds"] == "2.5"

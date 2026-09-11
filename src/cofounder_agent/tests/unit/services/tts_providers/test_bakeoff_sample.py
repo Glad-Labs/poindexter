@@ -5,7 +5,7 @@ import pytest
 
 @pytest.mark.unit
 def test_sample_script_is_substantial_and_exercises_pronunciation():
-    from services.tts_providers.bakeoff_sample import SAMPLE_SCRIPT
+    from poindexter.services.tts_providers.bakeoff_sample import SAMPLE_SCRIPT
 
     assert isinstance(SAMPLE_SCRIPT, str)
     # ~150 words — enough audio to judge naturalness across a few sentences.
@@ -19,7 +19,7 @@ def test_sample_script_is_substantial_and_exercises_pronunciation():
 
 @pytest.mark.unit
 def test_bakeoff_engine_defaults_seeded():
-    from services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["plugin.tts_provider.chatterbox.base_url"] == "http://chatterbox:8000/v1"
     assert DEFAULTS["plugin.tts_provider.chatterbox.model"] == "chatterbox"

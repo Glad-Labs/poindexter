@@ -81,7 +81,7 @@ def test_firefighter_registered_on_main_cli_app():
 
 def test_rule_list_renders_rows():
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.list_rules",
+        "poindexter.services.remediation_rules_service.list_rules",
         new=AsyncMock(return_value=[_rule_row()]),
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "list"])
@@ -91,7 +91,7 @@ def test_rule_list_renders_rows():
 
 def test_rule_list_empty_shows_inert_hint():
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.list_rules",
+        "poindexter.services.remediation_rules_service.list_rules",
         new=AsyncMock(return_value=[]),
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "list"])
@@ -102,7 +102,7 @@ def test_rule_list_empty_shows_inert_hint():
 def test_rule_list_state_filter_threads_enabled_bool():
     mock = AsyncMock(return_value=[])
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.list_rules", new=mock,
+        "poindexter.services.remediation_rules_service.list_rules", new=mock,
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "list", "--state", "disabled"])
     assert result.exit_code == 0, result.output
@@ -112,7 +112,7 @@ def test_rule_list_state_filter_threads_enabled_bool():
 def test_rule_list_no_state_passes_none():
     mock = AsyncMock(return_value=[])
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.list_rules", new=mock,
+        "poindexter.services.remediation_rules_service.list_rules", new=mock,
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "list"])
     assert result.exit_code == 0, result.output
@@ -125,7 +125,7 @@ def test_rule_list_no_state_passes_none():
 def test_rule_add_threads_options_to_service():
     mock = AsyncMock(return_value=_rule_row(id=7))
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.add_rule", new=mock,
+        "poindexter.services.remediation_rules_service.add_rule", new=mock,
     ):
         result = CliRunner().invoke(firefighter_group, [
             "rule", "add",
@@ -147,7 +147,7 @@ def test_rule_add_threads_options_to_service():
 def test_rule_add_disabled_flag_sets_enabled_false():
     mock = AsyncMock(return_value=_rule_row(enabled=False))
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.add_rule", new=mock,
+        "poindexter.services.remediation_rules_service.add_rule", new=mock,
     ):
         result = CliRunner().invoke(firefighter_group, [
             "rule", "add", "--action", "run_auto_remediate",
@@ -163,7 +163,7 @@ def test_rule_add_disabled_flag_sets_enabled_false():
 def test_rule_add_threads_optional_caps():
     mock = AsyncMock(return_value=_rule_row())
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.add_rule", new=mock,
+        "poindexter.services.remediation_rules_service.add_rule", new=mock,
     ):
         result = CliRunner().invoke(firefighter_group, [
             "rule", "add", "--action", "restart_container", "--alert", "X",
@@ -180,7 +180,7 @@ def test_rule_add_threads_optional_caps():
 def test_rule_add_bad_param_exits_before_service():
     mock = AsyncMock(return_value=_rule_row())
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.add_rule", new=mock,
+        "poindexter.services.remediation_rules_service.add_rule", new=mock,
     ):
         result = CliRunner().invoke(firefighter_group, [
             "rule", "add", "--action", "restart_container",
@@ -194,7 +194,7 @@ def test_rule_add_bad_param_exits_before_service():
 def test_rule_add_service_error_exits_1():
     err = ff.svc.RemediationRuleError("unknown action_name 'rm_rf'")
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.add_rule",
+        "poindexter.services.remediation_rules_service.add_rule",
         new=AsyncMock(side_effect=err),
     ):
         result = CliRunner().invoke(firefighter_group, [
@@ -209,7 +209,7 @@ def test_rule_add_service_error_exits_1():
 
 def test_rule_show_requires_a_selector():
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.get_rule",
+        "poindexter.services.remediation_rules_service.get_rule",
         new=AsyncMock(return_value=None),
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "show"])
@@ -219,7 +219,7 @@ def test_rule_show_requires_a_selector():
 
 def test_rule_show_by_id_dumps_row():
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.get_rule",
+        "poindexter.services.remediation_rules_service.get_rule",
         new=AsyncMock(return_value=_rule_row()),
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "show", "1"])
@@ -229,7 +229,7 @@ def test_rule_show_by_id_dumps_row():
 
 def test_rule_show_missing_exits_1():
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.get_rule",
+        "poindexter.services.remediation_rules_service.get_rule",
         new=AsyncMock(return_value=None),
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "show", "--alert", "Ghost"])
@@ -241,7 +241,7 @@ def test_rule_show_missing_exits_1():
 
 def test_rule_rm_missing_reports_and_exits():
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.remove_rule",
+        "poindexter.services.remediation_rules_service.remove_rule",
         new=AsyncMock(return_value=None),
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "rm", "5"])
@@ -252,7 +252,7 @@ def test_rule_rm_missing_reports_and_exits():
 def test_rule_rm_by_alert_confirms():
     mock = AsyncMock(return_value=_rule_row())
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.remove_rule", new=mock,
+        "poindexter.services.remediation_rules_service.remove_rule", new=mock,
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "rm", "--alert", "PyroscopeDown"])
     assert result.exit_code == 0, result.output
@@ -266,7 +266,7 @@ def test_rule_rm_by_alert_confirms():
 def test_rule_enable_by_id_threads_true():
     mock = AsyncMock(return_value=_rule_row(enabled=True))
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.set_rule_enabled", new=mock,
+        "poindexter.services.remediation_rules_service.set_rule_enabled", new=mock,
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "enable", "3"])
     assert result.exit_code == 0, result.output
@@ -278,7 +278,7 @@ def test_rule_enable_by_id_threads_true():
 def test_rule_disable_by_alert_threads_false():
     mock = AsyncMock(return_value=_rule_row(enabled=False))
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.set_rule_enabled", new=mock,
+        "poindexter.services.remediation_rules_service.set_rule_enabled", new=mock,
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "disable", "--alert", "PromtailDown"])
     assert result.exit_code == 0, result.output
@@ -289,7 +289,7 @@ def test_rule_disable_by_alert_threads_false():
 
 def test_rule_enable_missing_exits_1():
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
-        "services.remediation_rules_service.set_rule_enabled",
+        "poindexter.services.remediation_rules_service.set_rule_enabled",
         new=AsyncMock(return_value=None),
     ):
         result = CliRunner().invoke(firefighter_group, ["rule", "enable", "99"])

@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-from services.template_runner import PipelineState
+from poindexter.services.template_runner import PipelineState
 
 _TASK_METADATA_SRC = (
     Path(__file__).resolve().parents[3]

@@ -45,9 +45,9 @@ from typing import Any
 
 import apprise
 
-from services.integrations.registry import register_handler
-from services.integrations.secret_resolver import resolve_secret
-from services.logger_config import get_logger
+from poindexter.services.integrations.registry import register_handler
+from poindexter.services.integrations.secret_resolver import resolve_secret
+from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 

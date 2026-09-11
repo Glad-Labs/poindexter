@@ -81,7 +81,7 @@ async def _load_post(pool: Any, slug: str) -> dict[str, Any]:
 
 
 async def _build_site_config(pool: Any) -> Any:
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig()
     await sc.load(pool=pool)
@@ -108,12 +108,12 @@ async def _run_stages(
     Stage, which left all the upstream long-form generation running —
     a 30-min waste on Wan. Caught by Matt during the b6ekoqn5t run.
     """
-    from services.stages.scene_visuals import SceneVisualsStage
-    from services.stages.script_for_video import ScriptForVideoStage
-    from services.stages.stitch_long_form import StitchLongFormStage
-    from services.stages.stitch_short_form import StitchShortFormStage
-    from services.stages.tts_for_video import TtsForVideoStage
-    from services.stages.upload_to_platform import UploadToPlatformStage
+    from poindexter.services.stages.scene_visuals import SceneVisualsStage
+    from poindexter.services.stages.script_for_video import ScriptForVideoStage
+    from poindexter.services.stages.stitch_long_form import StitchLongFormStage
+    from poindexter.services.stages.stitch_short_form import StitchShortFormStage
+    from poindexter.services.stages.tts_for_video import TtsForVideoStage
+    from poindexter.services.stages.upload_to_platform import UploadToPlatformStage
 
     stages: list[Any] = [
         ScriptForVideoStage(),
@@ -218,7 +218,7 @@ async def main(
     try:
         # Populate the module-level service container so providers that
         # use the DI seam (Pexels, etc.) can reach the DB pool.
-        from services.container import register_service
+        from poindexter.services.container import register_service
         register_service("database", _FakeDatabaseService(pool))
 
         post = await _load_post(pool, slug)

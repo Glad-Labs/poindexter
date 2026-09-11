@@ -35,7 +35,7 @@ import math
 from typing import Any
 
 from plugins.job import JobResult
-from services.cost_ledger import API_AXIS_PREDICATE, ELECTRICITY_AXIS_PREDICATE
+from poindexter.services.cost_ledger import API_AXIS_PREDICATE, ELECTRICITY_AXIS_PREDICATE
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)

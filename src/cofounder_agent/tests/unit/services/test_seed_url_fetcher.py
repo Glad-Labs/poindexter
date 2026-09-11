@@ -19,14 +19,14 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from services.seed_url_fetcher import (
+from poindexter.services.seed_url_fetcher import (
     SeedURLError,
     SeedURLFetcher,
     SeedURLResult,
     _looks_like_login_wall,
     build_source_attribution,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # A bare fetcher reused across tests — the config helpers all fall back
 # to their hardcoded defaults on an empty SiteConfig, which is exactly
@@ -407,7 +407,7 @@ class TestAppContainerWiring:
     def test_app_container_exposes_seed_url_fetcher(self):
         from unittest.mock import MagicMock
 
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         fetcher = container.seed_url_fetcher
@@ -416,7 +416,7 @@ class TestAppContainerWiring:
     def test_cached_property_memoises(self):
         from unittest.mock import MagicMock
 
-        from services.container import AppContainer
+        from poindexter.services.container import AppContainer
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         assert container.seed_url_fetcher is container.seed_url_fetcher

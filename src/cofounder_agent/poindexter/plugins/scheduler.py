@@ -32,7 +32,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import live_activity
+from poindexter.services import live_activity
 
 # Dep-free (json/logging only), so importing it here doesn't break the lean
 # images that this module already guards apscheduler for.
@@ -148,7 +148,7 @@ class PluginScheduler:
             ) from _APSCHEDULER_IMPORT_ERROR
         self._pool = pool
         self._site_config = site_config
-        from services.clock import DEFAULT_TZ, resolve_operator_tz
+        from poindexter.services.clock import DEFAULT_TZ, resolve_operator_tz
 
         if tz is not None:
             self._tz = tz
@@ -622,7 +622,7 @@ class PluginScheduler:
                 ).total_seconds() < _FAILURE_NOTIFY_COOLDOWN_S:
                     return  # already paged within the cooldown window
                 self._last_failure_notify[job_name] = now
-                from services.integrations.operator_notify import notify_operator
+                from poindexter.services.integrations.operator_notify import notify_operator
                 await notify_operator(
                     f"🔴 Alerting-infra job '{job_name}' FAILED — the alert "
                     f"delivery path itself is degraded ({streak} consecutive "
@@ -861,7 +861,7 @@ class PluginScheduler:
         ):
             return
         try:
-            from services.audit_log import AuditLogger
+            from poindexter.services.audit_log import AuditLogger
 
             details = {
                 "ok": bool(result.ok),

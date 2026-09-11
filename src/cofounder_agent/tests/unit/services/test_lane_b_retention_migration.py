@@ -31,10 +31,10 @@ import pytest
 class TestRetentionResolveSummaryModel:
     @pytest.mark.asyncio
     async def test_returns_pin_strips_prefix(self):
-        from services.integrations.handlers import retention_summarize_to_table as mod
+        from poindexter.services.integrations.handlers import retention_summarize_to_table as mod
 
         with patch(
-            "services.integrations.handlers.retention_summarize_to_table._get_setting",
+            "poindexter.services.integrations.handlers.retention_summarize_to_table._get_setting",
             AsyncMock(return_value="ollama/gemma3:27b-it-qat"),
         ):
             model = await mod._resolve_summary_model(MagicMock())
@@ -42,14 +42,14 @@ class TestRetentionResolveSummaryModel:
 
     @pytest.mark.asyncio
     async def test_raises_and_notifies_when_pin_unset(self):
-        from services.integrations.handlers import retention_summarize_to_table as mod
+        from poindexter.services.integrations.handlers import retention_summarize_to_table as mod
 
         notify = AsyncMock()
         with patch(
-            "services.integrations.handlers.retention_summarize_to_table._get_setting",
+            "poindexter.services.integrations.handlers.retention_summarize_to_table._get_setting",
             AsyncMock(return_value=""),
         ), patch(
-            "services.integrations.handlers.retention_summarize_to_table.notify_operator",
+            "poindexter.services.integrations.handlers.retention_summarize_to_table.notify_operator",
             notify,
         ):
             with pytest.raises(RuntimeError, match="no summary model"):

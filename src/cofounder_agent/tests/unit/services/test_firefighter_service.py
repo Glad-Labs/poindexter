@@ -27,13 +27,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.firefighter_service import (
+from poindexter.services.firefighter_service import (
     _FALLBACK_SYSTEM_PROMPT,
     _resolve_system_prompt,
     build_triage_context,
     run_triage,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -377,7 +377,7 @@ class TestRunTriage:
         router.invoke = AsyncMock(return_value={"text": "ok"})
 
         with patch(
-            "services.prompt_manager.get_prompt_manager",
+            "poindexter.services.prompt_manager.get_prompt_manager",
         ) as mock_pm:
             mock_pm.return_value.get_prompt.return_value = "BE BRIEF."
             await run_triage({}, cfg, router)
@@ -406,7 +406,7 @@ class TestResolveSystemPrompt:
 
     def test_returns_value_from_prompt_manager(self):
         with patch(
-            "services.prompt_manager.get_prompt_manager",
+            "poindexter.services.prompt_manager.get_prompt_manager",
         ) as mock_pm:
             mock_pm.return_value.get_prompt.return_value = "FROM_PROMPT_MANAGER"
             result = _resolve_system_prompt()
@@ -421,7 +421,7 @@ class TestResolveSystemPrompt:
         prompt to the LLM.
         """
         with patch(
-            "services.prompt_manager.get_prompt_manager",
+            "poindexter.services.prompt_manager.get_prompt_manager",
             side_effect=RuntimeError("prompt_manager not initialised"),
         ):
             result = _resolve_system_prompt()

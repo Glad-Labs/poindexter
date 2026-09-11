@@ -14,7 +14,7 @@ import sys
 import click
 
 from poindexter.cli._dataplane import dump_row, fmt_age, render_table, run_service
-from services import declarative_config_service as dcs
+from poindexter.services import declarative_config_service as dcs
 
 _SURFACE = "webhooks"
 

@@ -9,7 +9,7 @@ paragraph.
 """
 
 
-from services.excerpt_generator import generate_excerpt
+from poindexter.services.excerpt_generator import generate_excerpt
 
 
 class TestGenerateExcerpt:

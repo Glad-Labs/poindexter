@@ -25,16 +25,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-import services.http_client as http_client_module
-import services.skill_importer as skill_importer_module
+import poindexter.services.http_client as http_client_module
+import poindexter.services.skill_importer as skill_importer_module
 from modules.content.atoms.content_reconcile_citations import (
     _resolve_youtube_authors,
 )
-from services.http_client import wire_http_client_modules
-from services.llm_providers.openai_compat import OpenAICompatProvider
-from services.research_context import build_rag_context
-from services.skill_importer import SkillImportError, remove_skill
-from services.topic_sources.codebase import CodebaseSource
+from poindexter.services.http_client import wire_http_client_modules
+from poindexter.services.llm_providers.openai_compat import OpenAICompatProvider
+from poindexter.services.research_context import build_rag_context
+from poindexter.services.skill_importer import SkillImportError, remove_skill
+from poindexter.services.topic_sources.codebase import CodebaseSource
 
 pytestmark = pytest.mark.unit
 
@@ -111,7 +111,7 @@ def test_wire_http_client_modules_aggregates_failures_into_one_finding(
     monkeypatch.setattr(
         http_client_module,
         "WIRED_HTTP_CLIENT_MODULES",
-        ("services.no_such_module_xyz",),
+        ("poindexter.services.no_such_module_xyz",),
     )
 
     wired = wire_http_client_modules(MagicMock())
@@ -120,7 +120,7 @@ def test_wire_http_client_modules_aggregates_failures_into_one_finding(
     assert len(calls) == 1
     assert calls[0]["kind"] == "http_client_wiring_failed"
     assert calls[0]["dedup_key"] == "http_client_wiring_failed"
-    assert "services.no_such_module_xyz" in calls[0]["body"]
+    assert "poindexter.services.no_such_module_xyz" in calls[0]["body"]
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ async def test_remove_skill_aggregates_parse_failures_into_one_finding(
 
     monkeypatch.setattr(skill_importer_module, "_parse_frontmatter", _flaky_parse)
 
-    with patch("services.skill_importer._SKILLS_DIR", skills_root):
+    with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
         result = await remove_skill("good-skill", pool=None)
 
     # Non-blocking — the good skill was still found and removed despite the
@@ -278,7 +278,7 @@ async def test_remove_skill_not_found_still_raises_after_parse_failure(
 
     monkeypatch.setattr(skill_importer_module, "_parse_frontmatter", _flaky_parse)
 
-    with patch("services.skill_importer._SKILLS_DIR", skills_root):
+    with patch("poindexter.services.skill_importer._SKILLS_DIR", skills_root):
         with pytest.raises(SkillImportError, match="not installed"):
             await remove_skill("ghost-skill", pool=None)
 
@@ -310,7 +310,7 @@ async def test_codebase_extract_aggregates_embed_failures_into_one_finding(
     pool = _FakePool([])
 
     with patch(
-        "services.llm_providers.dispatcher.dispatch_embed", embed_mock,
+        "poindexter.services.llm_providers.dispatcher.dispatch_embed", embed_mock,
     ):
         topics = await CodebaseSource().extract(
             pool=pool,

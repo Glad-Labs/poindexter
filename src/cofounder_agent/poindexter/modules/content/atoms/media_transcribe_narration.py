@@ -44,7 +44,7 @@ import tempfile
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from services.caption_providers import get_caption_provider
+from poindexter.services.caption_providers import get_caption_provider
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -278,7 +278,7 @@ async def _transcribe_one(
         except (TypeError, ValueError):
             min_ratio = 0.5
     if align_enabled and caption_text and result.segments:
-        from services.caption_align import align_script_to_segments, segments_to_srt
+        from poindexter.services.caption_align import align_script_to_segments, segments_to_srt
 
         aligned, fraction = align_script_to_segments(
             list(result.segments), caption_text,
@@ -308,7 +308,7 @@ async def _transcribe_one(
     # segments, so QA compares speech, not display formatting.
     max_cue_words = _resolve_max_cue_words(site_config, label)
     if max_cue_words > 0 and display_segments:
-        from services.caption_align import split_segments_for_display
+        from poindexter.services.caption_align import split_segments_for_display
 
         chunked = split_segments_for_display(
             display_segments,
@@ -330,7 +330,7 @@ async def _transcribe_one(
     # matched word's onset (minus the display lead) / last matched word's
     # offset. Text and chunking are untouched; only WHEN each cue shows.
     if result.words and display_segments:
-        from services.caption_align import retime_cues_to_words
+        from poindexter.services.caption_align import retime_cues_to_words
 
         display_segments = retime_cues_to_words(
             display_segments,
@@ -344,7 +344,7 @@ async def _transcribe_one(
         )
 
     if display_segments:
-        from services.caption_align import segments_to_srt
+        from poindexter.services.caption_align import segments_to_srt
 
         rebuilt = segments_to_srt(display_segments)
         if rebuilt:
@@ -432,7 +432,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # names). The fidelity reference must be the text TTS actually received,
     # so the same pass runs here — otherwise a clean-script "CI/CD" diffs
     # against ASR of the spoken "See Eye See Dee" and tanks fidelity.
-    from services.podcast_service import _normalize_for_speech
+    from poindexter.services.podcast_service import _normalize_for_speech
 
     def _tts_input(text: str) -> str:
         # site_config=None (tests / degraded runs) would fail-loud inside the

@@ -24,8 +24,8 @@ from plugins.media_compositor import (
     CompositionScene,
     MediaCompositor,
 )
-from services.media_compositors import ffmpeg_local as ffmpeg_mod
-from services.media_compositors.ffmpeg_local import (
+from poindexter.services.media_compositors import ffmpeg_local as ffmpeg_mod
+from poindexter.services.media_compositors.ffmpeg_local import (
     FFmpegLocalCompositor,
     _build_burn_captions_cmd,
     _build_concat_cmd,
@@ -999,7 +999,7 @@ class TestComposeHappyPath:
             '"width": 1920, "height": 1080, "r_frame_rate": "30/1"}]}'
         )
 
-        with patch("services.media_compositors.ffmpeg_local.shutil.which", side_effect=fake_which):
+        with patch("poindexter.services.media_compositors.ffmpeg_local.shutil.which", side_effect=fake_which):
             with patch.object(ffmpeg_mod, "_run_blocking", side_effect=fake_run):
                 with patch.object(
                     ffmpeg_mod, "_ffprobe_blocking",
@@ -1053,7 +1053,7 @@ class TestComposeHappyPath:
         )
 
         with patch(
-            "services.media_compositors.ffmpeg_local.shutil.which",
+            "poindexter.services.media_compositors.ffmpeg_local.shutil.which",
             side_effect=lambda name: f"/usr/bin/{name}",
         ):
             with patch.object(ffmpeg_mod, "_run_blocking", side_effect=fake_run):
@@ -1122,7 +1122,7 @@ class TestComposeHappyPath:
             return (0, self._probe_payload(48.0), "")
 
         with patch(
-            "services.media_compositors.ffmpeg_local.shutil.which",
+            "poindexter.services.media_compositors.ffmpeg_local.shutil.which",
             side_effect=lambda name: f"/usr/bin/{name}",
         ):
             with patch.object(ffmpeg_mod, "_run_blocking", side_effect=fake_run):
@@ -1174,7 +1174,7 @@ class TestComposeHappyPath:
             return (0, self._probe_payload(48.0), "")
 
         with patch(
-            "services.media_compositors.ffmpeg_local.shutil.which",
+            "poindexter.services.media_compositors.ffmpeg_local.shutil.which",
             side_effect=lambda name: f"/usr/bin/{name}",
         ):
             with patch.object(ffmpeg_mod, "_run_blocking", side_effect=fake_run):
@@ -1203,7 +1203,7 @@ class TestComposeFailurePath:
         def fake_which(name: str):
             return f"/usr/bin/{name}"
 
-        with patch("services.media_compositors.ffmpeg_local.shutil.which", side_effect=fake_which):
+        with patch("poindexter.services.media_compositors.ffmpeg_local.shutil.which", side_effect=fake_which):
             # rc=1 with stderr — this is the FIRST call (normalize).
             with patch.object(
                 ffmpeg_mod, "_run_blocking",
@@ -1240,7 +1240,7 @@ class TestComposeFailurePath:
                 return (0, "", "")
             return (1, "", "concat list invalid")
 
-        with patch("services.media_compositors.ffmpeg_local.shutil.which", side_effect=fake_which):
+        with patch("poindexter.services.media_compositors.ffmpeg_local.shutil.which", side_effect=fake_which):
             with patch.object(ffmpeg_mod, "_run_blocking", side_effect=fake_run):
                 with patch.object(
                     ffmpeg_mod, "_ffprobe_blocking",
@@ -1256,7 +1256,7 @@ class TestComposeFailurePath:
         compositor = _make_compositor({"binary_path": "no-such-ffmpeg"})
         request = _make_request(tmp_path)
 
-        with patch("services.media_compositors.ffmpeg_local.shutil.which", return_value=None):
+        with patch("poindexter.services.media_compositors.ffmpeg_local.shutil.which", return_value=None):
             result = await compositor.compose(request)
 
         assert result.success is False
@@ -1287,7 +1287,7 @@ class TestProbe:
         media.write_bytes(b"\x00" * 8)
         compositor = _make_compositor()
         with patch(
-            "services.media_compositors.ffmpeg_local.shutil.which",
+            "poindexter.services.media_compositors.ffmpeg_local.shutil.which",
             return_value="/usr/bin/ffprobe",
         ):
             with patch.object(
@@ -1309,7 +1309,7 @@ class TestProbe:
             '"width": 1280, "height": 720, "r_frame_rate": "24/1"}]}'
         )
         with patch(
-            "services.media_compositors.ffmpeg_local.shutil.which",
+            "poindexter.services.media_compositors.ffmpeg_local.shutil.which",
             return_value="/usr/bin/ffprobe",
         ):
             with patch.object(
@@ -1330,7 +1330,7 @@ class TestProbe:
         media.write_bytes(b"\x00")
         compositor = _make_compositor()
         with patch(
-            "services.media_compositors.ffmpeg_local.shutil.which",
+            "poindexter.services.media_compositors.ffmpeg_local.shutil.which",
             return_value=None,
         ):
             out = await compositor.probe(str(media))
@@ -1371,7 +1371,7 @@ class TestSoundtrackLoopScoping:
     hold and gets cut at video end (caught by ear on the 2026-08-06 sample)."""
 
     def _cmd(self, **kwargs):
-        from services.media_compositors.ffmpeg_local import _build_soundtrack_mix_cmd
+        from poindexter.services.media_compositors.ffmpeg_local import _build_soundtrack_mix_cmd
 
         return _build_soundtrack_mix_cmd(
             binary="ffmpeg",

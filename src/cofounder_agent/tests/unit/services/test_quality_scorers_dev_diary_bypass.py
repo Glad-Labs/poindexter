@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from services.quality_scorers import score_accuracy
-from services.site_config import SiteConfig
+from poindexter.services.quality_scorers import score_accuracy
+from poindexter.services.site_config import SiteConfig
 
 # #272 Phase-2d: ``validator_config.is_validator_enabled`` now reads the
 # ``qa_allow_first_person_niches`` CSV from the SiteConfig threaded down by

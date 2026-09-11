@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services import image_service as image_service_mod
-from services.image_service import ImageGenOutcome, ImageService
-from services.site_config import SiteConfig
+from poindexter.services import image_service as image_service_mod
+from poindexter.services.image_service import ImageGenOutcome, ImageService
+from poindexter.services.site_config import SiteConfig
 
 pytestmark = pytest.mark.asyncio
 

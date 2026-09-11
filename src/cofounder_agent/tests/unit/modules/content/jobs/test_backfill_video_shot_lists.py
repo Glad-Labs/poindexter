@@ -16,7 +16,7 @@ import pytest
 from modules.content.jobs.backfill_video_shot_lists import (
     BackfillVideoShotListsJob,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 _SHOT_LIST = {"shots": [{"idx": 0}, {"idx": 1}], "total_duration_s": 30.0}
 
@@ -78,7 +78,7 @@ def _cfg(**over):
 
 def _patch_deps(monkeypatch, *, stage_result, platform=object()):
     monkeypatch.setattr(
-        "services.di_wiring.build_platform_for_subprocess",
+        "poindexter.services.di_wiring.build_platform_for_subprocess",
         lambda *a, **k: platform,
     )
     stage = MagicMock()
@@ -153,7 +153,7 @@ class TestBackfillVideoShotLists:
             "modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
         )
         monkeypatch.setattr(
-            "services.di_wiring.build_platform_for_subprocess", lambda *a, **k: object(),
+            "poindexter.services.di_wiring.build_platform_for_subprocess", lambda *a, **k: object(),
         )
         stage = MagicMock()
         stage.execute = AsyncMock(side_effect=[
@@ -176,7 +176,7 @@ class TestBackfillVideoShotLists:
         returns a benign no-op — which would clear markers for pieces that
         still have no shot list. Refuse the cycle instead."""
         monkeypatch.setattr(
-            "services.di_wiring.build_platform_for_subprocess", lambda *a, **k: None,
+            "poindexter.services.di_wiring.build_platform_for_subprocess", lambda *a, **k: None,
         )
         pool = _FakePool([_row()])
 

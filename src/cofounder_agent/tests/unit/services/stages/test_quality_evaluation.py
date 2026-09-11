@@ -15,7 +15,7 @@ from plugins.stage import Stage
 def _fake_quality_result(score: float = 82.5, passing: bool = True, truncated: bool = False):
     # Real QualityAssessment so the stage's quality_result.to_dict() call
     # (the #879 checkpointer-safe storage path) exercises the real method.
-    from services.quality_models import (
+    from poindexter.services.quality_models import (
         EvaluationMethod,
         QualityAssessment,
         QualityDimensions,

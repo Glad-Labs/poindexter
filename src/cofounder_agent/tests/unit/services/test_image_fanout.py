@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services import image_fanout
-from services.image_fanout import (
+from poindexter.services import image_fanout
+from poindexter.services.image_fanout import (
     _COMFY_CANDIDATES,
     FanoutCandidate,
     _build_candidate_graph,
@@ -120,7 +120,7 @@ class TestGraphs:
         """Every name in the shipped default list is either the
         stage-rendered zimage or has a ComfyUI builder — a typo'd default
         would drop a candidate silently."""
-        from services.image_fanout import _DEFAULT_CANDIDATES, _DEFAULT_PRIORITY
+        from poindexter.services.image_fanout import _DEFAULT_CANDIDATES, _DEFAULT_PRIORITY
 
         wanted = [n.strip() for n in _DEFAULT_CANDIDATES.split(",")]
         assert set(wanted) <= {"zimage", *_COMFY_CANDIDATES}
@@ -268,7 +268,7 @@ def _no_live_object_store():
     run would otherwise write real objects. Retention tests re-patch locally;
     the innermost patch wins, same idiom as the gpu rungs.
     """
-    with patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+    with patch("poindexter.services.r2_upload_service.R2UploadService.upload_to_r2",
                AsyncMock(return_value=None)):
         yield
 
@@ -287,8 +287,8 @@ def no_gpu_unload():
     # on the operator-box runner — the egress guard (poindexter#1011) caught
     # exactly that when this fixture only stubbed image-gen. Tests asserting
     # either rung re-patch locally; the innermost patch wins.
-    with patch("services.gpu_scheduler.gpu._unload_image_gen", AsyncMock()) as m, \
-         patch("services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()):
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", AsyncMock()) as m, \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()):
         yield m
 
 
@@ -494,7 +494,7 @@ class TestRunFeaturedFanout:
 
 class TestAuditSchema:
     def test_registered_and_validates_producer_shape(self):
-        from services.audit_event_schemas import (
+        from poindexter.services.audit_event_schemas import (
             EVENT_SCHEMAS,
             validate_event_details,
         )
@@ -534,7 +534,7 @@ class TestVramFixAndDatasetCompleteness:
         free = AsyncMock()
         with patch.object(image_fanout, "_render_via_comfy", render), \
              patch.object(image_fanout, "_score_candidate", score), \
-             patch("services.gpu_scheduler.gpu._unload_comfyui", free):
+             patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", free):
             out = await run_featured_fanout(
                 prompt="p", negative="n", zimage_path=zimage_file,
                 zimage_meta={}, site_config=_sc(), pool=_pool(), task_id="t",
@@ -545,7 +545,7 @@ class TestVramFixAndDatasetCompleteness:
     @pytest.mark.asyncio
     async def test_no_comfy_candidates_no_free(self, zimage_file, no_gpu_unload):
         free = AsyncMock()
-        with patch("services.gpu_scheduler.gpu._unload_comfyui", free):
+        with patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", free):
             await run_featured_fanout(
                 prompt="p", negative="n", zimage_path=zimage_file,
                 zimage_meta={},
@@ -567,7 +567,7 @@ class TestVramFixAndDatasetCompleteness:
 
         pool = _pool()
         with patch.object(image_fanout, "_render_via_comfy", render), \
-             patch("services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()):
+             patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()):
             await run_featured_fanout(
                 prompt="p", negative="n", zimage_path=None,
                 zimage_meta={"transient": True, "failure": "HTTP 503"},
@@ -599,7 +599,7 @@ class TestVramFixAndDatasetCompleteness:
         pool = _pool()
         with patch.object(image_fanout, "_render_via_comfy", render), \
              patch.object(image_fanout, "_score_candidate", score), \
-             patch("services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()):
+             patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()):
             await run_featured_fanout(
                 prompt="p", negative="n", zimage_path=None, zimage_meta=None,
                 site_config=_sc(image_fanout_candidates="schnell,klein"),
@@ -621,9 +621,9 @@ class TestVramFixAndDatasetCompleteness:
 
         prompt_mgr = MagicMock()
         prompt_mgr.get_prompt = MagicMock(return_value="judge prompt")
-        with patch("services.llm_providers.dispatcher.dispatch_complete",
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete",
                    fake_dispatch), \
-             patch("services.prompt_manager.get_prompt_manager",
+             patch("poindexter.services.prompt_manager.get_prompt_manager",
                    MagicMock(return_value=prompt_mgr)):
             await image_fanout._score_candidate(
                 cand, brief="b",
@@ -667,7 +667,7 @@ class TestJudgeThinkingBudget:
             "ollama/qwen3-vl:30b", 2048, sc) == 5000
 
     def test_registry_failure_falls_back_to_base(self):
-        with patch("services.llm_providers.thinking_models.is_thinking_model",
+        with patch("poindexter.services.llm_providers.thinking_models.is_thinking_model",
                    side_effect=RuntimeError("registry down")):
             assert image_fanout._judge_token_budget(
                 "ollama/qwen3-vl:30b", 2048, _FakeSiteConfig({})) == 2048
@@ -693,7 +693,7 @@ class TestCandidateRetention:
             seen.append(key)
             return f"https://cdn.example/{key}"
 
-        with patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+        with patch("poindexter.services.r2_upload_service.R2UploadService.upload_to_r2",
                    fake_upload):
             await image_fanout._retain_candidates(
                 cands, task_id="t42", site_config=_sc())
@@ -714,7 +714,7 @@ class TestCandidateRetention:
         f.write_bytes(b"A")
         cand = FanoutCandidate(name="schnell", path=str(f))
         upload = AsyncMock(return_value="https://cdn.example/x")
-        with patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+        with patch("poindexter.services.r2_upload_service.R2UploadService.upload_to_r2",
                    upload):
             await image_fanout._retain_candidates(
                 [cand], task_id="t",
@@ -728,7 +728,7 @@ class TestCandidateRetention:
         f = tmp_path / "a.png"
         f.write_bytes(b"A")
         cand = FanoutCandidate(name="schnell", path=str(f))
-        with patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+        with patch("poindexter.services.r2_upload_service.R2UploadService.upload_to_r2",
                    AsyncMock(side_effect=RuntimeError("object store down"))):
             await image_fanout._retain_candidates(
                 [cand], task_id="t", site_config=_sc())
@@ -747,7 +747,7 @@ class TestCandidateRetention:
         pool = _pool()
         with patch.object(image_fanout, "_render_via_comfy", no_render), \
              patch.object(image_fanout, "_score_candidate", AsyncMock()), \
-             patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+             patch("poindexter.services.r2_upload_service.R2UploadService.upload_to_r2",
                    fake_upload):
             await run_featured_fanout(
                 prompt="p", negative="n", zimage_path=zimage_file,
@@ -822,9 +822,9 @@ class TestJudgeModelPin:
 
         prompt_mgr = MagicMock()
         prompt_mgr.get_prompt = MagicMock(return_value="judge prompt")
-        with patch("services.llm_providers.dispatcher.dispatch_complete",
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete",
                    fake_dispatch), \
-             patch("services.prompt_manager.get_prompt_manager",
+             patch("poindexter.services.prompt_manager.get_prompt_manager",
                    MagicMock(return_value=prompt_mgr)):
             await image_fanout._score_candidate(
                 cand, brief="b",
@@ -852,9 +852,9 @@ class TestJudgeModelPin:
 
         prompt_mgr = MagicMock()
         prompt_mgr.get_prompt = MagicMock(return_value="judge prompt")
-        with patch("services.llm_providers.dispatcher.dispatch_complete",
+        with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete",
                    boom), \
-             patch("services.prompt_manager.get_prompt_manager",
+             patch("poindexter.services.prompt_manager.get_prompt_manager",
                    MagicMock(return_value=prompt_mgr)):
             await image_fanout._score_candidate(
                 cand, brief="b",

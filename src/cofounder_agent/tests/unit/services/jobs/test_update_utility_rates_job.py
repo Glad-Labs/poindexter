@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.jobs.update_utility_rates import (
+from poindexter.services.jobs.update_utility_rates import (
     DEFAULT_GPU_TDP_MAP,
     UpdateUtilityRatesJob,
     _load_gpu_tdp_map,
@@ -116,7 +116,7 @@ class TestRefreshElectricityRate:
         pool, _ = _make_pool()
         client = _patched_httpx(json_body={"response": {"data": []}})
         with patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=client,
         ):
             result = await _refresh_electricity_rate(
@@ -131,7 +131,7 @@ class TestRefreshElectricityRate:
         body = {"response": {"data": [{"price": 16.11, "period": "2025-12"}]}}
         client = _patched_httpx(json_body=body)
         with patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=client,
         ):
             change = await _refresh_electricity_rate(
@@ -150,7 +150,7 @@ class TestRefreshElectricityRate:
         body = {"response": {"data": [{"price": 16.11, "period": "2025-12"}]}}
         client = _patched_httpx(json_body=body)
         with patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=client,
         ):
             change = await _refresh_electricity_rate(
@@ -167,7 +167,7 @@ class TestRefreshElectricityRate:
         body = {"response": {"data": [{"price": 16.11, "period": "2025-12"}]}}
         client = _patched_httpx(json_body=body)
         with patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=client,
         ):
             change = await _refresh_electricity_rate(
@@ -193,7 +193,7 @@ class TestRefreshGpuTdp:
             return_value=(b"NVIDIA GeForce RTX 5090\n", b""),
         )
         with patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=fake_proc),
         ):
             change = await _refresh_gpu_tdp(pool, {"RTX 5090": 575})
@@ -206,7 +206,7 @@ class TestRefreshGpuTdp:
         fake_proc = MagicMock()
         fake_proc.communicate = AsyncMock(return_value=(b"Mystery GPU\n", b""))
         with patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=fake_proc),
         ):
             change = await _refresh_gpu_tdp(pool, {"RTX 5090": 575})
@@ -220,7 +220,7 @@ class TestRefreshGpuTdp:
             return_value=(b"NVIDIA GeForce RTX 5090\n", b""),
         )
         with patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=fake_proc),
         ):
             change = await _refresh_gpu_tdp(pool, {"RTX 5090": 575})
@@ -233,7 +233,7 @@ class TestRefreshGpuTdp:
         fake_proc = MagicMock()
         fake_proc.communicate = AsyncMock(return_value=(b"\n", b""))
         with patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=fake_proc),
         ):
             assert await _refresh_gpu_tdp(pool, DEFAULT_GPU_TDP_MAP) is None
@@ -276,13 +276,13 @@ class TestRun:
             return_value=(b"NVIDIA GeForce RTX 5090\n", b""),
         )
         with patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=eia_client,
         ), patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=fake_proc),
         ), patch(
-            "services.jobs.update_utility_rates._load_gpu_tdp_map",
+            "poindexter.services.jobs.update_utility_rates._load_gpu_tdp_map",
             return_value={"RTX 5090": 575},
         ):
             job = UpdateUtilityRatesJob()
@@ -300,10 +300,10 @@ class TestRun:
         eia_body = {"response": {"data": []}}  # no records → no change
         eia_client = _patched_httpx(json_body=eia_body)
         with patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=eia_client,
         ), patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(side_effect=FileNotFoundError("nvidia-smi not found")),
         ):
             job = UpdateUtilityRatesJob()
@@ -320,10 +320,10 @@ class TestRun:
         sc = MagicMock()
         sc.get.return_value = "SITE_KEY"
         with patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=client,
         ) as mock_cls, patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(side_effect=FileNotFoundError),
         ):
             job = UpdateUtilityRatesJob()
@@ -346,13 +346,13 @@ class TestRun:
             return_value=(b"NVIDIA GeForce RTX 5090\n", b""),
         )
         with patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=_patched_httpx(json_body={"response": {"data": []}}),
         ), patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=fake_proc),
         ), patch(
-            "services.jobs.update_utility_rates._load_gpu_tdp_map",
+            "poindexter.services.jobs.update_utility_rates._load_gpu_tdp_map",
             return_value={"RTX 5090": 575},
         ):
             job = UpdateUtilityRatesJob()
@@ -393,13 +393,13 @@ class TestRun:
         )
 
         with patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=_patched_httpx(json_body={"response": {"data": []}}),
         ), patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=fake_proc),
         ), patch(
-            "services.jobs.update_utility_rates._load_gpu_tdp_map",
+            "poindexter.services.jobs.update_utility_rates._load_gpu_tdp_map",
             return_value={"RTX 5090": 575},
         ):
             job = UpdateUtilityRatesJob()

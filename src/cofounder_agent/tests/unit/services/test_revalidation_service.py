@@ -35,8 +35,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services import revalidation_service
-from services.revalidation_service import (
+from poindexter.services import revalidation_service
+from poindexter.services.revalidation_service import (
     _CANONICAL_PATHS,
     _CANONICAL_TAGS,
     DEFAULT_REVALIDATE_URL,
@@ -157,7 +157,7 @@ class TestTriggerNextjsRevalidationHeaderAndBody:
             url="https://www.gladlabs.io/api/revalidate",
         )
         client = _build_httpx_client(200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             ok = await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
         assert ok is True
         # Verify the header is present and the value matches the secret.
@@ -171,7 +171,7 @@ class TestTriggerNextjsRevalidationHeaderAndBody:
     async def test_body_contains_paths_and_tags(self):
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             ok = await trigger_nextjs_revalidation(
                 ["/foo", "/bar"], ["tag-a", "tag-b"], site_config=cfg,
             )
@@ -183,7 +183,7 @@ class TestTriggerNextjsRevalidationHeaderAndBody:
     async def test_content_type_header_is_application_json(self):
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
         sent_headers = client.post.call_args.kwargs["headers"]
         assert sent_headers["Content-Type"] == "application/json"
@@ -193,7 +193,7 @@ class TestTriggerNextjsRevalidationHeaderAndBody:
         """Explicit public_site_revalidate_url overrides the legacy chain."""
         cfg = _build_site_config(url="https://staging.example.com/api/revalidate")
         client = _build_httpx_client(200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
         url_arg = client.post.call_args.args[0]
         assert url_arg == "https://staging.example.com/api/revalidate"
@@ -202,8 +202,8 @@ class TestTriggerNextjsRevalidationHeaderAndBody:
     async def test_skips_with_warning_when_secret_empty(self):
         """Empty secret = warn + return False, no httpx call."""
         cfg = _build_site_config(secret="", url="https://www.gladlabs.io/api/revalidate")
-        with patch("services.revalidation_service.httpx.AsyncClient") as mock_client_cls, \
-             patch("services.revalidation_service.logger") as mock_logger:
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient") as mock_client_cls, \
+             patch("poindexter.services.revalidation_service.logger") as mock_logger:
             ok = await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
         assert ok is False
         mock_client_cls.assert_not_called()  # never even opened the client
@@ -216,7 +216,7 @@ class TestTriggerNextjsRevalidationHeaderAndBody:
     async def test_returns_false_on_500_without_raising(self):
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(500, text="boom")
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             ok = await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
         assert ok is False
 
@@ -227,7 +227,7 @@ class TestTriggerNextjsRevalidationHeaderAndBody:
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=None)
         client.post = AsyncMock(side_effect=httpx.TimeoutException("slow"))
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             ok = await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
         assert ok is False
 
@@ -238,7 +238,7 @@ class TestTriggerNextjsRevalidationHeaderAndBody:
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=None)
         client.post = AsyncMock(side_effect=RuntimeError("network kaput"))
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             ok = await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
         assert ok is False
 
@@ -314,7 +314,7 @@ class TestTriggerIsrRevalidate:
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(200)
         slug = "great-article-aaaaaaaa"
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             ok = await trigger_isr_revalidate(slug, site_config=cfg)
         assert ok is True
         body = client.post.call_args.kwargs["json"]
@@ -333,7 +333,7 @@ class TestTriggerIsrRevalidate:
     async def test_extra_paths_and_tags_are_unioned(self):
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             await trigger_isr_revalidate(
                 "myslug",
                 paths=["/archive/1", "/special"],
@@ -353,7 +353,7 @@ class TestTriggerIsrRevalidate:
         """Idempotent: passing /posts (already canonical) doesn't double it."""
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             await trigger_isr_revalidate(
                 "myslug",
                 paths=["/posts", "/", "/sitemap.xml"],  # all canonical already
@@ -372,7 +372,7 @@ class TestTriggerIsrRevalidate:
         """#327 spec: secret MUST be fetched via the async get_secret method."""
         cfg = _build_site_config(secret="async-secret", url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             await trigger_isr_revalidate("myslug", site_config=cfg)
         # get_secret was awaited at least once with the right key.
         cfg.get_secret.assert_awaited_with("revalidate_secret", "")
@@ -384,7 +384,7 @@ class TestTriggerIsrRevalidate:
     async def test_skips_safely_when_secret_empty(self):
         """Empty secret = log warning, return False, never raise."""
         cfg = _build_site_config(secret="", url="https://www.gladlabs.io/api/revalidate")
-        with patch("services.revalidation_service.httpx.AsyncClient") as mock_client_cls:
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient") as mock_client_cls:
             ok = await trigger_isr_revalidate("myslug", site_config=cfg)
         assert ok is False
         mock_client_cls.assert_not_called()
@@ -397,7 +397,7 @@ class TestTriggerIsrRevalidate:
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=None)
         client.post = AsyncMock(side_effect=httpx.HTTPError("connection refused"))
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             # No exception should propagate.
             ok = await trigger_isr_revalidate("myslug", site_config=cfg)
         assert ok is False
@@ -407,7 +407,7 @@ class TestTriggerIsrRevalidate:
         """The new DB-configurable setting overrides the legacy URL chain."""
         cfg = _build_site_config(url="https://staging.example.com/api/revalidate")
         client = _build_httpx_client(200)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             await trigger_isr_revalidate("myslug", site_config=cfg)
         url_arg = client.post.call_args.args[0]
         assert url_arg == "https://staging.example.com/api/revalidate"
@@ -425,8 +425,8 @@ class TestScheduledPublisherCallsHelper:
 
     @pytest.mark.asyncio
     async def test_promotes_and_revalidates_each_row(self):
-        from services.scheduled_publisher import run_scheduled_publisher
-        from services.site_config import SiteConfig
+        from poindexter.services.scheduled_publisher import run_scheduled_publisher
+        from poindexter.services.site_config import SiteConfig
 
         rows = [
             {
@@ -468,7 +468,7 @@ class TestScheduledPublisherCallsHelper:
             return True
 
         with patch(
-            "services.revalidation_service.trigger_isr_revalidate",
+            "poindexter.services.revalidation_service.trigger_isr_revalidate",
             new=fake_revalidate,
         ):
             task = asyncio.create_task(
@@ -487,8 +487,8 @@ class TestScheduledPublisherCallsHelper:
     @pytest.mark.asyncio
     async def test_revalidation_failure_does_not_poison_loop(self):
         """A revalidation exception must not break subsequent rows."""
-        from services.scheduled_publisher import run_scheduled_publisher
-        from services.site_config import SiteConfig
+        from poindexter.services.scheduled_publisher import run_scheduled_publisher
+        from poindexter.services.site_config import SiteConfig
 
         rows = [
             {"id": "id-1", "title": "First", "slug": "first", "pipeline_task_id": None},
@@ -519,7 +519,7 @@ class TestScheduledPublisherCallsHelper:
             return True
 
         with patch(
-            "services.revalidation_service.trigger_isr_revalidate",
+            "poindexter.services.revalidation_service.trigger_isr_revalidate",
             new=fake_revalidate,
         ):
             task = asyncio.create_task(
@@ -544,7 +544,7 @@ class TestTriggerNextjsRevalidationDetailed:
     async def test_success_returns_status_and_url(self):
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(200, text='{"success":true}')
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
         assert isinstance(result, RevalidationResult)
         assert result.success is True
@@ -559,7 +559,7 @@ class TestTriggerNextjsRevalidationDetailed:
     async def test_http_failure_captures_status_and_body(self):
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(401, text="Unauthorized: invalid x-revalidate-secret")
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
         assert result.success is False
         assert result.skipped is False
@@ -577,7 +577,7 @@ class TestTriggerNextjsRevalidationDetailed:
             403, text="<title>Just a moment...</title>",
             headers={"cf-mitigated": "challenge", "server": "cloudflare"},
         )
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
         assert result.success is False
         assert result.status_code == 403
@@ -588,7 +588,7 @@ class TestTriggerNextjsRevalidationDetailed:
         """A 403 lacking cf-mitigated stays 'http' (genuine upstream auth fail)."""
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(403, text="Forbidden", headers={"server": "vercel"})
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
         assert result.error_kind == "http"
 
@@ -599,7 +599,7 @@ class TestTriggerNextjsRevalidationDetailed:
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=None)
         client.post = AsyncMock(side_effect=httpx.TimeoutException("slow"))
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
         assert result.success is False
         assert result.status_code is None
@@ -613,7 +613,7 @@ class TestTriggerNextjsRevalidationDetailed:
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=None)
         client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
         assert result.success is False
         assert result.status_code is None
@@ -638,7 +638,7 @@ class TestTriggerNextjsRevalidationDetailed:
         # task_publishing_routes) stays untouched.
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(500, text="boom")
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             ok = await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
         assert ok is False
         assert isinstance(ok, bool)
@@ -663,7 +663,7 @@ class TestRevalidationServiceClass:
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(200)
         svc = RevalidationService(site_config=cfg)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             result = await svc.trigger_nextjs_revalidation_detailed(["/"], ["posts"])
         assert isinstance(result, RevalidationResult)
         assert result.success is True
@@ -674,7 +674,7 @@ class TestRevalidationServiceClass:
         cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
         client = _build_httpx_client(500, text="boom")
         svc = RevalidationService(site_config=cfg)
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             ok = await svc.trigger_nextjs_revalidation(["/"], ["posts"])
         assert ok is False
 
@@ -684,7 +684,7 @@ class TestRevalidationServiceClass:
         client = _build_httpx_client(200)
         svc = RevalidationService(site_config=cfg)
         slug = "great-article-aaaaaaaa"
-        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+        with patch("poindexter.services.revalidation_service.httpx.AsyncClient", return_value=client):
             ok = await svc.trigger_isr_revalidate(slug)
         assert ok is True
         body = client.post.call_args.kwargs["json"]
@@ -705,16 +705,16 @@ class TestAppContainerWiring:
     wired to the container's SiteConfig."""
 
     def test_app_container_exposes_revalidation_service(self):
-        from services.container import AppContainer
-        from services.site_config import SiteConfig
+        from poindexter.services.container import AppContainer
+        from poindexter.services.site_config import SiteConfig
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         svc = container.revalidation_service
         assert isinstance(svc, RevalidationService)
 
     def test_cached_property_memoises(self):
-        from services.container import AppContainer
-        from services.site_config import SiteConfig
+        from poindexter.services.container import AppContainer
+        from poindexter.services.site_config import SiteConfig
 
         container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
         assert container.revalidation_service is container.revalidation_service

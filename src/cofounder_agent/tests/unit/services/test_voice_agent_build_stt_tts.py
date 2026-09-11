@@ -68,7 +68,7 @@ def _stubs():
 
 
 def test_build_stt_inprocess_returns_whisper():
-    import services.voice_agent as va
+    import poindexter.services.voice_agent as va
     cfg = _Cfg(voice_agent_stt_mode="inprocess", voice_agent_whisper_model="base")
     stt = va._build_stt(cfg)
     assert stt.__class__.__name__ == "WhisperSTTService"
@@ -76,7 +76,7 @@ def test_build_stt_inprocess_returns_whisper():
 
 def test_build_stt_sidecar_returns_openai_client():
     stt_cls, _ = _stub_openai_services()
-    import services.voice_agent as va
+    import poindexter.services.voice_agent as va
     cfg = _Cfg(
         voice_agent_stt_mode="sidecar",
         voice_agent_stt_base_url="http://speaches:8000/v1",
@@ -90,14 +90,14 @@ def test_build_stt_sidecar_returns_openai_client():
 
 def test_build_stt_sidecar_empty_url_fails_loud():
     _stub_openai_services()
-    import services.voice_agent as va
+    import poindexter.services.voice_agent as va
     cfg = _Cfg(voice_agent_stt_mode="sidecar", voice_agent_stt_base_url="", voice_agent_stt_model="x")
     with pytest.raises(ValueError, match="voice_agent_stt_base_url"):
         va._build_stt(cfg)
 
 
 def test_build_stt_unknown_mode_fails_loud():
-    import services.voice_agent as va
+    import poindexter.services.voice_agent as va
     cfg = _Cfg(voice_agent_stt_mode="bogus")
     with pytest.raises(ValueError, match="voice_agent_stt_mode"):
         va._build_stt(cfg)
@@ -109,7 +109,7 @@ def test_build_stt_unknown_mode_fails_loud():
 
 
 def test_build_tts_inprocess_returns_kokoro():
-    import services.voice_agent as va
+    import poindexter.services.voice_agent as va
     cfg = _Cfg(voice_agent_tts_mode="inprocess", voice_agent_tts_voice="bf_emma")
     tts = va._build_tts(cfg, None)
     assert tts.__class__.__name__ == "KokoroTTSService"
@@ -117,7 +117,7 @@ def test_build_tts_inprocess_returns_kokoro():
 
 def test_build_tts_sidecar_uses_override_voice_and_speed():
     _, tts_cls = _stub_openai_services()
-    import services.voice_agent as va
+    import poindexter.services.voice_agent as va
     cfg = _Cfg(
         voice_agent_tts_mode="sidecar",
         voice_agent_tts_base_url="http://speaches:8000/v1",
@@ -153,7 +153,7 @@ def test_build_tts_sidecar_without_valid_voices_in_module():
     tts_mod.OpenAITTSService = tts_cls  # type: ignore[attr-defined]
     sys.modules["pipecat.services.openai.tts"] = tts_mod
 
-    import services.voice_agent as va
+    import poindexter.services.voice_agent as va
     cfg = _Cfg(
         voice_agent_tts_mode="sidecar",
         voice_agent_tts_base_url="http://speaches:8000/v1",
@@ -179,7 +179,7 @@ def test_build_tts_sidecar_registers_kokoro_voice_in_module_dict():
     openai_catalog: dict[str, str] = {"alloy": "alloy", "nova": "nova", "echo": "echo"}
     _, tts_cls = _stub_openai_services(module_valid_voices=openai_catalog)
 
-    import services.voice_agent as va
+    import poindexter.services.voice_agent as va
     cfg = _Cfg(
         voice_agent_tts_mode="sidecar",
         voice_agent_tts_base_url="http://speaches:8000/v1",
@@ -197,7 +197,7 @@ def test_build_tts_sidecar_registers_kokoro_voice_in_module_dict():
 
 def test_build_tts_sidecar_empty_model_fails_loud():
     _stub_openai_services()
-    import services.voice_agent as va
+    import poindexter.services.voice_agent as va
     cfg = _Cfg(
         voice_agent_tts_mode="sidecar",
         voice_agent_tts_base_url="http://speaches:8000/v1",

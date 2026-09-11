@@ -17,15 +17,15 @@ from typing import Any
 import httpx
 import pytest
 
-import services.pro_delivery as pro_delivery
-from services.pro_delivery import (
+import poindexter.services.pro_delivery as pro_delivery
+from poindexter.services.pro_delivery import (
     ProDeliveryConfigError,
     ProDeliveryService,
     cli_link,
     normalize_github_username,
     run_sync,
 )
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # fakes

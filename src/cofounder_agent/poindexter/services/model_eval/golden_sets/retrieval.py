@@ -39,8 +39,8 @@ import random
 import re
 from typing import Any
 
-from services.logger_config import get_logger
-from services.model_eval.types import GoldenCase, GoldenSet
+from poindexter.services.logger_config import get_logger
+from poindexter.services.model_eval.types import GoldenCase, GoldenSet
 
 logger = get_logger(__name__)
 
@@ -297,7 +297,7 @@ def _make_llm_question_fn(*, site_config: Any, pool: Any) -> Any:
     ``pool`` stays in the signature because the caller has one and a future
     local-provider dispatch path would want it; it is unused today by design.
     """
-    from services.llm_text import ollama_chat_text
+    from poindexter.services.llm_text import ollama_chat_text
 
     del pool  # see docstring — routing through the dispatcher would bill an API
     model = (

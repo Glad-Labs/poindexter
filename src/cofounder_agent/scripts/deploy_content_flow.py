@@ -55,7 +55,7 @@ from prefect.client.orchestration import get_client  # noqa: E402
 from prefect.client.schemas.schedules import CronSchedule  # noqa: E402
 from prefect.types.entrypoint import EntrypointType  # noqa: E402
 
-from services.flows.content_generation import content_generation_flow  # noqa: E402
+from poindexter.services.flows.content_generation import content_generation_flow  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

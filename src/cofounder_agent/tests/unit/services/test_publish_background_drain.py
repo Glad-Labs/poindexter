@@ -20,9 +20,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import services.audit_log as audit_mod
-import services.publish_service as publish_service
-from services.site_config import SiteConfig
+import poindexter.services.audit_log as audit_mod
+import poindexter.services.publish_service as publish_service
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -122,7 +122,7 @@ class TestDrainBackgroundTasks:
 class TestCloseDrainsPublishBackgroundTasks:
     @pytest.mark.asyncio
     async def test_close_drains_publish_tasks_before_audit_drain_and_pool_close(self):
-        from services.database_service import DatabaseService
+        from poindexter.services.database_service import DatabaseService
 
         svc = DatabaseService(database_url="x", site_config=SiteConfig())
         cloud_pool = AsyncMock(name="cloud")
@@ -141,10 +141,10 @@ class TestCloseDrainsPublishBackgroundTasks:
             order.append("audit_drain")
 
         with patch(
-            "services.publish_service.drain_background_tasks",
+            "poindexter.services.publish_service.drain_background_tasks",
             new=AsyncMock(side_effect=_publish_drain),
         ) as publish_drain, patch(
-            "services.database_service.drain_pending_writes",
+            "poindexter.services.database_service.drain_pending_writes",
             new=AsyncMock(side_effect=_audit_drain),
         ) as audit_drain:
             await svc.close()
@@ -170,7 +170,7 @@ class TestCloseDrainsPublishBackgroundTasks:
         flow and the CLI publish paths do) must still complete AND land its
         ``newsletter_campaign_sent`` audit row before the pools close.
         """
-        from services.database_service import DatabaseService
+        from poindexter.services.database_service import DatabaseService
 
         local_pool = _FakePool("local")
         cloud_pool = _FakePool("cloud")
@@ -188,7 +188,7 @@ class TestCloseDrainsPublishBackgroundTasks:
             return {"sent": 1, "failed": 0, "skipped": 0, "total_subscribers": 1}
 
         monkeypatch.setattr(
-            "services.newsletter_service.send_post_newsletter", slow_send
+            "poindexter.services.newsletter_service.send_post_newsletter", slow_send
         )
 
         publish_service._spawn_background(

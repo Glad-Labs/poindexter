@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.community_drafts import (
+from poindexter.services.community_drafts import (
     SubredditProfile,
     add_profile,
     edit_profile,

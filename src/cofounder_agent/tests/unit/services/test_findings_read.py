@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from services.findings_read import get_findings_trend, read_findings
+from poindexter.services.findings_read import get_findings_trend, read_findings
 
 # The db_pool fixture is loop_scope="session"; tests must share that loop.
 pytestmark = pytest.mark.asyncio(loop_scope="session")

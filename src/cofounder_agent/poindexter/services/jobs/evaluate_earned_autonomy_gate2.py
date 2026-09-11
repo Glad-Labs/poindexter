@@ -33,7 +33,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.media_approval_service import _earned_autonomy_check
+from poindexter.services.media_approval_service import _earned_autonomy_check
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 

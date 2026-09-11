@@ -92,8 +92,8 @@ import tempfile
 from collections import deque
 from typing import Any
 
-from services.integrations import registry
-from services.integrations.registry import register_handler
+from poindexter.services.integrations import registry
+from poindexter.services.integrations.registry import register_handler
 
 logger = logging.getLogger(__name__)
 

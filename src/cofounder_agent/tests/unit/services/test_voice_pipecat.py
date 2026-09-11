@@ -65,7 +65,7 @@ def _install_whisper_stub(
 
 def test_resolve_whisper_model_accepts_value_and_name(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_whisper_stub(monkeypatch)
-    from services.voice_pipecat import resolve_whisper_model
+    from poindexter.services.voice_pipecat import resolve_whisper_model
 
     assert resolve_whisper_model("base") is _Model.BASE
     assert resolve_whisper_model("BASE") is _Model.BASE
@@ -76,7 +76,7 @@ def test_resolve_whisper_model_en_suffix_maps_to_base(monkeypatch: pytest.Monkey
     # The 2026-06-02 bug: a seeded ``base.en`` (dropped from Pipecat's enum)
     # crashed the audio plane on connect. The shim maps it back to ``base``.
     _install_whisper_stub(monkeypatch)
-    from services.voice_pipecat import resolve_whisper_model
+    from poindexter.services.voice_pipecat import resolve_whisper_model
 
     assert resolve_whisper_model("base.en") is _Model.BASE
     assert resolve_whisper_model("medium.en") is _Model.MEDIUM
@@ -84,7 +84,7 @@ def test_resolve_whisper_model_en_suffix_maps_to_base(monkeypatch: pytest.Monkey
 
 def test_resolve_whisper_model_bogus_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_whisper_stub(monkeypatch)
-    from services.voice_pipecat import resolve_whisper_model
+    from poindexter.services.voice_pipecat import resolve_whisper_model
 
     with pytest.raises(RuntimeError, match=r"not a\s+valid Pipecat Whisper model"):
         resolve_whisper_model("definitely-not-a-model")
@@ -93,7 +93,7 @@ def test_resolve_whisper_model_bogus_raises(monkeypatch: pytest.MonkeyPatch) -> 
 def test_resolve_whisper_model_unknown_en_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     # ``.en`` only maps when the base IS valid; ``huge.en`` has no base.
     _install_whisper_stub(monkeypatch)
-    from services.voice_pipecat import resolve_whisper_model
+    from poindexter.services.voice_pipecat import resolve_whisper_model
 
     with pytest.raises(RuntimeError):
         resolve_whisper_model("huge.en")
@@ -107,7 +107,7 @@ def test_resolve_whisper_model_unknown_en_still_raises(monkeypatch: pytest.Monke
 def test_build_whisper_stt_pins_cpu_int8(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
     _install_whisper_stub(monkeypatch, capture=captured)
-    from services.voice_pipecat import build_whisper_stt
+    from poindexter.services.voice_pipecat import build_whisper_stt
 
     build_whisper_stt("base")
     assert captured["device"] == "cpu"
@@ -121,7 +121,7 @@ def test_build_whisper_stt_pins_cpu_int8(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_bridge_settings_default_stt_model_is_base() -> None:
-    from services.voice_pipecat import resolve_bridge_voice_settings
+    from poindexter.services.voice_pipecat import resolve_bridge_voice_settings
 
     settings = resolve_bridge_voice_settings({})
     assert settings["stt_model"] == "base"  # not the dropped "base.en"
@@ -133,7 +133,7 @@ def test_bridge_settings_default_stt_model_is_base() -> None:
 
 
 def test_bridge_settings_explicit_values_win() -> None:
-    from services.voice_pipecat import resolve_bridge_voice_settings
+    from poindexter.services.voice_pipecat import resolve_bridge_voice_settings
 
     settings = resolve_bridge_voice_settings(
         {
@@ -150,7 +150,7 @@ def test_bridge_settings_explicit_values_win() -> None:
 
 
 def test_bridge_settings_bad_float_falls_back_to_default() -> None:
-    from services.voice_pipecat import resolve_bridge_voice_settings
+    from poindexter.services.voice_pipecat import resolve_bridge_voice_settings
 
     settings = resolve_bridge_voice_settings(
         {"voice_bridge_user_speech_timeout": "not-a-number"},
@@ -182,7 +182,7 @@ class _FakeCfg:
 @pytest.mark.asyncio
 async def test_livekit_creds_async_db_value_wins(monkeypatch):
     """Non-empty app_settings key/secret override the env vars."""
-    from services import voice_pipecat
+    from poindexter.services import voice_pipecat
 
     monkeypatch.setenv("LIVEKIT_API_KEY", "env-key")
     monkeypatch.setenv("LIVEKIT_API_SECRET", "env-secret")
@@ -197,7 +197,7 @@ async def test_livekit_creds_async_db_value_wins(monkeypatch):
 @pytest.mark.asyncio
 async def test_livekit_creds_async_empty_db_falls_back_to_env(monkeypatch):
     """Empty app_settings rows (the seeded default) keep the env values."""
-    from services import voice_pipecat
+    from poindexter.services import voice_pipecat
 
     monkeypatch.setenv("LIVEKIT_API_KEY", "env-key")
     monkeypatch.setenv("LIVEKIT_API_SECRET", "env-secret")
@@ -209,7 +209,7 @@ async def test_livekit_creds_async_empty_db_falls_back_to_env(monkeypatch):
 @pytest.mark.asyncio
 async def test_livekit_creds_async_no_site_config_uses_env(monkeypatch):
     """No SiteConfig (no DB pool) -> env only, no get_secret call."""
-    from services import voice_pipecat
+    from poindexter.services import voice_pipecat
 
     monkeypatch.setenv("LIVEKIT_API_KEY", "env-key")
     monkeypatch.setenv("LIVEKIT_API_SECRET", "env-secret")
@@ -220,7 +220,7 @@ async def test_livekit_creds_async_no_site_config_uses_env(monkeypatch):
 @pytest.mark.asyncio
 async def test_livekit_creds_async_db_error_falls_back_to_env(monkeypatch):
     """A get_secret hiccup must not break minting — fall back to env."""
-    from services import voice_pipecat
+    from poindexter.services import voice_pipecat
 
     monkeypatch.setenv("LIVEKIT_API_KEY", "env-key")
     monkeypatch.setenv("LIVEKIT_API_SECRET", "env-secret")

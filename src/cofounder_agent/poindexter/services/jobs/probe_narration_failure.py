@@ -99,8 +99,8 @@ async def _probe_tts(site_config: Any, *, http_client_factory: Any = None) -> tu
     skipped (TTS disabled by config, or no URL resolvable) and must count as
     neither trigger evidence nor recovery.
     """
-    from services.media_infra_health import resolve_tts_health_url
-    from services.tts_service import is_tts_enabled
+    from poindexter.services.media_infra_health import resolve_tts_health_url
+    from poindexter.services.tts_service import is_tts_enabled
 
     if site_config is None or not is_tts_enabled(site_config):
         return None, "tts disabled (podcast_tts_enabled) — probe skipped"

@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.scheduled_publisher import run_scheduled_publisher
-from services.site_config import SiteConfig
+from poindexter.services.scheduled_publisher import run_scheduled_publisher
+from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -138,7 +138,7 @@ class TestPublishingTrigger:
             # Allow other sleeps (like the test's 0.05s) through
             await original_sleep(seconds)
 
-        with patch("services.scheduled_publisher.asyncio.sleep", side_effect=mock_sleep):
+        with patch("poindexter.services.scheduled_publisher.asyncio.sleep", side_effect=mock_sleep):
             task = asyncio.create_task(
                 run_scheduled_publisher(get_pool, site_config=SiteConfig())
             )
@@ -163,7 +163,7 @@ class TestPublishingTrigger:
             if len(sleep_values) >= 1:
                 raise asyncio.CancelledError()
 
-        with patch("services.scheduled_publisher.asyncio.sleep", side_effect=mock_sleep):
+        with patch("poindexter.services.scheduled_publisher.asyncio.sleep", side_effect=mock_sleep):
             task = asyncio.create_task(
                 run_scheduled_publisher(get_pool, site_config=SiteConfig())
             )
@@ -190,7 +190,7 @@ class TestPollIntervalConfig:
             initial_config={"scheduled_publisher_poll_seconds": "not-a-number"}
         )
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             task = asyncio.create_task(
                 run_scheduled_publisher(get_pool, site_config=bad_sc)
             )
@@ -213,7 +213,7 @@ class TestPollIntervalConfig:
             initial_config={"scheduled_publisher_poll_seconds": "30"}
         )
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             task = asyncio.create_task(
                 run_scheduled_publisher(get_pool, site_config=good_sc)
             )
@@ -267,7 +267,7 @@ class TestErrorHandling:
         conn.fetch.side_effect = Exception("connection lost")
         get_pool = AsyncMock(return_value=pool)
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             await _run_one_iteration(get_pool)
 
             mock_logger.error.assert_called()
@@ -279,7 +279,7 @@ class TestErrorHandling:
         """If get_pool() itself raises, the loop survives."""
         get_pool = AsyncMock(side_effect=RuntimeError("pool init failed"))
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             await _run_one_iteration(get_pool)
 
             mock_logger.error.assert_called()
@@ -290,7 +290,7 @@ class TestErrorHandling:
         pool, conn = _make_pool([])
         get_pool = AsyncMock(return_value=pool)
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             await _run_one_iteration(get_pool)
 
             # Verify shutdown was logged
@@ -324,7 +324,7 @@ class TestErrorHandling:
             if sleep_count >= 2:
                 raise asyncio.CancelledError()
 
-        with patch("services.scheduled_publisher.asyncio.sleep", side_effect=mock_sleep):
+        with patch("poindexter.services.scheduled_publisher.asyncio.sleep", side_effect=mock_sleep):
             task = asyncio.create_task(
                 run_scheduled_publisher(get_pool, site_config=SiteConfig())
             )
@@ -351,7 +351,7 @@ class TestLogging:
         pool, _conn = _make_pool(rows)
         get_pool = AsyncMock(return_value=pool)
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             await _run_one_iteration(get_pool)
 
             # Should have info logs for startup + each published post
@@ -366,7 +366,7 @@ class TestLogging:
         pool, _conn = _make_pool([])
         get_pool = AsyncMock(return_value=pool)
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             await _run_one_iteration(get_pool)
 
             startup_logged = any(
@@ -381,7 +381,7 @@ class TestLogging:
         pool, _conn = _make_pool(rows)
         get_pool = AsyncMock(return_value=pool)
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             await _run_one_iteration(get_pool)
 
             published_calls = [
@@ -510,7 +510,7 @@ class TestPipelineTasksStatusSync:
         pool, conn = _make_pool(rows)
         get_pool = AsyncMock(return_value=pool)
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             await _run_one_iteration(get_pool)
 
             warning_logged = any(
@@ -592,7 +592,7 @@ class TestPipelineTasksStatusSync:
         pool, conn = _make_pool(rows)
         get_pool = AsyncMock(return_value=pool)
 
-        with patch("services.scheduled_publisher.logger") as mock_logger:
+        with patch("poindexter.services.scheduled_publisher.logger") as mock_logger:
             await _run_one_iteration(get_pool)
 
             warning_calls = [
@@ -620,7 +620,7 @@ class TestFinalPublishGate:
         pool, _conn = _make_pool(rows)
         get_pool = AsyncMock(return_value=pool)
         with patch(
-            "services.posts_approval_service.pause_post_at_gate",
+            "poindexter.services.posts_approval_service.pause_post_at_gate",
             new=AsyncMock(),
         ) as mock_pause:
             await _run_one_iteration(get_pool)  # empty SiteConfig -> gate off
@@ -635,7 +635,7 @@ class TestFinalPublishGate:
             initial_config={"pipeline_gate_final_publish_approval": "on"}
         )
         with patch(
-            "services.posts_approval_service.pause_post_at_gate",
+            "poindexter.services.posts_approval_service.pause_post_at_gate",
             new=AsyncMock(return_value={"ok": True}),
         ) as mock_pause:
             task = asyncio.create_task(
@@ -672,7 +672,7 @@ class TestPromoteFiresNewsletter:
 
     @pytest.mark.asyncio
     async def test_newsletter_spawned_per_promoted_row(self, monkeypatch):
-        from services import publish_service
+        from poindexter.services import publish_service
 
         rows = [
             {
@@ -716,7 +716,7 @@ class TestPromoteFiresNewsletter:
 
     @pytest.mark.asyncio
     async def test_missing_slug_skips_newsletter_without_crashing(self, monkeypatch):
-        from services import publish_service
+        from poindexter.services import publish_service
 
         rows = [{"id": "post-uuid-noslug", "title": "No slug"}]
         pool, conn = _make_pool(rows)
@@ -757,7 +757,7 @@ class TestDemoteVetoedAutoPosts:
 
     @pytest.mark.asyncio
     async def test_demote_sql_scopes_to_marker_and_task_status(self):
-        from services.scheduled_publisher import _demote_vetoed_auto_posts
+        from poindexter.services.scheduled_publisher import _demote_vetoed_auto_posts
 
         conn = self._conn([])
         await _demote_vetoed_auto_posts(conn)
@@ -774,7 +774,7 @@ class TestDemoteVetoedAutoPosts:
 
     @pytest.mark.asyncio
     async def test_demoted_rows_lose_their_auto_clean_run_row(self):
-        from services.scheduled_publisher import _demote_vetoed_auto_posts
+        from poindexter.services.scheduled_publisher import _demote_vetoed_auto_posts
 
         conn = self._conn([
             {"id": "p1", "title": "Vetoed", "pipeline_task_id": "t-1"},

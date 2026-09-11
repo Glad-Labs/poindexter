@@ -71,7 +71,7 @@ class UrlValidationStage:
             )
 
         try:
-            from services.url_validator import URLValidator
+            from poindexter.services.url_validator import URLValidator
 
             # Seam 1 Wave 3f (#667): fallback SiteConfig() removed — pipeline
             # always threads a real site_config via context. None is safe;

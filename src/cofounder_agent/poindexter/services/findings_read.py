@@ -189,7 +189,7 @@ async def get_findings_trend(pool: Any, *, range_seconds: int, step_seconds: int
     """Findings-count time-series, one series per severity, over an epoch-floored
     ``step_seconds`` grid of ``audit_log`` ``event_type='finding'`` rows. An empty
     bucket is 0 (zero findings is a real value, not a gap). SQL lives here."""
-    from services.qa_trend import _clamp  # single clamp source
+    from poindexter.services.qa_trend import _clamp  # single clamp source
 
     r, s = _clamp(range_seconds, step_seconds)
     sev_sql = _SEVERITY_ROLLUP_SQL

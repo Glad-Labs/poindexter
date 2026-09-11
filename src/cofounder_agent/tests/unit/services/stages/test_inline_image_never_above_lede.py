@@ -45,7 +45,7 @@ def _plan(*sections: str, featured=None):
 
 async def _inject(content: str, plan):
     with patch(
-        "services.image_decision_agent.plan_images",
+        "poindexter.services.image_decision_agent.plan_images",
         AsyncMock(return_value=plan),
     ):
         out, _info = await _plan_and_inject_placeholders(

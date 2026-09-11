@@ -28,7 +28,7 @@ from unittest.mock import patch
 
 import pytest
 
-import services.approval_service as svc
+import poindexter.services.approval_service as svc
 from tests.unit.services._gate_fakes import FakeConn, FakePool, executed_sql
 
 pytestmark = pytest.mark.unit

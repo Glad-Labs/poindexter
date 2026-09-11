@@ -17,8 +17,8 @@ from unittest.mock import patch
 import pytest
 
 from plugins.caption_provider import CaptionProvider, CaptionResult, CaptionSegment
-from services.caption_providers import whisper_local as whisper_mod
-from services.caption_providers.whisper_local import (
+from poindexter.services.caption_providers import whisper_local as whisper_mod
+from poindexter.services.caption_providers.whisper_local import (
     WhisperLocalCaptionProvider,
     _build_command,
     _parse_segments,
@@ -124,7 +124,7 @@ class TestMissingBinary:
             "model_path": str(model),
         })
 
-        with patch("services.caption_providers.whisper_local.shutil.which", return_value=None):
+        with patch("poindexter.services.caption_providers.whisper_local.shutil.which", return_value=None):
             result = await provider.transcribe(audio_path=str(audio))
 
         assert result.success is False
@@ -146,7 +146,7 @@ class TestMissingModel:
 
         # Patch shutil.which so the binary check passes.
         with patch(
-            "services.caption_providers.whisper_local.shutil.which",
+            "poindexter.services.caption_providers.whisper_local.shutil.which",
             return_value="/fake/whisper-cli",
         ):
             result = await provider.transcribe(audio_path=str(audio))
@@ -162,7 +162,7 @@ class TestMissingModel:
             # model_path absent
         })
         with patch(
-            "services.caption_providers.whisper_local.shutil.which",
+            "poindexter.services.caption_providers.whisper_local.shutil.which",
             return_value="/fake/whisper-cli",
         ):
             result = await provider.transcribe(audio_path=str(audio))
@@ -196,7 +196,7 @@ class TestResolveBinary:
                 return "/usr/local/bin/main"
             return None
 
-        with patch("services.caption_providers.whisper_local.shutil.which", side_effect=fake_which):
+        with patch("poindexter.services.caption_providers.whisper_local.shutil.which", side_effect=fake_which):
             result = _resolve_binary("custom-name")
         assert result == "/usr/local/bin/main"
         # Should have tried the configured name AND the historical fallbacks
@@ -205,12 +205,12 @@ class TestResolveBinary:
         assert "main" in calls
 
     def test_returns_none_when_no_candidate_resolves(self):
-        with patch("services.caption_providers.whisper_local.shutil.which", return_value=None):
+        with patch("poindexter.services.caption_providers.whisper_local.shutil.which", return_value=None):
             assert _resolve_binary("nope") is None
 
     def test_empty_configured_string_still_tries_defaults(self):
         with patch(
-            "services.caption_providers.whisper_local.shutil.which",
+            "poindexter.services.caption_providers.whisper_local.shutil.which",
             side_effect=lambda n: "/x/whisper-cli" if n == "whisper-cli" else None,
         ):
             assert _resolve_binary("") == "/x/whisper-cli"
@@ -454,7 +454,7 @@ class TestTranscribeHappyPath:
             def __exit__(self, *exc):
                 return self._inner.__exit__(*exc)
 
-        with patch("services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
+        with patch("poindexter.services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
             with patch.object(whisper_mod.tempfile, "TemporaryDirectory", _SeededTmpDir):
                 with patch.object(
                     whisper_mod, "_run_whisper_blocking",
@@ -504,7 +504,7 @@ class TestTranscribeHappyPath:
             def __exit__(self, *exc):
                 return self._inner.__exit__(*exc)
 
-        with patch("services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
+        with patch("poindexter.services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
             with patch.object(whisper_mod.tempfile, "TemporaryDirectory", _SeededTmpDir):
                 with patch.object(
                     whisper_mod, "_run_whisper_blocking",
@@ -530,7 +530,7 @@ class TestTranscribeFailurePath:
         })
 
         long_stderr = "boom\n" * 200  # > 500 chars → must be truncated
-        with patch("services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
+        with patch("poindexter.services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
             with patch.object(
                 whisper_mod, "_run_whisper_blocking",
                 return_value=(2, "", long_stderr),
@@ -556,7 +556,7 @@ class TestTranscribeFailurePath:
 
         # Don't pre-seed JSON — whisper.cpp claims success but produced
         # nothing.
-        with patch("services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
+        with patch("poindexter.services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
             with patch.object(
                 whisper_mod, "_run_whisper_blocking",
                 return_value=(0, "", ""),
@@ -579,7 +579,7 @@ class TestTranscribeFailurePath:
             "model_path": str(model),
         })
 
-        with patch("services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
+        with patch("poindexter.services.caption_providers.whisper_local.shutil.which", return_value="/fake/whisper-cli"):
             with patch.object(
                 whisper_mod, "_run_whisper_blocking",
                 side_effect=OSError("permission denied"),

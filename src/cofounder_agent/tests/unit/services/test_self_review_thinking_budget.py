@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from services.self_review import detect_contradictions
+from poindexter.services.self_review import detect_contradictions
 
 
 def _sc(**over):
@@ -63,7 +63,7 @@ async def _capture(site_config):
         or "gemma-4-31B-it-qat:latest",
         revise_model="gemma-4-31B-it-qat:latest",
     )
-    with patch("services.self_review._prepare", new=AsyncMock(return_value=ctx)):
+    with patch("poindexter.services.self_review._prepare", new=AsyncMock(return_value=ctx)):
         await detect_contradictions("x" * 900, "T", "Topic", site_config=site_config)
     return seen
 

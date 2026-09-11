@@ -20,9 +20,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 
 from middleware.api_token_auth import verify_api_token
-from services import trace_read
-from services.database_service import DatabaseService
-from services.logger_config import get_logger
+from poindexter.services import trace_read
+from poindexter.services.database_service import DatabaseService
+from poindexter.services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)

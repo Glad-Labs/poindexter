@@ -101,7 +101,7 @@ async def test_record_media_asset_podcast_upsert_is_idempotent(test_txn) -> None
     (same id, refreshed attrs) instead of raising under the unique guard — i.e.
     the ON CONFLICT predicate really matches uniq_media_assets_post_podcast_type.
     This is the regen path (PodcastService.generate_episode force=True)."""
-    from services.media_asset_recorder import record_media_asset
+    from poindexter.services.media_asset_recorder import record_media_asset
 
     post_id = await _new_post(test_txn, "upsert-podcast-884")
     pool = _TxnPool(test_txn)

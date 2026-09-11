@@ -1,7 +1,7 @@
 """The community-draft settings ship as app_settings defaults (not migration seeds)."""
 from __future__ import annotations
 
-from services.settings_defaults import DEFAULTS
+from poindexter.services.settings_defaults import DEFAULTS
 
 
 def test_community_draft_model_defaults_empty():

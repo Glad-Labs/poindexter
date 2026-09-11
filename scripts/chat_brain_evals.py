@@ -67,9 +67,8 @@ async def _run_case(
     model: str, api_base: str, intent: str,
 ) -> tuple[str | None, dict[str, Any]]:
     import litellm
-
-    from services.chat_prompts import _CHAT_SYSTEM_FALLBACK
-    from services.chat_tools import to_openai_tools, tool_names_csv
+    from poindexter.services.chat_prompts import _CHAT_SYSTEM_FALLBACK
+    from poindexter.services.chat_tools import to_openai_tools, tool_names_csv
 
     system = _CHAT_SYSTEM_FALLBACK.format(
         persona_name="Poindexter", tool_names=tool_names_csv(),

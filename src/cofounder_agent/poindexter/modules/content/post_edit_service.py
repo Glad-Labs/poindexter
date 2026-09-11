@@ -217,7 +217,7 @@ class PostEditService:
         if new_title == old_title:
             return EditResult(task_id, "title", True, f"title unchanged (v{version})")
 
-        from services.publish_service import derive_publish_identity
+        from poindexter.services.publish_service import derive_publish_identity
 
         topic = (task or {}).get("topic") or ""
         _, _, old_slug = derive_publish_identity(
@@ -229,7 +229,7 @@ class PostEditService:
 
         warnings: list[str] = []
         try:
-            from services.title_searchability import find_searchable_entities
+            from poindexter.services.title_searchability import find_searchable_entities
 
             report = find_searchable_entities(new_title)
             if not report.ok:
@@ -244,7 +244,7 @@ class PostEditService:
 
         rewritten = 0
         if old_slug != new_slug:
-            from services.social_drafts import _LIVE_STATUSES
+            from poindexter.services.social_drafts import _LIVE_STATUSES
 
             old_path, new_path = f"/posts/{old_slug}", f"/posts/{new_slug}"
             drafts = await self._pool.fetch(_LIVE_DRAFTS_SQL, task_id, list(_LIVE_STATUSES))
@@ -450,7 +450,7 @@ class PostEditService:
         import os
         import tempfile
 
-        from services.brand_hero import HeroSpec, render_hero_png
+        from poindexter.services.brand_hero import HeroSpec, render_hero_png
 
         overrides: dict[str, str] = {}
         if tagline:
@@ -695,7 +695,7 @@ class PostEditService:
             )
             return warnings
         try:
-            from services.static_export_service import export_full_rebuild
+            from poindexter.services.static_export_service import export_full_rebuild
 
             result = await export_full_rebuild(self._pool, site_config=self._site_config)
             if result.get("success"):
@@ -743,7 +743,7 @@ class PostEditService:
         ``_upload_featured_to_r2``): ``R2UploadService`` converts PNG→WebP and
         returns the public URL. ``task_id`` seeds a stable-ish object key.
         """
-        from services.r2_upload_service import R2UploadService
+        from poindexter.services.r2_upload_service import R2UploadService
 
         if self._site_config is None:
             raise RuntimeError("site_config required to upload generated image")

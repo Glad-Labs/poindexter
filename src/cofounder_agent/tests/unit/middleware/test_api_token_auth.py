@@ -63,7 +63,7 @@ def _signing_key(monkeypatch):
 
 def _mint_jwt(scopes: tuple[str, ...] = ("api:read",), ttl_seconds: int = 60) -> str:
     """Mint a real OAuth JWT for use in tests."""
-    from services.auth.oauth_issuer import issue_token
+    from poindexter.services.auth.oauth_issuer import issue_token
 
     token, _claims = issue_token(
         client_id="pdx_test_client",

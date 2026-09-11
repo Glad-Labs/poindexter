@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from services.integrations import registry as registry_module
-from services.integrations import retention_runner
-from services.integrations.handlers import retention_downsample, retention_ttl_prune
+from poindexter.services.integrations import registry as registry_module
+from poindexter.services.integrations import retention_runner
+from poindexter.services.integrations.handlers import retention_downsample, retention_ttl_prune
 
 
 class _FakeConn:

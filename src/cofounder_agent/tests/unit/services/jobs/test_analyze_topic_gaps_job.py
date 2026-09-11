@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.analyze_topic_gaps import AnalyzeTopicGapsJob
+from poindexter.services.jobs.analyze_topic_gaps import AnalyzeTopicGapsJob
 
 
 def _make_pool(
@@ -85,7 +85,7 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding",
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding",
             new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {})
@@ -116,7 +116,7 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding",
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding",
             new=MagicMock(),
         ) as mock_emit:
             await job.run(pool, {})
@@ -136,7 +136,7 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding",
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {"low_threshold": 5})
@@ -153,7 +153,7 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding",
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {})
@@ -172,7 +172,7 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding",
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {"low_threshold": 3})
@@ -197,7 +197,7 @@ class TestRun:
         job = AnalyzeTopicGapsJob()
         mock_gitea = MagicMock()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding", new=mock_gitea,
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding", new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})
         mock_gitea.assert_not_called()
@@ -224,7 +224,7 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding",
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {})
@@ -264,7 +264,7 @@ class TestBrainKnowledgeUpsert:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding",
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {"file_gitea_issue": False})
@@ -330,7 +330,7 @@ class TestBrainKnowledgeUpsert:
 
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding",
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {"file_gitea_issue": False})
@@ -352,7 +352,7 @@ class TestBrainKnowledgeUpsert:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.emit_finding",
+            "poindexter.services.jobs.analyze_topic_gaps.emit_finding",
             new=MagicMock(),
         ):
             await job.run(pool, {"file_gitea_issue": False})

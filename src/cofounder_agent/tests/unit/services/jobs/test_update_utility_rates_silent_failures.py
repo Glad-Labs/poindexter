@@ -27,9 +27,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.update_utility_rates import UpdateUtilityRatesJob
+from poindexter.services.jobs.update_utility_rates import UpdateUtilityRatesJob
 
-_LOGGER_NAME = "services.jobs.update_utility_rates"
+_LOGGER_NAME = "poindexter.services.jobs.update_utility_rates"
 
 
 def _make_pool(gpu_current: Any = "200", audit_raises: bool = False) -> Any:
@@ -74,15 +74,15 @@ def _run_ctx():
 
     return (
         patch(
-            "services.jobs.update_utility_rates.httpx.AsyncClient",
+            "poindexter.services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=client,
         ),
         patch(
-            "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
+            "poindexter.services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=fake_proc),
         ),
         patch(
-            "services.jobs.update_utility_rates._load_gpu_tdp_map",
+            "poindexter.services.jobs.update_utility_rates._load_gpu_tdp_map",
             return_value={"RTX 5090": 575},
         ),
     )

@@ -110,5 +110,5 @@ def test_scheduled_publisher_runs_in_both_deployment_modes():
 def test_scheduled_publisher_module_is_importable():
     """Sanity guard — if the module ever vanishes (e.g. rename) the
     lifespan import would crash at startup. Fail here first."""
-    from services.scheduled_publisher import run_scheduled_publisher
+    from poindexter.services.scheduled_publisher import run_scheduled_publisher
     assert callable(run_scheduled_publisher)

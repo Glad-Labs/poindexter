@@ -152,7 +152,7 @@ class IngestBenchmarkResultsJob:
         except ImportError:
             return JobResult(ok=False, detail="httpx not available", changes_made=0)
 
-        from services.net_transient import (
+        from poindexter.services.net_transient import (
             is_transient_network_error,
             transient_retry_transport,
         )

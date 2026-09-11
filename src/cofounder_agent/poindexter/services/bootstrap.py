@@ -22,9 +22,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.container import AppContainer
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.container import AppContainer
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
@@ -145,7 +145,7 @@ async def build_container(
     # final four ambient-singleton modules (gpu_scheduler / ollama_client /
     # prompt_manager / utils.route_utils) now source their SiteConfig
     # instead of a per-module global wired by ``set_site_config``.
-    from services.container_registry import set_container
+    from poindexter.services.container_registry import set_container
     set_container(container)
 
     # ------------------------------------------------------------------

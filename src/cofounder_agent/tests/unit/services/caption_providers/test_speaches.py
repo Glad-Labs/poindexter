@@ -33,7 +33,7 @@ class _StubSiteConfig:
 
 
 def _make_provider(mapping: dict[str, Any] | None = None):
-    from services.caption_providers.speaches import SpeachesCaptionProvider
+    from poindexter.services.caption_providers.speaches import SpeachesCaptionProvider
 
     return SpeachesCaptionProvider(site_config=_StubSiteConfig(mapping or {}))
 
@@ -85,12 +85,12 @@ _VERBOSE_JSON = {
 
 class TestProtocolConformance:
     def test_satisfies_caption_provider_protocol(self):
-        from services.caption_providers.speaches import SpeachesCaptionProvider
+        from poindexter.services.caption_providers.speaches import SpeachesCaptionProvider
 
         assert isinstance(SpeachesCaptionProvider(), CaptionProvider)
 
     def test_class_attributes(self):
-        from services.caption_providers.speaches import SpeachesCaptionProvider
+        from poindexter.services.caption_providers.speaches import SpeachesCaptionProvider
 
         p = SpeachesCaptionProvider()
         assert p.name == "speaches"
@@ -119,7 +119,7 @@ class TestDisabledGate:
         audio = tmp_path / "in.mp3"
         audio.write_bytes(b"\x00" * 16)
         provider = _make_provider({"enabled": False})
-        with patch("services.caption_providers.speaches.httpx.AsyncClient") as mock_client:
+        with patch("poindexter.services.caption_providers.speaches.httpx.AsyncClient") as mock_client:
             await provider.transcribe(audio_path=str(audio))
         mock_client.assert_not_called()
 
@@ -153,7 +153,7 @@ class TestTranscribeHappyPath:
 
         fake = _FakeAsyncClient(_FakeResp(200, _VERBOSE_JSON))
         with patch(
-            "services.caption_providers.speaches.httpx.AsyncClient",
+            "poindexter.services.caption_providers.speaches.httpx.AsyncClient",
             return_value=fake,
         ):
             result = await provider.transcribe(audio_path=str(audio))
@@ -179,7 +179,7 @@ class TestTranscribeHappyPath:
 
         fake = _FakeAsyncClient(_FakeResp(200, _VERBOSE_JSON))
         with patch(
-            "services.caption_providers.speaches.httpx.AsyncClient",
+            "poindexter.services.caption_providers.speaches.httpx.AsyncClient",
             return_value=fake,
         ):
             await provider.transcribe(audio_path=str(audio), language_hint="en")
@@ -196,7 +196,7 @@ class TestTranscribeHappyPath:
         provider = _make_provider({})
         fake = _FakeAsyncClient(_FakeResp(200, {"language": "en", "segments": []}))
         with patch(
-            "services.caption_providers.speaches.httpx.AsyncClient",
+            "poindexter.services.caption_providers.speaches.httpx.AsyncClient",
             return_value=fake,
         ):
             result = await provider.transcribe(audio_path=str(audio))
@@ -229,7 +229,7 @@ class TestInitialPromptBias:
 
         fake = _FakeAsyncClient(_FakeResp(200, _VERBOSE_JSON))
         with patch(
-            "services.caption_providers.speaches.httpx.AsyncClient",
+            "poindexter.services.caption_providers.speaches.httpx.AsyncClient",
             return_value=fake,
         ):
             await provider.transcribe(audio_path=str(audio))
@@ -244,7 +244,7 @@ class TestInitialPromptBias:
 
         fake = _FakeAsyncClient(_FakeResp(200, _VERBOSE_JSON))
         with patch(
-            "services.caption_providers.speaches.httpx.AsyncClient",
+            "poindexter.services.caption_providers.speaches.httpx.AsyncClient",
             return_value=fake,
         ):
             await provider.transcribe(audio_path=str(audio))
@@ -261,7 +261,7 @@ class TestInitialPromptBias:
 
         fake = _FakeAsyncClient(_FakeResp(200, _VERBOSE_JSON))
         with patch(
-            "services.caption_providers.speaches.httpx.AsyncClient",
+            "poindexter.services.caption_providers.speaches.httpx.AsyncClient",
             return_value=fake,
         ):
             await provider.transcribe(audio_path=str(audio))
@@ -282,7 +282,7 @@ class TestErrorHandling:
         provider = _make_provider({})
         fake = _FakeAsyncClient(_FakeResp(500, {}, text="internal error"))
         with patch(
-            "services.caption_providers.speaches.httpx.AsyncClient",
+            "poindexter.services.caption_providers.speaches.httpx.AsyncClient",
             return_value=fake,
         ):
             result = await provider.transcribe(audio_path=str(audio))
@@ -305,7 +305,7 @@ class TestErrorHandling:
             async def __aexit__(self, *exc):
                 return False
 
-        with patch("services.caption_providers.speaches.httpx.AsyncClient", _Boom):
+        with patch("poindexter.services.caption_providers.speaches.httpx.AsyncClient", _Boom):
             result = await provider.transcribe(audio_path=str(audio))
         assert result.success is False
         assert "connection refused" in (result.error or "")
@@ -318,18 +318,18 @@ class TestErrorHandling:
 
 class TestSrtHelpers:
     def test_format_ts_zero(self):
-        from services.caption_providers.speaches import _format_ts
+        from poindexter.services.caption_providers.speaches import _format_ts
 
         assert _format_ts(0.0) == "00:00:00,000"
 
     def test_format_ts_hours_minutes_millis(self):
-        from services.caption_providers.speaches import _format_ts
+        from poindexter.services.caption_providers.speaches import _format_ts
 
         assert _format_ts(3661.5) == "01:01:01,500"
 
     def test_segments_to_srt_numbered_blocks(self):
         from plugins.caption_provider import CaptionSegment
-        from services.caption_providers.speaches import _segments_to_srt
+        from poindexter.services.caption_providers.speaches import _segments_to_srt
 
         srt = _segments_to_srt([
             CaptionSegment(start_s=0.0, end_s=1.0, text="one"),
@@ -340,7 +340,7 @@ class TestSrtHelpers:
         assert "00:00:00,000 --> 00:00:01,000" in srt
 
     def test_segments_to_srt_empty_is_empty(self):
-        from services.caption_providers.speaches import _segments_to_srt
+        from poindexter.services.caption_providers.speaches import _segments_to_srt
 
         assert _segments_to_srt([]) == ""
 
@@ -349,7 +349,7 @@ class TestWordTimestamps:
     """Word-granularity parsing (2026-08-26): words AUGMENT segments."""
 
     def test_parse_words_alongside_segments(self):
-        from services.caption_providers.speaches import _parse_verbose_json
+        from poindexter.services.caption_providers.speaches import _parse_verbose_json
 
         segments, words, language = _parse_verbose_json({
             "language": "en",
@@ -368,7 +368,7 @@ class TestWordTimestamps:
         assert language == "en"
 
     def test_missing_words_key_yields_empty(self):
-        from services.caption_providers.speaches import _parse_verbose_json
+        from poindexter.services.caption_providers.speaches import _parse_verbose_json
 
         segments, words, _ = _parse_verbose_json({
             "segments": [{"start": 0.0, "end": 1.0, "text": "hi"}],

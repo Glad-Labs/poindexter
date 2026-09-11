@@ -86,7 +86,7 @@ def _parse_frontmatter(raw: str) -> tuple[dict, str]:
     ``SkillFrontmatterError`` as the importer's user-facing
     ``SkillImportError``. Returns ``(meta_dict, body_string)``.
     """
-    from services.skill_frontmatter import (  # lazy: keeps yaml off cold paths
+    from poindexter.services.skill_frontmatter import (  # lazy: keeps yaml off cold paths
         SkillFrontmatterError,
         parse_frontmatter,
     )
@@ -147,7 +147,7 @@ def _validate_body_sections(meta: dict, body: str) -> None:
     this the importer trusted frontmatter and the failure surfaced far away,
     at worker boot, as a skipped key.
     """
-    from services.skill_frontmatter import extract_section
+    from poindexter.services.skill_frontmatter import extract_section
 
     prompts = (meta.get("metadata") or {}).get("prompts") or []
     for prompt in prompts:

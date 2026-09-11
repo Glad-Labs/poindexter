@@ -101,7 +101,7 @@ if _cofounder_root.is_dir() and str(_cofounder_root) not in _sys_boot.path:
     _sys_boot.path.insert(0, str(_cofounder_root))
 
 try:  # pragma: no cover - import-shape only
-    from services.logger_config import get_logger as _get_logger
+    from poindexter.services.logger_config import get_logger as _get_logger
 
     _log = _get_logger(__name__)
 except Exception:  # pragma: no cover - structlog/services optional
@@ -247,7 +247,7 @@ async def _get_site_config() -> Any:
     """
     global _site_config
     if _site_config is None:
-        from services.site_config import SiteConfig
+        from poindexter.services.site_config import SiteConfig
 
         pool = await _get_pool()
         _site_config = SiteConfig(pool=pool)
@@ -402,7 +402,7 @@ async def list_tasks(status: str = "all", limit: int = 10) -> str:
     """List content tasks with their status and quality scores."""
     try:
         pool = await _get_pool()
-        from services.tasks_mcp import list_tasks as _svc_list_tasks
+        from poindexter.services.tasks_mcp import list_tasks as _svc_list_tasks
         rows = await _svc_list_tasks(pool, status=status, limit=limit)
         if not rows:
             return "No tasks found."
@@ -428,7 +428,7 @@ async def _resolve_task_id(task_id: str) -> str:
     """Resolve a short task ID prefix to the full UUID via database lookup."""
     try:
         pool = await _get_pool()
-        from services.tasks_mcp import resolve_task_prefix
+        from poindexter.services.tasks_mcp import resolve_task_prefix
         return await resolve_task_prefix(pool, task_id)
     except Exception:
         return task_id  # Fall back to whatever was given
@@ -849,7 +849,7 @@ async def get_budget() -> str:
     """Get current AI spending status (daily and monthly)."""
     try:
         pool = await _get_pool()
-        from services.cost_aggregation_service import get_spend_totals
+        from poindexter.services.cost_aggregation_service import get_spend_totals
         totals = await get_spend_totals(pool)
         return json.dumps(totals, indent=2)
     except Exception as e:
@@ -888,7 +888,7 @@ async def get_setting(key: str) -> str:
     try:
         pool = await _get_pool()
         bare_key, declared_category = _strip_category_prefix(key)
-        from services.admin_db import AdminDatabase
+        from poindexter.services.admin_db import AdminDatabase
         setting = await AdminDatabase(pool).get_setting(bare_key)
         if not setting:
             return f"Setting '{key}' not found."
@@ -923,7 +923,7 @@ async def set_setting(key: str, value: str) -> str:
     # the agent_permissions query failed (poindexter#750).
     try:
         pool = await _get_pool()
-        from services.agent_permissions import check_write_permission, queue_for_approval
+        from poindexter.services.agent_permissions import check_write_permission, queue_for_approval
         allowed, requires_approval = await check_write_permission(
             pool, "mcp_server", "app_settings", "write"
         )
@@ -956,7 +956,7 @@ async def list_settings(category: str = "") -> str:
     """List all configuration settings, optionally filtered by category."""
     try:
         pool = await _get_pool()
-        from services.admin_db import AdminDatabase
+        from poindexter.services.admin_db import AdminDatabase
         settings = await AdminDatabase(pool).get_all_settings(category or None)
         if not settings:
             return "No settings found."
@@ -1020,7 +1020,7 @@ async def search_memory(
         # A chunk is up to 6000 chars; its opening frequently says nothing
         # about why it came back.
         try:
-            from services.rag_excerpt import excerpt_around_query as _excerpt
+            from poindexter.services.rag_excerpt import excerpt_around_query as _excerpt
         except Exception:  # pragma: no cover — services/ optional in CI shape
             def _excerpt(text: str, _q: str, n: int) -> str:
                 return text[:n]
@@ -1163,7 +1163,7 @@ async def get_audit_log(event_type: str = "", severity: str = "", limit: int = 2
     """
     try:
         pool = await _get_pool()
-        from services.audit_log import AuditLogger
+        from poindexter.services.audit_log import AuditLogger
         rows = await AuditLogger(pool).query(
             event_type=event_type or None,
             severity=severity or None,
@@ -1193,7 +1193,7 @@ async def get_audit_summary(hours: int = 24) -> str:
     """Get a summary of audit log activity over the last N hours."""
     try:
         pool = await _get_pool()
-        from services.audit_log import query_summary
+        from poindexter.services.audit_log import query_summary
         rows = await query_summary(pool, hours=hours)
 
         if not rows:
@@ -1244,7 +1244,7 @@ async def findings_list(
         pool = await _get_pool()
         from datetime import datetime as _dt
 
-        from services.findings_read import read_findings
+        from poindexter.services.findings_read import read_findings
         data = await read_findings(
             pool,
             kind=kind,
@@ -1325,7 +1325,7 @@ async def get_brain_knowledge(entity: str = "", attribute: str = "", limit: int 
     """
     try:
         pool = await _get_pool()
-        from services.brain_knowledge_read import query_knowledge
+        from poindexter.services.brain_knowledge_read import query_knowledge
         rows = await query_knowledge(pool, entity=entity, attribute=attribute, limit=limit)
 
         if not rows:
@@ -1358,8 +1358,8 @@ async def topics_show_batch(niche: str) -> str:
     """Show the current open batch for a niche, sorted by effective_score."""
     try:
         pool = await _get_pool()
-        from services.niche_service import NicheService
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.niche_service import NicheService
+        from poindexter.services.topic_batch_service import TopicBatchService
         n = await NicheService(pool).get_by_slug(niche)
         if not n:
             return f"unknown niche: {niche}"
@@ -1385,7 +1385,7 @@ async def topics_rank_batch(batch_id: str, ordered_candidate_ids: list[str]) -> 
     """Set operator ranking for a batch's candidates. Pass IDs in best-first order."""
     try:
         pool = await _get_pool()
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
         site_config = await _get_site_config()
         await TopicBatchService(pool, site_config=site_config).rank_batch(
             batch_id=UUID(batch_id), ordered_candidate_ids=ordered_candidate_ids,
@@ -1402,7 +1402,7 @@ async def topics_edit_winner(batch_id: str, topic: str = "", angle: str = "") ->
         return "topics_edit_winner failed: provide topic and/or angle"
     try:
         pool = await _get_pool()
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
         site_config = await _get_site_config()
         await TopicBatchService(pool, site_config=site_config).edit_winner(
             batch_id=UUID(batch_id),
@@ -1419,7 +1419,7 @@ async def topics_resolve_batch(batch_id: str) -> str:
     """Resolve a batch — advance the rank-1 candidate into the content pipeline."""
     try:
         pool = await _get_pool()
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
         site_config = await _get_site_config()
         await TopicBatchService(pool, site_config=site_config).resolve_batch(batch_id=UUID(batch_id))
         return f"Resolved {batch_id}"
@@ -1432,7 +1432,7 @@ async def topics_reject_batch(batch_id: str, reason: str = "") -> str:
     """Reject a batch — discard candidates, allow a fresh sweep."""
     try:
         pool = await _get_pool()
-        from services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_batch_service import TopicBatchService
         site_config = await _get_site_config()
         await TopicBatchService(pool, site_config=site_config).reject_batch(batch_id=UUID(batch_id), reason=reason)
         return f"Rejected {batch_id}"
@@ -1527,7 +1527,7 @@ async def start_voice_call(
             brain = normalised
 
         pool = await _get_pool()
-        from services.admin_db import AdminDatabase
+        from poindexter.services.admin_db import AdminDatabase
         db = AdminDatabase(pool)
 
         # Optional brain flip — persist BEFORE we read back so the
@@ -1700,7 +1700,7 @@ async def set_game_mode(action: str, hours: float = 0) -> str:
         hours: Window length for "on". 0 = use app_settings default (4h).
     """
     try:
-        from services import game_mode
+        from poindexter.services import game_mode
 
         pool = await _get_pool()
         site_config = await _get_site_config()
@@ -1720,7 +1720,7 @@ async def set_game_mode(action: str, hours: float = 0) -> str:
         payload = status.as_dict()
         if verb == "on":
             # Eviction is HTTP, so it works from here even without docker.
-            from services.llm_providers.ollama_unload import (
+            from poindexter.services.llm_providers.ollama_unload import (
                 ollama_base_urls,
                 unload_loaded_ollama_models,
             )

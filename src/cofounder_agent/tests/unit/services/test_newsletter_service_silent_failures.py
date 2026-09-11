@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.newsletter_service import send_post_newsletter
+from poindexter.services.newsletter_service import send_post_newsletter
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -91,7 +91,7 @@ async def test_send_log_write_failures_emit_one_warn_finding(monkeypatch):
     pool = _pool(log_write_raises=True)
 
     with patch(
-        "services.newsletter_service._send_via_resend", new_callable=AsyncMock,
+        "poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock,
     ) as mock_send:
         mock_send.return_value = (True, None)
         result = await send_post_newsletter(
@@ -114,7 +114,7 @@ async def test_healthy_send_log_writes_emit_no_finding(monkeypatch):
     pool = _pool(log_write_raises=False)
 
     with patch(
-        "services.newsletter_service._send_via_resend", new_callable=AsyncMock,
+        "poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock,
     ) as mock_send:
         mock_send.return_value = (True, None)
         result = await send_post_newsletter(

@@ -16,7 +16,7 @@ import hashlib
 import random
 from typing import Any
 
-from services.model_eval.types import GoldenCase, GoldenSet
+from poindexter.services.model_eval.types import GoldenCase, GoldenSet
 
 _GOLDEN_NAME = "model_eval_reranker"
 _CHUNK_CHARS = 600

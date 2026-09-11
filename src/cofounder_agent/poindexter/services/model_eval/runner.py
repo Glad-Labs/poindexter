@@ -12,8 +12,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from services.model_eval.harness import EvalHarness
-from services.model_eval.types import GoldenSet, MetricResult, Scorer
+from poindexter.services.model_eval.harness import EvalHarness
+from poindexter.services.model_eval.types import GoldenSet, MetricResult, Scorer
 
 
 @dataclass(frozen=True)

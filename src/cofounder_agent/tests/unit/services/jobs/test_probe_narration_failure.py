@@ -15,9 +15,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.jobs import probe_narration_failure as pnf
-from services.jobs.probe_narration_failure import ProbeNarrationFailureJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs import probe_narration_failure as pnf
+from poindexter.services.jobs.probe_narration_failure import ProbeNarrationFailureJob
+from poindexter.services.site_config import SiteConfig
 
 
 class _FakePool:

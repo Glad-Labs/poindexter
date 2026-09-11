@@ -1,6 +1,6 @@
 """Unit tests for publish_service slug + excerpt helpers (#728)."""
 
-from services.publish_service import (
+from poindexter.services.publish_service import (
     build_post_slug,
     choose_excerpt,
     derive_publish_identity,
@@ -163,7 +163,7 @@ def test_body_heading_source_setting_restores_legacy_precedence():
     """The escape hatch: publish_title_source='body_heading' reverts to the
     old order without a deploy.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     legacy = SiteConfig(initial_config={"publish_title_source": "body_heading"})
     title, _content, _slug = derive_publish_identity(
@@ -194,7 +194,7 @@ def test_canonical_title_comes_from_the_column_not_stage_data():
     an empty string and the body heading won by default. The column
     (``task["title"]`` = pipeline_versions.title) is the real source.
     """
-    from services.publish_service import resolve_canonical_title
+    from poindexter.services.publish_service import resolve_canonical_title
 
     # The 90% case: column populated, stage_data copy missing entirely.
     assert resolve_canonical_title(

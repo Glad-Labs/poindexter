@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.ingest_benchmark_results import (
+from poindexter.services.jobs.ingest_benchmark_results import (
     IngestBenchmarkResultsJob,
     parse_benchmark_artifact,
 )
@@ -245,7 +245,7 @@ class TestIngestBenchmarkResultsConfig:
         """Half-configured = degraded, not a quiet green (CF-job posture)."""
         pool, _ = _make_pool()
         with _patch_token(""), patch(
-            "services.jobs.ingest_benchmark_results.emit_finding"
+            "poindexter.services.jobs.ingest_benchmark_results.emit_finding"
         ) as finding:
             result = await IngestBenchmarkResultsJob().run(
                 pool, {"_site_config": _sc()}
@@ -323,7 +323,7 @@ class TestIngestBenchmarkResultsIngest:
         with _patch_token(), patch.dict(
             "sys.modules", {"httpx": fake_httpx}
         ), patch(
-            "services.jobs.ingest_benchmark_results.emit_finding"
+            "poindexter.services.jobs.ingest_benchmark_results.emit_finding"
         ) as finding:
             result = await IngestBenchmarkResultsJob().run(
                 pool, {"_site_config": _sc()}

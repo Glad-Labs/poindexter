@@ -23,7 +23,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class CancelOrphanedSocialDraftsJob:
         ):
             return JobResult(ok=True, detail="social_drafts_enabled=false — no-op")
 
-        from services.social_drafts import SocialDraftsService
+        from poindexter.services.social_drafts import SocialDraftsService
 
         try:
             cancelled = await SocialDraftsService().cancel_orphaned_for_rejected_tasks(

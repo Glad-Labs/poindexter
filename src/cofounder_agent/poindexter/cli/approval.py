@@ -53,7 +53,7 @@ async def _make_site_config(pool):
     service module. Loaded from the DB so gate-enable settings are
     visible to the same process.
     """
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     cfg = SiteConfig(pool=pool)
     try:
@@ -202,12 +202,12 @@ def approve_command(
     so the resume-pass idempotency check sees the gate cleared. The
     runner picks up where it left off.
     """
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         ApprovalServiceError,
         TaskNotFoundError,
         TaskNotPausedError,
     )
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         approve as approve_service,
     )
 
@@ -283,12 +283,12 @@ def reject_command(
     Sets the task to the gate's reject status (``rejected`` by default)
     and clears the gate columns. The pipeline halts; no auto-retry.
     """
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         ApprovalServiceError,
         TaskNotFoundError,
         TaskNotPausedError,
     )
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         reject as reject_service,
     )
 
@@ -357,7 +357,7 @@ def list_pending_command(
 
     Ordered oldest-first so you work the queue chronologically.
     """
-    from services.approval_service import list_pending
+    from poindexter.services.approval_service import list_pending
 
     async def _impl():
         pool = await _make_pool()
@@ -397,7 +397,7 @@ def list_pending_command(
 @click.option("--json", "json_output", is_flag=True)
 def show_pending_command(task_id: str, json_output: bool) -> None:
     """Show the gate state + full artifact for one task."""
-    from services.approval_service import (
+    from poindexter.services.approval_service import (
         ApprovalServiceError,
         TaskNotFoundError,
         show_pending,
@@ -464,7 +464,7 @@ def gates_group() -> None:
 @click.option("--json", "json_output", is_flag=True)
 def gates_list_command(json_output: bool) -> None:
     """Show every known gate + its enabled state + pending count."""
-    from services.approval_service import list_gates
+    from poindexter.services.approval_service import list_gates
 
     async def _impl():
         pool = await _make_pool()
@@ -538,7 +538,7 @@ def gates_set_command(gate_name: str, state: str, json_output: bool) -> None:
 
     Effective on the next pipeline tick — no worker restart needed.
     """
-    from services.approval_service import set_gate_enabled
+    from poindexter.services.approval_service import set_gate_enabled
 
     async def _impl():
         pool = await _make_pool()

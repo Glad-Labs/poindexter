@@ -20,7 +20,7 @@ import time as _time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 from utils.crawler_ua import build_crawler_ua
 
 if TYPE_CHECKING:
@@ -2063,7 +2063,7 @@ def validate_content(
     # Per-rule DB-driven enable/scope checks. Imported lazily so module
     # load doesn't pull in asyncpg for callers (tests, scripts) that
     # never reach validate_content().
-    from services.validator_config import is_validator_enabled
+    from poindexter.services.validator_config import is_validator_enabled
 
     _sc = site_config
     # Per-call company facts — populated from the live site_config for this

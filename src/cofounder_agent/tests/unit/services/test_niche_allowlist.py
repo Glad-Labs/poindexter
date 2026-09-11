@@ -10,7 +10,7 @@ publishable. These tests pin that contract — including that the query does
 NOT filter on ``active``.
 """
 
-from services.niche_service import get_known_niche_slugs
+from poindexter.services.niche_service import get_known_niche_slugs
 
 
 class _FakeConn:

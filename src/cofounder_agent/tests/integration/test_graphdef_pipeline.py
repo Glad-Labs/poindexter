@@ -82,7 +82,7 @@ def _make_fake_pool() -> Any:
 def _make_site_config() -> Any:
     """Real SiteConfig with the graph_def flag on + Postgres checkpointer
     off (so the runner uses a transient in-memory MemorySaver, no DB)."""
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     return SiteConfig(
         initial_config={
@@ -106,9 +106,9 @@ def test_canonical_blog_spec_compiles():
     callable and the wiring must form a valid LangGraph. A spec that
     references a deleted stage or a typo'd atom name fails here.
     """
-    from services import pipeline_architect
-    from services.atom_registry import discover
-    from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+    from poindexter.services import pipeline_architect
+    from poindexter.services.atom_registry import discover
+    from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
 
     discover()  # surface stage.* + register qa.* / seo.* atoms (idempotent)
 
@@ -129,9 +129,9 @@ def test_media_pipeline_spec_compiles():
     wiring must form a valid LangGraph. Guards against the media_pipeline spec
     drifting into a non-compileable shape (e.g. a renamed/removed atom).
     """
-    from services import pipeline_architect
-    from services.atom_registry import discover
-    from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+    from poindexter.services import pipeline_architect
+    from poindexter.services.atom_registry import discover
+    from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
 
     discover()  # register media.* atoms (auto-discovered under modules.content.atoms)
 
@@ -176,9 +176,9 @@ async def test_graphdef_run_propagates_content_to_finalize(monkeypatch):
     checkpointer), so it is a true regression guard for the empty-content
     class of bug — only the stage bodies are stubbed.
     """
-    from services import atom_registry
-    from services.atom_registry import discover
-    from services.template_runner import TemplateRunner
+    from poindexter.services import atom_registry
+    from poindexter.services.atom_registry import discover
+    from poindexter.services.template_runner import TemplateRunner
 
     discover()  # ensure stage.* virtual atoms exist before we override them
 
@@ -235,12 +235,12 @@ async def test_graphdef_run_propagates_content_to_finalize(monkeypatch):
         # contract fingerprints (poindexter#755); mirror that so the run's
         # contract gate (assert_graph_def_current) sees current fingerprints
         # instead of refusing an unstamped spec.
-        from services.pipeline_architect import stamp_graph_def
+        from poindexter.services.pipeline_architect import stamp_graph_def
 
         return stamp_graph_def(minimal_spec)
 
     monkeypatch.setattr(
-        "services.pipeline_templates.load_active_graph_def",
+        "poindexter.services.pipeline_templates.load_active_graph_def",
         _fake_load_active_graph_def,
     )
 
@@ -282,9 +282,9 @@ async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
     the terminal node via LangGraph state channels. Fails if any of the
     five media keys is an undeclared PipelineState channel (LangGraph drops
     undeclared keys on the graph_def path)."""
-    from services import atom_registry
-    from services.atom_registry import discover
-    from services.template_runner import TemplateRunner
+    from poindexter.services import atom_registry
+    from poindexter.services.atom_registry import discover
+    from poindexter.services.template_runner import TemplateRunner
 
     discover()
     seen: dict[str, Any] = {}
@@ -349,12 +349,12 @@ async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
         # contract fingerprints (poindexter#755); mirror that so the run's
         # contract gate (assert_graph_def_current) sees current fingerprints
         # instead of refusing an unstamped spec.
-        from services.pipeline_architect import stamp_graph_def
+        from poindexter.services.pipeline_architect import stamp_graph_def
 
         return stamp_graph_def(minimal_spec)
 
     monkeypatch.setattr(
-        "services.pipeline_templates.load_active_graph_def",
+        "poindexter.services.pipeline_templates.load_active_graph_def",
         _fake_load_active_graph_def,
     )
 
@@ -379,7 +379,7 @@ async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
 from unittest.mock import patch as _patch
 
 from plugins.atom import AtomMeta as _AtomMeta
-from services import pipeline_architect as _pa
+from poindexter.services import pipeline_architect as _pa
 
 
 def _rescue_meta(name: str) -> _AtomMeta:

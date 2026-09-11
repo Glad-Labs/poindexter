@@ -53,11 +53,11 @@ import pytest
 import pytest_asyncio
 
 from plugins.topic_source import DiscoveredTopic
-from services.niche_service import NicheService
-from services.site_config import SiteConfig
-from services.topic_batch_service import TopicBatchService
-from services.topic_pool import insert_pooled_topics
-from services.topic_sanity import evaluate_topic_sanity
+from poindexter.services.niche_service import NicheService
+from poindexter.services.site_config import SiteConfig
+from poindexter.services.topic_batch_service import TopicBatchService
+from poindexter.services.topic_pool import insert_pooled_topics
+from poindexter.services.topic_sanity import evaluate_topic_sanity
 
 pytestmark = [pytest.mark.asyncio(loop_scope="session"), pytest.mark.integration]
 
@@ -159,7 +159,7 @@ async def _e2e_db_pool_session():
 
     pool = await asyncpg.create_pool(test_dsn, min_size=1, max_size=4)
     try:
-        from services.migrations import run_migrations
+        from poindexter.services.migrations import run_migrations
 
         class _StubService:
             def __init__(self, pool):
@@ -217,7 +217,7 @@ def _clear_goal_vec_cache():
     persists for the process lifetime. Clear between tests so the second
     test doesn't inherit the first's monkeypatched fake vectors.
     """
-    from services.topic_ranking import _GOAL_VEC_CACHE
+    from poindexter.services.topic_ranking import _GOAL_VEC_CACHE
 
     _GOAL_VEC_CACHE.clear()
     yield
@@ -291,9 +291,9 @@ async def test_seeded_niche_sweep_produces_a_batch(db_pool, monkeypatch):
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
-    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed_text)
     monkeypatch.setattr(
-        "services.topic_ranking._embed_text_cached", fake_embed_text,
+        "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
     async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
@@ -304,7 +304,7 @@ async def test_seeded_niche_sweep_produces_a_batch(db_pool, monkeypatch):
             result[c.id] = c
         return result
 
-    monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
+    monkeypatch.setattr("poindexter.services.topic_ranking.llm_final_score", fake_llm_score)
 
     svc = TopicBatchService(db_pool, site_config=SiteConfig())
     batch = await svc.run_sweep(niche_id=n.id)

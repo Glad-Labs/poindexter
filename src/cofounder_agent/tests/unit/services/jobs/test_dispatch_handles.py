@@ -22,8 +22,8 @@ from typing import Any
 
 import pytest
 
-from services.jobs import dispatch_handles as dh
-from services.jobs.dispatch_handles import (
+from poindexter.services.jobs import dispatch_handles as dh
+from poindexter.services.jobs.dispatch_handles import (
     PlatformDispatchResult,
     claim_media_dispatch,
     persist_platform_handles,
@@ -178,7 +178,7 @@ def test_still_undispatched_sql_gates_on_undelivered_approved():
 @pytest.mark.asyncio
 async def test_guard_is_exported_and_used_by_both_lanes():
     """Both dispatch lanes must import the SAME guard (single source of truth)."""
-    from services.jobs import media_distribute, podcast_distribute
+    from poindexter.services.jobs import media_distribute, podcast_distribute
 
     assert media_distribute.claim_media_dispatch is claim_media_dispatch
     assert podcast_distribute.claim_media_dispatch is claim_media_dispatch

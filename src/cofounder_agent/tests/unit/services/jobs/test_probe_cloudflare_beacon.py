@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from prometheus_client import REGISTRY
 
-import services.jobs.probe_cloudflare_beacon as probe_mod
-from services.jobs.probe_cloudflare_beacon import ProbeCloudflareBeaconJob
+import poindexter.services.jobs.probe_cloudflare_beacon as probe_mod
+from poindexter.services.jobs.probe_cloudflare_beacon import ProbeCloudflareBeaconJob
 
 _GAUGE = "poindexter_cloudflare_beacon_reachable"
 
@@ -37,8 +37,8 @@ async def _run_until_finding(sc, fake_httpx, runs: int = 2):
     the last result — the finding is gated on a streak of failed runs."""
     result = None
     with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
-        "services.jobs.probe_cloudflare_beacon.emit_finding"
-    ) as mock_finding, patch("services.jobs.probe_cloudflare_beacon.asyncio.sleep", new=AsyncMock()):
+        "poindexter.services.jobs.probe_cloudflare_beacon.emit_finding"
+    ) as mock_finding, patch("poindexter.services.jobs.probe_cloudflare_beacon.asyncio.sleep", new=AsyncMock()):
         for _ in range(runs):
             result = await ProbeCloudflareBeaconJob().run(MagicMock(), {"_site_config": sc})
     return result, mock_finding
@@ -108,7 +108,7 @@ class TestProbeCloudflareBeaconMetadata:
 class TestProbeCloudflareBeaconSkips:
     async def test_skips_when_site_config_missing(self):
         with patch(
-            "services.jobs.probe_cloudflare_beacon.emit_finding"
+            "poindexter.services.jobs.probe_cloudflare_beacon.emit_finding"
         ) as mock_finding:
             result = await ProbeCloudflareBeaconJob().run(MagicMock(), {})
         assert result.ok is True
@@ -121,7 +121,7 @@ class TestProbeCloudflareBeaconSkips:
     async def test_skips_when_beacon_url_unset(self):
         sc = _sc(beacon_url="")
         with patch(
-            "services.jobs.probe_cloudflare_beacon.emit_finding"
+            "poindexter.services.jobs.probe_cloudflare_beacon.emit_finding"
         ) as mock_finding:
             result = await ProbeCloudflareBeaconJob().run(
                 MagicMock(), {"_site_config": sc}
@@ -155,7 +155,7 @@ class TestProbeCloudflareBeaconReachable:
         sc = _sc()
         fake_httpx, client = _fake_httpx(status=status)
         with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
-            "services.jobs.probe_cloudflare_beacon.emit_finding"
+            "poindexter.services.jobs.probe_cloudflare_beacon.emit_finding"
         ) as mock_finding:
             result = await ProbeCloudflareBeaconJob().run(
                 MagicMock(), {"_site_config": sc}
@@ -214,7 +214,7 @@ class TestProbeCloudflareBeaconUnreachable:
         # First: down.
         fake_down, _ = _fake_httpx(status=503)
         with patch.dict("sys.modules", {"httpx": fake_down}), patch(
-            "services.jobs.probe_cloudflare_beacon.emit_finding"
+            "poindexter.services.jobs.probe_cloudflare_beacon.emit_finding"
         ):
             await ProbeCloudflareBeaconJob().run(MagicMock(), {"_site_config": sc})
         assert REGISTRY.get_sample_value(_GAUGE) == 0.0
@@ -253,8 +253,8 @@ class TestProbeCloudflareBeaconFlapControl:
         sc = _sc()
         bad, _ = _fake_httpx(raises=ConnectionError("blip"))
         good, _ = _fake_httpx(status=204)
-        with patch("services.jobs.probe_cloudflare_beacon.emit_finding") as mock_finding, patch(
-            "services.jobs.probe_cloudflare_beacon.asyncio.sleep", new=AsyncMock()
+        with patch("poindexter.services.jobs.probe_cloudflare_beacon.emit_finding") as mock_finding, patch(
+            "poindexter.services.jobs.probe_cloudflare_beacon.asyncio.sleep", new=AsyncMock()
         ):
             for fake in (bad, good, bad):
                 with patch.dict("sys.modules", {"httpx": fake}):
@@ -276,15 +276,15 @@ class TestProbeCloudflareBeaconFlapControl:
         fake = MagicMock()
         fake.AsyncClient = _AsyncClient
         with patch.dict("sys.modules", {"httpx": fake}), patch(
-            "services.jobs.probe_cloudflare_beacon.emit_finding"
-        ) as mock_finding, patch("services.jobs.probe_cloudflare_beacon.asyncio.sleep", new=AsyncMock()):
+            "poindexter.services.jobs.probe_cloudflare_beacon.emit_finding"
+        ) as mock_finding, patch("poindexter.services.jobs.probe_cloudflare_beacon.asyncio.sleep", new=AsyncMock()):
             result = await ProbeCloudflareBeaconJob().run(MagicMock(), {"_site_config": sc})
         assert result.ok is True and "reachable" in result.detail
         assert REGISTRY.get_sample_value(_GAUGE) == 1.0
         mock_finding.assert_not_called()
 
     async def test_settings_are_seeded(self):
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
         for k in (probe_mod.ATTEMPTS_KEY, probe_mod.MIN_CONSECUTIVE_KEY, probe_mod.CONNECT_TIMEOUT_KEY):
             assert k in DEFAULTS and k in METADATA, k

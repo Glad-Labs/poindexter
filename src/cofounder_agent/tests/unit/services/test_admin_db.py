@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.admin_db import AdminDatabase
+from poindexter.services.admin_db import AdminDatabase
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -497,7 +497,7 @@ class TestGetSetting:
         so live keys (max_posts_per_day, daily_post_limit, …) looked unread to
         the zero-reader probe. Mirrors SettingsService.get's record_read.
         """
-        from services import settings_read_sink
+        from poindexter.services import settings_read_sink
 
         settings_read_sink.drain_read_keys()  # clear any prior state
         pool = _make_pool(fetchrow_result=object())
@@ -515,7 +515,7 @@ class TestGetSetting:
         """The ask is recorded regardless of where the value resolves — a
         cache hit still stamps last_read_at, mirroring SettingsService.get
         (which records before consulting its cache)."""
-        from services import settings_read_sink
+        from poindexter.services import settings_read_sink
 
         settings_read_sink.drain_read_keys()
         pool = _make_pool()

@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from modules.content.multi_model_qa import MultiModelQA
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 
 def _qa(thinking_budget: str = "8000") -> MultiModelQA:

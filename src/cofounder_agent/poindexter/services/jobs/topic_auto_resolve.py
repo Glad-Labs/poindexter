@@ -47,7 +47,7 @@ from typing import Any
 from uuid import UUID
 
 from plugins.job import JobResult
-from services.settings_read_sink import record_read
+from poindexter.services.settings_read_sink import record_read
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,7 @@ class TopicAutoResolveJob:
         # for months (found by the 2026-07-25 alarm audit; the recurring
         # topic_batch_stuck pages were this).
         try:
-            from services.pipeline_throttle import is_queue_full
+            from poindexter.services.pipeline_throttle import is_queue_full
             full, queue_size, queue_limit = await is_queue_full(
                 pool, site_config=config.get("_site_config"),
             )
@@ -225,9 +225,9 @@ class TopicAutoResolveJob:
         # Import here to avoid a module-load cycle (topic_batch_service
         # pulls in plenty of pipeline machinery; jobs/__init__ stays
         # light).
-        from services.topic_batch_service import TopicBatchService
-        from services.topic_recent_coverage import RecentCoverageError
-        from services.topic_sanity import TopicSanityError
+        from poindexter.services.topic_batch_service import TopicBatchService
+        from poindexter.services.topic_recent_coverage import RecentCoverageError
+        from poindexter.services.topic_sanity import TopicSanityError
 
         # #272 Phase-2d: TopicBatchService requires an explicit site_config.
         # The scheduler seeds the run-bound instance into

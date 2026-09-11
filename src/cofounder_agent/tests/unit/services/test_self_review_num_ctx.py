@@ -39,8 +39,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.self_review import self_review_and_revise
-from services.site_config import SiteConfig
+from poindexter.services.self_review import self_review_and_revise
+from poindexter.services.site_config import SiteConfig
 
 # Draft must exceed the 500-char floor so the self-review path actually runs.
 _DRAFT = "This draft has enough substance for a cross-section review. " * 15
@@ -93,30 +93,30 @@ def _run_through_real_dispatch(site_config: SiteConfig, is_paid: bool):
 
     return provider, [
         patch(
-            "services.llm_providers.dispatcher.get_provider",
+            "poindexter.services.llm_providers.dispatcher.get_provider",
             new=AsyncMock(return_value=provider),
         ),
         patch(
-            "services.llm_providers.dispatcher.get_provider_config",
+            "poindexter.services.llm_providers.dispatcher.get_provider_config",
             new=AsyncMock(return_value={}),
         ),
         patch(
-            "services.llm_providers.dispatcher._record_dispatch_cost",
+            "poindexter.services.llm_providers.dispatcher._record_dispatch_cost",
             new=AsyncMock(return_value=None),
         ),
         patch(
-            "services.llm_providers.dispatcher._enforce_budget_if_paid",
+            "poindexter.services.llm_providers.dispatcher._enforce_budget_if_paid",
             new=AsyncMock(return_value=None),
         ),
         patch(
-            "services.llm_providers.dispatcher._is_paid_llm_call",
+            "poindexter.services.llm_providers.dispatcher._is_paid_llm_call",
             lambda _model, _pc=None: is_paid,
         ),
         patch(
-            "services.llm_providers.dispatcher._gpu_serialize_local_dispatch",
+            "poindexter.services.llm_providers.dispatcher._gpu_serialize_local_dispatch",
             lambda _model, _pc: False,
         ),
-        patch("services.container_registry.get_container", lambda: container),
+        patch("poindexter.services.container_registry.get_container", lambda: container),
     ]
 
 
@@ -128,7 +128,7 @@ async def _self_review(site_config: SiteConfig, is_paid: bool) -> MagicMock:
         for p in patches:
             stack.enter_context(p)
         stack.enter_context(
-            patch("services.prompt_manager.get_prompt_manager"),
+            patch("poindexter.services.prompt_manager.get_prompt_manager"),
         ).return_value.get_prompt.return_value = "PROMPT"
         out, stats = await self_review_and_revise(
             _DRAFT, "A Title", "A Topic",

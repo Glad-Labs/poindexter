@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.audit_published_quality import AuditPublishedQualityJob
+from poindexter.services.jobs.audit_published_quality import AuditPublishedQualityJob
 
 
 def _make_pool(
@@ -68,7 +68,7 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.emit_finding",
+            "poindexter.services.jobs.audit_published_quality.emit_finding",
             new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {"file_gitea_issue": True})
@@ -87,7 +87,7 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.emit_finding",
+            "poindexter.services.jobs.audit_published_quality.emit_finding",
             new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {})
@@ -106,7 +106,7 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.emit_finding",
+            "poindexter.services.jobs.audit_published_quality.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {})
@@ -123,7 +123,7 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.emit_finding",
+            "poindexter.services.jobs.audit_published_quality.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {"file_gitea_issue": False})
@@ -150,7 +150,7 @@ class TestRun:
         job = AuditPublishedQualityJob()
         # min_words=200 → shouldn't flag word-count. But no headings → 1 issue.
         with patch(
-            "services.jobs.audit_published_quality.emit_finding",
+            "poindexter.services.jobs.audit_published_quality.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(
@@ -170,7 +170,7 @@ class TestRun:
         )
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.emit_finding",
+            "poindexter.services.jobs.audit_published_quality.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {})
@@ -194,7 +194,7 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.emit_finding",
+            "poindexter.services.jobs.audit_published_quality.emit_finding",
             new=MagicMock(),
         ):
             result = await job.run(pool, {})

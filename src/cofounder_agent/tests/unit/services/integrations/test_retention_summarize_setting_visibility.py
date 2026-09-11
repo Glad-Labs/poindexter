@@ -31,11 +31,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.integrations.handlers import retention_summarize_to_table as rstt
+from poindexter.services.integrations.handlers import retention_summarize_to_table as rstt
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
-_LOGGER = "services.integrations.handlers.retention_summarize_to_table"
+_LOGGER = "poindexter.services.integrations.handlers.retention_summarize_to_table"
 
 
 async def test_setting_read_failure_is_visible(caplog):

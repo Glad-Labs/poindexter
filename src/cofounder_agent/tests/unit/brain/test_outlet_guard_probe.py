@@ -365,8 +365,8 @@ class TestRestore:
 
 class TestDefaultsWiring:
     def test_every_key_has_a_default_and_a_self_healing_category(self):
-        from services.settings_categories import resolve_category
-        from services.settings_defaults import DEFAULTS, METADATA
+        from poindexter.services.settings_categories import resolve_category
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
         keys = [
             og.ENABLED_KEY, og.MIN_LINE_VOLTAGE_KEY, og.REQUIRE_UPS_ON_BATTERY_KEY,

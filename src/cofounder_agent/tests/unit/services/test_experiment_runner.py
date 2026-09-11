@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from services.experiment_runner import (
+from poindexter.services.experiment_runner import (
     ExperimentVariant,
     apply_variant_to_state,
     pick_variant,

@@ -4,7 +4,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from services.logs_read import build_logql, flatten_streams, normalize_level, read_logs
+from poindexter.services.logs_read import build_logql, flatten_streams, normalize_level, read_logs
 
 _LOKI_PAYLOAD = {
     "status": "success",

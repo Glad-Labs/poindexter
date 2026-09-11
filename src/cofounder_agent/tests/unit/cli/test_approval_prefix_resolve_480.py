@@ -169,7 +169,7 @@ class TestApproveCommandPrefixResolution:
             "poindexter.cli.approval._make_site_config",
             new=AsyncMock(return_value=MagicMock()),
         ), patch(
-            "services.approval_service.approve",
+            "poindexter.services.approval_service.approve",
             new=fake_approve,
         ):
             result = runner.invoke(
@@ -210,7 +210,7 @@ class TestApproveCommandPrefixResolution:
         """The empirical failure 2026-05-11 20:46 UTC: full UUID lookup
         succeeds but the task has no gate. Operator should see the
         ``poindexter tasks approve`` suggestion in the error."""
-        from services.approval_service import TaskNotPausedError
+        from poindexter.services.approval_service import TaskNotPausedError
 
         full_id = "6bf91cc3-0281-4b93-aa02-b04ebc1ab45b"
 
@@ -233,7 +233,7 @@ class TestApproveCommandPrefixResolution:
             "poindexter.cli.approval._make_site_config",
             new=AsyncMock(return_value=MagicMock()),
         ), patch(
-            "services.approval_service.approve",
+            "poindexter.services.approval_service.approve",
             new=AsyncMock(side_effect=fake_approve),
         ):
             result = runner.invoke(approve_command, ["6bf91cc3"])
@@ -288,7 +288,7 @@ class TestRejectCommandPrefixResolution:
             "poindexter.cli.approval._make_site_config",
             new=AsyncMock(return_value=MagicMock()),
         ), patch(
-            "services.approval_service.reject",
+            "poindexter.services.approval_service.reject",
             new=fake_reject,
         ):
             result = runner.invoke(
@@ -301,7 +301,7 @@ class TestRejectCommandPrefixResolution:
         assert fake_reject.await_args.kwargs["task_id"] == full_id
 
     def test_reject_not_paused_routes_to_tasks_reject_hint(self, runner):
-        from services.approval_service import TaskNotPausedError
+        from poindexter.services.approval_service import TaskNotPausedError
 
         full_id = "6bf91cc3-0281-4b93-aa02-b04ebc1ab45b"
 
@@ -321,7 +321,7 @@ class TestRejectCommandPrefixResolution:
             "poindexter.cli.approval._make_site_config",
             new=AsyncMock(return_value=MagicMock()),
         ), patch(
-            "services.approval_service.reject",
+            "poindexter.services.approval_service.reject",
             new=AsyncMock(side_effect=fake_reject),
         ):
             result = runner.invoke(reject_command, ["6bf91cc3", "--reason", "test"])
@@ -360,7 +360,7 @@ class TestShowPendingPrefixResolution:
             "poindexter.cli.approval._make_pool",
             new=AsyncMock(return_value=MagicMock(close=AsyncMock())),
         ), patch(
-            "services.approval_service.show_pending",
+            "poindexter.services.approval_service.show_pending",
             new=fake_show,
         ):
             result = runner.invoke(show_pending_command, ["6bf91cc3"])

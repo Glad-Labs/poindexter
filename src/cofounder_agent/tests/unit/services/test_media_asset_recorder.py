@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.media_asset_recorder import (
+from poindexter.services.media_asset_recorder import (
     _DEFAULT_MIME_TYPES,
     _json_dumps,
     file_size_safe,

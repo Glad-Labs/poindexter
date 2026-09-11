@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.gpu_scheduler import GPUScheduler
+from poindexter.services.gpu_scheduler import GPUScheduler
 
 pytestmark = pytest.mark.unit
 

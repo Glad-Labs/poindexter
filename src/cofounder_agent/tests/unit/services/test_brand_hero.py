@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from services.brand_hero import (
+from poindexter.services.brand_hero import (
     BRAND,
     HERO_HEIGHT,
     HERO_WIDTH,
@@ -147,20 +147,20 @@ def test_stage_labels_are_escaped():
 @pytest.mark.asyncio
 async def test_render_png_returns_none_when_capture_fails(monkeypatch):
     """Mirrors capture_preview_screenshot's contract: None, never raises."""
-    from services import brand_hero
+    from poindexter.services import brand_hero
 
     async def _capture(url, **kwargs):
         return None
 
     monkeypatch.setattr(
-        "services.preview_screenshot.capture_preview_screenshot", _capture,
+        "poindexter.services.preview_screenshot.capture_preview_screenshot", _capture,
     )
     assert await brand_hero.render_hero_png() is None
 
 
 @pytest.mark.asyncio
 async def test_render_png_passes_hero_dimensions_and_cleans_up(monkeypatch):
-    from services import brand_hero
+    from poindexter.services import brand_hero
 
     seen: dict[str, object] = {}
 
@@ -173,7 +173,7 @@ async def test_render_png_passes_hero_dimensions_and_cleans_up(monkeypatch):
         return b"\x89PNG\r\n\x1a\n fake"
 
     monkeypatch.setattr(
-        "services.preview_screenshot.capture_preview_screenshot", _capture,
+        "poindexter.services.preview_screenshot.capture_preview_screenshot", _capture,
     )
     out = await brand_hero.render_hero_png()
     assert out == b"\x89PNG\r\n\x1a\n fake"

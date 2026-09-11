@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.chart_render import (
+from poindexter.services.chart_render import (
     ChartSpec,
     Series,
     build_chart_html,

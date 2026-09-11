@@ -72,7 +72,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     final_title = state.get("title") or seo_title or state.get("topic", "")
 
     try:
-        from services.pipeline_db import PipelineDB
+        from poindexter.services.pipeline_db import PipelineDB
         # content.persist_task assembles the full task_metadata and publishes
         # it on this channel one node earlier; we re-assert the same blob.
         task_metadata = state.get("task_metadata") or {}

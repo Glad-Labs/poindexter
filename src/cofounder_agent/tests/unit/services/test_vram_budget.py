@@ -9,7 +9,7 @@ Ollama /api/show by read_model_arch at runtime.
 
 import pytest
 
-from services.vram_budget import (
+from poindexter.services.vram_budget import (
     ModelArch,
     estimate_kv_cache_gb,
     estimate_model_vram_gb,

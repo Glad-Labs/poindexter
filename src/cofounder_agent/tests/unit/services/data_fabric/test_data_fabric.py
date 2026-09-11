@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from services.data_fabric import DataFabric
-from services.data_fabric.loki import DEFAULT_URL as LOKI_DEFAULT_URL
-from services.data_fabric.loki import LokiClient
-from services.data_fabric.prometheus import DEFAULT_URL as PROMETHEUS_DEFAULT_URL
-from services.data_fabric.prometheus import PrometheusClient
-from services.data_fabric.pyroscope import DEFAULT_URL as PYROSCOPE_DEFAULT_URL
-from services.data_fabric.pyroscope import PyroscopeClient
-from services.data_fabric.tempo import DEFAULT_URL as TEMPO_DEFAULT_URL
-from services.data_fabric.tempo import TempoClient
+from poindexter.services.data_fabric import DataFabric
+from poindexter.services.data_fabric.loki import DEFAULT_URL as LOKI_DEFAULT_URL
+from poindexter.services.data_fabric.loki import LokiClient
+from poindexter.services.data_fabric.prometheus import DEFAULT_URL as PROMETHEUS_DEFAULT_URL
+from poindexter.services.data_fabric.prometheus import PrometheusClient
+from poindexter.services.data_fabric.pyroscope import DEFAULT_URL as PYROSCOPE_DEFAULT_URL
+from poindexter.services.data_fabric.pyroscope import PyroscopeClient
+from poindexter.services.data_fabric.tempo import DEFAULT_URL as TEMPO_DEFAULT_URL
+from poindexter.services.data_fabric.tempo import TempoClient
 
 
 class TestPrometheusProperty:

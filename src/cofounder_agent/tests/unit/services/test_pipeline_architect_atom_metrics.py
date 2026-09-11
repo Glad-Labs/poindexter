@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from services.pipeline_architect import _wrap_atom
+from poindexter.services.pipeline_architect import _wrap_atom
 
 pytestmark = pytest.mark.unit
 

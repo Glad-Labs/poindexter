@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import pytest
 
-from services import pipeline_architect
-from services.atom_registry import discover
-from services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
+from poindexter.services import pipeline_architect
+from poindexter.services.atom_registry import discover
+from poindexter.services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
 
 
 @pytest.mark.unit

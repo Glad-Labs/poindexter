@@ -80,8 +80,8 @@ async def test_revised_list_replaces_original() -> None:
         "task_id": "t1",
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         result = await ReviewVideoShotListStage().execute(ctx, {})
 
@@ -106,8 +106,8 @@ async def test_long_review_prefers_video_long_script() -> None:
         "task_id": "t-src",
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         result = await ReviewVideoShotListStage().execute(ctx, {})
 
@@ -131,8 +131,8 @@ async def test_failure_keeps_original_non_halting() -> None:
         "task_id": "t1",
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         result = await ReviewVideoShotListStage().execute(ctx, {})
 
@@ -170,8 +170,8 @@ async def test_short_list_also_reviewed() -> None:
         "task_id": "t1",
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         result = await ReviewVideoShotListStage().execute(ctx, {})
 
@@ -198,8 +198,8 @@ async def test_review_timeout_read_from_db_setting() -> None:
         "task_id": "t1",
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         await ReviewVideoShotListStage().execute(ctx, {})
 
@@ -238,8 +238,8 @@ async def test_review_recovers_unquoted_key_dialect() -> None:
         "task_id": "t1",
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         result = await ReviewVideoShotListStage().execute(ctx, {})
 
@@ -273,8 +273,8 @@ async def test_review_dispatch_disables_thinking_by_default() -> None:
         "task_id": "t1",
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         result = await ReviewVideoShotListStage().execute(ctx, {})
 
@@ -302,8 +302,8 @@ async def test_review_dispatch_uses_configured_max_tokens() -> None:
         "task_id": "t1",
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         await ReviewVideoShotListStage().execute(ctx, {})
 
@@ -334,8 +334,8 @@ async def test_review_retries_on_empty_extract_and_recovers() -> None:
         "task_id": "t1",
     }
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         result = await ReviewVideoShotListStage().execute(ctx, {})
 

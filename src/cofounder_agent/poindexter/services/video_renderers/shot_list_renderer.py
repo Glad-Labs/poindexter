@@ -51,9 +51,9 @@ from pathlib import Path
 from typing import Any
 
 from plugins.media_compositor import CompositionRequest, CompositionScene
+from poindexter.services.settings_defaults import default_int
+from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
-from services.settings_defaults import default_int
-from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -272,7 +272,7 @@ async def _render_image_gen_image(
     """
     import httpx
 
-    from services.video_service import _consume_image_gen_response
+    from poindexter.services.video_service import _consume_image_gen_response
 
     neg = (
         "text, words, letters, watermark, face, person, hands, blurry, "
@@ -350,7 +350,7 @@ async def _render_pexels_image(
 
     import httpx
 
-    from services.image_providers.pexels import PexelsProvider
+    from poindexter.services.image_providers.pexels import PexelsProvider
 
     try:
         results = await PexelsProvider().fetch(
@@ -415,7 +415,7 @@ async def _render_pexels_video(
 
     import httpx
 
-    from services.image_providers.pexels_video import PexelsVideoProvider
+    from poindexter.services.image_providers.pexels_video import PexelsVideoProvider
 
     try:
         results = await PexelsVideoProvider().fetch(
@@ -516,7 +516,7 @@ async def _live_free_vram_gb(site_config: Any) -> float | None:
     try:
         import httpx
 
-        from services.video_providers.wan2_1 import _resolve_server_url
+        from poindexter.services.video_providers.wan2_1 import _resolve_server_url
 
         url = _resolve_server_url({}, site_config).rstrip("/") + "/health"
         async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
@@ -546,7 +546,7 @@ async def _wan_resident_gb(site_config: Any) -> float:
     try:
         import httpx
 
-        from services.video_providers.wan2_1 import _resolve_server_url
+        from poindexter.services.video_providers.wan2_1 import _resolve_server_url
 
         url = _resolve_server_url({}, site_config).rstrip("/") + "/health"
         async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
@@ -633,7 +633,7 @@ async def _fit_hero_dims_to_free_vram(
         return None
 
     try:
-        from services.gpu_registry import GPURegistry
+        from poindexter.services.gpu_registry import GPURegistry
 
         registry = GPURegistry(site_config=site_config)
         free_gb = None
@@ -770,7 +770,7 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
     if not enabled:
         return
     try:
-        from services.gpu_scheduler import gpu
+        from poindexter.services.gpu_scheduler import gpu
 
         await gpu._unload_image_gen(hard=True)
         # The pipeline's own QA/vision calls leave the writer resident on
@@ -862,7 +862,7 @@ async def _wait_wan_ready(site_config: Any, *, budget_s: float) -> bool:
     """
     import httpx
 
-    from services.video_providers.wan2_1 import _resolve_server_url
+    from poindexter.services.video_providers.wan2_1 import _resolve_server_url
 
     url = _resolve_server_url({}, site_config).rstrip("/") + "/health"
     deadline = time.monotonic() + max(0.0, budget_s)
@@ -963,7 +963,7 @@ async def _clear_wan_for_stills(shots: list[Shot], site_config: Any) -> None:
     if not enabled:
         return
     try:
-        from services.gpu_scheduler import gpu
+        from poindexter.services.gpu_scheduler import gpu
 
         await gpu._unload_wan(hard=True)
         # ComfyUI holds its loaded models the same way between renders; its
@@ -1005,7 +1005,7 @@ async def _render_generative_clip(
     the ``hero_render_fallback`` finding alone (the wan-server container that
     produced the miss may already be gone by the time anyone looks).
     """
-    from services.video_providers.wan2_1 import Wan21Provider
+    from poindexter.services.video_providers.wan2_1 import Wan21Provider
 
     # poindexter#907 defect 2 — clear the render card before wan loads.
     #
@@ -1040,7 +1040,7 @@ async def _render_generative_clip(
             provider_choice = "wan21"
     provider: Any
     if provider_choice == "comfyui":
-        from services.video_providers.comfyui import ComfyUIProvider
+        from poindexter.services.video_providers.comfyui import ComfyUIProvider
 
         provider = ComfyUIProvider()
     else:
@@ -1530,7 +1530,7 @@ async def _llm_restock_query(
         if s.idx != shot.idx and (s.intent or "").strip()
     )[:600]
 
-    from services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
 
     prompt = get_prompt_manager().get_prompt(
         "video.restock_query",
@@ -1539,7 +1539,7 @@ async def _llm_restock_query(
         failed_query=(shot.query or "").strip(),
     )
 
-    from services.llm_providers.dispatcher import dispatch_complete
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
     # think=False + real output headroom: the director model is
     # thinking-capable, and its reasoning channel shares the output budget.
@@ -3213,7 +3213,7 @@ async def render_shot_list(
                     # On-theme card first (site gradient + flow motif + brand
                     # fonts + operator logo, 2026-08-26); the plain brand card
                     # stays the guaranteed floor when it declines.
-                    from services.video_renderers.brand_endcard import (
+                    from poindexter.services.video_renderers.brand_endcard import (
                         render_endcard,
                     )
 
@@ -3323,7 +3323,7 @@ async def render_shot_list(
         },
     )
 
-    from services.media_compositors.ffmpeg_local import FFmpegLocalCompositor
+    from poindexter.services.media_compositors.ffmpeg_local import FFmpegLocalCompositor
 
     compositor = FFmpegLocalCompositor(site_config=site_config)
     composition = await compositor.compose(request)

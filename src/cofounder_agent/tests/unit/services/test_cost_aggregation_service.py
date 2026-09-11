@@ -18,9 +18,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services import cost_ledger
-from services.cost_aggregation_service import CostAggregationService
-from services.cost_ledger import SpendBreakdown
+from poindexter.services import cost_ledger
+from poindexter.services.cost_aggregation_service import CostAggregationService
+from poindexter.services.cost_ledger import SpendBreakdown
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -666,7 +666,7 @@ class TestGetBudgetStatusProjection:
 
         # Freeze "now" so days_elapsed is deterministic. With a high burn rate
         # projected_final_cost can reliably exceed 110% of the budget.
-        with patch("services.cost_aggregation_service.datetime") as mock_dt:
+        with patch("poindexter.services.cost_aggregation_service.datetime") as mock_dt:
             from datetime import datetime, timezone
             fixed_now = datetime(2026, 4, 5, 12, 0, 0, tzinfo=timezone.utc)
             mock_dt.now = MagicMock(return_value=fixed_now)
@@ -699,7 +699,7 @@ class TestGetBudgetStatusProjection:
         _patch_month_api(monkeypatch, 10.0)
         svc = _make_service(db=_make_db())
 
-        with patch("services.cost_aggregation_service.datetime") as mock_dt:
+        with patch("poindexter.services.cost_aggregation_service.datetime") as mock_dt:
             from datetime import datetime, timezone
             fixed_now = datetime(2026, 4, 15, 12, 0, 0, tzinfo=timezone.utc)
             mock_dt.now = MagicMock(return_value=fixed_now)
@@ -732,7 +732,7 @@ class TestGetBudgetStatusProjection:
         _patch_month_api(monkeypatch, 10.0)
         svc = _make_service(db=_make_db())
 
-        with patch("services.cost_aggregation_service.datetime") as mock_dt:
+        with patch("poindexter.services.cost_aggregation_service.datetime") as mock_dt:
             from datetime import datetime, timezone
             fixed_now = datetime(2026, 6, 1, 2, 0, 0, tzinfo=timezone.utc)
             mock_dt.now = MagicMock(return_value=fixed_now)

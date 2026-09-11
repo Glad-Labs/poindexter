@@ -53,7 +53,7 @@ class TestApprovePublishPrefix:
             "poindexter.cli.publish_approval.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
         ), patch(
-            "services.posts_approval_service.approve_publish",
+            "poindexter.services.posts_approval_service.approve_publish",
             new=fake_svc,
         ):
             result = runner.invoke(approve_publish_command, ["6bf91cc3"])
@@ -97,7 +97,7 @@ class TestRejectPublishPrefix:
             "poindexter.cli.publish_approval.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
         ), patch(
-            "services.posts_approval_service.reject_publish",
+            "poindexter.services.posts_approval_service.reject_publish",
             new=fake_svc,
         ):
             result = runner.invoke(reject_publish_command, ["6bf91cc3", "--reason", "x"])
@@ -124,7 +124,7 @@ class TestShowPendingPublishPrefix:
             "poindexter.cli.publish_approval.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
         ), patch(
-            "services.posts_approval_service.show_pending_publish",
+            "poindexter.services.posts_approval_service.show_pending_publish",
             new=fake_svc,
         ):
             result = runner.invoke(show_pending_publish_command, ["6bf91cc3"])

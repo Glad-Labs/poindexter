@@ -48,7 +48,7 @@ from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Any
 
-from services.module_paths import resolve_module_path
+from poindexter.services.module_paths import resolve_module_path
 
 logger = logging.getLogger(__name__)
 
@@ -621,11 +621,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Core Taps — same imperative load path as samples. Keeps them
         # discoverable in-container without relying on a `pip install .`
         # of poindexter-backend itself (tracked as packaging follow-up).
-        ("taps", "services.taps.memory", "MemoryFilesTap"),
-        ("taps", "services.taps.published_posts", "PostsTap"),
-        ("taps", "services.taps.audit", "AuditTap"),
-        ("taps", "services.taps.brain_knowledge", "BrainKnowledgeTap"),
-        ("taps", "services.taps.brain_decisions", "BrainDecisionsTap"),
+        ("taps", "poindexter.services.taps.memory", "MemoryFilesTap"),
+        ("taps", "poindexter.services.taps.published_posts", "PostsTap"),
+        ("taps", "poindexter.services.taps.audit", "AuditTap"),
+        ("taps", "poindexter.services.taps.brain_knowledge", "BrainKnowledgeTap"),
+        ("taps", "poindexter.services.taps.brain_decisions", "BrainDecisionsTap"),
         # GiteaIssuesTap retired 2026-05-08 — Gitea was decommissioned
         # 2026-04-30; the corresponding settings.taps.gitea_issues row
         # is harmless and is left in app_settings for historical reference.
@@ -634,13 +634,13 @@ def get_core_samples() -> dict[str, list[Any]]:
         # the 2026-04-02 backfill until the corpus-staleness panel
         # (poindexter#989) surfaced it. GitHubIssuesTap covers both the
         # public mirror and the private stack repo (poindexter#991).
-        ("taps", "services.taps.github_issues", "GitHubIssuesTap"),
-        ("taps", "services.taps.claude_code_sessions", "ClaudeCodeSessionsTap"),
+        ("taps", "poindexter.services.taps.github_issues", "GitHubIssuesTap"),
+        ("taps", "poindexter.services.taps.claude_code_sessions", "ClaudeCodeSessionsTap"),
         # OpenClawSQLiteTap — ingests pre-embedded chunks from OpenClaw
         # into pgvector. Registered 2026-05-20 (finding #189): had the
         # pyproject.toml entry_point but was never added here, so it's
         # never run in production despite the seed settings being live.
-        ("taps", "services.taps.openclaw_sqlite", "OpenClawSQLiteTap"),
+        ("taps", "poindexter.services.taps.openclaw_sqlite", "OpenClawSQLiteTap"),
         # Core Jobs — apscheduler-driven housekeeping. Ship as imperative
         # loads until the poetry packaging issue is resolved.
         # sync_page_views removed 2026-06-02 (#936 cleanup) — legacy cloud->local
@@ -654,7 +654,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # job pulls every 5 min via the SQL HTTP API.
         (
             "jobs",
-            "services.jobs.sync_cloudflare_analytics",
+            "poindexter.services.jobs.sync_cloudflare_analytics",
             "SyncCloudflareAnalyticsJob",
         ),
         # Sibling CF Analytics Engine ingest — the affiliate-redirect Worker at
@@ -665,7 +665,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # false), so it skips quietly when CF isn't configured.
         (
             "jobs",
-            "services.jobs.sync_affiliate_clicks",
+            "poindexter.services.jobs.sync_affiliate_clicks",
             "SyncAffiliateClicksJob",
         ),
         # CI benchmark ingest (glad-labs-stack#3337 follow-up). The nightly
@@ -676,7 +676,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # benchmark_ingest_repo is set (fresh-install posture).
         (
             "jobs",
-            "services.jobs.ingest_benchmark_results",
+            "poindexter.services.jobs.ingest_benchmark_results",
             "IngestBenchmarkResultsJob",
         ),
         # Stealth-bot sweep for the ingested page_views (the sync job above drops
@@ -685,7 +685,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # is_bot=true; reader surfaces read page_views_human. 15-min cadence.
         (
             "jobs",
-            "services.jobs.flag_bot_page_views",
+            "poindexter.services.jobs.flag_bot_page_views",
             "FlagBotPageViewsJob",
         ),
         # Active outage detector for the page-views beacon Worker (the ingest
@@ -697,7 +697,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # the /metrics scrape path.
         (
             "jobs",
-            "services.jobs.probe_cloudflare_beacon",
+            "poindexter.services.jobs.probe_cloudflare_beacon",
             "ProbeCloudflareBeaconJob",
         ),
         # Sibling detector for the /go affiliate Worker. Two tiers: an
@@ -709,7 +709,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # PoindexterAffiliateRedirectDown) and emits a finding on failure.
         (
             "jobs",
-            "services.jobs.probe_affiliate_redirect",
+            "poindexter.services.jobs.probe_affiliate_redirect",
             "ProbeAffiliateRedirectJob",
         ),
         # Records this host's public egress IP and emits a finding when it
@@ -719,29 +719,29 @@ def get_core_samples() -> dict[str, list[Any]]:
         # cause legible at the moment it changes.
         (
             "jobs",
-            "services.jobs.probe_wan_ip_change",
+            "poindexter.services.jobs.probe_wan_ip_change",
             "ProbeWanIpChangeJob",
         ),
-        ("jobs", "services.jobs.expire_stale_approvals", "ExpireStaleApprovalsJob"),
-        ("jobs", "services.jobs.db_backup", "DbBackupJob"),
-        ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),
+        ("jobs", "poindexter.services.jobs.expire_stale_approvals", "ExpireStaleApprovalsJob"),
+        ("jobs", "poindexter.services.jobs.db_backup", "DbBackupJob"),
+        ("jobs", "poindexter.services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),
         (
             "jobs",
-            "services.jobs.render_alertmanager_config",
+            "poindexter.services.jobs.render_alertmanager_config",
             "RenderAlertmanagerConfigJob",
         ),
-        ("jobs", "services.jobs.render_grafana_alerts", "RenderGrafanaAlertsJob"),
-        ("jobs", "services.jobs.postgres_vacuum", "PostgresVacuumJob"),
-        ("jobs", "services.jobs.check_published_links", "CheckPublishedLinksJob"),
-        ("jobs", "services.jobs.flag_missing_seo", "FlagMissingSeoJob"),
-        ("jobs", "services.jobs.fix_missing_seo", "FixMissingSeoJob"),
-        ("jobs", "services.jobs.detect_duplicate_posts", "DetectDuplicatePostsJob"),
-        ("jobs", "services.jobs.audit_published_quality", "AuditPublishedQualityJob"),
-        ("jobs", "services.jobs.fix_broken_internal_links", "FixBrokenInternalLinksJob"),
-        ("jobs", "services.jobs.fix_broken_external_links", "FixBrokenExternalLinksJob"),
-        ("jobs", "services.jobs.fix_uncategorized_posts", "FixUncategorizedPostsJob"),
-        ("jobs", "services.jobs.tune_publish_threshold", "TunePublishThresholdJob"),
-        ("jobs", "services.jobs.verify_published_posts", "VerifyPublishedPostsJob"),
+        ("jobs", "poindexter.services.jobs.render_grafana_alerts", "RenderGrafanaAlertsJob"),
+        ("jobs", "poindexter.services.jobs.postgres_vacuum", "PostgresVacuumJob"),
+        ("jobs", "poindexter.services.jobs.check_published_links", "CheckPublishedLinksJob"),
+        ("jobs", "poindexter.services.jobs.flag_missing_seo", "FlagMissingSeoJob"),
+        ("jobs", "poindexter.services.jobs.fix_missing_seo", "FixMissingSeoJob"),
+        ("jobs", "poindexter.services.jobs.detect_duplicate_posts", "DetectDuplicatePostsJob"),
+        ("jobs", "poindexter.services.jobs.audit_published_quality", "AuditPublishedQualityJob"),
+        ("jobs", "poindexter.services.jobs.fix_broken_internal_links", "FixBrokenInternalLinksJob"),
+        ("jobs", "poindexter.services.jobs.fix_broken_external_links", "FixBrokenExternalLinksJob"),
+        ("jobs", "poindexter.services.jobs.fix_uncategorized_posts", "FixUncategorizedPostsJob"),
+        ("jobs", "poindexter.services.jobs.tune_publish_threshold", "TunePublishThresholdJob"),
+        ("jobs", "poindexter.services.jobs.verify_published_posts", "VerifyPublishedPostsJob"),
         # Static-export reconciliation — 15-min DB ↔ R2 drift watchdog. The
         # public site reads R2 static/posts/index.json as source of truth;
         # publish_service used to fire export_post as a fire-and-forget asyncio
@@ -750,7 +750,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # whenever count or latest-published-at drift between DB and R2.
         (
             "jobs",
-            "services.jobs.static_export_reconciliation",
+            "poindexter.services.jobs.static_export_reconciliation",
             "StaticExportReconciliationJob",
         ),
         # Static-export orphan sweep — retires per-post JSONs whose slug is no
@@ -760,7 +760,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # files under "Excluded by noindex" instead of dropping (#1146).
         (
             "jobs",
-            "services.jobs.static_export_orphan_sweep",
+            "poindexter.services.jobs.static_export_orphan_sweep",
             "StaticExportOrphanSweepJob",
         ),
         # Media-generation reconciliation — sibling watchdog for podcast +
@@ -771,7 +771,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # so the GPU/disk don't pile up under backlog.
         (
             "jobs",
-            "services.jobs.media_reconciliation",
+            "poindexter.services.jobs.media_reconciliation",
             "MediaReconciliationJob",
         ),
         # Media-FEED reconciliation — the same watchdog one level up:
@@ -787,7 +787,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # fails) and escalates instead.
         (
             "jobs",
-            "services.jobs.media_feed_reconciliation",
+            "poindexter.services.jobs.media_feed_reconciliation",
             "MediaFeedReconciliationJob",
         ),
         # Media orphan sweep — reaps unreferenced images/video/podcast objects
@@ -797,7 +797,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # 2026-07-11-r2-media-reaper-design.md.
         (
             "jobs",
-            "services.jobs.media_orphan_sweep",
+            "poindexter.services.jobs.media_orphan_sweep",
             "MediaOrphanSweepJob",
         ),
         # Fan-out candidate prune — ages out the retained featured-fanout
@@ -807,26 +807,26 @@ def get_core_samples() -> dict[str, list[Any]]:
         # reference-based and would read every candidate as an orphan.
         (
             "jobs",
-            "services.jobs.fanout_candidate_prune",
+            "poindexter.services.jobs.fanout_candidate_prune",
             "FanoutCandidatePruneJob",
         ),
-        ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
-        ("jobs", "services.jobs.classify_content_types", "ClassifyContentTypesJob"),
-        ("jobs", "services.jobs.retry_failed_social_drafts", "RetryFailedSocialDraftsJob"),
-        ("jobs", "services.jobs.chat_task_watch", "ChatTaskWatchJob"),
+        ("jobs", "poindexter.services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
+        ("jobs", "poindexter.services.jobs.classify_content_types", "ClassifyContentTypesJob"),
+        ("jobs", "poindexter.services.jobs.retry_failed_social_drafts", "RetryFailedSocialDraftsJob"),
+        ("jobs", "poindexter.services.jobs.chat_task_watch", "ChatTaskWatchJob"),
         (
             "jobs",
-            "services.jobs.cancel_orphaned_social_drafts",
+            "poindexter.services.jobs.cancel_orphaned_social_drafts",
             "CancelOrphanedSocialDraftsJob",
         ),
         (
             "jobs",
-            "services.jobs.backfill_missing_social_drafts",
+            "poindexter.services.jobs.backfill_missing_social_drafts",
             "BackfillMissingSocialDraftsJob",
         ),
         (
             "jobs",
-            "services.jobs.schedule_social_drafts",
+            "poindexter.services.jobs.schedule_social_drafts",
             "ScheduleSocialDraftsJob",
         ),
         # Postiz accepts an enqueue (HTTP 200) before the platform publish
@@ -836,7 +836,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # stamp the permalink.
         (
             "jobs",
-            "services.jobs.sync_postiz_delivery_state",
+            "poindexter.services.jobs.sync_postiz_delivery_state",
             "SyncPostizDeliveryStateJob",
         ),
         # SyncProSubscriptionsJob — pay→deliver chain (glad-labs-stack#3216):
@@ -844,52 +844,52 @@ def get_core_samples() -> dict[str, list[Any]]:
         # the Pro deliverable repo. No-op until pro_delivery_enabled=true.
         (
             "jobs",
-            "services.jobs.sync_pro_subscriptions",
+            "poindexter.services.jobs.sync_pro_subscriptions",
             "SyncProSubscriptionsJob",
         ),
-        ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
-        ("jobs", "services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
+        ("jobs", "poindexter.services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
+        ("jobs", "poindexter.services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing
         # post_performance snapshots from external_metrics. Runs every
         # 30d as a maintenance pass; the rollup job above keeps new
         # rows accurate. Glad-Labs/poindexter#27.
         (
             "jobs",
-            "services.jobs.backfill_post_performance_gsc",
+            "poindexter.services.jobs.backfill_post_performance_gsc",
             "BackfillPostPerformanceGscJob",
         ),
         # ReloadSiteConfigJob — every-minute refresh of the in-memory
         # site_config cache so SQL/UI edits to app_settings take effect
         # without a container restart (internal tracker).
-        ("jobs", "services.jobs.reload_site_config", "ReloadSiteConfigJob"),
+        ("jobs", "poindexter.services.jobs.reload_site_config", "ReloadSiteConfigJob"),
         # WarmPinnedLlmEndpointsJob — loads each model that
         # model_api_base_overrides pins to its own GPU-bound Ollama, so a
         # restart never leaves that GPU cold until the first rail call
         # cold-loads mid-pipeline. OLLAMA_KEEP_ALIVE=-1 never evicts but also
         # never loads; this is the missing half of stack#2051 (see #2938).
-        ("jobs", "services.jobs.warm_pinned_llm_endpoints", "WarmPinnedLlmEndpointsJob"),
+        ("jobs", "poindexter.services.jobs.warm_pinned_llm_endpoints", "WarmPinnedLlmEndpointsJob"),
         # FlushSettingsReadTelemetryJob — drains SiteConfig.drain_read_keys()
         # every minute and stamps app_settings.last_read_at, so an
         # never-read key keeps a NULL stamp (orphan candidate). Pairs with
         # ProbeZeroReaderSettingsJob below (poindexter#756 item 2).
-        ("jobs", "services.jobs.flush_settings_read_telemetry", "FlushSettingsReadTelemetryJob"),
+        ("jobs", "poindexter.services.jobs.flush_settings_read_telemetry", "FlushSettingsReadTelemetryJob"),
         # ProbeZeroReaderSettingsJob — 6-hourly inverse of the flush job:
         # app_settings keys whose last_read_at is still NULL past the grace
         # window are emitted as an advisory settings_zero_reader_keys finding
         # (orphan candidates -> Discord ops). poindexter#756 item 3.
-        ("jobs", "services.jobs.probe_retention_backlog", "ProbeRetentionBacklogJob"),
-        ("jobs", "services.jobs.probe_zero_reader_settings", "ProbeZeroReaderSettingsJob"),
+        ("jobs", "poindexter.services.jobs.probe_retention_backlog", "ProbeRetentionBacklogJob"),
+        ("jobs", "poindexter.services.jobs.probe_zero_reader_settings", "ProbeZeroReaderSettingsJob"),
         # ProbeDisabledCapabilitiesJob — daily check of a curated list of
         # opt-in capability flags (writer self-review, self-consistency QA,
         # video/podcast/newsletter/social) that ship disabled. Emits an
         # advisory disabled_capabilities finding so silence never reads as
         # "working" (glad-labs-stack#2133).
-        ("jobs", "services.jobs.probe_disabled_capabilities", "ProbeDisabledCapabilitiesJob"),
+        ("jobs", "poindexter.services.jobs.probe_disabled_capabilities", "ProbeDisabledCapabilitiesJob"),
         # ProbeRescueYieldJob — daily watchdog for the QA rescue loop's
         # conversion rate: emits an advisory qa_rescue_yield_zero finding on a
         # 0-for-N rewrite streak so rescue burn is never silent again (the
         # 2026-07 collapse ran 0-for-116 unnoticed; poindexter#986).
-        ("jobs", "services.jobs.probe_rescue_yield", "ProbeRescueYieldJob"),
+        ("jobs", "poindexter.services.jobs.probe_rescue_yield", "ProbeRescueYieldJob"),
         # ProbeDecodeSplitCoverageJob — watchdog on the Ollama decode/prefill
         # capture. That seam is a fail-open monkey-patch over LiteLLM internals,
         # so a version bump can stop it SILENTLY while every call still
@@ -899,7 +899,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # rot on the next pin change.
         (
             "jobs",
-            "services.jobs.probe_decode_split_coverage",
+            "poindexter.services.jobs.probe_decode_split_coverage",
             "ProbeDecodeSplitCoverageJob",
         ),
         # ProbePipelineIdleJob — hourly watchdog on pipeline OUTPUT. Every
@@ -909,13 +909,13 @@ def get_core_samples() -> dict[str, list[Any]]:
         # its 7-day expiry meant the reaper would not free it either
         # (poindexter#1036). Watching output catches every cause, not just that
         # one.
-        ("jobs", "services.jobs.probe_pipeline_idle", "ProbePipelineIdleJob"),
+        ("jobs", "poindexter.services.jobs.probe_pipeline_idle", "ProbePipelineIdleJob"),
         # ProbeHeroFallbackJob — 6-hourly watchdog for hero (i2v) animation:
         # per-shot hero_render_fallback findings are info-level and invisible
         # in aggregate, so a four-day outage shipped stills as "video" while
         # the operator, not the system, noticed the missing motion
         # (poindexter#992). Pages once per window on a fallback cluster.
-        ("jobs", "services.jobs.probe_hero_fallback", "ProbeHeroFallbackJob"),
+        ("jobs", "poindexter.services.jobs.probe_hero_fallback", "ProbeHeroFallbackJob"),
         # ProbeNarrationFailureJob — hourly watchdog for the narration lane:
         # per-render narration_synthesis_failed warns route to Discord and
         # scroll past (the 2026-08-13 chatterbox outage ran two days, 30+
@@ -923,13 +923,13 @@ def get_core_samples() -> dict[str, list[Any]]:
         # on a failure cluster OR a live TTS probe staying down N runs —
         # the latter because the media_tts_gate turns an outage into silent
         # deferral, so failure findings alone go quiet exactly then.
-        ("jobs", "services.jobs.probe_narration_failure", "ProbeNarrationFailureJob"),
+        ("jobs", "poindexter.services.jobs.probe_narration_failure", "ProbeNarrationFailureJob"),
         # ProbeMediaRenderLoopJob — pages critical when the SAME task keeps
         # failing its render: a repeat cluster means a broken frozen input
         # (not an outage), and the daily cap-reset re-arm turns it into
         # multi-day model-load churn — the 2026-08-24 OOM's amplifier
         # (poindexter#1021).
-        ("jobs", "services.jobs.probe_media_render_loop", "ProbeMediaRenderLoopJob"),
+        ("jobs", "poindexter.services.jobs.probe_media_render_loop", "ProbeMediaRenderLoopJob"),
         # BackfillVideoShotListsJob — recovery for pieces whose Stage-1
         # director was skipped on a busy GPU, leaving video_shot_list = {}.
         # Those pieces were dispatched once, produced nothing, and kept their
@@ -953,43 +953,43 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Langfuse UI get replaced + flagged, orphaned names get an advisory
         # prompt_catalog_drift finding -> Discord ops. See
         # docs/architecture/prompt-management.md.
-        ("jobs", "services.jobs.sync_prompt_catalog_to_langfuse", "SyncPromptCatalogToLangfuseJob"),
-        ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
+        ("jobs", "poindexter.services.jobs.sync_prompt_catalog_to_langfuse", "SyncPromptCatalogToLangfuseJob"),
+        ("jobs", "poindexter.services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
         # SEO Harvest Loop Phase 1 — read-only analyzer that classifies
         # published posts into opportunity tiers from the latest GSC snapshot.
-        ("jobs", "services.jobs.run_seo_opportunity_analyzer", "RunSeoOpportunityAnalyzerJob"),
+        ("jobs", "poindexter.services.jobs.run_seo_opportunity_analyzer", "RunSeoOpportunityAnalyzerJob"),
         # SEO Harvest Loop Phase 2b — auto-enqueue seo_refresh tasks from the
         # analyzer's ranked open opportunities. Gated on seo.refresh.enabled
         # (default off); fires every 6h but no-ops until the operator opts in.
-        ("jobs", "services.jobs.enqueue_seo_refreshes", "EnqueueSeoRefreshesJob"),
+        ("jobs", "poindexter.services.jobs.enqueue_seo_refreshes", "EnqueueSeoRefreshesJob"),
         # SEO Harvest Loop Phase 2c — measure GSC position/CTR delta N days after
         # a refresh (read-only). Proves the loop works.
-        ("jobs", "services.jobs.measure_seo_refresh_outcomes", "MeasureSeoRefreshOutcomesJob"),
+        ("jobs", "poindexter.services.jobs.measure_seo_refresh_outcomes", "MeasureSeoRefreshOutcomesJob"),
         # SEO Harvest gate hygiene — dismiss seo_refresh runs parked at the
         # approval gate past seo.refresh.gate_max_parked_days (default 14; 0
         # disables) and reopen their opportunity rows. The gate-parked
         # complement of the flow's reclaim_stale_inprogress_tasks sweep.
-        ("jobs", "services.jobs.expire_stale_seo_refresh_gates", "ExpireStaleSeoRefreshGatesJob"),
+        ("jobs", "poindexter.services.jobs.expire_stale_seo_refresh_gates", "ExpireStaleSeoRefreshGatesJob"),
         # Niche topic-discovery sweep — calls TopicBatchService.run_sweep
         # per active niche on a 30-min cadence. Per-niche cadence floor
         # (niches.discovery_cadence_minute_floor) gates the actual work.
         # Layer 1 of the topic-UX rollout (niche pivot).
-        ("jobs", "services.jobs.run_niche_topic_sweep", "RunNicheTopicSweepJob"),
+        ("jobs", "poindexter.services.jobs.run_niche_topic_sweep", "RunNicheTopicSweepJob"),
         # Daily dev_diary auto-post (PR #160). Cron 0 13 * * * UTC = 9am EDT.
         # The pyproject.toml entry-point is also registered but isn't read
         # at runtime per the imperative-load pattern this list enforces.
-        ("jobs", "services.jobs.run_dev_diary_post", "RunDevDiaryPostJob"),
+        ("jobs", "poindexter.services.jobs.run_dev_diary_post", "RunDevDiaryPostJob"),
         # Daily morning brief (cron 0 7 * * * — local container time).
         # Posts a consolidated 24h digest to Discord ops and only pings
         # Telegram when overnight criticals appear, so the operator wakes
         # up to one summary instead of 50+ individual Captain Hook pings.
-        ("jobs", "services.jobs.morning_brief", "MorningBriefJob"),
+        ("jobs", "poindexter.services.jobs.morning_brief", "MorningBriefJob"),
         # Daily findings digest (cron 0 9 * * * — local container time).
         # Posts a once-a-day Discord rollup of audit_log findings by kind +
         # delivery policy + the pending-delivery backlog — the last unbuilt
         # #461 Phase-4 triage surface (#549). Routine, so Discord not Telegram.
         # Master switch ``findings_daily_digest_enabled`` (default true).
-        ("jobs", "services.jobs.findings_daily_digest", "FindingsDailyDigestJob"),
+        ("jobs", "poindexter.services.jobs.findings_daily_digest", "FindingsDailyDigestJob"),
         # Topic auto-resolve (every 2h). Closes the gap when the operator
         # is not running ``poindexter topics rank-batch / resolve-batch``
         # manually. Scans open topic_batches, applies LLM-rank as
@@ -997,7 +997,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # canonical_blog content_task. Master switch is
         # ``topic_auto_resolve_enabled`` (default false). See
         # services/jobs/topic_auto_resolve.py docstring for rails.
-        ("jobs", "services.jobs.topic_auto_resolve", "TopicAutoResolveJob"),
+        ("jobs", "poindexter.services.jobs.topic_auto_resolve", "TopicAutoResolveJob"),
         # Stale-batch reaper (hourly). Self-heal watchdog for the recurring
         # "content went dark" wedge: a topic_batch stuck status='open' blocks
         # every future sweep for its niche (uq_one_open_batch_per_niche).
@@ -1005,12 +1005,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # when ``topic_batch_reaper_enabled`` (default false) — auto-expires
         # the dead (past expires_at) ones so the niche self-recovers. See
         # services/jobs/reap_stale_topic_batches.py docstring for the rails.
-        ("jobs", "services.jobs.reap_stale_topic_batches", "ReapStaleTopicBatchesJob"),
+        ("jobs", "poindexter.services.jobs.reap_stale_topic_batches", "ReapStaleTopicBatchesJob"),
         # Reaper: flip orphaned 'running' live_activity rows (a producer that
         # died mid-run) to 'stale' every minute so the console pulse's recent
         # trail advances and rows don't accumulate. activity_silent — it must
         # not write its own live_activity row every minute.
-        ("jobs", "services.jobs.reap_stale_activity", "ReapStaleActivityJob"),
+        ("jobs", "poindexter.services.jobs.reap_stale_activity", "ReapStaleActivityJob"),
         # Bridge: ``audit_log`` findings -> ``alert_events`` so the brain's
         # existing alert_dispatcher (with its dedup matrix) actually pages
         # operators on severity>=warn findings. Closes the "audit_log row
@@ -1019,14 +1019,14 @@ def get_core_samples() -> dict[str, list[Any]]:
         # to audit_log in 7 days, zero reached the operator. Runs every
         # 60s; uses ``app_settings.findings_alert_route_watermark`` to
         # track progress.
-        ("jobs", "services.jobs.findings_alert_router", "FindingsAlertRouterJob"),
+        ("jobs", "poindexter.services.jobs.findings_alert_router", "FindingsAlertRouterJob"),
         # Integrations runners — wrap tap_runner / retention_runner as
         # scheduled Jobs. Pre-2026-05-09 these only ran via the
         # poindexter CLI, so external_taps + retention_policies had been
         # dark since 2026-05-01. RunTapsJob fires hourly (matches the
         # hackernews tap's "every 1 hour" floor); RunRetentionJob fires
         # every 6 hours (retention is a sweep-everything operation).
-        ("jobs", "services.jobs.run_taps", "RunTapsJob"),
+        ("jobs", "poindexter.services.jobs.run_taps", "RunTapsJob"),
         # The local iCUE sensor feed (corsair_csv) needs a faster cadence than
         # the hourly RunTapsJob: iCUE rewrites the CSV every 30s, so hourly
         # ingest leaves sensor_samples up to ~60m stale even when healthy —
@@ -1035,8 +1035,8 @@ def get_core_samples() -> dict[str, list[Any]]:
         # so the feed stays ~5-10m fresh and the threshold can drop to 30m.
         # Other taps stay on the hourly walk; the corsair handler is idempotent
         # so the two paths don't collide.
-        ("jobs", "services.jobs.ingest_corsair_csv", "IngestCorsairCsvJob"),
-        ("jobs", "services.jobs.run_retention", "RunRetentionJob"),
+        ("jobs", "poindexter.services.jobs.ingest_corsair_csv", "IngestCorsairCsvJob"),
+        ("jobs", "poindexter.services.jobs.run_retention", "RunRetentionJob"),
         # Memory + embedding hygiene — registered 2026-05-09 after the
         # deletion-candidates audit found these had pyproject.toml
         # entry_points but were missing from this in-process discovery
@@ -1051,8 +1051,8 @@ def get_core_samples() -> dict[str, list[Any]]:
         # imperative discovery path never registered it, so the job
         # never ran and ``memory_sync_stale`` was paging on its
         # never-updating ``writer='collapse_job'``.
-        ("jobs", "services.jobs.check_memory_staleness", "CheckMemoryStalenessJob"),
-        ("jobs", "services.jobs.extract_knowledge_edges", "ExtractKnowledgeEdgesJob"),
+        ("jobs", "poindexter.services.jobs.check_memory_staleness", "CheckMemoryStalenessJob"),
+        ("jobs", "poindexter.services.jobs.extract_knowledge_edges", "ExtractKnowledgeEdgesJob"),
         # prune_orphan_embeddings / prune_stale_embeddings / collapse_old_embeddings
         # retired 2026-06-24 — folded into retention_policies declarative framework
         # as embeddings_orphan_prune and embeddings_collapse handlers.
@@ -1065,25 +1065,25 @@ def get_core_samples() -> dict[str, list[Any]]:
         # behaviour no-op until the operator opts in. Becomes the primary
         # Stage-2 producer; the backfill jobs above demote to reconciliation
         # (Plan 8).
-        ("jobs", "services.jobs.dispatch_media_pipeline", "DispatchMediaPipelineJob"),
+        ("jobs", "poindexter.services.jobs.dispatch_media_pipeline", "DispatchMediaPipelineJob"),
         # Stage-2 link + Gate-2-seed pass (#689 Plan 8 / 8b-2): links
         # media_pipeline-rendered media_assets to their published post (via the
         # posts.metadata->>'pipeline_task_id' seam) and seeds the Gate-2 approval
         # rows. Same dormant master switch (``media_pipeline_trigger_enabled``).
-        ("jobs", "services.jobs.media_distribute", "MediaDistributeJob"),
+        ("jobs", "poindexter.services.jobs.media_distribute", "MediaDistributeJob"),
         # Stage-3 podcast lane (#689 deviation — separate isolated graph). The
         # dispatch job runs ``podcast_pipeline`` (render+persist) for Gate-1
         # pieces with a persisted podcast_script; the distribute job links the
         # asset to its post, seeds the Gate-2 podcast approval (incl. backlog
         # heal), and delivers approved episodes to R2 + RSS. Both DORMANT behind
         # ``podcast_pipeline_trigger_enabled`` (default off).
-        ("jobs", "services.jobs.dispatch_podcast_pipeline", "DispatchPodcastPipelineJob"),
-        ("jobs", "services.jobs.podcast_distribute", "PodcastDistributeJob"),
+        ("jobs", "poindexter.services.jobs.dispatch_podcast_pipeline", "DispatchPodcastPipelineJob"),
+        ("jobs", "poindexter.services.jobs.podcast_distribute", "PodcastDistributeJob"),
         # Gate-2 earned-autonomy re-evaluation (#531): periodically promotes
         # pending Gate-2 rows where the niche has since met the consecutive-
         # dispatch-success threshold. Dormant behind the same
         # ``media_pipeline_trigger_enabled`` gate as the other Stage-2 jobs.
-        ("jobs", "services.jobs.evaluate_earned_autonomy_gate2", "EvaluateEarnedAutonomyGate2Job"),
+        ("jobs", "poindexter.services.jobs.evaluate_earned_autonomy_gate2", "EvaluateEarnedAutonomyGate2Job"),
         # Anomaly detection — z-score outlier detection across failure
         # rate, quality, cost, and error-log rate (every 4h). Emits a
         # finding via utils.findings (routes through notify_operator
@@ -1091,26 +1091,26 @@ def get_core_samples() -> dict[str, list[Any]]:
         # docstring's "files a Gitea issue" was stale — actual code
         # uses emit_finding (post-Gitea-retirement path). Doc updated
         # 2026-05-09.
-        ("jobs", "services.jobs.detect_anomalies", "DetectAnomaliesJob"),
+        ("jobs", "poindexter.services.jobs.detect_anomalies", "DetectAnomaliesJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
-        ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
-        ("topic_sources", "services.topic_sources.devto", "DevtoSource"),
-        ("topic_sources", "services.topic_sources.web_search", "WebSearchSource"),
-        ("topic_sources", "services.topic_sources.knowledge", "KnowledgeSource"),
-        ("topic_sources", "services.topic_sources.codebase", "CodebaseSource"),
+        ("topic_sources", "poindexter.services.topic_sources.hackernews", "HackerNewsSource"),
+        ("topic_sources", "poindexter.services.topic_sources.devto", "DevtoSource"),
+        ("topic_sources", "poindexter.services.topic_sources.web_search", "WebSearchSource"),
+        ("topic_sources", "poindexter.services.topic_sources.knowledge", "KnowledgeSource"),
+        ("topic_sources", "poindexter.services.topic_sources.codebase", "CodebaseSource"),
         # Dev_diary topic source — pulls 24h of PRs/commits/decisions for
         # the daily build-in-public post (PR #160).
-        ("topic_sources", "services.topic_sources.dev_diary_source", "DevDiarySource"),
+        ("topic_sources", "poindexter.services.topic_sources.dev_diary_source", "DevDiarySource"),
         # IGDB topic source — recent indie game releases for the gaming
         # niche. Registered 2026-05-20 (finding #189): seed migration
         # 20260512_182304 created the app_settings rows but the source
         # was never plugged into the imperative load path.
-        ("topic_sources", "services.topic_sources.igdb", "IGDBSource"),
+        ("topic_sources", "poindexter.services.topic_sources.igdb", "IGDBSource"),
         # GscQueryGapSource — surfaces high-impression/poor-position GSC
         # queries as new topic candidates (poindexter#764). Ships inert:
         # gated on app_settings.seo.query_ingestion.enabled (default false).
-        ("topic_sources", "services.topic_sources.gsc_query_gap", "GscQueryGapSource"),
+        ("topic_sources", "poindexter.services.topic_sources.gsc_query_gap", "GscQueryGapSource"),
         # BenchmarkFindingsSource — the only topic source that reads our OWN
         # instrumentation instead of the outside world. Proposes a post only
         # when cost_logs supports a claim nobody else can make, and carries the
@@ -1119,7 +1119,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # them. Ships disabled.
         (
             "topic_sources",
-            "services.topic_sources.benchmark_findings",
+            "poindexter.services.topic_sources.benchmark_findings",
             "BenchmarkFindingsSource",
         ),
         # RssSource — generic RSS/Atom ingestion (poindexter#1017). One plugin,
@@ -1127,7 +1127,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # config.feed_url. No engagement signal by design — a feed's signal is
         # that the operator curated it; candidates carry a flat configurable
         # relevance_score and the ranking layer differentiates from there.
-        ("topic_sources", "services.topic_sources.rss", "RssSource"),
+        ("topic_sources", "poindexter.services.topic_sources.rss", "RssSource"),
         # SearchAutocompleteSource — the only source that measures search DEMAND
         # rather than what's being published/discussed. gsc_query_gap is
         # demand-driven but circular (it only sees queries the site already
@@ -1136,50 +1136,50 @@ def get_core_samples() -> dict[str, list[Any]]:
         # it calls a third-party endpoint unauthenticated.
         (
             "topic_sources",
-            "services.topic_sources.search_autocomplete",
+            "poindexter.services.topic_sources.search_autocomplete",
             "SearchAutocompleteSource",
         ),
         # Core ImageProviders — Phase G migration. Pexels first (search);
         # image-gen generation provider lands in a follow-up slice.
-        ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
+        ("image_providers", "poindexter.services.image_providers.pexels", "PexelsProvider"),
         # Pexels video search — sibling of the photo provider above, same
         # kind="search" contract; gives video shot-list sources real
         # stock-footage motion instead of a static photo (2026-07-14).
-        ("image_providers", "services.image_providers.pexels_video", "PexelsVideoProvider"),
-        ("image_providers", "services.image_providers.image_gen", "ImageGenProvider"),
-        ("image_providers", "services.image_providers.ai_generation", "AIGenerationProvider"),
+        ("image_providers", "poindexter.services.image_providers.pexels_video", "PexelsVideoProvider"),
+        ("image_providers", "poindexter.services.image_providers.image_gen", "ImageGenProvider"),
+        ("image_providers", "poindexter.services.image_providers.ai_generation", "AIGenerationProvider"),
         # FLUX.1-schnell — second-generation text-to-image alternative to
         # image-gen Lightning. Apache-2.0 licensed (the non-commercial flux_dev
         # variant is intentionally NOT registered). GH#123.
-        ("image_providers", "services.image_providers.flux_schnell", "FluxSchnellProvider"),
+        ("image_providers", "poindexter.services.image_providers.flux_schnell", "FluxSchnellProvider"),
         # Screenshot capture — kind="screenshot", the third ImageProvider
         # style. Renders an ALLOW-LISTED operator surface with the same
         # headless chromium the vision QA rail drives, for posts about
         # Poindexter itself. Diffusion cannot draw a real dashboard, so a
         # [SCREENSHOT: target] marker routes here instead. poindexter#1002.
-        ("image_providers", "services.image_providers.screenshot", "ScreenshotProvider"),
+        ("image_providers", "poindexter.services.image_providers.screenshot", "ScreenshotProvider"),
         # ChartProvider — the other half of the same gap: for a MEASUREMENT
         # post the honest illustration is the numbers drawn to scale. Takes a
         # data spec and renders it; deliberately has no query surface, so a
         # writer-emitted marker can never make it fetch its own data.
-        ("image_providers", "services.image_providers.chart", "ChartProvider"),
+        ("image_providers", "poindexter.services.image_providers.chart", "ChartProvider"),
         # Core VideoProviders. Imperative load until the packaging issue
         # (entry_points discovery in Docker) is resolved — same pattern
         # as the image_providers above.
-        ("video_providers", "services.video_providers.wan2_1", "Wan21Provider"),
-        ("video_providers", "services.video_providers.comfyui", "ComfyUIProvider"),
+        ("video_providers", "poindexter.services.video_providers.wan2_1", "Wan21Provider"),
+        ("video_providers", "poindexter.services.video_providers.comfyui", "ComfyUIProvider"),
         # Core AudioGenProviders. Stable Audio Open 1.0 — text-to-music/SFX
         # via dedicated inference server (Stability AI Community license,
         # free <$1M ARR). GH-Glad-Labs/poindexter#125.
         (
             "audio_gen_providers",
-            "services.audio_gen_providers.stable_audio_open",
+            "poindexter.services.audio_gen_providers.stable_audio_open",
             "StableAudioOpenProvider",
         ),
         # Core LLM providers.
-        ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
-        ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
-        ("llm_providers", "services.llm_providers.litellm_provider", "LiteLLMProvider"),
+        ("llm_providers", "poindexter.services.llm_providers.ollama_native", "OllamaNativeProvider"),
+        ("llm_providers", "poindexter.services.llm_providers.openai_compat", "OpenAICompatProvider"),
+        ("llm_providers", "poindexter.services.llm_providers.litellm_provider", "LiteLLMProvider"),
         # Plugin-namespaced LLM providers (paid-vendor SDKs, opt-in via
         # ``app_settings.plugin.llm_provider.<name>.enabled``). Each ships
         # disabled by default so the core install stays free + self-hostable.

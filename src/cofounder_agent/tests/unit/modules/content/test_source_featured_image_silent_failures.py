@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import modules.content.stages.source_featured_image as sfi
-from services.site_config import SiteConfig
+from poindexter.services.site_config import SiteConfig
 
 pytestmark = pytest.mark.unit
 

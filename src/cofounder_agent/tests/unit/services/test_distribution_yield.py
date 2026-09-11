@@ -14,13 +14,13 @@ from datetime import datetime
 
 import pytest
 
-from services.distribution_yield import (
+from poindexter.services.distribution_yield import (
     _PLACEMENTS_SQL,
     SurfaceYield,
     _surface_for_referrer,
     surface_yield,
 )
-from services.pipeline_db import LEGACY_SITE_TARGETS, SITE_TARGET
+from poindexter.services.pipeline_db import LEGACY_SITE_TARGETS, SITE_TARGET
 
 
 class _FakeConn:

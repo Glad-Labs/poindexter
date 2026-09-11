@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.template_runner import PipelineState
+from poindexter.services.template_runner import PipelineState
 
 
 @pytest.mark.unit

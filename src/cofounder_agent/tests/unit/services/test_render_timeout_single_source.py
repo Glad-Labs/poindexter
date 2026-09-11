@@ -25,7 +25,7 @@ import re
 
 import pytest
 
-from services.settings_defaults import DEFAULTS, default_int
+from poindexter.services.settings_defaults import DEFAULTS, default_int
 
 pytestmark = pytest.mark.unit
 

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.integrations.handlers.retention_checkpoint_prune import (
+from poindexter.services.integrations.handlers.retention_checkpoint_prune import (
     _DEFAULT_THREAD_PREFIXES,
     checkpoint_prune,
 )

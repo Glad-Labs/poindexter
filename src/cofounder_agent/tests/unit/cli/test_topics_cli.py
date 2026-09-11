@@ -161,8 +161,8 @@ class TestSweep:
         svc_cls.return_value.show_batch = AsyncMock(return_value=view)
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
         ):
             result = runner.invoke(
                 topics_group, ["sweep", "--niche", n.slug],
@@ -193,8 +193,8 @@ class TestSweep:
         svc_cls.return_value.show_batch = AsyncMock(return_value=view)
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
         ):
             result = runner.invoke(
                 topics_group, ["sweep", "--niche", n.slug],
@@ -245,8 +245,8 @@ class TestShowBatch:
         svc_cls = MagicMock()
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
         ):
             result = runner.invoke(
                 topics_group, ["show-batch", "--niche", n.slug],
@@ -271,8 +271,8 @@ class TestShowBatch:
         svc_cls.return_value.show_batch = AsyncMock(return_value=view)
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
-            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.topic_batch_service.TopicBatchService", svc_cls),
         ):
             result = runner.invoke(
                 topics_group, ["show-batch", "--niche", n.slug],
@@ -290,9 +290,9 @@ class TestShowBatch:
         ns_cls.return_value.get_by_slug = AsyncMock(return_value=None)
 
         with (
-            patch("services.niche_service.NicheService", ns_cls),
+            patch("poindexter.services.niche_service.NicheService", ns_cls),
             patch(
-                "services.topic_batch_service.TopicBatchService", MagicMock(),
+                "poindexter.services.topic_batch_service.TopicBatchService", MagicMock(),
             ),
         ):
             result = runner.invoke(
@@ -321,7 +321,7 @@ class TestRankBatch:
         svc_cls.return_value.rank_batch = AsyncMock(return_value=None)
 
         with patch(
-            "services.topic_batch_service.TopicBatchService", svc_cls,
+            "poindexter.services.topic_batch_service.TopicBatchService", svc_cls,
         ):
             result = runner.invoke(
                 topics_group,
@@ -343,7 +343,7 @@ class TestRankBatch:
         svc_cls.return_value.show_batch = AsyncMock(return_value=view)
 
         with patch(
-            "services.topic_batch_service.TopicBatchService", svc_cls,
+            "poindexter.services.topic_batch_service.TopicBatchService", svc_cls,
         ):
             result = runner.invoke(
                 topics_group,
@@ -367,7 +367,7 @@ class TestEditWinner:
         svc_cls.return_value.edit_winner = AsyncMock(return_value=None)
 
         with patch(
-            "services.topic_batch_service.TopicBatchService", svc_cls,
+            "poindexter.services.topic_batch_service.TopicBatchService", svc_cls,
         ):
             result = runner.invoke(
                 topics_group,
@@ -386,7 +386,7 @@ class TestEditWinner:
         svc_cls = MagicMock()
 
         with patch(
-            "services.topic_batch_service.TopicBatchService", svc_cls,
+            "poindexter.services.topic_batch_service.TopicBatchService", svc_cls,
         ):
             result = runner.invoke(
                 topics_group, ["edit-winner", str(bid)],
@@ -409,7 +409,7 @@ class TestResolveBatch:
         svc_cls.return_value.resolve_batch = AsyncMock(return_value=None)
 
         with patch(
-            "services.topic_batch_service.TopicBatchService", svc_cls,
+            "poindexter.services.topic_batch_service.TopicBatchService", svc_cls,
         ):
             result = runner.invoke(
                 topics_group, ["resolve-batch", str(bid)],
@@ -435,7 +435,7 @@ class TestRejectBatch:
         svc_cls.return_value.reject_batch = AsyncMock(return_value=None)
 
         with patch(
-            "services.topic_batch_service.TopicBatchService", svc_cls,
+            "poindexter.services.topic_batch_service.TopicBatchService", svc_cls,
         ):
             result = runner.invoke(
                 topics_group,
@@ -455,7 +455,7 @@ class TestRejectBatch:
         svc_cls.return_value.reject_batch = AsyncMock(return_value=None)
 
         with patch(
-            "services.topic_batch_service.TopicBatchService", svc_cls,
+            "poindexter.services.topic_batch_service.TopicBatchService", svc_cls,
         ):
             result = runner.invoke(
                 topics_group, ["reject-batch", str(bid)],
@@ -479,7 +479,7 @@ class TestNicheList:
         ns_cls = MagicMock()
         ns_cls.return_value.list_active = AsyncMock(return_value=[n1, n2])
 
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = runner.invoke(topics_group, ["niche", "list"])
 
         assert result.exit_code == 0, result.output
@@ -502,7 +502,7 @@ class TestNicheShow:
         ns_cls.return_value.get_goals = AsyncMock(return_value=goals)
         ns_cls.return_value.get_sources = AsyncMock(return_value=sources)
 
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = runner.invoke(
                 topics_group, ["niche", "show", "ai-ml"],
             )
@@ -519,7 +519,7 @@ class TestNicheShow:
         ns_cls = MagicMock()
         ns_cls.return_value.get_by_slug = AsyncMock(return_value=None)
 
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = runner.invoke(
                 topics_group, ["niche", "show", "no-such"],
             )
@@ -540,7 +540,7 @@ class TestNicheSetCadence:
         ns_cls.return_value.get_by_slug = AsyncMock(return_value=n)
         ns_cls.return_value.set_cadence_target = AsyncMock(return_value=updated)
 
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = runner.invoke(
                 topics_group, ["niche", "set-cadence", "ai-ml", "2.5"],
             )
@@ -556,7 +556,7 @@ class TestNicheSetCadence:
         ns_cls = MagicMock()
         ns_cls.return_value.get_by_slug = AsyncMock(return_value=None)
 
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = runner.invoke(
                 topics_group, ["niche", "set-cadence", "no-such", "1"],
             )
@@ -573,7 +573,7 @@ class TestNicheSetCadence:
             side_effect=ValueError("cadence target must be positive, got 0.0"),
         )
 
-        with patch("services.niche_service.NicheService", ns_cls):
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
             result = runner.invoke(
                 topics_group, ["niche", "set-cadence", "ai-ml", "0"],
             )

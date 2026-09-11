@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 
-from services.jobs.backfill_post_performance_gsc import (
+from poindexter.services.jobs.backfill_post_performance_gsc import (
     BackfillPostPerformanceGscJob,
 )
 

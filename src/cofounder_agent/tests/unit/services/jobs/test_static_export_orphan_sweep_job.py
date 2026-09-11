@@ -24,11 +24,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.static_export_orphan_sweep import StaticExportOrphanSweepJob
-from services.site_config import SiteConfig
+from poindexter.services.jobs.static_export_orphan_sweep import StaticExportOrphanSweepJob
+from poindexter.services.site_config import SiteConfig
 
-_EXPORTED = "services.static_export_service._list_exported_post_slugs"
-_RETIRE = "services.static_export_service._retire_slug"
+_EXPORTED = "poindexter.services.static_export_service._list_exported_post_slugs"
+_RETIRE = "poindexter.services.static_export_service._retire_slug"
 
 
 def _make_pool(published_slugs, *, fetch_error: Exception | None = None) -> Any:

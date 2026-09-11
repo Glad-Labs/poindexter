@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.integrations.handlers.tap_corsair_csv import (
+from poindexter.services.integrations.handlers.tap_corsair_csv import (
     _derive_offset_hours_from_mtime,
     _parse_timestamp,
     _parse_value,

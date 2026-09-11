@@ -26,7 +26,7 @@ Activation
 
 The retriever is dormant until consumed. Simplest call site:
 
-    from services.rag_engine import get_rag_retriever
+    from poindexter.services.rag_engine import get_rag_retriever
     retriever = await get_rag_retriever(pool, top_k=5)
     nodes = await retriever.aretrieve("how to bootstrap a SaaS")
 
@@ -44,7 +44,7 @@ from collections.abc import Iterable
 from contextlib import suppress
 from typing import Any
 
-from services.logger_config import get_logger
+from poindexter.services.logger_config import get_logger
 from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
@@ -683,7 +683,7 @@ def _build_rerank_retriever_class():
     from llama_index.core.retrievers import BaseRetriever
     from llama_index.core.schema import NodeWithScore, QueryBundle
 
-    from services.rag_excerpt import excerpt_around_query
+    from poindexter.services.rag_excerpt import excerpt_around_query
 
     class CrossEncoderRerankRetriever(BaseRetriever):
         def __init__(
@@ -949,7 +949,7 @@ def _build_graph_expanded_retriever_class():
                 # matched nothing.
                 return results
 
-            from services.knowledge_graph import neighbours
+            from poindexter.services.knowledge_graph import neighbours
 
             seeds: list[tuple[str, str]] = []
             present: set[tuple[str, str]] = set()

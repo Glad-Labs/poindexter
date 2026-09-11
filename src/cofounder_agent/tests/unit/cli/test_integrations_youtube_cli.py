@@ -491,7 +491,7 @@ class TestSmokeTest:
         captured: dict[str, Any] = {}
 
         # Patch the adapter's actual upload helper so no Google API hits.
-        from services.publish_adapters import youtube as yt_mod
+        from poindexter.services.publish_adapters import youtube as yt_mod
 
         def fake_upload(*, credentials, media_path, body):
             captured["body"] = body
@@ -535,7 +535,7 @@ class TestSmokeTest:
 
         captured: dict[str, Any] = {}
 
-        from services.publish_adapters import youtube as yt_mod
+        from poindexter.services.publish_adapters import youtube as yt_mod
 
         def fake_upload(*, credentials, media_path, body):
             captured["body"] = body
@@ -569,7 +569,7 @@ class TestSmokeTest:
         media = tmp_path / "v.mp4"
         media.write_bytes(b"x" * 1024)
 
-        from services.publish_adapters import youtube as yt_mod
+        from poindexter.services.publish_adapters import youtube as yt_mod
 
         def boom(*, credentials, media_path, body):
             raise RuntimeError("403 quota exceeded")
@@ -631,7 +631,7 @@ class TestForceEscapeHatch:
 
     @pytest.mark.asyncio
     async def test_force_true_bypasses_disabled_check(self):
-        from services.publish_adapters.youtube import YouTubePublishAdapter
+        from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
 
         class _SC:
             def get(self, key, default=None):
@@ -656,7 +656,7 @@ class TestForceEscapeHatch:
 
     @pytest.mark.asyncio
     async def test_force_true_still_requires_secrets(self):
-        from services.publish_adapters.youtube import YouTubePublishAdapter
+        from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
 
         class _SC:
             def get(self, key, default=None):
@@ -675,7 +675,7 @@ class TestForceEscapeHatch:
     async def test_force_false_default_still_blocks_when_disabled(self):
         """Sanity check — without force=True the existing disabled-gate
         behaviour is unchanged."""
-        from services.publish_adapters.youtube import YouTubePublishAdapter
+        from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
 
         class _SC:
             def get(self, key, default=None):
@@ -826,7 +826,7 @@ class TestSetupUpdateScope:
     def test_scope_lists_are_a_superset_not_a_swap(self):
         """The update grant must still cover uploading, or re-consenting to
         edit metadata would break the upload path."""
-        from services.publish_adapters.youtube import _SCOPES, _SCOPES_WITH_UPDATE
+        from poindexter.services.publish_adapters.youtube import _SCOPES, _SCOPES_WITH_UPDATE
 
         assert set(_SCOPES).issubset(set(_SCOPES_WITH_UPDATE))
         assert "youtube.force-ssl" in " ".join(_SCOPES_WITH_UPDATE)
@@ -916,7 +916,7 @@ def _stub_sync(monkeypatch, outcomes, unrecorded=()):
     The command imports both names inside its body, so patching them on the
     service module is what the CLI actually resolves.
     """
-    import services.youtube_metadata_sync as svc
+    import poindexter.services.youtube_metadata_sync as svc
 
     async def _sync(_pool, _sc, **_kw):
         return list(outcomes)
@@ -945,7 +945,7 @@ def _stub_sync(monkeypatch, outcomes, unrecorded=()):
 
 
 def _outcome(**kw: Any):
-    from services.youtube_metadata_sync import SyncOutcome
+    from poindexter.services.youtube_metadata_sync import SyncOutcome
 
     base = dict(video_id="vid1", post_id="p1", title="T", applied=True)
     base.update(kw)

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.jobs.check_published_links import CheckPublishedLinksJob
+from poindexter.services.jobs.check_published_links import CheckPublishedLinksJob
 
 
 def _make_pool(rows: list[dict]) -> Any:
@@ -83,7 +83,7 @@ class TestRun:
         client = _patched_httpx_client({"https://ok.example": 200})
 
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ):
             job = CheckPublishedLinksJob()
@@ -102,10 +102,10 @@ class TestRun:
         client = _patched_httpx_client({"https://dead.example": 404})
 
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.check_published_links.emit_finding",
+            "poindexter.services.jobs.check_published_links.emit_finding",
             new=MagicMock(),
         ):
             job = CheckPublishedLinksJob()
@@ -127,10 +127,10 @@ class TestRun:
         })
         finds = MagicMock()
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.check_published_links.emit_finding", new=finds,
+            "poindexter.services.jobs.check_published_links.emit_finding", new=finds,
         ):
             job = CheckPublishedLinksJob()
             result = await job.run(pool, {})
@@ -151,7 +151,7 @@ class TestRun:
         })
 
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ):
             job = CheckPublishedLinksJob()
@@ -176,7 +176,7 @@ class TestRun:
         sc_stub = MagicMock()
         sc_stub.get.side_effect = lambda k, d=None: "gladlabs.io" if k == "site_domain" else d
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ):
             job = CheckPublishedLinksJob()
@@ -198,7 +198,7 @@ class TestRun:
         client = _patched_httpx_client(dict.fromkeys(urls, 200))
 
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ):
             job = CheckPublishedLinksJob()
@@ -215,10 +215,10 @@ class TestRun:
         mock_gitea = MagicMock()
 
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.check_published_links.emit_finding",
+            "poindexter.services.jobs.check_published_links.emit_finding",
             new=mock_gitea,
         ):
             job = CheckPublishedLinksJob()
@@ -256,10 +256,10 @@ class TestAccessRestricted:
         client = _patched_httpx_client({"https://gated.example": code})
         finds = MagicMock()
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.check_published_links.emit_finding", new=finds,
+            "poindexter.services.jobs.check_published_links.emit_finding", new=finds,
         ):
             job = CheckPublishedLinksJob()
             result = await job.run(pool, {})
@@ -282,10 +282,10 @@ class TestAccessRestricted:
             "429" if k == "link_check_skip_status_codes" else d
         )
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.check_published_links.emit_finding", new=MagicMock(),
+            "poindexter.services.jobs.check_published_links.emit_finding", new=MagicMock(),
         ):
             job = CheckPublishedLinksJob()
             result = await job.run(pool, {"_site_config": sc})
@@ -301,10 +301,10 @@ class TestAccessRestricted:
         ])
         client = _patched_httpx_client({"https://err.example": 500})
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.check_published_links.emit_finding", new=MagicMock(),
+            "poindexter.services.jobs.check_published_links.emit_finding", new=MagicMock(),
         ):
             job = CheckPublishedLinksJob()
             result = await job.run(pool, {})
@@ -325,7 +325,7 @@ class TestUserAgent:
         client = _patched_httpx_client({"https://ok.example": 200})
         mock_cls = MagicMock(return_value=client)
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient", mock_cls,
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient", mock_cls,
         ):
             job = CheckPublishedLinksJob()
             await job.run(pool, {"file_gitea_issue": False})
@@ -346,7 +346,7 @@ class TestUserAgent:
         )
         mock_cls = MagicMock(return_value=client)
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient", mock_cls,
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient", mock_cls,
         ):
             job = CheckPublishedLinksJob()
             await job.run(pool, {"file_gitea_issue": False, "_site_config": sc})
@@ -372,7 +372,7 @@ class TestHeadToGetFallback:
         client.head = AsyncMock(return_value=_FakeHeadResponse(405))
         client.get = AsyncMock(return_value=_FakeHeadResponse(200))
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ):
             job = CheckPublishedLinksJob()
@@ -392,10 +392,10 @@ class TestHeadToGetFallback:
         client.head = AsyncMock(return_value=_FakeHeadResponse(405))
         client.get = AsyncMock(return_value=_FakeHeadResponse(404))
         with patch(
-            "services.jobs.check_published_links.httpx.AsyncClient",
+            "poindexter.services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.check_published_links.emit_finding", new=MagicMock(),
+            "poindexter.services.jobs.check_published_links.emit_finding", new=MagicMock(),
         ):
             job = CheckPublishedLinksJob()
             result = await job.run(pool, {})

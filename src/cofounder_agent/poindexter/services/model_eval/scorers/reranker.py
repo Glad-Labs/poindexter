@@ -12,8 +12,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from services.model_eval.metrics import mrr, ndcg_at_k
-from services.model_eval.types import GoldenSet, MetricResult
+from poindexter.services.model_eval.metrics import mrr, ndcg_at_k
+from poindexter.services.model_eval.types import GoldenSet, MetricResult
 
 _K = 10
 _SLOT = "rag_rerank_model"

@@ -98,9 +98,9 @@ async def test_podcast_script_preserved_when_scene_parsing_fails():
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="A" * 500),
          ), \
          patch(
@@ -126,9 +126,9 @@ async def test_happy_path_propagates_podcast_script_and_scenes():
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="B" * 500),
          ):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
@@ -150,9 +150,9 @@ async def test_runaway_short_is_trimmed_and_emits_finding():
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
@@ -181,9 +181,9 @@ async def test_runaway_long_script_is_trimmed_and_emits_finding():
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
@@ -211,9 +211,9 @@ async def test_long_script_within_budget_is_not_trimmed():
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
@@ -240,9 +240,9 @@ async def test_short_within_budget_is_not_trimmed():
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
@@ -275,9 +275,9 @@ async def test_audio_gen_intro_called_when_enabled():
 
     ctx = _ctx()
     # No platform/pool — video scenes call will be skipped gracefully
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="C" * 500),
          ), \
          patch(
@@ -316,9 +316,9 @@ async def test_audio_gen_skipped_when_disabled():
         audio_calls.append(True)
 
     ctx = _ctx()
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="D" * 500),
          ), \
          patch(
@@ -353,9 +353,9 @@ async def test_tts_called_when_enabled():
         return b"RIFF_fake_wav"
 
     ctx = _ctx()
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="E" * 500),
          ), \
          patch(
@@ -386,8 +386,8 @@ async def test_ambient_path_returned_via_context_updates():
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="P" * 600)), \
          patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=True), \
@@ -422,8 +422,8 @@ async def test_ambient_and_sting_outputs_are_durable_not_tempfiles(tmp_path):
         calls.append((kind, kw))
         return SimpleNamespace(file_path=f"{kw.get('output_dir', '')}/out.wav")
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="P" * 600)), \
          patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=True), \
@@ -455,8 +455,8 @@ async def test_tts_output_path_is_durable(tmp_path):
         return b"RIFF_fake_wav"
 
     ctx = _ctx()
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="E" * 500)), \
          patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=True), \
@@ -502,8 +502,8 @@ async def test_podcast_audio_path_returned_via_context_updates(tmp_path):
     async def _mock_tts(text, *, site_config, output_path=None):
         return b"RIFF_fake_wav"
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="P" * 600)), \
          patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=True), \
@@ -525,8 +525,8 @@ async def test_intro_sting_path_returned_via_context_updates():
     gpu = SimpleNamespace(lock=_fake_lock)
     ctx = _ctx()  # no platform → only the intro-sting block fires (not ambient)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="Q" * 600)), \
          patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=True), \
@@ -557,8 +557,8 @@ async def test_podcast_audio_paths_preserved_on_scene_failure(tmp_path):
 
     from modules.content.stages import generate_media_scripts as gms
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="R" * 600)), \
          patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=True), \
@@ -603,8 +603,8 @@ async def test_auto_model_skips_gracefully():
     )
     gpu = SimpleNamespace(lock=_fake_lock)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="S" * 500)):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -627,8 +627,8 @@ async def test_missing_model_and_no_pool_skips_gracefully():
     }
     gpu = SimpleNamespace(lock=_fake_lock)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="T" * 500)):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -757,10 +757,10 @@ async def test_video_long_script_emitted_via_context_updates():
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(side_effect=_complete)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="A" * 500)), \
-         patch("services.podcast_service._normalize_for_speech",
+         patch("poindexter.services.podcast_service._normalize_for_speech",
                new=lambda text, **_k: text), \
          patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=False), \
@@ -979,9 +979,9 @@ async def test_invalid_short_retries_once_then_ships_without_short():
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
@@ -1018,9 +1018,9 @@ async def test_valid_short_on_retry_is_used():
     # dispatch serves ONLY the scene calls here: bad then good.
     ctx["platform"].dispatch.complete = AsyncMock(side_effect=[bad, good])
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
@@ -1100,9 +1100,9 @@ async def test_curated_sting_file_skips_generation(tmp_path):
     ctx = _ctx()
     ctx["site_config"]._cfg["podcast_sting_file_path"] = str(theme)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch(
-             "services.podcast_service._build_script_with_llm",
+             "poindexter.services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="C" * 500),
          ), \
          patch(
@@ -1150,8 +1150,8 @@ async def test_video_only_skips_podcast_call_but_produces_video_scripts():
     )
     podcast_llm = AsyncMock(return_value="P" * 600)
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm", new=podcast_llm):
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm", new=podcast_llm):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
     assert result.ok
@@ -1181,8 +1181,8 @@ async def test_video_only_never_generates_ambient_bed():
         return_value=SimpleNamespace(file_path="/tmp/must-not-exist.wav"),
     )
 
-    with patch("services.gpu_scheduler.gpu", gpu), \
-         patch("services.podcast_service._build_script_with_llm",
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="P" * 600)), \
          patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=True), \

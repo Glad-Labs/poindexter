@@ -47,9 +47,9 @@ _SERVICES_PARENT = _REPO_ROOT / "src" / "cofounder_agent"
 if str(_SERVICES_PARENT) not in sys.path:
     sys.path.insert(0, str(_SERVICES_PARENT))
 
-from services.alt_text import _IMG_ALT_RE  # noqa: E402
-from services.image_captioner import caption_image  # noqa: E402
-from services.publish_service import sanitize_published_title  # noqa: E402
+from poindexter.services.alt_text import _IMG_ALT_RE  # noqa: E402
+from poindexter.services.image_captioner import caption_image  # noqa: E402
+from poindexter.services.publish_service import sanitize_published_title  # noqa: E402
 
 _IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _IMG_SRC_RE = re.compile(r'<img\b[^>]*?\bsrc="([^"]+)"', re.IGNORECASE)
@@ -83,7 +83,7 @@ def _resolve_db_url(cli_value: str | None) -> str:
 async def _build_site_config(pool):
     """Load a SiteConfig from the pool and wire its _pool (for get_secret +
     dispatch + R2). Mirrors the in-container bootstrap used by tests."""
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig()
     await sc.load(pool)
@@ -201,8 +201,8 @@ async def mode_alt(conn, sc, pool, *, dry_run, post_id, limit, force) -> set[str
 
 
 async def mode_seo_desc(conn, sc, pool, *, dry_run, post_id, limit) -> set[str]:
-    from services.ai_content_generator import get_content_generator
-    from services.seo_content_generator import get_seo_content_generator
+    from poindexter.services.ai_content_generator import get_content_generator
+    from poindexter.services.seo_content_generator import get_seo_content_generator
 
     where = "status='published' AND (seo_description IS NULL OR seo_description='')"
     params: list = []
@@ -293,7 +293,7 @@ async def mode_titles(conn, sc, pool, *, dry_run, post_id, limit) -> set[str]:
 
 async def _export(pool, slug: str, sc) -> None:
     try:
-        from services.static_export_service import export_post
+        from poindexter.services.static_export_service import export_post
 
         await export_post(pool, slug, site_config=sc)
     except Exception as e:  # noqa: BLE001 — non-fatal; bulk revalidate still runs
@@ -303,7 +303,7 @@ async def _export(pool, slug: str, sc) -> None:
 async def _revalidate_all(sc) -> None:
     """One bulk ISR revalidation — the 'posts' tag is on every per-slug page,
     so this refreshes the index AND every post page."""
-    from services.revalidation_service import trigger_nextjs_revalidation
+    from poindexter.services.revalidation_service import trigger_nextjs_revalidation
 
     ok = await trigger_nextjs_revalidation(
         paths=["/", "/archive", "/posts", "/sitemap.xml", "/feed.xml"],

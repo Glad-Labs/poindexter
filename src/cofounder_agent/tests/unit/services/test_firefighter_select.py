@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.firefighter_service import select_remediation_action
-from services.site_config import SiteConfig
+from poindexter.services.firefighter_service import select_remediation_action
+from poindexter.services.site_config import SiteConfig
 
 _CATALOG = [
     {

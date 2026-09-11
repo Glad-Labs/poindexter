@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from services.database_service import DatabaseService
+from poindexter.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

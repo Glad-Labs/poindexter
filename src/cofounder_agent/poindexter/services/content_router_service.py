@@ -79,8 +79,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from services.logger_config import get_logger
-from services.site_config import SiteConfig
+from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 from utils.exception_format import describe_exception
 
 from .audit_log import audit_log_bg
@@ -116,7 +116,7 @@ async def _record_experiment_outcome(
     ``process_content_generation_task`` for testability.
     """
     try:
-        from services.pipeline_experiment_hook import record_pipeline_outcome
+        from poindexter.services.pipeline_experiment_hook import record_pipeline_outcome
 
         await record_pipeline_outcome(
             assignment=result.get("experiment_assignment") or {},
@@ -272,7 +272,7 @@ def _graph_hydration_keys(
     # contracts still count — conservative, never surfaces fewer keys.
     order.extend(nid for nid in ids if nid not in order)
 
-    from services.template_runner import PipelineState  # lazy: import cycle
+    from poindexter.services.template_runner import PipelineState  # lazy: import cycle
 
     declared = set(PipelineState.__annotations__)
     produced: set[str] = set()
@@ -335,10 +335,10 @@ async def _load_task_metadata(
         return {}
 
     if graph_loader is None:
-        from services.pipeline_templates import load_active_graph_def
+        from poindexter.services.pipeline_templates import load_active_graph_def
         graph_loader = load_active_graph_def
     if get_meta is None:
-        from services.atom_registry import get_atom_meta
+        from poindexter.services.atom_registry import get_atom_meta
         get_meta = get_atom_meta
 
     graph_def = await graph_loader(getattr(database_service, "pool", None), template_slug or "")
@@ -425,7 +425,7 @@ async def process_content_generation_task(
     # during DI transition (#242). Falls back to fresh instances when
     # invoked outside the lifespan-wired context (tests, ad-hoc CLI).
     try:
-        from services.container import get_service as _get_service
+        from poindexter.services.container import get_service as _get_service
         _settings_service = _get_service("settings")
     except Exception:
         _settings_service = None
@@ -439,7 +439,7 @@ async def process_content_generation_task(
         # task's own pool instead.
         _pool = getattr(database_service, "pool", None)
         if _pool is not None:
-            from services.settings_service import SettingsService as _SettingsService
+            from poindexter.services.settings_service import SettingsService as _SettingsService
             _settings_service = _SettingsService(_pool)
             logger.info(
                 "[CONTENT_ROUTER] no 'settings' registration in the service "
@@ -453,7 +453,7 @@ async def process_content_generation_task(
                 "(qa.vision image relevance, preview screenshot) will "
                 "read their enable flags as false this run",
             )
-    from services.image_style_rotation import ImageStyleTracker as _IST
+    from poindexter.services.image_style_rotation import ImageStyleTracker as _IST
     _style_tracker = _IST(
         history_size=_sc.get_int("image_style_history_size", 10),
         ttl_seconds=_sc.get_int("image_style_history_ttl_seconds", 3600),
@@ -471,7 +471,7 @@ async def process_content_generation_task(
     # config. The assignment dict is threaded through so finalize can
     # ``record_outcome`` on the same row.
     try:
-        from services.pipeline_experiment_hook import assign_pipeline_variant
+        from poindexter.services.pipeline_experiment_hook import assign_pipeline_variant
         _experiment_assignment = await assign_pipeline_variant(
             task_id=task_id,
             database_service=database_service,
@@ -610,7 +610,7 @@ async def process_content_generation_task(
     )
 
     try:
-        from services.template_runner import TemplateRunner
+        from poindexter.services.template_runner import TemplateRunner
         _tmpl_runner = TemplateRunner(database_service.pool, site_config=_sc)
         # Build the default progress-streaming callback per the
         # pipeline_streaming_channel setting (#361 part 2). Returns None for
@@ -619,7 +619,7 @@ async def process_content_generation_task(
         # callback-build failure must never block the run.
         _on_event = None
         try:
-            from services.pipeline_streaming import make_streaming_callback
+            from poindexter.services.pipeline_streaming import make_streaming_callback
             _on_event = await make_streaming_callback(
                 database_service.pool, _sc, str(task_id),
                 template_slug=template_slug,

@@ -14,8 +14,8 @@ from unittest.mock import patch
 import pytest
 
 from modules.content.atoms import podcast_render
-from services.podcast_service import PodcastService
-from services.site_config import SiteConfig
+from poindexter.services.podcast_service import PodcastService
+from poindexter.services.site_config import SiteConfig
 
 
 @pytest.mark.asyncio
@@ -101,7 +101,7 @@ async def test_sting_mix_replaces_path_on_success(tmp_path, monkeypatch) -> None
         return "/tmp/mixed.mp3"
 
     import modules.content.atoms._narration_render as nr
-    import services.podcast_sting_mixer as mixer
+    import poindexter.services.podcast_sting_mixer as mixer
 
     monkeypatch.setattr(nr, "render_narration", fake_narration)
     monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
@@ -120,7 +120,7 @@ async def test_sting_mix_failure_ships_dry_and_flags(tmp_path, monkeypatch) -> N
     findings = []
 
     import modules.content.atoms._narration_render as nr
-    import services.podcast_sting_mixer as mixer
+    import poindexter.services.podcast_sting_mixer as mixer
 
     monkeypatch.setattr(nr, "render_narration", fake_narration)
     monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
@@ -145,7 +145,7 @@ async def test_sting_mix_disabled_skips(tmp_path, monkeypatch) -> None:
         return "/tmp/mixed.mp3"
 
     import modules.content.atoms._narration_render as nr
-    import services.podcast_sting_mixer as mixer
+    import poindexter.services.podcast_sting_mixer as mixer
 
     monkeypatch.setattr(nr, "render_narration", fake_narration)
     monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
@@ -195,7 +195,7 @@ async def test_empty_snapshot_falls_back_to_curated_theme(tmp_path, monkeypatch)
         used["sting"] = sting
         return "/tmp/mixed.mp3"
 
-    import services.podcast_sting_mixer as mixer
+    import poindexter.services.podcast_sting_mixer as mixer
     _patch_narration(monkeypatch)
     monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
 
@@ -223,7 +223,7 @@ async def test_dangling_temp_snapshot_falls_back_to_curated_theme(
         used["sting"] = sting
         return "/tmp/mixed.mp3"
 
-    import services.podcast_sting_mixer as mixer
+    import poindexter.services.podcast_sting_mixer as mixer
     _patch_narration(monkeypatch)
     monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
 
