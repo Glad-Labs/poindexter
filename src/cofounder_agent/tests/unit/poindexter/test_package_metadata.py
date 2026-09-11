@@ -95,6 +95,21 @@ def test_core_runtime_dependencies_declared() -> None:
     )
 
 
+def test_extras_partition_the_optional_dependencies() -> None:
+    """Every `optional = true` dependency belongs to an extra (an orphan optional
+    dep would never install), and every extra member is marked optional (a
+    non-optional member makes the extra a no-op). The three lean extras from
+    poindexter#1046 step 6 must exist."""
+    data = _manifest()
+    deps = data["tool"]["poetry"]["dependencies"]
+    extras = data["project"]["optional-dependencies"]
+    optional = {name for name, spec in deps.items() if isinstance(spec, dict) and spec.get("optional")}
+    in_extras = {member for members in extras.values() for member in members}
+    assert {"pipeline", "qa", "rag"} <= set(extras), sorted(extras)
+    assert optional <= in_extras, f"optional deps in no extra: {sorted(optional - in_extras)}"
+    assert in_extras <= optional, f"extra members not marked optional: {sorted(in_extras - optional)}"
+
+
 def test_version_matches_release_manifest() -> None:
     version = _manifest()["project"]["version"]
     manifest = json.loads((REPO_ROOT / ".release-please-manifest.json").read_text(encoding="utf-8"))

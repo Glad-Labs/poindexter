@@ -180,7 +180,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ```bash
 cd src/cofounder_agent
-poetry install
+poetry install --extras "pipeline qa rag"
 poetry run pytest tests/unit/ -q
 ```
 

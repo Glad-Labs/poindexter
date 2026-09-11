@@ -151,7 +151,7 @@ beautifulsoup4 = "^4.12"
 feedparser = "^6.0"
 boto3 = "^1.42.84"
 cloudinary = "^1.45"
-playwright = "^1.61"
+playwright = { version = "^1.61", optional = true }
 mcp = ">=2.0.0,<3"
 pillow = ">=12.2.0"
 apscheduler = "^3.11.3"
@@ -199,7 +199,7 @@ psycopg = { version = ">=3.3.5,<4.0", extras = ["binary", "pool"] }
 # with `module 'pyarrow' has no attribute 'PyExtensionType'`.
 # datasets >=2.16 handles the new pyarrow API; 3.x is the current
 # stable line. Closes Glad-Labs/poindexter#308.
-datasets = ">=5.0.0,<6"
+datasets = { version = ">=5.0.0,<6", optional = true }
 # LiteLLM — backs services/cost_lookup.py (model_cost table — #199),
 # the LiteLLMProvider plugin (services/llm_providers/litellm_provider.py
 # — #372 cutover), and the Langfuse callback wiring used at lifespan
@@ -211,7 +211,7 @@ datasets = ">=5.0.0,<6"
 # (proxy SSTI — high), GHSA-v4p8-mg3p-g94g (proxy MCP RCE — high).
 # Poindexter doesn't run litellm-proxy; the bump is hygiene + closing
 # the dependabot alerts that landed with the guardrails-ai dep.
-litellm = ">=1.83.7,<2.0"
+litellm = { version = ">=1.83.7,<2.0", optional = true }
 
 # Langfuse — same gap as litellm. PR #47 (Langfuse-first prompt manager)
 # and PR #241 (LiteLLM→Langfuse callback) both import langfuse with
@@ -237,7 +237,7 @@ litellm = ">=1.83.7,<2.0"
 # has soaked. See memory reference_langfuse_serializer_recursion_bug.md +
 # .shared-context/upstream-bug-reports/langfuse-event-serializer-cycle.md.
 langfuse = "^4.13"
-deepeval = "^4.1.5"
+deepeval = { version = "^4.1.5", optional = true }
 # guardrails-ai dropped 2026-05-12 — PyPI quarantined the package after
 # a suspect 0.10.1 release published that day (CVE-2026-45758, malware /
 # supply-chain compromise). It is NOT installable. The two QA rails it
@@ -248,7 +248,7 @@ deepeval = "^4.1.5"
 # a NATIVE reimplementation with no third-party dependency, so the
 # capability is preserved with zero supply-chain surface. DO NOT re-add
 # guardrails-ai.
-ragas = ">=0.2,<0.5"
+ragas = { version = ">=0.2,<0.5", optional = true }
 # ragas 0.4.x (0.4.3 is the newest release) hard-imports
 # langchain_community.chat_models.vertexai at `from ragas import evaluate`
 # time while declaring langchain-community="*" — no upper bound. That
@@ -261,10 +261,10 @@ ragas = ">=0.2,<0.5"
 # transitive. Lift it when a ragas release drops the vertexai import —
 # tracked in Glad-Labs/poindexter#840 (#839 was the incident, now closed;
 # #840 is the open follow-up that actually lifts the pin).
-langchain-community = ">=0.4,<0.4.2"
-langchain-ollama = "^1.1.0"
-llama-index-core = "^0.14.24"
-llama-index-embeddings-ollama = "^0.9.0"
+langchain-community = { version = ">=0.4,<0.4.2", optional = true }
+langchain-ollama = { version = "^1.1.0", optional = true }
+llama-index-core = { version = "^0.14.24", optional = true }
+llama-index-embeddings-ollama = { version = "^0.9.0", optional = true }
 # Cross-encoder reranker for the LlamaIndex rag_engine Phase C wrapper
 # (services/rag_engine.py::_build_rerank_retriever_class). The warmup
 # task in main.py's lifespan imports CrossEncoder when
@@ -300,7 +300,7 @@ sentence-transformers = { version = "^6.0", optional = true }
 # through 2026-05-27 because of this exact mismatch (the ``^3.7.0``
 # caret was bumping the worker past the server's 3.6.x). Bump together
 # when upgrading.
-prefect = ">=3.7.7,<3.8.0"
+prefect = { version = ">=3.7.7,<3.8.0", optional = true }
 
 # YouTube Data API v3 — used by services/publish_adapters/youtube.py
 # for the videos.insert resumable upload path. Declared as an optional
@@ -338,6 +338,17 @@ profiling = ["pyroscope-io"]
 # consent flow (`poindexter integrations youtube setup`). See
 # services/publish_adapters/youtube.py + Glad-Labs/poindexter#40.
 youtube = ["google-auth", "google-auth-oauthlib", "google-api-python-client", "pyasn1"]
+# poindexter#1046 step 6 -- what a bare `pip install poindexter` pulls vs the
+# pipeline stacks. Measured: `poindexter --help` imports 64 third-party roots
+# (fastapi, langgraph, langfuse, apscheduler, ...) and NONE of these, so the CLI
+# and the client library install without prefect, deepeval or llama-index.
+# tests/unit/poindexter/test_cli_import_closure.py pins that in a fresh
+# interpreter. The worker images and CI install all three; a command that reaches
+# one of these without its extra fails loudly with ModuleNotFoundError (the
+# plugin registry skips an unimportable provider and says so) -- never silently.
+pipeline = ["prefect", "playwright", "litellm"]
+qa = ["deepeval", "ragas", "datasets"]
+rag = ["llama-index-core", "llama-index-embeddings-ollama", "langchain-community", "langchain-ollama"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing

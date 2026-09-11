@@ -21,7 +21,7 @@ For local Python development (requires Postgres running on port 5433):
 
 ```bash
 cd src/cofounder_agent
-poetry install
+poetry install --extras "pipeline qa rag"
 poetry run uvicorn main:app --reload --port 8002
 ```
 

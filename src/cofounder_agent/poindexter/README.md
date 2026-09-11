@@ -17,6 +17,23 @@ Python 3.13. The package talks to a PostgreSQL database with the `pgvector`
 extension; `poindexter setup` writes `~/.poindexter/bootstrap.toml` and runs the
 schema migrations against it.
 
+The bare install is the CLI and the client library. The generation stacks are
+extras, so a machine that only operates the pipeline does not download them:
+
+```bash
+pip install "poindexter[pipeline,qa,rag]"   # a full pipeline node
+```
+
+| Extra      | Pulls in                                           | Needed for                                         |
+| ---------- | -------------------------------------------------- | -------------------------------------------------- |
+| `pipeline` | prefect, playwright, litellm                       | running the content flow, screenshots, LLM routing |
+| `qa`       | deepeval, ragas, datasets                          | the LLM-judge QA rails                             |
+| `rag`      | llama-index, langchain-community, langchain-ollama | the RAG retrieval stack                            |
+| `rerank`   | sentence-transformers (+ torch)                    | the cross-encoder reranker                         |
+
+A command that needs an extra you did not install fails with a plain
+`ModuleNotFoundError` naming the package — never a silent degradation.
+
 To run the whole stack (worker, brain daemon, Prefect, Grafana, ...) rather than
 the client alone, clone the repository and start the consumer compose file:
 
@@ -115,7 +132,7 @@ wired up:
 ```bash
 # From repo root:
 cd src/cofounder_agent
-poetry install
+poetry install --extras "pipeline qa rag"
 poetry run poindexter --help
 ```
 

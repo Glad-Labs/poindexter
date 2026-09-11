@@ -60,7 +60,7 @@ COPY pyproject.toml poetry.lock ./
 # plugins/registry.py — the same path the worker image (Dockerfile.worker)
 # relies on with --no-root, proven working in production.
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-root --only main --no-interaction --no-ansi --extras "rerank"
+    poetry install --no-root --only main --no-interaction --no-ansi --extras "rerank pipeline qa rag"
 
 # Fail-fast verification — confirm the rerank stack landed AND that torch is the
 # CPU build (mirror of the worker image). sentence-transformers is an opt-in

@@ -26,7 +26,7 @@
     "build:frontend": "npm run build --workspace=web/public-site --if-present",
     "// setup": "=== SETUP ===",
     "setup": "npm install && npm run setup:python",
-    "setup:python": "poetry -C src/cofounder_agent install",
+    "setup:python": "poetry -C src/cofounder_agent install --extras \"pipeline qa rag\"",
     "clean": "rimraf --glob node_modules package-lock.json yarn.lock **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__ **/*.pyc",
     "clean:install": "npm run clean && npm run setup",
     "prepare": "node -e \"process.exit(process.env.CI || process.env.VERCEL ? 0 : 1)\" || husky",

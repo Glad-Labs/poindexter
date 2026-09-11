@@ -135,10 +135,10 @@ cd src/cofounder_agent
 # 2026-06-23 rerank-extra trim; the host opts in here so a fresh setup matches
 # what the worker runs. See docs/superpowers/specs/2026-06-23-ci-rerank-extra-design.md.
 if command -v poetry >/dev/null 2>&1; then
-    poetry install --no-root --extras rerank
+    poetry install --no-root --extras "rerank pipeline qa rag"
 else
     pip install poetry
-    poetry install --no-root --extras rerank
+    poetry install --no-root --extras "rerank pipeline qa rag"
 fi
 cd ../..
 

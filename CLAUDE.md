@@ -125,7 +125,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 npm run dev                  # Backend (:8002) + frontend (:3000) concurrently, for host dev
 npm run dev:cofounder        # Backend only (uvicorn via the backend poetry env, port 8002)
 npm run dev:public           # Next.js only (port 3000 — collides with Grafana while the operator Docker stack is up)
-npm run setup                # npm install + poetry -C src/cofounder_agent install
+npm run setup                # npm install + poetry -C src/cofounder_agent install --extras "pipeline qa rag"
 
 # Docker backend stack (how the backend actually runs in production):
 docker compose -f docker-compose.consumer.yml up -d                     # Consumer stack (8-16 GB VRAM / 32 GB RAM)

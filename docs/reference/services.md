@@ -154,7 +154,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `media_quality_service.py` | Media Quality Service — deterministic Layer 1 signals. |
 | `metrics_exporter.py` | Prometheus metrics exporter — exposes pipeline state via ``/metrics``. |
 | `model_preferences.py` | Parse operator / API caller model selections into ``(model, provider)``. |
-| `module_paths.py` | The one place a project module is named by string. |
+| `module_paths.py` | The one seam a project module named by *string* goes through. |
 | `module_runner.py` | Per-module migration runner — applies one ``Module``'s migrations. |
 | `net_transient.py` | Transient-network classification + connect-retry transport (stack#3161). |
 | `newsletter_service.py` | Newsletter Service — send emails to subscribers on post publish. |

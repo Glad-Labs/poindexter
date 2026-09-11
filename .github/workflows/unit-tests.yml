@@ -255,7 +255,7 @@ jobs:
         working-directory: src/cofounder_agent
         run: |
           poetry config virtualenvs.create false
-          poetry install --no-root --no-interaction
+          poetry install --no-root --no-interaction --extras "pipeline qa rag"
 
       # Prune stale optional/orphaned packages (self-hosted-runner drift).
       #
