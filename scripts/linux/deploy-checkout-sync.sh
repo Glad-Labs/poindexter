@@ -51,9 +51,16 @@
 #   7. bounce-on-change: restart the long-lived bind-mount app containers
 #      (worker, pipeline-bot) so changed Python is re-imported. prefect-worker
 #      is deliberately NOT bounced (each flow run is a fresh subprocess that
-#      re-imports /app; a bounce would kill an in-flight post). Redundancy
-#      guard: skip a container whose process already started after this
-#      pass's reset (it's necessarily on the new tree).
+#      re-imports /app; a bounce would kill an in-flight post). Two guards:
+#      skip a container whose process already started after this pass's reset
+#      (it's necessarily on the new tree), and -- ONCE PER TREE -- skip the whole
+#      bounce when ~/.poindexter/deploy-last-bounced-sha already names HEAD and
+#      this pass did no reset. That file is written as soon as the restarts
+#      succeed, independently of the deploy marker below, so a pass that is
+#      retrying some OTHER failed step (image-rebuild, compose-apply) does not
+#      restart the worker again. Before stack#3661 (2026-09-11) it did: a broken
+#      sidecar build withheld the marker for 12 h and every 10-minute retry
+#      bounced the worker, ~70 restarts, each killing in-flight scheduler jobs.
 #   8. claude.ai-connector sync: poindexter-mcp-http.service is host systemd,
 #      not compose — it runs mcp-server/http_server.py out of THIS clone
 #      (unit template: infrastructure/systemd/poindexter-mcp-http.service).
@@ -68,10 +75,14 @@
 #      installed skip this step; --no-restart leaves the unit alone too.
 #   9. step independence: rebuilds, compose-apply, the stranded sweep,
 #      restarts, and the connector sync ALL run even if an earlier one failed;
-#      ANY failure withholds the marker so the pass retries next cycle
-#      (re-restarting a current container is a no-op).
+#      ANY failure withholds the marker so the pass retries next cycle. A retry
+#      redoes only what did not complete: the bounce and the connector restart
+#      remember the tree they last finished for (see 7 and 8) and are skipped
+#      while HEAD is unchanged -- restarting a healthy container is NOT a no-op.
 #
-# Marker  : ~/.poindexter/deploy-last-restarted-sha   (outside the clone)
+# Marker  : ~/.poindexter/deploy-last-restarted-sha   (outside the clone; a fully clean pass)
+#           ~/.poindexter/deploy-last-bounced-sha     (tree the app containers were last restarted onto)
+#           ~/.poindexter/deploy-last-connector-sha   (tree the connector step last completed for)
 # Log     : ~/.poindexter/deploy-checkout-sync.log    (single .1 rotation)
 # Status  : ~/.poindexter/deploy-checkout-sync.status.json
 #   result: deployed | synced-no-change | synced-norestart | baseline-recorded
@@ -108,6 +119,12 @@ POINDEXTER_HOME="$HOME/.poindexter"
 LOG_FILE="$POINDEXTER_HOME/deploy-checkout-sync.log"
 STATUS_FILE="$POINDEXTER_HOME/deploy-checkout-sync.status.json"
 MARKER_FILE="$POINDEXTER_HOME/deploy-last-restarted-sha"
+# Per-step "done for this tree" records (stack#3661): written by the bounce loop
+# and the connector step the moment THEY succeed, so a pass that fails elsewhere
+# and retries next cycle does not redo them. Distinct from MARKER_FILE, which
+# only a fully clean pass writes and which drives the code-advanced diff.
+BOUNCE_MARKER_FILE="$POINDEXTER_HOME/deploy-last-bounced-sha"
+CONNECTOR_MARKER_FILE="$POINDEXTER_HOME/deploy-last-connector-sha"
 LOG_MAX_BYTES="${POINDEXTER_DEPLOY_LOG_MAX_BYTES:-5242880}"
 
 NO_RESTART=0; NO_FLOW_CHECK=0
@@ -116,6 +133,7 @@ for arg in "$@"; do
     --status)
       echo "deploy clone: $DEPLOY_DIR"
       git -C "$DEPLOY_DIR" rev-parse --short HEAD 2>/dev/null | sed 's/^/  HEAD: /' || echo "  (clone missing)"
+      [ -f "$BOUNCE_MARKER_FILE" ] && echo "  containers last bounced onto: $(cut -c1-9 "$BOUNCE_MARKER_FILE")"
       [ -f "$STATUS_FILE" ] && { echo "  --- last status ---"; cat "$STATUS_FILE"; echo; }
       [ -f "$LOG_FILE" ] && { echo "  --- last 15 log lines ---"; tail -15 "$LOG_FILE"; }
       exit 0 ;;
@@ -402,8 +420,21 @@ done
   log "compose-apply failed twice; continuing to container restarts — marker withheld, retries next cycle." ERROR
 
 # ---- bounce-on-change with redundancy guard --------------------------------
-restart_failed=0; restarted=""; skipped=""
+# Once per tree. A pass that did NOT reset (HEAD unchanged since the last pass)
+# and whose HEAD is already the tree the containers were bounced onto is a retry
+# of some other failed step; bouncing again would kill whatever the worker is
+# doing for nothing (stack#3661). The per-container StartedAt guard inside the
+# loop stays for the same-pass case (compose-apply recreated it moments ago).
+# No bounce record yet (first pass after this change, or the file was removed)
+# means "unknown": bounce once and record, exactly the pre-3661 behaviour.
+restart_failed=0; restarted=""; skipped=""; bounce_skipped=0
+last_bounced="$(cat "$BOUNCE_MARKER_FILE" 2>/dev/null | tr -d '[:space:]')"
+if [ -z "$reset_at_epoch" ] && [ -n "$last_bounced" ] && [ "$last_bounced" = "$head_sha" ]; then
+  bounce_skipped=1
+  log "Containers already restarted onto $short_head on an earlier pass; not bouncing again (only the step that failed retries)."
+fi
 for c in "${RESTART_CONTAINERS[@]}"; do
+  [ "$bounce_skipped" = "1" ] && break
   if ! docker container inspect "$c" >/dev/null 2>&1; then
     log "  skip '$c' (not present)"; continue
   fi
@@ -420,6 +451,9 @@ for c in "${RESTART_CONTAINERS[@]}"; do
     restart_failed=1; log "  FAILED to restart '$c'" ERROR
   fi
 done
+# Record the tree the containers are now on -- even if another step of this pass
+# fails and withholds MARKER_FILE, the next pass must not bounce them again.
+[ "$restart_failed" = "0" ] && printf '%s' "$head_sha" > "$BOUNCE_MARKER_FILE"
 
 # ---- stranded-container sweep (safety net) --------------------------------
 # A container in `created` state has NEVER been started — that state is only
@@ -472,11 +506,20 @@ systemctl_root() { # unit management needs root; queries above do not
   if [ "$(id -u)" = "0" ]; then systemctl "$@"; else sudo -n systemctl "$@"; fi
 }
 
+# The mcp_changed / mcp_deps_changed flags come from the MARKER-based diff, which
+# is identical on every retrying pass; without this record the connector was
+# re-synced and restarted every 10 minutes alongside the worker (stack#3661).
+last_connector="$(cat "$CONNECTOR_MARKER_FILE" 2>/dev/null | tr -d '[:space:]')"
+connector_done_for_head=0; [ -n "$last_connector" ] && [ "$last_connector" = "$head_sha" ] && connector_done_for_head=1
 if mcp_unit_loaded; then
   need_uv_sync=0; need_mcp_restart=0
-  [ "$mcp_deps_changed" = "1" ] && need_uv_sync=1
-  [ -x "$mcp_venv_python" ] || need_uv_sync=1   # self-heal a missing venv
-  [ "$mcp_changed" = "1" ] && need_mcp_restart=1
+  if [ "$connector_done_for_head" = "1" ]; then
+    log "connector: already synced+restarted for $short_head on an earlier pass; skipping."
+  else
+    [ "$mcp_deps_changed" = "1" ] && need_uv_sync=1
+    [ "$mcp_changed" = "1" ] && need_mcp_restart=1
+  fi
+  [ -x "$mcp_venv_python" ] || need_uv_sync=1   # self-heal a missing venv (always)
   [ "$need_uv_sync" = "1" ] && need_mcp_restart=1  # fresh deps => reload process
 
   if [ "$need_uv_sync" = "1" ]; then
@@ -505,6 +548,7 @@ if mcp_unit_loaded; then
       mcp_failed=1
     fi
   fi
+  [ "$mcp_failed" = "0" ] && printf '%s' "$head_sha" > "$CONNECTOR_MARKER_FILE"
 elif [ "$mcp_changed" = "1" ]; then
   log "connector: mcp-server/ changed but $MCP_UNIT is not installed on this host; skipping."
 fi
@@ -515,6 +559,7 @@ if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$restart_failed"
   detail=""
   [ -n "$rebuild_services" ] && detail="rebuilt: $rebuild_services"
   [ -n "$skipped" ] && detail="${detail:+$detail; }skipped already-fresh: $skipped"
+  [ "$bounce_skipped" = "1" ] && detail="${detail:+$detail; }restarts skipped: containers already on $short_head"
   # Surface the recovery in the status file even on a clean pass — a sweep that
   # had to act means the apply raced, and a silent self-heal is how a recurring
   # fault stays invisible.
@@ -528,7 +573,8 @@ else
   [ "$restart_failed" = "1" ] && steps="${steps}container-restart "
   [ "$stranded_failed" = "1" ] && steps="${steps}stranded-start "
   [ "$mcp_failed" = "1" ] && steps="${steps}mcp-connector "
-  log "Deploy pass incomplete (failed: $steps); NOT recording marker — retries next cycle." ERROR
-  write_status error "$head_sha" "$last_deployed" "$restarted" "failed steps: $steps"
+  note=""; [ "$bounce_skipped" = "1" ] && note="; restarts skipped: containers already on $short_head"
+  log "Deploy pass incomplete (failed: $steps); NOT recording marker — retries next cycle$note." ERROR
+  write_status error "$head_sha" "$last_deployed" "$restarted" "failed steps: $steps$note"
   exit 1
 fi
