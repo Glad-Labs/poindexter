@@ -223,7 +223,7 @@ jobs:
           # PR (stack#3626, 2026-09-10) having run nothing -- the biggest changes
           # are exactly the ones that were skipping. A here-string has no pipe, and
           # -c reads the whole list; the count is printed so a skip is auditable.
-          backend_hits=$(grep -cE '^src/cofounder_agent/|^brain/|^scripts/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$' <<<"$changed" || true)
+          backend_hits=$(grep -cE '^src/cofounder_agent/|^scripts/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$' <<<"$changed" || true)
           echo "Backend-pattern matches: ${backend_hits} of $(wc -l <<<"$changed") changed paths"
           if [ "${backend_hits}" -gt 0 ]; then
             echo "Backend code or this workflow changed — running full suite."

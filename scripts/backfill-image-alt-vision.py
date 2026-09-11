@@ -37,7 +37,7 @@ import asyncio
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import asyncpg
@@ -69,7 +69,6 @@ def _resolve_db_url(cli_value: str | None) -> str:
     # bootstrap.toml is canonical (#198) — resolve from it so the port tracks the
     # deploy; force IPv4 because Windows resolves ``localhost`` to ``::1`` first
     # and Docker Desktop's IPv6 port-proxy drops connections. (#1796)
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     try:
         from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 
@@ -128,7 +127,7 @@ async def _recaption_content(content: str, topic: str, sc, pool, budget: int) ->
             if new_alt:
                 safe = _clean_for_attr(new_alt)
                 new_tag = _IMG_ALT_RE.sub(
-                    lambda a: f"{a.group(1)}{safe}{a.group(3)}", tag, count=1
+                    lambda a, safe=safe: f"{a.group(1)}{safe}{a.group(3)}", tag, count=1
                 )
                 if new_tag != tag:
                     n += 1
@@ -182,7 +181,7 @@ async def mode_alt(conn, sc, pool, *, dry_run, post_id, limit, force) -> set[str
             continue
         if not changed:
             continue
-        meta_patch = {"alt_vision_backfilled_at": datetime.now(timezone.utc).isoformat()}
+        meta_patch = {"alt_vision_backfilled_at": datetime.now(UTC).isoformat()}
         if feat_alt:
             meta_patch["featured_image_alt"] = _clean_for_attr(feat_alt)
         await conn.execute(

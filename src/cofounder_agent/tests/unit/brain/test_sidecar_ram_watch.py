@@ -114,7 +114,7 @@ def test_incident_footprints_would_have_tripped():
 
 def test_shipped_defaults_match_app_settings_seed():
     """DEFAULT_TARGETS and the app_settings seed are a drift pair."""
-    from cofounder_agent.services.settings_defaults import DEFAULTS
+    from poindexter.services.settings_defaults import DEFAULTS
 
     assert sw.parse_targets(DEFAULTS["sidecar_ram_recycle_targets"]) == (
         sw.parse_targets(sw.DEFAULT_TARGETS)
@@ -354,7 +354,7 @@ def test_failed_recycle_does_not_start_the_cooldown():
 def test_gpu_lock_key_matches_the_scheduler_constant():
     """The brain cannot import the worker package, so the key is duplicated.
     Pin it against the real constant so the two cannot drift apart."""
-    from cofounder_agent.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY
+    from poindexter.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY
 
     assert sw.GPU_ADVISORY_LOCK_KEY == GPU_ADVISORY_LOCK_KEY
 

@@ -43,9 +43,6 @@ import wave
 from pathlib import Path
 
 _project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_project_root))
-# poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
-# the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
 sys.path.insert(0, str(_project_root / "src" / "cofounder_agent"))
 sys.path.insert(0, str(_project_root / "scripts"))
 
@@ -771,7 +768,7 @@ async def _execute_action(action: dict) -> str:
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=60)
         out = (stdout_b or b"").decode("utf-8", errors="replace").strip()
         err = (stderr_b or b"").decode("utf-8", errors="replace").strip()
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         return f"Skill {skill_name} timed out."
     except Exception as exc:  # noqa: BLE001 — surface any subprocess error
@@ -933,7 +930,7 @@ async def join(ctx):
     if HAS_VAD:
         sink = VADSink(ctx.channel, ctx.guild)
         try:
-            vc.start_recording(sink, lambda *a: None, ctx.channel)
+            vc.start_recording(sink, lambda *_: None, ctx.channel)
         except Exception as exc:  # noqa: BLE001
             await ctx.followup.send(f"Couldn't start recording: {exc}", ephemeral=True)
             return
@@ -1122,7 +1119,7 @@ async def stats(ctx):
             )
         lines = [f"**{r['status']}:** {r['c']}" for r in rows]
         await ctx.respond(
-            f"**Pipeline (24h):**\n" + "\n".join(lines) +
+            "**Pipeline (24h):**\n" + "\n".join(lines) +
             f"\n\n**Total published:** {total_published}"
         )
     except Exception as e:

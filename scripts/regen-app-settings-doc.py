@@ -38,13 +38,8 @@ from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
 
-# Prepend the repo root: its `brain/` stub puts the backend root on sys.path and
-# aliases `brain.*` onto `poindexter.brain.*` (poindexter#1046 step 2), so
-# `from brain.bootstrap import ...` resolves regardless of the caller's CWD.
+# Prepend the backend root so `poindexter.*` resolves regardless of the caller's CWD.
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO))
-# poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
-# the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
 sys.path.insert(0, str(_REPO / "src" / "cofounder_agent"))
 
 from poindexter.brain.bootstrap import resolve_database_url  # noqa: E402

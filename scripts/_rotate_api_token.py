@@ -34,7 +34,6 @@ def _resolve_db_url() -> str:
     """
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
-        sys.path.insert(0, str(ROOT))
         try:
             from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 

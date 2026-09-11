@@ -48,8 +48,6 @@ import asyncio
 import os
 import sys
 from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Tuple
 
 # Make the project ``utils`` package importable when run from repo root.
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -78,7 +76,6 @@ def _resolve_db_url() -> str:
         val = os.getenv(env_key)
         if val:
             return val.replace("@localhost:", "@127.0.0.1:")
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     try:
         from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 
@@ -107,7 +104,7 @@ class BackfillDiff:
         return self.old_title != self.new_title or self.old_seo_title != self.new_seo_title
 
 
-def _derive_from_h1(body_h1: str) -> Tuple[str, str]:
+def _derive_from_h1(body_h1: str) -> tuple[str, str]:
     """Return ``(new_title, new_seo_title)`` for a given body H1."""
     new_title = strip_emoji(body_h1)
     new_seo_title = derive_seo_title(body_h1, max_len=DEFAULT_SEO_TITLE_MAX_LEN)
@@ -119,7 +116,7 @@ def _derive_from_h1(body_h1: str) -> Tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def _pick_canonical(body: str | None, existing_title: str | None) -> Tuple[str | None, str]:
+def _pick_canonical(body: str | None, existing_title: str | None) -> tuple[str | None, str]:
     """Pick canonical title: body H1 preferred, else existing title column.
 
     Returns ``(canonical, source_label)`` where source_label is 'h1' or
@@ -134,9 +131,9 @@ def _pick_canonical(body: str | None, existing_title: str | None) -> Tuple[str |
     return None, "none"
 
 
-async def _scan_posts(conn, limit: int | None) -> Tuple[List[BackfillDiff], int, int]:
+async def _scan_posts(conn, limit: int | None) -> tuple[list[BackfillDiff], int, int]:
     """Scan the ``posts`` table. Returns (diffs, skipped_no_canonical, skipped_no_body)."""
-    diffs: List[BackfillDiff] = []
+    diffs: list[BackfillDiff] = []
     skipped_no_canonical = 0
     skipped_no_body = 0
 
@@ -170,8 +167,8 @@ async def _scan_posts(conn, limit: int | None) -> Tuple[List[BackfillDiff], int,
 
 async def _scan_content_tasks(
     conn, limit: int | None
-) -> Tuple[List[BackfillDiff], int, int]:
-    diffs: List[BackfillDiff] = []
+) -> tuple[list[BackfillDiff], int, int]:
+    diffs: list[BackfillDiff] = []
     skipped_no_canonical = 0
     skipped_no_body = 0
 
@@ -213,8 +210,8 @@ async def _scan_content_tasks(
 
 async def _scan_pipeline_versions(
     conn, limit: int | None
-) -> Tuple[List[BackfillDiff], int, int]:
-    diffs: List[BackfillDiff] = []
+) -> tuple[list[BackfillDiff], int, int]:
+    diffs: list[BackfillDiff] = []
     skipped_no_canonical = 0
     skipped_no_body = 0
 
@@ -296,7 +293,7 @@ async def _main_async(args: argparse.Namespace) -> int:
     print(f"[backfill-canonical-titles] Connecting to {db_url.split('@')[-1]!r}")
     conn = await asyncpg.connect(db_url)
     try:
-        all_diffs: List[BackfillDiff] = []
+        all_diffs: list[BackfillDiff] = []
         total_skipped_no_canonical = 0
         total_skipped_no_body = 0
 

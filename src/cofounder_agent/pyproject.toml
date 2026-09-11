@@ -599,7 +599,7 @@ asyncio_mode = "auto"
 # matches the existing per-test-function isolation we already get; making
 # it explicit silences the PytestDeprecationWarning.
 asyncio_default_fixture_loop_scope = "function"
-pythonpath = ["../..", ".", "../"]
+pythonpath = ["../..", "."]
 addopts = [
     "-v",
     "--tb=short",

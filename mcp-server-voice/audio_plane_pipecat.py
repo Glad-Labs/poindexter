@@ -125,8 +125,8 @@ async def _resolve_livekit_creds_db_first() -> tuple[str, str, str]:
 # this MCP server's directory.
 #
 # The MCP server gets started by ``uv run --directory mcp-server-voice``,
-# so ``import services.voice_pipecat`` won't resolve until we add the
-# repo root to ``sys.path``. Mirrors the exact technique
+# so ``poindexter.services.voice_pipecat`` won't resolve until we add
+# ``src/cofounder_agent`` to ``sys.path``. Mirrors the exact technique
 # the backend's retired ``_ensure_brain_on_path`` helpers used (poindexter#1046).
 # ---------------------------------------------------------------------------
 
@@ -147,8 +147,7 @@ def _ensure_services_on_path() -> None:
                 sys.path.insert(0, p)
             return
         # In Docker the layout is /app/poindexter/services/voice_pipecat.py
-        # (poindexter#1046 step 2); /app stays the sys.path root, and the flat
-        # stub at /app/services makes `import services.voice_pipecat` resolve.
+        # (poindexter#1046); /app is the sys.path root the package resolves from.
         flat = parent / "poindexter" / "services" / "voice_pipecat.py"
         if flat.is_file():
             p = str(parent)

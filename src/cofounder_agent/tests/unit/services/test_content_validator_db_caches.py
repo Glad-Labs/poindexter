@@ -16,25 +16,16 @@ environment, dev machine or CI).
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
 from poindexter.modules.content import content_validator as cv
 
 
 def _ensure_brain_importable() -> None:
-    """Mirror content_validator's own upward search for brain/bootstrap.py
-    so ``brain.bootstrap.resolve_database_url`` is patchable regardless of
-    whether anything has imported it yet."""
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py").is_file():
-            if str(parent) not in sys.path:
-                sys.path.insert(0, str(parent))
-            return
-    pytest.skip("poindexter/brain/bootstrap.py not found — cannot exercise DSN resolution seam")
+    """Import the module so ``poindexter.brain.bootstrap.resolve_database_url`` is
+    patchable regardless of whether anything has imported it yet. A plain import:
+    brain lives inside the package, so there is no path to discover (poindexter#1046)."""
+    import poindexter.brain.bootstrap  # noqa: F401
 
 
 class _FakeSiteConfigWithPool:

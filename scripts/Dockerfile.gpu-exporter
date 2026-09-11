@@ -18,7 +18,7 @@ EXPOSE 9835
 # state in memory, no filesystem writes.
 RUN groupadd --system --gid 1001 exporter \
  && useradd  --system --uid 1001 --gid exporter --create-home --home-dir /home/exporter exporter \
- && chown -R exporter:exporter /app /brain /home/exporter
+ && chown -R exporter:exporter /app /home/exporter
 USER exporter
 
 CMD ["python", "/app/nvidia-smi-exporter.py"]

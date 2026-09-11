@@ -161,7 +161,7 @@ async def test_first_turn_session_collision_retries_with_resume(monkeypatch):
     """First --session-id call fails with 'already in use' → bridge
     transparently retries with --resume and returns the second call's
     JSON result. Mirrors the 2026-05-08 voice-agent repro."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     success_payload = b'{"type":"result","result":"hello back"}'
     recorder = _SpawnRecorder(
@@ -200,7 +200,7 @@ async def test_first_turn_session_collision_retries_with_resume(monkeypatch):
 async def test_non_collision_first_turn_failure_still_raises(monkeypatch):
     """Any non-'already in use' first-turn failure must NOT trigger the
     silent retry — that path is reserved for the documented race."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     recorder = _SpawnRecorder(
         [(2, b"", b"Error: claude binary segfaulted, RIP")],
@@ -222,7 +222,7 @@ async def test_non_first_turn_collision_does_not_double_retry(monkeypatch):
     """Once past the first turn the bridge is already on --resume; a
     'session already in use' there is a real bug (not the documented
     race) and should surface as an error rather than loop forever."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     recorder = _SpawnRecorder(
         [(1, b"", b"Error: Session ID abc is already in use.")],
@@ -242,7 +242,7 @@ async def test_non_first_turn_collision_does_not_double_retry(monkeypatch):
 async def test_happy_path_first_turn_no_collision(monkeypatch):
     """Sanity check: when claude accepts --session-id on the first turn
     we don't add a phantom retry call."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     recorder = _SpawnRecorder(
         [(0, b'{"type":"result","result":"first reply"}', b"")],
@@ -274,7 +274,7 @@ async def test_resume_missing_session_creates_with_session_id(monkeypatch):
     same id and returns the second call's result. The pin stays stable
     (#1006). Without this, the always-on bot would fail every turn on its
     first deploy."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     success_payload = b'{"type":"result","result":"fresh session ready"}'
     recorder = _SpawnRecorder(
@@ -310,7 +310,7 @@ async def test_resume_missing_session_does_not_loop_if_create_also_fails(monkeyp
     create ALSO fails (here with 'already in use', which would otherwise
     trigger the #431 resume-recovery), the _recovered guard stops the
     ping-pong and the error surfaces — exactly two subprocess calls, no loop."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     recorder = _SpawnRecorder(
         [
@@ -333,7 +333,7 @@ async def test_resume_other_failure_still_raises(monkeypatch):
     """A --resume failure that is NOT 'no conversation found' must not
     trigger the create-recovery — that path is reserved for the missing-JSONL
     case."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     recorder = _SpawnRecorder(
         [(2, b"", b"Error: claude binary exploded")],

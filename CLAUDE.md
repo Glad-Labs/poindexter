@@ -188,7 +188,7 @@ for new code: (1) `__name__`-based logger names and `__module__` strings now rea
 import failure must do so under BOTH spellings; (3) a `Path(__file__).parents[N]` walk
 inside a moved file is one level deeper than before — anchor on a sentinel, not a depth;
 (4) path-keyed ratchet baselines and lint roots are spelled `src/cofounder_agent/poindexter/...`.
-Step 3 (2026-09-11) rewrote every import and string module path to the canonical spelling — new code writes `poindexter.services.x`, never the flat form; steps 4–5 retire the flat-root assumptions and the stubs.
+Step 3 (2026-09-11) rewrote every import and string module path to the canonical spelling — new code writes `poindexter.services.x`, never the flat form; steps 4–5 retire the flat-root assumptions and the stubs. Step 4 (2026-09-11) removed the flat-root plumbing: pytest `pythonpath` is `[\"../..\", \".\"]`, scripts put `src/cofounder_agent` (never the repo root) on `sys.path`, the sidecar images COPY only `poindexter/`, and the umbrella `cofounder_agent.services.x` spelling is gone from tests — the stubs, the finder and the `api = cofounder_agent.main:app` entry point remain for step 5.
 
 **Entry point:** `main.py` — FastAPI app with two deployment modes:
 

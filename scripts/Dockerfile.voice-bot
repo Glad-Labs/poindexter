@@ -29,7 +29,6 @@ WORKDIR /app
 COPY scripts/discord-voice-bot.py /app/discord-voice-bot.py
 COPY src/cofounder_agent/poindexter/__init__.py src/cofounder_agent/poindexter/_flat_imports.py /app/poindexter/
 COPY src/cofounder_agent/poindexter/brain /app/poindexter/brain
-COPY brain/__init__.py /app/brain/__init__.py
 
 ENV PYTHONPATH="/app"
 
@@ -42,7 +41,7 @@ ENV PYTHONPATH="/app"
 # (~370 MB) writes there without escalation.
 RUN groupadd --system --gid 1001 voicebot \
  && useradd  --system --uid 1001 --gid voicebot --create-home --home-dir /home/voicebot voicebot \
- && chown -R voicebot:voicebot /app /brain \
+ && chown -R voicebot:voicebot /app \
  && mkdir -p /home/voicebot/.cache/huggingface \
  && chown -R voicebot:voicebot /home/voicebot/.cache
 ENV HF_HOME=/home/voicebot/.cache/huggingface

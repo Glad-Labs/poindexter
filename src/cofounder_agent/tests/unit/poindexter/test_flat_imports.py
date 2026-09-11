@@ -306,7 +306,7 @@ def test_flat_roots_match_the_resolver_single_source_of_truth():
 
 
 @pytest.mark.unit
-def test_real_finder_is_active_and_the_real_tree_is_aliased():
+def test_real_finder_is_active_and_the_real_tree_is_aliased(monkeypatch):
     """Step 2 PR A: poindexter/__init__.py installs the real finder, so on the REAL
     tree the flat and canonical spellings are one object. This is the acceptance
     test for the move itself -- not a synthetic tree."""
@@ -323,6 +323,23 @@ def test_real_finder_is_active_and_the_real_tree_is_aliased():
     assert sys.modules["services"] is sys.modules["poindexter.services"]
     assert flat.__name__ == "poindexter.services.module_paths"
     assert flat.ROOT_PACKAGE == "poindexter"
-    import cofounder_agent.services.module_paths as umbrella  # the entry-point spelling
+    # The umbrella spelling needs `src/` importable: the poetry manifest ships
+    # src/cofounder_agent as the `cofounder_agent` package, but the test env does
+    # not install it (CI is `poetry install --no-root`) and step 4 of the epic
+    # dropped the pytest pythonpath entry that used to stand in for it. Build the
+    # condition here, and drop any `cofounder_agent` another checkout's editable
+    # install may have put in sys.modules, so the assertion is about THIS tree.
+    src_dir = Path(poindexter.__file__).resolve().parents[2]
+    assert (src_dir / "cofounder_agent" / "__init__.py").is_file(), src_dir
+    monkeypatch.syspath_prepend(str(src_dir))
+    for key in [k for k in sys.modules if k == "cofounder_agent" or k.startswith("cofounder_agent.")]:
+        monkeypatch.delitem(sys.modules, key)
+    before = set(sys.modules)
+    try:
+        import cofounder_agent.services.module_paths as umbrella  # the entry-point spelling
 
-    assert umbrella is canon
+        assert umbrella is canon
+    finally:
+        for key in set(sys.modules) - before:
+            if key == "cofounder_agent" or key.startswith("cofounder_agent."):
+                sys.modules.pop(key, None)

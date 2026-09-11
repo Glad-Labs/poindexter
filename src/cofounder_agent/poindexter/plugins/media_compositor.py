@@ -30,7 +30,7 @@ Register a MediaCompositor via ``pyproject.toml``:
 .. code:: toml
 
     [project.entry-points."poindexter.media_compositors"]
-    ffmpeg_local = "cofounder_agent.services.media_compositors.ffmpeg_local:FFmpegLocalCompositor"
+    ffmpeg_local = "poindexter.services.media_compositors.ffmpeg_local:FFmpegLocalCompositor"
 
 Per-install config lives in
 ``app_settings.plugin.media_compositor.<name>`` —

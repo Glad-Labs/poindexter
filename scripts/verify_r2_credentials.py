@@ -24,7 +24,6 @@ async def main() -> int:
 
     dsn = os.environ.get("DATABASE_URL") or os.environ.get("LOCAL_DATABASE_URL")
     if not dsn:
-        sys.path.insert(0, "/opt/poindexter")
         from poindexter.brain.bootstrap import resolve_database_url
         dsn = resolve_database_url()
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)

@@ -16,7 +16,7 @@ Register a TopicSource via ``pyproject.toml``:
 .. code:: toml
 
     [project.entry-points."poindexter.topic_sources"]
-    hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
+    hackernews = "poindexter.services.topic_sources.hackernews:HackerNewsSource"
 
 Per-install config lives in ``app_settings.plugin.topic_source.<name>``
 with the same schema that taps + jobs use.

@@ -59,7 +59,6 @@ def _resolve_db_url() -> str:
         val = os.getenv(env_key)
         if val:
             return val.replace("@localhost:", "@127.0.0.1:")
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     try:
         from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 

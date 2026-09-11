@@ -138,8 +138,8 @@ inside the brain container so they reuse its DSN and secret decryption:
 
 ```bash
 docker exec poindexter-brain-daemon python3 -c "
-import asyncio,sys; sys.path.insert(0,'/app/brain')
-import asyncpg, bootstrap, httpx, glitchtip_triage_probe as p
+import asyncio, asyncpg, httpx
+from poindexter.brain import bootstrap, glitchtip_triage_probe as p
 async def m():
     pool=await asyncpg.create_pool(bootstrap.resolve_database_url())
     tok=await p._read_secret(pool,p.TOKEN_SETTING_KEY)

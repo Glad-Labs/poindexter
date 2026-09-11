@@ -44,7 +44,6 @@ whole module if no live Postgres DSN is reachable.
 from __future__ import annotations
 
 import secrets
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
@@ -94,14 +93,10 @@ def _sane_title(title: str) -> str:
 
 
 def _bootstrap_resolve_dsn() -> str | None:
-    """Walk the tree up until we find brain/bootstrap.py, then call its
-    resolver. Same trick the unit-tier + integration_db conftests use.
+    """Resolve the DSN through the brain's canonical resolver (bootstrap.toml, then
+    the env); None when nothing resolves. ``poindexter.brain`` imports from the
+    backend root like every other package -- no sys.path walk (poindexter#1046).
     """
-    for p in Path(__file__).resolve().parents:
-        if (p / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py").is_file():
-            if str(p) not in sys.path:
-                sys.path.insert(0, str(p))
-            break
     try:
         from poindexter.brain.bootstrap import resolve_database_url
 

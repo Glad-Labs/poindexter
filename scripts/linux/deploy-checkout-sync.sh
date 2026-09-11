@@ -333,7 +333,7 @@ declare -A REBUILD_MAP=(
   # worker does: adding a single COPY once let three LLM providers register
   # whose SDKs the image lacks, and every embedding store failed. So it is
   # baked on purpose — and therefore must rebuild when that subset changes.
-  ['^scripts/(Dockerfile\.auto-embed|auto-embed\.py)$|^src/cofounder_agent/(poindexter|plugins|services|modules|schemas|utils)/|^brain/__init__\.py$']="auto-embed"
+  ['^scripts/(Dockerfile\.auto-embed|auto-embed\.py)$|^src/cofounder_agent/poindexter/']="auto-embed"
 )
 rebuild_services=""; diff_ok=0
 if diff_paths="$(git -C "$DEPLOY_DIR" diff --name-only "$last_deployed" "$head_sha" 2>/dev/null)"; then

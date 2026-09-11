@@ -1637,7 +1637,7 @@ class TestNoPublishedPostsRecentlyRule:
     def test_seeded_app_setting_matches_the_code_default(self):
         """Second source for the same value — pin them (see the swap
         threshold's twin test for why these are seeded at all)."""
-        from cofounder_agent.services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         assert DEFAULTS["prometheus.threshold.no_published_posts_hours"] == (
             rb.DEFAULT_THRESHOLDS["no_published_posts_hours"]
@@ -1723,7 +1723,7 @@ class TestHostSwapExhaustedRule:
         app_settings row (the renderer falls back to DEFAULT_THRESHOLDS, so
         thresholds work fine unseeded — that is the norm for the other 37).
         """
-        from cofounder_agent.services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         key = "prometheus.threshold.host_memory_swap_free_warning_percent"
         assert DEFAULTS[key] == (
@@ -1831,7 +1831,7 @@ class TestHostSwapFastTierFullRule:
         )
 
     def test_seeded_app_setting_matches_the_code_default(self):
-        from cofounder_agent.services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         key = "prometheus.threshold.host_swap_fast_tier_used_warning_percent"
         assert DEFAULTS[key] == (

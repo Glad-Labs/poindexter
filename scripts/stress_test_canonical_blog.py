@@ -30,7 +30,7 @@ import asyncio
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Allow running as `python scripts/stress_test_canonical_blog.py` from repo root.
@@ -47,7 +47,6 @@ def _resolve_db_url() -> str:
     """
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         try:
             from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 
@@ -104,7 +103,7 @@ TOPICS = [
 
 def _today_topic_pool(count: int) -> list[str]:
     """Pick `count` topics, suffixed so duplicates don't dedupe."""
-    suffix = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    suffix = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
     pool: list[str] = []
     for i, t in enumerate(TOPICS):
         if i >= count:
@@ -213,7 +212,7 @@ async def _audit_scan(pool, since: datetime) -> dict[str, int]:
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=25,
-                        help="Number of tasks to dispatch (max %d)" % len(TOPICS))
+                        help=f"Number of tasks to dispatch (max {len(TOPICS)})")
     parser.add_argument("--max-wait", type=int, default=7200,
                         help="Max wait per run in seconds (default 2h)")
     parser.add_argument(
@@ -224,7 +223,7 @@ async def main():
     args = parser.parse_args()
 
     count = min(args.count, len(TOPICS))
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
 
     print(f"=== stress test starting at {started_at.isoformat()} ===")
     print(f"  count    : {count}")
@@ -240,7 +239,7 @@ async def main():
     print(f"\n=== polling {len(task_ids)} tasks ===")
     results = await _poll(pool, task_ids, args.max_wait)
 
-    print(f"\n=== results ===")
+    print("\n=== results ===")
     by_status: dict[str, int] = {}
     durations: list[int] = []
     failures: list[tuple[str, str]] = []
@@ -259,7 +258,7 @@ async def main():
         p95 = durations[int(len(durations) * 0.95)]
         print(f"\n  median duration : {mid}s")
         print(f"  p95 duration    : {p95}s")
-        print(f"  total elapsed   : {(datetime.now(timezone.utc) - started_at).total_seconds():.0f}s")
+        print(f"  total elapsed   : {(datetime.now(UTC) - started_at).total_seconds():.0f}s")
 
     if failures:
         print(f"\n=== failure samples ({min(5, len(failures))}/{len(failures)}) ===")

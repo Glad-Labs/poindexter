@@ -12,7 +12,7 @@ under any ``_SAMPLES`` module_path breaks the sidecar with a
 
 ``schemas/`` isn't a direct ``_SAMPLES`` root but is a transitive import
 of ``modules.content.stages.generate_video_shot_list`` — pinned
-explicitly rather than derived.
+explicitly (it has to stay under the one COPY'd root) rather than derived.
 
 poindexter#852: ``services/ollama_client.py`` — lazy-imported by
 ``OllamaNativeProvider._get_client()`` on the first real ``embed()``/
@@ -41,11 +41,9 @@ DOCKERFILE = REPO_ROOT / "scripts" / "Dockerfile.auto-embed"
 REGISTRY_PATH = REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "plugins" / "registry.py"
 OLLAMA_CLIENT_PATH = REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "services" / "ollama_client.py"
 
-# First-party roots COPY'd into the image (or resolvable via sys.path
-# tricks in auto-embed.py) — never pip packages.
-_FIRST_PARTY_ROOTS = frozenset({
-    "services", "plugins", "poindexter", "brain", "utils", "schemas", "modules",
-})
+# First-party roots COPY'd into the image — never pip packages. Exactly one since
+# poindexter#1046: every first-party module lives under poindexter/.
+_FIRST_PARTY_ROOTS = frozenset({"poindexter"})
 
 # Import name -> pip distribution name, for the handful where they differ.
 # Empty today (every embed-hot-path import happens to match its pip name)
@@ -122,12 +120,19 @@ def test_dockerfile_copies_every_core_sample_root():
 
 def test_dockerfile_copies_schemas_for_video_shot_list_stages():
     # modules.content.stages.generate_video_shot_list / review_video_shot_list
-    # import schemas.video_shot_list — a transitive dep _SAMPLES parsing
-    # above doesn't see, so pin it explicitly.
-    assert "schemas" in _copied_top_level_packages(), (
-        "scripts/Dockerfile.auto-embed must COPY src/cofounder_agent/poindexter/schemas — "
-        "modules.content.stages.generate_video_shot_list imports "
-        "schemas.video_shot_list (poindexter#849)."
+    # import poindexter.schemas.video_shot_list — a transitive dep the _SAMPLES
+    # parsing above doesn't see. It rides in the poindexter/ COPY (poindexter#1046),
+    # so pin that the module still lives under the copied root.
+    assert "poindexter" in _copied_top_level_packages(), (
+        "scripts/Dockerfile.auto-embed must COPY src/cofounder_agent/poindexter"
+    )
+    video_shot_list = (
+        REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "schemas" / "video_shot_list.py"
+    )
+    assert video_shot_list.is_file(), (
+        "poindexter/schemas/video_shot_list.py left the poindexter/ root the sidecar "
+        "COPYs — modules.content.stages.generate_video_shot_list imports it "
+        "(poindexter#849)."
     )
 
 

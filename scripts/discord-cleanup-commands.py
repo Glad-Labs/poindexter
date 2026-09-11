@@ -15,9 +15,6 @@ import sys
 from pathlib import Path
 
 _project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_project_root))
-# poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
-# the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
 sys.path.insert(0, str(_project_root / "src" / "cofounder_agent"))
 
 
@@ -77,7 +74,7 @@ async def main():
             if cmds:
                 print(f"  Cleared {len(cmds)} global commands from {bot_name}")
             else:
-                print(f"  No global commands to clear")
+                print("  No global commands to clear")
 
     print("\nDone. Restart the voice bot to re-register guild-specific commands.")
 

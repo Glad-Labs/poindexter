@@ -21,7 +21,7 @@ Register an AudioGenProvider via ``pyproject.toml``:
 
     [project.entry-points."poindexter.audio_gen_providers"]
     stable-audio-open-1.0 = (
-        "cofounder_agent.services.audio_gen_providers."
+        "poindexter.services.audio_gen_providers."
         "stable_audio_open:StableAudioOpenProvider"
     )
 

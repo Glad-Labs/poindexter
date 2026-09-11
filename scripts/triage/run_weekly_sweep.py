@@ -19,11 +19,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Make `services.*` (and brain.bootstrap for the audit_log write) importable
+# Make `poindexter.*` (incl. brain.bootstrap for the audit_log write) importable
 # when run as a bare script.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "src" / "cofounder_agent"))
-sys.path.insert(0, str(_REPO_ROOT))
 
 from poindexter.services.triage.sweep import find_gaps  # noqa: E402
 

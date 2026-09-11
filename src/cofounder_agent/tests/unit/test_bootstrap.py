@@ -6,21 +6,9 @@ and the loud-fail behavior of require_database_url.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-# brain/ lives at the repo root; walk up until we find it.
-_HERE = Path(__file__).resolve()
-for _p in _HERE.parents:
-    if (_p / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py").is_file():
-        if str(_p) not in sys.path:
-            sys.path.insert(0, str(_p))
-        break
-
-# E402 — brain/ has to be put on sys.path before this import can resolve.
-from poindexter.brain import bootstrap  # noqa: E402
+from poindexter.brain import bootstrap
 
 
 @pytest.fixture

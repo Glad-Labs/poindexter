@@ -113,9 +113,8 @@ chmod 600 "$NEWVAL_FILE"
 
 # 3. Set the new value via plugins.secrets (encrypts under current key)
 docker exec -i poindexter-worker python -c "
-import asyncio, asyncpg, os, sys
-sys.path.insert(0, '/app/src/cofounder_agent')
-from plugins.secrets import set_secret
+import asyncio, asyncpg, os
+from poindexter.plugins.secrets import set_secret
 async def main():
     val = open('/tmp/newval').read().strip()
     conn = await asyncpg.connect(os.environ['DATABASE_URL'])
@@ -192,9 +191,8 @@ OLD_KEY="$POINDEXTER_SECRET_KEY"
 
 # 3. Run the rotation (re-encrypts every is_secret=true row)
 docker exec -i poindexter-worker python -c "
-import asyncio, asyncpg, os, sys
-sys.path.insert(0, '/app/src/cofounder_agent')
-from plugins.secrets import rotate_key
+import asyncio, asyncpg, os
+from poindexter.plugins.secrets import rotate_key
 async def main():
     conn = await asyncpg.connect(os.environ['DATABASE_URL'])
     n = await rotate_key(conn, old_key='$OLD_KEY', new_key='$NEW_KEY')

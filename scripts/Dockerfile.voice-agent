@@ -102,12 +102,11 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && npm install -g @anthropic-ai/claude-code \
     && claude --version
 
-# /opt/poindexter holds the brain package (sibling import path used by
-# require_database_url + SiteConfig); /app is the cofounder_agent root
-# so `from services.voice_agent import ...` resolves cleanly. Both
-# directories are mounted from the host in docker-compose.local.yml so
-# host-side edits land in the container without a rebuild.
-ENV PYTHONPATH="/app:/opt/poindexter" \
+# /app is the backend root (src/cofounder_agent, bind-mounted from the host in
+# docker-compose.local.yml so host-side edits land without a rebuild); the
+# `poindexter` package -- services, brain, bootstrap -- lives under it, so it is
+# the only sys.path entry the agent needs.
+ENV PYTHONPATH="/app" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 

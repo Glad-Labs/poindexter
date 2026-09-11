@@ -69,7 +69,7 @@ def _collect_ancestor_conditions(tree: ast.AST, target_call_name: str) -> list[s
 def test_scheduled_publisher_runs_in_both_deployment_modes():
     """The fix: ``run_scheduled_publisher`` is invoked at lifespan top
     scope, not inside a ``deployment_mode == "coordinator"`` branch."""
-    from cofounder_agent import main
+    import main
 
     src = inspect.getsource(main.lifespan)
     tree = ast.parse(inspect.cleandoc(src))

@@ -1128,7 +1128,7 @@ class TestProbeContentGenGpuLock:
         # literal-only assertion passes happily while the two trees diverge —
         # and a diverged key means this probe stops seeing render sessions and
         # loads the ~19 GB writer into VRAM mid-render.
-        from cofounder_agent.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY
+        from poindexter.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY
 
         assert call.args[1] == hp.GPU_ADVISORY_LOCK_KEY == GPU_ADVISORY_LOCK_KEY
 

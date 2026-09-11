@@ -24,8 +24,7 @@ from pathlib import Path
 import asyncpg
 import httpx
 
-# Resolve repo root to sys.path so the cofounder_agent package + its
-# services subpackage import cleanly.
+# Put the backend root on sys.path so ``poindexter.*`` imports cleanly.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT / "src" / "cofounder_agent"))
 
@@ -38,7 +37,6 @@ def _resolve_db_url() -> str:
     """
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
-        sys.path.insert(0, str(_REPO_ROOT))
         try:
             from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 
@@ -169,8 +167,8 @@ async def main() -> int:
         # Most recent trace is likely ours — print it for the reviewer.
         matched = traces[0]
         print(
-            f"[smoke] marker not found in trace summaries; using "
-            f"most recent trace (likely ours)"
+            "[smoke] marker not found in trace summaries; using "
+            "most recent trace (likely ours)"
         )
 
     if matched is None:

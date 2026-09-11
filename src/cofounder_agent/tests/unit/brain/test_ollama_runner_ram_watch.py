@@ -291,6 +291,6 @@ def test_gpu_lock_key_matches_the_worker_constant():
     Added 2026-08-28 by `scripts/ci/gpu_lock_key_contract_lint.py`, which
     found this duplicate unpinned.
     """
-    from cofounder_agent.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY
+    from poindexter.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY
 
     assert ow.GPU_ADVISORY_LOCK_KEY == GPU_ADVISORY_LOCK_KEY

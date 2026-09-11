@@ -81,6 +81,56 @@ jobs:
         run: |
           docker images poindexter-brain:ci --format 'brain image size: {{.Size}}'
 
+  # The two pure-Python sidecars build hosted in about a minute each and are
+  # built here for the same reason the brain is: an image no job builds rots
+  # invisibly. Step 2 of poindexter#1046 moved brain/ under poindexter/ and left
+  # `chown -R … /brain` behind in three sidecar Dockerfiles; nothing in CI built
+  # them, so the break surfaced only as a prod deploy pass failing every ten
+  # minutes ("chown: cannot access '/brain'") until someone read the deploy log.
+  # The smoke imports through the image's own entry surface (the plugin registry
+  # for auto-embed, the exporter script for gpu-exporter) because a COPY that
+  # ships the wrong tree still builds green. voice-bot is deliberately not built
+  # here: its pytorch base is a multi-GB pull for a feature that is parked.
+  build-sidecars:
+    if: github.repository != 'Glad-Labs/poindexter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [auto-embed, gpu-exporter]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+      - name: Build ${{ matrix.image }} image
+        run: docker build -f scripts/Dockerfile.${{ matrix.image }} -t poindexter-${{ matrix.image }}:ci .
+      - name: Import smoke inside the image
+        run: |
+          case "${{ matrix.image }}" in
+            auto-embed)
+              docker run --rm --entrypoint python -e DATABASE_URL=postgresql://x:y@localhost:1/z \
+                poindexter-auto-embed:ci -c '
+          import sys
+          from poindexter.plugins.registry import get_core_samples, get_taps
+          taps = get_taps(); samples = get_core_samples()
+          flat = [k for k in sys.modules if k.split(".")[0] in {"services", "plugins", "modules", "utils", "brain", "schemas"}]
+          assert taps, "no taps registered inside the sidecar"
+          assert not flat, f"flat module keys inside the sidecar: {flat[:5]}"
+          print(f"auto-embed: {len(samples)} core samples, {len(taps)} taps, 0 flat keys")
+          ' ;;
+            gpu-exporter)
+              docker run --rm --entrypoint python poindexter-gpu-exporter:ci -c '
+          import ast
+          ast.parse(open("/app/nvidia-smi-exporter.py").read())
+          import asyncpg
+          print("gpu-exporter: script parses, asyncpg importable")
+          ' ;;
+          esac
+      - name: Report size
+        run: |
+          docker images poindexter-${{ matrix.image }}:ci --format '${{ matrix.image }} image size: {{.Size}}'
+
   # The worker is THE image that runs the content pipeline, and the one worth
   # guarding. It is ~7.6 GB and its `poetry install` pulls multi-GB wheels
   # (torch, playwright) — and it still builds HOSTED, on purpose.

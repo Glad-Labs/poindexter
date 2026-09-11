@@ -141,7 +141,7 @@ def _result(text: str) -> str:
 
 @pytest.mark.asyncio
 async def test_host_exec_posts_payload_with_token(monkeypatch):
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     calls = _install_fake_httpx(
         monkeypatch, [_Resp(200, {"returncode": 0, "stdout": _result("hi back"), "stderr": ""})],
@@ -166,7 +166,7 @@ async def test_host_exec_posts_payload_with_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_host_exec_non_200_raises(monkeypatch):
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     _install_fake_httpx(monkeypatch, [_Resp(401, {"error": "unauthorized"}, "unauthorized")])
     svc = vac.ClaudeCodeBridgeLLMService(
@@ -182,7 +182,7 @@ async def test_host_exec_recovers_create_on_no_conversation(monkeypatch):
     """A host 200 reporting rc=1 + 'no conversation found' triggers the same
     create-recovery as the local path: re-POST with first_turn flipped to
     True (create), same pinned id."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     calls = _install_fake_httpx(
         monkeypatch,
@@ -210,7 +210,7 @@ async def test_local_mode_when_no_host_url(monkeypatch):
     """No host_brain_url => host exec is never used (back-compat). We assert
     the dispatcher picks local without mocking a subprocess by stubbing
     _exec_local."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     svc = vac.ClaudeCodeBridgeLLMService(cwd="/tmp", session_id=_UUID)
     assert svc._host_brain_url is None
@@ -236,7 +236,7 @@ def test_container_mode_logs_deprecation_warning(caplog):
     host_brain_url must not pass silently."""
     import logging
 
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     with caplog.at_level(logging.WARNING):
         vac.ClaudeCodeBridgeLLMService(cwd="/tmp", session_id=_UUID)  # no host_brain_url
@@ -252,7 +252,7 @@ def test_host_mode_does_not_log_container_deprecation(caplog):
     """The supported host-brain path must NOT emit the deprecation warning."""
     import logging
 
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     with caplog.at_level(logging.WARNING):
         vac.ClaudeCodeBridgeLLMService(
@@ -274,7 +274,7 @@ def test_host_mode_does_not_log_container_deprecation(caplog):
 @pytest.mark.asyncio
 async def test_discord_transcript_posts_content(monkeypatch):
     """When a webhook resolves, each turn POSTs a You/Claude content payload."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     async def _webhook():
         return "https://discord.test/webhook/abc"
@@ -294,7 +294,7 @@ async def test_discord_transcript_posts_content(monkeypatch):
 @pytest.mark.asyncio
 async def test_discord_transcript_skips_when_disabled(monkeypatch):
     """No webhook (disabled / unconfigured) -> no POST at all."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     async def _no_webhook():
         return None

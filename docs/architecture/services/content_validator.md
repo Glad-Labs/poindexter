@@ -135,8 +135,8 @@ DB-backed (no app_settings keys, not refreshable without restart):
   with pgAdmin or the API; no redeploy needed for new entries to take
   effect.
 
-Disk-backed lists (under `poindexter/brain/hallucination-check/`, located via
-ancestor walk + `/opt/poindexter/brain/hallucination-check` fallback):
+Disk-backed lists (under `poindexter/brain/hallucination-check/`, located by an
+ancestor walk from the module -- the old `/opt/poindexter` mount is gone):
 
 - `stdlib-python-312.txt` — Python 3.12 stdlib module names
 - `pypi-top-500.txt` — top 500 PyPI packages

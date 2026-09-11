@@ -33,12 +33,8 @@ import asyncpg
 import httpx
 
 _project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_project_root))
-# poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
-# the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
-sys.path.insert(0, str(_project_root / "src" / "cofounder_agent"))
 sys.path.insert(0, str(_project_root / "scripts"))
-# `services.*` lives under src/cofounder_agent/ — add that to sys.path
+# `poindexter.*` lives under src/cofounder_agent/ — add that to sys.path
 # so we can import the integrations package without restructuring.
 sys.path.insert(0, str(_project_root / "src" / "cofounder_agent"))
 
@@ -389,7 +385,7 @@ async def handle_command(text: str, chat_id: str):
             await conn.close()
             lines = [f"*{r['status']}:* {r['c']}" for r in rows]
             await send_message(
-                f"*Pipeline (24h):*\n" + "\n".join(lines) + f"\n\n*Total published:* {total}",
+                "*Pipeline (24h):*\n" + "\n".join(lines) + f"\n\n*Total published:* {total}",
                 chat_id,
             )
         except Exception as e:
@@ -452,7 +448,7 @@ async def poll_updates():
                         print(f"[CMD] dispatching {text[:30]!r}", flush=True)
                         try:
                             await handle_command(text, chat_id)
-                            print(f"[CMD] dispatched ok", flush=True)
+                            print("[CMD] dispatched ok", flush=True)
                         except Exception as e:
                             print(f"[CMD] ERROR: {type(e).__name__}: {e}", flush=True)
                             await send_message(f"Error: {e}", chat_id)

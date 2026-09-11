@@ -42,7 +42,6 @@ Usage:
 from __future__ import annotations
 
 import secrets
-import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
@@ -52,15 +51,10 @@ import pytest_asyncio
 
 
 def _bootstrap_resolve_dsn() -> str | None:
-    """Walk the tree up until we find brain/bootstrap.py, then call its
-    resolver. Same trick the production code uses to avoid hardcoded
-    DATABASE_URL reads.
+    """Resolve the DSN through the brain's canonical resolver (bootstrap.toml, then
+    the env); None when nothing resolves. ``poindexter.brain`` imports from the
+    backend root like every other package -- no sys.path walk (poindexter#1046).
     """
-    for p in Path(__file__).resolve().parents:
-        if (p / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py").is_file():
-            if str(p) not in sys.path:
-                sys.path.insert(0, str(p))
-            break
     try:
         from poindexter.brain.bootstrap import resolve_database_url
         return resolve_database_url()

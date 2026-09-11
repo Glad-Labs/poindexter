@@ -128,7 +128,7 @@ jobs:
           # match leaves echo holding SIGPIPE once the list outgrows the pipe buffer, and
           # the step concludes "no relevant change" on exactly the largest PRs
           # (stack#3626). A here-string has no pipe; the count makes a skip auditable.
-          hits=$(grep -cE '^mcp-server/|^src/cofounder_agent/|^brain/|^\.github/workflows/mcp-server-tests\.yml$' <<<"$changed" || true)
+          hits=$(grep -cE '^mcp-server/|^src/cofounder_agent/|^\.github/workflows/mcp-server-tests\.yml$' <<<"$changed" || true)
           echo "mcp-server-relevant paths: ${hits} of $(wc -l <<<"$changed")"
           if [ "${hits}" -gt 0 ]; then
             echo "mcp-server or an imported subtree changed — running the suite."

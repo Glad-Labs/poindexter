@@ -28,8 +28,8 @@ Register a PublishAdapter via ``pyproject.toml``:
 .. code:: toml
 
     [project.entry-points."poindexter.publish_adapters"]
-    youtube = "cofounder_agent.services.publish_adapters.youtube:YouTubePublishAdapter"
-    tiktok  = "cofounder_agent.services.publish_adapters.tiktok:TikTokPublishAdapter"
+    youtube = "poindexter.services.publish_adapters.youtube:YouTubePublishAdapter"
+    tiktok  = "poindexter.services.publish_adapters.tiktok:TikTokPublishAdapter"
 
 Per-install config lives in ``app_settings.plugin.publish_adapter.<name>``
 — ``enabled``, OAuth credentials (as secrets), default visibility,

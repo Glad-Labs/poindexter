@@ -22,7 +22,7 @@ Register a TTSProvider via ``pyproject.toml``:
 .. code:: toml
 
     [project.entry-points."poindexter.tts_providers"]
-    kokoro = "cofounder_agent.services.tts_providers.kokoro:KokoroTTSProvider"
+    kokoro = "poindexter.services.tts_providers.kokoro:KokoroTTSProvider"
 
 Per-install config lives in ``app_settings`` under
 ``plugin.tts_provider.<name>`` (matches the convention the

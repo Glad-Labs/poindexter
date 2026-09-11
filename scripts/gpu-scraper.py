@@ -57,9 +57,6 @@ def _resolve_db_url() -> str:
     """
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-        # poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
-        # the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
         try:
             from poindexter.brain.bootstrap import resolve_database_url  # type: ignore

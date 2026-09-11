@@ -146,9 +146,6 @@ def _resolve_db_url(cli_value: str | None) -> str:
     # bootstrap.toml is canonical (#198) — resolve from it so the port tracks the
     # deploy; force IPv4 because Windows resolves ``localhost`` to ``::1`` first
     # and Docker Desktop's IPv6 port-proxy drops connections. (#1796)
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    # poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
-    # the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
     try:
         from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
@@ -172,13 +169,11 @@ def _data_root() -> Path:
 
 
 def _ensure_backend_on_path() -> None:
-    """Put ``src/cofounder_agent`` (for ``services.*``) and the repo root (for
-    ``brain.*``) on sys.path so the script runs from the repo root without a
-    manual PYTHONPATH."""
-    root = Path(__file__).resolve().parent.parent
-    for p in (root / "src" / "cofounder_agent", root):
-        if p.is_dir() and str(p) not in sys.path:
-            sys.path.insert(0, str(p))
+    """Put ``src/cofounder_agent`` (the ``poindexter`` package root) on sys.path so
+    the script runs from the repo root without a manual PYTHONPATH."""
+    backend = Path(__file__).resolve().parent.parent / "src" / "cofounder_agent"
+    if backend.is_dir() and str(backend) not in sys.path:
+        sys.path.insert(0, str(backend))
 
 
 def _ensure_secret_key_env() -> bool:

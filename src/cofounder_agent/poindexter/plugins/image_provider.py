@@ -14,8 +14,8 @@ Register an ImageProvider via ``pyproject.toml``:
 .. code:: toml
 
     [project.entry-points."poindexter.image_providers"]
-    pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
-    image_gen = "cofounder_agent.services.image_providers.image_gen:ImageGenProvider"
+    pexels = "poindexter.services.image_providers.pexels:PexelsProvider"
+    image_gen = "poindexter.services.image_providers.image_gen:ImageGenProvider"
 
 Per-install config lives in ``app_settings.plugin.image_provider.<name>``.
 """

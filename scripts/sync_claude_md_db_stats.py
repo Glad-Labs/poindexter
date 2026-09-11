@@ -64,14 +64,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CLAUDE_MD = ROOT / "CLAUDE.md"
 
-# Make ``brain`` importable regardless of the caller's CWD (the script is
-# launched from the repo root, from src/cofounder_agent via poetry, or from
-# a scheduled-session worktree). ``brain.bootstrap`` owns DSN resolution.
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-    # poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
-    # the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
-    sys.path.insert(0, str(ROOT / "src" / "cofounder_agent"))
+# Make ``scripts.lib_readme_stats`` (repo root) and ``poindexter.brain.bootstrap``
+# (src/cofounder_agent, which owns DSN resolution) importable regardless of the
+# caller's CWD: the script is launched from the repo root, from src/cofounder_agent
+# via poetry, or from a scheduled-session worktree. Each root is added on its own
+# -- nesting the second insert under the first's guard skipped it whenever the
+# repo root was already on sys.path.
+for _root in (ROOT, ROOT / "src" / "cofounder_agent"):
+    if str(_root) not in sys.path:
+        sys.path.insert(0, str(_root))
 
 from scripts.lib_readme_stats import (  # noqa: E402  (needs the path bootstrap above)
     FLOOR_STEPS,

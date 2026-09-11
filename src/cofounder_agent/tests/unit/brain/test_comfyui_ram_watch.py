@@ -328,7 +328,7 @@ class TestWatermarkPlacement:
 
     def test_seeded_app_setting_matches_the_module_default(self):
         """Two sources for one value is a drift pair — pin them."""
-        from cofounder_agent.services.settings_defaults import DEFAULTS
+        from poindexter.services.settings_defaults import DEFAULTS
 
         assert float(DEFAULTS["comfyui_ram_recycle_watermark_gb"]) == (
             cw.DEFAULT_WATERMARK_GB

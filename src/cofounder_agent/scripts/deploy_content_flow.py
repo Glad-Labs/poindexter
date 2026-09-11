@@ -38,15 +38,12 @@ import os
 import sys
 from pathlib import Path
 
-# Put the repo root on sys.path: its `brain/` stub aliases `brain.*` onto
-# `poindexter.brain.*` (poindexter#1046 step 2) so `from brain.bootstrap import`
-# resolves when poetry runs this from src/cofounder_agent/.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-    # poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
-    # the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
-    sys.path.insert(0, str(_REPO_ROOT / "src" / "cofounder_agent"))
+# Put the backend root on sys.path so `poindexter.*` resolves whether poetry runs
+# this from src/cofounder_agent/ or it is launched by path from the repo root.
+# brain lives under poindexter/ (poindexter#1046), so no repo-root entry is needed.
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
 
 # Point Prefect at the local server BEFORE importing prefect.* — the
 # settings snapshot is taken at import time, so setting this later

@@ -204,7 +204,7 @@ class _PersistSpy:
 async def test_token_budget_trip_rotates_and_persists(monkeypatch):
     """Once cumulative tokens exceed the budget, the next turn rotates the
     session (new uuid, --session-id create) and awaits the persist callback."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     recorder = _SpawnRecorder([(0, _result_payload("ok"), b"")])
     monkeypatch.setattr(asyncio, "create_subprocess_exec", recorder)
@@ -233,7 +233,7 @@ async def test_token_budget_trip_rotates_and_persists(monkeypatch):
 async def test_age_trip_rotates_via_fake_clock(monkeypatch):
     """When the session is older than max_age_seconds (measured by the
     injected clock) the next reset check rotates it."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     clock = _FakeClock(now=1000.0)
     persist = _PersistSpy()
@@ -264,7 +264,7 @@ async def test_manual_phrase_rotates_before_send(monkeypatch):
     """A manual-reset phrase rotates the session, and the rotation happens
     BEFORE the (mocked) claude send so turn 1 of the fresh session is a
     create, not a resume."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     recorder = _SpawnRecorder([(0, _result_payload("fresh start"), b"")])
     monkeypatch.setattr(asyncio, "create_subprocess_exec", recorder)
@@ -331,7 +331,7 @@ async def test_manual_phrase_rotates_before_send(monkeypatch):
 @pytest.mark.asyncio
 async def test_manual_phrases_match(monkeypatch, phrase):
     """All documented manual-reset phrases trigger a rotation."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     svc = vac.ClaudeCodeBridgeLLMService(cwd="/tmp", session_id="pinned-1")
     original = svc._session_id
@@ -343,7 +343,7 @@ async def test_manual_phrases_match(monkeypatch, phrase):
 async def test_under_threshold_turn_does_not_rotate(monkeypatch):
     """A normal under-threshold turn leaves the session id intact and does
     NOT call the persist callback."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     clock = _FakeClock(now=1000.0)
     persist = _PersistSpy()
@@ -368,7 +368,7 @@ async def test_under_threshold_turn_does_not_rotate(monkeypatch):
 @pytest.mark.asyncio
 async def test_cumulative_token_accounting_adds_up(monkeypatch):
     """Each successful turn adds input+output tokens to the running total."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     recorder = _SpawnRecorder(
         [
@@ -392,7 +392,7 @@ async def test_cumulative_token_accounting_adds_up(monkeypatch):
 async def test_extract_usage_handles_missing_usage(monkeypatch):
     """_extract_usage returns 0 when the payload has no usage block, and
     _extract_text still returns the result text (no regression)."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     payload = b'{"type":"result","result":"no usage here"}'
     assert vac.ClaudeCodeBridgeLLMService._extract_text(payload) == "no usage here"
@@ -402,7 +402,7 @@ async def test_extract_usage_handles_missing_usage(monkeypatch):
 @pytest.mark.asyncio
 async def test_no_persist_callback_is_safe(monkeypatch):
     """Rotation with no persist callback configured must not raise."""
-    from cofounder_agent.services import voice_agent_claude_code as vac
+    from poindexter.services import voice_agent_claude_code as vac
 
     svc = vac.ClaudeCodeBridgeLLMService(
         cwd="/tmp",
@@ -423,7 +423,7 @@ def test_run_bot_lazy_import_symbols_resolve():
     service-class test above. Pin the wiring contract here so the next rename
     fails in CI, not at 2 a.m. on the voice line (#1006)."""
     # The settings-write class the persist callback constructs.
-    from cofounder_agent.services.admin_db import AdminDatabase
+    from poindexter.services.admin_db import AdminDatabase
 
     assert hasattr(AdminDatabase, "set_setting"), (
         "run_bot persists the pinned session via AdminDatabase.set_setting; "
@@ -433,7 +433,7 @@ def test_run_bot_lazy_import_symbols_resolve():
     # The auto-reset ctor params run_bot threads in must still exist.
     import inspect
 
-    from cofounder_agent.services.voice_agent_claude_code import (
+    from poindexter.services.voice_agent_claude_code import (
         ClaudeCodeBridgeLLMService,
     )
 

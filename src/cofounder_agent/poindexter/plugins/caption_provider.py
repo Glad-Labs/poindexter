@@ -23,7 +23,7 @@ Register a CaptionProvider via ``pyproject.toml``:
 .. code:: toml
 
     [project.entry-points."poindexter.caption_providers"]
-    whisper_local = "cofounder_agent.services.caption_providers.whisper_local:WhisperLocalCaptionProvider"
+    whisper_local = "poindexter.services.caption_providers.whisper_local:WhisperLocalCaptionProvider"
 
 Per-install config lives in
 ``app_settings.plugin.caption_provider.<name>`` —

@@ -26,7 +26,7 @@ Register a VideoProvider via ``pyproject.toml``:
 .. code:: toml
 
     [project.entry-points."poindexter.video_providers"]
-    wan2.1-1.3b = "cofounder_agent.services.video_providers.wan2_1:Wan21Provider"
+    wan2.1-1.3b = "poindexter.services.video_providers.wan2_1:Wan21Provider"
 
 Per-install config lives in ``app_settings.plugin.video_provider.<name>``
 — ``server_url``, warmup flag, render dimensions, etc.

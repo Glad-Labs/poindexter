@@ -1763,12 +1763,9 @@ def _stdio_main() -> None:
         setup_runtime()
     except RuntimeError as exc:
         import sys as _sys
-        from pathlib import Path as _Path
 
-        _repo_root = _Path(__file__).resolve().parents[1]
-        if str(_repo_root) not in _sys.path:
-            _sys.path.insert(0, str(_repo_root))
         try:
+            # src/cofounder_agent is on sys.path via the boot block above.
             from poindexter.brain.operator_notifier import notify_operator
             notify_operator(
                 title="MCP server cannot start — missing required env var",
