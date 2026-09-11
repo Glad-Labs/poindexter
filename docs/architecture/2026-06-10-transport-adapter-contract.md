@@ -7,7 +7,7 @@ and the MCP servers are **thin adapters** over it. No adapter contains business
 logic or raw SQL — each delegates to a service function. "Go over HTTP" is
 mandatory only across a **process / trust boundary**, never for local in-process
 callers.
-**Tracking:** [#1340](https://github.com/Glad-Labs/glad-labs-stack/issues/1340)
+**Tracking:** [#1340](https://github.com/Glad-Labs/poindexter/issues/1340)
 (epic) → #1341 / #1342 / #1343 / #1344.
 **Aligns with:** [`kernel-platform-architecture.md`](2026-06-04-kernel-platform-architecture.md)
 (surfaces = front of house), [`module-v1.md`](module-v1.md) (the
@@ -98,7 +98,7 @@ Surfaces take orders and report status; they do not cook.
 ## Current-state snapshot (2026-06-10 audit)
 
 Point-in-time; the living worklist is in
-[#1340](https://github.com/Glad-Labs/glad-labs-stack/issues/1340).
+[#1340](https://github.com/Glad-Labs/poindexter/issues/1340).
 
 The CLI is already mostly correct — most commands call `services.*` directly via
 constructor DI (the payoff of the SiteConfig DI migration). The drift is
@@ -147,7 +147,7 @@ publishers/validators — which have no service at all yet). → #1343.
 
 | Issue                                                             | Work                                                                             |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| [#1340](https://github.com/Glad-Labs/glad-labs-stack/issues/1340) | Epic / tracker                                                                   |
+| [#1340](https://github.com/Glad-Labs/poindexter/issues/1340) | Epic / tracker                                                                   |
 | #1341                                                             | Extract `posts_service`; CMS routes delegate (Category B)                        |
 | #1342                                                             | Converge MCP tools onto services; kill DIRECT-SQL reimplementations (Category A) |
 | #1343                                                             | Mirror operator surfaces over HTTP (Category C)                                  |

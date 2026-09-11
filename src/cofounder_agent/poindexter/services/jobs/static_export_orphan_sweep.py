@@ -12,7 +12,7 @@ the "Post Not Found" UI plus Next.js's auto-injected
 ``<meta name="robots" content="noindex">``. Google files those under
 "Excluded by 'noindex'" in Search Console instead of dropping them as 404s, so
 deleted content lingers in the index reports and stays publicly reachable
-(Glad-Labs/glad-labs-stack#1146).
+(Glad-Labs/poindexter#1146).
 
 This janitor closes the gap on a schedule, independent of *which* takedown path
 ran (the gate hard-kill, the publish-gate reject, or a bulk DB update — none of

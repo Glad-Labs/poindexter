@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# Coolant-temp bridge for OpenLinkHub external-binary sensor profiles (hub 1
-# fans keyed on hub 2's XD-pump coolant probe). Prints 46 on any failure so
-# a broken bridge ramps fans up (fail-hot) instead of idling them under load.
-T=$(curl -s --max-time 2 http://127.0.0.1:27003/api/devices/D88EC280CF680350A725FEFCE85D887D | python3 -c "import json,sys; print(round(float(json.load(sys.stdin)['device']['devices']['13']['temperature']),1))" 2>/dev/null)
-case "$T" in ''|*[!0-9.]*) echo 46 ;; *) echo "$T" ;; esac
