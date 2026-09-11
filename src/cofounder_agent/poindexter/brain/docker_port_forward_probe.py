@@ -111,8 +111,8 @@ from typing import Any
 
 import asyncpg
 
-from brain.bootstrap import resolve_database_url
-from brain.operator_notifier import notify_operator
+from poindexter.brain.bootstrap import resolve_database_url
+from poindexter.brain.operator_notifier import notify_operator
 
 logger = logging.getLogger("brain.docker_port_forward_probe")
 
@@ -1651,7 +1651,7 @@ class DockerPortForwardProbe:
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
     async def check(self, pool, config):  # type: ignore[override]
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
 
         summary = await run_docker_port_forward_probe(pool)
         return ProbeResult(

@@ -45,7 +45,7 @@ def fake_site_config():
 async def test_uses_ops_triage_writer_model_when_set(fake_site_config):
     """Triage-specific override path. The router must NOT call
     resolve_local_writer_model() — the override is the whole point."""
-    from routes.triage_routes import _DefaultModelRouter
+    from poindexter.routes.triage_routes import _DefaultModelRouter
 
     sc = fake_site_config({
         "ops_triage_writer_model": "gemma3:27b",
@@ -77,7 +77,7 @@ async def test_strips_ollama_prefix_from_override(fake_site_config):
     """Operators sometimes set ``ollama/<name>`` (LiteLLM convention)
     in app_settings; the router strips the prefix because the local
     chat helper takes the bare model name."""
-    from routes.triage_routes import _DefaultModelRouter
+    from poindexter.routes.triage_routes import _DefaultModelRouter
 
     sc = fake_site_config({"ops_triage_writer_model": "ollama/gemma3:27b"})
     router = _DefaultModelRouter(sc)
@@ -99,7 +99,7 @@ async def test_falls_back_to_resolve_local_writer_model_when_override_empty(fake
     """Back-compat: installs that never seed the triage-specific key
     must still resolve a model via the local-writer resolver. Pins the
     fallback so a future refactor doesn't drop it silently."""
-    from routes.triage_routes import _DefaultModelRouter
+    from poindexter.routes.triage_routes import _DefaultModelRouter
 
     sc = fake_site_config({})  # no override
     router = _DefaultModelRouter(sc)
@@ -127,7 +127,7 @@ async def test_falls_back_to_resolve_local_writer_model_when_override_empty(fake
 async def test_response_is_think_block_stripped(fake_site_config):
     """The defensive layer: even if a thinking model IS configured, the
     response gets cleaned before reaching the alert pipeline."""
-    from routes.triage_routes import _DefaultModelRouter
+    from poindexter.routes.triage_routes import _DefaultModelRouter
 
     sc = fake_site_config({"ops_triage_writer_model": "glm-4.7-5090:latest"})
     router = _DefaultModelRouter(sc)
@@ -159,7 +159,7 @@ async def test_router_threads_pool_into_ollama_chat_text(fake_site_config):
     fallback that BYPASSES the GPU lock, reloading the 19GB writer model
     mid-render and CUDA-OOMing the image-gen server (validation 2026-06-21).
     """
-    from routes.triage_routes import _DefaultModelRouter
+    from poindexter.routes.triage_routes import _DefaultModelRouter
 
     sc = fake_site_config({"ops_triage_writer_model": "gemma3:27b"})
     sentinel_pool = object()
@@ -182,7 +182,7 @@ async def test_build_router_threads_pool_to_default_router(fake_site_config):
     """``_build_router`` must forward the route's pool to the default
     router so production triage routes through the gated dispatcher.
     The test-injection factory seam stays pool-agnostic (``(site_config)``)."""
-    from routes.triage_routes import _build_router, set_model_router_for_tests
+    from poindexter.routes.triage_routes import _build_router, set_model_router_for_tests
 
     set_model_router_for_tests(None)  # ensure the default router path
     sc = fake_site_config({"ops_triage_writer_model": "gemma3:27b"})
@@ -206,7 +206,7 @@ async def test_build_router_threads_pool_to_default_router(fake_site_config):
 async def test_site_config_get_raising_uses_fallback(fake_site_config):
     """A misbehaving SiteConfig that raises on ``.get()`` must NOT
     crash the triage path — it falls back to the writer-model chain."""
-    from routes.triage_routes import _DefaultModelRouter
+    from poindexter.routes.triage_routes import _DefaultModelRouter
 
     class _BadSC:
         def get(self, key: str, default: Any = "") -> Any:
@@ -237,7 +237,7 @@ async def test_paid_writer_does_not_leak_uses_local_pin(fake_site_config):
     into it. With no ``ops_triage_writer_model`` override, the router resolves a
     LOCAL writer pin via the real ``resolve_local_writer_model`` (only the LLM
     I/O is mocked here — the resolver runs for real)."""
-    from routes.triage_routes import _DefaultModelRouter
+    from poindexter.routes.triage_routes import _DefaultModelRouter
 
     sc = fake_site_config({
         "ops_triage_writer_model": "",  # no override

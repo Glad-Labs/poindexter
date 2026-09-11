@@ -21,11 +21,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import routes.social_routes as social_routes_module
+import poindexter.routes.social_routes as social_routes_module
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.social_routes import router as social_router
 from poindexter.services.social_drafts import SocialDraftPage, SocialDraftRow
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
-from routes.social_routes import router as social_router
 from tests.unit.routes.conftest import make_mock_db
 
 

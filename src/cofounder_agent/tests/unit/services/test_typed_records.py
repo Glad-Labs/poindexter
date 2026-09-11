@@ -15,14 +15,14 @@ from typing import get_type_hints
 
 import pytest
 
-from schemas.database_response_models import (
+from poindexter.schemas.database_response_models import (
     PostResponse,
     TaskCostBreakdownResponse,
     TaskCountsResponse,
     TaskResponse,
     UserResponse,
 )
-from schemas.typed_records import (
+from poindexter.schemas.typed_records import (
     CostBreakdownRecord,
     PaginatedTasksResult,
     PostRecord,
@@ -141,8 +141,7 @@ class TestModuleSurface:
         to ``from schemas import TaskResponse`` — the two layers should
         be one import away from each other.
         """
-        import schemas
-
+        from poindexter import schemas
         for name in (
             "TaskRecord",
             "PostRecord",

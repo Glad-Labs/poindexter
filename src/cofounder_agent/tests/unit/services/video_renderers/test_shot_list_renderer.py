@@ -12,12 +12,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from poindexter.schemas.video_shot_list import Shot, VideoShotList
 from poindexter.services.video_renderers.shot_list_renderer import (
     ShotListRenderResult,
     _render_one_shot,
     render_shot_list,
 )
-from schemas.video_shot_list import Shot, VideoShotList
 
 
 @pytest.fixture(autouse=True)
@@ -2054,11 +2054,11 @@ class TestBackfillPass:
     """A failed shot is filled with a card, not dropped."""
 
     def _failed_state(self, idx=0, source="image_gen"):
+        from poindexter.schemas.video_shot_list import Shot
         from poindexter.services.video_renderers.shot_list_renderer import (
             ShotRenderResult,
             _ShotState,
         )
-        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=idx, duration_s=6.0, intent="establish topic", source=source,
@@ -2116,12 +2116,12 @@ class TestBackfillPass:
 
     @pytest.mark.asyncio
     async def test_successful_shot_untouched(self, tmp_path):
+        from poindexter.schemas.video_shot_list import Shot
         from poindexter.services.video_renderers.shot_list_renderer import (
             ShotRenderResult,
             _backfill_pass,
             _ShotState,
         )
-        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=1, duration_s=5.0, intent="x", source="pexels",
@@ -2155,10 +2155,10 @@ class TestCrossFamilySubstitute:
     a pexels failure never routes to image-gen (no-AI-humans policy)."""
 
     def test_query_strips_style_modifier(self):
+        from poindexter.schemas.video_shot_list import Shot
         from poindexter.services.video_renderers.shot_list_renderer import (
             _pexels_query_from_shot,
         )
-        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=0, duration_s=6.0, intent="establish the data center",
@@ -2171,10 +2171,10 @@ class TestCrossFamilySubstitute:
 
     def test_query_falls_back_to_intent_when_prompt_has_no_subject(self):
         """A prompt that is only a style modifier yields no subject → intent."""
+        from poindexter.schemas.video_shot_list import Shot
         from poindexter.services.video_renderers.shot_list_renderer import (
             _pexels_query_from_shot,
         )
-        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=0, duration_s=6.0, intent="city skyline at night",
@@ -2214,12 +2214,12 @@ class TestCrossFamilySubstitute:
     @pytest.mark.asyncio
     async def test_pexels_source_never_substitutes_to_image_gen(self, tmp_path):
         """A missed pexels shot must go straight to the card, never image-gen."""
+        from poindexter.schemas.video_shot_list import Shot
         from poindexter.services.video_renderers.shot_list_renderer import (
             ShotRenderResult,
             _backfill_pass,
             _ShotState,
         )
-        from schemas.video_shot_list import Shot
 
         shot = Shot(
             idx=0, duration_s=5.0, intent="developer at desk",

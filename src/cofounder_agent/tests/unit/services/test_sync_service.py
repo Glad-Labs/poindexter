@@ -107,7 +107,7 @@ class TestSyncServiceInit:
         }
         with patch.dict("os.environ", env_patch), patch.dict(
             "os.environ", {"DATABASE_URL": "", "POINDEXTER_MEMORY_DSN": ""},
-        ), patch("brain.bootstrap._read_bootstrap_toml", return_value={}):
+        ), patch("poindexter.brain.bootstrap._read_bootstrap_toml", return_value={}):
             svc = SyncService()
             assert svc.cloud_url == "postgres://env-cloud"
             assert svc.local_url == "postgres://env-local"
@@ -117,7 +117,7 @@ class TestSyncServiceInit:
         env_patch = {"DATABASE_URL": "postgres://env-database-url"}
         with patch.dict("os.environ", env_patch), patch.dict(
             "os.environ", {"CLOUD_DATABASE_URL": ""},
-        ), patch("brain.bootstrap._read_bootstrap_toml", return_value={}):
+        ), patch("poindexter.brain.bootstrap._read_bootstrap_toml", return_value={}):
             svc = SyncService(local_url="postgres://local-explicit")
             assert svc.cloud_url == "postgres://env-database-url"
 
@@ -129,7 +129,7 @@ class TestSyncServiceInit:
             "os.environ",
             {"LOCAL_DATABASE_URL": "postgres://env-loses", "DATABASE_URL": ""},
         ), patch(
-            "brain.bootstrap._read_bootstrap_toml",
+            "poindexter.brain.bootstrap._read_bootstrap_toml",
             return_value={"database_url": "postgres://bootstrap-wins"},
         ):
             svc = SyncService(cloud_url="postgres://cloud-explicit")

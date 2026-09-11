@@ -23,12 +23,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.cms_routes import router
 from poindexter.utils.content_formatting import (
     convert_markdown_to_html,
     generate_excerpt_from_content,
     map_featured_image_to_coverimage,
 )
-from routes.cms_routes import router
 
 HAS_MARKDOWN = find_spec("markdown") is not None
 
@@ -300,7 +300,7 @@ class TestListPostsCompleteness:
     def test_full_post_has_all_display_fields(self):
         """A fully-fleshed post in the list should have all fields for rendering a post card."""
         pool, conn = _make_pool_mock(fetch_return=[FULL_POST_ROW])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         post = data["posts"][0]
@@ -316,7 +316,7 @@ class TestListPostsCompleteness:
     def test_full_post_has_seo_fields(self):
         """SEO fields should be present for search engine optimization."""
         pool, conn = _make_pool_mock(fetch_return=[FULL_POST_ROW])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         post = data["posts"][0]
@@ -327,7 +327,7 @@ class TestListPostsCompleteness:
     def test_full_post_has_cover_image_mapping(self):
         """Posts with featured_image_url should have Strapi-compatible coverImage."""
         pool, conn = _make_pool_mock(fetch_return=[FULL_POST_ROW])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         post = data["posts"][0]
@@ -340,7 +340,7 @@ class TestListPostsCompleteness:
     def test_content_processed_through_markdown_converter(self):
         """Content should be passed through convert_markdown_to_html (HTML if module available, raw fallback otherwise)."""
         pool, conn = _make_pool_mock(fetch_return=[FULL_POST_ROW])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         content = data["posts"][0]["content"]
@@ -352,7 +352,7 @@ class TestListPostsCompleteness:
     def test_minimal_post_gets_auto_excerpt(self):
         """Posts without an excerpt should get one auto-generated from content."""
         pool, conn = _make_pool_mock(fetch_return=[MINIMAL_POST_ROW])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         post = data["posts"][0]
@@ -362,7 +362,7 @@ class TestListPostsCompleteness:
     def test_minimal_post_null_coverimage(self):
         """Posts without featured image should have coverImage: null."""
         pool, conn = _make_pool_mock(fetch_return=[MINIMAL_POST_ROW])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         assert data["posts"][0]["coverImage"] is None
@@ -370,7 +370,7 @@ class TestListPostsCompleteness:
     def test_null_published_at_formats_safely(self):
         """Posts with null published_at (drafts) should return null, not crash."""
         pool, conn = _make_pool_mock(fetch_return=[MINIMAL_POST_ROW])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         assert data["posts"][0]["published_at"] is None
@@ -394,7 +394,7 @@ class TestGetPostBySlugCompleteness:
 
     def test_single_post_has_data_and_meta(self):
         pool, conn = self._setup_full_post_with_tags_and_category()
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts/ai-powered-diagnostics-healthcare").json()
         assert "data" in data
@@ -403,7 +403,7 @@ class TestGetPostBySlugCompleteness:
     def test_single_post_data_has_all_content_fields(self):
         """Single post response should include all fields needed for rendering."""
         pool, conn = self._setup_full_post_with_tags_and_category()
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts/ai-powered-diagnostics-healthcare").json()
         post = data["data"]
@@ -422,7 +422,7 @@ class TestGetPostBySlugCompleteness:
     def test_single_post_meta_has_tags(self):
         """Single post meta should include tags array."""
         pool, conn = self._setup_full_post_with_tags_and_category()
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts/ai-powered-diagnostics-healthcare").json()
         tags = data["meta"]["tags"]
@@ -434,7 +434,7 @@ class TestGetPostBySlugCompleteness:
     def test_single_post_meta_has_category(self):
         """Single post meta should include the resolved category."""
         pool, conn = self._setup_full_post_with_tags_and_category()
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts/ai-powered-diagnostics-healthcare").json()
         category = data["meta"]["category"]
@@ -445,7 +445,7 @@ class TestGetPostBySlugCompleteness:
     def test_single_post_timestamps_are_iso(self):
         """All timestamps should be ISO 8601 formatted strings."""
         pool, conn = self._setup_full_post_with_tags_and_category()
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts/ai-powered-diagnostics-healthcare").json()
         post = data["data"]
@@ -459,7 +459,7 @@ class TestGetPostBySlugCompleteness:
         pool, conn = _make_pool_mock(fetchrow_return=FULL_POST_ROW)
         conn.fetch = AsyncMock(side_effect=Exception("post_tags table missing"))
         conn.fetchrow = AsyncMock(side_effect=[FULL_POST_ROW, None])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.get("/api/posts/ai-powered-diagnostics-healthcare")
         assert resp.status_code == 200
@@ -470,7 +470,7 @@ class TestGetPostBySlugCompleteness:
         row = {**FULL_POST_ROW, "category_id": None}
         pool, conn = _make_pool_mock(fetchrow_return=row)
         conn.fetch = AsyncMock(return_value=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts/ai-powered-diagnostics-healthcare").json()
         assert data["meta"]["category"] is None
@@ -488,7 +488,7 @@ class TestPostUpdateValidation:
         pool, conn = _make_pool_mock()
         # Full UUID → the prefix resolver short-circuits (no lookup), so the
         # PATCH reaches the UPDATE path.
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/550e8400-e29b-41d4-a716-446655440000",
@@ -505,7 +505,7 @@ class TestPostUpdateValidation:
     def test_schedule_requires_published_at(self):
         """Setting status to 'scheduled' without published_at should fail."""
         pool, conn = _make_pool_mock()
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/post-001",
@@ -518,7 +518,7 @@ class TestPostUpdateValidation:
         """Scheduled published_at must be in the future."""
         pool, conn = _make_pool_mock()
         past_date = "2020-01-01T00:00:00Z"
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/post-001",
@@ -530,7 +530,7 @@ class TestPostUpdateValidation:
     def test_invalid_published_at_format_rejected(self):
         """Invalid date format should return 400."""
         pool, conn = _make_pool_mock()
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/post-001",
@@ -541,7 +541,7 @@ class TestPostUpdateValidation:
     def test_no_valid_fields_rejected(self):
         """PATCH with only invalid fields should return 400."""
         pool, conn = _make_pool_mock()
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/post-001",
@@ -553,7 +553,7 @@ class TestPostUpdateValidation:
         """Should allow updating SEO-specific fields."""
         pool, conn = _make_pool_mock()
         # Full UUID → prefix resolver short-circuits, PATCH reaches the UPDATE.
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/550e8400-e29b-41d4-a716-446655440000",
@@ -569,7 +569,7 @@ class TestPostUpdateValidation:
         """PATCH on a non-existent post should return 404."""
         pool, conn = _make_pool_mock()
         conn.execute = AsyncMock(return_value="UPDATE 0")
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/nonexistent-id",

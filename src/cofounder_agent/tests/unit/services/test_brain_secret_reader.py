@@ -43,7 +43,7 @@ _BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from brain import secret_reader as sr  # noqa: E402
+from poindexter.brain import secret_reader as sr  # noqa: E402
 
 
 def _row(value, is_secret):
@@ -220,7 +220,7 @@ class TestReadAppSetting:
         """``_bootstrap_secret_key`` reads ``poindexter_secret_key`` from
         bootstrap.toml via the shared ``brain.bootstrap`` reader (no second
         TOML parser — #342 spirit)."""
-        from brain import bootstrap as bs
+        from poindexter.brain import bootstrap as bs
 
         monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
         boot = tmp_path / "bootstrap.toml"
@@ -234,7 +234,7 @@ class TestReadAppSetting:
         self, monkeypatch, tmp_path,
     ):
         """No bootstrap.toml → "" (caller keeps its default degradation)."""
-        from brain import bootstrap as bs
+        from poindexter.brain import bootstrap as bs
 
         monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
         monkeypatch.setattr(bs, "BOOTSTRAP_FILE", tmp_path / "absent.toml")
@@ -258,7 +258,7 @@ class TestEndToEndAlertDispatch:
     async def test_full_path_decrypts_token_and_posts_to_real_telegram_url(
         self, monkeypatch,
     ):
-        from brain import brain_daemon as bd
+        from poindexter.brain import brain_daemon as bd
 
         # Master key for pgcrypto round-trip — the brain container env.
         monkeypatch.setenv("POINDEXTER_SECRET_KEY", "test-master-key")
@@ -335,7 +335,7 @@ class TestEndToEndAlertDispatch:
         DB an encrypted row + an empty key env and confirms the lazy
         path returns False and skips the network.
         """
-        from brain import brain_daemon as bd
+        from poindexter.brain import brain_daemon as bd
 
         monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
         # Make sure the env-var bootstrap fallbacks don't bleed in.

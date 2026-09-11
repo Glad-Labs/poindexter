@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from routes.memory_dashboard_routes import _iso, _seconds_since
+from poindexter.routes.memory_dashboard_routes import _iso, _seconds_since
 
 
 class TestIsoHelper:
@@ -52,7 +52,7 @@ class TestResolveStalenessThreshold:
     @pytest.mark.asyncio
     async def test_returns_default_when_no_dsn(self):
         with patch.dict("os.environ", {}, clear=True):
-            from routes.memory_dashboard_routes import _resolve_staleness_threshold
+            from poindexter.routes.memory_dashboard_routes import _resolve_staleness_threshold
             result = await _resolve_staleness_threshold("claude-code")
             assert result == 6 * 3600  # 6 hours default
 
@@ -61,16 +61,16 @@ class TestRouteRegistration:
     """Verify the router has the expected endpoints registered."""
 
     def test_router_has_memory_stats(self):
-        from routes.memory_dashboard_routes import router
+        from poindexter.routes.memory_dashboard_routes import router
         paths = [r.path for r in router.routes]
         assert "/api/memory/stats" in paths
 
     def test_router_has_memory_search(self):
-        from routes.memory_dashboard_routes import router
+        from poindexter.routes.memory_dashboard_routes import router
         paths = [r.path for r in router.routes]
         assert "/api/memory/search" in paths
 
     def test_router_has_html_dashboard(self):
-        from routes.memory_dashboard_routes import router
+        from poindexter.routes.memory_dashboard_routes import router
         paths = [r.path for r in router.routes]
         assert "/memory" in paths

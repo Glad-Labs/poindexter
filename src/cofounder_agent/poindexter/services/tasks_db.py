@@ -17,13 +17,13 @@ from uuid import UUID, uuid4
 from asyncpg import Pool
 
 from poindexter.plugins.tracing import inject_trace_context
+from poindexter.schemas.database_response_models import TaskCountsResponse, TaskResponse
+from poindexter.schemas.model_converter import ModelConverter
+from poindexter.schemas.typed_records import PaginatedTasksResult, TaskRecord
 from poindexter.services.logger_config import get_logger
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.json_encoder import safe_json_load
 from poindexter.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
-from schemas.database_response_models import TaskCountsResponse, TaskResponse
-from schemas.model_converter import ModelConverter
-from schemas.typed_records import PaginatedTasksResult, TaskRecord
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance

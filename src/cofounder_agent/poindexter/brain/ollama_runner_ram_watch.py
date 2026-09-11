@@ -54,7 +54,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from brain.ram_recycle_common import (
+from poindexter.brain.ram_recycle_common import (
     coerce_bool,
     coerce_float,
     coerce_int,
@@ -513,7 +513,7 @@ class OllamaRunnerRamWatchProbe:
     interval_seconds: int = 600
 
     async def check(self, pool, config):  # type: ignore[override]
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
         summary = await run_ollama_runner_ram_watch_probe(pool)
         return ProbeResult(
             ok=bool(summary.get("ok", False)),

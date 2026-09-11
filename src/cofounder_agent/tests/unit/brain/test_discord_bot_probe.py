@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain import discord_bot_probe as dbp
+from poindexter.brain import discord_bot_probe as dbp
 
 # ---------------------------------------------------------------------------
 # Mock builders

@@ -127,8 +127,8 @@ try:  # pragma: no cover — only fails when the dep is uninstalled
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
-from brain.docker_utils import localize_url
-from brain.operator_notifier import notify_operator
+from poindexter.brain.docker_utils import localize_url
+from poindexter.brain.operator_notifier import notify_operator
 
 logger = logging.getLogger("brain.prefect_stuck_flow_probe")
 
@@ -1255,7 +1255,7 @@ class PrefectStuckFlowProbe:
 
     async def check(self, pool, config):  # type: ignore[override]
         del config  # settings come from pool/app_settings, not the probe registry config
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
 
         summary = await run_prefect_stuck_flow_probe(pool)
         return ProbeResult(

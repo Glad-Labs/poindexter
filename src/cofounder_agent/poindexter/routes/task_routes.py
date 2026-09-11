@@ -14,6 +14,8 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.schemas.task_schemas import TaskListResponse, UnifiedTaskRequest
+from poindexter.schemas.unified_task_response import UnifiedTaskResponse
 
 # Import async database service
 from poindexter.services.database_service import DatabaseService
@@ -22,8 +24,6 @@ from poindexter.services.site_config import SiteConfig
 from poindexter.utils.rate_limiter import limiter
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 from poindexter.utils.uuid_prefix import resolve_task_id_prefix
-from schemas.task_schemas import TaskListResponse, UnifiedTaskRequest
-from schemas.unified_task_response import UnifiedTaskResponse
 
 # Configure logging
 logger = get_logger(__name__)
@@ -826,8 +826,8 @@ async def delete_task(
 # SUB-ROUTERS
 # ============================================================================
 # Imported late to avoid circular imports — these routers depend on `router`.
-from routes.task_publishing_routes import publishing_router  # noqa: E402
-from routes.task_status_routes import status_router  # noqa: E402
+from poindexter.routes.task_publishing_routes import publishing_router  # noqa: E402
+from poindexter.routes.task_status_routes import status_router  # noqa: E402
 
 router.include_router(status_router)
 router.include_router(publishing_router)

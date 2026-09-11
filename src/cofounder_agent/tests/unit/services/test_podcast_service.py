@@ -472,7 +472,7 @@ class TestFileExtensionRuleNeverEatsNumbers:
         assert _normalize_for_speech(text, site_config=_TEST_SC) == text
 
     @pytest.mark.parametrize("text,gone", [
-        ("See config.yaml for details", "config.yaml"),
+        ("See config.yaml for details", "poindexter.config.yaml"),
         ("Edit main.py then run it", "main.py"),
         ("the Node.js runtime", "Node.js"),
     ])

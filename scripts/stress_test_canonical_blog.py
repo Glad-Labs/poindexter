@@ -49,7 +49,7 @@ def _resolve_db_url() -> str:
     if not dsn:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         try:
-            from brain.bootstrap import resolve_database_url  # type: ignore
+            from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 
             dsn = resolve_database_url()
         except Exception as exc:  # bootstrap is best-effort on the host

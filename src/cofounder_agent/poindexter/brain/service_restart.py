@@ -44,11 +44,11 @@ def _resolve_brain_daemon_module() -> Any | None:
     """Identical resolution to alert_dispatcher._resolve_brain_daemon_module —
     duplicated rather than imported to keep this module standalone-testable
     without pulling in the full brain_daemon import graph."""
-    mod = sys.modules.get("brain.brain_daemon") or sys.modules.get("poindexter.brain.brain_daemon")
+    mod = sys.modules.get("poindexter.brain.brain_daemon")
     if mod is not None:
         return mod
     try:
-        from brain import brain_daemon as mod  # type: ignore
+        from poindexter.brain import brain_daemon as mod  # type: ignore
 
         return mod
     except ImportError:

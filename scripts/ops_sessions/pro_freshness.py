@@ -446,7 +446,7 @@ def _ensure_clone(log) -> bool:
 
 def notify_info(title: str, detail: str) -> None:
     try:
-        from brain.operator_notifier import notify_operator
+        from poindexter.brain.operator_notifier import notify_operator
 
         notify_operator(title, detail, source="pro-freshness", severity="info")
     except Exception:  # noqa: BLE001 — a note must never mask the build result

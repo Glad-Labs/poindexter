@@ -36,22 +36,21 @@ from typing import Literal
 # Standalone — no imports from the FastAPI codebase
 import asyncpg
 
-from brain.alert_sync import sync_alert_rules
-from brain.health_probes import run_health_probes
+from poindexter.brain.alert_sync import sync_alert_rules
+from poindexter.brain.health_probes import run_health_probes
 
 # Brain-local secret reader — single source of truth for app_settings
-# decryption (closes Glad-Labs/poindexter#342). Siblings are imported by the
-# `brain.` spelling everywhere (poindexter#1046 step 2): the container runs this
-# module as `python -m poindexter.brain.brain_daemon`, so the package spelling
-# is the only one that exists -- there is no flat copy to fall back to.
+# decryption (closes Glad-Labs/poindexter#342). Siblings are imported by their
+# canonical `poindexter.brain.` spelling (poindexter#1046 step 3); the container
+# runs this module as `python -m poindexter.brain.brain_daemon`.
 #
 # The module is named secret_reader (not secrets) to avoid shadowing
 # Python's stdlib ``secrets`` module.
-from brain.secret_reader import read_app_setting as _read_app_setting
-from brain.seed_loader import seed_app_settings
+from poindexter.brain.secret_reader import read_app_setting as _read_app_setting
+from poindexter.brain.seed_loader import seed_app_settings
 
 try:
-    from brain.business_probes import run_business_probes
+    from poindexter.brain.business_probes import run_business_probes
     _HAS_BUSINESS_PROBES = True
 except ImportError:
     _HAS_BUSINESS_PROBES = False
@@ -61,181 +60,183 @@ except ImportError:
 # imports above (and the brain still boots if httpx is somehow
 # unavailable — every other call path here uses urllib).
 try:
-    from brain.oauth_client import BRAIN_DEFAULT_SCOPES, oauth_client_from_pool
+    from poindexter.brain.oauth_client import BRAIN_DEFAULT_SCOPES, oauth_client_from_pool
     _HAS_OAUTH_CLIENT = True
 except ImportError:  # pragma: no cover — package-qualified path for tests
     _HAS_OAUTH_CLIENT = False
 
 try:
-    from brain.operator_url_probe import maybe_run_operator_url_probe
+    from poindexter.brain.operator_url_probe import maybe_run_operator_url_probe
     _HAS_OPERATOR_URL_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified for tests
     _HAS_OPERATOR_URL_PROBE = False
 
 try:
-    from brain.migration_drift_probe import run_migration_drift_probe
+    from poindexter.brain.migration_drift_probe import run_migration_drift_probe
     _HAS_MIGRATION_DRIFT_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified for tests
     _HAS_MIGRATION_DRIFT_PROBE = False
 
 try:
-    from brain.compose_drift_probe import run_compose_drift_probe
+    from poindexter.brain.compose_drift_probe import run_compose_drift_probe
     _HAS_COMPOSE_DRIFT_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified for tests
     _HAS_COMPOSE_DRIFT_PROBE = False
 
 try:
-    from brain.prometheus_secret_writer import write_prometheus_secrets
+    from poindexter.brain.prometheus_secret_writer import write_prometheus_secrets
     _HAS_PROMETHEUS_SECRET_WRITER = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_PROMETHEUS_SECRET_WRITER = False
 
 try:
-    from brain.glitchtip_triage_probe import run_glitchtip_triage_probe
+    from poindexter.brain.glitchtip_triage_probe import run_glitchtip_triage_probe
     _HAS_GLITCHTIP_TRIAGE_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_GLITCHTIP_TRIAGE_PROBE = False
 
 try:
-    from brain.prefect_stuck_flow_probe import run_prefect_stuck_flow_probe
+    from poindexter.brain.prefect_stuck_flow_probe import run_prefect_stuck_flow_probe
     _HAS_PREFECT_STUCK_FLOW_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_PREFECT_STUCK_FLOW_PROBE = False
 
 try:
-    from brain.alert_dispatcher import poll_and_dispatch as _poll_alert_events
+    from poindexter.brain.alert_dispatcher import poll_and_dispatch as _poll_alert_events
     _HAS_ALERT_DISPATCHER = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_ALERT_DISPATCHER = False
 
 try:
-    from brain.service_restart import poll_and_execute_restart_requests as _poll_service_restarts
+    from poindexter.brain.service_restart import (
+        poll_and_execute_restart_requests as _poll_service_restarts,
+    )
     _HAS_SERVICE_RESTART = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_SERVICE_RESTART = False
 
-from brain.psu_power import (
+from poindexter.brain.psu_power import (
     fetch_icue_psu_watts,
     psu_watchdog_transition,
     select_power_source,
 )
 
 try:
-    from brain.backup_watcher import run_backup_watcher_probe
+    from poindexter.brain.backup_watcher import run_backup_watcher_probe
     _HAS_BACKUP_WATCHER = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_BACKUP_WATCHER = False
 
 try:
-    from brain.smart_monitor import run_smart_monitor_probe
+    from poindexter.brain.smart_monitor import run_smart_monitor_probe
     _HAS_SMART_MONITOR = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_SMART_MONITOR = False
 
 try:
-    from brain.restore_test_probe import run_restore_test_probe
+    from poindexter.brain.restore_test_probe import run_restore_test_probe
     _HAS_RESTORE_TEST_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_RESTORE_TEST_PROBE = False
 
 try:
-    from brain.offsite_backup_watch import run_offsite_backup_watch_probe
+    from poindexter.brain.offsite_backup_watch import run_offsite_backup_watch_probe
     _HAS_OFFSITE_BACKUP_WATCH = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_OFFSITE_BACKUP_WATCH = False
 
 try:
-    from brain.auto_embed_watch import run_auto_embed_watch_probe
+    from poindexter.brain.auto_embed_watch import run_auto_embed_watch_probe
     _HAS_AUTO_EMBED_WATCH = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_AUTO_EMBED_WATCH = False
 
 try:
-    from brain.postiz_queue_watch import run_postiz_queue_watch_probe
+    from poindexter.brain.postiz_queue_watch import run_postiz_queue_watch_probe
     _HAS_POSTIZ_QUEUE_WATCH = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_POSTIZ_QUEUE_WATCH = False
 
 try:
-    from brain.comfyui_ram_watch import run_comfyui_ram_watch_probe
+    from poindexter.brain.comfyui_ram_watch import run_comfyui_ram_watch_probe
     _HAS_COMFYUI_RAM_WATCH = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_COMFYUI_RAM_WATCH = False
 
 try:
-    from brain.sidecar_ram_watch import run_sidecar_ram_watch_probe
+    from poindexter.brain.sidecar_ram_watch import run_sidecar_ram_watch_probe
     _HAS_SIDECAR_RAM_WATCH = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_SIDECAR_RAM_WATCH = False
 
 try:
-    from brain.ollama_runner_ram_watch import run_ollama_runner_ram_watch_probe
+    from poindexter.brain.ollama_runner_ram_watch import run_ollama_runner_ram_watch_probe
     _HAS_OLLAMA_RUNNER_RAM_WATCH = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_OLLAMA_RUNNER_RAM_WATCH = False
 
 try:
-    from brain.docker_port_forward_probe import run_docker_port_forward_probe
+    from poindexter.brain.docker_port_forward_probe import run_docker_port_forward_probe
     _HAS_DOCKER_PORT_FORWARD_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_DOCKER_PORT_FORWARD_PROBE = False
 
 try:
-    from brain.data_freshness_probe import run_data_freshness_probe
+    from poindexter.brain.data_freshness_probe import run_data_freshness_probe
     _HAS_DATA_FRESHNESS_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_DATA_FRESHNESS_PROBE = False
 
 try:
-    from brain.scheduled_workflow_watch import run_scheduled_workflow_watch
+    from poindexter.brain.scheduled_workflow_watch import run_scheduled_workflow_watch
     _HAS_SCHEDULED_WORKFLOW_WATCH = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_SCHEDULED_WORKFLOW_WATCH = False
 
 try:
-    from brain.clock_skew_probe import run_clock_skew_probe
+    from poindexter.brain.clock_skew_probe import run_clock_skew_probe
     _HAS_CLOCK_SKEW_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_CLOCK_SKEW_PROBE = False
 
 try:
-    from brain.deploy_sync_probe import run_deploy_sync_probe
+    from poindexter.brain.deploy_sync_probe import run_deploy_sync_probe
     _HAS_DEPLOY_SYNC_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_DEPLOY_SYNC_PROBE = False
 
 try:
-    from brain.pr_staleness_probe import run_pr_staleness_probe
+    from poindexter.brain.pr_staleness_probe import run_pr_staleness_probe
     _HAS_PR_STALENESS_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_PR_STALENESS_PROBE = False
 
 try:
-    from brain.branch_drift_probe import run_branch_drift_probe
+    from poindexter.brain.branch_drift_probe import run_branch_drift_probe
     _HAS_BRANCH_DRIFT_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified for tests
     _HAS_BRANCH_DRIFT_PROBE = False
 
 try:
-    from brain.discord_bot_probe import run_discord_bot_probe
+    from poindexter.brain.discord_bot_probe import run_discord_bot_probe
     _HAS_DISCORD_BOT_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_DISCORD_BOT_PROBE = False
 
 try:
-    from brain.mcp_http_probe import run_mcp_http_probe
+    from poindexter.brain.mcp_http_probe import run_mcp_http_probe
     _HAS_MCP_HTTP_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_MCP_HTTP_PROBE = False
 
 try:
-    from brain.outlet_guard_probe import run_outlet_guard_probe
+    from poindexter.brain.outlet_guard_probe import run_outlet_guard_probe
     _HAS_OUTLET_GUARD_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_OUTLET_GUARD_PROBE = False
 
 try:
-    from brain.post_performance_probe import probe_post_performance
+    from poindexter.brain.post_performance_probe import probe_post_performance
     _HAS_POST_PERFORMANCE_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_POST_PERFORMANCE_PROBE = False
@@ -369,7 +370,7 @@ def _audit_brain_module_imports() -> None:
         for flag_name, module_file, breaks in missing
     ]
     try:
-        from brain.operator_notifier import notify_operator
+        from poindexter.brain.operator_notifier import notify_operator
     except ImportError:
         logger.warning(
             "[BRAIN] operator_notifier unavailable — %d packaging "
@@ -451,7 +452,7 @@ def _page_operator_failsafe(
     Returns True if the failsafe was invoked. Never raises.
     """
     try:
-        from brain.operator_notifier import notify_operator
+        from poindexter.brain.operator_notifier import notify_operator
     except ImportError:
         logger.error(
             "[BRAIN] operator_notifier failsafe unavailable — cannot page "
@@ -654,7 +655,7 @@ logger = logging.getLogger("brain")
 # of DATABASE_URL / LOCAL_DATABASE_URL / POINDEXTER_MEMORY_DSN works. If
 # none of those yield a value, require_database_url() notifies the operator
 # and exits cleanly.
-from brain.bootstrap import require_database_url
+from poindexter.brain.bootstrap import require_database_url
 
 LOCAL_BRAIN_DB = require_database_url(source="brain_daemon")
 
@@ -788,12 +789,12 @@ async def _hydrate_notify_env_from_settings(pool) -> None:
     duplicate brain_daemon imports.
     """
     try:
-        from brain.secret_reader import (
+        from poindexter.brain.secret_reader import (
             read_app_setting,  # type: ignore[import-not-found]
         )
     except ImportError:
         try:
-            from brain.secret_reader import read_app_setting  # type: ignore[no-redef]
+            from poindexter.brain.secret_reader import read_app_setting  # type: ignore[no-redef]
         except ImportError:
             logger.warning(
                 "[BRAIN] secret_reader unavailable — "
@@ -2726,7 +2727,7 @@ async def run_cycle(pool):
     # notifier's repeat-suppression gate (brain/operator_notifier.py) stays
     # operator-tunable without a redeploy. 0 disables the gate.
     try:
-        from brain.operator_notifier import set_page_cooldown_seconds
+        from poindexter.brain.operator_notifier import set_page_cooldown_seconds
         raw = await _read_app_setting(pool, "operator_page_cooldown_minutes", "30")
         set_page_cooldown_seconds(int(float(raw)) * 60)
     except Exception as exc:  # noqa: BLE001 — cooldown refresh must never kill the cycle
@@ -3391,7 +3392,7 @@ async def main():
     # the watchdog only saw alert_events rows (Grafana → webhook path)
     # and treated direct-to-Telegram brain notifications as silent.
     try:
-        from brain.operator_notifier import (
+        from poindexter.brain.operator_notifier import (
             set_notify_audit_sink,  # type: ignore[import-not-found]
         )
     except ImportError:

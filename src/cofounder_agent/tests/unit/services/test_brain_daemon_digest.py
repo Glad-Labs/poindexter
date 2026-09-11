@@ -33,7 +33,7 @@ import pytest
 _BRAIN_DIR = Path(importlib.import_module("poindexter.brain").__file__).parent
 
 if _BRAIN_DIR is not None:
-    from brain import brain_daemon as bd  # noqa: E402
+    from poindexter.brain import brain_daemon as bd  # noqa: E402
 else:
     bd = None  # type: ignore[assignment]
 

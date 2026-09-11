@@ -23,8 +23,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.findings_routes import router
 from poindexter.utils.route_utils import get_database_dependency
-from routes.findings_routes import router
 
 SAMPLE = {
     "findings": [
@@ -70,7 +70,7 @@ def _build_app(db=None, *, authed=True):
 class TestListFindings:
     def test_returns_structured_summary(self):
         with patch(
-            "routes.findings_routes.read_findings",
+            "poindexter.routes.findings_routes.read_findings",
             new=AsyncMock(return_value=SAMPLE),
         ) as m:
             app = _build_app()
@@ -86,7 +86,7 @@ class TestListFindings:
 
     def test_forwards_query_params(self):
         with patch(
-            "routes.findings_routes.read_findings",
+            "poindexter.routes.findings_routes.read_findings",
             new=AsyncMock(return_value=SAMPLE),
         ) as m:
             app = _build_app()
@@ -103,7 +103,7 @@ class TestListFindings:
 
     def test_defaults_when_no_query_params(self):
         with patch(
-            "routes.findings_routes.read_findings",
+            "poindexter.routes.findings_routes.read_findings",
             new=AsyncMock(return_value=SAMPLE),
         ) as m:
             app = _build_app()
@@ -119,7 +119,7 @@ class TestListFindings:
     def test_rejects_out_of_range_hours(self):
         # hours is clamped by the route's Query bounds (1..720); 0 -> 422.
         with patch(
-            "routes.findings_routes.read_findings",
+            "poindexter.routes.findings_routes.read_findings",
             new=AsyncMock(return_value=SAMPLE),
         ):
             app = _build_app()

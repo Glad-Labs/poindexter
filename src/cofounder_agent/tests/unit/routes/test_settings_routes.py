@@ -16,9 +16,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.settings_routes import router
+from poindexter.schemas.model_converter import ModelConverter
 from poindexter.utils.route_utils import get_database_dependency
-from routes.settings_routes import router
-from schemas.model_converter import ModelConverter
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

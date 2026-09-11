@@ -43,8 +43,11 @@ from pathlib import Path
 # `from brain.bootstrap import ...` resolves regardless of the caller's CWD.
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
+# poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
+# the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
+sys.path.insert(0, str(_REPO / "src" / "cofounder_agent"))
 
-from brain.bootstrap import resolve_database_url  # noqa: E402
+from poindexter.brain.bootstrap import resolve_database_url  # noqa: E402
 
 # This file is generated for the PUBLIC OSS mirror, so the ONLY correct source
 # is a throwaway DB seeded by the baseline migration — that is what CI does

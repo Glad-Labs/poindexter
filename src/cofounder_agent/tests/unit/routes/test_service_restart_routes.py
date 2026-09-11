@@ -16,8 +16,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.service_restart_routes import router
 from poindexter.utils.route_utils import get_database_dependency
-from routes.service_restart_routes import router
 
 pytestmark = pytest.mark.unit
 
@@ -46,7 +46,7 @@ class TestPostRestart:
             "completed_at": None,
         }
         with patch(
-            "routes.service_restart_routes.create_restart_request",
+            "poindexter.routes.service_restart_routes.create_restart_request",
             new=AsyncMock(return_value=row),
         ):
             resp = TestClient(_build_app()).post(
@@ -66,7 +66,7 @@ class TestPostRestart:
         from poindexter.services.service_restart_requests import InvalidContainerName
 
         with patch(
-            "routes.service_restart_routes.create_restart_request",
+            "poindexter.routes.service_restart_routes.create_restart_request",
             new=AsyncMock(side_effect=InvalidContainerName("not-a-real-container")),
         ):
             resp = TestClient(_build_app()).post(
@@ -82,7 +82,7 @@ class TestPostRestart:
         from poindexter.services.service_restart_requests import SelfDefeatingRestart
 
         with patch(
-            "routes.service_restart_routes.create_restart_request",
+            "poindexter.routes.service_restart_routes.create_restart_request",
             new=AsyncMock(side_effect=SelfDefeatingRestart("poindexter-brain-daemon")),
         ):
             resp = TestClient(_build_app()).post(
@@ -112,7 +112,7 @@ class TestGetRestartStatus:
             "completed_at": datetime.now(timezone.utc),
         }
         with patch(
-            "routes.service_restart_routes.get_restart_request",
+            "poindexter.routes.service_restart_routes.get_restart_request",
             new=AsyncMock(return_value=row),
         ):
             resp = TestClient(_build_app()).get(
@@ -123,7 +123,7 @@ class TestGetRestartStatus:
 
     def test_unknown_id_returns_404(self):
         with patch(
-            "routes.service_restart_routes.get_restart_request",
+            "poindexter.routes.service_restart_routes.get_restart_request",
             new=AsyncMock(return_value=None),
         ):
             resp = TestClient(_build_app()).get(

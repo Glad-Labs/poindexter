@@ -97,7 +97,7 @@ def get_config() -> Config:
     DB URL is resolved via brain.bootstrap (explicit arg > bootstrap.toml >
     env vars); everything else reads straight from the process environment.
     """
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
 
     environment = os.getenv("ENVIRONMENT", "development")
 

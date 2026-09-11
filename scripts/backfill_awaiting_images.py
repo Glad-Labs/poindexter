@@ -137,7 +137,7 @@ async def _resolve_db_url() -> str | None:
         return dsn
     sys.path.insert(0, "/app")
     try:
-        from brain.bootstrap import resolve_database_url  # type: ignore
+        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
     except Exception:
         return None
     return resolve_database_url()

@@ -40,12 +40,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from poindexter.schemas.video_shot_list import VideoShotList
 from poindexter.services import live_activity
 from poindexter.services.gpu_scheduler import gpu
 from poindexter.services.video_renderers.shot_list_renderer import render_shot_list
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
-from schemas.video_shot_list import VideoShotList
 
 logger = logging.getLogger(__name__)
 

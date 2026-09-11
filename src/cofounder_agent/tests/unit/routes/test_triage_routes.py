@@ -26,10 +26,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes import triage_routes
+from poindexter.routes.triage_routes import router, set_model_router_for_tests
 from poindexter.services.site_config import SiteConfig
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
-from routes import triage_routes
-from routes.triage_routes import router, set_model_router_for_tests
 
 # ---------------------------------------------------------------------------
 # Pool / DB mocks
@@ -393,7 +393,7 @@ class TestDefaultModelRouterThinking:
         """
         from unittest.mock import patch
 
-        from routes.triage_routes import _DefaultModelRouter
+        from poindexter.routes.triage_routes import _DefaultModelRouter
 
         sc = SiteConfig(initial_config={
             "ops_triage_writer_model": "ollama/granite4.2:3b",

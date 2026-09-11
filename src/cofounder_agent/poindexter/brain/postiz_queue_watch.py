@@ -46,8 +46,8 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from brain.operator_notifier import notify_operator
-from brain.secret_reader import read_app_setting
+from poindexter.brain.operator_notifier import notify_operator
+from poindexter.brain.secret_reader import read_app_setting
 
 logger = logging.getLogger("brain.postiz_queue_watch")
 
@@ -534,7 +534,7 @@ class PostizQueueWatchProbe:
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
     async def check(self, pool, config):  # type: ignore[override]
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
         summary = await run_postiz_queue_watch_probe(pool)
         return ProbeResult(
             ok=bool(summary.get("ok", False)),

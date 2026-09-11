@@ -3,9 +3,9 @@ import logging
 
 import pytest
 
-from brain.remediation import engine as E
-from brain.remediation import rules as R
-from brain.remediation.registry import ActionResult
+from poindexter.brain.remediation import engine as E
+from poindexter.brain.remediation import rules as R
+from poindexter.brain.remediation.registry import ActionResult
 from tests.unit.brain._remediation_fakes import FakePool
 
 LOG = logging.getLogger("t")

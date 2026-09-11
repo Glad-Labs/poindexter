@@ -11,13 +11,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from poindexter.services.site_config import SiteConfig
-from routes.podcast_routes import (
+from poindexter.routes.podcast_routes import (
     _build_rss_xml,
     _format_duration,
     _rfc2822,
     router,
 )
+from poindexter.services.site_config import SiteConfig
 
 # storage_* cutover (#731): podcast routes read storage_public_url (was
 # r2_public_url). Build a dedicated SiteConfig for the feed-rendering
@@ -212,11 +212,11 @@ class TestBuildRssXml:
 
 
 class TestPodcastFeed:
-    @patch("routes.podcast_routes.PodcastService")
+    @patch("poindexter.routes.podcast_routes.PodcastService")
     @patch("poindexter.utils.route_utils.get_services")
     def test_empty_feed_when_no_episodes(self, mock_get_services, mock_svc_cls):
         # Mock the lazy import
-        with patch("routes.podcast_routes.get_services", create=True) as mock_gs:
+        with patch("poindexter.routes.podcast_routes.get_services", create=True) as mock_gs:
             mock_db = MagicMock()
             mock_db.pool = None
             mock_db.cloud_pool = None
@@ -283,7 +283,7 @@ class TestPodcastFeed:
         """
         import inspect
 
-        from routes.podcast_routes import podcast_feed
+        from poindexter.routes.podcast_routes import podcast_feed
 
         source = inspect.getsource(podcast_feed)
         assert "'podcast' = ANY(media_to_generate)" in source, (
@@ -317,7 +317,7 @@ class TestPodcastFeed:
         """
         import inspect
 
-        from routes.podcast_routes import podcast_feed
+        from poindexter.routes.podcast_routes import podcast_feed
 
         source = inspect.getsource(podcast_feed)
         assert "media_approvals" in source, (
@@ -342,12 +342,12 @@ class TestPodcastFeed:
 
 class TestStreamEpisode:
     def test_missing_episode_returns_404(self):
-        with patch("routes.podcast_routes.PODCAST_DIR", Path("/nonexistent/path")):
+        with patch("poindexter.routes.podcast_routes.PODCAST_DIR", Path("/nonexistent/path")):
             resp = client.get("/api/podcast/episodes/abc123.mp3")
             assert resp.status_code == 404
 
     def test_path_traversal_blocked(self):
-        with patch("routes.podcast_routes.PODCAST_DIR", Path("/tmp/podcasts")):
+        with patch("poindexter.routes.podcast_routes.PODCAST_DIR", Path("/tmp/podcasts")):
             resp = client.get("/api/podcast/episodes/..%2F..%2Fetc%2Fpasswd.mp3")
             assert resp.status_code == 404
 
@@ -355,7 +355,7 @@ class TestStreamEpisode:
         mp3_file = tmp_path / "test123.mp3"
         mp3_file.write_bytes(b"\xff\xfb\x90\x00" * 100)
 
-        with patch("routes.podcast_routes.PODCAST_DIR", tmp_path):
+        with patch("poindexter.routes.podcast_routes.PODCAST_DIR", tmp_path):
             resp = client.get("/api/podcast/episodes/test123.mp3")
             assert resp.status_code == 200
             assert resp.headers["content-type"] == "audio/mpeg"
@@ -367,7 +367,7 @@ class TestStreamEpisode:
 
 
 class TestListEpisodes:
-    @patch("routes.podcast_routes.PodcastService")
+    @patch("poindexter.routes.podcast_routes.PodcastService")
     def test_returns_json_list(self, mock_svc_cls):
         mock_svc = MagicMock()
         mock_svc.list_episodes.return_value = [
@@ -392,7 +392,7 @@ class TestListEpisodes:
         # file_path out of the public body (the mock input includes it).
         assert "file_path" not in data["items"][0]
 
-    @patch("routes.podcast_routes.PodcastService")
+    @patch("poindexter.routes.podcast_routes.PodcastService")
     def test_empty_list(self, mock_svc_cls):
         mock_svc = MagicMock()
         mock_svc.list_episodes.return_value = []
@@ -448,7 +448,7 @@ class TestGenerateEpisode:
         resp = tc.post("/api/podcast/generate/nonexistent")
         assert resp.status_code == 404
 
-    @patch("routes.podcast_routes.PodcastService")
+    @patch("poindexter.routes.podcast_routes.PodcastService")
     @patch("poindexter.utils.route_utils.get_services")
     def test_successful_generation(self, mock_gs, mock_svc_cls):
         tc = self._make_app_with_auth_override()
@@ -486,7 +486,7 @@ class TestGenerateEpisode:
         assert data["success"] is True
         assert data["post_id"] == "post-1"
 
-    @patch("routes.podcast_routes.PodcastService")
+    @patch("poindexter.routes.podcast_routes.PodcastService")
     @patch("poindexter.utils.route_utils.get_services")
     def test_generation_failure_returns_500(self, mock_gs, mock_svc_cls):
         tc = self._make_app_with_auth_override()

@@ -147,8 +147,11 @@ def _resolve_db_url(cli_value: str | None) -> str:
     # deploy; force IPv4 because Windows resolves ``localhost`` to ``::1`` first
     # and Docker Desktop's IPv6 port-proxy drops connections. (#1796)
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    # poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
+    # the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
     try:
-        from brain.bootstrap import resolve_database_url  # type: ignore
+        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 
         dsn = resolve_database_url()
     except Exception as exc:  # bootstrap is best-effort on the host
@@ -189,7 +192,7 @@ def _ensure_secret_key_env() -> bool:
     if os.environ.get("POINDEXTER_SECRET_KEY"):
         return True
     try:
-        from brain.bootstrap import get_bootstrap_value
+        from poindexter.brain.bootstrap import get_bootstrap_value
     except Exception:
         return False
     secret_key = get_bootstrap_value("poindexter_secret_key")

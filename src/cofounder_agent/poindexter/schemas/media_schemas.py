@@ -7,7 +7,7 @@ replace the prior untyped bodies that used bespoke ``episodes``/``count`` keys.
 
 from pydantic import BaseModel
 
-from schemas.database_response_models import ListResponse
+from poindexter.schemas.database_response_models import ListResponse
 
 
 class PodcastEpisodeItem(BaseModel):

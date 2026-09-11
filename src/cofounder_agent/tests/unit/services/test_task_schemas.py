@@ -7,13 +7,13 @@ Tests field validation, defaults, and model behaviour without any DB or LLM call
 import pytest
 from pydantic import ValidationError
 
-from schemas.task_schemas import (
+from poindexter.schemas.task_schemas import (
     ApproveTaskRequest,
     ContentConstraints,
     TaskCreateRequest,
     UnifiedTaskRequest,
 )
-from schemas.task_status_schemas import TaskStatusUpdateRequest
+from poindexter.schemas.task_status_schemas import TaskStatusUpdateRequest
 
 # ---------------------------------------------------------------------------
 # UnifiedTaskRequest

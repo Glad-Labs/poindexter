@@ -26,7 +26,7 @@ import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package
 # resolves the same way the migration_drift_probe tests import it.
-from brain import backup_watcher as bw
+from poindexter.brain import backup_watcher as bw
 
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned config
@@ -580,7 +580,7 @@ class TestProbeWrapper:
                 "sentinels": {"status": "clean"},
             }
 
-        import brain.backup_watcher as _bw_mod
+        import poindexter.brain.backup_watcher as _bw_mod
         original = _bw_mod.run_backup_watcher_probe
         _bw_mod.run_backup_watcher_probe = fake_probe  # type: ignore[assignment]
         try:

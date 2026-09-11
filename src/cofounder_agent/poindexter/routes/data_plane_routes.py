@@ -20,10 +20,10 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.schemas.data_plane_schemas import DataPlaneRowListResponse
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.logger_config import get_logger
 from poindexter.utils.route_utils import get_database_dependency
-from schemas.data_plane_schemas import DataPlaneRowListResponse
 
 logger = get_logger(__name__)
 router = APIRouter(

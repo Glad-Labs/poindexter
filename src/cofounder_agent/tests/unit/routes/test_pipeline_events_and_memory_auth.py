@@ -31,8 +31,8 @@ def app_with_routes():
     """Build a minimal FastAPI app that just mounts the two routers
     under test, with the verify_api_token dependency intact so we can
     assert the 401 lands."""
-    from routes.memory_dashboard_routes import router as memory_router
-    from routes.pipeline_events_routes import router as pipeline_router
+    from poindexter.routes.memory_dashboard_routes import router as memory_router
+    from poindexter.routes.pipeline_events_routes import router as pipeline_router
 
     app = FastAPI()
     app.include_router(pipeline_router)

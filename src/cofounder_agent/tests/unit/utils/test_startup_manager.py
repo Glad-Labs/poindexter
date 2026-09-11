@@ -280,7 +280,7 @@ class TestRunMigrations:
             {
                 "poindexter.services.migrations": mock_migrations,
                 "poindexter.services.content_router_service": mock_content,
-                "brain.operator_notifier": MagicMock(notify_operator=MagicMock()),
+                "poindexter.brain.operator_notifier": MagicMock(notify_operator=MagicMock()),
             },
         ):
             with pytest.raises(SystemExit):

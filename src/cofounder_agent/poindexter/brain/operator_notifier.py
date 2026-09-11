@@ -16,7 +16,7 @@ are broken.
 
 Usage:
 
-    from brain.operator_notifier import notify_operator
+    from poindexter.brain.operator_notifier import notify_operator
 
     try:
         db_url = os.environ["DATABASE_URL"]

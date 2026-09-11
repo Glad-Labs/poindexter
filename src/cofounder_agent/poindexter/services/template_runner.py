@@ -2154,7 +2154,7 @@ class TemplateRunner:
         if self._checkpointer_dsn:
             return self._checkpointer_dsn
         try:
-            from brain.bootstrap import resolve_database_url
+            from poindexter.brain.bootstrap import resolve_database_url
             return resolve_database_url()
         except Exception as exc:  # noqa: BLE001
             # Warn, not debug: this swallow is what made the seo_refresh

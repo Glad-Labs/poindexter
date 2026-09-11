@@ -51,11 +51,11 @@ from pathlib import Path
 from typing import Any
 
 from poindexter.plugins.media_compositor import CompositionRequest, CompositionScene
+from poindexter.schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
 from poindexter.services.settings_defaults import default_int
 from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
-from schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
 
 logger = logging.getLogger(__name__)
 

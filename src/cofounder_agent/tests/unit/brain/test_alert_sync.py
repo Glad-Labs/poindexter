@@ -21,7 +21,7 @@ _REPO_ROOT = next(
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from brain.alert_sync import (  # noqa: E402
+from poindexter.brain.alert_sync import (  # noqa: E402
     _hash_rule,
     _is_sql_query,
     _rule_uid,

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package resolves.
-from brain import restore_test_probe as rt
+from poindexter.brain import restore_test_probe as rt
 
 
 # ---------------------------------------------------------------------------

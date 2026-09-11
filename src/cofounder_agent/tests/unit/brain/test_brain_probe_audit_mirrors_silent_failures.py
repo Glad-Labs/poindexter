@@ -90,7 +90,7 @@ async def test_audit_mirror_write_failure_is_visible(mod_name, helper_name, capl
 def test_malformed_max_count_gate_is_visible(caplog):
     """A malformed ``max_count`` skips the gate and lets the rule match anyway
     (fail-open, on an auto-resolve path). Behaviour is preserved; it must warn."""
-    gtp = importlib.import_module("brain.glitchtip_triage_probe")
+    gtp = importlib.import_module("poindexter.brain.glitchtip_triage_probe")
 
     rule = {
         "max_count": "not-a-number",  # operator typo

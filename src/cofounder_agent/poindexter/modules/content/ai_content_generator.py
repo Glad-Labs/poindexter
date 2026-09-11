@@ -251,7 +251,7 @@ class AIContentGenerator:
             # LOCAL_DATABASE_URL / DATABASE_URL / bootstrap.toml in order,
             # so services shouldn't reach into os.getenv directly.
             try:
-                from brain.bootstrap import resolve_database_url
+                from poindexter.brain.bootstrap import resolve_database_url
                 dsn = resolve_database_url() or ""
             except Exception:
                 dsn = ""

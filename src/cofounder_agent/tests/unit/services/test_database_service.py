@@ -27,7 +27,7 @@ from poindexter.services.site_config import SiteConfig
 
 
 def _has_brain_module() -> bool:
-    return find_spec("brain.bootstrap") is not None
+    return find_spec("poindexter.brain.bootstrap") is not None
 
 
 def _ensure_brain_bootstrap_stub(monkeypatch) -> ModuleType:
@@ -43,7 +43,7 @@ def _ensure_brain_bootstrap_stub(monkeypatch) -> ModuleType:
     if _has_brain_module():
         # Real module is present; tests can monkeypatch its attributes
         # directly. Return it so callers can patch BOOTSTRAP_FILE.
-        import brain.bootstrap as _real_boot
+        import poindexter.brain.bootstrap as _real_boot
         return _real_boot
 
     # Build a stand-in package + submodule pair that mimics the public
@@ -53,7 +53,7 @@ def _ensure_brain_bootstrap_stub(monkeypatch) -> ModuleType:
     brain_pkg = ModuleType("brain")
     brain_pkg.__path__ = []  # mark as a package so importlib is happy
 
-    bootstrap_mod = ModuleType("brain.bootstrap")
+    bootstrap_mod = ModuleType("poindexter.brain.bootstrap")
     bootstrap_mod.BOOTSTRAP_DIR = Path("/nonexistent")
     bootstrap_mod.BOOTSTRAP_FILE = Path("/nonexistent/bootstrap.toml")
 
@@ -77,8 +77,8 @@ def _ensure_brain_bootstrap_stub(monkeypatch) -> ModuleType:
     bootstrap_mod.resolve_database_url = _resolve_database_url
     bootstrap_mod.require_database_url = _require_database_url
 
-    monkeypatch.setitem(sys.modules, "brain", brain_pkg)
-    monkeypatch.setitem(sys.modules, "brain.bootstrap", bootstrap_mod)
+    monkeypatch.setitem(sys.modules, "poindexter.brain", brain_pkg)
+    monkeypatch.setitem(sys.modules, "poindexter.brain.bootstrap", bootstrap_mod)
     return bootstrap_mod
 
 # ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ class TestDatabaseServiceInit:
         # ``require_database_url`` raises SystemExit(2) after notifying
         # the operator. Patch the operator notifier so the test does not
         # try to hit Telegram/Discord during the run.
-        with patch("brain.operator_notifier.notify_operator", create=True):
+        with patch("poindexter.brain.operator_notifier.notify_operator", create=True):
             with pytest.raises(SystemExit) as excinfo:
                 DatabaseService(site_config=SiteConfig())
         assert excinfo.value.code == 2

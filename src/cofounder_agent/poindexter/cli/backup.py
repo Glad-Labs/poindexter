@@ -399,7 +399,7 @@ def backup_setup() -> None:
           postgres network isn't available →
       4/4 encrypted persist + an OFFLINE-save banner for the restic password.
     """
-    from brain import bootstrap
+    from poindexter.brain import bootstrap
 
     from ._bootstrap import ensure_secret_key
 
@@ -622,7 +622,7 @@ async def _get_setting(dsn: str, key: str) -> str:
 @backup_group.command(name="status")
 def backup_status() -> None:
     """Show repo + last backup/verify ages (reads the audit_log heartbeat)."""
-    from brain import bootstrap
+    from poindexter.brain import bootstrap
 
     dsn = bootstrap.resolve_database_url()
     if not dsn:
@@ -696,7 +696,7 @@ def _run_or_die(
 @backup_group.command(name="run")
 def backup_run() -> None:
     """Trigger an offsite backup now (manual; the in-stack runner does this on cron)."""
-    from brain import bootstrap
+    from poindexter.brain import bootstrap
 
     dsn = bootstrap.resolve_database_url()
     if not dsn:
@@ -714,7 +714,7 @@ def backup_run() -> None:
 @backup_group.command(name="verify")
 def backup_verify() -> None:
     """Run ``restic check --read-data-subset`` against the remote now (bit-rot scan)."""
-    from brain import bootstrap
+    from poindexter.brain import bootstrap
 
     dsn = bootstrap.resolve_database_url()
     if not dsn:
@@ -733,7 +733,7 @@ def backup_verify() -> None:
 @backup_group.command(name="snapshots")
 def backup_snapshots() -> None:
     """List remote snapshots."""
-    from brain import bootstrap
+    from poindexter.brain import bootstrap
 
     dsn = bootstrap.resolve_database_url()
     if not dsn:

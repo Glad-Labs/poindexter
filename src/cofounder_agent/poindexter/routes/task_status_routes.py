@@ -20,6 +20,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.task_routes import _check_task_ownership, _normalize_seo_keywords_in_task
+from poindexter.schemas.model_converter import ModelConverter
+from poindexter.schemas.task_status_schemas import (
+    TaskStatusInfo,
+    TaskStatusUpdateRequest,
+    TaskStatusUpdateResponse,
+)
+from poindexter.schemas.unified_task_response import UnifiedTaskResponse
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
 from poindexter.services.logger_config import get_logger
@@ -32,14 +40,6 @@ from poindexter.utils.task_status import (
     is_terminal,
     is_valid_transition,
 )
-from routes.task_routes import _check_task_ownership, _normalize_seo_keywords_in_task
-from schemas.model_converter import ModelConverter
-from schemas.task_status_schemas import (
-    TaskStatusInfo,
-    TaskStatusUpdateRequest,
-    TaskStatusUpdateResponse,
-)
-from schemas.unified_task_response import UnifiedTaskResponse
 
 logger = get_logger(__name__)
 

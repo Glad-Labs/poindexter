@@ -17,7 +17,7 @@ class _FakeConfig:
 
 async def test_activity_shape(test_pool):
     # The route is a thin adapter; assert it returns the service contract keys.
-    from routes.activity_routes import _read_activity
+    from poindexter.routes.activity_routes import _read_activity
 
     out = await _read_activity(test_pool, site_config=_FakeConfig())  # type: ignore[arg-type]  # duck-typed stub
     assert set(out.keys()) == {"running", "recent", "summary"}

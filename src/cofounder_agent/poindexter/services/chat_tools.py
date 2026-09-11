@@ -222,11 +222,11 @@ async def _create_post(
     niche_slug: str = "",
     force: bool = False,
 ) -> str:
+    from poindexter.schemas.task_schemas import UnifiedTaskRequest
     from poindexter.services.blog_task_creation import (
         BlogTaskCreationError,
         create_blog_post_task,
     )
-    from schemas.task_schemas import UnifiedTaskRequest
 
     fields: dict[str, Any] = {
         "task_type": "blog_post",

@@ -34,6 +34,9 @@ import httpx
 
 _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
+# poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
+# the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
+sys.path.insert(0, str(_project_root / "src" / "cofounder_agent"))
 sys.path.insert(0, str(_project_root / "scripts"))
 # `services.*` lives under src/cofounder_agent/ — add that to sys.path
 # so we can import the integrations package without restructuring.
@@ -49,7 +52,7 @@ API_URL = os.getenv("POINDEXTER_API_URL", "http://localhost:8002")
 
 
 def _resolve_db_url() -> str:
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
 
     db_url = os.getenv("DATABASE_URL") or resolve_database_url()
     if not db_url:
@@ -165,7 +168,7 @@ class _BotSiteConfig:
             import asyncpg  # noqa: F401  # imported here so a missing dep
 
             # doesn't break the simple paths
-            from brain.bootstrap import resolve_database_url
+            from poindexter.brain.bootstrap import resolve_database_url
             dsn = os.getenv("DATABASE_URL") or resolve_database_url()
             if dsn:
                 async def _fetch_one():
@@ -202,7 +205,7 @@ def _load_passthrough_config(initial: dict[str, str]) -> dict[str, str]:
     extra: dict[str, str] = {}
     try:
         import asyncpg
-        from brain.bootstrap import resolve_database_url
+        from poindexter.brain.bootstrap import resolve_database_url
         dsn = os.getenv("DATABASE_URL") or resolve_database_url()
         if not dsn:
             return extra
@@ -375,7 +378,7 @@ async def handle_command(text: str, chat_id: str):
     elif cmd == "/stats":
         try:
             import asyncpg
-            from brain.bootstrap import resolve_database_url
+            from poindexter.brain.bootstrap import resolve_database_url
             dsn = os.getenv("DATABASE_URL") or resolve_database_url()
             conn = await asyncpg.connect(dsn)
             rows = await conn.fetch(

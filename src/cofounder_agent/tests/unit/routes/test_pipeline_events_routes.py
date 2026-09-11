@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.pipeline_events_routes import (
+from poindexter.routes.pipeline_events_routes import (
     _PIPELINE_EVENT_TYPES,
     _format_event,
     _resolve_event_types,
@@ -119,7 +119,7 @@ def _make_client(mock_pool: MagicMock) -> TestClient:
     app.include_router(router)
     app.dependency_overrides[verify_api_token] = lambda: "test-token"
     # Patch _get_pool at the module level to return our mock pool
-    import routes.pipeline_events_routes as mod
+    import poindexter.routes.pipeline_events_routes as mod
 
     async def _fake_get_pool():
         return mock_pool

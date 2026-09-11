@@ -86,7 +86,7 @@ BASE = "/api/tasks"  # router has prefix="/api/tasks" built in
 
 def _build_task_app(mock_db: AsyncMock, user=TEST_USER_A, skip_auth=True) -> FastAPI:
     """Build minimal FastAPI app with task router and mocked deps."""
-    from routes.task_routes import router
+    from poindexter.routes.task_routes import router
 
     app = FastAPI()
     # Router already has prefix="/api/tasks" — include without extra prefix
@@ -242,7 +242,7 @@ class TestTaskAuthEnforcement:
 
     def test_unauthenticated_get_task_rejected(self):
         """Without auth override, the route should return 401 (no Bearer token)."""
-        from routes.task_routes import router
+        from poindexter.routes.task_routes import router
 
         # Build app WITHOUT overriding verify_api_token — the real one will
         # check for a Bearer token and fail.

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.schemas.topics_schemas import TopicProposalListResponse
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
@@ -23,7 +24,6 @@ from poindexter.services.topic_length import pick_target_length
 from poindexter.services.url_scraper import URLScrapeError, URLScraper
 from poindexter.utils.rate_limiter import _settings_limit, limiter
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
-from schemas.topics_schemas import TopicProposalListResponse
 
 logger = get_logger(__name__)
 

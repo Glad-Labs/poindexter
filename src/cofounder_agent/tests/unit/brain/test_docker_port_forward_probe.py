@@ -40,7 +40,7 @@ import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package
 # resolves the same way the backup_watcher tests import it.
-from brain import docker_port_forward_probe as pf
+from poindexter.brain import docker_port_forward_probe as pf
 
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned config
@@ -1078,7 +1078,7 @@ class TestProbeWrapper:
                 },
             }
 
-        import brain.docker_port_forward_probe as _pf_mod
+        import poindexter.brain.docker_port_forward_probe as _pf_mod
         original = _pf_mod.run_docker_port_forward_probe
         _pf_mod.run_docker_port_forward_probe = fake_probe  # type: ignore[assignment]
         try:

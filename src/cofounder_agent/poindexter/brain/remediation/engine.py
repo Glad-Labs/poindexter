@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from brain.remediation import rules as R
-from brain.remediation.registry import (
+from poindexter.brain.remediation import rules as R
+from poindexter.brain.remediation.registry import (
     ActionResult,
     RemediationContext,
     describe_catalog,

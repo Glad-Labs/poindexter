@@ -20,9 +20,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.topics_routes import router
 from poindexter.services.url_scraper import URLScrapeError
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
-from routes.topics_routes import router
 
 
 def _make_db():
@@ -71,7 +71,7 @@ def _patch_scraper(scrape_side_effect=None, scrape_return=None):
         side_effect=scrape_side_effect, return_value=scrape_return,
     )
     return patch(
-        "routes.topics_routes.URLScraper", return_value=scraper_instance,
+        "poindexter.routes.topics_routes.URLScraper", return_value=scraper_instance,
     ), scraper_instance
 
 
@@ -86,7 +86,7 @@ class TestFromUrl:
         db = _make_db()
         patcher, _scraper = _patch_scraper(scrape_return=_scraped())
         with patcher, patch(
-            "routes.topics_routes.pick_target_length", return_value=1200,
+            "poindexter.routes.topics_routes.pick_target_length", return_value=1200,
         ):
             client = TestClient(_build_app(db))
             resp = client.post(
@@ -164,9 +164,9 @@ class TestFromUrls:
 
         scraper_instance.scrape_url = AsyncMock(side_effect=_scrape)
         with patch(
-            "routes.topics_routes.URLScraper", return_value=scraper_instance,
+            "poindexter.routes.topics_routes.URLScraper", return_value=scraper_instance,
         ), patch(
-            "routes.topics_routes.pick_target_length", return_value=1200,
+            "poindexter.routes.topics_routes.pick_target_length", return_value=1200,
         ):
             client = TestClient(_build_app(db))
             resp = client.post(
@@ -193,7 +193,7 @@ class TestFromUrls:
 
         scraper_instance.scrape_url = AsyncMock(side_effect=_scrape)
         with patch(
-            "routes.topics_routes.URLScraper", return_value=scraper_instance,
+            "poindexter.routes.topics_routes.URLScraper", return_value=scraper_instance,
         ):
             client = TestClient(_build_app(db))
             resp = client.post(

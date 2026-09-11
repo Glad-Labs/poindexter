@@ -347,11 +347,11 @@ def stub_pr_env(monkeypatch):
 
     # Fake brain.bootstrap so resolve_database_url returns a sentinel.
     fake_brain = types.ModuleType("brain")
-    fake_bootstrap = types.ModuleType("brain.bootstrap")
+    fake_bootstrap = types.ModuleType("poindexter.brain.bootstrap")
     fake_bootstrap.resolve_database_url = lambda **_kw: "postgres://stub"
     fake_bootstrap.require_database_url = lambda **_kw: "postgres://stub"
-    monkeypatch.setitem(sys.modules, "brain", fake_brain)
-    monkeypatch.setitem(sys.modules, "brain.bootstrap", fake_bootstrap)
+    monkeypatch.setitem(sys.modules, "poindexter.brain", fake_brain)
+    monkeypatch.setitem(sys.modules, "poindexter.brain.bootstrap", fake_bootstrap)
 
     # ``__captured_headers__`` collects the headers dict passed to each
     # outbound GitHub request so tests can assert the crawler User-Agent on

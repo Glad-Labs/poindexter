@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from brain import ram_recycle_common as rc
+from poindexter.brain import ram_recycle_common as rc
 
 
 def test_parse_status_rss_swap_gb():

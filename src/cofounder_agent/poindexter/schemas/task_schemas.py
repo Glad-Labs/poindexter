@@ -9,8 +9,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from schemas.database_response_models import ListResponse
-from schemas.unified_task_response import UnifiedTaskResponse
+from poindexter.schemas.database_response_models import ListResponse
+from poindexter.schemas.unified_task_response import UnifiedTaskResponse
 
 
 class UnifiedTaskRequest(BaseModel):

@@ -75,7 +75,7 @@ if not _dsn:
                 if str(_p) not in sys.path:
                     sys.path.insert(0, str(_p))
                 break
-        from brain.bootstrap import resolve_database_url
+        from poindexter.brain.bootstrap import resolve_database_url
         _dsn = resolve_database_url() or ""
     except Exception:
         pass

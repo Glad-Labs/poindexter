@@ -39,11 +39,11 @@ def _resolve_brain_daemon() -> Any | None:
     hard-imports the daemon at module load (avoids import cycles + keeps the
     module importable in unit tests that don't load the daemon).
     """
-    mod = sys.modules.get("brain.brain_daemon") or sys.modules.get("poindexter.brain.brain_daemon")
+    mod = sys.modules.get("poindexter.brain.brain_daemon")
     if mod is not None:
         return mod
     try:
-        from brain import brain_daemon as mod  # type: ignore
+        from poindexter.brain import brain_daemon as mod  # type: ignore
         return mod
     except ImportError:
         return None
@@ -90,7 +90,7 @@ async def _restart_denylist(pool: Any) -> frozenset[str]:
     the two invariants denied.
     """
     try:
-        from brain.remediation import rules as _rules
+        from poindexter.brain.remediation import rules as _rules
         raw = await _rules._read_str(pool, _DENYLIST_SETTING, "")
     except Exception:  # noqa: BLE001 — guard must never fail open
         return _NEVER_RESTART

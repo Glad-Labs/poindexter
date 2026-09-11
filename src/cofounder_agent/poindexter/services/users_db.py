@@ -14,10 +14,10 @@ from uuid import uuid4
 
 from asyncpg import Pool
 
+from poindexter.schemas.database_response_models import OAuthAccountResponse, UserResponse
+from poindexter.schemas.model_converter import ModelConverter
 from poindexter.services.logger_config import get_logger
 from poindexter.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
-from schemas.database_response_models import OAuthAccountResponse, UserResponse
-from schemas.model_converter import ModelConverter
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance

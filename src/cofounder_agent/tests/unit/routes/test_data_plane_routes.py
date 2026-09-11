@@ -21,7 +21,7 @@ _SVC = "poindexter.services.declarative_config_service"
 
 
 def _app(mock_db=None):
-    from routes.data_plane_routes import router
+    from poindexter.routes.data_plane_routes import router
 
     app = FastAPI()
     app.include_router(router)
@@ -113,7 +113,7 @@ class TestDataPlaneRoutes:
     def test_every_route_requires_auth(self):
         # Core to #1340: the HTTP mirror must be OAuth-guarded. Assert every
         # route declares the verify_api_token dependency.
-        from routes.data_plane_routes import router
+        from poindexter.routes.data_plane_routes import router
 
         for route in router.routes:
             calls = {d.call for d in route.dependant.dependencies}

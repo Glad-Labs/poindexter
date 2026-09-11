@@ -18,8 +18,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.revalidate_routes import router, trigger_nextjs_revalidation
 from poindexter.services.revalidation_service import RevalidationResult
-from routes.revalidate_routes import router, trigger_nextjs_revalidation
 
 
 def _ok_result(url: str = "https://www.gladlabs.io/api/revalidate") -> RevalidationResult:
@@ -60,7 +60,7 @@ def _build_app() -> FastAPI:
 class TestRevalidateCache:
     def test_returns_200_on_success(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            "poindexter.routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
             new=AsyncMock(return_value=_ok_result()),
         ):
             client = TestClient(_build_app())
@@ -73,7 +73,7 @@ class TestRevalidateCache:
 
     def test_response_has_success_true_when_revalidation_succeeds(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            "poindexter.routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
             new=AsyncMock(return_value=_ok_result()),
         ):
             client = TestClient(_build_app())
@@ -87,7 +87,7 @@ class TestRevalidateCache:
 
     def test_response_has_success_false_when_revalidation_fails(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            "poindexter.routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
             new=AsyncMock(return_value=_fail_result()),
         ):
             client = TestClient(_build_app())
@@ -101,7 +101,7 @@ class TestRevalidateCache:
 
     def test_response_includes_paths(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            "poindexter.routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
             new=AsyncMock(return_value=_ok_result()),
         ):
             client = TestClient(_build_app())
@@ -114,7 +114,7 @@ class TestRevalidateCache:
 
     def test_defaults_to_root_and_archive_when_paths_omitted(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            "poindexter.routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
             new=AsyncMock(return_value=_ok_result()),
         ) as mock_trigger:
             client = TestClient(_build_app())
@@ -141,7 +141,7 @@ class TestRevalidateCache:
         # ['posts', 'post-index']. Verify both arguments are passed.
         custom_paths = ["/blog", "/about"]
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            "poindexter.routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
             new=AsyncMock(return_value=_ok_result()),
         ) as mock_trigger:
             client = TestClient(_build_app())
@@ -159,7 +159,7 @@ class TestRevalidateCache:
     def test_returns_200_with_empty_paths_list(self):
         """Empty paths list falls back to default paths inside the route handler."""
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            "poindexter.routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
             new=AsyncMock(return_value=_ok_result()),
         ):
             client = TestClient(_build_app())

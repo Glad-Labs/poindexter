@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain import business_probes as bp
+from poindexter.brain import business_probes as bp
 
 # ---------------------------------------------------------------------------
 # Helpers

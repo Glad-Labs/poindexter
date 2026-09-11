@@ -21,7 +21,7 @@ import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package resolves
 # the same way the offsite_backup_watch tests import it.
-from brain import auto_embed_watch as ae
+from poindexter.brain import auto_embed_watch as ae
 
 
 def _make_pool(*, setting_values=None, firing=None, executed=None):

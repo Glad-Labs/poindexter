@@ -31,7 +31,7 @@ _BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from brain import oauth_client as oac  # noqa: E402
+from poindexter.brain import oauth_client as oac  # noqa: E402
 
 
 def _make_jwt(exp_offset: int = 3600) -> str:

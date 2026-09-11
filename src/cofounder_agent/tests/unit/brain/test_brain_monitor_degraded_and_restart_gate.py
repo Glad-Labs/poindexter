@@ -40,7 +40,7 @@ _BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from brain import brain_daemon as bd  # noqa: E402
+from poindexter.brain import brain_daemon as bd  # noqa: E402
 
 
 def _http_error(code: int, body: bytes, reason: str = "Service Unavailable"):

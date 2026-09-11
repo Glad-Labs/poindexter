@@ -57,13 +57,13 @@ except ImportError:  # pragma: no cover
 # re-resolve through the import system each call, but pytest patches
 # the package-qualified module — having the reference here pinned to
 # the same module makes the test deterministic across local + CI.
-from brain.docker_utils import (
+from poindexter.brain.docker_utils import (
     IN_DOCKER as _IN_DOCKER,  # noqa: F401 -- re-exported so tests can patch it here
 )
-from brain.docker_utils import (
+from poindexter.brain.docker_utils import (
     localize_url as _localize_url_impl,
 )
-from brain.operator_notifier import notify_operator
+from poindexter.brain.operator_notifier import notify_operator
 
 
 def _localize(url: str) -> str:

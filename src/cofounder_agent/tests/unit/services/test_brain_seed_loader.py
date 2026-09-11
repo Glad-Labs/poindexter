@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import asyncpg
 import pytest
 
-from brain import seed_loader as sl
+from poindexter.brain import seed_loader as sl
 
 
 def _make_conn():

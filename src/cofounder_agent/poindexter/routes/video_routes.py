@@ -14,10 +14,10 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 
+from poindexter.schemas.media_schemas import VideoEpisodeListResponse
 from poindexter.services.logger_config import get_logger
 from poindexter.services.video_service import VIDEO_DIR
 from poindexter.utils.route_utils import get_site_config_dependency
-from schemas.media_schemas import VideoEpisodeListResponse
 
 logger = get_logger(__name__)
 

@@ -338,7 +338,7 @@ class TestVerifyRecoveryDrill:
                 "verify-recovery resolved a DSN — it must not read the DB"
             )
 
-        monkeypatch.setattr("brain.bootstrap.resolve_database_url", _boom)
+        monkeypatch.setattr("poindexter.brain.bootstrap.resolve_database_url", _boom)
         monkeypatch.setattr(bk, "_get_setting", _boom)
         monkeypatch.setattr(bk, "_resolved_secret_env", _boom)
         monkeypatch.setattr(bk, "_run_or_die", _boom)

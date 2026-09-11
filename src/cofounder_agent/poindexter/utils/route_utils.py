@@ -357,7 +357,7 @@ OLD PATTERN (still works but deprecated):
 ===========================================
 
 In main.py:
-    from routes.task_routes import set_db_service
+    from poindexter.routes.task_routes import set_db_service
     set_db_service(database_service)
 
 In task_routes.py:

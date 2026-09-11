@@ -63,8 +63,8 @@ try:  # pragma: no cover — only fails when the dep is uninstalled
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
-from brain.operator_notifier import notify_operator
-from brain.secret_reader import read_app_setting as _shared_read_app_setting
+from poindexter.brain.operator_notifier import notify_operator
+from poindexter.brain.secret_reader import read_app_setting as _shared_read_app_setting
 
 logger = logging.getLogger("brain.pr_staleness_probe")
 
@@ -819,7 +819,7 @@ class PRStalenessProbe:
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
     async def check(self, pool, config):  # type: ignore[override]
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
 
         summary = await run_pr_staleness_probe(pool)
         return ProbeResult(

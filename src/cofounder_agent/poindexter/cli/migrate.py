@@ -46,7 +46,7 @@ async def _make_pool():
     ``resolve_database_url`` but no new ones are introduced.
     """
 
-    from brain.bootstrap import require_database_url
+    from poindexter.brain.bootstrap import require_database_url
 
     dsn = require_database_url(source="poindexter migrate")
     return await open_cli_pool(dsn)

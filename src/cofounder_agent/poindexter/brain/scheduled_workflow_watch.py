@@ -66,7 +66,7 @@ try:
 except ImportError:  # pragma: no cover — brain ships httpx; degrade loudly
     httpx = None  # type: ignore[assignment]
 
-from brain.secret_reader import read_app_setting as _shared_read_app_setting
+from poindexter.brain.secret_reader import read_app_setting as _shared_read_app_setting
 
 logger = logging.getLogger(__name__)
 

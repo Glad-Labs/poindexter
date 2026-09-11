@@ -135,14 +135,14 @@ try:  # PyYAML is the only new dep (#213).
 except ImportError:  # pragma: no cover — bubbled up below
     _yaml = None
 
-from brain.operator_notifier import notify_operator
+from poindexter.brain.operator_notifier import notify_operator
 
 try:  # httpx is used only for the host-recover POST; degrade if absent.
     import httpx
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
-from brain.secret_reader import read_app_setting as _read_secret_setting
+from poindexter.brain.secret_reader import read_app_setting as _read_secret_setting
 
 logger = logging.getLogger("brain.compose_drift_probe")
 
@@ -1652,7 +1652,7 @@ class ComposeDriftProbe:
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
     async def check(self, pool, config):  # type: ignore[override]
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
 
         summary = await run_compose_drift_probe(pool, docker_reachable_fn=_docker_reachable)
         return ProbeResult(

@@ -24,11 +24,11 @@ from typing import Any
 
 import asyncpg
 
-from config import get_config
+from poindexter.config import get_config
+from poindexter.schemas.typed_records import PaginatedTasksResult, TaskRecord
 from poindexter.services.logger_config import get_logger
 from poindexter.services.module_paths import resolve_module_path
 from poindexter.services.site_config import SiteConfig
-from schemas.typed_records import PaginatedTasksResult, TaskRecord
 
 from .admin_db import AdminDatabase
 from .audit_log import AuditLogger, drain_pending_writes, init_global_audit_logger
@@ -123,10 +123,10 @@ class DatabaseService:
             _resolve = None
             try:
 
-                from brain.bootstrap import (
+                from poindexter.brain.bootstrap import (
                     require_database_url as _require,  # type: ignore[no-redef]
                 )
-                from brain.bootstrap import (
+                from poindexter.brain.bootstrap import (
                     resolve_database_url as _resolve,  # type: ignore[no-redef]
                 )
 

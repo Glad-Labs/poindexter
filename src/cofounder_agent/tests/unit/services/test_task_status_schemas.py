@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from schemas.task_status_schemas import (
+from poindexter.schemas.task_status_schemas import (
     TaskStatusFilterRequest,
     TaskStatusHistoryEntry,
     TaskStatusInfo,

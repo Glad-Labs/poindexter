@@ -62,7 +62,7 @@ def _bootstrap_resolve_dsn() -> str | None:
                 sys.path.insert(0, str(p))
             break
     try:
-        from brain.bootstrap import resolve_database_url
+        from poindexter.brain.bootstrap import resolve_database_url
         return resolve_database_url()
     except Exception:
         return None

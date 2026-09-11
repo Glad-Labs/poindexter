@@ -31,9 +31,9 @@ _BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from brain import branch_drift_probe as bdp  # noqa: E402
+from poindexter.brain import branch_drift_probe as bdp  # noqa: E402
 
-_LOGGER = "brain.branch_drift_probe"
+_LOGGER = "poindexter.brain.branch_drift_probe"
 
 
 @pytest.mark.unit

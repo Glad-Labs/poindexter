@@ -9,7 +9,7 @@ from uuid import UUID
 
 import pytest
 
-from schemas.database_response_models import (
+from poindexter.schemas.database_response_models import (
     CategoryResponse,
     CostLogResponse,
     ErrorResponse,
@@ -22,7 +22,7 @@ from schemas.database_response_models import (
     TaskResponse,
     UserResponse,
 )
-from schemas.model_converter import ModelConverter
+from poindexter.schemas.model_converter import ModelConverter
 
 NOW = datetime.now(timezone.utc)
 

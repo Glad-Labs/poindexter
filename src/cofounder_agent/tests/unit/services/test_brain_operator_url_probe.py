@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from brain import operator_url_probe as oup
+from poindexter.brain import operator_url_probe as oup
 
 
 def _make_pool(rows=None):

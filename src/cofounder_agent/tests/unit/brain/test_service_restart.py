@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from brain import service_restart as sr
+from poindexter.brain import service_restart as sr
 
 pytestmark = pytest.mark.asyncio
 

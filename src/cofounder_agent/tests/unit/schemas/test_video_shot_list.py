@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from schemas.video_shot_list import Shot, VideoShotList, scan_for_human_tokens
+from poindexter.schemas.video_shot_list import Shot, VideoShotList, scan_for_human_tokens
 
 
 def _now() -> datetime:

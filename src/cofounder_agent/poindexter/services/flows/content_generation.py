@@ -973,7 +973,7 @@ async def _build_default_database_service() -> Any:
     identical regardless of whether the flow runs from inside a
     container, the host shell, or the Prefect worker pool.
     """
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
     from poindexter.services.database_service import DatabaseService
     from poindexter.services.site_config import SiteConfig
 

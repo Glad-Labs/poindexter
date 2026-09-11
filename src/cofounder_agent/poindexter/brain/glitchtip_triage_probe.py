@@ -45,13 +45,13 @@ try:  # pragma: no cover — only fails when the dep is uninstalled
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
-from brain.docker_utils import localize_url
-from brain.operator_notifier import notify_operator
+from poindexter.brain.docker_utils import localize_url
+from poindexter.brain.operator_notifier import notify_operator
 
 # Shared brain secret reader — single source of truth for app_settings
 # decryption. Replaces the duplicated _read_secret implementation that
 # used to live below; closes Glad-Labs/poindexter#342.
-from brain.secret_reader import read_app_setting as _shared_read_app_setting
+from poindexter.brain.secret_reader import read_app_setting as _shared_read_app_setting
 
 logger = logging.getLogger("brain.glitchtip_triage_probe")
 
@@ -821,7 +821,7 @@ class GlitchTipTriageProbe:
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
     async def check(self, pool, config):  # type: ignore[override]
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
 
         summary = await run_glitchtip_triage_probe(pool)
         return ProbeResult(

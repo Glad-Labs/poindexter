@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from brain import ollama_runner_ram_watch as ow
+from poindexter.brain import ollama_runner_ram_watch as ow
 
 
 class _Pool:

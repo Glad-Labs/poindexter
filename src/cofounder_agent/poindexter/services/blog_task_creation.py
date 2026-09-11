@@ -22,9 +22,9 @@ import uuid as uuid_lib
 from datetime import datetime, timezone
 from typing import Any
 
+from poindexter.schemas.task_schemas import UnifiedTaskRequest
 from poindexter.services.logger_config import get_logger
 from poindexter.services.topic_length import pick_target_length
-from schemas.task_schemas import UnifiedTaskRequest
 
 logger = get_logger(__name__)
 

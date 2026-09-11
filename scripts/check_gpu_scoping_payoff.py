@@ -26,6 +26,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
+# poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
+# the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
+sys.path.insert(0, str(REPO / "src" / "cofounder_agent"))
 
 #: When device scoping was enabled in app_settings (UTC).
 #: A real tz-aware datetime, NOT a string: asyncpg binds timestamptz params by
@@ -46,7 +49,7 @@ async def _gather() -> dict:
     a bound later came from somewhere less trusted than a module constant.
     """
     import asyncpg
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
 
     now = _dt.datetime.now(_dt.UTC)
     after = (CUTOVER, now)
@@ -147,7 +150,7 @@ def main() -> int:
 
     if not args.quiet:
         try:
-            from brain.operator_notifier import notify_operator
+            from poindexter.brain.operator_notifier import notify_operator
 
             notify_operator(
                 f"GPU scoping follow-up: {verdict.split(' —')[0]}",

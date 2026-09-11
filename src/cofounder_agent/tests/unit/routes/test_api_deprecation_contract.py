@@ -26,7 +26,7 @@ import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.routing import APIRoute
 
-import routes as routes_pkg
+import poindexter.routes as routes_pkg
 
 pytestmark = pytest.mark.unit
 
@@ -73,7 +73,7 @@ def test_legacy_skip_alias_is_machine_deprecated() -> None:
     """The ``skip`` pagination alias on ``GET /api/posts`` is a deprecated
     fallback for ``offset`` — it must be ``Query(deprecated=True)`` so the
     OpenAPI param carries ``deprecated: true``."""
-    from routes.cms_routes import router as cms_router
+    from poindexter.routes.cms_routes import router as cms_router
 
     app = FastAPI()
     app.include_router(cms_router)
@@ -94,7 +94,7 @@ def test_settings_page_per_page_are_machine_deprecated() -> None:
     canonical `offset`/`limit` pair (#635) but were never marked
     `deprecated=True` on the Query() declarations (poindexter#746 item 2),
     so OpenAPI/Swagger/codegen presented both systems as equally current."""
-    from routes.settings_routes import router as settings_router
+    from poindexter.routes.settings_routes import router as settings_router
 
     app = FastAPI()
     app.include_router(settings_router)

@@ -71,13 +71,13 @@ def _patch_operator_id(monkeypatch):
     # Patch the cached module-level reference in each route module that
     # does ``from middleware.api_token_auth import OPERATOR_ID``.
     try:
-        import routes.writing_style_routes as ws_mod
+        import poindexter.routes.writing_style_routes as ws_mod
 
         monkeypatch.setattr(ws_mod, "OPERATOR_ID", target_id)
     except ImportError:
         pass
     try:
-        import routes.workflow_history as wh_mod
+        import poindexter.routes.workflow_history as wh_mod
 
         monkeypatch.setattr(wh_mod, "OPERATOR_ID", target_id)
     except ImportError:

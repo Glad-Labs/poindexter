@@ -7,7 +7,7 @@ envelope is what gets canonicalized.
 
 from typing import Any
 
-from schemas.database_response_models import ListResponse
+from poindexter.schemas.database_response_models import ListResponse
 
 
 class TopicProposalListResponse(ListResponse[dict[str, Any]]):

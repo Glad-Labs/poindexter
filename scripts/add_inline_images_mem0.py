@@ -156,7 +156,7 @@ async def main() -> int:
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
         sys.path.insert(0, "/app")
-        from brain.bootstrap import resolve_database_url  # type: ignore
+        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
         dsn = resolve_database_url()
 
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)

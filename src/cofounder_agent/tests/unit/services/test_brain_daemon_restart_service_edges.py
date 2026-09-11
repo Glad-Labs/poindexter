@@ -51,7 +51,7 @@ pytestmark = [
     ),
 ]
 
-from brain import brain_daemon as bd  # noqa: E402
+from poindexter.brain import brain_daemon as bd  # noqa: E402
 
 
 @pytest.fixture

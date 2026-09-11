@@ -277,10 +277,10 @@ def fake_pool_and_config(monkeypatch):
     monkeypatch.setitem(sys.modules, "asyncpg", fake_asyncpg)
 
     fake_brain = types.ModuleType("brain")
-    fake_brain_bootstrap = types.ModuleType("brain.bootstrap")
+    fake_brain_bootstrap = types.ModuleType("poindexter.brain.bootstrap")
     fake_brain_bootstrap.require_database_url = lambda **_kw: "postgres://stub"
-    monkeypatch.setitem(sys.modules, "brain", fake_brain)
-    monkeypatch.setitem(sys.modules, "brain.bootstrap", fake_brain_bootstrap)
+    monkeypatch.setitem(sys.modules, "poindexter.brain", fake_brain)
+    monkeypatch.setitem(sys.modules, "poindexter.brain.bootstrap", fake_brain_bootstrap)
 
     # services.site_config is the canonical home of SiteConfig in the
     # real codebase; replace it with a swappable handle for the test.

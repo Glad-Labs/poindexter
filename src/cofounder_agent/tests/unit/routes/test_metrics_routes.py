@@ -20,8 +20,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.metrics_routes import metrics_router
 from poindexter.utils.route_utils import get_database_dependency
-from routes.metrics_routes import metrics_router
 from tests.unit.routes.conftest import make_mock_db
 
 # ---------------------------------------------------------------------------
@@ -273,14 +273,14 @@ def _make_mock_cost_service():
 class TestGetBudgetStatus:
     def test_returns_200(self):
         mock_svc = _make_mock_cost_service()
-        with patch("routes.metrics_routes.CostAggregationService", return_value=mock_svc):
+        with patch("poindexter.routes.metrics_routes.CostAggregationService", return_value=mock_svc):
             client = TestClient(_build_app())
             resp = client.get("/api/metrics/costs/budget")
         assert resp.status_code == 200
 
     def test_custom_monthly_budget_forwarded(self):
         mock_svc = _make_mock_cost_service()
-        with patch("routes.metrics_routes.CostAggregationService", return_value=mock_svc):
+        with patch("poindexter.routes.metrics_routes.CostAggregationService", return_value=mock_svc):
             client = TestClient(_build_app())
             client.get("/api/metrics/costs/budget?monthly_budget=500")
         mock_svc.get_budget_status.assert_awaited_once_with(monthly_budget=500.0)
@@ -289,7 +289,7 @@ class TestGetBudgetStatus:
         # Omitting the param sends None so the service reads the operator's real
         # cap from app_settings (no hardcoded $150 at the route boundary).
         mock_svc = _make_mock_cost_service()
-        with patch("routes.metrics_routes.CostAggregationService", return_value=mock_svc):
+        with patch("poindexter.routes.metrics_routes.CostAggregationService", return_value=mock_svc):
             client = TestClient(_build_app())
             client.get("/api/metrics/costs/budget")
         mock_svc.get_budget_status.assert_awaited_once_with(monthly_budget=None)
@@ -302,7 +302,7 @@ class TestGetBudgetStatus:
     def test_db_error_returns_500(self):
         failing_svc = AsyncMock()
         failing_svc.get_budget_status = AsyncMock(side_effect=RuntimeError("DB error"))
-        with patch("routes.metrics_routes.CostAggregationService", return_value=failing_svc):
+        with patch("poindexter.routes.metrics_routes.CostAggregationService", return_value=failing_svc):
             client = TestClient(_build_app())
             resp = client.get("/api/metrics/costs/budget")
         assert resp.status_code == 500

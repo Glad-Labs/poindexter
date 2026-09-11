@@ -1036,8 +1036,8 @@ def _patch_pg(dsn: str | None = "postgresql://test/db", conn=None):
         "sys.modules",
         {
             "asyncpg": mock_asyncpg,
-            "brain": MagicMock(),
-            "brain.bootstrap": mock_brain_bootstrap,
+            "poindexter.brain": MagicMock(),
+            "poindexter.brain.bootstrap": mock_brain_bootstrap,
         },
     ), mock_asyncpg, mock_brain_bootstrap
 

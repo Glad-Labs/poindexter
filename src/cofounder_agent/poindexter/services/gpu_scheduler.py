@@ -933,7 +933,9 @@ class GPUScheduler:
         try:
             import asyncpg  # type: ignore[import-untyped]
 
-            from brain.bootstrap import resolve_database_url  # type: ignore[import-untyped]
+            from poindexter.brain.bootstrap import (
+                resolve_database_url,  # type: ignore[import-untyped]
+            )
         except ImportError:
             logger.debug("[GPU] asyncpg/brain.bootstrap unavailable — skipping pg advisory lock")
             return
@@ -1706,7 +1708,7 @@ class GPUScheduler:
         try:
             import asyncpg
 
-            from brain.bootstrap import resolve_database_url
+            from poindexter.brain.bootstrap import resolve_database_url
         except Exception:
             # silent-ok: asyncpg + brain.bootstrap are core deps — an import
             # failure here is a systemic, constant condition (the worker is

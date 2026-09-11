@@ -17,9 +17,10 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, R
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
-# Import configuration
-from config import get_config
 from middleware.api_token_auth import verify_api_token
+
+# Import configuration
+from poindexter.config import get_config
 from poindexter.modules.content.api import UnifiedQualityService
 from poindexter.services.container import service_container
 

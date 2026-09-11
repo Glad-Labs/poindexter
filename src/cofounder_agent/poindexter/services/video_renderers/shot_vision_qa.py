@@ -24,7 +24,7 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any
 
-from schemas.video_shot_list import Shot
+from poindexter.schemas.video_shot_list import Shot
 
 logger = logging.getLogger(__name__)
 

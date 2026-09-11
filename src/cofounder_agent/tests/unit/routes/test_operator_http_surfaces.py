@@ -45,7 +45,7 @@ def _mock_site_config() -> MagicMock:
 
 
 def _app_gates(mock_db=None):
-    from routes.gates_routes import router
+    from poindexter.routes.gates_routes import router
 
     app = FastAPI()
     app.include_router(router)
@@ -57,7 +57,7 @@ def _app_gates(mock_db=None):
 
 
 def _app_posts_approval(mock_db=None):
-    from routes.posts_approval_routes import router
+    from poindexter.routes.posts_approval_routes import router
 
     app = FastAPI()
     app.include_router(router)
@@ -69,7 +69,7 @@ def _app_posts_approval(mock_db=None):
 
 
 def _app_scheduling(mock_db=None):
-    from routes.scheduling_routes import router
+    from poindexter.routes.scheduling_routes import router
 
     app = FastAPI()
     app.include_router(router)
@@ -81,7 +81,7 @@ def _app_scheduling(mock_db=None):
 
 
 def _app_topic_batch(mock_db=None):
-    from routes.topic_batch_routes import router
+    from poindexter.routes.topic_batch_routes import router
 
     app = FastAPI()
     app.include_router(router)
@@ -93,7 +93,7 @@ def _app_topic_batch(mock_db=None):
 
 
 def _app_media_approval(mock_db=None):
-    from routes.media_approval_routes import router
+    from poindexter.routes.media_approval_routes import router
 
     app = FastAPI()
     app.include_router(router)

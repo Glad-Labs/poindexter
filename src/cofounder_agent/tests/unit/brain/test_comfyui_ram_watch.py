@@ -28,7 +28,7 @@ import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package resolves
 # the same way the postiz_queue_watch tests import it.
-from brain import comfyui_ram_watch as cw
+from poindexter.brain import comfyui_ram_watch as cw
 
 
 def _make_pool(*, setting_values=None, executed=None):

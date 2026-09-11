@@ -20,7 +20,7 @@ import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package resolves
 # the same way the backup_watcher tests import it.
-from brain import offsite_backup_watch as ow
+from poindexter.brain import offsite_backup_watch as ow
 
 
 def _make_pool(*, setting_values=None, firing=None, executed=None):

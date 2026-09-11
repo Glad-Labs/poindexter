@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from poindexter.plugins.probe_registry import BrainProbeRegistry
-from routes.module_probes_routes import router as module_probes_router
+from poindexter.routes.module_probes_routes import router as module_probes_router
 
 
 async def _fake_probe() -> dict[str, str]:

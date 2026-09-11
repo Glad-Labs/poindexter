@@ -32,8 +32,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from poindexter.routes.oauth_routes import authorization_router
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
-from routes.oauth_routes import authorization_router
 
 # ---------------------------------------------------------------------------
 # Signing key — issue_token reads POINDEXTER_SECRET_KEY at call time.
@@ -108,7 +108,7 @@ def patch_provider(monkeypatch):
         provider = MagicMock()
         provider.get_client = AsyncMock(return_value=provider_client)
         monkeypatch.setattr(
-            "routes.oauth_routes.PoindexterOAuthProvider",
+            "poindexter.routes.oauth_routes.PoindexterOAuthProvider",
             lambda pool: provider,
         )
         return provider

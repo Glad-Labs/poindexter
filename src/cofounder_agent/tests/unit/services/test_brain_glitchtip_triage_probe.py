@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain import glitchtip_triage_probe as gt
+from poindexter.brain import glitchtip_triage_probe as gt
 
 
 def _make_pool(settings: dict[str, str] | None = None, secrets: dict[str, str] | None = None):

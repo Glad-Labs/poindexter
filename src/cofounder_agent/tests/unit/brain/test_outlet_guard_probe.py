@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain import outlet_guard_probe as og
+from poindexter.brain import outlet_guard_probe as og
 
 PLUG = "http://10.0.0.5"
 

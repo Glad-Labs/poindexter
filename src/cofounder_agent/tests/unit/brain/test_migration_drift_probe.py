@@ -15,7 +15,7 @@ import time
 from itertools import pairwise
 from unittest.mock import AsyncMock, MagicMock
 
-from brain import migration_drift_probe as md
+from poindexter.brain import migration_drift_probe as md
 
 
 def _make_pool():

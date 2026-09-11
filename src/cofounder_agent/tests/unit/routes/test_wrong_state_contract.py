@@ -20,8 +20,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.approval_routes import router as approval_router
 from poindexter.utils.route_utils import get_database_dependency
-from routes.approval_routes import router as approval_router
 from tests.unit.routes.conftest import make_mock_db
 
 # task_status_routes imports from task_routes which in turn imports status_router
@@ -102,10 +102,10 @@ def _build_status_validated_client(mock_db=None, mock_status_service=None):
     directly; instead we patch the underlying function in ``utils.route_utils``
     (same pattern as ``test_task_status_routes.py``).
     """
+    from poindexter.routes.task_routes import router as task_router  # noqa: PLC0415
     from poindexter.services.enhanced_status_change_service import (
         EnhancedStatusChangeService,  # noqa: PLC0415
     )
-    from routes.task_routes import router as task_router  # noqa: PLC0415
 
     if mock_db is None:
         mock_db = make_mock_db()
@@ -139,7 +139,7 @@ def _build_status_validated_client(mock_db=None, mock_status_service=None):
 
 def _build_publishing_app(mock_db=None) -> FastAPI:
     """Minimal app with publishing_router (approve + publish + go-live)."""
-    from routes.task_publishing_routes import publishing_router
+    from poindexter.routes.task_publishing_routes import publishing_router
 
     if mock_db is None:
         mock_db = make_mock_db()

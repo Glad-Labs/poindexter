@@ -168,7 +168,7 @@ def setup_runtime() -> None:
         _repo_root_boot = _Path_boot(__file__).resolve().parents[1]
         if str(_repo_root_boot) not in _sys_boot.path:
             _sys_boot.path.insert(0, str(_repo_root_boot))
-        from brain.bootstrap import require_database_url
+        from poindexter.brain.bootstrap import require_database_url
 
         LOCAL_DB_DSN = require_database_url(source="mcp_server")
 
@@ -1769,7 +1769,7 @@ def _stdio_main() -> None:
         if str(_repo_root) not in _sys.path:
             _sys.path.insert(0, str(_repo_root))
         try:
-            from brain.operator_notifier import notify_operator
+            from poindexter.brain.operator_notifier import notify_operator
             notify_operator(
                 title="MCP server cannot start — missing required env var",
                 detail=str(exc),

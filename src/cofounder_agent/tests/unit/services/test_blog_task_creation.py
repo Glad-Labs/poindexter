@@ -17,12 +17,12 @@ import pytest
 import poindexter.services.blog_task_creation as btc
 import poindexter.services.pipeline_throttle as pipeline_throttle
 import poindexter.services.topic_dedup_guard as topic_dedup_guard
+from poindexter.schemas.task_schemas import UnifiedTaskRequest
 from poindexter.services import topic_pool as topic_pool_mod
 from poindexter.services.blog_task_creation import (
     BlogTaskCreationError,
     create_blog_post_task,
 )
-from schemas.task_schemas import UnifiedTaskRequest
 
 
 class FakeDb:

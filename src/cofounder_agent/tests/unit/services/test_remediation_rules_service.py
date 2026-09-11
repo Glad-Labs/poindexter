@@ -256,7 +256,7 @@ def test_known_actions_in_sync_with_brain_registry():
     constant (prod code must not import the brain package — only tests may). This
     guard keeps that copy honest: it must equal the brain's real action registry,
     so a new executor can't silently become un-addable via the CLI."""
-    from brain.remediation.registry import ACTION_REGISTRY
+    from poindexter.brain.remediation.registry import ACTION_REGISTRY
 
     assert set(svc._KNOWN_ACTIONS) == set(ACTION_REGISTRY), (
         "services.remediation_rules_service._KNOWN_ACTIONS drifted from "

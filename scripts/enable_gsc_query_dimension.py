@@ -36,7 +36,7 @@ def _resolve_db_url() -> str:
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
         try:
-            from brain.bootstrap import resolve_database_url  # type: ignore
+            from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 
             dsn = resolve_database_url()
         except Exception as exc:  # bootstrap is best-effort on the host

@@ -16,12 +16,15 @@ from pathlib import Path
 
 _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
+# poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
+# the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
+sys.path.insert(0, str(_project_root / "src" / "cofounder_agent"))
 
 
 async def main():
     import asyncpg
     import httpx
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
 
     db_url = os.getenv("DATABASE_URL") or resolve_database_url()
     conn = await asyncpg.connect(db_url)

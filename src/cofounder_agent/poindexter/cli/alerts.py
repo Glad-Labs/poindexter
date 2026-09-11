@@ -203,7 +203,7 @@ def alerts_sync() -> None:
     """Push every enabled rule to Grafana immediately (what the brain daemon
     does every grafana_alert_sync_interval_cycles cycles)."""
     async def _impl(pool):
-        from brain.alert_sync import sync_alert_rules
+        from poindexter.brain.alert_sync import sync_alert_rules
 
         return await sync_alert_rules(pool)
 

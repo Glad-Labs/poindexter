@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain.health_probes import probe_gpu_temperature
+from poindexter.brain.health_probes import probe_gpu_temperature
 
 
 def _make_pool(*, gpu_row, threshold_row, staleness_row=None):

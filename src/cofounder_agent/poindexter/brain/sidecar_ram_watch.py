@@ -56,7 +56,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from brain.ram_recycle_common import (
+from poindexter.brain.ram_recycle_common import (
     coerce_bool,
     coerce_float,
     coerce_int,
@@ -425,7 +425,7 @@ class SidecarRamWatchProbe:
     interval_seconds: int = 300
 
     async def check(self, pool, config):  # type: ignore[override]
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
         summary = await run_sidecar_ram_watch_probe(pool)
         return ProbeResult(
             ok=bool(summary.get("ok", False)),

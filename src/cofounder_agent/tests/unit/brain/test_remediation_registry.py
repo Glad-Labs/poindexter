@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from brain.remediation.registry import (
+from poindexter.brain.remediation.registry import (
     ACTION_REGISTRY,
     ActionResult,
     RemediationContext,
@@ -57,7 +57,7 @@ async def test_known_action_dispatches_with_params():
 
 
 def test_describe_catalog_covers_every_registered_action():
-    from brain.remediation.registry import describe_catalog
+    from poindexter.brain.remediation.registry import describe_catalog
 
     catalog = describe_catalog()
     names = {a["name"] for a in catalog}
@@ -70,7 +70,7 @@ def test_describe_catalog_covers_every_registered_action():
 
 
 def test_describe_catalog_filters_to_allowlist():
-    from brain.remediation.registry import describe_catalog
+    from poindexter.brain.remediation.registry import describe_catalog
 
     catalog = describe_catalog(allowlist=["restart_container"])
     assert {a["name"] for a in catalog} == {"restart_container"}
@@ -78,7 +78,7 @@ def test_describe_catalog_filters_to_allowlist():
 
 def test_describe_catalog_empty_allowlist_means_all():
     """Mirrors config semantics: an empty allowlist = no restriction = all."""
-    from brain.remediation.registry import describe_catalog
+    from poindexter.brain.remediation.registry import describe_catalog
 
     assert {a["name"] for a in describe_catalog(allowlist=[])} == set(ACTION_REGISTRY.keys())
 
@@ -86,7 +86,7 @@ def test_describe_catalog_empty_allowlist_means_all():
 def test_describe_catalog_ignores_unknown_allowlist_entries():
     """An allowlist naming a non-registered action never fabricates a catalog
     entry — you can only offer actions that actually execute."""
-    from brain.remediation.registry import describe_catalog
+    from poindexter.brain.remediation.registry import describe_catalog
 
     catalog = describe_catalog(allowlist=["restart_container", "no_such_action"])
     assert {a["name"] for a in catalog} == {"restart_container"}
@@ -140,7 +140,7 @@ def _ctx_with(pool):
 )
 async def test_hardcoded_denylist_blocks_restart(monkeypatch, container):
     """The two invariants are refused, and docker is never reached."""
-    import brain.remediation.registry as reg
+    import poindexter.brain.remediation.registry as reg
 
     spy = _SpyDaemon()
     monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: spy)
@@ -161,7 +161,7 @@ async def test_denied_status_is_not_ok_so_the_engine_pages(monkeypatch):
     That is the whole safety property: refusing the action must ALSO surface the
     alert to a human, not silently swallow it.
     """
-    import brain.remediation.registry as reg
+    import poindexter.brain.remediation.registry as reg
 
     monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: _SpyDaemon())
     result = await reg._restart_container(
@@ -174,7 +174,7 @@ async def test_denied_status_is_not_ok_so_the_engine_pages(monkeypatch):
 @pytest.mark.asyncio
 async def test_allowed_container_still_restarts(monkeypatch):
     """No regression: an ordinary container is untouched by the guard."""
-    import brain.remediation.registry as reg
+    import poindexter.brain.remediation.registry as reg
 
     spy = _SpyDaemon()
     monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: spy)
@@ -190,7 +190,7 @@ async def test_allowed_container_still_restarts(monkeypatch):
 @pytest.mark.asyncio
 async def test_operator_additions_are_honoured(monkeypatch):
     """`ops_firefighter_restart_denylist` ADDS install-specific names."""
-    import brain.remediation.registry as reg
+    import poindexter.brain.remediation.registry as reg
 
     spy = _SpyDaemon()
     monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: spy)
@@ -217,7 +217,7 @@ async def test_setting_can_never_reopen_the_floor(monkeypatch, setting_value):
     two invariants — otherwise the guard has an off switch, which is exactly the
     foot-gun it exists to remove.
     """
-    import brain.remediation.registry as reg
+    import poindexter.brain.remediation.registry as reg
 
     spy = _SpyDaemon()
     monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: spy)
@@ -238,7 +238,7 @@ async def test_guard_fails_closed_when_the_settings_read_raises(monkeypatch):
     A guard that fails open is worse than none: it would be silently absent in
     exactly the degraded conditions where the firefighter is most active.
     """
-    import brain.remediation.registry as reg
+    import poindexter.brain.remediation.registry as reg
 
     class _ExplodingPool:
         async def fetchval(self, *a, **k):
@@ -259,7 +259,7 @@ def test_catalog_warns_the_model_off_the_denied_containers():
     """Layer one: the catalog description is the ONLY thing the selector sees,
     so naming the forbidden containers there suppresses the pick at the source.
     The executor guard is the backstop for when it picks them anyway."""
-    from brain.remediation.registry import describe_catalog
+    from poindexter.brain.remediation.registry import describe_catalog
 
     desc = next(
         a["description"] for a in describe_catalog() if a["name"] == "restart_container"

@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from config import get_config
+from poindexter.config import get_config
 from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)

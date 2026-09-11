@@ -60,7 +60,7 @@ async def _record(applied: list[dict]) -> None:
         return
     try:
         import asyncpg  # local import: only needed when actually writing
-        from brain.bootstrap import resolve_database_url
+        from poindexter.brain.bootstrap import resolve_database_url
     except Exception as exc:  # pragma: no cover
         print(f"[sweep] audit_log skipped (deps unavailable): {exc}", file=sys.stderr)
         return

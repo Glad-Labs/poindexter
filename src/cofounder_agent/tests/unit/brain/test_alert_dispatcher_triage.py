@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from brain import alert_dispatcher as ad
+from poindexter.brain import alert_dispatcher as ad
 
 # ---------------------------------------------------------------------------
 # Pool builder + canned settings
@@ -121,7 +121,7 @@ class TestParallelScheduling:
             # Return a real (already-done) task to satisfy the caller.
             return original_create_task(_no_op_coro(), name=name)
 
-        with patch("brain.alert_dispatcher.asyncio.create_task", side_effect=_spy_create_task):
+        with patch("poindexter.brain.alert_dispatcher.asyncio.create_task", side_effect=_spy_create_task):
             await ad.poll_and_dispatch(pool, notify_fn=notify_fn)
 
         # The notify attempt failed AND a triage task was scheduled.
@@ -146,7 +146,7 @@ class TestParallelScheduling:
             coro.close()
             return original_create_task(_no_op_coro(), name=name)
 
-        with patch("brain.alert_dispatcher.asyncio.create_task", side_effect=_spy):
+        with patch("poindexter.brain.alert_dispatcher.asyncio.create_task", side_effect=_spy):
             await ad.poll_and_dispatch(pool, notify_fn=notify_fn)
 
         assert any(name and name.startswith("triage_one_22") for name in scheduled)
@@ -199,7 +199,7 @@ class TestRetries:
         fake_mod.send_followup = _spy_followup
 
         with patch.object(ad, "_post_triage_sync", side_effect=_fake_post), \
-             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"poindexter.brain.brain_daemon": fake_mod}):
             result = await ad._triage_one(
                 pool, row, notify_result, sleep_fn=_spy_sleep,
             )
@@ -292,7 +292,7 @@ class TestNoRetryStatuses:
             return None
 
         with patch.object(ad, "_post_triage_sync", side_effect=_402), \
-             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"poindexter.brain.brain_daemon": fake_mod}):
             result = await ad._triage_one(
                 pool, row, notify_result, sleep_fn=_spy_sleep,
             )
@@ -341,7 +341,7 @@ class TestFollowupThreading:
             return None
 
         with patch.object(ad, "_post_triage_sync", side_effect=_ok), \
-             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"poindexter.brain.brain_daemon": fake_mod}):
             await ad._triage_one(
                 pool, row, notify_result, sleep_fn=_spy_sleep,
             )
@@ -408,7 +408,7 @@ class TestFollowupThreading:
             return None
 
         with patch.object(ad, "_post_triage_sync", side_effect=_ok), \
-             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"poindexter.brain.brain_daemon": fake_mod}):
             await ad._triage_one(pool, row, notify_result, sleep_fn=_spy_sleep)
 
         text = captured["text"]
@@ -451,7 +451,7 @@ class TestFollowupThreading:
             return None
 
         with patch.object(ad, "_post_triage_sync", side_effect=_empty), \
-             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"poindexter.brain.brain_daemon": fake_mod}):
             await ad._triage_one(
                 pool, row, notify_result, sleep_fn=_spy_sleep,
             )
@@ -482,7 +482,7 @@ class TestKillSwitch:
             coro.close()
             return original_create_task(_no_op_coro(), name=name)
 
-        with patch("brain.alert_dispatcher.asyncio.create_task", side_effect=_spy):
+        with patch("poindexter.brain.alert_dispatcher.asyncio.create_task", side_effect=_spy):
             await ad.poll_and_dispatch(pool, notify_fn=notify_fn)
 
         # No triage task should have been scheduled when the kill-switch
@@ -507,7 +507,7 @@ class TestKillSwitch:
             coro.close()
             return original_create_task(_no_op_coro(), name=name)
 
-        with patch("brain.alert_dispatcher.asyncio.create_task", side_effect=_spy):
+        with patch("poindexter.brain.alert_dispatcher.asyncio.create_task", side_effect=_spy):
             await ad.poll_and_dispatch(pool, notify_fn=notify_fn)
 
         assert any(name and name.startswith("triage_one_78") for name in scheduled)

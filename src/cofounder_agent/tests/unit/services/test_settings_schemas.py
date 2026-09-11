@@ -7,7 +7,7 @@ Tests field validation and model behaviour for settings schemas.
 import pytest
 from pydantic import ValidationError
 
-from schemas.settings_schemas import (
+from poindexter.schemas.settings_schemas import (
     SettingBulkUpdateRequest,
     SettingCreate,
     SettingDataTypeEnum,

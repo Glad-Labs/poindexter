@@ -72,7 +72,7 @@ class _FakePool:
         q = " ".join(query.split())  # collapse whitespace
         if "FROM brain_knowledge" in q and "health_status" in q and "MAX" not in q:
             return [_StrictRow(r) for r in self._probe_rows]
-        if "brain.cycle_heartbeat" in q or "AS sources" in q:
+        if "poindexter.brain.cycle_heartbeat" in q or "AS sources" in q:
             return [_StrictRow({"newest": self._newest_signal})]
         if "FROM app_settings" in q:
             return [

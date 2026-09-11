@@ -8,8 +8,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.logs_routes import router
 from poindexter.utils.route_utils import get_site_config_dependency
-from routes.logs_routes import router
 
 SAMPLE = {
     "lines": [
@@ -38,7 +38,7 @@ def _build_app(*, authed=True):
 @pytest.mark.unit
 def test_returns_logs_payload():
     app = _build_app()
-    with patch("routes.logs_routes.read_logs", new=AsyncMock(return_value=SAMPLE)) as m:
+    with patch("poindexter.routes.logs_routes.read_logs", new=AsyncMock(return_value=SAMPLE)) as m:
         res = TestClient(app).get("/api/logs?service=poindexter-worker&level=error")
     assert res.status_code == 200
     assert res.json() == SAMPLE

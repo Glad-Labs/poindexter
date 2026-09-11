@@ -22,8 +22,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.seo_routes import router
 from poindexter.utils.route_utils import get_database_dependency
-from routes.seo_routes import router
 
 SAMPLE = {
     "queue": [
@@ -78,7 +78,7 @@ def _build_app(db=None, *, authed=True):
 @pytest.mark.unit
 class TestSeoSummary:
     def test_returns_structured_summary(self):
-        with patch("routes.seo_routes.read_seo", new=AsyncMock(return_value=SAMPLE)) as m:
+        with patch("poindexter.routes.seo_routes.read_seo", new=AsyncMock(return_value=SAMPLE)) as m:
             app = _build_app()
             resp = TestClient(app).get("/api/seo")
         assert resp.status_code == 200
@@ -90,14 +90,14 @@ class TestSeoSummary:
         m.assert_awaited_once()
 
     def test_forwards_limit(self):
-        with patch("routes.seo_routes.read_seo", new=AsyncMock(return_value=SAMPLE)) as m:
+        with patch("poindexter.routes.seo_routes.read_seo", new=AsyncMock(return_value=SAMPLE)) as m:
             app = _build_app()
             TestClient(app).get("/api/seo?limit=10")
         assert m.await_args is not None
         assert m.await_args.kwargs["limit"] == 10
 
     def test_default_limit(self):
-        with patch("routes.seo_routes.read_seo", new=AsyncMock(return_value=SAMPLE)) as m:
+        with patch("poindexter.routes.seo_routes.read_seo", new=AsyncMock(return_value=SAMPLE)) as m:
             app = _build_app()
             TestClient(app).get("/api/seo")
         assert m.await_args is not None
@@ -105,7 +105,7 @@ class TestSeoSummary:
 
     def test_rejects_out_of_range_limit(self):
         # limit is clamped by the route's Query bounds (1..100); 0 -> 422.
-        with patch("routes.seo_routes.read_seo", new=AsyncMock(return_value=SAMPLE)):
+        with patch("poindexter.routes.seo_routes.read_seo", new=AsyncMock(return_value=SAMPLE)):
             app = _build_app()
             resp = TestClient(app).get("/api/seo?limit=0")
         assert resp.status_code == 422

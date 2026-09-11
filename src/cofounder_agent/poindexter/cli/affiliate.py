@@ -14,7 +14,7 @@ from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 
 
 async def _connect():
-    from brain import bootstrap
+    from poindexter.brain import bootstrap
 
     dsn = bootstrap.resolve_database_url()
     if not dsn:

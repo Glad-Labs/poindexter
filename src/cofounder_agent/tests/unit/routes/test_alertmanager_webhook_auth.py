@@ -26,8 +26,8 @@ from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from poindexter.routes.alertmanager_webhook_routes import router
 from poindexter.utils.route_utils import get_database_dependency
-from routes.alertmanager_webhook_routes import router
 
 
 class _FakeConn:
@@ -94,7 +94,7 @@ class TestBearerTokenAuth:
             "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(return_value="correct-token"),
         ), patch(
-            "routes.alertmanager_webhook_routes._ensure_table",
+            "poindexter.routes.alertmanager_webhook_routes._ensure_table",
             new=AsyncMock(return_value=None),
         ):
             resp = client.post(
@@ -139,7 +139,7 @@ class TestImplementationDetails:
     def test_uses_hmac_compare_digest(self):
         """Make sure we didn't regress to ``==`` — timing-safe comparison
         matters when the attacker can observe response latency."""
-        from routes import alertmanager_webhook_routes as mod
+        from poindexter.routes import alertmanager_webhook_routes as mod
         source = __import__("inspect").getsource(mod.verify_alertmanager_token)
         assert "compare_digest" in source
 
@@ -180,7 +180,7 @@ class TestOAuthJWT:
             "poindexter.services.auth.oauth_issuer.verify_token",
             return_value=AsyncMock(),
         ), patch(
-            "routes.alertmanager_webhook_routes._ensure_table",
+            "poindexter.routes.alertmanager_webhook_routes._ensure_table",
             new=AsyncMock(return_value=None),
         ):
             resp = client.post(
@@ -233,7 +233,7 @@ class TestOAuthJWT:
             "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(return_value="legacy-static-token-abc123"),
         ), patch(
-            "routes.alertmanager_webhook_routes._ensure_table",
+            "poindexter.routes.alertmanager_webhook_routes._ensure_table",
             new=AsyncMock(return_value=None),
         ):
             resp = client.post(

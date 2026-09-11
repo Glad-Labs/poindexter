@@ -1729,7 +1729,7 @@ class TestInternalFilePathExemption:
         assert _looks_like_file_or_path("api_token_auth.py")
         assert _looks_like_file_or_path("Component.tsx")
         assert _looks_like_file_or_path("worker_service.py")
-        assert _looks_like_file_or_path("config.json")
+        assert _looks_like_file_or_path("poindexter.config.json")
         assert _looks_like_file_or_path("services/foo.py")
         assert _looks_like_file_or_path("web\\public-site\\lib\\posts.ts")
         # Real library / attribute references → False (still validated).

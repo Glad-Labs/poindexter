@@ -31,7 +31,7 @@ from dataclasses import dataclass
 import httpx
 import pytest
 
-from brain.docker_utils import IN_DOCKER
+from poindexter.brain.docker_utils import IN_DOCKER
 
 # ---------------------------------------------------------------------------
 # The one URL — the guard and the code under test must agree on it
@@ -422,7 +422,7 @@ async def platform_stack():
     """
     import asyncpg
 
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
 
     dsn = resolve_database_url()
     if not dsn:

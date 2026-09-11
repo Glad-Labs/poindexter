@@ -28,7 +28,7 @@ import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package
 # resolves the same way the backup_watcher tests import it.
-from brain import smart_monitor as sm
+from poindexter.brain import smart_monitor as sm
 
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned smartctl payloads
@@ -788,7 +788,7 @@ class TestProbeWrapper:
                 },
             }
 
-        import brain.smart_monitor as _sm_mod
+        import poindexter.brain.smart_monitor as _sm_mod
         original = _sm_mod.run_smart_monitor_probe
         _sm_mod.run_smart_monitor_probe = fake_probe  # type: ignore[assignment]
         try:

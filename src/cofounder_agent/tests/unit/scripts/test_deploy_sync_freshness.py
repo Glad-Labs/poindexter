@@ -94,7 +94,7 @@ def test_probe_knows_every_result_the_script_writes(sync_sh):
     string surfaces as unknown rather than being folded into 'healthy' — but
     that only helps if someone notices. This fails the moment the two lists
     disagree."""
-    from brain.deploy_sync_probe import _OK_RESULTS
+    from poindexter.brain.deploy_sync_probe import _OK_RESULTS
 
     written = set(re.findall(r"^\s*write_status\s+([a-z][a-z0-9-]*)", sync_sh, re.M))
     assert written, "found no write_status call sites — did the script move?"

@@ -29,7 +29,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.voice_routes import (
+from poindexter.routes.voice_routes import (
     _DEV_PLACEHOLDER_SECRET,
     _mint_livekit_token,
     _resolve_voice_room,

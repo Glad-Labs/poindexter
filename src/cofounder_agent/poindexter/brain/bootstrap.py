@@ -130,7 +130,7 @@ def require_database_url(
     # Import locally so a broken notifier doesn't mask the real error.
     _sys = sys
     try:
-        from brain.operator_notifier import notify_operator
+        from poindexter.brain.operator_notifier import notify_operator
     except Exception:
         _sys.stderr.write(
             "FATAL: no database URL configured and operator_notifier could not be imported.\n"

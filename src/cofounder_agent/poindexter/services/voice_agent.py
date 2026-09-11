@@ -648,7 +648,7 @@ async def _bootstrap_and_run(brain: str, project_dir: str | None) -> None:
     """Build a SiteConfig from the live DB and start the local mic loop."""
     import asyncpg
 
-    from brain.bootstrap import require_database_url
+    from poindexter.brain.bootstrap import require_database_url
     from poindexter.services.site_config import SiteConfig
 
     dsn = require_database_url(source="voice_agent")

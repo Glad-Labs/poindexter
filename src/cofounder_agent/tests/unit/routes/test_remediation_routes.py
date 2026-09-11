@@ -23,9 +23,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.remediation_routes import router, set_model_router_for_tests
 from poindexter.services.site_config import SiteConfig
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
-from routes.remediation_routes import router, set_model_router_for_tests
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -264,7 +264,7 @@ class TestSelectorModelRouterResolution:
     async def test_paid_writer_does_not_leak_uses_local_pin(self):
         """No ``ops_firefighter_model`` + a PAID ``pipeline_writer_model``: the
         selector must resolve the LOCAL writer pin, never the paid model."""
-        from routes.remediation_routes import _SelectorModelRouter
+        from poindexter.routes.remediation_routes import _SelectorModelRouter
 
         sc = SiteConfig(initial_config={
             "ops_firefighter_model": "",  # no dedicated override
@@ -308,7 +308,7 @@ class TestSelectorModelRouterResolution:
         alerts. That is exactly the kind of regression a test has to hold,
         because neither review nor a smoke test will catch it.
         """
-        from routes.remediation_routes import _SelectorModelRouter
+        from poindexter.routes.remediation_routes import _SelectorModelRouter
 
         sc = SiteConfig(initial_config={
             "ops_firefighter_model": "ollama/granite4.2:3b",
@@ -329,7 +329,7 @@ class TestSelectorModelRouterResolution:
     async def test_dedicated_firefighter_model_override_still_wins(self):
         """The dedicated ``ops_firefighter_model`` pin takes precedence over the
         writer chain and is unaffected by the satellite-resolver swap."""
-        from routes.remediation_routes import _SelectorModelRouter
+        from poindexter.routes.remediation_routes import _SelectorModelRouter
 
         sc = SiteConfig(initial_config={
             "ops_firefighter_model": "ollama/llama3.2:3b",

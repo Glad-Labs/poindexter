@@ -19,8 +19,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.approval_routes import router
 from poindexter.utils.route_utils import get_database_dependency
-from routes.approval_routes import router
 from tests.unit.routes.conftest import make_mock_db
 
 
@@ -417,7 +417,7 @@ class TestRejectFinalizeEscalation:
         mock_db.update_task_status_guarded = AsyncMock(return_value="rejected_retry")
         client = TestClient(_build_app(mock_db))
 
-        with patch("routes.approval_routes.audit_log_bg") as mock_audit:
+        with patch("poindexter.routes.approval_routes.audit_log_bg") as mock_audit:
             resp = client.post("/api/tasks/task-001/reject", json=FINAL_BODY)
 
         assert resp.status_code == 200

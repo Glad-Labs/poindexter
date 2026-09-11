@@ -69,6 +69,9 @@ CLAUDE_MD = ROOT / "CLAUDE.md"
 # a scheduled-session worktree). ``brain.bootstrap`` owns DSN resolution.
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+    # poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
+    # the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
+    sys.path.insert(0, str(ROOT / "src" / "cofounder_agent"))
 
 from scripts.lib_readme_stats import (  # noqa: E402  (needs the path bootstrap above)
     FLOOR_STEPS,
@@ -335,7 +338,7 @@ def apply_to_readme(
 
 def _resolve_dsn(explicit: str | None) -> str:
     """Resolve the prod DSN via the brain's canonical resolver; exit 2 if none."""
-    from brain.bootstrap import (
+    from poindexter.brain.bootstrap import (
         resolve_database_url,  # type: ignore[import-not-found]  # lazy: brain pkg on sys.path at runtime
     )
 

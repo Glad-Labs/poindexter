@@ -220,7 +220,7 @@ async def _connect() -> Any | None:
     try:
         import asyncpg  # type: ignore[import-untyped]
 
-        from brain.bootstrap import resolve_database_url  # type: ignore[import-untyped]
+        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore[import-untyped]
     except Exception:
         # silent-ok: core deps missing = the worker is already systemically
         # broken; a per-release finding would only add noise on top.

@@ -37,7 +37,10 @@ import asyncpg
 
 # Repo root on path so ``brain.bootstrap`` resolves when run as ``python scripts/…``.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from brain.bootstrap import resolve_database_url  # noqa: E402  # type: ignore
+# poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
+# the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
+from poindexter.brain.bootstrap import resolve_database_url  # noqa: E402  # type: ignore
 from poindexter.modules.content.atoms.qa_content_originality import (  # noqa: E402
     _DEFAULT_CHUNK_MAX,
     _DEFAULT_CHUNK_MIN,

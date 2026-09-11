@@ -32,7 +32,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from routes.external_webhooks import (
+from poindexter.routes.external_webhooks import (
     _verify_lemon_squeezy_signature,
     _verify_resend_signature,
     lemon_squeezy_webhook,

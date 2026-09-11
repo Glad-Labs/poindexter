@@ -215,7 +215,7 @@ def _default_notify_fn() -> NotifyFn | None:
     only writes the audit row + logs, which is the safe degraded behaviour.
     """
     try:  # pragma: no cover — package-qualified path for the worker side
-        from brain.operator_notifier import notify_operator  # type: ignore
+        from poindexter.brain.operator_notifier import notify_operator  # type: ignore
 
         return notify_operator
     except ImportError:
@@ -477,7 +477,7 @@ class FinancePollStalenessProbe:
         try:  # brain ProbeResult — dual import for container vs. test
             from probe_interface import ProbeResult  # type: ignore
         except ImportError:  # pragma: no cover
-            from brain.probe_interface import ProbeResult  # type: ignore
+            from poindexter.brain.probe_interface import ProbeResult  # type: ignore
 
         fired = bool(summary.get("stale") or summary.get("auth_lost"))
         return ProbeResult(

@@ -69,7 +69,7 @@ async def _resolve_dsn() -> str:
         return dsn
     # Fall back to the bootstrap helper if we're inside the repo.
     try:
-        from brain.bootstrap import resolve_database_url  # type: ignore
+        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 
         maybe = resolve_database_url() or ""
         if maybe:

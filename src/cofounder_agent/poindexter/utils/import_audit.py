@@ -174,7 +174,7 @@ def audit_worker_imports(site_config: Any) -> dict[str, str]:
         for mod, detail in failures.items():
             logger.error("[boot-audit] %s missing — %s", mod, detail)
         try:
-            from brain.operator_notifier import notify_operator
+            from poindexter.brain.operator_notifier import notify_operator
         except ImportError:
             try:
                 from operator_notifier import notify_operator  # type: ignore[no-redef]

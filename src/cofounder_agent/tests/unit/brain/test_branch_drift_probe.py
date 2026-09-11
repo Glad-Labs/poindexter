@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain import branch_drift_probe as bdp
+from poindexter.brain import branch_drift_probe as bdp
 
 _FIXED_NOW = datetime(2026, 6, 2, 12, 0, 0, tzinfo=timezone.utc)
 _LOCAL_HEAD = "abbad234cfa31863c8c43b4587784771d9a76612"

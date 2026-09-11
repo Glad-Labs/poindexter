@@ -26,7 +26,7 @@ import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package resolves
 # the same way the auto_embed_watch tests import it.
-from brain import postiz_queue_watch as pz
+from poindexter.brain import postiz_queue_watch as pz
 
 
 def _make_pool(*, setting_values=None, api_key="pz-key", firing=None, executed=None):

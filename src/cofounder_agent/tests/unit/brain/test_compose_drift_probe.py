@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain import compose_drift_probe as cd
+from poindexter.brain import compose_drift_probe as cd
 
 # ---------------------------------------------------------------------------
 # Helpers

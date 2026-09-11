@@ -32,9 +32,9 @@ from poindexter.modules.content.stages.generate_video_shot_list import (
     _tolerant_json_loads,
 )
 from poindexter.plugins.stage import StageResult
+from poindexter.schemas.video_shot_list import VideoShotList
 from poindexter.services.gpu_admission import GpuBusyError
 from poindexter.services.gpu_scheduler import media_wait_budget_s
-from schemas.video_shot_list import VideoShotList
 
 logger = logging.getLogger(__name__)
 

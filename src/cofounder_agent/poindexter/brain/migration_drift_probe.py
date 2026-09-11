@@ -49,8 +49,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from brain.docker_utils import localize_url
-from brain.operator_notifier import notify_operator
+from poindexter.brain.docker_utils import localize_url
+from poindexter.brain.operator_notifier import notify_operator
 
 logger = logging.getLogger("brain.migration_drift_probe")
 
@@ -1231,7 +1231,7 @@ class MigrationDriftProbe:
     async def check(self, pool, config):  # type: ignore[override]  # noqa: ARG002 — Probe Protocol signature; config unused by this probe
         # ProbeResult import is lazy so brain_daemon.py imports don't
         # require probe_interface.py to be on sys.path in every context.
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
 
         summary = await run_migration_drift_probe(pool)
         return ProbeResult(

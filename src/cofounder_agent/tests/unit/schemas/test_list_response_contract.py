@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from schemas import ListResponse, PaginatedResponse
-from schemas.data_plane_schemas import DataPlaneRowListResponse
-from schemas.media_schemas import PodcastEpisodeListResponse, VideoEpisodeListResponse
-from schemas.settings_schemas import SettingListResponse
-from schemas.task_schemas import (
+from poindexter.schemas import ListResponse, PaginatedResponse
+from poindexter.schemas.data_plane_schemas import DataPlaneRowListResponse
+from poindexter.schemas.media_schemas import PodcastEpisodeListResponse, VideoEpisodeListResponse
+from poindexter.schemas.settings_schemas import SettingListResponse
+from poindexter.schemas.task_schemas import (
     GateListResponse,
     GatePausedListResponse,
     MediaApprovalListResponse,
@@ -23,7 +23,7 @@ from schemas.task_schemas import (
     PostApprovalListResponse,
     TaskListResponse,
 )
-from schemas.topics_schemas import TopicProposalListResponse
+from poindexter.schemas.topics_schemas import TopicProposalListResponse
 
 pytestmark = pytest.mark.unit
 

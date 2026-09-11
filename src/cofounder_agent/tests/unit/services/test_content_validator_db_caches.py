@@ -59,7 +59,7 @@ class TestFactOverridesCooldown:
     def test_repeated_calls_after_failed_connect_do_not_reconnect(self, monkeypatch):
         _ensure_brain_importable()
         monkeypatch.setattr(
-            "brain.bootstrap.resolve_database_url",
+            "poindexter.brain.bootstrap.resolve_database_url",
             lambda: "postgresql://fake-host-for-test/dsn",
         )
 

@@ -230,7 +230,7 @@ async def diagnose_connection_issues(site_config: Any = None) -> dict[str, Any]:
         diagnostics["recommendations"].append("Set DATABASE_URL environment variable")
 
     # Check pool configuration — defaults must match database_service.py
-    from config import get_config
+    from poindexter.config import get_config
 
     _config = get_config()
     _is_dev = _config.environment.lower() in ("development", "dev", "local")

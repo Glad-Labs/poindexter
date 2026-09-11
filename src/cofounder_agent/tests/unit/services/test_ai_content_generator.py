@@ -704,7 +704,7 @@ class TestPopulateInternalLinksCache:
         """
         gen = _make_generator()
         monkeypatch.delenv("DATABASE_URL", raising=False)
-        with patch("brain.bootstrap.resolve_database_url", return_value=""):
+        with patch("poindexter.brain.bootstrap.resolve_database_url", return_value=""):
             await gen._populate_internal_links_cache()
         assert gen._internal_links_cache == []
 

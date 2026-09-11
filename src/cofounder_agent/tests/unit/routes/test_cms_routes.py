@@ -21,7 +21,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
-from routes.cms_routes import router
+from poindexter.routes.cms_routes import router
 
 # ---------------------------------------------------------------------------
 # Helper: build a minimal app.
@@ -142,14 +142,14 @@ class TestListPosts:
     def test_returns_200_with_empty_posts(self):
         # No rows → total_count comes from empty list (total=0 branch)
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.get("/api/posts")
         assert resp.status_code == 200
 
     def test_response_has_standard_envelope(self):
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         assert "posts" in data
@@ -159,7 +159,7 @@ class TestListPosts:
 
     def test_default_pagination_values(self):
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         assert data["offset"] == 0
@@ -167,7 +167,7 @@ class TestListPosts:
 
     def test_custom_offset_and_limit(self):
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts?offset=10&limit=5").json()
         assert data["offset"] == 10
@@ -176,7 +176,7 @@ class TestListPosts:
     def test_deprecated_skip_falls_back_to_offset(self):
         """The skip param should be accepted as alias for offset."""
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts?skip=5").json()
         assert data["offset"] == 5
@@ -185,7 +185,7 @@ class TestListPosts:
         """total in response comes from total_count window column, not a separate fetchrow."""
         row = {**SAMPLE_POST_ROW, "total_count": 42}
         pool, conn = _make_pool_mock(fetch_return=[row])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         assert data["total"] == 42
@@ -194,7 +194,7 @@ class TestListPosts:
         """The internal total_count window column must be stripped from the post objects."""
         row = {**SAMPLE_POST_ROW, "total_count": 7}
         pool, conn = _make_pool_mock(fetch_return=[row])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
         assert len(data["posts"]) == 1
@@ -202,7 +202,7 @@ class TestListPosts:
 
     def test_db_error_returns_500(self):
         with patch(
-            "routes.cms_routes.get_db_pool",
+            "poindexter.routes.cms_routes.get_db_pool",
             new=AsyncMock(side_effect=RuntimeError("DB down")),
         ):
             client = TestClient(_build_app())
@@ -221,7 +221,7 @@ class TestGetPostBySlug:
         pool, conn = _make_pool_mock(fetchrow_return=SAMPLE_POST_ROW)
         # tags fetch returns empty list
         conn.fetch = AsyncMock(return_value=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.get("/api/posts/test-post")
         assert resp.status_code == 200
@@ -229,7 +229,7 @@ class TestGetPostBySlug:
     def test_found_post_has_data_and_meta_keys(self):
         pool, conn = _make_pool_mock(fetchrow_return=SAMPLE_POST_ROW)
         conn.fetch = AsyncMock(return_value=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts/test-post").json()
         assert "data" in data
@@ -239,21 +239,21 @@ class TestGetPostBySlug:
     def test_found_post_has_slug_in_data(self):
         pool, conn = _make_pool_mock(fetchrow_return=SAMPLE_POST_ROW)
         conn.fetch = AsyncMock(return_value=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts/test-post").json()
         assert data["data"]["slug"] == "test-post"
 
     def test_missing_post_returns_404(self):
         pool, conn = _make_pool_mock(fetchrow_return=None)
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.get("/api/posts/nonexistent-slug")
         assert resp.status_code == 404
 
     def test_db_error_returns_500(self):
         with patch(
-            "routes.cms_routes.get_db_pool",
+            "poindexter.routes.cms_routes.get_db_pool",
             new=AsyncMock(side_effect=RuntimeError("DB down")),
         ):
             client = TestClient(_build_app())
@@ -270,14 +270,14 @@ class TestGetPostBySlug:
 class TestListCategories:
     def test_returns_200_with_empty_list(self):
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.get("/api/categories")
         assert resp.status_code == 200
 
     def test_response_has_standard_envelope(self):
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/categories").json()
         assert "categories" in data
@@ -287,7 +287,7 @@ class TestListCategories:
 
     def test_returns_categories_from_db(self):
         pool, conn = _make_pool_mock(fetch_return=[SAMPLE_CATEGORY_ROW])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/categories").json()
         assert data["total"] == 1
@@ -295,14 +295,14 @@ class TestListCategories:
 
     def test_default_limit_is_100(self):
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/categories").json()
         assert data["limit"] == 100
 
     def test_db_error_returns_500(self):
         with patch(
-            "routes.cms_routes.get_db_pool",
+            "poindexter.routes.cms_routes.get_db_pool",
             new=AsyncMock(side_effect=RuntimeError("DB down")),
         ):
             client = TestClient(_build_app())
@@ -319,14 +319,14 @@ class TestListCategories:
 class TestListTags:
     def test_returns_200_with_empty_list(self):
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.get("/api/tags")
         assert resp.status_code == 200
 
     def test_response_has_standard_envelope(self):
         pool, conn = _make_pool_mock(fetch_return=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/tags").json()
         assert "tags" in data
@@ -336,7 +336,7 @@ class TestListTags:
 
     def test_returns_tags_from_db(self):
         pool, conn = _make_pool_mock(fetch_return=[SAMPLE_TAG_ROW])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/tags").json()
         assert data["total"] == 1
@@ -344,7 +344,7 @@ class TestListTags:
 
     def test_db_error_returns_500(self):
         with patch(
-            "routes.cms_routes.get_db_pool",
+            "poindexter.routes.cms_routes.get_db_pool",
             new=AsyncMock(side_effect=RuntimeError("DB down")),
         ):
             client = TestClient(_build_app())
@@ -386,7 +386,7 @@ class TestCmsStatus:
     def test_error_detail_does_not_leak_exception_message(self):
         """Ensure raw exception text is not exposed in the HTTP response."""
         with patch(
-            "routes.cms_routes.get_db_pool",
+            "poindexter.routes.cms_routes.get_db_pool",
             new=AsyncMock(side_effect=RuntimeError("SECRET_DB_PASSWORD_EXPOSED")),
         ):
             client = TestClient(_build_app())
@@ -404,15 +404,15 @@ class TestCmsStatus:
 @pytest.mark.unit
 class TestConvertMarkdownToHtml:
     def test_empty_returns_empty(self):
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         assert convert_markdown_to_html("") == ""
 
     def test_none_returns_empty(self):
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         assert convert_markdown_to_html(None) == ""  # type: ignore[arg-type]
 
     def test_headings_convert_to_h_tags(self):
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         html = convert_markdown_to_html("# Title\n\nParagraph.")
         assert "<h1>" in html
         assert "</h1>" in html
@@ -420,19 +420,19 @@ class TestConvertMarkdownToHtml:
         assert "<p>" in html
 
     def test_bold_and_italic(self):
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         html = convert_markdown_to_html("**bold** and *italic*.")
         assert "<strong>" in html or "<b>" in html
         assert "<em>" in html or "<i>" in html
 
     def test_code_fence(self):
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         html = convert_markdown_to_html("```python\nprint('hi')\n```")
         assert "<code" in html or "<pre" in html
 
     def test_already_html_passed_through(self):
         """Content that is pure HTML (no markdown markers) passes through unchanged."""
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         already_html = "<article><p>Hello</p></article>"
         result = convert_markdown_to_html(already_html)
         assert result == already_html
@@ -441,7 +441,7 @@ class TestConvertMarkdownToHtml:
         """#198 regression: posts with leading <img> + markdown body now
         convert instead of being returned raw. The old early-return
         shipped `## Heading` and `**bold**` markers to the live site."""
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         mixed = (
             '<img src="x"/>\n\n'
             "## Heading\n\nSome **bold** text.\n\n"
@@ -455,7 +455,7 @@ class TestConvertMarkdownToHtml:
 
     def test_comment_block_not_treated_as_html(self):
         """Content starting with <![ is markdown (CDATA), not HTML."""
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         # This should still get markdown processing because it starts with <!
         content = "<![CDATA[stuff]]> after the cdata"
         result = convert_markdown_to_html(content)
@@ -465,7 +465,7 @@ class TestConvertMarkdownToHtml:
     def test_markdown_inline_image_renders_img_tag(self):
         """#540: a markdown image must become an <img> so the preview shows
         it (not literal ![alt](url) text)."""
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         html = convert_markdown_to_html("Intro.\n\n![a chart](https://x/y.png)\n\nMore.")
         assert "<img" in html
         assert "https://x/y.png" in html
@@ -475,7 +475,7 @@ class TestConvertMarkdownToHtml:
         """#540: published posts carry inline images as raw <img> between
         markdown blocks (replace_inline_images output). They must survive +
         the surrounding markdown must still render."""
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         mixed = (
             "## Section\n\nText before.\n\n"
             '<img src="https://r2/image-gen/pic.png" alt="diagram" width="1024" loading="lazy" />\n\n'
@@ -495,7 +495,7 @@ class TestPreviewHtmlForwardsSiteConfig:
     Depends sentinel and 500'd the posts path at the storage_public_url read."""
 
     async def test_preview_html_passes_site_config_to_preview_post(self):
-        import routes.cms_routes as cms
+        import poindexter.routes.cms_routes as cms
         minimal_post = {
             "title": "T", "content": "## H\n\nbody", "status": "draft",
             "quality_score": 90, "excerpt": "", "featured_image_url": "",
@@ -512,7 +512,7 @@ class TestPreviewHtmlForwardsSiteConfig:
         assert resp.status_code == 200
 
     def test_lists_convert(self):
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         html = convert_markdown_to_html("- item one\n- item two\n- item three")
         assert "<ul>" in html
         assert "<li>" in html
@@ -521,7 +521,7 @@ class TestPreviewHtmlForwardsSiteConfig:
         """If markdown library raises, return the raw content unchanged."""
         from unittest.mock import patch
 
-        from routes.cms_routes import convert_markdown_to_html
+        from poindexter.routes.cms_routes import convert_markdown_to_html
         with patch("markdown.markdown", side_effect=RuntimeError("parser broke")):
             result = convert_markdown_to_html("# Title\n\nBody.")
         assert result == "# Title\n\nBody."
@@ -642,7 +642,7 @@ class TestUpdatePost:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 f"/api/posts/{POST_UUID}",
@@ -654,7 +654,7 @@ class TestUpdatePost:
         assert resp.json()["success"] is True
 
     def test_no_valid_fields_returns_400(self):
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/post-001",
@@ -673,7 +673,7 @@ class TestUpdatePost:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 f"/api/posts/{POST_UUID}",
@@ -683,7 +683,7 @@ class TestUpdatePost:
         assert resp.status_code == 404
 
     def test_invalid_published_at_returns_400(self):
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/post-001",
@@ -694,7 +694,7 @@ class TestUpdatePost:
         assert "ISO 8601" in resp.json()["detail"]
 
     def test_scheduled_without_published_at_returns_400(self):
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/post-001",
@@ -705,7 +705,7 @@ class TestUpdatePost:
         assert "published_at is required" in resp.json()["detail"]
 
     def test_scheduled_with_past_date_returns_400(self):
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/post-001",
@@ -727,7 +727,7 @@ class TestUpdatePost:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 f"/api/posts/{POST_UUID}",
@@ -749,7 +749,7 @@ class TestUpdatePost:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 f"/api/posts/{POST_UUID}",
@@ -768,7 +768,7 @@ class TestUpdatePost:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 f"/api/posts/{POST_UUID}",
@@ -813,7 +813,7 @@ class TestUpdatePostPrefixResolution:
 
     def test_unique_prefix_resolves_then_updates_full_id(self):
         pool, conn = self._make_pool(fetch_rows=[{"id": POST_UUID}])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/550e8400",  # 8-char prefix an operator pasted
@@ -829,7 +829,7 @@ class TestUpdatePostPrefixResolution:
 
     def test_ambiguous_prefix_returns_409_without_updating(self):
         pool, conn = self._make_pool(fetch_rows=[{"id": POST_UUID}, {"id": POST_UUID_2}])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/550e8400",
@@ -842,7 +842,7 @@ class TestUpdatePostPrefixResolution:
 
     def test_unknown_prefix_returns_404_without_updating(self):
         pool, conn = self._make_pool(fetch_rows=[])
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
                 "/api/posts/deadbeef",
@@ -869,7 +869,7 @@ class TestDeletePost:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.delete(
                 "/api/posts/post-001",
@@ -887,7 +887,7 @@ class TestDeletePost:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.delete(
                 "/api/posts/missing-id",
@@ -905,7 +905,7 @@ class TestDeletePost:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             client.delete(
                 "/api/posts/abc-123",
@@ -950,7 +950,7 @@ class TestUnpublishPostRoute:
         }
         unpublish = AsyncMock(return_value=service_result)
         with patch(
-            "routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)
+            "poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)
         ), patch("poindexter.services.publish_service.unpublish_post", new=unpublish):
             client = TestClient(self._app_with_site_config())
             resp = client.post(
@@ -973,7 +973,7 @@ class TestUnpublishPostRoute:
             }
         )
         with patch(
-            "routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)
+            "poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)
         ), patch("poindexter.services.publish_service.unpublish_post", new=unpublish):
             client = TestClient(self._app_with_site_config())
             resp = client.post(
@@ -1010,7 +1010,7 @@ class TestGetCategoryBySlug:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.get("/api/categories/tech")
 
@@ -1028,7 +1028,7 @@ class TestGetCategoryBySlug:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.get("/api/categories/missing")
         assert resp.status_code == 404
@@ -1045,7 +1045,7 @@ class TestGetCategoryBySlug:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/categories/t").json()
 
@@ -1065,7 +1065,7 @@ class TestGetCategoryBySlug:
         pool = MagicMock()
         pool.acquire = MagicMock(return_value=cm)
 
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/categories/t").json()
 
@@ -1137,7 +1137,7 @@ class TestPreviewPostHtmlSecurity:
         from unittest.mock import AsyncMock as _AM
         client = TestClient(_build_app())
         return client, patch(
-            "routes.cms_routes.preview_post",
+            "poindexter.routes.cms_routes.preview_post",
             new=_AM(return_value=post),
         )
 

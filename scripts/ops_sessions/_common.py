@@ -70,7 +70,7 @@ def bootstrap_value(key: str) -> str:
 
 
 def db_url() -> str:
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
 
     url = resolve_database_url()
     if not url:
@@ -448,7 +448,7 @@ def _arm_auto_merge(
 
 def notify_fail(title: str, detail: str, source: str) -> None:
     try:
-        from brain.operator_notifier import notify_operator
+        from poindexter.brain.operator_notifier import notify_operator
 
         notify_operator(title, detail, source=source, severity="warning")
     except Exception:  # noqa: BLE001 — notification must never mask the real error

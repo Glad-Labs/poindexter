@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from routes import cms_routes
+from poindexter.routes import cms_routes
 
 
 @pytest.mark.asyncio

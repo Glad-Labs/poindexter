@@ -133,8 +133,8 @@ def _build_approval_app(mock_db=None, for_reject=False) -> FastAPI:
     (mounted under /api/tasks via task_routes). The reject and pending-approval
     endpoints live in approval_routes.router (prefix /api/tasks).
     """
-    from routes.approval_routes import router as approval_router
-    from routes.task_publishing_routes import publishing_router
+    from poindexter.routes.approval_routes import router as approval_router
+    from poindexter.routes.task_publishing_routes import publishing_router
 
     app = FastAPI()
     # approval_routes.router already has prefix="/api/tasks"
@@ -163,9 +163,9 @@ REJECT_PAYLOAD = {
 }
 
 # Patch targets
-_OPERATOR_IDENTITY_APPROVAL = "routes.approval_routes.get_operator_identity"
-_CHECK_OWNERSHIP = "routes.task_publishing_routes._check_task_ownership"
-_REVALIDATION = "routes.revalidate_routes.trigger_nextjs_revalidation"
+_OPERATOR_IDENTITY_APPROVAL = "poindexter.routes.approval_routes.get_operator_identity"
+_CHECK_OWNERSHIP = "poindexter.routes.task_publishing_routes._check_task_ownership"
+_REVALIDATION = "poindexter.routes.revalidate_routes.trigger_nextjs_revalidation"
 _WEBHOOK = "poindexter.services.webhook_delivery_service.emit_webhook_event"
 
 
@@ -255,8 +255,8 @@ class TestApproveTaskFlow:
 
     def test_approve_unauthenticated_returns_401(self):
         """Without auth override, endpoint requires real Bearer token -> 401."""
-        from routes.approval_routes import router as approval_router
-        from routes.task_publishing_routes import publishing_router
+        from poindexter.routes.approval_routes import router as approval_router
+        from poindexter.routes.task_publishing_routes import publishing_router
 
         app = FastAPI()
         app.include_router(approval_router)
@@ -408,7 +408,7 @@ class TestGetPendingApprovals:
         assert "task_id" in task or "id" in task
 
     def test_unauthenticated_returns_401(self):
-        from routes.approval_routes import router as approval_router
+        from poindexter.routes.approval_routes import router as approval_router
 
         app = FastAPI()
         app.include_router(approval_router)

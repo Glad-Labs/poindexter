@@ -27,9 +27,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.task_routes import router
 from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
 from poindexter.utils.route_utils import get_database_dependency
-from routes.task_routes import router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
 
 # ---------------------------------------------------------------------------

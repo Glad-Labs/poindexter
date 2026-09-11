@@ -355,7 +355,7 @@ async def test_gpu_task_session_recorded_with_task_id():
     fake_conn.close = AsyncMock()
 
     with patch("asyncpg.connect", new=AsyncMock(return_value=fake_conn)), patch(
-        "brain.bootstrap.resolve_database_url", return_value="postgresql://x",
+        "poindexter.brain.bootstrap.resolve_database_url", return_value="postgresql://x",
     ):
         await scheduler._record_task_session(
             task_id="task-pin-007",

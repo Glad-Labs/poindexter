@@ -33,9 +33,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from schemas.database_response_models import SettingResponse as DbSettingResponse
-from schemas.model_converter import ModelConverter
-from schemas.settings_schemas import SettingResponse as ApiSettingResponse
+from poindexter.schemas.database_response_models import SettingResponse as DbSettingResponse
+from poindexter.schemas.model_converter import ModelConverter
+from poindexter.schemas.settings_schemas import SettingResponse as ApiSettingResponse
 
 pytestmark = pytest.mark.unit
 
@@ -195,7 +195,7 @@ class TestNoFabricatedAuthorship:
         import ast
         from pathlib import Path
 
-        import routes.settings_routes as settings_routes
+        import poindexter.routes.settings_routes as settings_routes
 
         tree = ast.parse(Path(settings_routes.__file__).read_text(encoding="utf-8"))
         offenders = [
@@ -273,7 +273,7 @@ class TestLifecycleMetadataReachesTheApi:
         import ast
         import inspect
 
-        from routes.settings_routes import _lifecycle_metadata
+        from poindexter.routes.settings_routes import _lifecycle_metadata
 
         tree = ast.parse(inspect.getsource(_lifecycle_metadata))
         offenders = []
@@ -295,11 +295,10 @@ class TestDeadHistorySchemaStaysDeleted:
     """
 
     def test_not_exported_from_schemas(self):
-        import schemas
-
+        from poindexter import schemas
         assert not hasattr(schemas, "SettingHistoryResponse")
 
     def test_not_defined_in_settings_schemas(self):
-        import schemas.settings_schemas as settings_schemas
+        import poindexter.schemas.settings_schemas as settings_schemas
 
         assert not hasattr(settings_schemas, "SettingHistoryResponse")

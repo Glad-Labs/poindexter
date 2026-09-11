@@ -121,7 +121,7 @@ async def test_persisted_last_run_epoch_emits_finding_on_pool_error(monkeypatch)
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_cost_guard_check_emits_finding_on_import_failure(monkeypatch):
-    from routes.triage_routes import _cost_guard_check
+    from poindexter.routes.triage_routes import _cost_guard_check
 
     calls = _capture(monkeypatch)
     monkeypatch.setitem(sys.modules, "poindexter.services.cost_guard", None)

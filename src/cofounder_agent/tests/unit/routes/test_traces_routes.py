@@ -8,9 +8,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.traces_routes import router
 from poindexter.services.traces_read import LangfuseNotConfigured
 from poindexter.utils.route_utils import get_site_config_dependency
-from routes.traces_routes import router
 
 SAMPLE = {
     "traces": [
@@ -54,7 +54,7 @@ def _build_app(*, authed=True):
 @pytest.mark.unit
 def test_returns_traces_payload():
     app, _ = _build_app()
-    with patch("routes.traces_routes.read_traces", new=AsyncMock(return_value=SAMPLE)):
+    with patch("poindexter.routes.traces_routes.read_traces", new=AsyncMock(return_value=SAMPLE)):
         res = TestClient(app).get("/api/traces?hours=12&limit=10")
     assert res.status_code == 200
     assert res.json() == SAMPLE
@@ -66,7 +66,7 @@ def test_route_threads_public_url_and_host_separately():
     # host stays the Docker-internal name — the whole point of the fix.
     app, _ = _build_app()
     mock = AsyncMock(return_value=SAMPLE)
-    with patch("routes.traces_routes.read_traces", new=mock):
+    with patch("poindexter.routes.traces_routes.read_traces", new=mock):
         res = TestClient(app).get("/api/traces")
     assert res.status_code == 200
     assert mock.await_args is not None
@@ -79,7 +79,7 @@ def test_route_threads_public_url_and_host_separately():
 def test_unconfigured_returns_503():
     app, _ = _build_app()
     with patch(
-        "routes.traces_routes.read_traces",
+        "poindexter.routes.traces_routes.read_traces",
         new=AsyncMock(side_effect=LangfuseNotConfigured("set langfuse keys")),
     ):
         res = TestClient(app).get("/api/traces")

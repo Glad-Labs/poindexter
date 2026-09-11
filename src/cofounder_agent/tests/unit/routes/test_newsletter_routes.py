@@ -17,9 +17,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.newsletter_routes import router
 from poindexter.utils.rate_limiter import limiter
 from poindexter.utils.route_utils import get_database_dependency
-from routes.newsletter_routes import router
 
 
 @pytest.fixture(autouse=True)
@@ -385,7 +385,7 @@ class TestGetSubscriberCount:
 @pytest.mark.asyncio
 async def test_audience_sync_skips_when_unconfigured():
     """No resend_audience_id -> no Resend call, never touches the key."""
-    from routes.newsletter_routes import _sync_to_resend_audience
+    from poindexter.routes.newsletter_routes import _sync_to_resend_audience
 
     sc = MagicMock()
     sc.get = MagicMock(return_value="")  # resend_audience_id unset
@@ -397,7 +397,7 @@ async def test_audience_sync_skips_when_unconfigured():
 @pytest.mark.asyncio
 async def test_audience_sync_never_raises_on_error(monkeypatch):
     """A Resend/network failure must NOT bubble up and fail the signup."""
-    from routes import newsletter_routes as nr
+    from poindexter.routes import newsletter_routes as nr
 
     sc = MagicMock()
     sc.get = MagicMock(return_value="aud-123")
@@ -417,7 +417,7 @@ async def test_audience_sync_never_raises_on_error(monkeypatch):
 @pytest.mark.asyncio
 async def test_audience_sync_posts_contact_when_configured(monkeypatch):
     """Configured -> POSTs the contact to the right audience with a browser UA."""
-    from routes import newsletter_routes as nr
+    from poindexter.routes import newsletter_routes as nr
 
     sc = MagicMock()
     sc.get = MagicMock(return_value="aud-123")

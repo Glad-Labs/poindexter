@@ -74,7 +74,7 @@ def _bootstrap_secret_key() -> str:
     returns "" on any failure so the caller keeps its default degradation.
     """
     try:
-        from brain.bootstrap import get_bootstrap_value
+        from poindexter.brain.bootstrap import get_bootstrap_value
         return get_bootstrap_value("poindexter_secret_key", "")
     except Exception:  # noqa: BLE001 — best-effort, never raise
         # silent-ok: "" is this helper's DOCUMENTED return for "no key

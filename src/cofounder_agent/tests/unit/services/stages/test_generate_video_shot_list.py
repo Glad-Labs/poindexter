@@ -23,7 +23,7 @@ from poindexter.modules.content.stages.generate_video_shot_list import (
     _resolve_director_think,
     _tolerant_json_loads,
 )
-from schemas.video_shot_list import VideoShotList
+from poindexter.schemas.video_shot_list import VideoShotList
 
 # ---------------------------------------------------------------------------
 # Pure helpers — _estimate_target_duration + _extract_json_object

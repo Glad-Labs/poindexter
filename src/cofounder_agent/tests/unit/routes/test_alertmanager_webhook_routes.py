@@ -22,14 +22,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from poindexter.utils.route_utils import get_database_dependency
-from routes.alertmanager_webhook_routes import (
+from poindexter.routes.alertmanager_webhook_routes import (
     _format_alert_message,
     _parse_iso,
     _should_page_operator,
     router,
     verify_alertmanager_token,
 )
+from poindexter.utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Fake asyncpg pool — records every SQL + args; fetchval returns scripted values.
@@ -370,7 +370,7 @@ class TestWebhookEndpoint:
         the route — keeping this contract enforced via test rather than
         comment-only.
         """
-        from routes import alertmanager_webhook_routes as m
+        from poindexter.routes import alertmanager_webhook_routes as m
         assert not hasattr(m, "_dispatch_to_operator"), (
             "_dispatch_to_operator must stay deleted — dispatch is the "
             "brain daemon's responsibility (brain/alert_dispatcher.py)."
@@ -388,7 +388,7 @@ class TestWebhookEndpoint:
         not carry a ``remediated`` count (which implied this route did
         remediation, when it never did).
         """
-        from routes import alertmanager_webhook_routes as m
+        from poindexter.routes import alertmanager_webhook_routes as m
         assert not hasattr(m, "_maybe_remediate"), (
             "_maybe_remediate must stay deleted — operational recovery is the "
             "brain firefighter's job (brain/remediation/), not a webhook-side "

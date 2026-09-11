@@ -10,7 +10,7 @@ from contextlib import suppress
 from typing import Any, TypeVar
 from uuid import UUID
 
-from schemas.database_response_models import (
+from poindexter.schemas.database_response_models import (
     AgentStatusResponse,
     AuthorResponse,
     CategoryResponse,

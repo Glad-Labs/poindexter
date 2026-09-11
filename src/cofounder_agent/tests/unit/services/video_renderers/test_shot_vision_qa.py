@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from poindexter.schemas.video_shot_list import Shot
 from poindexter.services.site_config import SiteConfig
 from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
-from schemas.video_shot_list import Shot
 
 
 def _shot(source="image_gen", prompt="a cyan circuit board, dark navy backdrop"):

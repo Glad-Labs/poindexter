@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain.data_freshness_probe import (
+from poindexter.brain.data_freshness_probe import (
     DEFAULT_FEEDS,
     _parse_feeds,
     run_data_freshness_probe,

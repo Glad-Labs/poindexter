@@ -20,7 +20,7 @@ for _p in _HERE.parents:
         break
 
 # E402 — brain/ has to be put on sys.path before this import can resolve.
-from brain import bootstrap  # noqa: E402
+from poindexter.brain import bootstrap  # noqa: E402
 
 
 @pytest.fixture
@@ -134,7 +134,7 @@ class TestRequireDatabaseUrl:
             calls.append(kwargs)
             return {"telegram": "stubbed", "discord": "stubbed", "alerts_log": "stubbed"}
 
-        import brain.operator_notifier as notifier
+        import poindexter.brain.operator_notifier as notifier
 
         monkeypatch.setattr(notifier, "notify_operator", _fake_notify)
 

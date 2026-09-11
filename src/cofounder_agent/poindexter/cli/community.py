@@ -32,7 +32,7 @@ from poindexter.services.subreddit_import import export_csv, import_csv
 
 
 async def _connect():
-    from brain import bootstrap
+    from poindexter.brain import bootstrap
 
     dsn = bootstrap.resolve_database_url()
     if not dsn:

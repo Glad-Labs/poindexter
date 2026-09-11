@@ -42,7 +42,7 @@ import httpx
 # actual decrypt logic lives in ``brain.secret_reader`` so the brain
 # notify path, glitchtip probe, and oauth helper all share one
 # implementation (closes Glad-Labs/poindexter#342).
-from brain.secret_reader import read_app_setting
+from poindexter.brain.secret_reader import read_app_setting
 
 logger = logging.getLogger("brain.oauth_client")
 

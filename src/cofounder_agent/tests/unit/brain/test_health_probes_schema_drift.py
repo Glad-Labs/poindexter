@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain.health_probes import (
+from poindexter.brain.health_probes import (
     probe_embeddings_freshness,
     probe_newsletter_health,
     probe_podcast_health,

@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import brain.alert_dispatcher as ad
-from brain.remediation.engine import RemediationDecision
-from brain.remediation.registry import ActionResult
+import poindexter.brain.alert_dispatcher as ad
+from poindexter.brain.remediation.engine import RemediationDecision
+from poindexter.brain.remediation.registry import ActionResult
 
 _CATALOG = [{"name": "restart_container", "description": "restart it", "params_schema": {"container": "str"}}]
 

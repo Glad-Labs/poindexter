@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain import compose_drift_probe as cdp
+from poindexter.brain import compose_drift_probe as cdp
 
 
 def _make_pool(setting_values: dict[str, str] | None = None):

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from brain.remediation import engine as E
+from poindexter.brain.remediation import engine as E
 from tests.unit.brain._remediation_fakes import FakePool
 
 LOG = logging.getLogger("t")

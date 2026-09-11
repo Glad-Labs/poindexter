@@ -102,7 +102,7 @@ def _resolve_dsn() -> str:
     """
     try:
 
-        from brain.bootstrap import resolve_database_url
+        from poindexter.brain.bootstrap import resolve_database_url
         url = resolve_database_url()
         if url:
             return url

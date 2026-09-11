@@ -184,7 +184,7 @@ def _seed_env_from_bootstrap() -> None:
     ``app_settings.mcp_oauth_client_*`` — no env var is required.
     Phase 3 (#249) removed the legacy static-Bearer path.
     """
-    from brain.bootstrap import get_bootstrap_value  # type: ignore[import-not-found]
+    from poindexter.brain.bootstrap import get_bootstrap_value  # type: ignore[import-not-found]
 
     secret_key = (
         os.environ.get("POINDEXTER_SECRET_KEY")

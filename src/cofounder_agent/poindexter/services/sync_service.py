@@ -65,7 +65,7 @@ def _resolve_local_database_url() -> str:
     # importing at module top would couple sync_service's import order
     # to brain's package layout. Call-time import is fine for the
     # constructor-only use.
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
 
     return (resolve_database_url() or "").strip()
 

@@ -27,9 +27,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.topics_routes import router
 from poindexter.services.topic_batch_service import BatchView, CandidateView
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
-from routes.topics_routes import router
 
 
 def _make_db():
@@ -77,7 +77,7 @@ def _open_batch(batch_id, niche_id, *, slug="glad-labs", name="Glad Labs", candi
 
 def _patch_service(svc):
     """Patch TopicBatchService in the route namespace so it returns ``svc``."""
-    return patch("routes.topics_routes.TopicBatchService", return_value=svc)
+    return patch("poindexter.routes.topics_routes.TopicBatchService", return_value=svc)
 
 
 # ---------------------------------------------------------------------------

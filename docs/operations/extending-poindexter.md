@@ -56,7 +56,7 @@ Create `src/cofounder_agent/poindexter/modules/content/stages/my_stage.py`:
 
 ```python
 from typing import Any
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 
 
 class MyStage:
@@ -197,7 +197,7 @@ rail method) and contribute to the weighted final score that `qa.aggregate`
 computes.
 
 ```python
-from plugins.stage import ReviewerResult
+from poindexter.plugins.stage import ReviewerResult
 
 
 class MyReviewer:
@@ -271,7 +271,7 @@ Existing publishing handlers live in `services/integrations/handlers/`:
 
 Text social copy (X, Bluesky, Mastodon, LinkedIn) is distributed separately
 through Postiz — the `social.generate_drafts` atom writes `social_post_drafts`
-rows that are approved and posted via `services.integrations.postiz_client`,
+rows that are approved and posted via `poindexter.services.integrations.postiz_client`,
 not an in-process adapter.
 
 ### Minimum shape
@@ -371,7 +371,7 @@ Each implements `.extract(pool, config) → list[DiscoveredTopic]`.
 ### Minimum shape
 
 ```python
-from services.topic_sources.base import TopicSource, DiscoveredTopic
+from poindexter.services.topic_sources.base import TopicSource, DiscoveredTopic
 
 
 class MyTap:
@@ -479,7 +479,7 @@ is gone as of the Lane C Stage 4 cutover, 2026-05-16), drop in
 `ApprovalGateStage` with config:
 
 ```python
-from modules.content.stages.approval_gate import ApprovalGateStage
+from poindexter.modules.content.stages.approval_gate import ApprovalGateStage
 
 approval_gate = ApprovalGateStage()
 
@@ -661,7 +661,7 @@ Copy the layout of `modules/content/`. Public modules use
 # modules/<name>/<name>_module.py
 from pathlib import Path
 
-from plugins.module import ModuleManifest
+from poindexter.plugins.module import ModuleManifest
 
 
 _MANIFEST = ModuleManifest(
@@ -682,7 +682,7 @@ class <Name>Module:
         return _MANIFEST
 
     async def migrate(self, pool: object) -> None:
-        from services.module_migrations import run_module_migrations
+        from poindexter.services.module_migrations import run_module_migrations
         await run_module_migrations(pool, _MANIFEST.name, self.migrations_dir)
 
     # Phase 4 lifecycle hooks — leave as no-ops until you actually wire them.
@@ -715,7 +715,7 @@ Verify discovery:
 
 ```bash
 cd src/cofounder_agent && poetry run python -c "
-from plugins.registry import get_modules, clear_registry_cache
+from poindexter.plugins.registry import get_modules, clear_registry_cache
 clear_registry_cache()
 print([m.manifest().name for m in get_modules()])
 "

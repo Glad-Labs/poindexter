@@ -54,26 +54,26 @@ from typing import Any
 # Shared with sidecar_ram_watch (poindexter#3360 generalisation): both probes
 # read a container's PID-1 footprint, restart it, and record the outcome the
 # same way — only the IDLE PROOF differs, and that stays per-module.
-from brain.docker_utils import resolve_url
-from brain.ram_recycle_common import (
+from poindexter.brain.docker_utils import resolve_url
+from poindexter.brain.ram_recycle_common import (
     coerce_bool as _coerce_bool,
 )
-from brain.ram_recycle_common import (
+from poindexter.brain.ram_recycle_common import (
     coerce_float as _coerce_float,
 )
-from brain.ram_recycle_common import (
+from poindexter.brain.ram_recycle_common import (
     coerce_int as _coerce_int,
 )
-from brain.ram_recycle_common import (
+from poindexter.brain.ram_recycle_common import (
     emit_finding as _emit_finding_common,
 )
-from brain.ram_recycle_common import (
+from poindexter.brain.ram_recycle_common import (
     read_container_main_rss_swap_gb as _read_container_main_rss_swap_gb,
 )
-from brain.ram_recycle_common import (
+from poindexter.brain.ram_recycle_common import (
     read_setting as _read_setting,
 )
-from brain.ram_recycle_common import (
+from poindexter.brain.ram_recycle_common import (
     restart_container as _restart_comfyui_container,
 )
 
@@ -411,7 +411,7 @@ class ComfyUIRamWatchProbe:
     interval_seconds: int = 300
 
     async def check(self, pool, config):  # type: ignore[override]
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
         summary = await run_comfyui_ram_watch_probe(pool)
         return ProbeResult(
             ok=bool(summary.get("ok", False)),

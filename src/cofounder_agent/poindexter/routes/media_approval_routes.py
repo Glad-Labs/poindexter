@@ -15,10 +15,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from middleware.api_token_auth import get_operator_identity, verify_api_token
+from poindexter.schemas.task_schemas import MediaApprovalListResponse
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.logger_config import get_logger
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
-from schemas.task_schemas import MediaApprovalListResponse
 
 logger = get_logger(__name__)
 router = APIRouter(

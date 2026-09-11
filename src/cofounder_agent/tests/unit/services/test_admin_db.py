@@ -269,7 +269,7 @@ class TestGetTaskCosts:
     @pytest.mark.asyncio
     async def test_success_builds_breakdown_by_phase(self):
         """get_task_costs groups entries by phase and sums cost_usd correctly."""
-        from schemas.database_response_models import CostLogResponse
+        from poindexter.schemas.database_response_models import CostLogResponse
 
         now = datetime.now(timezone.utc)
 
@@ -323,7 +323,7 @@ class TestGetTaskCosts:
     @pytest.mark.asyncio
     async def test_none_cost_usd_treated_as_zero(self):
         """Rows with NULL cost_usd should be treated as 0.0."""
-        from schemas.database_response_models import CostLogResponse
+        from poindexter.schemas.database_response_models import CostLogResponse
 
         now = datetime.now(timezone.utc)
 

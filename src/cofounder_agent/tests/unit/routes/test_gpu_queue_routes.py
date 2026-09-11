@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
-from routes.gpu_queue_routes import router
+from poindexter.routes.gpu_queue_routes import router
 
 pytestmark = pytest.mark.unit
 
@@ -27,9 +27,9 @@ def _build_app(*, authed: bool = True) -> FastAPI:
 class TestGetGpuQueue:
     def test_empty_state_is_honest(self):
         with (
-            patch("routes.gpu_queue_routes.list_waiters", new=AsyncMock(return_value=[])),
-            patch("routes.gpu_queue_routes.list_stats", new=AsyncMock(return_value=[])),
-            patch("routes.gpu_queue_routes._current_holder", return_value=None),
+            patch("poindexter.routes.gpu_queue_routes.list_waiters", new=AsyncMock(return_value=[])),
+            patch("poindexter.routes.gpu_queue_routes.list_stats", new=AsyncMock(return_value=[])),
+            patch("poindexter.routes.gpu_queue_routes._current_holder", return_value=None),
         ):
             resp = TestClient(_build_app()).get("/api/gpu/queue")
         assert resp.status_code == 200
@@ -57,13 +57,13 @@ class TestGetGpuQueue:
                 "updated_at": datetime.now(timezone.utc),
             }
         ]
-        from routes.gpu_queue_routes import GpuHolder
+        from poindexter.routes.gpu_queue_routes import GpuHolder
 
         with (
-            patch("routes.gpu_queue_routes.list_waiters", new=AsyncMock(return_value=waiters)),
-            patch("routes.gpu_queue_routes.list_stats", new=AsyncMock(return_value=stats)),
+            patch("poindexter.routes.gpu_queue_routes.list_waiters", new=AsyncMock(return_value=waiters)),
+            patch("poindexter.routes.gpu_queue_routes.list_stats", new=AsyncMock(return_value=stats)),
             patch(
-                "routes.gpu_queue_routes._current_holder",
+                "poindexter.routes.gpu_queue_routes._current_holder",
                 return_value=GpuHolder(owner="image_gen", model="z-image", held_for_s=5.0),
             ),
         ):
@@ -78,7 +78,7 @@ class TestGetGpuQueue:
 
     def test_holder_derived_from_scheduler_state(self):
         """_current_holder reads the live scheduler singleton's fields."""
-        import routes.gpu_queue_routes as m
+        import poindexter.routes.gpu_queue_routes as m
 
         with (
             patch.object(m.gpu, "_current_owner", "ollama"),

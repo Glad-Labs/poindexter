@@ -26,7 +26,7 @@ import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package
 # resolves the same way the other brain probe tests import it.
-from brain import pr_staleness_probe as psp
+from poindexter.brain import pr_staleness_probe as psp
 
 # ---------------------------------------------------------------------------
 # Helpers — fixed clock, pool builder, fake httpx client

@@ -26,8 +26,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from schemas.database_response_models import TaskResponse
-from schemas.model_converter import ModelConverter
+from poindexter.schemas.database_response_models import TaskResponse
+from poindexter.schemas.model_converter import ModelConverter
 
 
 def _make_row(**overrides) -> dict:

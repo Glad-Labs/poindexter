@@ -183,7 +183,7 @@ def _stub_lazy_imports():
         "poindexter.services.social_poster": social_mod,
         "poindexter.services.devto_service": devto_mod,
         "poindexter.services.revalidation_service": reval_mod,
-        "routes.revalidate_routes": legacy_reval_routes,
+        "poindexter.routes.revalidate_routes": legacy_reval_routes,
         "poindexter.services.integrations.operator_notify": operator_notify_mod,
         "poindexter.services.podcast_service": podcast_mod,
     }

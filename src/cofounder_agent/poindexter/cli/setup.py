@@ -47,7 +47,7 @@ def _import_bootstrap():
     package of this CLI, importable wherever the CLI itself is. Kept as a
     function because callers (and tests) patch it.
     """
-    from brain import bootstrap
+    from poindexter.brain import bootstrap
 
     return bootstrap
 
@@ -504,7 +504,7 @@ def _auto_provision() -> str:
         # Best-effort: pull the DSN from the running bootstrap.toml if it
         # matches this container.
         try:
-            from brain import bootstrap
+            from poindexter.brain import bootstrap
 
             existing_dsn = bootstrap.resolve_database_url()
             if existing_dsn and f":{_AUTO_PORT}/" in existing_dsn:

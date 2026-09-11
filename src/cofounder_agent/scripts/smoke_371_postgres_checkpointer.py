@@ -63,7 +63,7 @@ async def _smoke() -> None:
     site_config = SiteConfig()
     # ---- 1. Resolve a base DSN from bootstrap.toml or DATABASE_URL ----
     import poindexter.services.pipeline_templates as pt
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
     from poindexter.services.template_runner import PipelineState, TemplateRunner
     base_dsn = resolve_database_url()
     if not base_dsn:

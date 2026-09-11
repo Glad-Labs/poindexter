@@ -279,7 +279,7 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
             if str(_p) not in _sys.path:
                 _sys.path.insert(0, str(_p))
             break
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
 
     dsn = resolve_database_url()
     if not dsn:

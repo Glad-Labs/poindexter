@@ -158,6 +158,8 @@ memory = "poindexter_tap_memory:MemoryFilesTap"
 openai_compat = "poindexter_llm_openai_compat:OpenAICompatProvider"
 ```
 
+**Import root.** Since Glad-Labs/poindexter#1046 the in-tree plugins live under the `poindexter` package — `poindexter.plugins.*` for the contracts and registry, `poindexter.services.taps.*` / `poindexter.services.llm_providers.*` for the shipped providers — and the in-tree entry points are spelled the same way (`memory = "poindexter.services.taps.memory:MemoryFilesTap"`). External plugins keep their own package names, as in the example above; the flat spellings (`services.x`, `plugins.x`) are compatibility aliases scheduled for removal.
+
 Poindexter loads them via `importlib.metadata.entry_points(group="poindexter.taps")`. No pkgutil scan, no custom registry, no decorators. This is the same pattern pytest, click, flask use.
 
 - **Install:** `pip install poindexter-tap-slack`

@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain import migration_drift_probe as mdp
+from poindexter.brain import migration_drift_probe as mdp
 
 
 def _make_pool():

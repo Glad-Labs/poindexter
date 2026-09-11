@@ -22,8 +22,8 @@ import urllib.request
 from datetime import UTC
 from typing import Any
 
-from brain.docker_utils import localize_url, resolve_url
-from brain.secret_reader import read_app_setting as _read_app_setting
+from poindexter.brain.docker_utils import localize_url, resolve_url
+from poindexter.brain.secret_reader import read_app_setting as _read_app_setting
 
 try:  # httpx is pinned in the brain image; guard for minimal dev envs.
     import httpx

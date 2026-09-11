@@ -39,7 +39,7 @@ _BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from brain import brain_daemon as bd  # noqa: E402
+from poindexter.brain import brain_daemon as bd  # noqa: E402
 
 _LOGGER = "brain"
 
@@ -217,7 +217,7 @@ class TestNotifyEnvHydrationVisibility:
 
         # The function does `from brain.secret_reader import read_app_setting`
         # at call time, so patching the module attribute intercepts it.
-        monkeypatch.setattr("brain.secret_reader.read_app_setting", _boom)
+        monkeypatch.setattr("poindexter.brain.secret_reader.read_app_setting", _boom)
 
         with caplog.at_level(logging.WARNING, logger=_LOGGER):
             # object() is a truthy sentinel pool; read_app_setting is stubbed.

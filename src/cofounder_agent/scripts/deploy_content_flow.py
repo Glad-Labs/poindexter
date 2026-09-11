@@ -44,6 +44,9 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
+    # poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
+    # the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
+    sys.path.insert(0, str(_REPO_ROOT / "src" / "cofounder_agent"))
 
 # Point Prefect at the local server BEFORE importing prefect.* — the
 # settings snapshot is taken at import time, so setting this later
@@ -121,7 +124,7 @@ async def _resolve_setting(key: str, default: str) -> str:
     """
     import asyncpg
 
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
 
     try:
         dsn = resolve_database_url()

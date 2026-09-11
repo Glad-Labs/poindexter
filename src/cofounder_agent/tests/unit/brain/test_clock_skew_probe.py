@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain.clock_skew_probe import (
+from poindexter.brain.clock_skew_probe import (
     DEFAULT_REFERENCE_URL,
     DEFAULT_RENOTIFY_MINUTES,
     DEFAULT_RETENTION_DAYS,

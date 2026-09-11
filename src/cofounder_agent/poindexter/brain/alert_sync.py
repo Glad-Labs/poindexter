@@ -42,7 +42,7 @@ from typing import Any
 
 import asyncpg
 
-from brain.secret_reader import read_app_setting
+from poindexter.brain.secret_reader import read_app_setting
 
 logger = logging.getLogger("brain.alert_sync")
 
@@ -565,7 +565,9 @@ async def _fire_empty_token_alarm(pool: Any, skip_count: int) -> None:
     )
     notify_fn = None
     try:
-        from brain.brain_daemon import notify as _notify  # type: ignore[import-not-found]
+        from poindexter.brain.brain_daemon import (
+            notify as _notify,  # type: ignore[import-not-found]
+        )
 
         notify_fn = _notify
     except ImportError:

@@ -57,7 +57,7 @@ def _resolve_database_url(arg: str | None) -> str:
     if arg:
         return arg.replace("@localhost:", "@127.0.0.1:")
     try:
-        from brain.bootstrap import resolve_database_url  # type: ignore[import]
+        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore[import]
 
         maybe = resolve_database_url()
         url = asyncio.run(maybe) if asyncio.iscoroutine(maybe) else maybe  # type: ignore[arg-type]

@@ -35,7 +35,7 @@ _BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from brain import brain_daemon as bd  # noqa: E402
+from poindexter.brain import brain_daemon as bd  # noqa: E402
 
 
 @pytest.mark.unit
@@ -105,7 +105,7 @@ class TestAlertDispatchDied:
 class TestPageOperatorFailsafe:
     def test_invokes_notify_operator_with_kwargs(self, monkeypatch):
         mock = MagicMock(return_value={"telegram": "sent"})
-        monkeypatch.setattr("brain.operator_notifier.notify_operator", mock)
+        monkeypatch.setattr("poindexter.brain.operator_notifier.notify_operator", mock)
         ok = bd._page_operator_failsafe(
             title="t", detail="d", source="brain:test", severity="critical"
         )
@@ -119,7 +119,7 @@ class TestPageOperatorFailsafe:
     def test_swallows_notify_failure(self, monkeypatch):
         """The failsafe must never raise — a failed page can't crash the loop."""
         mock = MagicMock(side_effect=RuntimeError("network down"))
-        monkeypatch.setattr("brain.operator_notifier.notify_operator", mock)
+        monkeypatch.setattr("poindexter.brain.operator_notifier.notify_operator", mock)
         assert bd._page_operator_failsafe(title="t", detail="d", source="s") is False
 
 

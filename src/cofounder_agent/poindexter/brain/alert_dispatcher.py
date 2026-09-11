@@ -100,9 +100,13 @@ logger = logging.getLogger("brain.alert_dispatcher")
 # them, and so a brain image without brain/remediation still imports the
 # dispatcher (the hooks resolve to no-ops that page as usual).
 try:
-    from brain.remediation.engine import evaluate_for_dispatch as evaluate_for_dispatch_hook
-    from brain.remediation.engine import run_verify_scan as run_verify_scan_hook
-    from brain.remediation.rules import load_firefighter_config as _load_firefighter_config
+    from poindexter.brain.remediation.engine import (
+        evaluate_for_dispatch as evaluate_for_dispatch_hook,
+    )
+    from poindexter.brain.remediation.engine import run_verify_scan as run_verify_scan_hook
+    from poindexter.brain.remediation.rules import (
+        load_firefighter_config as _load_firefighter_config,
+    )
 except Exception as _ff_import_err:  # noqa: BLE001 — partial/legacy image
     # LOUD, not silent: this fallback once hid a real packaging bug — the
     # brain/remediation/ subpackage wasn't COPYed into the image, so the
@@ -260,7 +264,7 @@ async def _read_app_setting_str(pool: Any, key: str, default: str) -> str:
     read ``ops_triage_enabled`` / ``api_base_url`` / etc. are
     unaffected.
     """
-    from brain.secret_reader import read_app_setting
+    from poindexter.brain.secret_reader import read_app_setting
     try:
         return await read_app_setting(pool, key, default)
     except Exception as e:  # noqa: BLE001 — best-effort, mirror old shape
@@ -609,10 +613,10 @@ async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
     # function. Both flat (`import brain_daemon`) and package-qualified
     # (`from brain import brain_daemon`) imports are supported because
     # the Dockerfile mirrors brain/ files into both /app and /app/brain/.
-    brain_daemon_mod = sys.modules.get("brain.brain_daemon") or sys.modules.get("poindexter.brain.brain_daemon")
+    brain_daemon_mod = sys.modules.get("poindexter.brain.brain_daemon")
     if brain_daemon_mod is None:
         try:
-            from brain import brain_daemon as brain_daemon_mod  # type: ignore
+            from poindexter.brain import brain_daemon as brain_daemon_mod  # type: ignore
         except ImportError:
             brain_daemon_mod = None
 
@@ -1408,11 +1412,11 @@ def _resolve_brain_daemon_module() -> Any | None:
     ``None`` when neither path resolves; callers fall back to the
     legacy notify_fn in that case.
     """
-    mod = sys.modules.get("brain.brain_daemon") or sys.modules.get("poindexter.brain.brain_daemon")
+    mod = sys.modules.get("poindexter.brain.brain_daemon")
     if mod is not None:
         return mod
     try:
-        from brain import brain_daemon as mod  # type: ignore
+        from poindexter.brain import brain_daemon as mod  # type: ignore
         return mod
     except ImportError:
         return None
@@ -1792,7 +1796,7 @@ async def _mint_oauth_token(pool: Any, base_url: str) -> str | None:
     unauthenticated calls at the worker.
     """
     try:
-        from brain.oauth_client import oauth_client_from_pool
+        from poindexter.brain.oauth_client import oauth_client_from_pool
         client = await oauth_client_from_pool(pool, base_url=base_url)
         if not client.using_oauth:
             await client.aclose()
@@ -1982,10 +1986,10 @@ async def _send_triage_followup(
     """
     if not diagnosis:
         return
-    brain_daemon_mod = sys.modules.get("brain.brain_daemon") or sys.modules.get("poindexter.brain.brain_daemon")
+    brain_daemon_mod = sys.modules.get("poindexter.brain.brain_daemon")
     if brain_daemon_mod is None:
         try:
-            from brain import brain_daemon as brain_daemon_mod  # type: ignore
+            from poindexter.brain import brain_daemon as brain_daemon_mod  # type: ignore
         except ImportError:
             logger.warning(
                 "[alert_dispatcher] brain_daemon unavailable — "

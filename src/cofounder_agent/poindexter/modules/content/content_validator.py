@@ -350,7 +350,7 @@ def _load_fact_overrides_sync(site_config: Any = None) -> list[tuple[str, str, s
         # brain.bootstrap.resolve_database_url() is the canonical DSN
         # resolver — no os.getenv in services (project-wide rule).
         try:
-            from brain.bootstrap import resolve_database_url
+            from poindexter.brain.bootstrap import resolve_database_url
             db_url = resolve_database_url() or ""
         except Exception:
             db_url = ""

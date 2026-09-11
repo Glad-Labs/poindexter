@@ -108,7 +108,7 @@ def _resolve_smoke_dsn() -> str | None:
     job with zero migration cost.
     """
     try:
-        from brain.bootstrap import resolve_database_url
+        from poindexter.brain.bootstrap import resolve_database_url
         dsn = resolve_database_url()
     except Exception:
         return None

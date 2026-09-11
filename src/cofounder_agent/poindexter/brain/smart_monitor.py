@@ -70,7 +70,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from brain.operator_notifier import notify_operator
+from poindexter.brain.operator_notifier import notify_operator
 
 logger = logging.getLogger("brain.smart_monitor")
 
@@ -994,7 +994,7 @@ class SmartMonitorProbe:
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
     async def check(self, pool, config):  # type: ignore[override]
-        from brain.probe_interface import ProbeResult
+        from poindexter.brain.probe_interface import ProbeResult
 
         summary = await run_smart_monitor_probe(pool)
         return ProbeResult(

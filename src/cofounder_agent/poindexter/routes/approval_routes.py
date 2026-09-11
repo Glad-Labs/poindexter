@@ -21,13 +21,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import get_operator_identity, verify_api_token
+from poindexter.schemas.task_schemas import PendingApprovalListResponse
 from poindexter.services.audit_log import audit_log_bg
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.error_handler import AppError
 from poindexter.services.logger_config import get_logger
 from poindexter.utils.route_utils import get_database_dependency
 from poindexter.utils.uuid_prefix import resolve_task_id_prefix
-from schemas.task_schemas import PendingApprovalListResponse
 
 # Stable gate name for the legacy `awaiting_approval` HITL flow.
 # All route-level approval/rejection writes funnel through this gate so

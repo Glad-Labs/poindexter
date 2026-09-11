@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain import mcp_http_probe as mhp
+from poindexter.brain import mcp_http_probe as mhp
 
 
 def _default_settings() -> dict[str, str]:

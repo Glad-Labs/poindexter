@@ -23,11 +23,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
-from poindexter.utils.rate_limiter import limiter
-from poindexter.utils.route_utils import get_database_dependency
 
 # Import helpers under test directly (pure functions, no I/O)
-from routes.task_routes import _normalize_seo_keywords_in_task, router
+from poindexter.routes.task_routes import _normalize_seo_keywords_in_task, router
+from poindexter.utils.rate_limiter import limiter
+from poindexter.utils.route_utils import get_database_dependency
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
 
 
@@ -724,7 +724,7 @@ class TestDiscoverTopicsEndpoint:
 
     @staticmethod
     def _patch_niche(monkeypatch, slug="test-niche"):
-        import routes.task_routes as tr
+        import poindexter.routes.task_routes as tr
 
         niche = MagicMock()
         niche.slug = slug
@@ -1011,7 +1011,7 @@ class TestCreateTaskSeedURL:
 @pytest.mark.unit
 class TestCheckTaskOwnership:
     def test_same_user_does_not_raise(self):
-        from routes.task_routes import _check_task_ownership
+        from poindexter.routes.task_routes import _check_task_ownership
 
         task = {"user_id": "user-abc"}
         user = {"id": "user-abc"}
@@ -1021,7 +1021,7 @@ class TestCheckTaskOwnership:
     def test_different_user_raises_403(self):
         from fastapi import HTTPException
 
-        from routes.task_routes import _check_task_ownership
+        from poindexter.routes.task_routes import _check_task_ownership
 
         task = {"user_id": "user-abc"}
         user = {"id": "user-xyz"}
@@ -1031,7 +1031,7 @@ class TestCheckTaskOwnership:
 
     def test_missing_task_user_id_does_not_raise(self):
         """Legacy tasks without user_id are accessible by all users."""
-        from routes.task_routes import _check_task_ownership
+        from poindexter.routes.task_routes import _check_task_ownership
 
         task = {}  # no user_id
         user = {"id": "user-xyz"}
@@ -1040,7 +1040,7 @@ class TestCheckTaskOwnership:
 
     def test_missing_request_user_id_does_not_raise(self):
         """If current_user has no id, the check is skipped."""
-        from routes.task_routes import _check_task_ownership
+        from poindexter.routes.task_routes import _check_task_ownership
 
         task = {"user_id": "user-abc"}
         user = {}  # no id

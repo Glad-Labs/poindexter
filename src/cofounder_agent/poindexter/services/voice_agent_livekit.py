@@ -240,7 +240,7 @@ async def _spending_from_db() -> str:
     """Direct cost_logs query as a fallback when the API doesn't ship a summary."""
     import asyncpg
 
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
     dsn = resolve_database_url()
     conn = await asyncpg.connect(dsn, timeout=2.0)
     try:
@@ -274,7 +274,7 @@ async def _connect_db() -> Any:
     """
     import asyncpg
 
-    from brain.bootstrap import resolve_database_url
+    from poindexter.brain.bootstrap import resolve_database_url
     dsn = resolve_database_url()
     return await asyncpg.connect(dsn, timeout=2.0)
 
@@ -536,7 +536,7 @@ async def _get_recent_pull_requests_text() -> str:
     try:
         import asyncpg
 
-        from brain.bootstrap import resolve_database_url
+        from poindexter.brain.bootstrap import resolve_database_url
         from poindexter.plugins.secrets import get_secret
         dsn = resolve_database_url()
         pool = await asyncpg.create_pool(dsn, min_size=1, max_size=1, timeout=2.0)
@@ -1174,7 +1174,7 @@ async def run_bot(
     """
     import asyncpg
 
-    from brain.bootstrap import require_database_url
+    from poindexter.brain.bootstrap import require_database_url
     from poindexter.services.site_config import SiteConfig
 
     # Bootstrap a tiny pool just to read voice_agent_livekit_url before
@@ -1469,7 +1469,7 @@ async def run_service(profile: str = "default") -> int:
 
     import asyncpg
 
-    from brain.bootstrap import require_database_url
+    from poindexter.brain.bootstrap import require_database_url
     from poindexter.services.site_config import SiteConfig
 
     dsn = require_database_url(source=f"voice_agent_livekit_service[{profile}]")

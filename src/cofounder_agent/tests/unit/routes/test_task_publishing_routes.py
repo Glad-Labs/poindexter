@@ -32,8 +32,8 @@ def _import_publishing_module():
     but since the module may already be loaded, we just grab it.
     """
     # If already imported (e.g. by the full app), just use it
-    if "routes.task_publishing_routes" in sys.modules:
-        return sys.modules["routes.task_publishing_routes"]
+    if "poindexter.routes.task_publishing_routes" in sys.modules:
+        return sys.modules["poindexter.routes.task_publishing_routes"]
 
     # Otherwise, mock the circular bit so we can import cleanly
     import importlib
@@ -41,9 +41,9 @@ def _import_publishing_module():
     # Ensure task_routes is loaded first — it registers the sub-router,
     # and triggering *this* import first seeds sys.modules so the cycle
     # resolves cleanly when task_publishing_routes imports back from it.
-    import routes.task_routes  # noqa: F401
+    import poindexter.routes.task_routes  # noqa: F401
 
-    return importlib.import_module("routes.task_publishing_routes")
+    return importlib.import_module("poindexter.routes.task_publishing_routes")
 
 
 _pub_mod = _import_publishing_module()
@@ -949,7 +949,7 @@ class TestPublishTask:
 
         app = _build_app(mock_db)
         with patch(
-            "routes.task_publishing_routes.ModelConverter.task_response_to_unified",
+            "poindexter.routes.task_publishing_routes.ModelConverter.task_response_to_unified",
             side_effect=RuntimeError("converter boom"),
         ):
             client = TestClient(app)
@@ -1198,7 +1198,7 @@ class TestGenerateTaskImage:
         mock_db.get_task = AsyncMock(return_value=task)
 
         app = _build_app(mock_db)
-        with patch("routes.task_publishing_routes.os.getenv", return_value=None):
+        with patch("poindexter.routes.task_publishing_routes.os.getenv", return_value=None):
             client = TestClient(app)
             resp = self._post_generate(client)
 
@@ -1256,7 +1256,7 @@ class TestGenerateTaskImage:
         mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=None)
 
         with (
-            patch("routes.task_publishing_routes.os.getenv", return_value="test-pexels-key"),
+            patch("poindexter.routes.task_publishing_routes.os.getenv", return_value="test-pexels-key"),
             patch("aiohttp.ClientSession", mock_session_cls),
         ):
             client = TestClient(app)
@@ -1294,7 +1294,7 @@ class TestGenerateTaskImage:
         mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=None)
 
         with (
-            patch("routes.task_publishing_routes.os.getenv", return_value="test-key"),
+            patch("poindexter.routes.task_publishing_routes.os.getenv", return_value="test-key"),
             patch("aiohttp.ClientSession", mock_session_cls),
         ):
             client = TestClient(app)

@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from brain.psu_power import (
+from poindexter.brain.psu_power import (
     STATIC_DEFAULT_WATTS,
     fetch_icue_psu_watts,
     psu_watchdog_transition,

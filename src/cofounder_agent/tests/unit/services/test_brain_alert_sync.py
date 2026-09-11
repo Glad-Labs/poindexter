@@ -37,7 +37,7 @@ _BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from brain import alert_sync as asx  # noqa: E402
+from poindexter.brain import alert_sync as asx  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                     #
@@ -314,7 +314,7 @@ class TestSyncAlertRulesDisabledOrUnconfigured:
         import types
         fake_module = types.ModuleType("brain_daemon")
         fake_module.notify = fake_notify  # type: ignore[attr-defined]
-        with patch.dict(sys.modules, {"brain.brain_daemon": fake_module, "poindexter.brain.brain_daemon": fake_module}):
+        with patch.dict(sys.modules, {"poindexter.brain.brain_daemon": fake_module}):
             _mock_pool(settings={"grafana_api_token": ""})
             with patch("urllib.request.urlopen"):
                 summaries = []
@@ -474,7 +474,7 @@ class TestMaybeSyncGrafanaAlertsCadence:
     """The counter in brain_daemon must only fire sync every N cycles."""
 
     async def test_counter_fires_sync_every_interval(self):
-        from brain import brain_daemon as bd
+        from poindexter.brain import brain_daemon as bd
 
         # Reset the module-level counter so tests are independent.
         bd._alert_sync_cycle_counter = 0
@@ -496,7 +496,7 @@ class TestMaybeSyncGrafanaAlertsCadence:
             assert sync_mock.await_count == 2
 
     async def test_interval_zero_disables_sync(self):
-        from brain import brain_daemon as bd
+        from poindexter.brain import brain_daemon as bd
 
         bd._alert_sync_cycle_counter = 0
         pool = MagicMock()
@@ -508,7 +508,7 @@ class TestMaybeSyncGrafanaAlertsCadence:
             assert sync_mock.await_count == 0
 
     async def test_sync_failure_does_not_propagate(self):
-        from brain import brain_daemon as bd
+        from poindexter.brain import brain_daemon as bd
 
         bd._alert_sync_cycle_counter = 0
         pool = MagicMock()

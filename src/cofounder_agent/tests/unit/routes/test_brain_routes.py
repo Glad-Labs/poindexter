@@ -15,9 +15,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.routes.brain_routes import router
 from poindexter.services.brain_stats import _iso
 from poindexter.utils.route_utils import get_database_dependency
-from routes.brain_routes import router
 
 # ---------------------------------------------------------------------------
 # Helper tests

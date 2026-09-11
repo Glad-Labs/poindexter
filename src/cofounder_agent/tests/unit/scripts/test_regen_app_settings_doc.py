@@ -44,12 +44,12 @@ def _load_script_module() -> ModuleType:
     neither the real brain package nor asyncpg need to be importable.
     """
 
-    if "brain.bootstrap" not in sys.modules:
-        stub = types.ModuleType("brain.bootstrap")
+    if "poindexter.brain.bootstrap" not in sys.modules:
+        stub = types.ModuleType("poindexter.brain.bootstrap")
         stub.resolve_database_url = lambda: ""  # type: ignore[attr-defined]
         brain_pkg = sys.modules.setdefault("brain", types.ModuleType("brain"))
         brain_pkg.bootstrap = stub  # type: ignore[attr-defined]
-        sys.modules["brain.bootstrap"] = stub
+        sys.modules["poindexter.brain.bootstrap"] = stub
 
     spec = spec_from_file_location("regen_app_settings_doc", SCRIPT_PATH)
     assert spec is not None and spec.loader is not None

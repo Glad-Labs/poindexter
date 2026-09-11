@@ -55,8 +55,11 @@ def _resolve_db_url() -> str:
         if val:
             return val.replace("@localhost:", "@127.0.0.1:")
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    # poindexter#1046 step 3: imports spell `poindexter.*`, which lives under src/cofounder_agent --
+    # the repo-root `brain/` stub used to put it on sys.path as a side effect; be explicit.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
     try:
-        from brain.bootstrap import resolve_database_url  # type: ignore
+        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
 
         dsn = resolve_database_url()
     except Exception as exc:  # bootstrap is best-effort on the host

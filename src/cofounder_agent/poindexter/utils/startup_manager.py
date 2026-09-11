@@ -211,7 +211,7 @@ class StartupManager:
         )
 
         try:
-            from brain.operator_notifier import notify_operator
+            from poindexter.brain.operator_notifier import notify_operator
 
             notify_operator(
                 title=f"Worker cannot start — {len(errors)} syntax error(s) in modules/",
@@ -370,7 +370,7 @@ class StartupManager:
         backoff_s = 1.0
 
         try:
-            from config import get_config
+            from poindexter.config import get_config
             from poindexter.services.database_service import DatabaseService
 
             config = get_config()
@@ -432,7 +432,7 @@ class StartupManager:
                 # brain is poindexter.brain (poindexter#1046 step 2) -- a sibling
                 # package, importable wherever this module is; no path walk.
 
-                from brain.operator_notifier import notify_operator
+                from poindexter.brain.operator_notifier import notify_operator
 
                 notify_operator(
                     title="Worker cannot start — database connection failed",
@@ -474,7 +474,7 @@ class StartupManager:
             logger.error(f"  {startup_error}", exc_info=True)
             try:
 
-                from brain.operator_notifier import notify_operator
+                from poindexter.brain.operator_notifier import notify_operator
 
                 notify_operator(
                     title="Worker cannot start — database migration failed",

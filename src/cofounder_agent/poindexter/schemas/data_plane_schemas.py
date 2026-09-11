@@ -9,7 +9,7 @@ canonicalized.
 
 from typing import Any
 
-from schemas.database_response_models import ListResponse
+from poindexter.schemas.database_response_models import ListResponse
 
 
 class DataPlaneRowListResponse(ListResponse[dict[str, Any]]):
