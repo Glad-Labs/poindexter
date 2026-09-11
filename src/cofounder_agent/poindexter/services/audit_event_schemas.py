@@ -183,6 +183,12 @@ class ImageFanoutCandidateEntry(BaseModel):
     # were unauditable for precisely this reason. None (key omitted) when
     # image_fanout_retain_candidates is off or the upload missed.
     url: str | None = None
+    # The vision model that produced this score. The judge had no model pin
+    # of its own and read ``qa_vision_model``, so a change made for the
+    # article vision rail repointed it mid-calibration (2026-09-09) with
+    # nothing in the row to say so — rows either side of the swap read as one
+    # population. None on rows written before the pin existed.
+    judge_model: str | None = None
 
 
 class ImageFanoutJudgedDetails(BaseModel):

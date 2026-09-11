@@ -2436,6 +2436,19 @@ DEFAULTS: dict[str, str] = {
     # multi_model_qa; raising THIS value alone only moved the loss rate
     # 30.6% -> 20.9%, because a reasoning trace does not fit in a nudge.
     'image_fanout_judge_max_tokens': '2048',
+    # Vision model that scores fan-out candidates. EMPTY = fall back to
+    # `qa_vision_model`, which is what every install judges with today, so
+    # the default is a no-op seam rather than a change.
+    #
+    # It exists because the fan-out judge had no pin and read `qa_vision_model`
+    # directly — the setting the ARTICLE vision rail is tuned on. Repointing
+    # that key at qwen3-vl:30b-a3b-instruct for `qa.vision` (2026-09-09 14:21)
+    # silently changed the model generating the Phase-2 router's training data,
+    # mid-calibration, and the judged rows carry no marker of it: the score
+    # distribution, the within-row spread and the text-cap behaviour all shift
+    # across that timestamp while the rows read as one population. Set this
+    # when the two rails should differ — they grade different things.
+    'image_fanout_judge_model': '',
     # Keep every candidate image in the object store, keyed by day and task,
     # so a judged row can be audited against the images it scored. Off means
     # the losing candidates exist only in the worker's /tmp until the next
@@ -5413,6 +5426,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_fanout_candidates': {'value_type': 'string'},
     'image_fanout_priority': {'value_type': 'string'},
     'image_fanout_judge_enabled': {'value_type': 'boolean'},
+    'image_fanout_judge_model': {'value_type': 'string'},
     'image_fanout_comfyui_url': {'value_type': 'url'},
     'image_fanout_render_timeout_s': {'value_type': 'integer'},
     'image_fanout_width': {'value_type': 'integer'},

@@ -462,9 +462,20 @@ Score this candidate 0-100:
   the requested style (isometric / flat vector / cinematic / etc.)?
 - COMPOSITION - clear focal subject, balanced framing, works as a wide hero
   image at a glance.
-- CLEAN - no garbled or legible text of any kind, no warped geometry, no
-  melted or extra limbs, no AI-slop artifacts. Any legible text caps the
-  score at 40.
+- CLEAN - no warped geometry, no melted or extra limbs, no AI-slop artifacts.
+- TEXT - judge text by whether a reader could READ it, not by whether marks
+  look text-shaped. Apply exactly one of:
+  - READABLE WORDS OR DIGITS a reader could transcribe - a title, a label, a
+    caption, numerals on a dial or scale, characters in any script. Caps the
+    score at 40, however small, however few, however well the image is
+    otherwise made.
+  - GARBLED PSEUDO-TEXT that only resembles writing - unreadable squiggles,
+    fake glyph rows standing in for body copy, decorative marks. Subtract 10
+    to 20 points. Do NOT cap: this is an artifact, not text.
+  - NO TEXT-LIKE MARKS AT ALL. No deduction.
+  Judge only what is in THIS image. If the brief asks for something
+  text-adjacent (code fragments, blueprint annotations, an open book), the
+  same test still decides it: readable caps, unreadable deducts.
 - BRAND - stylized illustration energy over photorealism; rich, confident
   palette.
 

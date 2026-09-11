@@ -159,7 +159,8 @@ response`, distinct from `unparseable vision response`; conflating them
 (`zimage,schnell,klein,qwen`) · `judge_enabled` (true) · `comfyui_url`
 (`http://comfyui:8188`) · `render_timeout_s` (600) · `width`/`height`
 (1024) · `judge_max_tokens` (2048, a floor — see the judge-budget note
-above) · `retain_candidates` (true) · per-model knobs (`schnell_checkpoint/steps/cfg`,
+above) · `judge_model` (`''` = follow `qa_vision_model`; see "The judge's
+model is pinned here" below) · `retain_candidates` (true) · per-model knobs (`schnell_checkpoint/steps/cfg`,
 `qwen_model/text_encoder/vae/steps/cfg/shift`,
 `klein_model/text_encoder/vae/steps/cfg`).
 
@@ -292,6 +293,52 @@ Two panels at the foot of the Pipeline board, beside the wins/presence table:
   looking for a parser bug that did not exist. Rows written before that date
   all read `unparseable` regardless of which they were.
 
+### The judge's model is pinned here
+
+`image_fanout_judge_model` selects the vision model that scores candidates.
+Empty — the default — falls back to `qa_vision_model`, so an install that
+never sets it judges with exactly the model it judged with before the pin
+existed.
+
+The pin exists because the fallback used to be the only path. The fan-out
+judge read `qa_vision_model` directly: the setting the **article** vision
+rail is tuned on. On 2026-09-09 14:21 that key was repointed at
+`qwen3-vl:30b-a3b-instruct` for `qa.vision`, and the fan-out judge changed
+model with it — mid-calibration, with nothing in the judged rows to say so.
+The judged rows are the Phase-2 router's training data; a decision made
+about a different rail must not be able to change how that data is generated
+without anyone choosing it.
+
+Every candidate entry now carries `judge_model`, stamped **before** the call
+so a failed judge call is still attributable. Split any analysis of these
+rows on it: the 2026-09-09 swap was only found by diffing score
+distributions against `app_settings.updated_at` after the fact, and a regime
+boundary belongs in the dataset, not in an archaeology exercise.
+
+### The text cap is the scoring function
+
+Read the `TEXT` block of `qa.featured_image_fanout` before you read a score.
+Across the 2026-08-31 → 09-10 calibration corpus (34 image-backed rows, all
+125 candidate images retained and inspected), **83% of every sub-40 score
+cites legible text.** The other criteria only separate the survivors.
+
+That makes the cap's reliability the judge's reliability, and until
+2026-09-10 it was inverted: it fired readily on *garbled* pseudo-glyphs and
+missed *readable* digits. In five audited rows the capped candidate carried
+visibly **less** text than a sibling scoring ≥ 90 — most starkly a caliper
+render whose large, transcribable scale digits scored 95 and won the row
+while the three siblings with smaller markings scored 38–40, and a
+server-room row where four images with equally legible book text scored
+45 / 65 / 92 / 92.
+
+The prompt was self-contradictory and the judge resolved the contradiction
+differently per candidate: `CLEAN` banned "garbled or legible text" while the
+cap sentence said only "Any legible text caps the score at 40". Garbled
+pseudo-text is by definition not legible. The rewrite makes readability the
+test — readable words or digits cap at 40, unreadable marks deduct 10–20 as
+the artifact they are — and says so for text-adjacent briefs too, since the
+brief itself sometimes asks for code fragments or blueprint annotations.
+
 ## Known gaps (Phase 2)
 
 - ComfyUI candidates have **no OCR gate** — text discipline rides the
@@ -307,8 +354,22 @@ Two panels at the foot of the Pipeline board, beside the wins/presence table:
   one candidate, judge down). Presence is lopsided too — zimage appeared in
   21 rows against schnell's 47 — so a raw win _rate_ is confounded before the
   judge speaks. The judge is also near-binary in practice: 71% of scores
-  ≥ 90, 24% ≤ 40, and only 4.8% anywhere in the 41–89 band. The retention and
-  budget fixes above address the mechanical half; the score-distribution half
-  is a `qa.featured_image_fanout` prompt question, deliberately left until
-  there is enough per-candidate data to answer it without over-fitting.
-  Tracked in Glad-Labs/poindexter#1032.
+  ≥ 90, 24% ≤ 40, and only 4.8% anywhere in the 41–89 band.
+
+  **Re-measured 2026-09-10 over 88 rows.** The mechanical half held: judge
+  loss 27% → 0.7%, genuine judge wins 42% → 78%, ties 9/32 → 0/36. The
+  near-binary half did **not** move — the 41–89 band is 5.3%, statistically
+  unchanged. The spread widened because the bimodality sharpened, not because
+  the judge started discriminating. The text-cap rewrite above is the first
+  half of the answer; whether the score bands themselves need work is not yet
+  answerable, because the judge model changed on 2026-09-09 and only four rows
+  post-date it. Tracked in Glad-Labs/poindexter#1032.
+
+- **zimage's numbers are conditioned on a gate its rivals do not face.** It is
+  absent from 11 of 34 image-backed rows, every one `ocr_gate_rejected`, so
+  its *worst* renders are deleted from the dataset rather than scored badly
+  while the ComfyUI three carry theirs into the judge. Its median 95 is a
+  survivor statistic. Any routing map seeded from these rows has to model that
+  selection, or gate the other three the same way. (Relatedly,
+  `image_ocr_gate_max_chars=6` passed a hero with **"HUOH"** across the top at
+  full size — four characters is under the limit.)

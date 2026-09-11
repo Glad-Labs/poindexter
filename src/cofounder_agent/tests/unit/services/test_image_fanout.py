@@ -779,3 +779,165 @@ class TestCandidateRetention:
             )
         details = json.loads(pool.execute.await_args.args[4])
         assert "url" not in details["candidates"][0]
+
+
+class TestJudgeModelPin:
+    """The judge had no model pin and read ``qa_vision_model`` — the setting
+    the ARTICLE vision rail is tuned on. Repointing that key for `qa.vision`
+    (2026-09-09 14:21) silently changed the model generating the Phase-2
+    router's training data, mid-calibration, and the rows carried no marker
+    of it. These pin the seam and the marker.
+    """
+
+    def test_falls_back_to_qa_vision_model(self):
+        """Backcompat: an install that never sets the pin judges with exactly
+        the model it judges with today."""
+        assert image_fanout.resolve_judge_model(
+            _FakeSiteConfig({"qa_vision_model": "ollama/qwen3-vl:30b"}),
+        ) == "ollama/qwen3-vl:30b"
+
+    def test_pin_wins_over_qa_vision_model(self):
+        assert image_fanout.resolve_judge_model(_FakeSiteConfig({
+            "qa_vision_model": "ollama/qwen3-vl:30b-a3b-instruct",
+            "image_fanout_judge_model": "ollama/llava:34b",
+        })) == "ollama/llava:34b"
+
+    def test_blank_pin_is_not_a_model(self):
+        """An empty string is the documented 'unset', not a model name — a
+        whitespace value must not dispatch against ''."""
+        assert image_fanout.resolve_judge_model(_FakeSiteConfig({
+            "qa_vision_model": "ollama/qwen3-vl:30b",
+            "image_fanout_judge_model": "   ",
+        })) == "ollama/qwen3-vl:30b"
+
+    @pytest.mark.asyncio
+    async def test_pinned_model_is_the_one_dispatched(self, tmp_path):
+        cand = FanoutCandidate(name="qwen", path=str(tmp_path / "c.png"))
+        (tmp_path / "c.png").write_bytes(b"P")
+        seen = {}
+
+        async def fake_dispatch(pool, messages, model, **kw):
+            seen["model"] = model
+            return MagicMock(text='{"score": 70, "reason": "ok"}')
+
+        prompt_mgr = MagicMock()
+        prompt_mgr.get_prompt = MagicMock(return_value="judge prompt")
+        with patch("services.llm_providers.dispatcher.dispatch_complete",
+                   fake_dispatch), \
+             patch("services.prompt_manager.get_prompt_manager",
+                   MagicMock(return_value=prompt_mgr)):
+            await image_fanout._score_candidate(
+                cand, brief="b",
+                site_config=_FakeSiteConfig({
+                    "qa_vision_model": "llava:13b",
+                    "image_fanout_judge_model": "llava:34b",
+                }),
+                pool=MagicMock(),
+            )
+        assert seen["model"] == "llava:34b"
+        assert cand.meta["judge_model"] == "llava:34b"
+
+    @pytest.mark.asyncio
+    async def test_model_is_stamped_even_when_the_judge_call_fails(
+        self, tmp_path,
+    ):
+        """A failed judge call is still evidence ABOUT that model. Recording
+        the model only on success would hide exactly the failures worth
+        attributing to it."""
+        cand = FanoutCandidate(name="qwen", path=str(tmp_path / "c.png"))
+        (tmp_path / "c.png").write_bytes(b"P")
+
+        async def boom(*a, **kw):
+            raise RuntimeError("judge exploded")
+
+        prompt_mgr = MagicMock()
+        prompt_mgr.get_prompt = MagicMock(return_value="judge prompt")
+        with patch("services.llm_providers.dispatcher.dispatch_complete",
+                   boom), \
+             patch("services.prompt_manager.get_prompt_manager",
+                   MagicMock(return_value=prompt_mgr)):
+            await image_fanout._score_candidate(
+                cand, brief="b",
+                site_config=_FakeSiteConfig({"qa_vision_model": "llava:13b"}),
+                pool=MagicMock(),
+            )
+        assert cand.score is None
+        assert cand.meta["judge_model"] == "llava:13b"
+
+    @pytest.mark.asyncio
+    async def test_judge_model_reaches_the_outcome_row(
+        self, zimage_file, no_gpu_unload,
+    ):
+        """The marker has to land in the DATASET. Reconstructing a regime
+        boundary from app_settings.updated_at after the fact is how the
+        2026-09-09 swap was found — months late."""
+        async def render(name, graph, **kw):
+            return f"/tmp/{name}.png", {"elapsed_s": 1.0}
+
+        async def score(c, **kw):
+            c.score = 90.0
+            c.meta["judge_model"] = "ollama/qwen3-vl:30b-a3b-instruct"
+
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", score), \
+             patch.object(image_fanout, "_retain_candidates", AsyncMock()):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={"model": "z_image_turbo"},
+                site_config=_sc(), pool=pool, task_id="t10",
+            )
+        details = json.loads(pool.execute.await_args.args[4])
+        assert all(
+            c["judge_model"] == "ollama/qwen3-vl:30b-a3b-instruct"
+            for c in details["candidates"]
+        )
+
+
+class TestJudgePromptTextRule:
+    """The cap is the scoring function, not one criterion of four: 83% of all
+    sub-40 scores in the calibration corpus cite legible text. It was firing
+    on garbled pseudo-glyphs while missing readable digits — in five audited
+    rows the capped candidate carried LESS text than a sibling scoring >=90
+    (row20: large legible caliper digits -> 95 and won; row31: four images
+    with equally legible book text -> 45/65/92/92). The prompt is the only
+    place that distinction can be made, so pin that it is made.
+    """
+
+    @staticmethod
+    def _body() -> str:
+        from pathlib import Path
+
+        text = (
+            Path(__file__).resolve().parents[3]
+            / "skills" / "content" / "content-qa" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        start = text.index("## qa.featured_image_fanout")
+        body = text[start:text.index("```", text.index("```text", start) + 7)]
+        # Collapse the prompt's line wrapping: these assertions are about what
+        # the judge is TOLD, and a reflow must not fail them.
+        return " ".join(body.split())
+
+    def test_readable_text_still_caps_at_40(self):
+        assert "Caps the score at 40" in self._body()
+
+    def test_garbled_pseudo_text_deducts_instead_of_capping(self):
+        """Garbled marks are an artifact, not text — the old wording banned
+        'garbled or legible text' in CLEAN while the cap sentence said only
+        'legible', so the judge resolved the conflict differently per
+        candidate within the same row."""
+        body = self._body()
+        assert "GARBLED PSEUDO-TEXT" in body
+        assert "Do NOT cap" in body
+
+    def test_readability_is_the_test_not_text_shaped_marks(self):
+        body = self._body()
+        assert "could READ it" in body
+        assert "transcribe" in body
+
+    def test_text_adjacent_briefs_are_covered(self):
+        """The brief itself sometimes asks for text-adjacent content ('floating
+        syntax fragments', blueprint annotations, an open book) — row13 capped
+        the candidate with the LEAST glyph content while a sibling rendering
+        two full pseudo-code panels scored 97."""
+        assert "text-adjacent" in self._body()

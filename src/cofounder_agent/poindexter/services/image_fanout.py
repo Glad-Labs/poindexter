@@ -471,6 +471,35 @@ def _parse_score(text: str) -> tuple[float | None, str]:
     return float(raw), str(parsed.get("reason", ""))[:200]
 
 
+def resolve_judge_model(site_config: Any) -> str:
+    """The vision model that scores fan-out candidates.
+
+    ``image_fanout_judge_model`` when set, else ``qa_vision_model``. The
+    fallback keeps every existing install on exactly the model it judges with
+    today, so this is a seam, not a change of behaviour.
+
+    It exists because the fan-out judge had no pin of its own and simply read
+    ``qa_vision_model`` — the setting the *article* vision rail is tuned on.
+    On 2026-09-09 14:21 that key was repointed at
+    ``qwen3-vl:30b-a3b-instruct`` for `qa.vision`, and the fan-out judge
+    silently changed model with it, mid-calibration. The judged rows are the
+    Phase-2 router's training data; a decision made about a different rail
+    must not be able to change how that data is generated without anyone
+    choosing it. Pinning here also lets the two rails diverge, which they
+    eventually should: one grades prose against an article, the other grades
+    a hero render against a brief.
+
+    The model is recorded on every judged row (see ``_record_outcome``) so a
+    regime boundary is visible IN the dataset rather than reconstructible
+    from ``app_settings.updated_at`` after the fact — which is how this one
+    was found.
+    """
+    pinned = str(_sc_get(site_config, "image_fanout_judge_model", "") or "").strip()
+    if pinned:
+        return pinned
+    return str(_sc_get(site_config, "qa_vision_model", "") or "").strip()
+
+
 def _judge_token_budget(model: str, base: int, site_config: Any) -> int:
     """Raise the judge's output budget when the vision model is a thinking one.
 
@@ -516,10 +545,14 @@ async def _score_candidate(
     candidate: FanoutCandidate, *, brief: str, site_config: Any, pool: Any,
 ) -> None:
     """Score one candidate in place. Fail-soft: score stays ``None``."""
-    model = str(_sc_get(site_config, "qa_vision_model", "") or "").strip()
+    model = resolve_judge_model(site_config)
     if not model or pool is None:
         candidate.reason = "judge unavailable (no model/pool)"
         return
+    # Stamp the model BEFORE the call: a candidate whose judge call fails is
+    # still evidence about that model, and a row that records the model only
+    # on success would hide exactly the failures worth attributing.
+    candidate.meta["judge_model"] = model
     try:
         with open(candidate.path, "rb") as fh:
             b64 = base64.b64encode(fh.read()).decode("ascii")
@@ -677,7 +710,11 @@ async def _record_outcome(
              "width": c.meta.get("width"), "height": c.meta.get("height"),
              # The image this score describes. None (key omitted) when
              # retention is off or the upload missed — see _retain_candidates.
-             "url": c.meta.get("url")}
+             "url": c.meta.get("url"),
+             # The vision model that produced this score. Without it, a
+             # judge-model swap is invisible in the dataset and the rows on
+             # either side read as one population — see resolve_judge_model.
+             "judge_model": c.meta.get("judge_model")}
             for c in candidates
         ],
     }
