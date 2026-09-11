@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+## [0.135.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.134.0...v0.135.0) (2026-09-11)
+
+
+### Features
+
+* **imports:** alias finder so flat and poindexter.* spellings are one module ([#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046) step 2, PR 0) ([#3624](https://github.com/Glad-Labs/glad-labs-stack/issues/3624)) ([bc46d68](https://github.com/Glad-Labs/glad-labs-stack/commit/bc46d68e8f895cd2524adceb0b97df36d37a8e86))
+* **pypi:** reserve the `poindexter` name, and gate publishing on a clean install ([#3618](https://github.com/Glad-Labs/glad-labs-stack/issues/3618)) ([8b38f88](https://github.com/Glad-Labs/glad-labs-stack/commit/8b38f88798bded8609f53f262a40d0089e087990))
+* **tasks:** retitle an awaiting_approval draft — re-slugs and rewrites social-draft URLs ([#3613](https://github.com/Glad-Labs/glad-labs-stack/issues/3613)) ([27a3d9c](https://github.com/Glad-Labs/glad-labs-stack/commit/27a3d9c4ada238c7cd3dc6787dda40aab5fb1fa4))
+* **topics:** Wikipedia pageviews as a topic-demand signal + dual-signal bonus ([#3592](https://github.com/Glad-Labs/glad-labs-stack/issues/3592)) ([d927047](https://github.com/Glad-Labs/glad-labs-stack/commit/d927047a7922584bde110fa2d3822d5f9991abcb))
+
+
+### Bug Fixes
+
+* **alerting:** mount the alertmanager template DIRECTORY, not the file ([#3602](https://github.com/Glad-Labs/glad-labs-stack/issues/3602)) ([bb8f1d2](https://github.com/Glad-Labs/glad-labs-stack/commit/bb8f1d2101532ae299de9e0d0502c56dad0047ca))
+* **brain:** boot grace — a DOWN seen while the brain itself is booting does not feed auto-restart ([#3603](https://github.com/Glad-Labs/glad-labs-stack/issues/3603)) ([6ee9366](https://github.com/Glad-Labs/glad-labs-stack/commit/6ee936611d17f342ad55fa97344834822d007c43))
+* **entity_demand:** price/ordinal/bare-number digits, list + disambiguation pages, 429s ([#3594](https://github.com/Glad-Labs/glad-labs-stack/issues/3594)) ([7151213](https://github.com/Glad-Labs/glad-labs-stack/commit/7151213698b60f5956838ef0128cb0a70a0270b4))
+* **entity_demand:** resolver precision from the first live sweep ([#3593](https://github.com/Glad-Labs/glad-labs-stack/issues/3593)) ([8b94046](https://github.com/Glad-Labs/glad-labs-stack/commit/8b940462a503b9d818200de3927c94cd87316273))
+* **gpu:** ComfyUI VRAM-squat finding is info when the restart queues, warn only when it cannot ([#3600](https://github.com/Glad-Labs/glad-labs-stack/issues/3600)) ([e467e21](https://github.com/Glad-Labs/glad-labs-stack/commit/e467e21bbd93914e78777a94bb1065b1f334e608))
+* **image:** make the fan-out judge's text cap mean what it says, and pin its model ([#3625](https://github.com/Glad-Labs/glad-labs-stack/issues/3625)) ([1d7e6ca](https://github.com/Glad-Labs/glad-labs-stack/commit/1d7e6ca5d154d26ed42e676b0f88928df086e24f))
+* **images:** inject chart results instead of stripping them ([#3617](https://github.com/Glad-Labs/glad-labs-stack/issues/3617)) ([13de742](https://github.com/Glad-Labs/glad-labs-stack/commit/13de74263f5179362b002ad82698fa6987f826b4))
+* **images:** top up illustrations after writer evidence markers; gate screenshots to posts about this system ([#3615](https://github.com/Glad-Labs/glad-labs-stack/issues/3615)) ([9ef4321](https://github.com/Glad-Labs/glad-labs-stack/commit/9ef43215bd3cf3a2547cc55478cdff4377cedcad))
+* **llm:** thinking-model classifier vetoes instruct-tagged siblings ([#3611](https://github.com/Glad-Labs/glad-labs-stack/issues/3611)) ([8ffd246](https://github.com/Glad-Labs/glad-labs-stack/commit/8ffd2469d6e93d573dcfd2f27771043eb3ecd0c5))
+* **probe:** beacon probe retries once and needs two failed runs before it emits ([#3601](https://github.com/Glad-Labs/glad-labs-stack/issues/3601)) ([641a5fc](https://github.com/Glad-Labs/glad-labs-stack/commit/641a5fcc9190b292e949355197317ae60d24b71d))
+* **qa:** judge rails — forward the output budget, retry empty verdicts, lift the Ragas job timeout ([#3605](https://github.com/Glad-Labs/glad-labs-stack/issues/3605)) ([b83adaf](https://github.com/Glad-Labs/glad-labs-stack/commit/b83adaf9bc2e438ffdfc083fc07a390754e3c70b))
+* **qa:** retire three gates no atom wires, instead of claiming they run ([#3623](https://github.com/Glad-Labs/glad-labs-stack/issues/3623)) ([9dad74b](https://github.com/Glad-Labs/glad-labs-stack/commit/9dad74b4e1ffe30990a4fa752e3be3055be50169))
+* **site:** author archive pages join the profile slug to author_id via authors.json ([#3599](https://github.com/Glad-Labs/glad-labs-stack/issues/3599)) ([445faf5](https://github.com/Glad-Labs/glad-labs-stack/commit/445faf5cf9059e5e6d46173d7764ab5f1113e240))
+* **topics:** pool rows stay 'batched' only while a candidate references them ([#3595](https://github.com/Glad-Labs/glad-labs-stack/issues/3595)) ([aab42e7](https://github.com/Glad-Labs/glad-labs-stack/commit/aab42e7ab23dfe2b7af5bce6f25387e825440693))
+* **topics:** put benchmark findings in the internal bucket so they can win a batch ([#3616](https://github.com/Glad-Labs/glad-labs-stack/issues/3616)) ([5e730db](https://github.com/Glad-Labs/glad-labs-stack/commit/5e730dbd1511be122071653f6fe63f3e57b45b0b))
+* **topics:** two-signal duplicate rule — shared distinctive title phrase relaxes the coverage floor ([#3614](https://github.com/Glad-Labs/glad-labs-stack/issues/3614)) ([dc7a3b5](https://github.com/Glad-Labs/glad-labs-stack/commit/dc7a3b5dc583dbf82c3e6e27f07c43dd9db86771))
+
+
+### Code Refactoring
+
+* **brain:** move brain/ under poindexter/ ([#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046) step 2, PR B) ([#3630](https://github.com/Glad-Labs/glad-labs-stack/issues/3630)) ([bf26ad8](https://github.com/Glad-Labs/glad-labs-stack/commit/bf26ad8c4316d3fb99e4716ac8fd5f161a0d71a2))
+* **imports:** move the eight backend roots under poindexter/ ([#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046) step 2, PR A) ([#3626](https://github.com/Glad-Labs/glad-labs-stack/issues/3626)) ([910c303](https://github.com/Glad-Labs/glad-labs-stack/commit/910c303313802428b58994e39e333eab79bdee3e))
+* **imports:** route every string-named project module through one resolver ([#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046) step 1) ([#3619](https://github.com/Glad-Labs/glad-labs-stack/issues/3619)) ([ea9e3f1](https://github.com/Glad-Labs/glad-labs-stack/commit/ea9e3f1c8ec52a0536f4983b5af9513d7a848343))
+* **imports:** spell modules/plugins/utils as poindexter.* everywhere ([#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046) step 3, kernel roots) ([#3654](https://github.com/Glad-Labs/glad-labs-stack/issues/3654)) ([cd96d9f](https://github.com/Glad-Labs/glad-labs-stack/commit/cd96d9fcfd6cd1748ed6aab012b30a0d411fa69f))
+* **imports:** spell routes/schemas/config/brain as poindexter.* — step 3 complete ([#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046)) ([#3655](https://github.com/Glad-Labs/glad-labs-stack/issues/3655)) ([b7792d1](https://github.com/Glad-Labs/glad-labs-stack/commit/b7792d14721be7386d6177c1b457c2eb2784a5ce))
+* **imports:** spell services.* as poindexter.services.* everywhere ([#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046) step 3, services) ([#3653](https://github.com/Glad-Labs/glad-labs-stack/issues/3653)) ([b46682b](https://github.com/Glad-Labs/glad-labs-stack/commit/b46682b592406717f45d92d7316eda07761b620e))
+
 ## [0.134.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.133.0...v0.134.0) (2026-09-08)
 
 
