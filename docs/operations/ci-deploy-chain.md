@@ -202,10 +202,13 @@ decorators in `test_database_service.py` and
   tag + release on `Glad-Labs/poindexter` so the public Releases page
   stays in sync. Without this, the public mirror's releases froze at
   v0.1.1 while the source ran ahead.
-- `.github/workflows/release-poindexter-to-pypi.yml` — publishes the
-  `poindexter` CLI package to PyPI on `poindexter-v*.*.*` tag pushes.
+- `.github/workflows/release-poindexter-to-pypi.yml` — builds the one
+  `poindexter` distribution (`src/cofounder_agent/pyproject.toml`) on every
+  `v*.*.*` tag the mirror re-creates, installs the wheel into a clean venv and
+  runs `poindexter --help`, then publishes to PyPI while the repo variable
+  `POINDEXTER_PYPI_RELEASE` is `true` (set 2026-09-11; first real release 0.136.0).
   Uses PyPI Trusted Publishing (OIDC) — no API token stored in Secrets.
-  Manual dispatch targets TestPyPI.
+  A manual dispatch takes `target` (testpypi = dry run, pypi = publishes).
 - `.github/workflows/runner-healthcheck.yml` — hosted-only control loop
   (must run in GitHub's cloud, not on Matt's PC). Every 6 hours it probes
   the self-hosted runners and sets or clears the `CI_RUNNER` repo variable.

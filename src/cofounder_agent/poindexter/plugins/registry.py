@@ -1213,19 +1213,53 @@ def get_core_samples() -> dict[str, list[Any]]:
     ]
 
     for plugin_type, module_path, class_name in _SAMPLES:
-        try:
-            # Resolved through the module-path seam so the flat spelling above
-            # keeps working after the poindexter.* move (poindexter#1046 step 1).
-            module = importlib.import_module(resolve_module_path(module_path))
-            cls = getattr(module, class_name)
-            samples[plugin_type].append(cls())
-        except Exception as e:
-            logger.exception(
-                "core sample load failed: %s.%s: %s",
-                module_path, class_name, e,
-            )
+        _load_core_sample(samples, plugin_type, module_path, class_name)
 
     return samples
+
+
+def _load_core_sample(
+    samples: dict[str, list[Any]], plugin_type: str, module_path: str, class_name: str
+) -> None:
+    """Import one ``_SAMPLES`` entry and append an instance, logging at the level the
+    failure deserves.
+
+    Two failures are expected in some builds and must not print a traceback on
+    every process start (a plain ``pip install poindexter`` runs this on ``--help``):
+
+    * the sample's OWN module is not in this build -- the public mirror strips the
+      operator-only files (``taps.claude_code_sessions``) while ``_SAMPLES`` still
+      names them;
+    * the sample needs an optional extra that is not installed -- providers raise
+      ``ImportError`` with an actionable message (``LiteLLMProvider requires the
+      'litellm' package``), and ``pipeline`` / ``qa`` / ``rag`` are opt-in.
+
+    Both get ONE warning line naming what is missing. Anything else is a real
+    defect and keeps the full traceback (poindexter#849: a missing COPY in the
+    auto-embed image showed up here).
+    """
+    try:
+        module = importlib.import_module(resolve_module_path(module_path))
+        cls = getattr(module, class_name)
+        samples[plugin_type].append(cls())
+    except ModuleNotFoundError as e:
+        missing = e.name or ""
+        if missing and (module_path == missing or module_path.startswith(missing + ".")):
+            logger.warning(
+                "core sample %s.%s is not shipped in this build (no module %r) -- skipped",
+                module_path, class_name, missing,
+            )
+        else:
+            logger.warning(
+                "core sample %s.%s needs %r, which is not installed (an optional extra?) -- skipped",
+                module_path, class_name, missing or str(e),
+            )
+    except ImportError as e:
+        logger.warning(
+            "core sample %s.%s skipped: %s", module_path, class_name, str(e).splitlines()[0]
+        )
+    except Exception as e:
+        logger.exception("core sample load failed: %s.%s: %s", module_path, class_name, e)
 
 
 def clear_registry_cache() -> None:

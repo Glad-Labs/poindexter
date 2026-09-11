@@ -1,8 +1,9 @@
 # Publish the `poindexter` CLI to PyPI.
 #
-# Trigger: pushing a release tag (`v*.*.*`, as cut by release-please), or a
-# manual dispatch. Dispatch takes two inputs: `target` (testpypi | pypi) and
-# `package` (cli | placeholder) -- see the inputs block for what each means.
+# Trigger: pushing a release tag (`v*.*.*`, as cut by release-please on the stack
+# and mirrored here by release-mirror-to-public.yml), or a manual dispatch with
+# `target` (testpypi | pypi). The package is always the one distribution built
+# from src/cofounder_agent/pyproject.toml.
 #
 # Publishing uses PyPI Trusted Publishing (OIDC) — there is NO API
 # token stored in GitHub Secrets. To wire this up on first use:
@@ -24,13 +25,13 @@
 #
 # History: Glad-Labs/poindexter#41 was closed 2026-04-21 on this workflow
 # EXISTING. It had zero runs until 2026-08-28 (wrong tag trigger), and the
-# first wheel it ever built could not import itself -- the CLI reaches into
-# the backend's flat `services`/`plugins`/`modules` packages, which a wheel
-# cannot ship. The real package is gated on the namespace migration in
-# Glad-Labs/poindexter#1046. Until it lands, `package=placeholder` publishes a 0.0.1
-# name-reservation package from packaging/pypi-placeholder/, and the
-# clean-install smoke job below is what stops the broken CLI wheel from ever
-# reaching PyPI.
+# first wheel it ever built could not import itself -- the CLI reached into the
+# backend's flat `services`/`plugins`/`modules` packages, which a wheel could not
+# ship. Glad-Labs/poindexter#1046 namespaced the backend under `poindexter.*`
+# and made src/cofounder_agent/pyproject.toml the one distribution; the first
+# real release (0.136.0, 2026-09-11) superseded the 0.0.1 name-reservation
+# placeholder, and the clean-install smoke job below is what keeps a wheel that
+# cannot run from ever reaching PyPI.
 
 name: Release poindexter to PyPI
 
@@ -57,18 +58,6 @@ on:
         options:
           - testpypi
           - pypi
-      package:
-        description: >-
-          cli = the real package (gated by POINDEXTER_PYPI_RELEASE), built
-          from src/cofounder_agent/pyproject.toml -- the one distribution
-          since Glad-Labs/poindexter#1046 step 5.
-          placeholder = the 0.0.1 name-reservation package.
-        required: true
-        default: cli
-        type: choice
-        options:
-          - cli
-          - placeholder
 
 permissions:
   # Required for PyPI Trusted Publishing via OIDC.
@@ -101,15 +90,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build twine
 
-      # `package` is empty on tag pushes (no inputs), which means the real CLI.
       - name: Select package source
         id: src
         run: |
-          case "${{ github.event.inputs.package || 'cli' }}" in
-            placeholder) dir="packaging/pypi-placeholder" ;;
-            cli)         dir="src/cofounder_agent" ;;
-            *) echo "unknown package: ${{ github.event.inputs.package }}" >&2; exit 1 ;;
-          esac
+          # One distribution since Glad-Labs/poindexter#1046 step 5.
+          dir="src/cofounder_agent"
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
           echo "building from $dir"
 
@@ -231,27 +216,16 @@ jobs:
     #    exists on glad-labs-stack, where the OIDC claim would not match.
     #  * `needs: smoke` -- nothing publishes that a clean install cannot run.
     #
-    #  Two ways in:
-    #   1. PLACEHOLDER: an explicit dispatch with target=pypi AND
-    #      package=placeholder. Human-triggered, one-time, reserves the name.
-    #      Deliberately NOT behind the go-live variable -- that variable means
-    #      "ship the real CLI on every release", which this is not.
-    #   2. REAL CLI: `vars.POINDEXTER_PYPI_RELEASE == 'true'` on
-    #      Glad-Labs/poindexter, plus a release tag or a package=cli dispatch.
-    #      Do not set the variable until the smoke job is green on a tag build
-    #      -- see Glad-Labs/poindexter#1046. No code change is needed to go live.
+    #  The switch: `vars.POINDEXTER_PYPI_RELEASE == 'true'` on Glad-Labs/poindexter,
+    #  plus a release tag or a target=pypi dispatch. Set 2026-09-11 once the smoke
+    #  job was green on the real package (Glad-Labs/poindexter#1046 step 7); every
+    #  `v*` tag has published since. A target=pypi dispatch therefore PUBLISHES --
+    #  use target=testpypi for a dry run.
     if: >-
       github.repository == 'Glad-Labs/poindexter' &&
-      (
-        (github.event_name == 'workflow_dispatch' &&
-         github.event.inputs.target == 'pypi' &&
-         github.event.inputs.package == 'placeholder')
-        ||
-        (vars.POINDEXTER_PYPI_RELEASE == 'true' &&
-         github.event.inputs.package != 'placeholder' &&
-         (startsWith(github.ref, 'refs/tags/v') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')))
-      )
+      vars.POINDEXTER_PYPI_RELEASE == 'true' &&
+      (startsWith(github.ref, 'refs/tags/v') ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

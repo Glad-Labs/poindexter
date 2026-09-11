@@ -40,6 +40,3 @@ docs/operations/test-coverage-*.md
 docs/architecture/database-and-embeddings-plan-*.md
 docs/architecture/gh-*-secret-keys-audit-*.md
 
-# PyPI name-reservation package. Not a docs page; its README is the PyPI
-# project page and must not be indexed as documentation.
-packaging/
