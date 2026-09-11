@@ -96,7 +96,7 @@ def _make_db(pool=None) -> AdminDatabase:
     return AdminDatabase(pool=pool or _make_pool())
 
 
-_CONVERTER = "services.admin_db.ModelConverter"
+_CONVERTER = "poindexter.services.admin_db.ModelConverter"
 
 
 def _make_cost_log_sentinel():

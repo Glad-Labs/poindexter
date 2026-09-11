@@ -38,7 +38,7 @@ def _all_api_routes() -> list[tuple[str, APIRoute]]:
     route module is covered automatically.
     """
     out: list[tuple[str, APIRoute]] = []
-    for mod_info in pkgutil.iter_modules(routes_pkg.__path__, "routes."):
+    for mod_info in pkgutil.iter_modules(routes_pkg.__path__, "poindexter.routes."):
         module = importlib.import_module(mod_info.name)
         for attr in vars(module).values():
             if isinstance(attr, APIRouter):

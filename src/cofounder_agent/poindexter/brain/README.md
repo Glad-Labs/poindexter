@@ -163,7 +163,7 @@ run it once on demand for debugging:
 import asyncio
 import asyncpg
 
-from brain.operator_url_probe import run_operator_url_probe
+from poindexter.brain.operator_url_probe import run_operator_url_probe
 
 async def main():
     pool = await asyncpg.create_pool(dsn="postgresql://poindexter:...@localhost/poindexter_brain")

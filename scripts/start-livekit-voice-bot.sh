@@ -34,7 +34,7 @@ if ! docker ps --filter name=poindexter-livekit --filter status=running --format
     exit 1
 fi
 
-# The bot wants to import services.voice_agent_livekit from the worker
+# The bot wants to import poindexter.services.voice_agent_livekit from the worker
 # package. Run it from the cofounder_agent/ directory so the module
 # path resolves cleanly without a poetry venv setup.
 cd "$(dirname "$0")/../src/cofounder_agent"

@@ -513,8 +513,8 @@ def _isolate_gpu_lock_direct_db(request):
 
     patchers = []
     for target in (
-        "services.gpu_scheduler.GPUScheduler._acquire_pg_advisory_lock",
-        "services.gpu_scheduler.GPUScheduler._record_task_session",
+        "poindexter.services.gpu_scheduler.GPUScheduler._acquire_pg_advisory_lock",
+        "poindexter.services.gpu_scheduler.GPUScheduler._record_task_session",
     ):
         try:
             patcher = patch(target, new=AsyncMock(return_value=None))

@@ -107,7 +107,7 @@ re-rolls for the same answer.
 can use it without importing backwards across the module boundary.
 
 ```python
-from services.image_ocr_gate import (
+from poindexter.services.image_ocr_gate import (
     describe_ocr_gate_rejection, is_ocr_gate_rejection, safe_json,
 )
 

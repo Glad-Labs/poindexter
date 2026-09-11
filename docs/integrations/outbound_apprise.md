@@ -34,7 +34,7 @@ Apprise accepts the native Discord webhook URL (`https://discord.com/api/webhook
 ## Caller usage
 
 ```python
-from services.integrations.outbound_dispatcher import deliver
+from poindexter.services.integrations.outbound_dispatcher import deliver
 
 await deliver("discord_ops", "Ops alert — pipeline stalled",
               db_service=db, site_config=site_config)
@@ -45,7 +45,7 @@ await deliver("telegram_ops", {"text": "Critical: worker offline"},
 Most internal callers go through the operator-notify shim, which routes by urgency:
 
 ```python
-from services.integrations.operator_notify import notify_operator
+from poindexter.services.integrations.operator_notify import notify_operator
 
 await notify_operator("routine note")                # -> discord_ops
 await notify_operator("paging you", critical=True)   # -> telegram_ops

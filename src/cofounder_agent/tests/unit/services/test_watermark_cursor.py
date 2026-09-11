@@ -136,7 +136,7 @@ class TestBothIngestsShareTheRule:
     def test_job_binds_the_shared_helper(self, job_module: str):
         import importlib
 
-        mod = importlib.import_module(f"services.jobs.{job_module}")
+        mod = importlib.import_module(f"poindexter.services.jobs.{job_module}")
         src = Path(mod.__file__).read_text(encoding="utf-8")
 
         assert "services.watermark_cursor import" in src

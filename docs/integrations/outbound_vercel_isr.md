@@ -32,7 +32,7 @@ config:             {
 ## Caller usage
 
 ```python
-from services.integrations.outbound_dispatcher import deliver
+from poindexter.services.integrations.outbound_dispatcher import deliver
 
 # After publishing a post
 await deliver("vercel_isr",

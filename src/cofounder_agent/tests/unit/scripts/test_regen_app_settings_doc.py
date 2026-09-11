@@ -39,7 +39,7 @@ _STATELESS_GHS = (
 def _load_script_module() -> ModuleType:
     """Load the hyphen-named script via importlib + a brain.bootstrap stub.
 
-    The script does ``from brain.bootstrap import resolve_database_url`` at
+    The script does ``from poindexter.brain.bootstrap import resolve_database_url`` at
     import time. The stub lets the module load in a pure-unit context where
     neither the real brain package nor asyncpg need to be importable.
     """
@@ -47,8 +47,6 @@ def _load_script_module() -> ModuleType:
     if "poindexter.brain.bootstrap" not in sys.modules:
         stub = types.ModuleType("poindexter.brain.bootstrap")
         stub.resolve_database_url = lambda: ""  # type: ignore[attr-defined]
-        brain_pkg = sys.modules.setdefault("brain", types.ModuleType("brain"))
-        brain_pkg.bootstrap = stub  # type: ignore[attr-defined]
         sys.modules["poindexter.brain.bootstrap"] = stub
 
     spec = spec_from_file_location("regen_app_settings_doc", SCRIPT_PATH)

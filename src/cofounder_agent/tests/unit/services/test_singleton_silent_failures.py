@@ -35,7 +35,7 @@ from poindexter.services.template_runner import TemplateRunner
 
 pytestmark = pytest.mark.unit
 
-_LF_PATCH_TARGET = "services.langfuse_experiments.LangfuseExperimentService"
+_LF_PATCH_TARGET = "poindexter.services.langfuse_experiments.LangfuseExperimentService"
 
 
 def _capture(monkeypatch) -> list[dict]:

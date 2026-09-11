@@ -114,7 +114,7 @@ def _make_mocked_service(
     return svc
 
 
-_LF_PATCH_TARGET = "services.langfuse_experiments.LangfuseExperimentService"
+_LF_PATCH_TARGET = "poindexter.services.langfuse_experiments.LangfuseExperimentService"
 
 
 # ---------------------------------------------------------------------------

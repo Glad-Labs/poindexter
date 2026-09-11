@@ -48,12 +48,12 @@ def test_the_package_directory_is_copied_whole():
     ), f"expected `COPY poindexter/brain/ /app/poindexter/brain/`; COPY lines: {_copy_lines()}"
 
 
-def test_the_alias_root_files_are_copied():
-    """``from brain.x import`` inside the package resolves through the finder that
-    ``poindexter/__init__.py`` installs; without these two files the container
-    would fail on its first sibling import."""
+def test_the_package_root_file_is_copied_and_nothing_flat():
+    """``poindexter/__init__.py`` makes ``/app/poindexter`` a package; the alias finder
+    it used to install is gone (step 5), so nothing else belongs at the root."""
     joined = " ".join(_copy_lines())
-    assert "poindexter/__init__.py" in joined and "poindexter/_flat_imports.py" in joined, _copy_lines()
+    assert "poindexter/__init__.py" in joined, _copy_lines()
+    assert "_flat_imports" not in joined, _copy_lines()
 
 
 def test_entrypoint_runs_the_daemon_as_a_package_module():

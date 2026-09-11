@@ -175,7 +175,7 @@ app_settings changes apply without a restart (#198):
   `poindexter settings set web_research_search_timeout_seconds 10`
 - **Test research output for a topic without running the pipeline:**
   ```python
-  python -c "import asyncio; from services.research_service import ResearchService; print(asyncio.run(ResearchService(pool=None).build_context('FastAPI streaming')))"
+  python -c "import asyncio; from poindexter.services.research_service import ResearchService; print(asyncio.run(ResearchService(pool=None).build_context('FastAPI streaming')))"
   ```
 - **Spot-check what DDG returns** — same shape, faster:
   `WebResearcher().search_simple("topic", num_results=3)`.

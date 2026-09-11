@@ -399,7 +399,7 @@ class TestCheckTitleOriginalityIntegration:
             "poindexter.services.web_research.WebResearcher",
             return_value=mock_researcher,
         ), patch(
-            "services.title_originality_external.TitleOriginalityExternalChecker"
+            "poindexter.services.title_originality_external.TitleOriginalityExternalChecker"
             ".check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
         ):
@@ -430,7 +430,7 @@ class TestCheckTitleOriginalityIntegration:
             "poindexter.services.web_research.WebResearcher",
             return_value=mock_researcher,
         ), patch(
-            "services.title_originality_external.TitleOriginalityExternalChecker"
+            "poindexter.services.title_originality_external.TitleOriginalityExternalChecker"
             ".check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
         ):

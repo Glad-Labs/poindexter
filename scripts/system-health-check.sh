@@ -285,7 +285,7 @@ check alerts "Telegram bot token decrypts" bash -c '
 import asyncio, asyncpg, os
 async def main():
     pool = await asyncpg.create_pool(os.environ["DATABASE_URL"])
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
     sc = SiteConfig()
     await sc.load(pool)
     tok = await sc.get_secret("telegram_bot_token")
@@ -391,7 +391,7 @@ check secrets "Encrypted secrets decrypt correctly" bash -c '
 import asyncio, asyncpg, os
 async def main():
     pool = await asyncpg.create_pool(os.environ["DATABASE_URL"])
-    from services.site_config import SiteConfig
+    from poindexter.services.site_config import SiteConfig
     sc = SiteConfig()
     await sc.load(pool)
     keys = ["revalidate_secret", "telegram_bot_token", "pexels_api_key", "resend_api_key"]

@@ -1,47 +1,27 @@
-"""The one place a project module is named by string.
+"""The one seam a project module named by *string* goes through.
 
-Every dynamic import of our own code -- the plugin registry's core samples,
-``atom_registry``'s package walk, ``http_client``'s wiring list, route
-registration, the import audit, the CLI's lazy provider load -- goes through
-this module instead of calling ``importlib.import_module("services.x")``
-directly. That is step 1 of Glad-Labs/poindexter#1046.
+Glad-Labs/poindexter#1046 moved the backend under ``poindexter.*``. The plugin
+registry's core samples, ``atom_registry``'s package walk, ``http_client``'s
+wiring list, route registration, the import audit and the CLI's lazy provider
+load all name modules as strings -- paths that fail at runtime rather than
+import time -- so step 1 of the epic routed them through here before anything
+moved. Since step 5 there is exactly one spelling, and this module's job is to
+keep it that way:
 
-WHY
----
-``src/cofounder_agent`` is on ``sys.path`` as a *root* today, so the backend's
-packages import as flat top-level names: ``services``, ``plugins``,
-``modules``, ``utils``, ``routes``, ``schemas``, ``config``, ``tasks``. That is
-why ``pip install poindexter`` has never worked -- a wheel cannot install those
-names without shadowing the real PyPI packages ``utils`` and ``config`` (and
-vice versa), and a wheel that nests them under a package cannot satisfy the
-code's own ``from services import ...``. The fix is to move the tree under
-``poindexter.*``. A mechanical import rewrite handles the ~6,400 ``import``
-statements; it cannot see the ~250 places a module is named by *string*.
-Those are the ones that fail at runtime, not import time, so they are moved
-behind this seam first, while the tree is still flat and every path is
-trivially testable.
+* :func:`resolve_module_path` returns a canonical path unchanged, passes
+  third-party paths through, and REFUSES the retired flat spelling
+  (``services.x``) with a ``ModuleNotFoundError`` that names the fix. A stale
+  string in a config row or a third-party plugin's entry point fails at the
+  seam with an actionable message instead of a bare ``No module named
+  'services'`` from deep inside importlib.
+* :func:`import_module_path` / :func:`import_object_path` are ``importlib`` for
+  such a path (``"module.path"`` / ``"module.path:attr"``), raising exactly what
+  importlib raises so callers keep their existing ``except`` policy.
 
-CONTRACT
---------
-* Both spellings are accepted everywhere, today: ``"services.x"`` and
-  ``"poindexter.services.x"`` resolve to whatever is importable in this
-  process. Callers may adopt the new spelling before the move.
-* :data:`ROOT_PACKAGE` is the single switch. It was ``""`` while the tree was
-  flat and is ``"poindexter"`` since step 2 of the epic. Nothing else changed.
-* Only *project* paths are touched. A first segment outside
-  :data:`PROJECT_ROOTS` (``os.path``, ``langchain_core.x``, a third-party
-  plugin's ``acme_taps.slack``) passes through untouched -- and so does the
-  CLI's own ``poindexter.cli.app``, because ``cli`` is not a project root.
-* ``brain`` IS a project root (decided 2026-09-10: it moves to
-  ``poindexter.brain``). It is a repo-root sibling of ``src/cofounder_agent``
-  today; the CLI imports it at 12 sites and the backend at 25, ``brain`` is a
-  taken name on PyPI, and the dependency is bidirectional -- so it ships inside
-  the one distribution, under the namespace.
-
-``tests/unit/services/test_module_paths.py`` walks every string-named
-project module in the wired call sites and asserts each resolves and
-imports under BOTH spellings, so a new string path in those files is covered
-the moment it is added.
+``tests/unit/services/test_module_paths.py`` AST-walks the wired files and
+imports every string path they name (with a floor so a refactor cannot blind
+it), and pins the epic's definition of done on the real tree: no flat root is
+importable as a top-level package.
 """
 
 from __future__ import annotations
@@ -53,26 +33,20 @@ from typing import Any
 __all__ = [
     "PROJECT_ROOTS",
     "ROOT_PACKAGE",
-    "flat_module_path",
     "import_module_path",
     "import_object_path",
-    "is_project_module_path",
     "resolve_module_path",
     "resolve_object_path",
 ]
 
-#: The package the backend lives under since step 2 of poindexter#1046
-#: (2026-09-10). It was ``""`` while the tree was flat; flipping it was the
-#: whole of that step's runtime change -- every string path already routed here.
+#: The package every backend module lives under.
 ROOT_PACKAGE: str = "poindexter"
 
-#: The future root's name. Recognised on input at all times so callers can
-#: write ``poindexter.services.x`` before the move.
-FUTURE_ROOT: str = "poindexter"
-
-#: The flat top-level packages of ``src/cofounder_agent`` -- the set that
-#: moves. Keep this in step with the tree; ``test_module_paths`` asserts every
-#: one is a real package.
+#: The subpackages of :data:`ROOT_PACKAGE` that used to be flat top-level
+#: packages of ``src/cofounder_agent``. A dotted path whose FIRST segment is one
+#: of these is the retired flat spelling. ``test_module_paths`` asserts that none
+#: of them is importable as a top-level package and that each imports under the
+#: root.
 PROJECT_ROOTS: frozenset[str] = frozenset(
     {"services", "plugins", "modules", "utils", "routes", "schemas", "config", "tasks", "brain"}
 )
@@ -84,38 +58,23 @@ def _split(dotted: str) -> list[str]:
     return dotted.split(".")
 
 
-def flat_module_path(dotted: str) -> str:
-    """Return the canonical *flat* spelling of a project module path.
-
-    ``"poindexter.services.x"`` -> ``"services.x"``; ``"services.x"`` is
-    returned unchanged; anything that is not a project path is returned
-    unchanged. Use this for keys that must be stable across the migration
-    (``sys.modules`` lookups, baseline files, log filters).
-    """
-    parts = _split(dotted)
-    if len(parts) >= 2 and parts[0] == FUTURE_ROOT and parts[1] in PROJECT_ROOTS:
-        return ".".join(parts[1:])
-    return dotted
-
-
-def is_project_module_path(dotted: str) -> bool:
-    """True when ``dotted`` names one of our own modules, in either spelling."""
-    try:
-        return _split(flat_module_path(dotted))[0] in PROJECT_ROOTS
-    except ValueError:
-        return False
-
-
 def resolve_module_path(dotted: str) -> str:
-    """Return the spelling of ``dotted`` that is importable in THIS process.
+    """Return ``dotted`` when it is importable as spelled; refuse the flat spelling.
 
-    Accepts both spellings. Non-project paths pass through untouched.
-    Idempotent: resolving a resolved path is a no-op.
+    Canonical (``poindexter.services.x``) and third-party paths pass through
+    untouched. A path whose first segment is a retired flat root raises
+    ``ModuleNotFoundError`` -- so an existing ``except ImportError`` policy still
+    applies -- with the canonical spelling in the message.
     """
-    flat = flat_module_path(dotted)
-    if _split(flat)[0] not in PROJECT_ROOTS:
-        return dotted
-    return f"{ROOT_PACKAGE}.{flat}" if ROOT_PACKAGE else flat
+    head = _split(dotted)[0]
+    if head in PROJECT_ROOTS:
+        raise ModuleNotFoundError(
+            f"{dotted!r} spells a retired flat import root; the backend lives under "
+            f"{ROOT_PACKAGE!r} since Glad-Labs/poindexter#1046 -- use "
+            f"'{ROOT_PACKAGE}.{dotted}'",
+            name=dotted,
+        )
+    return dotted
 
 
 def resolve_object_path(spec: str) -> tuple[str, str]:
@@ -131,7 +90,7 @@ def resolve_object_path(spec: str) -> tuple[str, str]:
 
 
 def import_module_path(dotted: str) -> ModuleType:
-    """``importlib.import_module`` for a project path, in either spelling.
+    """``importlib.import_module`` for a project path.
 
     Raises exactly what ``importlib.import_module`` raises -- callers keep
     their existing ``except`` policy.

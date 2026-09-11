@@ -54,7 +54,7 @@ these rows meaning something different.
 Bind `services.pipeline_db.SITE_TARGETS` rather than inlining a list:
 
 ```python
-from services.pipeline_db import SITE_TARGET, SITE_TARGETS
+from poindexter.services.pipeline_db import SITE_TARGET, SITE_TARGETS
 
 # writing: always the sentinel
 await PipelineDB(pool).add_distribution(task_id, SITE_TARGET, post_slug=slug)

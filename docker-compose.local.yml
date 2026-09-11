@@ -340,8 +340,8 @@ services:
   brain-daemon:
     build:
       # brain is the poindexter.brain package (poindexter#1046 step 2): the image
-      # is built from the backend root so it can COPY poindexter/__init__.py +
-      # _flat_imports.py alongside poindexter/brain/.
+      # is built from the backend root so it can COPY poindexter/__init__.py
+      # alongside poindexter/brain/.
       context: ./src/cofounder_agent
       dockerfile: poindexter/brain/Dockerfile
     container_name: poindexter-brain-daemon
@@ -948,7 +948,7 @@ services:
   # subprocesses. Reuses `Dockerfile.worker` so it has the full pipeline
   # dep tree (asyncpg, structlog, langchain, etc.) — a vanilla
   # prefecthq/prefect:3-latest image lacks them and the flow body's
-  # ``from services.content_router_service import ...`` would fail.
+  # ``from poindexter.services.content_router_service import ...`` would fail.
   #
   # Code is mounted read-only from the host (matches the worker
   # container's pattern); flow runs spawn in subprocesses inside this

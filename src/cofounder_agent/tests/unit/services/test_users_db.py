@@ -89,7 +89,7 @@ def _make_db(pool=None):
     return UsersDatabase(pool=pool or _make_pool())
 
 
-_CONVERTER = "services.users_db.ModelConverter"
+_CONVERTER = "poindexter.services.users_db.ModelConverter"
 
 
 # ---------------------------------------------------------------------------

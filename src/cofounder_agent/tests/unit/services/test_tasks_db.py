@@ -116,7 +116,7 @@ def _make_db(pool=None):
     return TasksDatabase(pool=pool or _make_pool())
 
 
-_CONVERTER = "services.tasks_db.ModelConverter"
+_CONVERTER = "poindexter.services.tasks_db.ModelConverter"
 
 
 # ---------------------------------------------------------------------------

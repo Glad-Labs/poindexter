@@ -191,7 +191,7 @@ docker exec -w /app poindexter-worker python3 -m poindexter taps run ga4_main
 > ```
 > docker exec -w /app poindexter-worker python3 -c "
 > import asyncio, asyncpg, os
-> from services.integrations import tap_runner
+> from poindexter.services.integrations import tap_runner
 > async def main():
 >     pool = await asyncpg.create_pool(os.environ['DATABASE_URL'], min_size=1, max_size=2)
 >     try:

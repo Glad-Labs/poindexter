@@ -65,7 +65,7 @@ _AUDIT_HELPERS = [
 async def test_audit_mirror_write_failure_is_visible(mod_name, helper_name, caplog):
     """A failed audit_log write must WARN — for these five probes the audit
     row is the only record of an audit-only event."""
-    mod = importlib.import_module(f"brain.{mod_name}")
+    mod = importlib.import_module(f"poindexter.brain.{mod_name}")
     helper = getattr(mod, helper_name)
 
     pool = MagicMock()

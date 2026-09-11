@@ -314,7 +314,7 @@ declare -A REBUILD_MAP=(
   # brain lives under poindexter/ (poindexter#1046 step 2). brain-daemon is the
   # only image that bakes it: the worker bind-mounts src/cofounder_agent, and
   # auto-embed's own entry below already covers poindexter/.
-  ['^src/cofounder_agent/poindexter/(brain/|__init__\.py$|_flat_imports\.py$)']="brain-daemon"
+  ['^src/cofounder_agent/poindexter/(brain/|__init__\.py$)']="brain-daemon"
   ['^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$|^scripts/Dockerfile\.worker$']="worker prefect-worker"
   ['^scripts/Dockerfile\.gpu-exporter$|^scripts/nvidia-smi-exporter\.py$']="gpu-exporter"
   ['^scripts/Dockerfile\.voice-agent$']="voice-agent-livekit"

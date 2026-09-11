@@ -55,7 +55,7 @@ def test_select_orphans_applies_prefix_grace_and_reference():
     assert keys == {"images/inline/dead.webp"}  # live=referenced, fresh=grace, static=prefix
 
 
-_R2 = "services.r2_upload_service.R2UploadService"
+_R2 = "poindexter.services.r2_upload_service.R2UploadService"
 
 
 def _pool(post_rows, ma_rows, *, fetch_error=None):

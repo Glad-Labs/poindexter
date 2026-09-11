@@ -41,7 +41,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path.cwd()
-sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "src" / "cofounder_agent"))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 # Best-effort tunable defaults — match settings_defaults.py / migration
@@ -56,7 +56,7 @@ async def _main():
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         try:
-            from brain.bootstrap import resolve_database_url
+            from poindexter.brain.bootstrap import resolve_database_url
             db_url = resolve_database_url()
         except Exception:
             db_url = None

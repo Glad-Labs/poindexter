@@ -545,10 +545,7 @@ ignore = [
 # `src`, and since poindexter#1046 step 2 the flat roots are one-file stubs while
 # the code lives under poindexter/ -- declaring them keeps import sections
 # stable through the migration (steps 3-5 rewrite the spellings, not this list).
-known-first-party = [
-    "poindexter", "services", "plugins", "modules", "utils", "routes", "schemas",
-    "config", "tasks", "brain", "middleware", "main", "tests",
-]
+known-first-party = ["poindexter", "middleware", "main", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]

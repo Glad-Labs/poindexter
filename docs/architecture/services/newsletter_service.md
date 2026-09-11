@@ -200,7 +200,7 @@ All from `app_settings` via `services.site_config`:
   ```
 - **Trigger manually for an existing post (one-off):**
   ```python
-  from services.newsletter_service import send_post_newsletter
+  from poindexter.services.newsletter_service import send_post_newsletter
   result = await send_post_newsletter(
       pool, title="Title", excerpt="Excerpt", slug="some-slug",
   )

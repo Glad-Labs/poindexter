@@ -79,7 +79,7 @@ This is a **voice → host-RCE** endpoint, treated as one:
    plaintext:
 
    ```python
-   from plugins.secrets import set_secret
+   from poindexter.plugins.secrets import set_secret
    await set_secret(conn, "voice_agent_claude_code_host_brain_token", token)  # encrypted
    await conn.execute(
        "UPDATE app_settings SET value=$1 WHERE key='voice_agent_claude_code_host_brain_url'",

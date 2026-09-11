@@ -533,7 +533,7 @@ class TestTemplateRunnerResume:
 
         with (
             patch.dict(
-                "services.pipeline_templates.TEMPLATES",
+                "poindexter.services.pipeline_templates.TEMPLATES",
                 fake_templates, clear=False,
             ),
             patch("poindexter.services.template_runner._emit_progress", AsyncMock()),
@@ -575,7 +575,7 @@ class TestTemplateRunnerResume:
 
         with (
             patch.dict(
-                "services.pipeline_templates.TEMPLATES",
+                "poindexter.services.pipeline_templates.TEMPLATES",
                 {"canonical_blog": lambda **kw: _Graph()}, clear=False,
             ),
             patch("poindexter.services.template_runner._emit_progress", AsyncMock()),

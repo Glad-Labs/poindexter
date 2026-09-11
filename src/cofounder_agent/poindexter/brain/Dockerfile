@@ -70,12 +70,10 @@ RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     py-spy --version && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
-# The brain is the ``poindexter.brain`` package (Glad-Labs/poindexter#1046, step
-# 2). One COPY of the package, plus the two root files that make the flat
-# ``brain.`` spelling used inside it resolve to the same module objects
-# (``poindexter/__init__.py`` installs the alias finder). Nothing is copied flat
-# and nothing is mirrored: the container imports exactly what the tests import.
-COPY poindexter/__init__.py poindexter/_flat_imports.py /app/poindexter/
+# The brain is the ``poindexter.brain`` package (Glad-Labs/poindexter#1046). One
+# COPY of the package plus the package root's ``__init__.py``; nothing is copied
+# flat and nothing is mirrored: the container imports exactly what the tests import.
+COPY poindexter/__init__.py /app/poindexter/
 COPY poindexter/brain/ /app/poindexter/brain/
 ENV PYTHONPATH=/app
 

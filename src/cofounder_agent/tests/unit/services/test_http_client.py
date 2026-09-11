@@ -300,8 +300,6 @@ def test_wire_skips_module_with_failing_import(monkeypatch):
     of failing modules and the module-local pointer is still updated."""
     import importlib
 
-    from poindexter.services.module_paths import flat_module_path
-
     # Measure the baseline first so the assertion is robust to future
     # additions/removals from WIRED_HTTP_CLIENT_MODULES.
     client = httpx.AsyncClient()
@@ -315,8 +313,7 @@ def test_wire_skips_module_with_failing_import(monkeypatch):
     real_import = importlib.import_module
 
     def fake_import(name, *args, **kwargs):
-        # Callers pass the RESOLVED spelling (poindexter.services.x); compare flat.
-        if flat_module_path(name) == flat_module_path(target):
+        if name == target:
             raise ImportError(f"simulated import failure for {name}")
         return real_import(name, *args, **kwargs)
 

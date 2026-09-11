@@ -232,7 +232,7 @@ threshold of T)`. The original warning categories are still emitted
   signal, not blocking decisions.)
 - **Run validation against a draft locally:**
   ```python
-  from modules.content.content_validator import validate_content
+  from poindexter.modules.content.content_validator import validate_content
   result = validate_content("My Title", "Body...", topic="fastapi", tags=["technical"])
   for issue in result.issues:
       print(issue.severity, issue.category, issue.description)

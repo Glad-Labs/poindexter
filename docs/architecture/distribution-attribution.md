@@ -39,7 +39,7 @@ seventh surface on that evidence is a coin toss dressed as a strategy.
 One helper every outbound-link composer routes through:
 
 ```python
-from services.distribution_ref import tag_for
+from poindexter.services.distribution_ref import tag_for
 
 url = tag_for(site_config, f"{site_url}/posts/{slug}", surface="devto")
 # → https://www.gladlabs.io/posts/…?utm_source=devto&utm_medium=syndication

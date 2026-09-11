@@ -175,7 +175,7 @@ filter failed"` via `logger.exception` — the candidate list falls
 - **Audit a specific candidate:** construct one and run it through
   the filter directly:
   ```python
-  from modules.content.internal_link_coherence import (
+  from poindexter.modules.content.internal_link_coherence import (
       InternalLinkCoherenceFilter, LinkCandidate
   )
   cand = LinkCandidate(slug="foo", title="Foo")

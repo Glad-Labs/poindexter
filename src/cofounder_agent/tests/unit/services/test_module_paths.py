@@ -1,17 +1,20 @@
-"""services/module_paths.py -- the string-named module seam (poindexter#1046 step 1).
+"""services/module_paths.py -- the string-named module seam (Glad-Labs/poindexter#1046).
 
 Two halves.
 
-1. Resolver semantics: both spellings accepted, non-project paths untouched,
-   idempotent, ``module:attr`` handled, the ROOT_PACKAGE switch does exactly
-   one thing.
+1. Resolver semantics: canonical and third-party paths pass through, the retired
+   flat spelling is refused with the fix in the message, ``module:attr`` is
+   handled, and non-strings are rejected.
+2. The epic's definition of done, pinned on the real tree:
 
-2. The acceptance criterion for step 1 of the epic: **every string-named
-   project module in the wired call sites resolves and imports under BOTH
-   spellings.** The inventory is read from the source files by AST, not
-   maintained by hand, so a new string path added to any of those files is
-   covered the moment it lands -- and a file that stops naming any module
-   trips the floor assertion instead of silently shrinking the check.
+   * no flat root (``services``, ``plugins``, ..., ``brain``) is importable as a
+     top-level package, its old directory is gone, and no alias finder sits on
+     ``sys.meta_path``;
+   * **every string-named project module in the wired call sites is spelled
+     canonically and imports.** The inventory is read from the source files by
+     AST, not maintained by hand, so a new string path added to any of those
+     files is covered the moment it lands -- and a file that stops naming any
+     module trips the floor assertion instead of silently shrinking the check.
 
 Import policy mirrors ``test_registry_completeness``: an import failure of a
 *project* module is a real defect and fails hard. Two narrow tolerances, both
@@ -22,21 +25,23 @@ visible under ``-rs``:
   sessions, the operator overlays), and the registry still names them. That is
   a strip, not a resolver defect, so it skips. It is decided from the resolver's
   own package root, so no stripped path is ever spelled here (the mirror-safety
-  guard rejects shipping tests that name one) and it stays correct after the
-  tree moves. The blind spot: a newly-dead ``_SAMPLES`` entry also skips here
-  rather than failing -- ``get_core_samples()`` already logs an ERROR for it on
-  every boot, and sample staleness is that test's job, not this one's.
+  guard rejects shipping tests that name one). The blind spot: a newly-dead
+  ``_SAMPLES`` entry also skips here rather than failing -- ``get_core_samples()``
+  already logs an ERROR for it on every boot, and sample staleness is that
+  test's job, not this one's.
 * a ``ModuleNotFoundError`` for a *third-party* dependency (an optional
   provider missing its extra) -- and even then the project path must have been
-  *found* (``find_spec``), which is the property the migration must preserve.
+  *found* (``find_spec``).
 """
 
 from __future__ import annotations
 
 import ast
 import importlib
+import importlib.machinery
 import importlib.util
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -44,8 +49,10 @@ import pytest
 from poindexter.services import module_paths as mp
 
 # The package root that holds services/, plugins/, ... -- derived from the resolver
-# itself so it follows the tree (src/cofounder_agent/poindexter since step 2).
+# itself so it follows the tree (src/cofounder_agent/poindexter).
 PKG_ROOT = Path(mp.__file__).resolve().parent.parent
+BACKEND_ROOT = PKG_ROOT.parent  # src/cofounder_agent
+REPO_ROOT = BACKEND_ROOT.parent.parent
 
 # The files whose string-named modules were routed through the seam. Keep in
 # step with the epic's step-1 list; the floor test below fails if any of them
@@ -63,101 +70,73 @@ WIRED_FILES = (
 )
 
 # Strings that look like project paths but are labels, not imports. They are
-# persisted (audit_log finding sources, SQL `source` columns) and are handled
-# by a later step of the epic, deliberately not by this seam.
+# persisted (audit_log finding sources, SQL `source` columns) and are data.
 _LABEL_CALLS = {"emit_finding", "emit", "_require", "build_avoidance_block_for_pool", "execute"}
+
+# The definition of done names these seven; `modules` and `brain` moved with them.
+_EXPECTED_ROOTS = frozenset(
+    {"services", "plugins", "modules", "utils", "routes", "schemas", "config", "tasks", "brain"}
+)
 
 
 # --------------------------------------------------------------------------
 # 1. resolver semantics
 # --------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestFlatModulePath:
-    def test_strips_future_root_from_project_path(self):
-        assert mp.flat_module_path("poindexter.services.x.y") == "services.x.y"
-
-    def test_flat_path_unchanged(self):
-        assert mp.flat_module_path("services.x") == "services.x"
-
-    def test_cli_package_is_not_a_project_root(self):
-        # The CLI itself lives at top-level `poindexter/` today. `cli` is not in
-        # PROJECT_ROOTS, so this must NOT be mistaken for a prefixed path.
-        assert mp.flat_module_path("poindexter.cli.app") == "poindexter.cli.app"
-
-    def test_third_party_untouched(self):
-        for p in ("os.path", "langchain_core.x", "acme_taps.slack", "poindexter"):
-            assert mp.flat_module_path(p) == p
-
-    def test_brain_is_a_project_root(self):
-        # Decided 2026-09-10: brain ships inside the distribution as poindexter.brain.
-        assert mp.flat_module_path("poindexter.brain.bootstrap") == "brain.bootstrap"
-        assert mp.resolve_module_path("brain.bootstrap") == mp.resolve_module_path(
-            "poindexter.brain.bootstrap"
-        )
-
-    @pytest.mark.parametrize("bad", ["", None, 42])
-    def test_rejects_non_string(self, bad):
-        with pytest.raises(ValueError):
-            mp.flat_module_path(bad)  # type: ignore[arg-type]
-
-
 @pytest.mark.unit
 class TestResolveModulePath:
-    def test_both_spellings_resolve_identically(self):
-        assert mp.resolve_module_path("poindexter.services.x") == mp.resolve_module_path(
-            "services.x"
-        )
-
-    def test_step2_tree_resolves_under_the_root(self):
-        # ROOT_PACKAGE flipped to "poindexter" in step 2 of the epic (2026-09-10).
-        assert mp.ROOT_PACKAGE == "poindexter"
-        assert mp.resolve_module_path("modules.content.atoms") == (
-            "poindexter.modules.content.atoms"
-        )
+    def test_canonical_path_unchanged(self):
+        assert mp.resolve_module_path("poindexter.services.x.y") == "poindexter.services.x.y"
         assert mp.resolve_module_path("poindexter.modules.content.atoms") == (
             "poindexter.modules.content.atoms"
         )
 
-    def test_idempotent(self):
-        once = mp.resolve_module_path("poindexter.utils.route_utils")
-        assert mp.resolve_module_path(once) == once
+    def test_third_party_and_cli_untouched(self):
+        for p in ("os.path", "langchain_core.x", "acme_taps.slack", "poindexter", "poindexter.cli.app"):
+            assert mp.resolve_module_path(p) == p
 
-    def test_root_package_switch_is_the_only_change(self, monkeypatch):
-        monkeypatch.setattr(mp, "ROOT_PACKAGE", "poindexter")
-        assert mp.resolve_module_path("services.x") == "poindexter.services.x"
-        assert mp.resolve_module_path("poindexter.services.x") == "poindexter.services.x"
-        # non-project paths are still untouched under the new root
-        assert mp.resolve_module_path("langchain_core.x") == "langchain_core.x"
-        assert mp.resolve_module_path("poindexter.cli.app") == "poindexter.cli.app"
+    @pytest.mark.parametrize("root", sorted(mp.PROJECT_ROOTS))
+    def test_flat_spelling_is_refused_with_the_fix(self, root):
+        with pytest.raises(ModuleNotFoundError) as excinfo:
+            mp.resolve_module_path(f"{root}.x")
+        assert excinfo.value.name == f"{root}.x"
+        assert f"poindexter.{root}.x" in str(excinfo.value)
 
-    def test_every_declared_project_root_is_importable(self):
-        # Importability rather than a directory under PKG_ROOT: `brain` is a repo-root
-        # sibling until step 2 moves it, and after the move every root lives under
-        # poindexter/. find_spec is the move-proof form of "this root exists".
-        for root in sorted(mp.PROJECT_ROOTS):
-            assert importlib.util.find_spec(root) is not None, (
-                f"PROJECT_ROOTS names {root!r} but it is not importable"
-            )
+    def test_flat_refusal_is_an_import_error(self):
+        # Callers keep their `except ImportError` policy (the registry logs + skips).
+        with pytest.raises(ImportError):
+            mp.resolve_module_path("services.x")
+
+    @pytest.mark.parametrize("bad", ["", None, 42])
+    def test_rejects_non_string(self, bad):
+        with pytest.raises(ValueError):
+            mp.resolve_module_path(bad)  # type: ignore[arg-type]
+
+    def test_project_roots_are_the_moved_packages(self):
+        assert mp.PROJECT_ROOTS == _EXPECTED_ROOTS
+        assert mp.ROOT_PACKAGE == "poindexter"
 
 
 @pytest.mark.unit
 class TestObjectPaths:
-    def test_splits_and_resolves(self):
+    def test_splits_canonical_spec(self):
         assert mp.resolve_object_path("poindexter.services.x:Klass") == (
             "poindexter.services.x",
             "Klass",
         )
-        assert mp.resolve_object_path("services.x:Klass") == ("poindexter.services.x", "Klass")
 
-    @pytest.mark.parametrize("bad", ["services.x", "services.x:", ":Klass", ""])
+    @pytest.mark.parametrize(
+        "bad", ["poindexter.services.x", "poindexter.services.x:", ":Klass", ""]
+    )
     def test_rejects_specs_without_attr(self, bad):
         with pytest.raises(ValueError):
             mp.resolve_object_path(bad)
 
+    def test_flat_spec_is_refused(self):
+        with pytest.raises(ModuleNotFoundError):
+            mp.resolve_object_path("services.x:Klass")
+
     def test_import_object_path_returns_the_attribute(self):
-        obj = mp.import_object_path("services.module_paths:resolve_module_path")
+        obj = mp.import_object_path("poindexter.services.module_paths:resolve_module_path")
         assert obj is mp.resolve_module_path
         assert (
             mp.import_object_path("poindexter.services.module_paths:ROOT_PACKAGE") == "poindexter"
@@ -165,17 +144,52 @@ class TestObjectPaths:
 
     def test_missing_attribute_stays_loud(self):
         with pytest.raises(AttributeError):
-            mp.import_object_path("services.module_paths:does_not_exist")
+            mp.import_object_path("poindexter.services.module_paths:does_not_exist")
 
-    def test_import_module_path_both_spellings_same_object(self):
-        assert mp.import_module_path("services.module_paths") is mp.import_module_path(
-            "poindexter.services.module_paths"
+    def test_import_module_path_returns_the_real_module(self):
+        assert mp.import_module_path("poindexter.services.module_paths") is mp
+
+
+# --------------------------------------------------------------------------
+# 2a. definition of done: the flat roots are gone from the real tree
+# --------------------------------------------------------------------------
+@pytest.mark.unit
+class TestFlatRootsAreGone:
+    """``import services`` must NOT work (epic DoD). Checked on sys.path itself
+    (``PathFinder``), not via ``sys.modules``: a test elsewhere may park a bare
+    ``types.ModuleType("plugins")`` fake there, and that is not an alias."""
+
+    @pytest.mark.parametrize("root", sorted(_EXPECTED_ROOTS))
+    def test_flat_root_is_not_on_sys_path(self, root):
+        spec = importlib.machinery.PathFinder.find_spec(root)
+        assert spec is None, f"{root!r} is still importable as a top-level package: {spec}"
+        loaded = sys.modules.get(root)
+        assert loaded is None or getattr(loaded, "__file__", None) is None, (
+            f"a real module sits under the flat name {root!r}: {loaded}"
         )
 
+    @pytest.mark.parametrize("root", sorted(_EXPECTED_ROOTS))
+    def test_each_root_imports_under_the_package(self, root):
+        module = importlib.import_module(f"{mp.ROOT_PACKAGE}.{root}")
+        assert module.__name__ == f"{mp.ROOT_PACKAGE}.{root}"
+
+    @pytest.mark.parametrize("root", sorted(_EXPECTED_ROOTS))
+    def test_stub_directory_is_gone(self, root):
+        assert not (BACKEND_ROOT / root).exists(), f"stub package still on disk: {BACKEND_ROOT / root}"
+        assert (PKG_ROOT / root).is_dir()  # utils/ is a namespace package: no __init__.py
+
+    def test_repo_root_brain_stub_is_gone(self):
+        assert not (REPO_ROOT / "brain").exists()
+
+    def test_no_alias_finder_on_meta_path(self):
+        finders = [f for f in sys.meta_path if type(f).__name__ == "FlatImportAliasFinder"]
+        assert not finders, finders
+
 
 # --------------------------------------------------------------------------
-# 2. acceptance: every wired string path resolves + imports both ways
+# 2b. acceptance: every wired string path is canonical and imports
 # --------------------------------------------------------------------------
+_CANONICAL = re.compile(rf"^{re.escape(mp.ROOT_PACKAGE)}\.[a-z_]+\.[A-Za-z0-9_.]+$")
 
 
 def _string_module_paths(rel: str) -> list[tuple[int, str]]:
@@ -187,22 +201,19 @@ def _string_module_paths(rel: str) -> list[tuple[int, str]]:
     for node in ast.walk(tree):
         for child in ast.iter_child_nodes(node):
             parents[child] = node
+
     out: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
             continue
         value = node.value
         module_part = value.split(":", 1)[0]
-        if not mp.is_project_module_path(module_part) or " " in value or value.endswith("."):
+        # Entry-point GROUP names share the root's prefix: `"poindexter.modules"` in
+        # registry.py's group map is a setuptools group, not a module path. Three
+        # segments or more is what a module path this seam is asked for looks like.
+        if not _CANONICAL.match(module_part) or " " in value or value.endswith("."):
             continue
-        # Entry-point GROUP names share the future root's prefix: `"poindexter.modules"`
-        # in registry.py's group map is a setuptools group, not the `modules` package.
-        # A bare two-segment `poindexter.<x>` is never a module path this seam is asked
-        # to import (the package roots are always spelled flat, e.g. "modules").
-        if re.fullmatch(rf"{re.escape(mp.FUTURE_ROOT)}\.[a-z_]+", value):
-            continue
-        # A `/` operand is a filesystem path segment, never a module:
-        # `(_p / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py")` in database_service's sys.path walk.
+        # A `/` operand is a filesystem path segment, never a module.
         parent = parents.get(node)
         if isinstance(parent, ast.BinOp) and isinstance(parent.op, ast.Div):
             continue
@@ -215,7 +226,6 @@ def _string_module_paths(rel: str) -> list[tuple[int, str]]:
             name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
             if name in _LABEL_CALLS:
                 continue
-        # skip the resolver's own docstring-free examples (its module is not in WIRED_FILES)
         out.append((node.lineno, value))
     return out
 
@@ -242,36 +252,16 @@ def test_inventory_floor():
     assert not empty, f"wired files yielding no string paths (check went blind?): {empty}"
 
 
-def _root_dir(root: str) -> Path | None:
-    """Filesystem directory of a project root, wherever this checkout keeps it.
-
-    `services`, `plugins`, ... sit under src/cofounder_agent; `brain` sits at the
-    repo root until step 2 moves it; after the move every root is under
-    poindexter/. `find_spec` on a bare top-level name only LOCATES the package
-    (no import), so this is cheap and follows the tree wherever it goes."""
-    spec = importlib.util.find_spec(root)
-    if spec is None or not spec.submodule_search_locations:
-        return None
-    return Path(next(iter(spec.submodule_search_locations)))
-
-
 def _source_shipped(dotted: str) -> bool:
     """True when this checkout contains the module's source (file or package)."""
-    flat = mp.flat_module_path(dotted)
-    root, _, rest = flat.partition(".")
-    root_dir = _root_dir(root)
-    if root_dir is None:
-        return False
-    if not rest:
-        return True
-    rel = root_dir.joinpath(*rest.split("."))
+    parts = dotted.split(".")[1:]  # drop the root package
+    rel = PKG_ROOT.joinpath(*parts)
     return rel.with_suffix(".py").is_file() or (rel / "__init__.py").is_file()
 
 
 def _find_spec(dotted: str):
     """``find_spec`` raises ``ModuleNotFoundError`` when a *parent* package
-    imports but the child does not (``poindexter.poindexter``); for this test
-    that is simply "not found", so read it as ``None``."""
+    imports but the child does not; for this test that is simply "not found"."""
     try:
         return importlib.util.find_spec(dotted)
     except ModuleNotFoundError:
@@ -279,10 +269,10 @@ def _find_spec(dotted: str):
 
 
 def _assert_importable(spec: str, *, where: str) -> None:
-    """The step-1 property: the project path is FOUND under the resolved
-    spelling. Then import it; a missing *project* module or any non-import
-    error is a defect. A missing *third-party* module (optional extra) is the
-    one tolerated outcome -- and only after find_spec succeeded."""
+    """The project path is FOUND under its (canonical) spelling, then imported.
+    A missing *project* module or any non-import error is a defect. A missing
+    *third-party* module (optional extra) is the one tolerated outcome -- and
+    only after find_spec succeeded."""
     module_part, _, attr = spec.partition(":")
     resolved = mp.resolve_module_path(module_part)
     if not _source_shipped(module_part):
@@ -296,9 +286,9 @@ def _assert_importable(spec: str, *, where: str) -> None:
         module = importlib.import_module(resolved)
     except ModuleNotFoundError as exc:
         missing_root = (exc.name or "").split(".")[0]
-        assert (
-            missing_root and missing_root not in mp.PROJECT_ROOTS and missing_root != mp.FUTURE_ROOT
-        ), f"{where}: {spec!r} failed on a PROJECT module: {exc}"
+        assert missing_root and missing_root != mp.ROOT_PACKAGE and missing_root not in mp.PROJECT_ROOTS, (
+            f"{where}: {spec!r} failed on a PROJECT module: {exc}"
+        )
         pytest.skip(f"{where}: {spec!r} needs optional third-party {exc.name!r}")
     if attr:
         assert hasattr(module, attr), f"{where}: {spec!r} imports but has no attribute {attr!r}"
@@ -308,18 +298,14 @@ def _assert_importable(spec: str, *, where: str) -> None:
 @pytest.mark.parametrize(
     "rel,lineno,spec", _INVENTORY, ids=[f"{r}:{ln}:{v}" for r, ln, v in _INVENTORY]
 )
-def test_wired_string_path_imports_under_both_spellings(rel: str, lineno: int, spec: str):
+def test_wired_string_path_is_canonical_and_imports(rel: str, lineno: int, spec: str):
     where = f"{rel}:{lineno}"
     _assert_importable(spec, where=where)
-    # Since step 3 the literals are canonical; derive BOTH spellings from the flat
-    # form so the test keeps exercising each, whichever one is written down.
-    module_part, sep, attr = spec.partition(":")
-    tail = f":{attr}" if sep else ""
-    flat = mp.flat_module_path(module_part)
-    prefixed = f"{mp.FUTURE_ROOT}.{flat}"
-    _assert_importable(flat + tail, where=where + " (flat)")
-    _assert_importable(prefixed + tail, where=where + " (prefixed)")
-    assert mp.resolve_module_path(prefixed) == mp.resolve_module_path(flat) == mp.resolve_module_path(module_part)
+    # The flat form of the same path must be refused by the seam (DoD: one spelling).
+    module_part, _, _ = spec.partition(":")
+    flat = module_part.split(".", 1)[1]
+    with pytest.raises(ModuleNotFoundError):
+        mp.resolve_module_path(flat)
 
 
 @pytest.mark.unit
@@ -343,9 +329,9 @@ def test_wired_call_sites_no_longer_import_project_paths_directly():
                 node.args
                 and isinstance(node.args[0], ast.Constant)
                 and isinstance(node.args[0].value, str)
+                and _CANONICAL.match(node.args[0].value)
             ):
-                if mp.is_project_module_path(node.args[0].value):
-                    offenders.append(f"{rel}:{node.lineno} {ast.unparse(node)[:80]}")
+                offenders.append(f"{rel}:{node.lineno} {ast.unparse(node)[:80]}")
     assert not offenders, (
         "literal project paths still fed straight to importlib:\n  " + "\n  ".join(offenders)
     )

@@ -156,7 +156,7 @@ Some taps emit many streams (page_metrics, query_metrics, device_metrics). Use:
 Register a handler under the `tap` surface:
 
 ```python
-from services.integrations.registry import register_handler
+from poindexter.services.integrations.registry import register_handler
 
 @register_handler("tap", "stripe_charge_writer")
 async def stripe_charge_writer(payload, *, site_config, row, pool):

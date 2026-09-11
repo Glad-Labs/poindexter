@@ -93,7 +93,7 @@ The contract tests serve two purposes:
 ## How callers fetch prompts
 
 ```python
-from services.prompt_manager import get_prompt_manager
+from poindexter.services.prompt_manager import get_prompt_manager
 
 pm = get_prompt_manager()  # cached singleton
 

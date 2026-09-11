@@ -272,7 +272,7 @@ class TestCheckpointerFallback:
         )
 
         with patch(
-            "brain.bootstrap.resolve_database_url", return_value=None,
+            "poindexter.brain.bootstrap.resolve_database_url", return_value=None,
         ), caplog.at_level(logging.WARNING):
             summary = await runner.run(
                 trivial_templates,
@@ -300,7 +300,7 @@ class TestCheckpointerFallback:
         )
 
         with patch(
-            "brain.bootstrap.resolve_database_url",
+            "poindexter.brain.bootstrap.resolve_database_url",
             side_effect=ModuleNotFoundError("No module named 'brain'"),
         ), caplog.at_level(logging.WARNING):
             summary = await runner.run(

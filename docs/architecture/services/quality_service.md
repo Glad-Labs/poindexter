@@ -193,7 +193,7 @@ ORDER BY created_at DESC LIMIT 50;`
 - **Run a one-off evaluation in the REPL:**
   ```python
   import asyncio
-  from modules.content.quality_service import UnifiedQualityService, EvaluationMethod
+  from poindexter.modules.content.quality_service import UnifiedQualityService, EvaluationMethod
   qs = UnifiedQualityService()
   result = asyncio.run(qs.evaluate("# Post\n\nBody...", context={"topic": "fastapi"}))
   print(result.overall_score, result.passing, result.suggestions)

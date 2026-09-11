@@ -107,7 +107,7 @@ def _make_db(pool=None):
 
 
 # Patch ModelConverter so we don't need real schema objects
-_CONVERTER_PATCH_BASE = "services.content_db.ModelConverter"
+_CONVERTER_PATCH_BASE = "poindexter.services.content_db.ModelConverter"
 
 
 # ---------------------------------------------------------------------------
