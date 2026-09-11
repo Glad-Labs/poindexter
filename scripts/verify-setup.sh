@@ -140,7 +140,7 @@ if curl -s "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
     # Check minimum required models
     MODELS=$(curl -s "$OLLAMA_URL/api/tags" | python3 -c "import json,sys; print(' '.join(m['name'] for m in json.load(sys.stdin).get('models',[])))" 2>/dev/null)
     for m in "qwen3:8b" "gemma3:27b" "nomic-embed-text"; do
-        if echo "$MODELS" | grep -q "$m"; then
+        if grep -q "$m" <<<"$MODELS"; then
             pass "Model $m: available"
         else
             warn "Model $m: not found — run: ollama pull $m"

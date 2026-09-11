@@ -339,7 +339,10 @@ rebuild_services=""; diff_ok=0
 if diff_paths="$(git -C "$DEPLOY_DIR" diff --name-only "$last_deployed" "$head_sha" 2>/dev/null)"; then
   diff_ok=1
   for re in "${!REBUILD_MAP[@]}"; do
-    if echo "$diff_paths" | grep -qE "$re"; then
+    # here-string, not `echo | grep -q`: under pipefail a diff longer than the pipe
+    # buffer makes echo take SIGPIPE when grep -q exits early, and the map entry
+    # silently does not fire (stack#3626 found this shape in unit-tests.yml).
+    if grep -qE "$re" <<<"$diff_paths"; then
       rebuild_services="$rebuild_services ${REBUILD_MAP[$re]}"
     fi
   done
@@ -352,8 +355,8 @@ fi
 # same posture as the brain rebuild above)
 mcp_changed=0; mcp_deps_changed=0
 if [ "$diff_ok" = "1" ]; then
-  echo "$diff_paths" | grep -qE '^mcp-server/' && mcp_changed=1
-  echo "$diff_paths" | grep -qE '^mcp-server/(pyproject\.toml|uv\.lock)$' && mcp_deps_changed=1
+  grep -qE '^mcp-server/' <<<"$diff_paths" && mcp_changed=1
+  grep -qE '^mcp-server/(pyproject\.toml|uv\.lock)$' <<<"$diff_paths" && mcp_deps_changed=1
 else
   mcp_changed=1; mcp_deps_changed=1
 fi

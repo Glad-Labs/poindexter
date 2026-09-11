@@ -28,9 +28,9 @@ total=0; allowed=0; flagged=0
 while IFS= read -r line; do
   [ -z "$line" ] && continue
   total=$((total+1))
-  if echo "$line" | grep -Eq "\"$ALLOWED\"|'$ALLOWED'"; then
+  if grep -Eq "\"$ALLOWED\"|'$ALLOWED'" <<<"$line"; then
     allowed=$((allowed+1))
-  elif echo "$line" | grep -Eq 'services/(site_config|settings_service|logger_config|telemetry|taps/|jobs/db_backup|migrations/)'; then
+  elif grep -Eq 'services/(site_config|settings_service|logger_config|telemetry|taps/|jobs/db_backup|migrations/)' <<<"$line"; then
     # Infrastructure modules that define the env-fallback mechanism itself
     # or propagate env to subprocesses. Read but never leak.
     allowed=$((allowed+1))

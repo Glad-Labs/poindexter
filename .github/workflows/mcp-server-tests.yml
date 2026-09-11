@@ -124,7 +124,13 @@ jobs:
           # src/cofounder_agent/**  — services.* + modules.content.* it imports
           # poindexter/brain/**                — brain.bootstrap / brain.operator_notifier
           # this workflow file      — so edits to it get smoke-tested by running
-          if echo "$changed" | grep -qE '^mcp-server/|^src/cofounder_agent/|^brain/|^\.github/workflows/mcp-server-tests\.yml$'; then
+          # NOT `echo "$changed" | grep -q`: under pipefail, grep -q exiting at its first
+          # match leaves echo holding SIGPIPE once the list outgrows the pipe buffer, and
+          # the step concludes "no relevant change" on exactly the largest PRs
+          # (stack#3626). A here-string has no pipe; the count makes a skip auditable.
+          hits=$(grep -cE '^mcp-server/|^src/cofounder_agent/|^brain/|^\.github/workflows/mcp-server-tests\.yml$' <<<"$changed" || true)
+          echo "mcp-server-relevant paths: ${hits} of $(wc -l <<<"$changed")"
+          if [ "${hits}" -gt 0 ]; then
             echo "mcp-server or an imported subtree changed — running the suite."
             echo "needs_tests=true" >> "$GITHUB_OUTPUT"
           else

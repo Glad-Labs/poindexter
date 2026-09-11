@@ -105,17 +105,20 @@ jobs:
           echo "$changed" | sed 's/^/  /'
 
           emit() { echo "$1=$2" >> "$GITHUB_OUTPUT"; echo "  -> $1=$2"; }
+          # Here-strings, not `echo "$changed" | grep -q`: under pipefail that pair
+          # reports "no match" on large PRs (SIGPIPE, stack#3626) and would skip the
+          # very scans a big dependency PR needs.
           # A broad match here only ever over-runs a scan (safe); the risk to
           # avoid is under-running, so patterns lean inclusive.
-          if echo "$changed" | grep -qE '^\.github/workflows/'; then emit workflows true; else emit workflows false; fi
-          if echo "$changed" | grep -qE '\.(sh|bash|ps1|psm1|psd1)$'; then emit shell true; else emit shell false; fi
-          if echo "$changed" | grep -qE '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$'; then emit pylock true; else emit pylock false; fi
-          if echo "$changed" | grep -qiE 'dockerfile|docker-compose|(^|/)compose\.ya?ml$|^infrastructure/'; then emit docker true; else emit docker false; fi
+          if grep -qE '^\.github/workflows/' <<<"$changed"; then emit workflows true; else emit workflows false; fi
+          if grep -qE '\.(sh|bash|ps1|psm1|psd1)$' <<<"$changed"; then emit shell true; else emit shell false; fi
+          if grep -qE '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$' <<<"$changed"; then emit pylock true; else emit pylock false; fi
+          if grep -qiE 'dockerfile|docker-compose|(^|/)compose\.ya?ml$|^infrastructure/' <<<"$changed"; then emit docker true; else emit docker false; fi
           # deps: fires when Python or JS lockfiles/manifests change. Used to
           # gate trivy-fs (CVE scan only matters when deps actually change).
-          if echo "$changed" | grep -qE \
-            '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$|^package(-lock)?\.json$|^web/'; \
-            then emit deps true; else emit deps false; fi
+          if grep -qE \
+            '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$|^package(-lock)?\.json$|^web/' \
+            <<<"$changed"; then emit deps true; else emit deps false; fi
 
   gitleaks:
     name: gitleaks — secret scan

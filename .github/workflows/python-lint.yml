@@ -103,3 +103,5 @@ jobs:
         run: pip install "ruff==${RUFF_VERSION}"
       - name: Ruff (syntax errors only, whole repo)
         run: ruff check --select E9 --output-format=github .
+      - name: pipe-to-grep classifier lint (a shape that lies on large inputs, stack#3626)
+        run: python scripts/ci/pipe_to_grep_lint.py
