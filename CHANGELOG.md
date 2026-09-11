@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [0.136.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.135.0...v0.136.0) (2026-09-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **backend:** delete the flat import roots and the alias finder (poindexter#1046 step 5a) ([#3662](https://github.com/Glad-Labs/glad-labs-stack/issues/3662))
+
+### Code Refactoring
+
+* **backend:** delete the flat import roots and the alias finder (poindexter[#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046) step 5a) ([#3662](https://github.com/Glad-Labs/glad-labs-stack/issues/3662)) ([8e13e82](https://github.com/Glad-Labs/glad-labs-stack/commit/8e13e823bdd845c61cf6b5509c4aa6f0b3aef78e))
+* **backend:** kill the flat-root assumptions (poindexter[#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046) step 4) ([#3660](https://github.com/Glad-Labs/glad-labs-stack/issues/3660)) ([e181fbd](https://github.com/Glad-Labs/glad-labs-stack/commit/e181fbd7be5c4bf0ba7893382cbb6d3bc8a0d476))
+
 ## [0.135.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.134.0...v0.135.0) (2026-09-11)
 
 
