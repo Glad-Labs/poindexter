@@ -27,10 +27,9 @@ import click
 # the issuer: bootstrap normally exports it, but CLI invocations skip the
 # worker startup path, so it is read from bootstrap.toml directly. This module
 # used to vendor its own copy of that (plus the bootstrap.toml reader beneath
-# it), predating _bootstrap.py — the reason for the vendoring, that
-# ``brain.bootstrap`` is not on sys.path for a ``pip install
-# poindexter-backend`` CLI, is exactly why _bootstrap.py exists and is
-# satisfied by importing from it.
+# it), predating _bootstrap.py — the reason for the vendoring (``brain.bootstrap``
+# was not in the installed wheel before poindexter#1046) is exactly why
+# _bootstrap.py exists, and is satisfied by importing from it.
 from poindexter.cli._bootstrap import close_cli_pool, ensure_secret_key, open_cli_pool
 
 

@@ -59,8 +59,9 @@ on:
           - pypi
       package:
         description: >-
-          cli = the real CLI (gated by POINDEXTER_PYPI_RELEASE; its wheel
-          currently fails the smoke test -- see Glad-Labs/poindexter#1046).
+          cli = the real package (gated by POINDEXTER_PYPI_RELEASE), built
+          from src/cofounder_agent/pyproject.toml -- the one distribution
+          since Glad-Labs/poindexter#1046 step 5.
           placeholder = the 0.0.1 name-reservation package.
         required: true
         default: cli
@@ -106,7 +107,7 @@ jobs:
         run: |
           case "${{ github.event.inputs.package || 'cli' }}" in
             placeholder) dir="packaging/pypi-placeholder" ;;
-            cli)         dir="src/cofounder_agent/poindexter" ;;
+            cli)         dir="src/cofounder_agent" ;;
             *) echo "unknown package: ${{ github.event.inputs.package }}" >&2; exit 1 ;;
           esac
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
@@ -143,15 +144,14 @@ jobs:
           retention-days: 14
 
   # The gate `twine check` cannot be. twine validates metadata and README
-  # rendering and never imports the package -- both the real CLI's artifacts
-  # PASS it while `poindexter --help` dies on `No module named 'services'`.
-  # This installs the wheel into a clean venv and runs the command, which is
-  # the only test that reflects what a user gets.
-  #
-  # EXPECTED RED on `v*` tag builds until Glad-Labs/poindexter#1046 lands: the real CLI wheel is
-  # not installable standalone, and this job saying so is what keeps
-  # publish-pypi from ever shipping it -- both publish jobs `needs` this one.
-  # A green run here on a tag build is the go-live signal for the real package.
+  # rendering and never imports the package -- before Glad-Labs/poindexter#1046
+  # the real wheel PASSED it while `poindexter --help` died on `No module named
+  # 'services'`, because the CLI imported flat roots the wheel did not ship.
+  # This installs the wheel into a clean venv, runs the command, imports
+  # `poindexter.services` + `poindexter.brain`, and fails if any retired flat
+  # root (`services`, `plugins`, ...) is installed or importable -- the only
+  # test that reflects what a user gets. Both publish jobs `needs` this one; a
+  # green run on a `v*` tag build is the go-live signal for the real package.
   smoke:
     name: Clean-install smoke test
     needs: build
@@ -175,6 +175,19 @@ jobs:
           "$RUNNER_TEMP/smoke/bin/pip" install --quiet dist/*.whl
           echo "--- poindexter --help ---"
           "$RUNNER_TEMP/smoke/bin/poindexter" --help
+          echo "--- import root: poindexter.* works, the retired flat roots do not ---"
+          "$RUNNER_TEMP/smoke/bin/python" - <<'PY'
+          import importlib, importlib.machinery, sysconfig
+          from pathlib import Path
+          importlib.import_module("poindexter.services")
+          importlib.import_module("poindexter.brain.bootstrap")
+          retired = ["services", "plugins", "modules", "utils", "routes", "schemas", "config", "tasks", "brain"]
+          site = Path(sysconfig.get_paths()["purelib"])
+          on_disk = [r for r in retired if (site / r).exists()]
+          importable = [r for r in retired if importlib.machinery.PathFinder.find_spec(r) is not None]
+          assert not on_disk and not importable, f"retired flat roots installed: disk={on_disk} importable={importable}"
+          print("ok: only poindexter.* is installed;", len(list(site.glob("poindexter/*"))), "entries under poindexter/")
+          PY
 
   publish-testpypi:
     name: Publish to TestPyPI

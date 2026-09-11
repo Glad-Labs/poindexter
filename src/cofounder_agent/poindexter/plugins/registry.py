@@ -620,7 +620,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # file plugins/samples/noop_job.py is retained as a reference.
         # Core Taps — same imperative load path as samples. Keeps them
         # discoverable in-container without relying on a `pip install .`
-        # of poindexter-backend itself (tracked as packaging follow-up).
+        # of the distribution itself (the images install --no-root).
         ("taps", "poindexter.services.taps.memory", "MemoryFilesTap"),
         ("taps", "poindexter.services.taps.published_posts", "PostsTap"),
         ("taps", "poindexter.services.taps.audit", "AuditTap"),

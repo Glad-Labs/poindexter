@@ -417,10 +417,9 @@ async def _resume_one(task_id: str, feedback: str | None) -> dict[str, Any]:
 
         # Hand the runner an EXPLICIT checkpointer DSN. TemplateRunner's
         # own fallback resolver (``_resolve_dsn``) imports
-        # ``brain.bootstrap``, which is NOT on sys.path in the installed
-        # CLI venv (poindexter-backend ships only ``cofounder_agent``;
-        # ``brain`` lives at the repo root). That import raises
-        # ModuleNotFoundError, gets swallowed, and the runner silently
+        # ``poindexter.brain.bootstrap``; in the installed CLI venv before
+        # poindexter#1046 that was not in the wheel, the import raised
+        # ModuleNotFoundError, got swallowed, and the runner silently
         # degrades to MemorySaver — which holds no checkpoint, so the
         # "resume" re-runs the graph from its entry node with the CLI's
         # thin initial state (no ``post_id``) and halts at

@@ -2,10 +2,11 @@
 
 Every ``poindexter`` subcommand needs to read the same DB DSN. Originally
 each module had its own copy-pasted ``_dsn()`` that read env vars only —
-``brain.bootstrap`` is the canonical resolver but it's not on sys.path
-for installed CLI invocations (poindexter-backend ships only
-``cofounder_agent``), so importing it silently fails and we fall through
-to env vars.
+``brain.bootstrap`` is the canonical resolver, but until Glad-Labs/poindexter#1046
+it was not in the installed wheel (the old distribution shipped only
+``cofounder_agent``), so importing it silently failed and every command fell
+through to env vars. It ships as ``poindexter.brain.bootstrap`` now; this
+module stays as the dependency-free resolver every CLI shares.
 
 That bug class burned ``poindexter auth migrate-cli`` on Matt's host: a
 stale ``LOCAL_DATABASE_URL`` pointing at an unreachable cloud DSN took

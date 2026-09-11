@@ -1,11 +1,11 @@
 [project]
-name = "poindexter-backend"
+name = "poindexter"
 version = "0.135.0"
-description = "Poindexter backend — FastAPI + specialized AI agents. Built by Glad Labs LLC."
+description = "Poindexter — the open-source AI content pipeline: CLI, services, plugins and the brain watchdog, as one package. Built by Glad Labs LLC."
 authors = [{ name = "Glad Labs LLC", email = "hello@gladlabs.io" }]
 # SPDX license — Apache-2.0, matching LICENSE / src/LICENSE.md (poindexter#645).
 license = "Apache-2.0"
-readme = "README.md"
+readme = "poindexter/README.md"
 # Build metadata only; the dependency-locking python range lives in
 # [tool.poetry.dependencies] below. Per Poetry's PEP 621 docs the two are
 # intentionally distinct (this is the build floor, that is the solver range).
@@ -17,10 +17,10 @@ requires-python = ">=3.13,<3.14"
 dynamic = ["dependencies", "classifiers"]
 
 [tool.poetry]
-packages = [
-    { include = "cofounder_agent", from = ".." },
-    { include = "poindexter", from = "." },
-]
+# One distribution, one import root (Glad-Labs/poindexter#1046 step 5). main.py,
+# middleware/, tests/ and skills/ beside the package are the worker checkout, not
+# the wheel; the umbrella `cofounder_agent` include that shipped them is gone.
+packages = [{ include = "poindexter", from = "." }]
 # poindexter/brain carries its own container manifest; keep it out of the wheel.
 exclude = ["poindexter/brain/Dockerfile", "poindexter/brain/pyproject.toml", "poindexter/brain/poetry.lock"]
 
@@ -363,7 +363,6 @@ pre-commit = ">=4.6.1,<5"
 ipython = "^9.16"
 
 [project.scripts]
-api = "cofounder_agent.main:app"
 # Plain `poindexter <command>` CLI (no `python -m` required).
 # Same entry point as python -m poindexter — routes through app.main.
 poindexter = "poindexter.cli.app:main"

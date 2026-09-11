@@ -186,7 +186,10 @@ flat is refused by `services/module_paths.py` with the canonical spelling in the
 Consequences for new code: (1) `__name__`-based logger names and `__module__` strings read
 `poindexter.services.x`; (2) a `Path(__file__).parents[N]` walk inside a moved file is one
 level deeper than before — anchor on a sentinel, not a depth; (3) path-keyed ratchet baselines
-and lint roots are spelled `src/cofounder_agent/poindexter/...`.
+and lint roots are spelled `src/cofounder_agent/poindexter/...`. Since step 5 (2026-09-11)
+`src/cofounder_agent/pyproject.toml` is the **one distribution, named `poindexter`** (the standalone
+`poindexter/pyproject.toml` is gone): `pip install poindexter` ships `poindexter/**` and nothing
+else — `main.py`, `middleware/`, `tests/`, `skills/` beside it are the worker checkout, not the wheel.
 Step 3 (2026-09-11) rewrote every import and string module path to the canonical spelling — new code writes `poindexter.services.x`, never the flat form; steps 4–5 retire the flat-root assumptions and the stubs. Step 4 (2026-09-11) removed the flat-root plumbing: pytest `pythonpath` is `[\"../..\", \".\"]`, scripts put `src/cofounder_agent` (never the repo root) on `sys.path`, the sidecar images COPY only `poindexter/`, and the umbrella `cofounder_agent.services.x` spelling is gone from tests — the stubs, the finder and the `api = cofounder_agent.main:app` entry point remain for step 5.
 
 **Entry point:** `main.py` — FastAPI app with two deployment modes:

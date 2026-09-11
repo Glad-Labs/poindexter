@@ -1,32 +1,30 @@
 # poindexter
 
-Unified command-line interface for the [Poindexter](https://github.com/Glad-Labs/poindexter)
-public AI content pipeline. Built and maintained by [Glad Labs LLC](https://gladlabs.io).
-
-`poindexter` is the thin client layer over the same memory store, app_settings
-database, and task queue the worker, MCP servers, and OpenClaw use. One schema,
-one client, zero drift.
+The open-source AI content pipeline from [Glad Labs](https://gladlabs.io), as one
+installable package: the `poindexter` command-line client, the service layer it
+delegates to, the plugin registry, and the standalone brain watchdog daemon. The
+CLI, the worker, and the MCP servers all import the same `poindexter.*` modules —
+one schema, one client, zero drift.
 
 ## Install
 
-The CLI ships **with the Poindexter stack**, not as a standalone package yet:
+```bash
+pip install poindexter
+poindexter --help
+```
+
+Python 3.13. The package talks to a PostgreSQL database with the `pgvector`
+extension; `poindexter setup` writes `~/.poindexter/bootstrap.toml` and runs the
+schema migrations against it.
+
+To run the whole stack (worker, brain daemon, Prefect, Grafana, ...) rather than
+the client alone, clone the repository and start the consumer compose file:
 
 ```bash
 git clone https://github.com/Glad-Labs/poindexter
 cd poindexter
 docker compose -f docker-compose.consumer.yml up -d
 ```
-
-The `poindexter` command is then available inside the worker container, or on
-the host via `poetry -C src/cofounder_agent install` (Python 3.13).
-
-> **`pip install poindexter` currently installs a placeholder** (0.0.1) that
-> reserves the name and prints these instructions. The CLI is a thin adapter
-> over the stack's service layer — it imports `services`, `plugins` and
-> `modules` by design — and the backend's flat import layout cannot ship those
-> on PyPI without shadowing real packages of the same names. The namespace
-> migration that makes `pip install poindexter` real is tracked in
-> [Glad-Labs/poindexter#1046](https://github.com/Glad-Labs/poindexter/issues/1046).
 
 ## Quick start
 
@@ -64,11 +62,27 @@ Every command respects `-v / --verbose` for client-side info logs and `-h /
 | `posts`    | Query and manage published / draft blog posts.                                             |
 | `settings` | Read and write `app_settings` (DB-first config, no `.env` needed).                         |
 | `costs`    | Pipeline spending and operational metrics.                                                 |
+| `doctor`   | Aggregate every health probe into one report.                                              |
+| `auth`     | Manage OAuth 2.1 client credentials for the API and MCP servers.                           |
 | `vercel`   | Vercel deployment status via the REST API (no Vercel CLI needed).                          |
-| `premium`  | Manage a Poindexter Premium subscription (license activation / revalidation).              |
+| `pro`      | Operate the Poindexter Pro delivery chain.                                                 |
 
-Run any group with `--help` for the full subcommand list, e.g.
-`poindexter memory --help`.
+Run `poindexter --help` for the full list (forty-odd groups) and any group with
+`--help` for its subcommands, e.g. `poindexter memory --help`.
+
+## Import root
+
+Everything ships under one package:
+
+```python
+from poindexter.services.site_config import SiteConfig
+from poindexter.plugins.registry import get_taps
+from poindexter.brain.bootstrap import resolve_database_url
+```
+
+The pre-1046 flat spellings (`import services.x`) are gone — there is exactly
+one module object per name, and nothing is installed at the top level except
+`poindexter`.
 
 ## Configuration
 
@@ -83,11 +97,12 @@ accepted as a convenience override.
 
 ## How versions work
 
-The PyPI version of this package tracks the upstream
+The PyPI version tracks the upstream
 [poindexter](https://github.com/Glad-Labs/poindexter) repository via
 [release-please](https://github.com/googleapis/release-please). Each release on
-`main` cuts a tag `poindexter-v<major>.<minor>.<patch>`; that tag fires the
-publish workflow and ships a matching wheel to PyPI.
+`main` cuts a tag `v<major>.<minor>.<patch>`; that tag fires the publish
+workflow, which builds the wheel, installs it into a clean venv, runs
+`poindexter --help`, and only then ships it.
 
 Breaking changes in the CLI show up in the repo's
 [CHANGELOG](https://github.com/Glad-Labs/poindexter/blob/main/CHANGELOG.md).
@@ -104,11 +119,11 @@ poetry install
 poetry run poindexter --help
 ```
 
-Or, to iterate on the package manifest directly:
+To build the distribution yourself (the manifest is `src/cofounder_agent/pyproject.toml`):
 
 ```bash
-cd src/cofounder_agent/poindexter
-python -m build          # produces dist/poindexter-*.whl + .tar.gz
+cd src/cofounder_agent
+uv build                     # or: python -m build
 pip install dist/poindexter-*.whl
 poindexter --help
 ```

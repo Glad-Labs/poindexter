@@ -2158,10 +2158,11 @@ class TemplateRunner:
             return resolve_database_url()
         except Exception as exc:  # noqa: BLE001
             # Warn, not debug: this swallow is what made the seo_refresh
-            # resume failure a two-step mystery. ``brain.bootstrap`` is NOT
-            # on sys.path in the installed CLI venv (poindexter-backend ships
-            # only ``cofounder_agent``; ``brain`` lives at the repo root), so
-            # this fallback raises ModuleNotFoundError there. Surfacing the
+            # resume failure a two-step mystery. Before poindexter#1046 the
+            # installed CLI venv had no ``brain.bootstrap`` at all (the old
+            # wheel shipped only ``cofounder_agent``), so this fallback raised
+            # ModuleNotFoundError there; it ships now, but a missing DSN still
+            # lands here. Surfacing the
             # cause makes the downstream "no DSN resolved — MemorySaver" line
             # self-diagnosing instead of silent.
             logger.warning(

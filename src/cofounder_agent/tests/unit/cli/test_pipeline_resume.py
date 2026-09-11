@@ -160,8 +160,8 @@ class TestApproveAndResume:
         ``checkpointer_dsn``.
 
         TemplateRunner's own fallback resolver imports ``brain.bootstrap``,
-        which is NOT on sys.path in the installed CLI venv (poindexter-backend
-        ships only ``cofounder_agent``). Without the explicit DSN the runner
+        which the installed CLI venv did not carry before poindexter#1046 (the
+        old wheel shipped only ``cofounder_agent``). Without the explicit DSN the runner
         swallows the ModuleNotFoundError, degrades to MemorySaver, and the
         resume can't load the durable checkpoint — it re-runs from the entry
         node with no ``post_id`` and halts at ``content.load_existing_post``.

@@ -170,9 +170,8 @@ def is_self_referential(content: str, topic: str, markers: list[str]) -> bool:
 
 def _package_root() -> Path:
     # …/poindexter/modules/content/atoms/qa_self_claim.py → src/cofounder_agent,
-    # whose pyproject.toml carries the backend version. parents[3] is
-    # poindexter/, which has its OWN pyproject (the standalone CLI manifest) --
-    # the wrong version to check claims against (poindexter#1046 step 2).
+    # whose pyproject.toml is the one distribution manifest (poindexter#1046
+    # step 5) and carries the release version. parents[3] is poindexter/.
     return Path(__file__).resolve().parents[4]
 
 
