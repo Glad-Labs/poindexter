@@ -1,47 +1,15 @@
 {
   "items": [
     {
-      "post_id": "8189b48c-e266-4eee-893d-b2739d902dbd",
-      "medium": "video",
-      "title": "Faithfulness in AI Content Isn't About Tone--It's About Whether Claims Are True",
-      "slug": "faithfulness-in-ai-content-isnt-about-tone-its-abo-faa0a9c6",
-      "quality_score": 100,
-      "created_at": "2026-09-08T14:12:17.047185Z"
-    },
-    {
-      "post_id": "8189b48c-e266-4eee-893d-b2739d902dbd",
-      "medium": "video_short",
-      "title": "Faithfulness in AI Content Isn't About Tone--It's About Whether Claims Are True",
-      "slug": "faithfulness-in-ai-content-isnt-about-tone-its-abo-faa0a9c6",
-      "quality_score": 100,
-      "created_at": "2026-09-08T14:10:43.414394Z"
-    },
-    {
-      "post_id": "8189b48c-e266-4eee-893d-b2739d902dbd",
+      "post_id": "909014a4-57cf-42d4-ab28-d75a8e0f4e5b",
       "medium": "podcast",
-      "title": "Faithfulness in AI Content Isn't About Tone--It's About Whether Claims Are True",
-      "slug": "faithfulness-in-ai-content-isnt-about-tone-its-abo-faa0a9c6",
+      "title": "A Parent Built Their 8-Year-Old a MUD to Teach Real Code, and Hacker News Argued About It",
+      "slug": "a-parent-built-their-8-year-old-a-mud-to-teach-rea-34877671",
       "quality_score": 100,
-      "created_at": "2026-09-08T05:10:40.159182Z"
-    },
-    {
-      "post_id": "1f98cc99-59d6-4a3f-bcac-bc92c68c66f9",
-      "medium": "podcast",
-      "title": "How a GPU Lock Bug Was Quietly Wrecking Our RAG Sweep",
-      "slug": "how-a-gpu-lock-bug-was-quietly-wrecking-our-rag-sw-9bdb7f9a",
-      "quality_score": 100,
-      "created_at": "2026-09-03T17:53:12.939055Z"
-    },
-    {
-      "post_id": "31fcb445-09a8-44ea-93f0-45262a9b9526",
-      "medium": "podcast",
-      "title": "A 4-Bit Model Just Beat Its Full-Precision Original",
-      "slug": "a-4-bit-model-just-beat-its-full-precision-origina-421ec269",
-      "quality_score": 100,
-      "created_at": "2026-08-31T00:32:34.607572Z"
+      "created_at": "2026-09-09T18:41:07.304929Z"
     }
   ],
-  "total": 5,
+  "total": 1,
   "limit": 50,
   "offset": 0
 }

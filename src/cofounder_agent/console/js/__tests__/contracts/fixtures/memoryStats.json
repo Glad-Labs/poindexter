@@ -1,115 +1,115 @@
 {
-  "total": 87098,
+  "total": 86115,
   "embed_model": "nomic-embed-text",
   "embed_dim": 768,
   "by_source_table": [
     {
       "key": "claude_sessions",
-      "count": 42470,
+      "count": 40796,
       "oldest": "2026-05-28T03:43:43.435669+00:00",
-      "newest": "2026-09-09T06:30:36.938342+00:00",
-      "age_seconds": 22041
+      "newest": "2026-09-12T07:52:47.740982+00:00",
+      "age_seconds": 14481
     },
     {
       "key": "brain",
-      "count": 23023,
+      "count": 23853,
       "oldest": "2026-05-28T03:45:36.069057+00:00",
-      "newest": "2026-09-09T12:31:28.777231+00:00",
-      "age_seconds": 389
+      "newest": "2026-09-12T10:56:08.411891+00:00",
+      "age_seconds": 3480
     },
     {
       "key": "audit",
-      "count": 18768,
-      "oldest": "2026-06-11T11:09:36.171724+00:00",
-      "newest": "2026-09-09T12:31:28.128889+00:00",
-      "age_seconds": 390
+      "count": 18605,
+      "oldest": "2026-06-14T08:05:20.402241+00:00",
+      "newest": "2026-09-12T10:56:07.602396+00:00",
+      "age_seconds": 3481
     },
     {
       "key": "issues",
-      "count": 1334,
+      "count": 1338,
       "oldest": "2026-08-07T05:45:45.111106+00:00",
-      "newest": "2026-09-09T04:21:37.555169+00:00",
-      "age_seconds": 29780
+      "newest": "2026-09-11T19:54:04.009131+00:00",
+      "age_seconds": 57604
     },
     {
       "key": "memory",
-      "count": 1170,
+      "count": 1182,
       "oldest": "2026-04-19T01:56:25.889677+00:00",
-      "newest": "2026-09-09T05:30:29.259446+00:00",
-      "age_seconds": 25649
+      "newest": "2026-09-11T19:53:27.606682+00:00",
+      "age_seconds": 57641
     },
     {
       "key": "posts",
-      "count": 333,
+      "count": 341,
       "oldest": "2026-04-16T17:18:28.368078+00:00",
-      "newest": "2026-09-09T04:20:40.032384+00:00",
-      "age_seconds": 29838
+      "newest": "2026-09-10T02:21:20.788168+00:00",
+      "age_seconds": 207168
     }
   ],
   "by_writer": [
     {
       "key": "claude-code-sessions",
-      "count": 42356,
-      "oldest": "2026-06-10T20:43:50.937505+00:00",
-      "newest": "2026-09-09T06:30:36.938342+00:00",
-      "age_seconds": 22041,
+      "count": 40586,
+      "oldest": "2026-06-13T19:55:34.855343+00:00",
+      "newest": "2026-09-11T19:54:07.425208+00:00",
+      "age_seconds": 57601,
       "stale_threshold": 21600,
       "stale": true
     },
     {
       "key": "brain-daemon",
-      "count": 22985,
+      "count": 23815,
       "oldest": "2026-06-09T19:42:41.200666+00:00",
-      "newest": "2026-09-09T12:31:28.777231+00:00",
-      "age_seconds": 389,
+      "newest": "2026-09-12T10:56:08.411891+00:00",
+      "age_seconds": 3480,
       "stale_threshold": 21600,
       "stale": false
     },
     {
       "key": "auto-embed",
-      "count": 19101,
+      "count": 18946,
       "oldest": "2026-04-16T17:18:28.368078+00:00",
-      "newest": "2026-09-09T12:31:28.128889+00:00",
-      "age_seconds": 390,
+      "newest": "2026-09-12T10:56:07.602396+00:00",
+      "age_seconds": 3481,
       "stale_threshold": 21600,
       "stale": false
     },
     {
       "key": "github",
-      "count": 1334,
+      "count": 1338,
       "oldest": "2026-08-07T05:45:45.111106+00:00",
-      "newest": "2026-09-09T04:21:37.555169+00:00",
-      "age_seconds": 29780,
+      "newest": "2026-09-11T19:54:04.009131+00:00",
+      "age_seconds": 57604,
       "stale_threshold": 21600,
       "stale": true
     },
     {
       "key": "claude-code",
-      "count": 1170,
+      "count": 1182,
       "oldest": "2026-04-19T01:56:25.889677+00:00",
-      "newest": "2026-09-09T05:30:29.259446+00:00",
-      "age_seconds": 25649,
+      "newest": "2026-09-11T19:53:27.606682+00:00",
+      "age_seconds": 57641,
       "stale_threshold": 21600,
       "stale": true
+    },
+    {
+      "key": "collapse_handler",
+      "count": 170,
+      "oldest": "2026-07-09T21:09:50.910261+00:00",
+      "newest": "2026-09-12T07:52:47.740982+00:00",
+      "age_seconds": 14481,
+      "stale_threshold": 21600,
+      "stale": false
     },
     {
       "key": "collapse_job",
       "count": 78,
       "oldest": "2026-05-28T03:43:43.435669+00:00",
       "newest": "2026-06-23T19:04:58.030807+00:00",
-      "age_seconds": 6715980,
+      "age_seconds": 6972550,
       "stale_threshold": 31536000,
       "stale": false
-    },
-    {
-      "key": "collapse_handler",
-      "count": 74,
-      "oldest": "2026-07-09T21:09:50.910261+00:00",
-      "newest": "2026-07-09T21:12:44.602326+00:00",
-      "age_seconds": 5325913,
-      "stale_threshold": 21600,
-      "stale": true
     }
   ],
-  "generated_at": "2026-09-09T12:37:58.390340+00:00"
+  "generated_at": "2026-09-12T11:54:08.920143+00:00"
 }
