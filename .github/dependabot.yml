@@ -199,6 +199,84 @@ updates:
           - 'patch'
 
   # ────────────────────────────────────
+  # npm — Cloudflare Workers affiliate redirect
+  # ────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/infrastructure/cloudflare/affiliate-redirect'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '03:40'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'npm'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+    groups:
+      beacon-minor-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ────────────────────────────────────
+  # npm — Cloudflare Workers Lemon Squeezy webhook relay
+  # ────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/infrastructure/cloudflare/ls-webhook-relay'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '03:40'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'npm'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+    groups:
+      beacon-minor-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ────────────────────────────────────
+  # npm — Cloudflare Workers Sentry relay
+  # ────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/infrastructure/cloudflare/sentry-relay'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '03:40'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'npm'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+    groups:
+      beacon-minor-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ────────────────────────────────────
   # Python — src/cofounder_agent (pip / Poetry)
   # ────────────────────────────────────
   - package-ecosystem: 'pip'
