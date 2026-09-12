@@ -35,3 +35,22 @@ def test_resolve_ref_ok_fix_flag(tmp_path):
     assert ds.resolve_ref("src/here.py", tmp_path) == ("ok", None)
     assert ds.resolve_ref("src/unique.py", tmp_path) == ("fix", "moved/unique.py")
     assert ds.resolve_ref("src/nope.py", tmp_path) == ("flag", None)
+
+
+def test_extract_refs_only_matches_at_a_token_boundary():
+    # `brain/` must not match INSIDE `poindexter/brain/...` — that shorthand is
+    # narrative, and matching its tail is how #3657 produced
+    # `poindexter/src/cofounder_agent/poindexter/brain/seed_app_settings.json`.
+    md = "see `poindexter/brain/seed_app_settings.json` and `brain/alert_sync.py`."
+    assert ds.extract_refs(md) == ["brain/alert_sync.py"]
+
+
+def test_replace_ref_never_rewrites_inside_a_longer_path():
+    text = "`poindexter/brain/x.py` and `brain/x.py` and brain/x.py."
+    out = ds.replace_ref(text, "brain/x.py", "src/cofounder_agent/poindexter/brain/x.py")
+    assert out == (
+        "`poindexter/brain/x.py` and `src/cofounder_agent/poindexter/brain/x.py`"
+        " and src/cofounder_agent/poindexter/brain/x.py."
+    )
+    # a ref that is a prefix of a longer file name is left alone too
+    assert ds.replace_ref("scripts/foo.py scripts/foo.py.bak", "scripts/foo.py", "x/foo.py") == "x/foo.py scripts/foo.py.bak"
