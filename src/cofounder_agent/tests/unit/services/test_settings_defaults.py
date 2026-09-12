@@ -1090,3 +1090,29 @@ def test_video_endcard_defaults_seeded():
     # mirror). '' = no logo.
     assert DEFAULTS["video_endcard_logo_path"] == ""
     assert METADATA["video_endcard_logo_path"]["value_type"] == "string"
+
+
+
+def test_metadata_value_types_are_accepted_by_the_db_check():
+    """Every METADATA value_type must be one the app_settings CHECK admits.
+
+    Nine entries said 'number' / 'enum' (not in the set); the seeder's UPDATE
+    for the first of them raised, the whole lifecycle pass died in a silent
+    except, and 192 rows kept owner=NULL for months (2026-09-12). The allowed
+    set is read from the baseline schema so this cannot drift from the DB.
+    """
+    import re
+    from pathlib import Path
+
+    from poindexter.services.settings_defaults import METADATA
+
+    schema = (
+        Path(__file__).resolve().parents[3]
+        / "poindexter" / "services" / "migrations" / "0000_baseline.schema.sql"
+    ).read_text(encoding="utf-8")
+    m = re.search(r"app_settings_value_type_check CHECK \(\(value_type = ANY \(ARRAY\[(.*?)\]", schema)
+    assert m, "value_type CHECK not found in the baseline schema"
+    allowed = set(re.findall(r"'([a-z_]+)'::text", m.group(1)))
+    assert {"string", "integer", "float", "boolean"} <= allowed
+    bad = {k: v.get("value_type") for k, v in METADATA.items() if v.get("value_type") not in allowed | {None}}
+    assert not bad, f"METADATA value_type outside the DB CHECK set: {bad}"

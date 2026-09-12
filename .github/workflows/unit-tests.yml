@@ -425,6 +425,11 @@ jobs:
       - name: Brain async-safety lint (no blocking calls on the loop)
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/brain_async_safety_lint.py
+      # The brain image copies only poindexter/brain/: a module-scope import of
+      # worker code is either a crash there or a silently inert feature (#3673).
+      - name: Brain import-isolation lint (no module-scope worker imports)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/brain_import_isolation_lint.py
 
       # Information-disclosure guard (security audit L2, #724): no
       # HTTPException whose detail= echoes a caught exception to the client
@@ -731,6 +736,10 @@ jobs:
         run: python scripts/ci/bandit_lint.py
       - name: Brain async-safety lint (no blocking calls on the loop)
         run: python scripts/ci/brain_async_safety_lint.py
+      # The brain image copies only poindexter/brain/: a module-scope import of
+      # worker code is either a crash there or a silently inert feature (#3673).
+      - name: Brain import-isolation lint (no module-scope worker imports)
+        run: python scripts/ci/brain_import_isolation_lint.py
       # Worth having on main specifically: the release PR is what bumps these
       # files, so a release that failed to bump a uv.lock lands here. This job
       # files an issue on failure, which is the notification that "the TOML

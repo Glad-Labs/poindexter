@@ -77,6 +77,28 @@ jobs:
           fetch-depth: 1
       - name: Build brain image
         run: docker build -f src/cofounder_agent/poindexter/brain/Dockerfile -t poindexter-brain:ci ./src/cofounder_agent
+      # The image copies only poindexter/brain/, so a module that imports worker
+      # code fails HERE and nowhere else -- the unit suite runs from the full
+      # worktree and cannot notice. Imports every brain module inside the image.
+      - name: Import smoke inside the brain image
+        run: |
+          # brain_daemon resolves its DSN at import (fail-loud exit 2 without one);
+          # the dummy DSN is never dialed at import time.
+          docker run --rm -e DATABASE_URL=postgresql://smoke:smoke@127.0.0.1:1/smoke \
+            --entrypoint python poindexter-brain:ci -c '
+          import importlib, pkgutil, sys
+          import poindexter.brain as b
+          mods = [m.name for m in pkgutil.iter_modules(b.__path__, "poindexter.brain.") if not m.ispkg]
+          bad = []
+          for name in mods:
+              try:
+                  importlib.import_module(name)
+              except BaseException as exc:
+                  bad.append(f"{name}: {type(exc).__name__}: {exc}")
+          print(f"{len(mods)} brain modules imported in the image, {len(bad)} failed")
+          print("\n".join(bad))
+          sys.exit(1 if bad or len(mods) < 20 else 0)
+          '
       - name: Report size
         run: |
           docker images poindexter-brain:ci --format 'brain image size: {{.Size}}'

@@ -56,9 +56,12 @@ What this module is NOT
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from poindexter.services.settings_categories import resolve_category
+
+logger = logging.getLogger(__name__)
 
 # Every value is stored as `str` because `app_settings.value` is a TEXT
 # column. Numeric / bool consumers parse via `site_config.get_int()`,
@@ -4996,7 +4999,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'dev_diary_auto_publish_max_edit_distance': {'owner': 'auto_publish_gate', 'value_type': 'integer'},
     'dev_diary_auto_publish_min_clean_runs': {'owner': 'auto_publish_gate', 'value_type': 'integer'},
     'enforce_niche_allowlist': {'owner': 'publish_service', 'value_type': 'boolean'},
-    'publish_title_source': {'owner': 'publish_service', 'value_type': 'enum'},
+    'publish_title_source': {'owner': 'publish_service', 'value_type': 'string'},
 
     # ----- Dev-diary substance bar (thin-day skip) -----
     'dev_diary_min_substance_score': {'owner': 'dev_diary_source', 'value_type': 'float'},
@@ -5540,7 +5543,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_pipeline_max_per_cycle': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},
     'media_pipeline_redispatch_max': {'owner': 'media_reconciliation', 'value_type': 'integer'},
     'ollama_unload_respect_keep_alive_pin': {'owner': 'ollama_unload', 'value_type': 'boolean'},
-    'ollama_unload_pin_horizon_days': {'owner': 'ollama_unload', 'value_type': 'number'},
+    'ollama_unload_pin_horizon_days': {'owner': 'ollama_unload', 'value_type': 'integer'},
     'media_qa_frame_detection_enabled': {'owner': 'media_qa', 'value_type': 'boolean'},
     'media_render_min_free_vram_gb': {'owner': 'media_infra_health', 'value_type': 'integer'},
     'media_render_reclaim_cooldown_minutes': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},
@@ -5569,7 +5572,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'topic_demand_dual_signal_factor': {'owner': 'entity_demand', 'value_type': 'float'},
     'topic_demand_google_sources': {'owner': 'entity_demand', 'value_type': 'csv'},
     'title_searchable_entity_enabled': {'owner': 'title_generation', 'value_type': 'boolean'},
-    'title_searchable_entity_mode': {'owner': 'title_generation', 'value_type': 'enum'},
+    'title_searchable_entity_mode': {'owner': 'title_generation', 'value_type': 'string'},
     'niche_carry_forward_decay_factor': {'owner': 'topic_batch_service', 'value_type': 'float'},
     'niche_goal_descriptions': {'owner': 'topic_ranking', 'value_type': 'json'},
     'niche_internal_rag_batch_share_cap': {'owner': 'topic_batch_service', 'value_type': 'float'},
@@ -5667,15 +5670,15 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'podcast_tts_base_url': {'owner': 'tts_service', 'value_type': 'url'},
     'podcast_tts_enabled': {'value_type': 'boolean'},
     'podcast_sting_mix_enabled': {'value_type': 'boolean'},
-    'podcast_sting_solo_seconds': {'value_type': 'number'},
-    'podcast_sting_fade_seconds': {'value_type': 'number'},
-    'podcast_sting_outro_seconds': {'value_type': 'number'},
-    'podcast_sting_gain_db': {'value_type': 'number'},
-    'podcast_sting_mix_timeout_seconds': {'value_type': 'number'},
+    'podcast_sting_solo_seconds': {'value_type': 'float'},
+    'podcast_sting_fade_seconds': {'value_type': 'float'},
+    'podcast_sting_outro_seconds': {'value_type': 'float'},
+    'podcast_sting_gain_db': {'value_type': 'float'},
+    'podcast_sting_mix_timeout_seconds': {'value_type': 'integer'},
     'podcast_sting_file_path': {'value_type': 'string'},
     'podcast_intro_echo_phrases': {'owner': 'podcast_service', 'value_type': 'string'},
     'audio_gen_intro_prompt_template': {'value_type': 'string'},
-    'audio_gen_intro_duration_s': {'value_type': 'number'},
+    'audio_gen_intro_duration_s': {'value_type': 'integer'},
     'podcast_tts_engine': {'owner': 'podcast_service'},
     'podcast_tts_format': {'value_type': 'string'},
     'podcast_tts_loudnorm_ar': {'value_type': 'integer'},
@@ -6049,11 +6052,15 @@ async def seed_all_defaults(pool: Any) -> int:
             except Exception:
                 pass
 
-        # Second pass: write lifecycle metadata where the columns differ.
-        # Skips silently if the lifecycle columns don't exist yet (migration
-        # hasn't run — e.g. fresh-clone worktree with an older schema).
-        try:
-            for key, meta in METADATA.items():
+        # Second pass: write lifecycle metadata where the columns differ -- per
+        # key, and LOUD. One registry entry the DB rejects (a value_type outside
+        # the app_settings_value_type_check set) used to abort the whole pass
+        # inside a silent except, and 192 rows -- wan_ip_probe_url among them --
+        # sat with no owner for months (2026-09-12). Missing lifecycle columns
+        # (a schema older than 20260618) still defer quietly, but say so once.
+        rejected: list[tuple[str, str]] = []
+        for key, meta in METADATA.items():
+            try:
                 await conn.execute(
                     """
                     UPDATE app_settings SET
@@ -6075,8 +6082,22 @@ async def seed_all_defaults(pool: Any) -> int:
                     meta.get('deprecated', False),
                     meta.get('superseded_by'),
                 )
-        except Exception:  # silent-ok: lifecycle columns absent (pre-20260618 schema); INSERT pass ran, metadata deferred until migration runs
-            pass
+            except Exception as exc:  # noqa: BLE001 -- surfaced below, never swallowed
+                text = str(exc)
+                if "column" in text and "does not exist" in text:
+                    logger.info(
+                        "settings metadata sync deferred: lifecycle columns absent (%s)",
+                        text[:120],
+                    )
+                    break
+                rejected.append((key, f"{type(exc).__name__}: {text[:160]}"))
+        if rejected:
+            logger.warning(
+                "settings metadata sync: the DB rejected %d of %d registry entries; "
+                "those rows keep their previous owner/value_type -- fix METADATA "
+                "(first: %s -> %s)",
+                len(rejected), len(METADATA), rejected[0][0], rejected[0][1],
+            )
 
         # Category reconcile: converge every row's category onto the resolver's
         # canonical answer. Converges prod's 698-in-'general' pile on the first

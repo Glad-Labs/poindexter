@@ -241,27 +241,24 @@ class TestCollectAppSettingUrls:
 
     @pytest.mark.asyncio
     async def test_skips_urls_another_probe_owns(self):
-        # A `_url` key the settings registry marks as owned by another probe
-        # (`owner` starting `probe_`) is that probe's TARGET, not an operator
-        # surface. `wan_ip_probe_url` (https://api.ipify.org) answers HEAD
-        # with 520 and GET with 200: the WAN probe GETs it and was fine while
-        # this probe paged "unreachable" ~95 times a day for ten days. No
-        # skip-list entry needed — the registry is the seam.
-        from poindexter.services.settings_defaults import METADATA
-
-        assert METADATA["wan_ip_probe_url"]["owner"].startswith("probe_")
-        assert oup._is_probe_owned("wan_ip_probe_url")
-        assert oup._is_probe_owned("cloudflare_beacon_url")
-        # a registered owner that is NOT a probe stays a surface
-        assert not oup._is_probe_owned("oauth_issuer_url")
-        # an unregistered key is a surface too (no owner = no opinion)
-        assert not oup._is_probe_owned("site_url")
+        # A `_url` key whose app_settings.owner names another probe (`probe_*`)
+        # is that probe's TARGET, not an operator surface. `wan_ip_probe_url`
+        # (https://api.ipify.org) answers HEAD with 520 and GET with 200: the WAN
+        # probe GETs it and was fine while this probe paged "unreachable" ~95
+        # times a day for ten days. The owner comes from the DB ROW -- the brain
+        # image has no settings registry to import (that was #3673's first cut,
+        # which shipped as a silent no-op behind an import fallback).
+        assert oup._is_probe_owned("probe_wan_ip_change")
+        assert oup._is_probe_owned("probe_cloudflare_beacon")
+        assert not oup._is_probe_owned("oauth_routes")   # a non-probe owner stays a surface
+        assert not oup._is_probe_owned(None)             # no owner = no opinion
+        assert not oup._is_probe_owned("")
 
         pool = _make_pool([
-            {"key": "site_url", "value": "https://gladlabs.io"},
-            {"key": "oauth_issuer_url", "value": "https://gladlabs.io/oauth"},
-            {"key": "wan_ip_probe_url", "value": "https://api.ipify.org"},
-            {"key": "cloudflare_beacon_url", "value": "https://beacon.example.workers.dev"},
+            {"key": "site_url", "value": "https://gladlabs.io", "owner": None},
+            {"key": "oauth_issuer_url", "value": "https://gladlabs.io/oauth", "owner": "oauth_routes"},
+            {"key": "wan_ip_probe_url", "value": "https://api.ipify.org", "owner": "probe_wan_ip_change"},
+            {"key": "cloudflare_beacon_url", "value": "https://beacon.example.workers.dev", "owner": "probe_cloudflare_beacon"},
         ])
         out = await oup.collect_app_setting_urls(pool)
         assert {i["key"] for i in out} == {"site_url", "oauth_issuer_url"}
@@ -275,6 +272,23 @@ class TestCollectAppSettingUrls:
         assert {i["key"] for i in out} == {
             "site_url", "oauth_issuer_url", "cloudflare_beacon_url",
         }
+
+    def test_probe_module_imports_no_worker_code(self):
+        # The brain image copies only poindexter/brain/. A module-scope import
+        # of poindexter.services.* here is either a crash in the container or
+        # a feature that silently degrades behind a fallback -- so the seam for
+        # settings knowledge is the DB (app_settings.owner), never the registry.
+        import ast
+        import inspect
+        tree = ast.parse(inspect.getsource(oup))
+        for node in ast.walk(tree):
+            mods = []
+            if isinstance(node, ast.Import):
+                mods = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                mods = [node.module or ""]
+            for m in mods:
+                assert not m.startswith("poindexter.services"), m
 
     @pytest.mark.asyncio
     async def test_localizes_localhost_when_in_docker(self, monkeypatch):

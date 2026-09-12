@@ -20,9 +20,9 @@ Surfaces inspected each cycle:
    that triggered #214.
 3. **app_settings keys ending in ``_url``** — ``site_url``, ``storefront_url``,
    ``oauth_issuer_url`` and friends. These are what the Grafana templates
-   substitute in. A key the settings registry marks as owned by another probe
-   (``METADATA[key]["owner"]`` starting ``probe_``) is that probe's TARGET, not
-   a surface an operator clicks — ``wan_ip_probe_url`` is the egress-IP echo
+   substitute in. A key whose ``app_settings.owner`` names another probe
+   (``probe_*`` -- the worker's seeder copies it from the settings registry) is
+   that probe's TARGET, not a surface an operator clicks — ``wan_ip_probe_url`` is the egress-IP echo
    the WAN probe fetches, ``cloudflare_beacon_url`` the POST-only beacon the
    beacon probe pings — so it is skipped here and gets its own probe's verdict.
    Earned 2026-09-12: ipify answers HEAD with 520 and GET with 200, so this
@@ -38,8 +38,9 @@ more than once per surface per cycle, and we cap operator notifications at 1 per
 surface per cycle to avoid blasting Telegram when (e.g.) the whole observability
 stack is down at the same time.
 
-Standalone module — only depends on stdlib + ``httpx`` (already a project dep)
-and the pure-data settings registry (``poindexter.services.settings_defaults``).
+Standalone module — only depends on stdlib + ``httpx`` (already a project dep).
+The brain image ships only ``poindexter/brain/``; ``scripts/ci/brain_import_isolation_lint.py``
+keeps worker imports out of here.
 ``tailscale`` CLI is optional; if it's missing we skip drift detection without
 failing the probe.
 """
@@ -82,21 +83,19 @@ def _localize(url: str) -> str:
 
 logger = logging.getLogger("brain.operator_url_probe")
 
-try:
-    from poindexter.services.settings_defaults import METADATA as _SETTINGS_METADATA
-except Exception:  # pragma: no cover - registry import must never take the probe down
-    _SETTINGS_METADATA = {}
 
+def _is_probe_owned(owner: object) -> bool:
+    """True when ``app_settings.owner`` says another probe owns the key.
 
-def _is_probe_owned(key: str) -> bool:
-    """True when the settings registry says another probe owns ``key``.
-
-    Such a URL is that probe's target (the WAN egress-IP echo, the page-views
-    beacon), not an operator surface; probing it here duplicates the owner's
-    check with a request shape the target may not accept.
+    ``owner`` is the column the worker's seeder keeps in step with the settings
+    registry (``settings_defaults.METADATA``); the brain reads it from the DB and
+    never imports the registry -- the brain image ships only ``poindexter/brain/``,
+    so a registry import here is a silent no-op in production (stack #3673's
+    first cut proved it). Such a URL is that probe's target (the WAN egress-IP
+    echo, the page-views beacon), not an operator surface; probing it here
+    duplicates the owner's check with a request shape the target may not accept.
     """
-    owner = (_SETTINGS_METADATA.get(key) or {}).get("owner") or ""
-    return str(owner).startswith("probe_")
+    return str(owner or "").startswith("probe_")
 
 # ---------------------------------------------------------------------------
 # Tunables
@@ -391,9 +390,9 @@ async def collect_app_setting_urls(
       * Keys named in ``operator_url_probe_skip_keys`` (comma-separated
         app_setting). Operator-controlled mute list for surfaces like
         social profiles that are bot-protected and return 403.
-      * Keys another probe owns per the settings registry (``owner`` starting
-        ``probe_``) — probe targets, not operator surfaces; see
-        ``_is_probe_owned``. An explicit operator override for such a key
+      * Keys another probe owns per ``app_settings.owner`` (``probe_*``) —
+        probe targets, not operator surfaces; see ``_is_probe_owned``. Read
+        from the DB on purpose: the brain image has no settings registry. An explicit operator override for such a key
         (``override_keys``, from ``operator_url_probe_target_overrides``)
         wins: the key stays a target so the override keeps applying, also to
         a dashboard link that shadows the same URL.
@@ -404,7 +403,8 @@ async def collect_app_setting_urls(
     """
     try:
         rows = await pool.fetch(
-            "SELECT key, value FROM app_settings WHERE value IS NOT NULL AND value <> ''"
+            "SELECT key, value, owner FROM app_settings"
+            " WHERE value IS NOT NULL AND value <> ''"
         )
     except Exception as exc:
         logger.warning("[OPERATOR_URL_PROBE] app_settings read failed: %s", exc)
@@ -431,7 +431,7 @@ async def collect_app_setting_urls(
         key = row["key"]
         if key in skip_keys:
             continue
-        if _is_probe_owned(key) and key not in override_keys:
+        if _is_probe_owned(row.get("owner")) and key not in override_keys:
             continue
             continue
         if not (key.endswith(URL_KEY_SUFFIX) or key in explicit):
