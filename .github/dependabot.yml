@@ -318,26 +318,6 @@ updates:
       include: 'scope'
     rebase-strategy: 'auto'
 
-  # ────────────────────────────────────
-  # Python — root pyproject.toml (Poetry)
-  # ────────────────────────────────────
-  - package-ecosystem: 'pip'
-    directory: '/'
-    target-branch: 'main'
-    schedule:
-      interval: 'weekly'
-      day: 'monday'
-      time: '04:10'
-    open-pull-requests-limit: 5
-    pull-request-branch-name:
-      separator: '/'
-    labels:
-      - 'dependencies'
-      - 'python'
-    commit-message:
-      prefix: 'deps:'
-      include: 'scope'
-    rebase-strategy: 'auto'
 
   # ────────────────────────────────────
   # Python — mcp-server (uv)

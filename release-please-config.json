@@ -11,16 +11,6 @@
       "extra-files": [
         {
           "type": "toml",
-          "path": "pyproject.toml",
-          "jsonpath": "$.tool.poetry.version"
-        },
-        {
-          "type": "toml",
-          "path": "pyproject.toml",
-          "jsonpath": "$.project.version"
-        },
-        {
-          "type": "toml",
           "path": "src/cofounder_agent/pyproject.toml",
           "jsonpath": "$.project.version"
         },

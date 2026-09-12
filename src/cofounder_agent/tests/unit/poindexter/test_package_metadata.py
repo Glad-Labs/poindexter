@@ -204,3 +204,18 @@ def test_readme_quickstart_commands_resolve(readme_rel: str) -> None:
         f"{readme_rel} documents poindexter commands that don't resolve against the CLI:\n  "
         + "\n  ".join(failures)
     )
+
+
+@pytest.mark.skipif(REPO_ROOT is None, reason="repo root not found")
+def test_repo_root_declares_no_distribution() -> None:
+    """The repo root is tool configuration only. Its old ``[tool.poetry]`` "dev
+    harness" (3,189-line lock installed by nothing) and the pre-5b umbrella
+    ``[project]`` + setuptools block fed Dependabot PRs and security alerts for
+    a package nobody built. Removed 2026-09-12; keep it that way."""
+    import tomllib
+
+    root_manifest = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "project" not in root_manifest, "repo-root pyproject grew a [project] table again"
+    assert "build-system" not in root_manifest, "repo-root pyproject grew a [build-system] again"
+    assert "poetry" not in root_manifest.get("tool", {}), "repo-root pyproject grew [tool.poetry] again"
+    assert not (REPO_ROOT / "poetry.lock").exists(), "repo-root poetry.lock is back"
