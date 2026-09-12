@@ -10,13 +10,13 @@ export const revalidate = 300; // 5 min
  * signup, etc. The only required piece is the `listPosts()` fetch.
  */
 export default async function HomePage() {
-  let posts: Awaited<ReturnType<typeof listPosts>>['items'] = [];
+  let posts: Awaited<ReturnType<typeof listPosts>>['posts'] = [];
   let total = 0;
   let error: string | null = null;
 
   try {
     const page = await listPosts(12, 0);
-    posts = page.items;
+    posts = page.posts ?? [];
     total = page.total;
   } catch (err) {
     error =

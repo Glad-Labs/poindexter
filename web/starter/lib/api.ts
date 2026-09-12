@@ -35,9 +35,12 @@ export interface Post {
   seo_description?: string | null;
 }
 
+/** Shape of `GET /api/posts` on the Poindexter backend. */
 export interface PostListResponse {
-  items: Post[];
+  posts: Post[];
   total: number;
+  offset: number;
+  limit: number;
 }
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
