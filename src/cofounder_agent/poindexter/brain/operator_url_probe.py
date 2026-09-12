@@ -20,7 +20,14 @@ Surfaces inspected each cycle:
    that triggered #214.
 3. **app_settings keys ending in ``_url``** — ``site_url``, ``storefront_url``,
    ``oauth_issuer_url`` and friends. These are what the Grafana templates
-   substitute in.
+   substitute in. A key the settings registry marks as owned by another probe
+   (``METADATA[key]["owner"]`` starting ``probe_``) is that probe's TARGET, not
+   a surface an operator clicks — ``wan_ip_probe_url`` is the egress-IP echo
+   the WAN probe fetches, ``cloudflare_beacon_url`` the POST-only beacon the
+   beacon probe pings — so it is skipped here and gets its own probe's verdict.
+   Earned 2026-09-12: ipify answers HEAD with 520 and GET with 200, so this
+   probe paged "operator surface unreachable" ~95 times a day for ten days
+   while the WAN probe, which GETs it, was fine.
 4. **Internal compose URLs** — ``prefect_api_url``, ``grafana_url``, ``loki_url``
    and similar app_settings keys (matched by a curated list, not just suffix,
    because some don't end in ``_url``).
@@ -31,7 +38,8 @@ more than once per surface per cycle, and we cap operator notifications at 1 per
 surface per cycle to avoid blasting Telegram when (e.g.) the whole observability
 stack is down at the same time.
 
-Standalone module — only depends on stdlib + ``httpx`` (already a project dep).
+Standalone module — only depends on stdlib + ``httpx`` (already a project dep)
+and the pure-data settings registry (``poindexter.services.settings_defaults``).
 ``tailscale`` CLI is optional; if it's missing we skip drift detection without
 failing the probe.
 """
@@ -73,6 +81,22 @@ def _localize(url: str) -> str:
 
 
 logger = logging.getLogger("brain.operator_url_probe")
+
+try:
+    from poindexter.services.settings_defaults import METADATA as _SETTINGS_METADATA
+except Exception:  # pragma: no cover - registry import must never take the probe down
+    _SETTINGS_METADATA = {}
+
+
+def _is_probe_owned(key: str) -> bool:
+    """True when the settings registry says another probe owns ``key``.
+
+    Such a URL is that probe's target (the WAN egress-IP echo, the page-views
+    beacon), not an operator surface; probing it here duplicates the owner's
+    check with a request shape the target may not accept.
+    """
+    owner = (_SETTINGS_METADATA.get(key) or {}).get("owner") or ""
+    return str(owner).startswith("probe_")
 
 # ---------------------------------------------------------------------------
 # Tunables
@@ -351,7 +375,9 @@ async def detect_tailscale_drift(pool) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-async def collect_app_setting_urls(pool) -> list[dict[str, str]]:
+async def collect_app_setting_urls(
+    pool, *, override_keys: frozenset[str] = frozenset()
+) -> list[dict[str, str]]:
     """Return ``[{surface, key, url}, ...]`` for every probable URL in app_settings.
 
     "Probable URL" = the key ends in ``_url`` OR it's in
@@ -365,6 +391,12 @@ async def collect_app_setting_urls(pool) -> list[dict[str, str]]:
       * Keys named in ``operator_url_probe_skip_keys`` (comma-separated
         app_setting). Operator-controlled mute list for surfaces like
         social profiles that are bot-protected and return 403.
+      * Keys another probe owns per the settings registry (``owner`` starting
+        ``probe_``) — probe targets, not operator surfaces; see
+        ``_is_probe_owned``. An explicit operator override for such a key
+        (``override_keys``, from ``operator_url_probe_target_overrides``)
+        wins: the key stays a target so the override keeps applying, also to
+        a dashboard link that shadows the same URL.
 
     Localhost / 127.0.0.1 URLs are rewritten via ``localize_url()`` so
     URLs that work from the host become reachable from inside the brain
@@ -398,6 +430,9 @@ async def collect_app_setting_urls(pool) -> list[dict[str, str]]:
     for row in rows:
         key = row["key"]
         if key in skip_keys:
+            continue
+        if _is_probe_owned(key) and key not in override_keys:
+            continue
             continue
         if not (key.endswith(URL_KEY_SUFFIX) or key in explicit):
             continue
@@ -770,7 +805,10 @@ async def run_operator_url_probe(
 
     # ---- 1) Collect all URL targets from the four sources -----------------
     dashboard_targets = extract_dashboard_links(dashboards_dir)
-    appsetting_targets = await collect_app_setting_urls(pool)
+    overrides = await _load_target_overrides(pool)
+    appsetting_targets = await collect_app_setting_urls(
+        pool, override_keys=frozenset(overrides)
+    )
 
     # Merge URL lists — dashboard-first so the richer surface label wins as
     # the operator anchor, but propagate the app_settings key onto a
@@ -784,7 +822,6 @@ async def run_operator_url_probe(
     # widens alive_codes for outbound-only APIs (Google sitemap ping,
     # IndexNow, R2 public bucket etc.) where 4xx means "host alive,
     # request shape wrong" rather than "service down".
-    overrides = await _load_target_overrides(pool)
 
     logger.info(
         "[OPERATOR_URL_PROBE] Probing %d URL(s) (%d dashboard, %d app_settings, "

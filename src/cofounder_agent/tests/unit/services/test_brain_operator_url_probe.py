@@ -240,6 +240,43 @@ class TestCollectAppSettingUrls:
         assert keys == {"site_url"}
 
     @pytest.mark.asyncio
+    async def test_skips_urls_another_probe_owns(self):
+        # A `_url` key the settings registry marks as owned by another probe
+        # (`owner` starting `probe_`) is that probe's TARGET, not an operator
+        # surface. `wan_ip_probe_url` (https://api.ipify.org) answers HEAD
+        # with 520 and GET with 200: the WAN probe GETs it and was fine while
+        # this probe paged "unreachable" ~95 times a day for ten days. No
+        # skip-list entry needed — the registry is the seam.
+        from poindexter.services.settings_defaults import METADATA
+
+        assert METADATA["wan_ip_probe_url"]["owner"].startswith("probe_")
+        assert oup._is_probe_owned("wan_ip_probe_url")
+        assert oup._is_probe_owned("cloudflare_beacon_url")
+        # a registered owner that is NOT a probe stays a surface
+        assert not oup._is_probe_owned("oauth_issuer_url")
+        # an unregistered key is a surface too (no owner = no opinion)
+        assert not oup._is_probe_owned("site_url")
+
+        pool = _make_pool([
+            {"key": "site_url", "value": "https://gladlabs.io"},
+            {"key": "oauth_issuer_url", "value": "https://gladlabs.io/oauth"},
+            {"key": "wan_ip_probe_url", "value": "https://api.ipify.org"},
+            {"key": "cloudflare_beacon_url", "value": "https://beacon.example.workers.dev"},
+        ])
+        out = await oup.collect_app_setting_urls(pool)
+        assert {i["key"] for i in out} == {"site_url", "oauth_issuer_url"}
+
+        # An explicit operator override for a probe-owned key wins: the
+        # beacon's 200-499 override must keep applying (also to a dashboard
+        # link that shadows the same URL), so the key stays a target.
+        out = await oup.collect_app_setting_urls(
+            pool, override_keys=frozenset({"cloudflare_beacon_url"})
+        )
+        assert {i["key"] for i in out} == {
+            "site_url", "oauth_issuer_url", "cloudflare_beacon_url",
+        }
+
+    @pytest.mark.asyncio
     async def test_localizes_localhost_when_in_docker(self, monkeypatch):
         # Brain runs in docker, so localhost loops back to the brain
         # container itself — every probe of a host service via
