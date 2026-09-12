@@ -9,9 +9,9 @@ Why
 different Python tree that cannot import the first:
 
 - ``services/gpu_scheduler.py`` — defines it, acquires/releases it.
-- ``brain/health_probes.py`` — **takes** it (``pg_try_advisory_lock``) so the
+- ``poindexter/brain/health_probes.py`` — **takes** it (``pg_try_advisory_lock``) so the
   writer-model probe never loads the ~19 GB writer into VRAM mid-render.
-- ``brain/sidecar_ram_watch.py`` — **reads** it as an idle gate before
+- ``poindexter/brain/sidecar_ram_watch.py`` — **reads** it as an idle gate before
   recycling a model sidecar.
 
 The brain runs stdlib + asyncpg only, so those two duplicate the value BY HAND.

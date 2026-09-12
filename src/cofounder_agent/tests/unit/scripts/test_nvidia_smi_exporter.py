@@ -465,7 +465,7 @@ def test_process_rows_full_cmdline_becomes_executable_basename():
     (observed live 2026-07-26)."""
     apps = (
         "GPU-aaaa, 50032, /usr/lib/claude-desktop/claude-desktop"
-        " --type=gpu-process --user-data-dir=/home/mattm/.config/Claude"
+        " --type=gpu-process --user-data-dir=/home/operator/.config/Claude"
         " --gpu-preferences=UAAAAAAAAAAgAQAEAAAAAAAAAAAAAGAA --shared-files, 171\n"
         "GPU-aaaa, 7, /usr/local/bin/ollama runner --model /models/gemma, 18432"
     )

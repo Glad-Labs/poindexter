@@ -75,7 +75,7 @@ def _evaluate(
     renamed — EXTRA rows and the exact-count check are tolerated. Only a runner
     failure or a MISSING current migration (one that should apply but didn't)
     stays fatal there: that is the real "this backup isn't restorable /
-    migratable" signal. (poindexter#441 — see brain/restore_test_probe.py.)
+    migratable" signal. (poindexter#441 — see poindexter/brain/restore_test_probe.py.)
     """
     missing = sorted(file_names - applied_names)
     extra = sorted(applied_names - file_names)

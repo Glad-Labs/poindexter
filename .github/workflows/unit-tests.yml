@@ -91,15 +91,17 @@ jobs:
     # protect the CI-minutes win). Advisory either way (no --cov-fail-under).
     #
     # #1292: the source-package list must name what the tests actually IMPORT.
-    # The pytest steps run from src/cofounder_agent (cwd), and the tests import
-    # the first-party packages directly — `services.*`, `modules.*`, `routes.*`,
-    # `utils.*`, `middleware.*`, `schemas.*`. The old `--cov=cofounder_agent`
-    # named a package that is never imported (there is no `cofounder_agent`
-    # package — `src/cofounder_agent/` is the import ROOT, not a package), so
-    # pytest-cov tracked NOTHING and every nightly printed "No data was
-    # collected" while still reporting green. Name the real packages instead.
+    # The pytest steps run from src/cofounder_agent (cwd), and since
+    # poindexter#1046 the tests import `poindexter.*` (services, modules,
+    # routes, utils, schemas, brain, cli all live under that one package) plus
+    # the two root modules beside it, `main` and `middleware`. Twice now the
+    # list named packages that no longer existed -- first `cofounder_agent`,
+    # then the flat roots the migration deleted -- and pytest-cov tracked
+    # NOTHING while every nightly reported green. `--cov-fail-under=1` is the
+    # floor that turns "measured nothing" red without gating on a percentage
+    # (the report stays advisory above 1%).
     env:
-      COV: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '--cov=services --cov=modules --cov=routes --cov=utils --cov=middleware --cov=schemas --cov-append --cov-report=' || '' }}
+      COV: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '--cov=poindexter --cov=main --cov=middleware --cov-append --cov-fail-under=1 --cov-report=' || '' }}
       # Public-mirror CI-minutes dedup. Every pytest step runs through $PYTEST.
       # On the source repo it's a normal run; on the force-pushed public mirror
       # (Glad-Labs/poindexter) it degrades to `--collect-only`. Rationale: the

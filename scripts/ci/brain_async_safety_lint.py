@@ -3,7 +3,7 @@
 
 The brain (``brain/``) is a single-event-loop asyncio daemon. ``brain_daemon``
 awaits every probe *sequentially* on that one loop (see
-``brain/brain_daemon.py`` ``run_cycle`` -> ``await run_*_probe(pool)``). So any
+``poindexter/brain/brain_daemon.py`` ``run_cycle`` -> ``await run_*_probe(pool)``). So any
 **synchronous blocking call executed directly on the loop** freezes the entire
 watchdog for its whole duration — no other probe runs, the heartbeat stalls, the
 reasoning queue backs up. A single ``docker restart`` (30 s) or a
@@ -22,7 +22,7 @@ The fix is always one of two shapes (both already used across ``brain/``):
   - blocking I/O (subprocess, urllib):  ``await asyncio.to_thread(fn, *args)``
   - a wait between retries:             ``await asyncio.sleep(seconds)``
     (make the injected ``sleep_fn`` seam default to ``asyncio.sleep`` and
-    ``await`` it — mirror ``brain/alert_dispatcher.py``).
+    ``await`` it — mirror ``poindexter/brain/alert_dispatcher.py``).
 
 Deliberately NOT flagged
 ------------------------

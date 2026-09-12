@@ -643,7 +643,8 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["cofounder_agent"]
+# The importable packages (poindexter#1046): the old `cofounder_agent` name measured nothing.
+source = ["poindexter", "main", "middleware"]
 omit = [
     "*/tests/*",
     "*/migrations/*",

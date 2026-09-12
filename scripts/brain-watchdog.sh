@@ -14,7 +14,15 @@
 set -euo pipefail
 
 HEARTBEAT_FILE="$HOME/.poindexter/heartbeat"
-BRAIN_SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/brain/brain_daemon.py"
+# The brain has run as the poindexter-brain-daemon CONTAINER since 2026-05 (its
+# restarts are the docker-watchdog unit's job); this script only applies to a
+# host-process brain and refuses to act when the container exists. The daemon
+# module moved under the package in poindexter#1046.
+BRAIN_SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/src/cofounder_agent/poindexter/brain/brain_daemon.py"
+if command -v docker >/dev/null 2>&1 && docker container inspect poindexter-brain-daemon >/dev/null 2>&1; then
+  echo "brain-watchdog: the brain runs as the poindexter-brain-daemon container; nothing to do here (docker-watchdog covers it)." >&2
+  exit 0
+fi
 LOG_DIR="$HOME/.poindexter/logs"
 LOG_FILE="$LOG_DIR/watchdog.log"
 MAX_STALE_SECONDS=900  # 15 minutes
