@@ -184,6 +184,14 @@ def _seed_env_from_bootstrap() -> None:
     ``app_settings.mcp_oauth_client_*`` — no env var is required.
     Phase 3 (#249) removed the legacy static-Bearer path.
     """
+    # The bootstrap reader ships in the worker tree, not in this server's venv;
+    # put src/cofounder_agent on sys.path BEFORE importing it. This function runs
+    # first in main(), ahead of every other path bootstrap -- when step 3 of
+    # poindexter#1046 spelled the import `poindexter.brain.bootstrap` it stopped
+    # resolving here, and the unit crash-looped for 27 h (2026-09-11 06:09 EDT ->
+    # 09-12) with `No module named 'poindexter'` while the probe's restarts were
+    # capped and deduped. tests/test_http_server_bootstrap_order.py pins this.
+    _ensure_poindexter_on_path()
     from poindexter.brain.bootstrap import get_bootstrap_value  # type: ignore[import-not-found]
 
     secret_key = (
