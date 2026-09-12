@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.136.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.136.0...v0.136.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **deploy:** bounce containers and restart the connector once per tree, not per retry ([#3667](https://github.com/Glad-Labs/glad-labs-stack/issues/3667)) ([d711817](https://github.com/Glad-Labs/glad-labs-stack/commit/d711817f8aced50756e8c75a0c9b1a3646984114))
+
 ## [0.136.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.135.0...v0.136.0) (2026-09-11)
 
 
