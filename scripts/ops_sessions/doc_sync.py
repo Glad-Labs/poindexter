@@ -7,7 +7,7 @@ from pathlib import Path
 
 import _common as c
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 # A reference starts at a path-token boundary. Without the lookbehind, `brain/`
 # also matched INSIDE `poindexter/brain/seed_app_settings.json`, the repaired
 # substring was spliced back into the longer path, and the 2026-09-11 run

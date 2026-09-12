@@ -33,7 +33,7 @@ Config is ``app_settings.scheduled_workflows``:
 
 .. code-block:: json
 
-    [{"repo": "Glad-Labs/glad-labs-stack", "workflow": "benchmarks.yml",
+    [{"repo": "Glad-Labs/poindexter", "workflow": "benchmarks.yml",
       "max_age_hours": 30}]
 
 ``max_age_hours`` should be roughly 1.5x the cron period: GitHub's scheduler
