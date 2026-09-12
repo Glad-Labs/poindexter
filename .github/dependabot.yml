@@ -401,7 +401,14 @@ updates:
   # Docker (base images)
   # ────────────────────────────────────
   - package-ecosystem: 'docker'
-    directory: '/'
+    # Dependabot's docker ecosystem reads Dockerfiles in the listed directories
+    # only (compose files are not Dockerfiles). `/` matched nothing, so every
+    # run ended 'No Dockerfiles nor Kubernetes YAML found in /' (2026-09-12).
+    directories:
+      - '/scripts'
+      - '/src/cofounder_agent'
+      - '/src/cofounder_agent/poindexter/brain'
+      - '/web/public-site'
     target-branch: 'main'
     schedule:
       interval: 'weekly'
