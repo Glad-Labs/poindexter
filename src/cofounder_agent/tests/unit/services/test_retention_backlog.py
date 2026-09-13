@@ -1,6 +1,6 @@
 """Tests for the retention correctness signal (poindexter#933).
 
-The bug this exists for (Glad-Labs/glad-labs-stack#2871) was invisible because
+The bug this exists for (Glad-Labs/poindexter#2871) was invisible because
 every signal was a *liveness* signal: `last_error` NULL, `last_run_at` current,
 `total_deleted` non-zero, panel green — for months, while pruning nothing.
 
