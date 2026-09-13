@@ -215,6 +215,71 @@ def _seed_env_from_bootstrap() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _init_sentry() -> bool:
+    """Best-effort Sentry (GlitchTip) init for the connector process.
+
+    The worker, brain and Prefect flow all report to GlitchTip; the connector
+    did not, so its 27-hour outage on 2026-09-12 left no trace there. Reads
+    ``sentry_dsn`` / ``sentry_enabled`` / ``sentry_environment`` straight from
+    ``app_settings`` (the DSN is not a secret) via the bootstrap DSN, tags the
+    process ``poindexter-mcp-http`` and the tree's version. Never raises and
+    never blocks startup: no SDK, no DB, no DSN all mean "run without it".
+    """
+    try:
+        import sentry_sdk
+    except ImportError:
+        logger.info("[mcp-http] sentry-sdk not installed — connector errors will not reach GlitchTip")
+        return False
+    try:
+        _ensure_poindexter_on_path()
+        import asyncio
+
+        import asyncpg  # type: ignore[import-not-found]
+        from poindexter import package_version  # type: ignore[import-not-found]
+        from poindexter.brain.bootstrap import (
+            resolve_database_url,  # type: ignore[import-not-found]
+        )
+
+        # No SQL in an adapter (adapter-purity ratchet): the brain's shared
+        # app_settings reader owns the query; this only opens a short-lived pool.
+        from poindexter.brain.secret_reader import (
+            read_app_setting,  # type: ignore[import-not-found]
+        )
+
+        async def _read() -> dict[str, str]:
+            pool = await asyncpg.create_pool(resolve_database_url(), min_size=1, max_size=1, timeout=5)
+            try:
+                out: dict[str, str] = {}
+                for key in ("sentry_dsn", "sentry_enabled", "sentry_environment", "environment"):
+                    out[key] = (await read_app_setting(pool, key)) or ""
+                return out
+            finally:
+                await pool.close()
+
+        cfg = asyncio.run(_read())
+    except Exception as exc:  # noqa: BLE001 — telemetry must never block the connector
+        logger.warning("[mcp-http] Sentry init skipped: settings unreadable (%s: %s)", type(exc).__name__, exc)
+        return False
+    dsn = cfg.get("sentry_dsn", "").strip()
+    enabled = (cfg.get("sentry_enabled") or "true").strip().lower() in ("true", "1", "yes")
+    if not dsn or not enabled:
+        logger.info("[mcp-http] Sentry not configured (sentry_dsn empty or sentry_enabled=false)")
+        return False
+    try:
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=(cfg.get("sentry_environment") or cfg.get("environment") or "production").strip(),
+            release=package_version(),
+            server_name="poindexter-mcp-http",
+            traces_sample_rate=0.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[mcp-http] Sentry init failed: %s", exc)
+        return False
+    logger.info("[mcp-http] Sentry initialised (errors → GlitchTip as poindexter-mcp-http)")
+    return True
+
+
 def _ensure_poindexter_on_path() -> None:
     """Add ``src/cofounder_agent/`` to sys.path so we can import the
     OAuth issuer module that ships in the worker tree.
@@ -449,6 +514,7 @@ def build_app():
 
 def main() -> None:
     _seed_env_from_bootstrap()
+    _init_sentry()
 
     # mcp-server/server.py is in the same dir as this file
     here = Path(__file__).resolve().parent

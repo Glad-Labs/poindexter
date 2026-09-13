@@ -481,6 +481,7 @@ dependencies = [
     { name = "mcp", extra = ["cli"] },
     { name = "pyjwt" },
     { name = "pyyaml" },
+    { name = "sentry-sdk" },
     { name = "uvicorn" },
 ]
 
@@ -499,6 +500,7 @@ requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = ">=2.0.0,<3" },
     { name = "pyjwt", specifier = ">=2.12.0,<3.0.0" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
+    { name = "sentry-sdk", specifier = ">=2.0,<3" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 
@@ -844,6 +846,19 @@ wheels = [
 ]
 
 [[package]]
+name = "sentry-sdk"
+version = "2.69.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/10/16/85874f5e51f8d0767ee8c4b4c460c5ea2bc8a1b613d641d9d9577ba39d3a/sentry_sdk-2.69.1.tar.gz", hash = "sha256:f9284b417540b0784b994fa021eb6f1e30ae1cce593d83541274d03c93966eff", size = 1043599, upload-time = "2026-09-08T14:18:19.505Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/43/eb/17040f8a60c300fe4cc349088d3e351b88812f478b57a0af05a49af7cb7c/sentry_sdk-2.69.1-py3-none-any.whl", hash = "sha256:2d2556d9a14db548982b914cbed2a2dc07b6e55d941a620752f89a2afccfd78d", size = 528587, upload-time = "2026-09-08T14:18:18.151Z" },
+]
+
+[[package]]
 name = "shellingham"
 version = "1.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -942,6 +957,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8b/2e/c14812d3d4d9cd1773c6be938f89e5735a1f11a9f184ac3639b93cef35d5/tzlocal-5.3.1.tar.gz", hash = "sha256:cceffc7edecefea1f595541dbd6e990cb1ea3d19bf01b2809f362a03dd7921fd", size = 30761, upload-time = "2025-03-05T21:17:41.549Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c2/14/e2a54fabd4f08cd7af1c07030603c3356b74da07f7cc056e600436edfa17/tzlocal-5.3.1-py3-none-any.whl", hash = "sha256:eb1a66c3ef5847adf7a834f1be0800581b683b5608e74f86ecbcef8ab91bb85d", size = 18026, upload-time = "2025-03-05T21:17:39.857Z" },
+]
+
+[[package]]
+name = "urllib3"
+version = "2.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
 ]
 
 [[package]]
