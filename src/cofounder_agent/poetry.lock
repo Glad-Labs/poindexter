@@ -2944,14 +2944,14 @@ xai = ["xai-sdk (>=0.2.0) ; python_version >= \"3.10\""]
 
 [[package]]
 name = "ipython"
-version = "9.16.1"
+version = "9.17.1"
 description = "IPython: Productive Interactive Computing"
 optional = false
 python-versions = ">=3.11"
 groups = ["dev"]
 files = [
-    {file = "ipython-9.16.1-py3-none-any.whl", hash = "sha256:4acae635506f6d352d94c4899a19d5f85f8bc4d230932342dca556fdab1c69b4"},
-    {file = "ipython-9.16.1.tar.gz", hash = "sha256:5a3d1f9a47ff216d6cf9cf863124f6a2c1a198d1354c546a4d24a370a283b64c"},
+    {file = "ipython-9.17.1-py3-none-any.whl", hash = "sha256:6d1645743cfd1a07eb695d85aa2b5fa66721f8cbae9431d4049f7084bbf06509"},
+    {file = "ipython-9.17.1.tar.gz", hash = "sha256:8919be8c27f20a6f4423145028063f6637b42a03ce57665bb12015ee1f073529"},
 ]
 
 [package.dependencies]
@@ -3183,7 +3183,7 @@ description = "Lightweight pipelining with Python functions"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"rag\" or extra == \"rerank\""
+markers = "extra == \"rerank\" or extra == \"rag\""
 files = [
     {file = "joblib-1.5.3-py3-none-any.whl", hash = "sha256:5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713"},
     {file = "joblib-1.5.3.tar.gz", hash = "sha256:8561a3269e6801106863fd0d6d84bb737be9e7631e33aaed3fb9ce5953688da3"},
@@ -3808,21 +3808,21 @@ wrapt = "*"
 
 [[package]]
 name = "llama-index-embeddings-ollama"
-version = "0.9.0"
+version = "0.10.0"
 description = "llama-index embeddings ollama integration"
 optional = true
 python-versions = "<4.0,>=3.10"
 groups = ["main"]
 markers = "extra == \"rag\""
 files = [
-    {file = "llama_index_embeddings_ollama-0.9.0-py3-none-any.whl", hash = "sha256:92e0ce481e60a9bcbddbe2c369d2f72c6fdd7158d03a34ab9b35d80869b673c3"},
-    {file = "llama_index_embeddings_ollama-0.9.0.tar.gz", hash = "sha256:19d2d2a0e3f0934480eae31243ac5f1ce171319578b9c0adad25cf1b6c35659e"},
+    {file = "llama_index_embeddings_ollama-0.10.0-py3-none-any.whl", hash = "sha256:164f35dc6b1966380533316567c58df7afaeaf598aa2c9a510c061c896d8ebbc"},
+    {file = "llama_index_embeddings_ollama-0.10.0.tar.gz", hash = "sha256:fc26cfe8d9d015f76b61558d4c9a1c854535ea0140dd87f169de760b40af3cea"},
 ]
 
 [package.dependencies]
 llama-index-core = ">=0.13.0,<0.15"
 ollama = ">=0.3.1"
-pytest-asyncio = ">=0.23.8"
+pytest-asyncio = "*"
 
 [[package]]
 name = "llama-index-instrumentation"
@@ -7773,7 +7773,7 @@ description = "Fundamental algorithms for scientific computing in Python"
 optional = true
 python-versions = ">=3.11"
 groups = ["main"]
-markers = "extra == \"qa\" or extra == \"rerank\""
+markers = "extra == \"rerank\" or extra == \"qa\""
 files = [
     {file = "scipy-1.17.1-cp311-cp311-macosx_10_14_x86_64.whl", hash = "sha256:1f95b894f13729334fb990162e911c9e5dc1ab390c58aa6cbecb389c5b5e28ec"},
     {file = "scipy-1.17.1-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:e18f12c6b0bc5a592ed23d3f7b891f68fd7f8241d69b7883769eb5d5dfb52696"},
@@ -8202,14 +8202,14 @@ tests = ["cython", "littleutils", "pygments", "pytest", "typeguard"]
 
 [[package]]
 name = "starlette"
-version = "1.3.1"
+version = "1.6.0"
 description = "The little ASGI library that shines."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "starlette-1.3.1-py3-none-any.whl", hash = "sha256:c7372aae11c3c3f26a42df7bd626cec2f47d03483d261d369516a615a53714c6"},
-    {file = "starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0"},
+    {file = "starlette-1.6.0-py3-none-any.whl", hash = "sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c"},
+    {file = "starlette-1.6.0.tar.gz", hash = "sha256:d4e3ac5e546444960c710297a3c9fc3f7ebae1b7e963f3d36173b49da535be9b"},
 ]
 
 [package.dependencies]
@@ -9895,4 +9895,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "9ae982f4859816560bc3b94e4873b76569a257e662b3d9ce69f3dd6dc7ebfe91"
+content-hash = "d43b2c4e37f9f1e810b6172372ee017be80b0d2d377aaf2f61b62b44454ab8ff"
