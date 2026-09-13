@@ -1,4 +1,16 @@
-"""Auto-merge green patch-bump dependabot PRs. Deterministic, no model."""
+"""Auto-merge green dependabot PRs that carry no product risk. Deterministic, no model.
+
+Policy (2026-09-13, widened from patch-only):
+
+* **Any scope, patch bump** -- ``from a.b.c to a.b.d`` -- merges when green and
+  6 h old (the original rule).
+* **Dev tooling, minor bump or grouped minor/patch** -- a title scoped
+  ``(deps-dev)``: either a single minor bump (same major) or a dependabot
+  *group* PR whose group is a development / ``*-minor-patch`` group. These only
+  move build and test tooling; CI is the whole risk surface, and it ran.
+* **Production minors and every major** still wait for a human, as do the
+  docker base-image bumps (``ci:`` prefix, runtime changes).
+"""
 from __future__ import annotations
 
 import datetime as dt
@@ -18,6 +30,36 @@ def is_patch_bump(title: str) -> bool:
         return False
     f_maj, f_min, f_pat, t_maj, t_min, t_pat = (int(x) for x in m.groups())
     return f_maj == t_maj and f_min == t_min and t_pat != f_pat
+
+
+_DEV_SCOPE = re.compile(r"\(deps-dev\)", re.I)
+_GROUP = re.compile(r"\bbump the (?P<group>[\w.-]+) group\b", re.I)
+_DEV_GROUP_MARKERS = ("development", "minor-patch", "dev")
+
+
+def is_dev_tooling_bump(title: str) -> bool:
+    """True for a dependabot PR that only moves dev tooling by at most a minor.
+
+    Accepts a ``(deps-dev)``-scoped single bump whose major is unchanged, or a
+    ``(deps-dev)``-scoped group PR whose group name marks it as development /
+    minor-patch. Majors are never auto-merged, and a production-scoped title
+    never matches regardless of the bump size.
+    """
+    if not _DEV_SCOPE.search(title):
+        return False
+    m = _VER.search(title)
+    if m:
+        f_maj, _f_min, _f_pat, t_maj, _t_min, _t_pat = (int(x) for x in m.groups())
+        return f_maj == t_maj
+    g = _GROUP.search(title)
+    if g:
+        name = g.group("group").lower()
+        return any(marker in name for marker in _DEV_GROUP_MARKERS)
+    return False
+
+
+def auto_mergeable(title: str) -> bool:
+    return is_patch_bump(title) or is_dev_tooling_bump(title)
 
 
 def all_checks_green(rollup: list[dict]) -> bool:
@@ -50,7 +92,7 @@ def main() -> int:
     merged, skipped = [], []
     for pr in prs:
         num = pr["number"]
-        if not (is_patch_bump(pr["title"]) and all_checks_green(pr.get("statusCheckRollup", []))
+        if not (auto_mergeable(pr["title"]) and all_checks_green(pr.get("statusCheckRollup", []))
                 and older_than_hours(pr["createdAt"], 6)):
             skipped.append(num)
             continue
