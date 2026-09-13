@@ -1044,7 +1044,7 @@ class TestPrefectSentryInit:
         # Second positional arg is site_config
         assert call_kwargs.args[1] is site_config
         # service_name must identify the Prefect subprocess
-        assert call_kwargs.kwargs.get("service_name") == "cofounder-agent-prefect"
+        assert call_kwargs.kwargs.get("service_name") == "poindexter-prefect-flow"
 
     @pytest.mark.asyncio
     async def test_sentry_init_not_called_when_no_site_config(self):

@@ -63,6 +63,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from poindexter import package_version
 from poindexter.services.logger_config import get_logger
 
 try:
@@ -134,7 +135,10 @@ class SentryIntegration:
     #   double-reports one designed outcome at two different severities.
     #   (2026-08-08 triage: 1,320 events — 31% of ALL captured events, the
     #   single largest error source, none of it actionable.)
-    DEFAULT_DROP_EXCEPTION_TYPES = "GraphInterrupt,GpuBusyError"
+    # TerminationSignal: SIGTERM reaching a Prefect flow at a deploy restart,
+    # reported as "unhandled exception during asyncio.run() shutdown" -- pure
+    # shutdown noise (52 events on one issue, 2026-09-12).
+    DEFAULT_DROP_EXCEPTION_TYPES = "GraphInterrupt,GpuBusyError,TerminationSignal"
 
     # Volatile substrings that make otherwise-identical errors group apart.
     # Each entry is ``[regex, replacement]``; applied to the fingerprint
@@ -160,6 +164,8 @@ class SentryIntegration:
             # error number), and full-precision floats are the actual
             # fragmenter.
             [r"\d+\.\d+s\b", "<DURATION>s"],
+            # ISO timestamps inside structured log lines minted one issue per event.
+            [r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?", "<TS>"],
         ]
     )
 
@@ -219,7 +225,10 @@ class SentryIntegration:
             in ("true", "1", "yes")
         )
         environment = site_config.get("environment", "development") or "development"
-        release = site_config.get("app_version", "3.0.1")
+        # An operator-set app_version wins; otherwise the version this tree
+        # ships as (release-please stamps pyproject). The old hardcoded "3.0.1"
+        # fallback tagged every event with a release three majors stale.
+        release = (site_config.get("app_version", "") or "").strip() or package_version()
         # SDK-internal debug logging is gated by an explicit DB setting,
         # NOT by `environment`. The SDK emits ~12 lines/sec of envelope
         # dispatch + tracing baggage chatter under the `sentry_sdk.errors`
@@ -283,6 +292,8 @@ class SentryIntegration:
                 # Environment and release information
                 environment=environment,
                 release=release,
+                # The container id is what the SDK would report; name the process.
+                server_name=service_name,
                 # Performance monitoring configuration — app_settings-driven
                 # (sentry_traces_sample_rate / sentry_profiles_sample_rate).
                 traces_sample_rate=traces_sample_rate,
@@ -519,6 +530,10 @@ class SentryIntegration:
             logentry = event.get("logentry")
             if isinstance(logentry, dict):
                 original = str(logentry.get("message") or "")
+                structured = cls._structured_log_fingerprint(event, original)
+                if structured is not None:
+                    event["fingerprint"] = structured
+                    return
                 if original:
                     scrubbed = cls._scrub(original)
                     if scrubbed != original:
@@ -532,6 +547,33 @@ class SentryIntegration:
                     event["fingerprint"] = [scrubbed]
         except Exception:  # noqa: BLE001  # silent-ok: a fingerprint is a grouping optimisation — losing it must never cost us the error event itself
             logger.debug("[SENTRY] fingerprint scrub failed", exc_info=True)
+
+    @classmethod
+    def _structured_log_fingerprint(cls, event: dict, message: str) -> list[str] | None:
+        """Group a structlog JSON line on ``[logger, event]``, not on the whole line.
+
+        The worker logs JSON (``{"event": "...", "logger": "...", "request_id":
+        ..., "timestamp": ...}``) and LoggingIntegration ships that entire line
+        as the message, so every request id and timestamp minted a fresh
+        GlitchTip issue: fifteen "Connection pool exhausted" issues for one
+        burst, ten "middleware error for /api/logs" issues for one restart
+        (2026-09-12 audit). The ``event`` text is the identity; the rest is
+        context the operator can still read in the event body.
+        """
+        text = (message or "").strip()
+        if not (text.startswith("{") and text.endswith("}")):
+            return None
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        event_text = data.get("event")
+        if not isinstance(event_text, str) or not event_text.strip():
+            return None
+        logger_name = str(data.get("logger") or event.get("logger") or "log")
+        return [logger_name, cls._scrub(event_text.strip())]
 
     @classmethod
     def capture_exception(

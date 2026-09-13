@@ -221,7 +221,7 @@ DEFAULTS: dict[str, str] = {
     # Glad Labs. Keep these identical to the 0000_baseline.seeds.sql seeds so the
     # overlay's "overwrite only the OSS default" match fires. company_founded_date
     # keeps the content_validator fallback date (non-empty → date math is safe).
-    'app_version': '3.0.1',
+    'app_version': '',  # empty = derive from pyproject via poindexter.package_version(); set to override
     'company_name': '',
     'company_founder_name': '',
     'company_founded_date': '2025-01-01',
@@ -3186,7 +3186,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # GpuBusyError = GPU admission skip, already recorded as an info-level
     # gpu_admission_rejected finding. Empty string restores nothing — set
     # it to a single bogus name to disable dropping entirely.
-    'sentry_drop_exception_types': 'GraphInterrupt,GpuBusyError',
+    'sentry_drop_exception_types': 'GraphInterrupt,GpuBusyError,TerminationSignal',
     # JSON array of [regex, replacement] pairs applied to an event's
     # GROUPING FINGERPRINT only (never the message the operator reads).
     # Volatile tokens otherwise mint a new GlitchTip issue per event: the
@@ -3195,7 +3195,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'sentry_fingerprint_scrub_patterns': (
         '[["/tmp/tmp[A-Za-z0-9_]+", "/tmp/tmp<TMP>"], '
         '["[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", "<UUID>"], '
-        '["\\\\d+\\\\.\\\\d+s\\\\b", "<DURATION>s"]]'
+        '["\\\\d+\\\\.\\\\d+s\\\\b", "<DURATION>s"], ["\\\\d{4}-\\\\d{2}-\\\\d{2}T\\\\d{2}:\\\\d{2}:\\\\d{2}(?:\\\\.\\\\d+)?(?:Z|[+-]\\\\d{2}:\\\\d{2})?", "<TS>"]]'
     ),
     # GlitchTip org slug the brain triage probe queries — operators set it to
     # the org they created in the GlitchTip first-login setup. Lockstep with

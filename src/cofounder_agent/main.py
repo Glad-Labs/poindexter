@@ -323,7 +323,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # first point where sentry_dsn / enable_pyroscope / enable_tracing are
         # actually populated. Each setup is guarded internally.
         try:
-            setup_sentry(app, _site_cfg, service_name="cofounder-agent")
+            setup_sentry(app, _site_cfg, service_name="poindexter-worker")
         except Exception as e:
             logger.warning("[LIFESPAN] sentry re-init failed: %s", e)
         try:
@@ -948,7 +948,7 @@ register_exception_handlers(app)
 # its own Phase H migration); pass it through so sentry_integration no
 # longer imports it at module scope.
 try:
-    setup_sentry(app, _site_cfg, service_name="cofounder-agent")
+    setup_sentry(app, _site_cfg, service_name="poindexter-worker")
 except Exception as _e:
     logger.warning("[MODULE] sentry module-level init failed: %s", _e)
 

@@ -1041,3 +1041,68 @@ def test_inline_default_matches_seeded_default(key: str, expected: str) -> None:
         f"seeded default for {key!r} is {m.group(1)!r} but the inline fallback in "
         f"services/sentry_integration.py is {expected!r} — make them agree"
     )
+
+
+from poindexter.services.sentry_integration import (
+    SentryIntegration,  # noqa: E402 -- the file imports lazily above; these tests need the class at module scope
+)
+
+
+class TestStructuredLogFingerprint:
+    """structlog JSON lines group on [logger, event], not on the whole line
+    (2026-09-12 audit: one GlitchTip issue per request id / timestamp)."""
+
+    def setup_method(self):
+        SentryIntegration._scrub_cache_key = None
+        SentryIntegration._scrub_cache = ()
+
+    def test_json_line_groups_on_logger_and_event(self):
+        import json as _json
+
+        line = _json.dumps({
+            "event": "Connection pool exhausted!", "logger": "utils.connection_health",
+            "level": "error", "request_id": "e4765261-efec-4196-a52c-c41c4efef1f8",
+            "timestamp": "2026-09-09T21:03:33.379579Z",
+        })
+        a = {"logentry": {"message": line}}
+        b = {"logentry": {"message": line.replace("e4765261", "ffb0a60c").replace("21:03:33", "21:03:28")}}
+        SentryIntegration._apply_fingerprint(a)
+        SentryIntegration._apply_fingerprint(b)
+        assert a["fingerprint"] == ["utils.connection_health", "Connection pool exhausted!"]
+        assert a["fingerprint"] == b["fingerprint"]
+
+    def test_event_text_is_still_scrubbed(self):
+        import json as _json
+
+        line = _json.dumps({"event": "worker 0f476a8b-06af-4396-ab5e-668b4a435990 stalled at 2026-09-10T15:17:27Z", "logger": "x"})
+        ev = {"logentry": {"message": line}}
+        SentryIntegration._apply_fingerprint(ev)
+        assert ev["fingerprint"] == ["x", "worker <UUID> stalled at <TS>"]
+
+    def test_non_json_and_eventless_json_fall_through(self):
+        ev = {"logentry": {"message": "plain message at 2026-09-10T15:17:27Z"}}
+        SentryIntegration._apply_fingerprint(ev)
+        assert ev["fingerprint"] == ["plain message at <TS>"]
+        ev2 = {"logentry": {"message": '{"level": "error"}'}}
+        SentryIntegration._apply_fingerprint(ev2)
+        assert "fingerprint" not in ev2  # nothing volatile, nothing structured: default grouping
+
+
+class TestShutdownNoiseDefaults:
+    def setup_method(self):
+        SentryIntegration._scrub_cache_key = None
+        SentryIntegration._scrub_cache = ()
+
+    def test_termination_signal_is_dropped_by_default(self):
+        class TerminationSignal(Exception):
+            pass
+
+        hint = {"exc_info": (TerminationSignal, TerminationSignal(15), None)}
+        assert SentryIntegration._before_send({"level": "error"}, hint) is None
+
+    def test_default_scrubbers_include_iso_timestamps(self):
+        import json as _json
+
+        repls = [r for _, r in _json.loads(SentryIntegration.DEFAULT_FINGERPRINT_SCRUB_PATTERNS)]
+        assert "<TS>" in repls
+        assert SentryIntegration._scrub("at 2026-09-12T21:03:33.379579Z and 2026-09-12T21:03:33+00:00") == "at <TS> and <TS>"

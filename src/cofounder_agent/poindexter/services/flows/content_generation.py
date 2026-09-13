@@ -403,7 +403,7 @@ async def _run_content_generation_flow(
             _setup_telemetry(
                 app=None,
                 site_config=_wired_site_config,
-                service_name="cofounder-agent-prefect",
+                service_name="poindexter-prefect-flow",
             )
         except Exception:  # noqa: BLE001 — telemetry must never block work
             logger.warning(
@@ -453,7 +453,7 @@ async def _run_content_generation_flow(
             SentryIntegration.initialize(
                 None,  # type: ignore[arg-type]
                 _wired_site_config,
-                service_name="cofounder-agent-prefect",
+                service_name="poindexter-prefect-flow",
             )
         except Exception:  # noqa: BLE001 — error tracking must never block work
             logger.warning(

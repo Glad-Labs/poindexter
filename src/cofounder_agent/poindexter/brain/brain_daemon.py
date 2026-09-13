@@ -616,9 +616,13 @@ async def _init_sentry(pool) -> bool:
         return False
     try:
         environment = await _read_app_setting(pool, "sentry_environment", "production")
+        from poindexter import package_version
+
         sentry_sdk.init(
             dsn=dsn,
             environment=environment,
+            release=package_version(),
+            server_name="poindexter-brain",
             # Errors-only: the brain has no web-request spans to trace. The
             # LoggingIntegration mirrors the worker — logger.error+ become
             # Sentry events (so the failsafe/cycle-watchdog errors land here).
