@@ -14,7 +14,7 @@
 # modes obvious. The brain handles alert dispatch downstream via the
 # alert_events insert this script does on failure.
 
-FROM alpine:3.20
+FROM alpine:3.24
 
 RUN apk add --no-cache \
     bash \
