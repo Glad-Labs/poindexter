@@ -22,6 +22,7 @@ import urllib.request
 from datetime import UTC
 from typing import Any
 
+from poindexter.brain import cycle_stage
 from poindexter.brain.docker_utils import localize_url, resolve_url
 from poindexter.brain.secret_reader import read_app_setting as _read_app_setting
 
@@ -1791,6 +1792,7 @@ async def run_health_probes(pool, notify_fn=None):
         )
 
     for name, probe_fn in PROBES.items():
+        cycle_stage.set_stage(f"health_probe:{name}")
         if not _is_due(name):
             continue
 

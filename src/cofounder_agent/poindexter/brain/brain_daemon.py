@@ -36,6 +36,7 @@ from typing import Literal
 # Standalone — no imports from the FastAPI codebase
 import asyncpg
 
+from poindexter.brain import cycle_stage
 from poindexter.brain.alert_sync import sync_alert_rules
 from poindexter.brain.health_probes import run_health_probes
 
@@ -2721,6 +2722,7 @@ async def service_restart_loop(pool, shutdown_event):
 
 async def run_cycle(pool):
     """One full brain cycle: monitor → process → maintain → update."""
+    cycle_stage.set_stage("cycle_start")
     logger.info("[BRAIN] === Cycle start ===")
 
     # Refresh the operator-page cooldown window from app_settings so the
@@ -2738,29 +2740,39 @@ async def run_cycle(pool):
     # alerts internally; here we keep the cycle alive so one monitor's bad day
     # doesn't take the others' detection down with it.
     try:
+        cycle_stage.set_stage("monitor_services")
         issues = await monitor_services(pool)
     except Exception as exc:
         logger.error("[BRAIN] monitor_services failed: %s", exc, exc_info=True)
         issues = []
     try:
+        cycle_stage.set_stage("monitor_external_services")
         ext_issues = await monitor_external_services(pool)
     except Exception as exc:
         logger.error("[BRAIN] monitor_external_services failed: %s", exc, exc_info=True)
         ext_issues = []
+    cycle_stage.set_stage("auto_remediate")
     await auto_remediate(pool)
+    cycle_stage.set_stage("self_maintain")
     await self_maintain(pool)
+    cycle_stage.set_stage("update_system_metrics")
     await update_system_metrics(pool)
+    cycle_stage.set_stage("log_electricity_cost")
     await log_electricity_cost(pool)
+    cycle_stage.set_stage("generate_daily_digest")
     await generate_daily_digest(pool)
+    cycle_stage.set_stage("maybe_sync_grafana_alerts")
     await _maybe_sync_grafana_alerts(pool)
 
     # Health probes — exercise services with real inputs (each on its own schedule)
+    cycle_stage.set_stage("run_health_probes")
     probe_results = await run_health_probes(pool, notify_fn=notify)
     probe_failures = [name for name, r in probe_results.items() if not r.get("ok")]
 
     # Business probes — operator-level monitoring (Glad Labs private, #215)
     if _HAS_BUSINESS_PROBES:
         try:
+            cycle_stage.set_stage("run_business_probes")
             biz_results = await run_business_probes(pool, notify_fn=notify)
             probe_results.update(biz_results)
         except Exception as e:
@@ -2770,6 +2782,7 @@ async def run_cycle(pool):
     # Internally gated to its own interval (default 24h); ok to call every cycle.
     if _HAS_POST_PERFORMANCE_PROBE:
         try:
+            cycle_stage.set_stage("probe_post_performance")
             pp_result = await probe_post_performance(pool, notify_fn=notify)
             probe_results["post_performance"] = pp_result
         except Exception as e:
@@ -2780,6 +2793,7 @@ async def run_cycle(pool):
     # summary dict on real runs.
     if _HAS_OPERATOR_URL_PROBE:
         try:
+            cycle_stage.set_stage("maybe_run_operator_url_probe")
             url_summary = await maybe_run_operator_url_probe(pool, notify_fn=None)
             if url_summary is not None:
                 probe_results["operator_url_probe"] = {
@@ -2801,6 +2815,7 @@ async def run_cycle(pool):
     # the worker when migration_drift_auto_recover_enabled=true.
     if _HAS_MIGRATION_DRIFT_PROBE:
         try:
+            cycle_stage.set_stage("run_migration_drift_probe")
             md_summary = await run_migration_drift_probe(pool)
             probe_results["migration_drift"] = {
                 "ok": bool(md_summary.get("ok", False)),
@@ -2817,6 +2832,7 @@ async def run_cycle(pool):
     # when compose_drift_auto_recover_enabled=true.
     if _HAS_COMPOSE_DRIFT_PROBE:
         try:
+            cycle_stage.set_stage("run_compose_drift_probe")
             cd_summary = await run_compose_drift_probe(pool)
             probe_results["compose_drift"] = {
                 "ok": bool(cd_summary.get("ok", False)),
@@ -3563,12 +3579,12 @@ async def main():
             consecutive_cycle_failures += 1
             elapsed = time.monotonic() - cycle_started
             logger.error(
-                "[BRAIN] Cycle aborted by timeout after %.0fs (watchdog "
+                "[BRAIN] Cycle aborted by timeout after %.0fs in stage %s (watchdog "
                 "ceiling=%ds, command_timeout=%.0fs, %d in a row) — a stuck "
                 "await was cancelled; daemon stays responsive and retries "
                 "next cycle.",
-                elapsed, cycle_timeout, BRAIN_DB_COMMAND_TIMEOUT_SECONDS,
-                consecutive_cycle_failures,
+                elapsed, cycle_stage.get_stage(), cycle_timeout,
+                BRAIN_DB_COMMAND_TIMEOUT_SECONDS, consecutive_cycle_failures,
             )
             if _should_page_cycle_failure(consecutive_cycle_failures):
                 _page_operator_failsafe(
@@ -3576,7 +3592,8 @@ async def main():
                     detail=(
                         f"run_cycle() was aborted by its watchdog "
                         f"{consecutive_cycle_failures} times in a row (last "
-                        f"after {elapsed:.0f}s; ceiling {cycle_timeout}s, "
+                        f"after {elapsed:.0f}s in stage {cycle_stage.get_stage()}; "
+                        f"ceiling {cycle_timeout}s, "
                         f"per-query command_timeout "
                         f"{BRAIN_DB_COMMAND_TIMEOUT_SECONDS:.0f}s). A stuck "
                         "await — likely a DB query on a wedged Docker host-port "
