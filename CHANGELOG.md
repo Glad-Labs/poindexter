@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [0.137.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.136.1...v0.137.0) (2026-09-13)
+
+
+### Features
+
+* **mcp-http:** report connector errors to GlitchTip ([#3719](https://github.com/Glad-Labs/glad-labs-stack/issues/3719)) ([bbb24fe](https://github.com/Glad-Labs/glad-labs-stack/commit/bbb24feea758c0e3d572e7dfeb57ff26af7ff9e9))
+* **starter:** Next 16 + React 19, and fix the post-list contract ([#3689](https://github.com/Glad-Labs/glad-labs-stack/issues/3689)) ([b7c37b0](https://github.com/Glad-Labs/glad-labs-stack/commit/b7c37b0588387ed968a01f7b67840729df47267a))
+
+
+### Bug Fixes
+
+* **brain,audit:** persist the triage probe's alerted set; retry audit writes before declaring a finding lost ([#3720](https://github.com/Glad-Labs/glad-labs-stack/issues/3720)) ([eb827a8](https://github.com/Glad-Labs/glad-labs-stack/commit/eb827a8f13ec577a929941c2c592c13a38e21927))
+* **brain:** name the stage that hung when the cycle watchdog fires ([#3723](https://github.com/Glad-Labs/glad-labs-stack/issues/3723)) ([952c49b](https://github.com/Glad-Labs/glad-labs-stack/commit/952c49bbf9e3f343cf6bbcbf557d80d4bdb8e882))
+* **brain:** read probe ownership from the DB, and stop the seeder hiding why it never got there ([#3705](https://github.com/Glad-Labs/glad-labs-stack/issues/3705)) ([7f5953e](https://github.com/Glad-Labs/glad-labs-stack/commit/7f5953e8720c0aed1b593585c01d0f67b35f5d98))
+* **brain:** stop the operator-URL probe paging on URLs another probe owns ([#3673](https://github.com/Glad-Labs/glad-labs-stack/issues/3673)) ([e301ceb](https://github.com/Glad-Labs/glad-labs-stack/commit/e301ceb2b92b135228c1667110575490f267ccb4))
+* **mcp-http:** put the worker tree on sys.path before importing the bootstrap reader ([#3671](https://github.com/Glad-Labs/glad-labs-stack/issues/3671)) ([50cae04](https://github.com/Glad-Labs/glad-labs-stack/commit/50cae049b363719c32e537fd65bfeb652482ae48))
+* **ops:** doc-sync must match path references at a token boundary ([#3687](https://github.com/Glad-Labs/glad-labs-stack/issues/3687)) ([8933352](https://github.com/Glad-Labs/glad-labs-stack/commit/89333528c05fe99633a14acaa6922fd65efa759a))
+* **sentry:** group structured log lines by event, drop shutdown noise, name and version every process ([#3721](https://github.com/Glad-Labs/glad-labs-stack/issues/3721)) ([2f8a232](https://github.com/Glad-Labs/glad-labs-stack/commit/2f8a2325c3a8735fe413b3d1e23a2aeddf83d795))
+* **topics:** a Google suggest 5xx is a skipped probe, not an exception ([#3722](https://github.com/Glad-Labs/glad-labs-stack/issues/3722)) ([d47bfce](https://github.com/Glad-Labs/glad-labs-stack/commit/d47bfce76fe90d45154517c10f56c8386273a3ae))
+
 ## [0.136.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.136.0...v0.136.1) (2026-09-12)
 
 
