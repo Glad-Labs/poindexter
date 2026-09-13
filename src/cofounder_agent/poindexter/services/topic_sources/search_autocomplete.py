@@ -248,14 +248,26 @@ class SearchAutocompleteSource:
             headers={"User-Agent": "Mozilla/5.0 (compatible; Poindexter/1.0)"},
         ) as client:
 
-            async def _one(seed: str, probe: str) -> list[tuple[int, str]]:
+            async def _one(seed: str, probe: str) -> list[tuple[int, str]] | None:
+                # An upstream 5xx / 429 / timeout is a skipped probe, not an
+                # error: raising out of the task made Sentry's asyncio
+                # integration report every Google hiccup as an exception
+                # (GlitchTip #1767) even though gather() swallowed it here.
+                # ``None`` = failed probe; the caller counts and warns once.
                 async with sem:
-                    resp = await client.get(
-                        _ENDPOINT, params={"client": "chrome", "q": probe},
-                    )
-                    resp.raise_for_status()
-                    # content-type is text/javascript; the body is JSON.
-                    payload = resp.json()
+                    try:
+                        resp = await client.get(
+                            _ENDPOINT, params={"client": "chrome", "q": probe},
+                        )
+                        resp.raise_for_status()
+                        # content-type is text/javascript; the body is JSON.
+                        payload = resp.json()
+                    except (httpx.HTTPError, ValueError) as exc:
+                        logger.debug(
+                            "SearchAutocompleteSource: probe %r skipped: %s: %s",
+                            probe, type(exc).__name__, exc,
+                        )
+                        return None
                 if not isinstance(payload, list) or len(payload) < 2:
                     return []
                 items = payload[1]
@@ -274,7 +286,7 @@ class SearchAutocompleteSource:
 
         failures = 0
         for got in gathered:
-            if isinstance(got, BaseException):
+            if got is None or isinstance(got, BaseException):
                 failures += 1
                 continue
             results.extend(got)
