@@ -1220,7 +1220,9 @@ async def api_health():
                 "Migrations health probe failed: %s", str(e), exc_info=True,
             )
             health_data["components"]["migrations"] = {
-                "error": f"{type(e).__name__}: {str(e)[:120]}",
+                # /api/health is unauthenticated: the type is enough for a monitor, the
+                # message stays in the log line above (CodeQL py/stack-trace-exposure #224).
+                "error": type(e).__name__,
             }
 
         # LLM resilience layer (GH#192, generalized from GH#153) —
@@ -1277,7 +1279,8 @@ async def api_health():
             )
             health_data["components"]["llm_resilience"] = {
                 "status": "error",
-                "reason": str(e)[:200],
+                "reason": "status probe failed",
+                # message in the log line above; /api/health is unauthenticated (CodeQL #224)
                 "error_type": type(e).__name__,
             }
 
