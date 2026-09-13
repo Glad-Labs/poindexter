@@ -1294,7 +1294,10 @@ async def api_health():
             logger.warning("GPU scheduler status probe failed: %s", e, exc_info=True)
             health_data["components"]["gpu"] = {
                 "status": "error",
-                "reason": str(e)[:200],
+                # The exception text stays in the log line above: /health is
+                # unauthenticated and the message can carry paths and internals
+                # (CodeQL py/stack-trace-exposure #224). The type is enough here.
+                "reason": "gpu scheduler status probe failed",
                 "error_type": type(e).__name__,
             }
 

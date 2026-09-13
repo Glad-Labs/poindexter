@@ -5,6 +5,7 @@ Endpoints for managing email campaign subscriptions and newsletter signups.
 """
 
 
+import re
 import secrets
 
 import httpx
@@ -18,6 +19,9 @@ from poindexter.utils.rate_limiter import limiter
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
+
+# Resend audience ids are UUID-shaped tokens; the id rides in a URL path segment.
+_AUDIENCE_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 # api.resend.com is behind Cloudflare, which 403s ("error code: 1010") on
 # default library User-Agents; a browser-like UA gets through.
@@ -58,6 +62,15 @@ async def _sync_to_resend_audience(
     """
     audience_id = (site_config.get("resend_audience_id", "") or "").strip()
     if not audience_id:
+        return
+    if not _AUDIENCE_ID_RE.fullmatch(audience_id):
+        # The id is spliced into the Resend URL path (CodeQL py/partial-ssrf
+        # #462). Resend ids are UUID-ish tokens; anything else is a
+        # misconfiguration, not a request we should shape.
+        logger.warning(
+            "[newsletter] resend_audience_id %r is not a plain id token — "
+            "skipping audience sync", audience_id[:40],
+        )
         return
     api_key = (await site_config.get_secret("resend_api_key", "")) or ""
     if not api_key:

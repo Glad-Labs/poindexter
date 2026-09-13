@@ -23,12 +23,16 @@ import gc
 import io
 import logging
 import os
+import sys as _sys
+
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import subprocess
 import threading
 import time
 
 import numpy as np
 import soundfile as sf
+from _voice_paths import contained_voice_path, voice_roots  # noqa: E402
 from audio_join import join_segments
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
@@ -267,8 +271,13 @@ def speech(req: SpeechRequest):
     # Validate BEFORE taking the lock / loading the model — a bad path should
     # 400 immediately rather than pay for a model load first.
     voice_ref = (req.audio_prompt_path or "").strip() or _DEFAULT_PROMPT_WAV
-    if voice_ref and not os.path.exists(voice_ref):
-        raise HTTPException(400, f"audio_prompt_path not found: {voice_ref}")
+    if voice_ref:
+        # Request-supplied paths stay inside the voices directories; a path
+        # outside them is a 400, not a readable file (CodeQL #228).
+        contained = contained_voice_path(voice_ref, voice_roots(default_prompt=_DEFAULT_PROMPT_WAV))
+        if contained is None:
+            raise HTTPException(400, f"audio_prompt_path not found under the voices directories: {voice_ref}")
+        voice_ref = str(contained)
 
     with _model_lock:
         # Stamp on entry as well as exit: a long synthesis must not look idle
