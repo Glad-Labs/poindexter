@@ -3183,7 +3183,7 @@ description = "Lightweight pipelining with Python functions"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"rerank\" or extra == \"rag\""
+markers = "extra == \"rag\" or extra == \"rerank\""
 files = [
     {file = "joblib-1.5.3-py3-none-any.whl", hash = "sha256:5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713"},
     {file = "joblib-1.5.3.tar.gz", hash = "sha256:8561a3269e6801106863fd0d6d84bb737be9e7631e33aaed3fb9ce5953688da3"},
@@ -3472,14 +3472,14 @@ wrapt = ">=1.14,<3"
 
 [[package]]
 name = "langgraph"
-version = "1.2.9"
+version = "1.2.11"
 description = "Building stateful, multi-actor applications with LLMs"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "langgraph-1.2.9-py3-none-any.whl", hash = "sha256:c2d98ad94333937922ba04148641c1da2bfe45b5b8e55d7b6dcb0bb2df809e76"},
-    {file = "langgraph-1.2.9.tar.gz", hash = "sha256:385f87bc1802c35af7e0aa479278ecba8582d103515eb48256cb2ddcd42d0bd4"},
+    {file = "langgraph-1.2.11-py3-none-any.whl", hash = "sha256:8bab70de7b2d00b5300fb289bcf38d8b241400f3184c1e95e8ce706fb0e8686b"},
+    {file = "langgraph-1.2.11.tar.gz", hash = "sha256:9ecfe11e50d338b34b15cf4d8a442642de103e8ae6971320efba84e4542eb363"},
 ]
 
 [package.dependencies]
@@ -7773,7 +7773,7 @@ description = "Fundamental algorithms for scientific computing in Python"
 optional = true
 python-versions = ">=3.11"
 groups = ["main"]
-markers = "extra == \"rerank\" or extra == \"qa\""
+markers = "extra == \"qa\" or extra == \"rerank\""
 files = [
     {file = "scipy-1.17.1-cp311-cp311-macosx_10_14_x86_64.whl", hash = "sha256:1f95b894f13729334fb990162e911c9e5dc1ab390c58aa6cbecb389c5b5e28ec"},
     {file = "scipy-1.17.1-cp311-cp311-macosx_12_0_arm64.whl", hash = "sha256:e18f12c6b0bc5a592ed23d3f7b891f68fd7f8241d69b7883769eb5d5dfb52696"},
@@ -9895,4 +9895,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "356e24c3e6132cef9450019380afad8075b4e79908075dba167a9ef5562a9f85"
+content-hash = "9ae982f4859816560bc3b94e4873b76569a257e662b3d9ce69f3dd6dc7ebfe91"
