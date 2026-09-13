@@ -270,8 +270,7 @@ class AuditLogger:
             )
             details_json = json.dumps(_null_non_finite(details or {}), allow_nan=False)
         try:
-            await self.pool.execute(
-                self.INSERT_SQL,
+            await self._execute_with_retry(
                 event_type,
                 source,
                 task_id,
@@ -307,6 +306,43 @@ class AuditLogger:
                     event_type, source, task_id,
                     exc_info=True,
                 )
+
+    # Delays between insert attempts. The 2026-09-09 pool-exhaustion burst
+    # lasted seconds; a finding raised inside it was lost outright (#1329,
+    # #1331 in GlitchTip -- "finding lost on audit write"). Two short retries
+    # ride out that shape without turning the audit path into a queue.
+    RETRY_DELAYS: tuple[float, ...] = (0.25, 1.0)
+
+    async def _execute_with_retry(
+        self,
+        event_type: str,
+        source: str,
+        task_id: str | None,
+        details_json: str,
+        severity: str,
+    ) -> None:
+        """Insert the row, retrying briefly on any failure; re-raises the last."""
+        attempts = 1 + len(self.RETRY_DELAYS)
+        for attempt in range(attempts):
+            try:
+                await self.pool.execute(
+                    self.INSERT_SQL,
+                    event_type,
+                    source,
+                    task_id,
+                    details_json,
+                    severity,
+                )
+                if attempt:
+                    logger.info(
+                        "audit write for event=%s source=%s succeeded on retry %d",
+                        event_type, source, attempt,
+                    )
+                return
+            except Exception:
+                if attempt >= attempts - 1:
+                    raise
+                await asyncio.sleep(self.RETRY_DELAYS[attempt])
 
     async def _page_operator_out_of_band(
         self,

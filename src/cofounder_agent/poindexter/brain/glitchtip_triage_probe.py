@@ -148,10 +148,61 @@ HTTP_READ_TIMEOUT_S = 15.0
 # keeps notifications quiet between cycles.
 PROBE_INTERVAL_SECONDS = 300
 
-# Module-level dedupe state — issue IDs we've alerted on this process
-# uptime. Resets on restart so a brain restart re-pages on still-active
-# noisy issues, which is the right behavior.
+# Dedupe state — issue IDs we've already paged on. Kept in memory for the
+# cycle and mirrored into ``brain_knowledge`` (entity ``glitchtip_triage``,
+# attribute ``alerted:<issue id>``) so a brain restart does not re-page every
+# open issue: on 2026-09-12 the same TerminationSignal issue paged five times
+# in three days, once per deploy restart (poindexter#1048). Rows expire after
+# 30 days; the freshness gate already keeps stale issues from paging.
 _alerted_ids: set[str] = set()
+_alerted_loaded: bool = False
+ALERTED_ENTITY = "glitchtip_triage"
+ALERTED_TTL_DAYS = 30
+
+
+async def _load_alerted_ids(pool) -> None:
+    """Hydrate the in-memory dedupe set from brain_knowledge, once per process."""
+    global _alerted_loaded
+    if _alerted_loaded:
+        return
+    try:
+        rows = await pool.fetch(
+            "SELECT attribute FROM brain_knowledge "
+            "WHERE entity = $1 AND attribute LIKE 'alerted:%' "
+            "AND (expires_at IS NULL OR expires_at > NOW())",
+            ALERTED_ENTITY,
+        )
+        for row in rows or []:
+            attr = row["attribute"] if not isinstance(row, dict) else row.get("attribute")
+            if isinstance(attr, str) and attr.startswith("alerted:"):
+                _alerted_ids.add(attr.split(":", 1)[1])
+        logger.info("[GLITCHTIP_TRIAGE] restored %d alerted issue id(s) from brain_knowledge", len(_alerted_ids))
+    except Exception as exc:  # noqa: BLE001 -- a cold dedupe set is the old behaviour, not a failure
+        logger.warning("[GLITCHTIP_TRIAGE] could not restore alerted ids: %s", exc)
+    _alerted_loaded = True
+
+
+async def _persist_alerted(pool, issue_id: str, title: str) -> None:
+    try:
+        await pool.execute(
+            "INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, expires_at) "
+            "VALUES ($1, $2, $3, 1.0, 'glitchtip_triage_probe', NOW() + make_interval(days => $4)) "
+            "ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, "
+            "expires_at = EXCLUDED.expires_at, updated_at = NOW()",
+            ALERTED_ENTITY, f"alerted:{issue_id}", title[:200], ALERTED_TTL_DAYS,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[GLITCHTIP_TRIAGE] could not persist alerted id %s: %s", issue_id, exc)
+
+
+async def _forget_alerted(pool, issue_id: str) -> None:
+    try:
+        await pool.execute(
+            "DELETE FROM brain_knowledge WHERE entity = $1 AND attribute = $2",
+            ALERTED_ENTITY, f"alerted:{issue_id}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[GLITCHTIP_TRIAGE] could not forget alerted id %s: %s", issue_id, exc)
 
 # Patterns we've already warned about being auto-bounded (#304). Without this
 # the "resolve rule X has no max_count — bounding to N" warning would repeat
@@ -598,6 +649,7 @@ async def run_glitchtip_triage_probe(
             so they can inject a mock client without monkeypatching httpx.
     """
     notify_fn = notify_fn or notify_operator
+    await _load_alerted_ids(pool)
 
     # ---- 0) Master enable check ------------------------------------------
     enabled = (await _read_setting(pool, ENABLED_SETTING_KEY, "true")).strip().lower()
@@ -684,6 +736,7 @@ async def run_glitchtip_triage_probe(
                         # Drop from alert dedupe so a future re-occurrence
                         # past the rule's max_count still pages.
                         _alerted_ids.discard(issue_id)
+                        await _forget_alerted(pool, issue_id)
                     else:
                         auto_resolve_failed.append(record)
                     continue
@@ -734,6 +787,7 @@ async def run_glitchtip_triage_probe(
                             dedup_key=f"glitchtip:{issue_id}",
                         )
                         _alerted_ids.add(issue_id)
+                        await _persist_alerted(pool, issue_id, title)
                         alerted.append({
                             "id": issue_id,
                             "title": title[:160],
