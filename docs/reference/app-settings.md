@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-09-11.**  
+> **Auto-generated from live `app_settings` table on 2026-09-13.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 678 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -262,7 +262,7 @@ The worker re-reads on every poll; no restart needed.
 | `alertmanager_url` | `http://alertmanager:9093` |  |  |
 | `api_url` | `http://localhost:8002` |  | Backend API base URL (legacy alias for api_base_url) |
 | `approval_gate_topic_decision_reject_status` | `dismissed` |  | Status set on pipeline_tasks when a topic-decision gate rejects the topic (vs. the global default 'rejected'). Distin... |
-| `app_version` | `3.0.1` |  | Auto-seeded by services.settings_defaults (#379) |
+| `app_version` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `atom_runs_capture_enabled` | `true` |  |  |
 | `audio_gen_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `brain_anomaly_baseline_window_days` | `30` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -982,7 +982,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `qa_standard_max_tokens` | `1500` |  | Max tokens for standard models in QA |
+| `qa_standard_max_tokens` | `4096` |  | Max tokens for standard models in QA |
 | `qa_temperature` | `0.3` |  | Temperature for QA review generation |
 | `qa_thinking_model_max_tokens` | `8000` |  | Max tokens for thinking models (qwen3.5, glm-4.7) in QA |
 
