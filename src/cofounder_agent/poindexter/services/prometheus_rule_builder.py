@@ -1087,6 +1087,31 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
     # long-running poindexter-mcp-http / poindexter-gpu-scraper services. A host
     # with none of them has no matching series, so both are naturally inert —
     # no expected-count threshold needed.
+    "PoindexterSystemdUnitRestartLooping": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "60s",
+        # A `Restart=` unit that keeps crashing never reaches `failed`: systemd
+        # cycles it through `activating (auto-restart)`, which is exactly the
+        # state PoindexterSystemdUnitFailed cannot see. The claude.ai connector
+        # crash-looped for 27 hours in that state (poindexter#1048, restart
+        # counter 92) behind a green board. `activating` for 10 minutes is a
+        # loop, not a start.
+        "expr": 'node_systemd_unit_state{name=~"poindexter.*",state="activating"} == 1',
+        "for": "10m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "Host systemd unit {{ $labels.name }} is stuck restarting",
+        "description": (
+            "The host systemd unit {{ $labels.name }} has sat in `activating` "
+            "for 10m, which for a Restart= unit means it is crash-looping: "
+            "every start fails and systemd restarts it again, so it never shows "
+            "`failed`. Triage on the host: `systemctl status {{ $labels.name }}` "
+            "(look at NRestarts) then `journalctl -u {{ $labels.name }} -n 50`. "
+            "Critical because a looping unit is a service that is down while "
+            "looking alive."
+        ),
+    },
     "PoindexterSystemdUnitFailed": {
         "enabled": True,
         "group": "poindexter-infrastructure",

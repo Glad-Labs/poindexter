@@ -76,6 +76,13 @@ DEFAULT_DISCOVERY_PATH = "/.well-known/oauth-protected-resource"
 DEFAULT_RESTART_CAP = 3
 DEFAULT_RESTART_WINDOW_MINUTES = 60
 DEFAULT_MIN_CONSECUTIVE_FAILURES = 3
+# After the restart cap is spent (or with no recovery path configured) and the
+# server is STILL down, re-page this often -- with a fresh fingerprint each
+# time, so the dedup window cannot swallow an outage that outlives it. The
+# 2026-09-11 connector crash loop ran 27 hours behind "dedup window suppresses
+# page" (poindexter#1048).
+ESCALATION_HOURS_KEY = "mcp_http_probe_escalation_hours"
+DEFAULT_ESCALATION_HOURS = 1
 
 
 # ---------------------------------------------------------------------------
@@ -86,12 +93,64 @@ _last_real_check_at: float = 0.0
 _last_alert_at: float = 0.0
 _restart_attempts: list[float] = []  # monotonic timestamps within the rolling window
 _consecutive_failures: int = 0  # probe cycles with ok=False since last ok
+_outage_started_at: float = 0.0  # first confirmed failure of the current outage
+_last_escalation_at: float = 0.0  # last "still down" page (hourly fingerprint)
+
+
+def _mark_recovered() -> None:
+    """The server answered: close the outage window for escalation purposes."""
+    global _outage_started_at, _last_escalation_at
+    _outage_started_at = 0.0
+    _last_escalation_at = 0.0
+
+
+async def _escalate_if_still_down(
+    pool, *, now: float, fingerprint_suffix: str, body: str, recovery_detail: str,
+) -> bool:
+    """Page again, hourly, while an outage outlives the dedup window.
+
+    The dedup window keys on ``_last_alert_at`` and is right for flapping; it is
+    wrong for a server that stays down after the restart cap, where it turned a
+    27-hour outage into one page. Each escalation carries a new fingerprint
+    (``<suffix>:down-<Nh>``) and critical severity, so the dispatcher routes it
+    to the pager rather than collapsing it onto the first alert.
+    """
+    global _last_escalation_at, _outage_started_at
+    if not _outage_started_at:
+        _outage_started_at = now
+    hours = await _read_int(pool, ESCALATION_HOURS_KEY, DEFAULT_ESCALATION_HOURS)
+    every_s = max(1, hours) * 3600
+    # Own clock, on purpose: the regular alert re-fires when its dedup window
+    # expires and refreshes _last_alert_at, but it carries the SAME fingerprint
+    # and the dispatcher collapses it -- which is the 27-hour hole. Escalation
+    # counts from the start of the outage, then from its own last page.
+    since_last = now - (_last_escalation_at or _outage_started_at)
+    if since_last < every_s:
+        return False
+    down_h = max(1, int((now - _outage_started_at) // 3600))
+    await _write_alert(
+        pool,
+        fingerprint_suffix=f"{fingerprint_suffix}:down-{down_h}h",
+        title=f"MCP HTTP server still down after {down_h}h ({recovery_detail or 'no auto-recovery'})",
+        body=(
+            f"{body}\n\nAuto-recovery is exhausted or unavailable ({recovery_detail or 'none configured'}) "
+            f"and the server has been unreachable for {down_h}h. The claude.ai connector is down until "
+            f"someone looks: `systemctl status poindexter-mcp-http` on the host."
+        ),
+        severity="critical",
+    )
+    _last_escalation_at = now
+    logger.error("[MCP_HTTP_PROBE] escalated: still down after %dh (%s)", down_h, recovery_detail)
+    return True
 
 
 def _reset_state() -> None:
     """Test hook — drop module-level cadence + dedup + restart state."""
     global _last_real_check_at, _last_alert_at, _consecutive_failures
+    global _outage_started_at, _last_escalation_at
     _last_real_check_at = 0.0
+    _outage_started_at = 0.0
+    _last_escalation_at = 0.0
     _last_alert_at = 0.0
     _consecutive_failures = 0
     _restart_attempts.clear()
@@ -177,6 +236,7 @@ async def _write_alert(
     fingerprint_suffix: str,
     title: str,
     body: str,
+    severity: str = "warning",
 ) -> None:
     """Insert one row into ``alert_events`` for the brain dispatcher to pick up.
 
@@ -202,7 +262,7 @@ async def _write_alert(
                 alertname, status, severity, category,
                 labels, annotations, fingerprint
             ) VALUES (
-                $1, 'firing', 'warning', 'infrastructure',
+                $1, 'firing', $5, 'infrastructure',
                 $2::jsonb, $3::jsonb, $4
             )
             """,
@@ -210,6 +270,7 @@ async def _write_alert(
             labels,
             annotations,
             f"mcp_http_probe:{fingerprint_suffix}",
+            severity,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[MCP_HTTP_PROBE] alert_events write failed: %s", exc)
@@ -343,6 +404,7 @@ async def run_mcp_http_probe(
     if 200 <= status_code < 400:
         logger.info("[MCP_HTTP_PROBE] %s ok (HTTP %s)", probe_url, status_code)
         _consecutive_failures = 0
+        _mark_recovered()
         # Success-path audit_log row — per feedback_total_visibility a
         # healthy probe must leave a footprint operators can confirm.
         # Failure paths write alert_events via _handle_failure; this row
@@ -407,7 +469,7 @@ async def _handle_failure(
     consecutive probe cycles. Combined with the 1h dedup window this cuts the
     ~7/day false-positive rate from single-shot failures down to genuine outages.
     """
-    global _last_alert_at, _consecutive_failures
+    global _last_alert_at, _consecutive_failures, _outage_started_at
 
     _consecutive_failures += 1
 
@@ -451,6 +513,8 @@ async def _handle_failure(
     recovery_token = (await _read_app_setting(pool, RECOVERY_TOKEN_KEY, "")).strip()
 
     recovery_detail = ""
+    if not _outage_started_at:
+        _outage_started_at = now
     if launcher_path or recovery_url:
         restart_cap = await _read_int(pool, RESTART_CAP_KEY, DEFAULT_RESTART_CAP)
         window_min = await _read_int(pool, RESTART_WINDOW_MINUTES_KEY, DEFAULT_RESTART_WINDOW_MINUTES)
@@ -476,6 +540,18 @@ async def _handle_failure(
                 f"{window_min}m)"
             )
             logger.warning("[MCP_HTTP_PROBE] %s", recovery_detail)
+    # Whatever the recovery branch did -- restarted, hit the cap, or had no
+    # recovery path at all -- a server still down an hour into the outage gets
+    # its own critical page. The rolling cap re-opens every window, so "cap
+    # reached" is not a persistent state to key on; outage duration is.
+    if await _escalate_if_still_down(
+        pool, now=now, fingerprint_suffix=fingerprint_suffix, body=body,
+        recovery_detail=recovery_detail,
+    ):
+        recovery_detail = (
+            f"{recovery_detail} — escalated" if recovery_detail
+            else "escalated (no auto-recovery configured)"
+        )
 
     result: dict[str, Any] = {
         "ok": False,
