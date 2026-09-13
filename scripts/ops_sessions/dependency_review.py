@@ -58,8 +58,58 @@ def is_dev_tooling_bump(title: str) -> bool:
     return False
 
 
+_SINGLE = re.compile(r"\bbump (?P<pkg>[@\w./-]+) from\b", re.I)
+# Group names dependabot.yml bounds to minor+patch update-types. A group PR
+# carries no version pair in its title, so the bound has to come from the
+# config that made the group.
+_MINOR_PATCH_GROUP_MARKERS = ("development", "minor-patch", "dev", "production")
+# Production minors that WAIT for a human (or a live smoke): packages whose
+# behaviour the unit suite cannot see — the LLM router (a private
+# transform_response seam is monkey-patched), the orchestrators, and the ML
+# stacks whose wheels/kernels only prove themselves on the GPU. Patches of
+# these still auto-merge via ``is_patch_bump``; majors never do.
+_HELD_MINOR_PACKAGES = frozenset({
+    "litellm", "prefect", "langgraph", "ragas", "deepeval", "diffusers",
+    "transformers", "sentence-transformers", "next",
+})
+_HELD_MINOR_PREFIXES = ("torch", "llama-index", "langchain")
+
+
+def bumped_package(title: str) -> str | None:
+    """The package a single-bump dependabot title moves, or None for a group PR."""
+    m = _SINGLE.search(title)
+    return m.group("pkg").lower() if m else None
+
+
+def is_held_package(pkg: str) -> bool:
+    return pkg in _HELD_MINOR_PACKAGES or pkg.startswith(_HELD_MINOR_PREFIXES)
+
+
+def is_production_minor_bump(title: str) -> bool:
+    """True for a production-scoped bump that moves at most a minor and is not held.
+
+    A ``(deps-dev)`` title never matches (that is ``is_dev_tooling_bump``'s
+    job). A single bump must keep its major and name a package outside the
+    held list; a group PR must be one dependabot.yml bounds to minor+patch.
+    Docker base-image tags (``3.13-slim`` -> ``3.14-slim``) carry no x.y.z
+    pair and never match.
+    """
+    if _DEV_SCOPE.search(title):
+        return False
+    m = _VER.search(title)
+    if m:
+        f_maj, _f_min, _f_pat, t_maj, _t_min, _t_pat = (int(x) for x in m.groups())
+        pkg = bumped_package(title)
+        return pkg is not None and f_maj == t_maj and not is_held_package(pkg)
+    g = _GROUP.search(title)
+    if g:
+        name = g.group("group").lower()
+        return any(marker in name for marker in _MINOR_PATCH_GROUP_MARKERS)
+    return False
+
+
 def auto_mergeable(title: str) -> bool:
-    return is_patch_bump(title) or is_dev_tooling_bump(title)
+    return is_patch_bump(title) or is_dev_tooling_bump(title) or is_production_minor_bump(title)
 
 
 def all_checks_green(rollup: list[dict]) -> bool:

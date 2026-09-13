@@ -505,7 +505,7 @@ pins are the `OPS_OLLAMA_MODEL_*` env knobs.
 
 | Session | Tier | When (local) | Does |
 | --- | --- | --- | --- |
-| `dependency-review` | deterministic | daily 06:30 | auto-merges green patch-bump dependabot PRs |
+| `dependency-review` | deterministic | daily 06:30 | auto-merges green dependabot PRs after 6 h: patches, dev-tooling minors, and production minors off a short held list (litellm / prefect / langgraph / torch / ragas / deepeval / llama-index / langchain / next wait for a live smoke); majors and runtime base images are by hand |
 | `codebase-audit` | deterministic | Wed 02:00 | `ruff --fix` F401/F841 → lint PR (bandit moved to a CI ratchet) |
 | `doc-sync` | deterministic | Fri 05:00 | verifies/repairs CLAUDE.md path references |
 | `claude-md-sync` | deterministic | daily 02:30 | syncs DB-derived counts + surfaces migration drift |
