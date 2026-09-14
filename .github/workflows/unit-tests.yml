@@ -435,9 +435,12 @@ jobs:
       # images, and the deploy sync rebuilds them on any scripts/ change — so a
       # sibling module that is imported but not copied ships as a restart loop
       # (2026-09-13: chatterbox, 507 restarts). Unconditional: a Dockerfile-only
-      # push must run it. Stdlib, ~1 s.
+      # push must run it. Stdlib, ~1 s. Because it is unconditional it also runs
+      # when `Setup Python` above was SKIPPED (docs-only PR), so it must use the
+      # runner's system interpreter: the self-hosted runner has `python3` but no
+      # `python` on PATH (#3762 failed with exit 127 on a services.md-only diff).
       - name: Dockerfile COPY-closure lint (every imported sibling is copied)
-        run: python scripts/ci/dockerfile_copy_closure_lint.py
+        run: python3 scripts/ci/dockerfile_copy_closure_lint.py
 
       # Information-disclosure guard (security audit L2, #724): no
       # HTTPException whose detail= echoes a caught exception to the client
