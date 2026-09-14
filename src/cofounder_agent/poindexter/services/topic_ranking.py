@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Mapping
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
@@ -399,10 +400,15 @@ async def llm_final_score(
 
     result: dict[str, ScoredCandidate] = {}
     omitted: list[str] = []
+    unusable: list[str] = []  # id present in the response, value not a usable score
+    goal_weights = {g.goal_type.upper(): float(g.weight_pct) for g in weights}
     for c in candidates:
-        score = _coerce_llm_score(parsed.get(c.id))
+        blob = parsed.get(c.id)
+        score = _coerce_llm_score(blob, goal_weights=goal_weights)
         if score is None:
             omitted.append(c.id)
+            if blob is not None:
+                unusable.append(c.id)
             score = c.embedding_score * 100
         c.llm_score = float(score)
         # NOTE: score_breakdown is deliberately NOT overwritten. The embedding
@@ -420,7 +426,15 @@ async def llm_final_score(
         # valid-JSON costume (e.g. a JSON array, whose first {...} member
         # parses as an object that happens to key on nothing we asked about).
         # Labelling that "partial" would understate it on the Findings board.
-        degrade_reason = "partial" if len(omitted) < len(candidates) else "no_matching_ids"
+        if len(omitted) < len(candidates):
+            degrade_reason = "partial"
+        elif unusable:
+            # Every id matched — the VALUES were the problem (a shape no
+            # coercion accepts). Saying "no_matching_ids" here sent a day of
+            # triage toward the prompt's id echo when the ids were fine.
+            degrade_reason = "unusable_shape"
+        else:
+            degrade_reason = "no_matching_ids"
     if degrade_reason:
         _emit_rank_degrade_finding(
             model=model,
@@ -432,14 +446,27 @@ async def llm_final_score(
     return result
 
 
-def _coerce_llm_score(blob: Any) -> float | None:
-    """Read a candidate's score from either supported response shape.
+def _coerce_llm_score(
+    blob: Any, *, goal_weights: Mapping[str, float] | None = None
+) -> float | None:
+    """Read a candidate's score from any supported response shape.
 
     Current prompt returns ``{"<id>": <score>}``. The retired prompt returned
     ``{"<id>": {"score": <n>, "breakdown": {...}}}`` — still accepted so a
     Langfuse prompt override or an operator's customised pack pinned to the old
     shape keeps scoring instead of silently degrading every candidate
     (``feedback_backcompat_now_required``).
+
+    A third shape is accepted since 2026-09-13: a bare per-goal breakdown,
+    ``{"<id>": {"TRAFFIC": 90, "EDUCATION": 40, ...}}``, with no ``score`` key.
+    ``qwen2.5:7b`` returns this for the score-only prompt on most batches, and
+    every candidate was being thrown away as "no_matching_ids" (8–19 total
+    degrades a day; the IDs matched, the shape did not). The scalar is the
+    weighted mean of the goals present, using the niche's own ``goal_weights``
+    (goals the niche does not weight count zero; with no usable weights, a
+    plain mean). Values on a 0–1 scale are lifted to 0–100. The model's
+    breakdown is NOT written to ``score_breakdown`` — that stays the calculated
+    per-goal cosine (poindexter#926).
 
     Returns ``None`` when no usable number is present, which the caller treats
     as "omitted" and backfills from the embedding pre-rank.
@@ -453,15 +480,38 @@ def _coerce_llm_score(blob: Any) -> float | None:
         return float(blob)
     if isinstance(blob, dict):
         inner = blob.get("score")
-        if isinstance(inner, bool) or not isinstance(inner, (int, float)):
-            return None
-        return float(inner)
+        if isinstance(inner, (int, float)) and not isinstance(inner, bool):
+            return float(inner)
+        return _score_from_breakdown(blob, goal_weights)
     if isinstance(blob, str):
         try:
             return float(blob.strip())
         except ValueError:
             return None
     return None
+
+
+def _score_from_breakdown(
+    blob: Mapping[str, Any], goal_weights: Mapping[str, float] | None
+) -> float | None:
+    """Weighted mean of a goal-keyed breakdown, or None when no goal key is numeric."""
+    known_goals = set(GOAL_DESCRIPTIONS) | {k.upper() for k in (goal_weights or {})}
+    values: dict[str, float] = {}
+    for key, val in blob.items():
+        if not isinstance(key, str) or isinstance(val, bool) or not isinstance(val, (int, float)):
+            continue
+        goal = key.strip().upper()
+        if goal in known_goals:
+            values[goal] = float(val)
+    if not values:
+        return None
+    if all(v <= 1.0 for v in values.values()):
+        values = {g: v * 100.0 for g, v in values.items()}
+    weights = {g: float((goal_weights or {}).get(g, 0.0)) for g in values}
+    total_w = sum(w for w in weights.values() if w > 0)
+    if total_w <= 0:
+        return sum(values.values()) / len(values)
+    return sum(values[g] * w for g, w in weights.items() if w > 0) / total_w
 
 
 def _emit_rank_degrade_finding(

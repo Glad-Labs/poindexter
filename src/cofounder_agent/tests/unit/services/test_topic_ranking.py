@@ -545,3 +545,94 @@ async def test_wrong_shape_is_a_total_degrade_not_partial(monkeypatch):
     assert scored["c2"].llm_score == pytest.approx(40.0)
     assert seen[0]["extra"]["reason"] == "no_matching_ids"
     assert seen[0]["extra"]["unscored"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Breakdown-only shape (2026-09-13): qwen2.5:7b answers the score-only prompt
+# with a per-goal breakdown and no ``score`` key. That must score, not degrade.
+# ---------------------------------------------------------------------------
+
+async def test_breakdown_only_shape_scores_by_the_niche_weights(monkeypatch):
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return ('{"c1": {"TRAFFIC": 90, "EDUCATION": 40, "BRAND": 10},'
+                ' "c2": {"TRAFFIC": 20, "EDUCATION": 80}}')
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
+    seen = []
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: seen.append(kw))
+    cands = [ScoredCandidate(id="c1", title="A", summary="", embedding_score=0.6),
+             ScoredCandidate(id="c2", title="B", summary="", embedding_score=0.4)]
+    weights = [NicheGoal("TRAFFIC", 60), NicheGoal("EDUCATION", 40)]  # BRAND unweighted → ignored
+    scored = await llm_final_score(cands, weights, model="m", site_config=_SC)
+    assert scored["c1"].llm_score == pytest.approx(0.6 * 90 + 0.4 * 40)  # 70.0
+    assert scored["c2"].llm_score == pytest.approx(0.6 * 20 + 0.4 * 80)  # 44.0
+    assert seen == []  # a scored batch is not a degrade
+
+
+async def test_breakdown_only_shape_on_a_unit_scale_is_lifted_to_percent(monkeypatch):
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": {"traffic": 0.9, "education": 0.4}}'
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: None)
+    cands = [ScoredCandidate(id="c1", title="A", summary="", embedding_score=0.6)]
+    weights = [NicheGoal("TRAFFIC", 60), NicheGoal("EDUCATION", 40)]
+    scored = await llm_final_score(cands, weights, model="m", site_config=_SC)
+    assert scored["c1"].llm_score == pytest.approx(70.0)
+
+
+async def test_breakdown_does_not_overwrite_the_calculated_per_goal_breakdown(monkeypatch):
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": {"TRAFFIC": 90, "EDUCATION": 40}}'
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: None)
+    pre_rank = {"TRAFFIC": 0.31, "EDUCATION": 0.12}
+    c = ScoredCandidate(id="c1", title="A", summary="", embedding_score=0.6)
+    c.score_breakdown = dict(pre_rank)
+    scored = await llm_final_score([c], [NicheGoal("TRAFFIC", 60), NicheGoal("EDUCATION", 40)], model="m", site_config=_SC)
+    assert scored["c1"].score_breakdown == pre_rank
+
+
+async def test_matched_ids_with_unusable_values_are_labelled_unusable_shape(monkeypatch):
+    """The ids matched; the values did not. The finding must say so."""
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": {"verdict": "strong"}, "c2": {"COLOUR": 7}}'
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
+    seen = []
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: seen.append(kw))
+    cands = [ScoredCandidate(id="c1", title="A", summary="", embedding_score=0.6),
+             ScoredCandidate(id="c2", title="B", summary="", embedding_score=0.4)]
+    scored = await llm_final_score(cands, [NicheGoal("TRAFFIC", 100)], model="m", site_config=_SC)
+    assert scored["c1"].llm_score == pytest.approx(60.0)
+    assert scored["c2"].llm_score == pytest.approx(40.0)
+    assert len(seen) == 1
+    assert seen[0]["extra"]["reason"] == "unusable_shape"
+    assert seen[0]["extra"]["unscored"] == 2
+
+
+async def test_absent_ids_are_still_labelled_no_matching_ids(monkeypatch):
+    from poindexter.services.topic_ranking import ScoredCandidate, llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"zzz": 88, "yyy": 44}'
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
+    seen = []
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: seen.append(kw))
+    cands = [ScoredCandidate(id="c1", title="A", summary="", embedding_score=0.6)]
+    await llm_final_score(cands, [NicheGoal("TRAFFIC", 100)], model="m", site_config=_SC)
+    assert seen[0]["extra"]["reason"] == "no_matching_ids"
+
+
+def test_coerce_breakdown_with_no_weights_uses_a_plain_mean():
+    from poindexter.services.topic_ranking import _coerce_llm_score
+
+    assert _coerce_llm_score({"TRAFFIC": 80, "REVENUE": 20}) == pytest.approx(50.0)
+    assert _coerce_llm_score({"TRAFFIC": 80, "REVENUE": 20}, goal_weights={"BRAND": 100}) == pytest.approx(50.0)
+    assert _coerce_llm_score({"TRAFFIC": "high"}) is None
+    assert _coerce_llm_score({"score": 71, "TRAFFIC": 5}) == 71.0  # explicit score still wins
