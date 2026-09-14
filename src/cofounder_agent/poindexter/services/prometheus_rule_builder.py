@@ -257,6 +257,23 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # while there is still runtime to act in — NUT's LB/forced-shutdown line
     # is the point of no return, not a useful warning.
     "ups_battery_charge_critical_percent": "50",
+    # --- Custom water loop via OpenLinkHub ---
+    # Pump-stopped is an absolute truth (0 RPM is 0 RPM on any pump), so it
+    # needs no threshold. "Slow" does: a D5 idles ~1800 and the operator rig
+    # runs ~4600 at its 70% profile floor, while an AIO pump sits near 2000.
+    # 1200 is below every sane running speed and above the noise floor of a
+    # stalling impeller, so it ships live and portable — the rule reads
+    # "spinning, but not like a pump".
+    "coolant_pump_rpm_warning": "1200",
+    # Coolant ceilings. Liquid temp is the one loop number that carries across
+    # hardware: a loop is designed to hold delta-over-ambient, so 45C means
+    # "something is wrong" on any build and 55C is where soft tubing and
+    # acrylic start to be a real concern. Measured operator-rig baseline
+    # (2026-09-14): 33.0C reservoir / 37.5C block under light load, so 45
+    # leaves a wide margin over a gaming session and still catches a failure
+    # long before the CPU/GPU dies notice.
+    "coolant_temperature_warning_celsius": "45",
+    "coolant_temperature_critical_celsius": "55",
     # Host systemd timer staleness (replaces the retired Windows
     # probe_scheduled_tasks — see PoindexterSystemdTimerStale below). This is
     # deliberately a "the timer is DEAD" backstop, not a per-cadence SLO: the
@@ -1264,6 +1281,142 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "bursting past its 1000W unit's rating mid-transfer. Shed load "
             "immediately: pause GPU jobs, and get anything non-essential "
             "off the battery-backed outlets."
+        ),
+    },
+    # --- Custom water loop via OpenLinkHub (openlinkhub_* from the host
+    # exporter, job="nvidia-smi"). On a build with no iCUE LINK hardware the
+    # exporter emits openlinkhub_up 0 and nothing else, so every rule below
+    # except LoopTelemetryDown is naturally inert — no pump series, no fire.
+    #
+    # All reads are wrapped in last_over_time[10m] for the UPS reason,
+    # sharpened: the exporter is the gpu-exporter container, so a worker
+    # deploy or an image rebuild restarts it, and a raw read across that gap
+    # would page "PUMP STOPPED" on every deploy. last (never max) so a real
+    # stop still propagates on the first fresh sample rather than being
+    # masked for 10 minutes by the previous healthy reading.
+    "CoolantPumpStopped": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        # The `and on() openlinkhub_up == 1` guard is the whole point of that
+        # gauge: without it a dead exporter and a dead pump are the same
+        # observation (no series), and the rule would be unwritable. With it,
+        # this fires ONLY when the hub is talking to us and reporting zero.
+        "expr": (
+            "last_over_time(openlinkhub_pump_rpm[10m]) == 0"
+            "\nand on() last_over_time(openlinkhub_up[10m]) == 1"
+        ),
+        # 1m, not the usual advisory patience: with no flow the block goes
+        # from fine to thermal-throttling in a couple of minutes, and the
+        # coolant temperature rules below are LAGGING confirmations of this
+        # one. This is the page that should arrive first.
+        "for": "1m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "Coolant pump {{ $labels.name }} is STOPPED (0 RPM)",
+        "description": (
+            "The loop's pump has reported 0 RPM for a minute while "
+            "OpenLinkHub is otherwise healthy, so this is the pump and not "
+            "a telemetry gap. There is no flow: the CPU and GPU blocks are "
+            "now sitting in static coolant and the loop's large thermal "
+            "mass is the only thing buying time. Stop GPU work and shut the "
+            "machine down if the pump does not restart — check the pump's "
+            "power lead and the iCUE LINK chain first."
+        ),
+    },
+    "CoolantPumpSlow": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            "last_over_time(openlinkhub_pump_rpm[10m]) > 0"
+            "\nand last_over_time(openlinkhub_pump_rpm[10m])"
+            " < {threshold.coolant_pump_rpm_warning}"
+            "\nand on() last_over_time(openlinkhub_up[10m]) == 1"
+        ),
+        # 10m: a pump that is spinning but slow is a degradation story
+        # (failing bearing, air pocket, clogged block), not a cliff — worth
+        # an unhurried warning rather than a page.
+        "for": "10m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Coolant pump {{ $labels.name }} running slow ({{ $value | humanize }} RPM)",
+        "description": (
+            "The pump is turning but has held below "
+            "prometheus.threshold.coolant_pump_rpm_warning (default 1200 "
+            "RPM) for ten minutes. A D5 under any normal profile runs well "
+            "above this. Likely an air pocket, a failing bearing, or a fan "
+            "curve that dropped the pump channel. Check the reservoir level "
+            "and the pump's duty profile in OpenLinkHub."
+        ),
+    },
+    "CoolantTemperatureHigh": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            "max(last_over_time(openlinkhub_coolant_celsius[10m]))"
+            " > {threshold.coolant_temperature_warning_celsius}"
+        ),
+        "for": "10m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Coolant temperature {{ $value | humanize }}C — above normal",
+        "description": (
+            "Loop liquid has held above "
+            "prometheus.threshold.coolant_temperature_warning_celsius "
+            "(default 45C) for ten minutes. A healthy loop holds a roughly "
+            "fixed delta over ambient, so this means heat is not leaving: "
+            "check radiator fans, dust, and room temperature. If the pump "
+            "is also slow or stopped, treat THOSE alerts as the cause — "
+            "this one is the downstream symptom."
+        ),
+    },
+    "CoolantTemperatureCritical": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            "max(last_over_time(openlinkhub_coolant_celsius[10m]))"
+            " > {threshold.coolant_temperature_critical_celsius}"
+        ),
+        "for": "2m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "Coolant temperature {{ $value | humanize }}C — CRITICAL",
+        "description": (
+            "Loop liquid is above "
+            "prometheus.threshold.coolant_temperature_critical_celsius "
+            "(default 55C). This is the range where soft tubing and acrylic "
+            "fittings become a real risk, and it is far past anything a "
+            "working loop reaches under load. Shut GPU and CPU work down "
+            "now and find the cause before restarting."
+        ),
+    },
+    "LoopTelemetryDown": {
+        # Ships enabled but self-inerting: a build with no iCUE LINK hardware
+        # still emits openlinkhub_up 0, which would page forever — so the
+        # rule requires the series to have been 1 at some point in the last
+        # 6h. That makes it "the loop telemetry I HAD has gone away", never
+        # "this machine has no water cooling".
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            "last_over_time(openlinkhub_up[10m]) == 0"
+            "\nand on() max_over_time(openlinkhub_up[6h]) == 1"
+        ),
+        "for": "15m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Water-loop telemetry is down — pump state unknown",
+        "description": (
+            "OpenLinkHub stopped answering, or answered with no telemetry "
+            "device (a lost HID / unplugged hub reads the same way). While "
+            "this is firing the pump alerts above CANNOT fire, because they "
+            "are deliberately gated on openlinkhub_up — so the loop is "
+            "unmonitored, not healthy. Check the OpenLinkHub service and "
+            "the hub's USB connection."
         ),
     },
     # Host disk space. Previously static in infrastructure.yml — moved here so

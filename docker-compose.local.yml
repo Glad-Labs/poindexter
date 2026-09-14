@@ -2064,6 +2064,13 @@ services:
       # SHELLY_PSU_URL (from the same bootstrap key) rides in via env.
       # Empty = no-op; the software estimate covers wall power.
       SHELLY_PSU_URL: "${SHELLY_PSU_URL:-}"
+      # OpenLinkHub water-loop telemetry (pump RPM / coolant temp / iCUE LINK
+      # fans). The daemon binds :27003 on the HOST, so `localhost` — the
+      # exporter's default for host runs — is this container and would always
+      # fail. host.docker.internal is already mapped via extra_hosts below.
+      # Override in bootstrap.toml (`openlinkhub_url`) or here if the daemon
+      # moves; unreachable = openlinkhub_up 0, which is what alerts on it.
+      OPENLINKHUB_URL: "${OPENLINKHUB_URL:-http://host.docker.internal:27003}"
     volumes:
       # Anchored to POINDEXTER_DEPLOY_ROOT like the /brain mount below it.
       # A bare `./` resolves to the compose PROJECT dir, which on this host is

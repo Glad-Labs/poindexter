@@ -1,0 +1,64 @@
+# OpenLinkHub -> Docker bridge relay.
+#
+# WHY THIS EXISTS
+# OpenLinkHub serves the iCUE LINK water-loop telemetry (pump RPM, coolant
+# temperature, fan speeds) that `scripts/nvidia-smi-exporter.py` turns into
+# openlinkhub_* metrics. The exporter runs inside the `gpu-exporter` container,
+# but OpenLinkHub binds 127.0.0.1:27003 — so the container's
+# host.docker.internal route gets ECONNREFUSED and every loop metric goes dark.
+#
+# WHY NOT JUST BIND OpenLinkHub TO 0.0.0.0
+# Its API is a CONTROL surface, not a read-only one: it sets fan curves, RGB,
+# and pump duty, with no authentication. This host runs no firewall (ufw
+# inactive), so listenAddress=0.0.0.0 would put unauthenticated pump control on
+# the LAN. That is a materially worse posture than the problem being solved.
+#
+# WHAT THIS DOES INSTEAD
+# Relays the Docker bridge gateway address ONLY (172.17.0.1, the docker0
+# interface) to the hub's loopback listener. docker0 is a host-local virtual
+# network — it is not routed to the LAN (this host: docker0 172.17.0.1/16 vs
+# LAN 192.168.1.0/24), so containers gain access and the network does not.
+#
+# TRADEOFF, STATED PLAINLY: every container on the default bridge can now reach
+# the hub's control API, not just the exporter. On this stack they are all
+# Poindexter's own. If that ever stops being true, replace this with a
+# read-only reverse proxy that allows GET /api/devices and nothing else.
+#
+# Operators: the bind address must match YOUR docker0 gateway — check with
+#   ip -o addr show docker0
+# and leave this unit uninstalled if you have no iCUE LINK hardware (the
+# exporter then emits openlinkhub_up 0 and the loop alerts self-inert).
+
+[Unit]
+Description=Relay OpenLinkHub (loopback) to the Docker bridge for the metrics exporter
+Documentation=file:///docs/operations/water-loop-monitoring.md
+After=network-online.target docker.service OpenLinkHub.service
+Wants=network-online.target
+# Not Requires=: if OpenLinkHub is down the relay should keep listening and
+# refuse connections, so the exporter records openlinkhub_up 0 (a real signal)
+# rather than the relay vanishing and looking like a different fault.
+After=OpenLinkHub.service
+
+[Service]
+Type=simple
+# bind= is what keeps this off the LAN — do not change it to 0.0.0.0.
+# fork = one child per connection; the exporter scrapes every 10s, so
+# concurrency is trivial.
+ExecStart=/usr/bin/socat TCP-LISTEN:27003,bind=172.17.0.1,fork,reuseaddr TCP:127.0.0.1:27003
+Restart=always
+RestartSec=5
+# Hardening: this process only needs to move bytes between two sockets.
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target

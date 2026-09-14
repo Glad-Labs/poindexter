@@ -3657,6 +3657,277 @@
       ],
       "title": "GPU hold durations — p50/p90 by owner·phase",
       "type": "table"
+    },
+    {
+      "type": "row",
+      "title": "Water Loop — pump & coolant (OpenLinkHub)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 208
+      },
+      "panels": [],
+      "id": 200
+    },
+    {
+      "type": "stat",
+      "title": "Pump speed",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "Loop pump RPM from the iCUE LINK bus. This is the only direct instrument on the loop — if it reads 0 while telemetry is up there is no flow, and CoolantPumpStopped pages within a minute. 'No data' means the telemetry is down, NOT that the pump is fine.",
+      "gridPos": {
+        "h": 6,
+        "w": 5,
+        "x": 0,
+        "y": 209
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rotrpm",
+          "custom": {},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "blue",
+                "value": 1200
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "openlinkhub_pump_rpm",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "id": 201
+    },
+    {
+      "type": "timeseries",
+      "title": "Coolant temperature — reservoir vs CPU block",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "Liquid temperature at two points. pump_res is the reservoir (cool side, post-radiator); cpu_block is the block outlet (hot side, having just picked up CPU heat). Fan-hub AIR probes are deliberately NOT here — those are openlinkhub_probe_celsius.",
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 5,
+        "y": 209
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 45
+              },
+              {
+                "color": "red",
+                "value": 55
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "openlinkhub_coolant_celsius",
+          "legendFormat": "{{source}} ({{device}})",
+          "refId": "A"
+        }
+      ],
+      "id": 202
+    },
+    {
+      "type": "timeseries",
+      "title": "Loop delta-T (block − reservoir)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "Temperature the coolant GAINS crossing the CPU block — physically a flow proxy: at a given heat load, slower flow means each unit of coolant absorbs more heat, so delta rises before any absolute threshold trips. NOT alerted on yet: delta also rises legitimately with CPU load, so a threshold needs a calibration window across idle/gaming/render. Baseline 2026-09-14: ~4.5C at light load.",
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 15,
+        "y": 209
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max(openlinkhub_coolant_celsius{source=\"cpu_block\"}) - max(openlinkhub_coolant_celsius{source=\"pump_res\"})",
+          "legendFormat": "delta-T",
+          "refId": "A"
+        }
+      ],
+      "id": 203
+    },
+    {
+      "type": "stat",
+      "title": "Loop telemetry",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "1 = OpenLinkHub answered and exposed at least one telemetry device. 0 = API down OR answered with no devices (a lost USB HID reads the same way). While this is 0 the pump alerts CANNOT fire — they are gated on it — so the loop is UNMONITORED, not healthy.",
+      "gridPos": {
+        "h": 6,
+        "w": 5,
+        "x": 0,
+        "y": 215
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN — loop unmonitored",
+                  "index": 0
+                },
+                "1": {
+                  "text": "UP",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "openlinkhub_up",
+          "legendFormat": "telemetry",
+          "refId": "A"
+        }
+      ],
+      "id": 204
+    },
+    {
+      "type": "timeseries",
+      "title": "iCUE LINK fan speeds",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "Every fan on the iCUE LINK bus. A fan series that disappears is a fan that dropped off the chain — worth noticing, since the bus is the only inventory we have of them.",
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 5,
+        "y": 215
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rotrpm",
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "openlinkhub_fan_rpm",
+          "legendFormat": "{{name}} ch{{channel}}",
+          "refId": "A"
+        }
+      ],
+      "id": 205
+    },
+    {
+      "type": "timeseries",
+      "title": "Fan-hub air probes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "AIR temperature at the QX fan hubs — case air, NOT coolant. Kept separate from the coolant panel on purpose: conflating the two would make every loop threshold measure the wrong fluid.",
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 15,
+        "y": 215
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "openlinkhub_probe_celsius",
+          "legendFormat": "ch{{channel}} {{name}}",
+          "refId": "A"
+        }
+      ],
+      "id": 206
     }
   ],
   "description": "CHARTER: GPU/PSU/wall power + host-memory pressure — thermal, electrical, and RAM headroom and electricity cost. GPU live is single-sourced from Prometheus nvidia_gpu_* (#653); the gpu_metrics SQL tables here are history only. Host-memory row added 2026-07-10 (desktop-freeze investigation)."

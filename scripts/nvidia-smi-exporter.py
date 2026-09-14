@@ -13,6 +13,10 @@ Metrics:
   - aida64_* — All AIDA64 sensors (when shared memory is enabled, Windows)
   - psu_* — Corsair HXi PSU metrics (via liquidctl or AIDA64)
   - lm_sensors_* — Linux hardware sensors (temps, voltages, fans)
+  - openlinkhub_* — Custom water-loop telemetry: pump RPM, coolant temperature,
+    iCUE LINK fans (via the OpenLinkHub local HTTP API). The loop had NO
+    instrument in Prometheus before this; a failed pump was only visible as
+    CPU/GPU temps climbing, which lags badly on a high-thermal-mass loop.
 
 Reliability:
   - Metrics are gathered by a background thread into a cached snapshot every
@@ -876,6 +880,276 @@ def _dedupe_psu_metric(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# OpenLinkHub — custom water-loop telemetry (pump, coolant, fans)
+#
+# The iCUE LINK bus is the ONLY instrument on the hardline loop, and until this
+# source existed nothing in Prometheus could see it: no coolant temperature, no
+# pump RPM. A dead D5 first surfaced as CPU/GPU temperatures climbing, which on
+# a loop with ~1500mm of radiator is a badly lagging indicator precisely because
+# the thermal mass is so large. This closes that gap.
+#
+# liquidctl cannot do this job (no iCUE LINK driver), and the older direct-HID
+# readers fought iCUE for the USB — see `_collect_all_metrics`. OpenLinkHub owns
+# the HID exclusively and re-serves it over localhost HTTP, so reading it here
+# contends with nothing.
+#
+# Two temperatures, and the distinction is load-bearing:
+#   * The XD5/XD6 pump/reservoir probe is COOLANT — liquid in the loop.
+#   * QX fan probes are AIR at the fan hub. Labelling those as coolant would
+#     make every loop alert meaningless, so only pump/res and CPU-block probes
+#     become `openlinkhub_coolant_celsius`; fan probes stay `*_probe_celsius`.
+#
+# NOT exported: flow rate. The inline impeller meter is a passive G1/4 part and
+# is not on the iCUE LINK bus, so it appears nowhere in the device tree. There
+# is no flow series to emit and inventing one would be worse than the gap.
+# ---------------------------------------------------------------------------
+
+_OPENLINKHUB_DEFAULT_URL = "http://localhost:27003"
+
+
+def _resolve_openlinkhub_url() -> str:
+    """OpenLinkHub base URL: ``OPENLINKHUB_URL`` env, then bootstrap.toml
+    ``openlinkhub_url``, else ``http://localhost:27003``.
+
+    Same two-launch-mode problem as the Shelly plug, with the opposite default.
+    The plug lives at an arbitrary LAN address so "unset" means "no plug"; the
+    hub is always local, so a working default costs no configuration. The
+    containerized ``gpu-exporter`` cannot use ``localhost`` (that is the
+    container), so compose passes ``host.docker.internal:27003`` via env —
+    which is why this resolves env FIRST and the default serves host runs.
+    """
+    import os
+
+    env_url = os.environ.get("OPENLINKHUB_URL", "").strip()
+    if env_url:
+        return env_url.rstrip("/")
+    from_bootstrap = _read_openlinkhub_url_from_bootstrap()
+    return from_bootstrap or _OPENLINKHUB_DEFAULT_URL
+
+
+def _read_openlinkhub_url_from_bootstrap() -> str:
+    """OpenLinkHub base URL from ~/.poindexter/bootstrap.toml, or "" if absent.
+
+    Mirrors ``_read_shelly_url_from_bootstrap``: the exporter is a stdlib-only
+    script with no DB access, so bootstrap.toml is the one sanctioned on-disk
+    override. Unreadable → "" and the caller falls back to the default.
+    """
+    try:
+        import tomllib
+        from pathlib import Path
+
+        path = Path.home() / ".poindexter" / "bootstrap.toml"
+        if not path.is_file():
+            return ""
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+        return str(data.get("openlinkhub_url", "") or "").strip().rstrip("/")
+    except Exception:  # noqa: BLE001 — defensive; never break the scrape
+        return ""
+
+
+def _olh_escape(value: str) -> str:
+    """Escape a Prometheus label value (backslash, quote, newline)."""
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", " ")
+        .strip()
+    )
+
+
+def _olh_is_pump(channel: dict) -> bool:
+    """True when a channel is a pump/reservoir rather than a fan.
+
+    Keys off the semantic ``description`` field ("Pump/Res", "AIO Pump")
+    rather than the product name, so an XD5/XD6/AIO swap does not silently
+    reclassify the loop's only pump as a fan and blank the pump alert.
+    """
+    return "pump" in str(channel.get("description", "")).lower()
+
+
+def _olh_channel_labels(product: str, serial: str, channel_id, channel: dict) -> str:
+    """Shared label set for one iCUE LINK channel."""
+    label = str(channel.get("label") or "").strip()
+    # OpenLinkHub's placeholder for "operator never named this" — carrying it
+    # through would put "Set Label" on a dozen series and read as a real name.
+    if label.lower() == "set label":
+        label = ""
+    parts = [
+        f'device="{_olh_escape(product)}"',
+        f'serial="{_olh_escape(serial)}"',
+        f'channel="{_olh_escape(channel_id)}"',
+        f'name="{_olh_escape(channel.get("name", ""))}"',
+    ]
+    if label:
+        parts.append(f'label="{_olh_escape(label)}"')
+    return ",".join(parts)
+
+
+def _olh_number(value) -> float | None:
+    """Coerce a JSON number, rejecting None/non-numeric/bool."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_openlinkhub_metrics(base_url: str | None = None, *, _fetch=None) -> str:
+    """Water-loop telemetry from OpenLinkHub's local HTTP API.
+
+    Emits (all gauges):
+      * ``openlinkhub_pump_rpm``          — pump speed. The one that matters.
+      * ``openlinkhub_coolant_celsius``   — liquid temp, ``source`` label
+                                            distinguishing ``pump_res`` from
+                                            ``cpu_block``.
+      * ``openlinkhub_fan_rpm``           — every iCUE LINK fan.
+      * ``openlinkhub_probe_celsius``     — fan-hub AIR probes (not coolant).
+      * ``openlinkhub_device_critical``   — the hub's own critical flag.
+      * ``openlinkhub_up``                — 1 when the API answered and parsed.
+
+    ``openlinkhub_up`` is emitted on EVERY path including failure, because the
+    alerting question "is the pump alive?" is unanswerable if a dead exporter
+    and a dead pump look identical (both: no series). A pump alert must be able
+    to say `openlinkhub_up == 1 and openlinkhub_pump_rpm == 0`.
+
+    Any error → ``openlinkhub_up 0`` and nothing else, so an OpenLinkHub restart
+    can never break the rest of the /metrics scrape.
+    """
+    url = _resolve_openlinkhub_url() if base_url is None else base_url
+    if not url:
+        return ""
+    fetch = _fetch or _default_fetch_json
+
+    header = (
+        "# HELP openlinkhub_up OpenLinkHub API reachable and parsed (1) or not (0)\n"
+        "# TYPE openlinkhub_up gauge\n"
+    )
+    try:
+        payload = fetch(f"{url.rstrip('/')}/api/devices")
+    except Exception as exc:  # noqa: BLE001 — a hub restart must not break the scrape
+        logger.warning("openlinkhub: fetch failed (%s: %s)", type(exc).__name__, exc)
+        return header + "openlinkhub_up 0\n"
+
+    try:
+        rows = _format_openlinkhub_rows(payload)
+    except Exception as exc:  # noqa: BLE001 — malformed payload must not break the scrape
+        logger.warning("openlinkhub: parse failed (%s: %s)", type(exc).__name__, exc)
+        return header + "openlinkhub_up 0\n"
+
+    if not rows:
+        # The API answered but exposed no telemetry-bearing device. That is a
+        # real fault, not an idle state — OpenLinkHub has lost the HID, or the
+        # hub is unplugged. Reporting `up 1` here would be the exact failure
+        # this gauge exists to prevent: healthy-looking telemetry with no pump
+        # series, indistinguishable from a stopped pump.
+        logger.warning("openlinkhub: API answered but exposed no telemetry devices")
+        return header + "openlinkhub_up 0\n"
+
+    return header + "openlinkhub_up 1\n" + rows
+
+
+def _format_openlinkhub_rows(payload: dict) -> str:
+    """Pure formatter: OpenLinkHub ``/api/devices`` JSON → exposition text.
+
+    Split out from the fetch so the whole device-tree walk is testable against
+    a captured payload with no hub, no HTTP and no hardware.
+    """
+    pump_rpm: list[str] = []
+    fan_rpm: list[str] = []
+    coolant: list[str] = []
+    probes: list[str] = []
+    critical: list[str] = []
+
+    devices = payload.get("devices")
+    if not isinstance(devices, dict):
+        return ""
+
+    for serial, device in devices.items():
+        if not isinstance(device, dict):
+            continue
+        detail = device.get("GetDevice")
+        if not isinstance(detail, dict):
+            # Peripherals (mice, headsets, keyboards) carry no telemetry.
+            continue
+        product = str(device.get("Product") or detail.get("product") or "unknown")
+        dev_labels = f'device="{_olh_escape(product)}",serial="{_olh_escape(serial)}"'
+
+        if isinstance(detail.get("IsCritical"), bool):
+            critical.append(
+                f"openlinkhub_device_critical{{{dev_labels}}} "
+                f"{1 if detail['IsCritical'] else 0}"
+            )
+
+        # CPU water block reports loop temperature at the block outlet — the
+        # hottest point in the loop, and the other half of the delta-T that
+        # reveals falling flow before any absolute threshold trips.
+        block_temp = _olh_number(detail.get("Temperature"))
+        if block_temp is not None and block_temp > 0:
+            coolant.append(
+                f'openlinkhub_coolant_celsius{{{dev_labels},source="cpu_block"}} {block_temp}'
+            )
+
+        channels = detail.get("devices")
+        if not isinstance(channels, dict):
+            continue
+        for channel_id, channel in channels.items():
+            if not isinstance(channel, dict):
+                continue
+            labels = _olh_channel_labels(product, serial, channel_id, channel)
+            is_pump = _olh_is_pump(channel)
+
+            rpm = _olh_number(channel.get("rpm"))
+            # A link ADAPTER reports rpm 0 and is not a fan; only rows that
+            # declare HasSpeed are real rotating hardware.
+            if rpm is not None and channel.get("HasSpeed"):
+                target = pump_rpm if is_pump else fan_rpm
+                metric = "openlinkhub_pump_rpm" if is_pump else "openlinkhub_fan_rpm"
+                target.append(f"{metric}{{{labels}}} {rpm}")
+
+            temp = _olh_number(channel.get("temperature"))
+            # 0.0 is OpenLinkHub's "no probe fitted" filler, not a reading.
+            if temp is not None and temp > 0:
+                if is_pump:
+                    coolant.append(
+                        f'openlinkhub_coolant_celsius{{{labels},source="pump_res"}} {temp}'
+                    )
+                else:
+                    probes.append(f"openlinkhub_probe_celsius{{{labels}}} {temp}")
+
+    out: list[str] = []
+    if pump_rpm:
+        out.append("# HELP openlinkhub_pump_rpm Water-loop pump speed (iCUE LINK)")
+        out.append("# TYPE openlinkhub_pump_rpm gauge")
+        out.extend(pump_rpm)
+    if coolant:
+        out.append(
+            "# HELP openlinkhub_coolant_celsius Loop liquid temperature "
+            "(source=pump_res reservoir, source=cpu_block block outlet)"
+        )
+        out.append("# TYPE openlinkhub_coolant_celsius gauge")
+        out.extend(coolant)
+    if fan_rpm:
+        out.append("# HELP openlinkhub_fan_rpm iCUE LINK fan speed")
+        out.append("# TYPE openlinkhub_fan_rpm gauge")
+        out.extend(fan_rpm)
+    if probes:
+        out.append(
+            "# HELP openlinkhub_probe_celsius iCUE LINK air temperature probe "
+            "(fan-hub air, NOT coolant)"
+        )
+        out.append("# TYPE openlinkhub_probe_celsius gauge")
+        out.extend(probes)
+    if critical:
+        out.append("# HELP openlinkhub_device_critical Device self-reported critical state")
+        out.append("# TYPE openlinkhub_device_critical gauge")
+        out.extend(critical)
+    return "\n".join(out) + "\n" if out else ""
+
+
+# ---------------------------------------------------------------------------
 # ASUS Astral per-pin 12V-2x6 connector telemetry
 #
 # ROG Astral cards carry an ITE IT8915FN that reports per-pin voltage and
@@ -1388,6 +1662,7 @@ def _collect_all_metrics() -> bytes:
     cpu = get_cpu_power_metrics()
     shelly = get_shelly_psu_metrics()
     astral = get_astral_pin_metrics()
+    olh = get_openlinkhub_metrics()
     aida = get_aida64_metrics()
     hwinfo = get_hwinfo_metrics()
     lm = get_lm_sensors_metrics()
@@ -1395,7 +1670,7 @@ def _collect_all_metrics() -> bytes:
     runners = get_ollama_runner_metrics()
     total = get_total_power_metrics(gpu, cpu)
     combined = (
-        gpu + procs + cpu + shelly + astral + aida + hwinfo + lm + swap
+        gpu + procs + cpu + shelly + astral + olh + aida + hwinfo + lm + swap
         + runners + total
     )
     return _dedupe_psu_metric(combined).encode()
