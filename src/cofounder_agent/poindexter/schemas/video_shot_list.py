@@ -37,6 +37,7 @@ ShotSource = Literal[
     "wan21",           # DEPRECATED alias of ``generative`` (legacy shot lists)
     "holdover",        # Cross-fade transition from prior shot (no asset)
     "cli_demo",        # Pre-baked recording of the real CLI (see demo_clips)
+    "presenter",       # Talking-head clip of the niche's persona speaking this shot's narration (S2V)
 ]
 
 
@@ -223,6 +224,21 @@ class Shot(BaseModel):
                 raise ValueError(
                     "source='cli_demo' must not have a prompt or query — the "
                     "clip is pre-recorded, not generated",
+                )
+        elif self.source == "presenter":
+            # The persona and the narration window define the shot; a
+            # "prompt" here is an optional delivery note. Query / demo_id would
+            # mean the director confused it with stock or a recording.
+            if self.query or self.demo_id:
+                raise ValueError(
+                    "source='presenter' must not carry a ``query`` or ``demo_id`` — "
+                    "the niche's persona and the narration window define the shot "
+                    "(an optional ``prompt`` is a delivery note)",
+                )
+            if str((info.context or {}).get("human_subjects", "")) == "none":
+                raise ValueError(
+                    "source='presenter' needs a niche whose media policy allows "
+                    "people (human_subjects=none forbids an on-camera presenter)",
                 )
         elif self.source == "holdover":
             # Holdover is a pure transition — no asset, no prompt, no query.

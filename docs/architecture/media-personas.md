@@ -1,7 +1,7 @@
 # Media personas — a face bound to a voice
 
-**Status:** shipped 2026-09-14 (persona records, voice seam, CLI). The
-`presenter` shot source that animates a persona inside a video lands next.
+**Status:** shipped 2026-09-14 — persona records, voice seam, CLI, and the
+`presenter` shot source that puts the persona on camera inside a video.
 
 ## Why
 
@@ -56,6 +56,35 @@ poindexter settings set niche.glad-labs.media.persona presenter
 `portrait` renders through `ImageService.generate_image_result` (GPU lock,
 operator priority) and uploads to `personas/<slug>-<seed>.png` on the
 configured storage; the previous portrait stays in the bucket.
+
+## Presenter shots in a video
+
+`source: "presenter"` in a shot list is a talking-head clip of the niche's
+persona speaking that shot's narration window. The director learns about it
+from the `{presenter_policy}` section of both director prompts (and both
+review prompts), which `media_subject_policy.resolve_media_policy` fills:
+"PRESENTER AVAILABLE — <name> …" when an enabled persona with a portrait is
+allowed by the niche's media policy, otherwise "NEVER emit presenter". A
+photoreal persona needs `human_subjects=allow` + `style_policy=any`; a
+stylized one needs people allowed at all.
+
+Render (`shot_list_renderer._render_presenter_clip`): fetch the portrait →
+cut `[narration_offset_s, +duration_s]` of the narration to mono 16 kHz →
+reclaim image-gen and check `video_presenter_min_free_vram_gb` → call the
+ComfyUI provider with `audio_path` (speech path, provider pinned to
+`comfyui`). The compositor maps only the narration track's audio, so the
+clip's own muxed speech is never doubled. Every miss returns a failed shot
+with a `presenter_render_fallback` finding and the substitution ladder fills
+the slot.
+
+Budget: `video_presenter_shots_max` (default 2) caps presenter shots per video
+the way `video_hero_shots_max` caps heroes; excess and any presenter shot on
+a niche with no available persona downgrade to `image_kenburns`
+(`presenter_unavailable` finding). Presenter shots are not vision-QA
+regenerable — a regen would cost a full render for a stochastic gain.
+`video_presenter_render_prompt` is the S2V prompt template
+(`{display_name}`), followed by the persona's `render_prompt_suffix` and the
+shot's optional delivery note.
 
 ## Rules that follow
 

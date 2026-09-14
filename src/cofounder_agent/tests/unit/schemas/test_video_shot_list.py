@@ -451,3 +451,30 @@ def test_shot_list_context_reaches_nested_shots(caplog: pytest.LogCaptureFixture
         except ValidationError:
             pass  # other list-level rules may reject this minimal fixture; the scan is what is under test
     assert "human-indicator" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# presenter source — the persona and the narration window define the shot
+# ---------------------------------------------------------------------------
+
+def test_presenter_needs_no_prompt_and_accepts_a_delivery_note() -> None:
+    bare = Shot(**_valid_shot(0, source="presenter"))
+    assert bare.source == "presenter" and bare.prompt is None
+    noted = Shot(**_valid_shot(0, source="presenter", prompt="warm, direct"))
+    assert noted.prompt == "warm, direct"
+
+
+def test_presenter_rejects_query_and_demo_id() -> None:
+    with pytest.raises(ValidationError, match="presenter"):
+        Shot(**_valid_shot(0, source="presenter", query="data center"))
+    with pytest.raises(ValidationError, match="presenter"):
+        Shot(**_valid_shot(0, source="presenter", demo_id="posts-list"))
+
+
+def test_presenter_is_refused_where_people_are_forbidden() -> None:
+    data = {"post_id": "p", "total_duration_s": 5.0, "shots": [_valid_shot(0, source="presenter")],
+            "director_model": "m", "director_prompt_version": "v1", "director_decided_at": _now().isoformat()}
+    with pytest.raises(ValidationError, match="allows people"):
+        VideoShotList.model_validate(data, context={"human_subjects": "none"})
+    VideoShotList.model_validate(data, context={"human_subjects": "allow"})
+    VideoShotList.model_validate(data)  # a frozen list re-validated without context still loads

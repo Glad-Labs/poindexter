@@ -68,9 +68,70 @@ def test_prompt_fragments_follow_the_policy():
     assert mp.writer_image_subject_rule(none).startswith("Never put identifiable people")
     assert "may appear" in mp.writer_image_subject_rule(allow) and "never photoreal" in mp.writer_image_subject_rule(allow)
     assert "never photoreal" not in mp.writer_image_subject_rule(photo)
-    assert set(mp.prompt_variables(allow)) == {"human_subject_policy", "human_subject_rule", "style_policy", "image_subject_rule", "people_sentence", "people_rule"}
+    assert set(mp.prompt_variables(allow)) == {"human_subject_policy", "human_subject_rule", "style_policy", "image_subject_rule", "people_sentence", "people_rule", "presenter_policy"}
 
 
 def test_none_site_config_is_the_default_policy():
     p = mp.resolve_media_policy(None, "any-niche")
     assert p.human_subjects == "allow" and p.style_policy == "stylized"
+
+
+# ---------------------------------------------------------------------------
+# presenter (persona) resolution rides the same policy object
+# ---------------------------------------------------------------------------
+
+def _presenter_sc(**extra):
+    base = {
+        "media_default_persona": "presenter",
+        "persona.presenter.display_name": "Ada",
+        "persona.presenter.portrait_url": "https://cdn/personas/presenter.png",
+        "persona.presenter.style_policy": "photoreal",
+        "persona.presenter.enabled": "true",
+        "media_human_subjects": "allow",
+        "media_style_policy": "any",
+    }
+    base.update(extra)
+    return _sc(**base)
+
+
+def test_presenter_available_when_persona_has_portrait_and_policy_allows():
+    p = mp.resolve_media_policy(_presenter_sc(), "glad-labs")
+    assert p.presenter_available is True
+    assert (p.presenter_slug, p.presenter_display_name, p.presenter_style) == ("presenter", "Ada", "photoreal")
+    assert p.presenter_max_shots == 2
+    text = mp.prompt_variables(p)["presenter_policy"]
+    assert "PRESENTER AVAILABLE" in text and '"Ada"' in text and "At most 2" in text
+
+
+def test_presenter_cap_is_a_setting():
+    p = mp.resolve_media_policy(_presenter_sc(video_presenter_shots_max="1"), None)
+    assert p.presenter_max_shots == 1
+
+
+def test_no_persona_means_never_emit_presenter():
+    p = mp.resolve_media_policy(_sc(), None)
+    assert p.presenter_available is False
+    assert "NEVER emit" in mp.prompt_variables(p)["presenter_policy"]
+
+
+def test_persona_without_portrait_is_unavailable_and_loud(caplog):
+    with caplog.at_level("WARNING"):
+        p = mp.resolve_media_policy(_presenter_sc(**{"persona.presenter.portrait_url": ""}), None)
+    assert p.presenter_available is False and p.presenter_slug == "presenter"
+    assert "no portrait" in caplog.text
+
+
+def test_photoreal_persona_needs_photoreal_people_policy(caplog):
+    with caplog.at_level("WARNING"):
+        p = mp.resolve_media_policy(_presenter_sc(media_style_policy="stylized"), None)
+    assert p.presenter_available is False
+    assert "photoreal" in caplog.text
+    stylized = mp.resolve_media_policy(
+        _presenter_sc(media_style_policy="stylized", **{"persona.presenter.style_policy": "stylized"}), None,
+    )
+    assert stylized.presenter_available is True
+
+
+def test_people_forbidden_disables_the_presenter():
+    p = mp.resolve_media_policy(_presenter_sc(media_human_subjects="none", **{"persona.presenter.style_policy": "stylized"}), None)
+    assert p.presenter_available is False

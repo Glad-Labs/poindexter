@@ -136,6 +136,16 @@ SHOT SOURCES AVAILABLE
   sparingly (max 1 per video) for breathing room between intense beats.
   No prompt or query needed.
 
+- "presenter": a talking-head clip of the channel's on-camera presenter
+  speaking THIS shot's narration, lip-synced to the voice track. Whether one
+  exists, and the limits, are stated in the PRESENTER section below. No
+  "query" and no "demo_id"; an optional "prompt" is a one-line delivery note
+  (mood, framing), never a scene description.
+
+PRESENTER
+---------
+{presenter_policy}
+
 HUMAN-SUBJECT POLICY
 --------------------
 {human_subject_policy}
@@ -158,7 +168,8 @@ HARD RULES
    liberally — Pexels for concrete, image_kenburns for abstract,
    generative for the hero motion beats.
 6. First and last shots MUST NOT be "generative" — its artifacts are most
-   visible at attention peaks (start + close).
+   visible at attention peaks (start + close). A "presenter" shot MAY open
+   or close the video.
 7. 6-12 shots total, NEVER more than 30 (hard schema cap). Each shot
    3-15 seconds; duration_s MUST NOT exceed 30.0 — a longer value is
    rejected outright, so split a long beat into multiple shots instead
@@ -300,7 +311,7 @@ shot, choose the render.
 
 SHOT SOURCES AVAILABLE
 ----------------------
-Same five sources as the long director. NOTE: "cli_demo" (the real CLI
+Same sources as the long director. NOTE: "cli_demo" (the real CLI
 recording available to the long director) is NOT available here — those clips
 are baked 16:9 landscape, and letterboxing terminal text into a 9:16 frame
 makes it unreadable on a phone. Do not emit source="cli_demo" in a short.
@@ -323,6 +334,13 @@ makes it unreadable on a phone. Do not emit source="cli_demo" in a short.
   push-in as particles drift upward" — movement only, never a restated scene;
   keep it smooth and subtle).
 - "holdover": cross-fade transition (max 1). No prompt/query.
+- "presenter": talking-head clip of the channel's on-camera presenter speaking
+  this shot's narration (see PRESENTER below). At most 1 in a short. No
+  "query"/"demo_id"; optional "prompt" = one-line delivery note.
+
+PRESENTER (same presenter as the long director)
+-----------------------------------------------
+{presenter_policy}
 
 VERTICAL (9:16) COMPOSITION
 ---------------------------
@@ -447,10 +465,15 @@ CONSTRAINTS (keep the draft valid):
       and if you are replacing a cli_demo shot, switch it to another source
       rather than guessing a slug that may not exist.
     * holdover                     -> neither "query" nor "prompt"
+    * presenter                    -> NEITHER "query" NOR "demo_id"; "prompt"
+      optional (a one-line delivery note). Keep an existing presenter shot as
+      it is unless it breaks a rule; never add one the PRESENTER line below
+      forbids.
   A generative / image_gen / image_kenburns shot with an empty or missing "prompt" is
   INVALID and the whole revision is discarded - always write the "prompt" when
   you choose those sources.
 - HUMAN-SUBJECT POLICY unchanged: {human_subject_rule}
+- PRESENTER: {presenter_policy}
 - shots idx 0-indexed and contiguous; sum of duration_s equals total_duration_s
   within 0.5s; duration_s never exceeds 30.0 per shot and the list never
   exceeds 30 shots (hard schema caps); narration_offset_s is REQUIRED on every
@@ -486,6 +509,8 @@ REVISE for retention, then output the REVISED list:
    for motion (never the first or last shot; never more than 2 generative in a short).
 4. ON-BRAND + HUMAN/STYLE POLICY - identical to the long director (dark-techno
    palette, per the style policy). {human_subject_rule}
+5. PRESENTER - {presenter_policy} At most 1 presenter shot in a short; it
+   carries no "query"/"demo_id" and an optional one-line "prompt".
 
 CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; image_gen /
 image_kenburns / generative use a non-empty on-brand "prompt" (per the human-subject policy) and NO

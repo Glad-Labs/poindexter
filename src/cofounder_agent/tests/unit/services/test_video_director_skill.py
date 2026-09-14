@@ -267,6 +267,8 @@ def test_review_prompt_restates_the_cli_demo_field_contract() -> None:
     rendered = pm.get_prompt(
         "video.review_v1",
         human_subject_rule=_POLICY_VARS["human_subject_rule"],
+
+        presenter_policy=_POLICY_VARS["presenter_policy"],
         current_shot_list="{}", podcast_script="S",
         title="T", content="C",
         target_duration_s="60.0", model="m",

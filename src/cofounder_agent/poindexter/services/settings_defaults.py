@@ -685,6 +685,21 @@ DEFAULTS: dict[str, str] = {
     # excess hero shots to image_kenburns (see shot_list_renderer._cap_hero_shots).
     'generative_video_model': 'Wan-AI/Wan2.2-TI2V-5B',
     'video_hero_shots_max': '3',
+    # Presenter (talking-head) shots — source "presenter" in the shot list,
+    # rendered through the ComfyUI provider's speech path with the niche's
+    # persona (docs/architecture/media-personas.md). ~420 s and ~31.9 GB per
+    # 4.8 s chunk on a 5090 (2026-09-14), so the cap is GPU budget, not taste.
+    'video_presenter_shots_max': '2',
+    # Free VRAM the render insists on before starting a chunk; below it the
+    # shot falls back rather than OOM-ing the card mid-video.
+    'video_presenter_min_free_vram_gb': '26',
+    # S2V render prompt; {display_name} is the persona's display name. The
+    # persona's render_prompt_suffix and the shot's delivery note are appended.
+    'video_presenter_render_prompt': (
+        '{display_name} speaks directly to the camera in a studio, natural facial '
+        'expressions, lips synchronized with the speech, subtle head movements, '
+        'steady framing, soft key light, sharp focus'
+    ),
     # Hero (i2v) render geometry — Wan 2.2 TI2V-5B's documented 720P@24fps
     # working range. Authored landscape-first; the renderer swaps
     # width/height for the portrait (9:16) short lane
@@ -4862,6 +4877,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_pexels_video_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
+    'video_presenter_shots_max': {'owner': 'video', 'value_type': 'integer'},
+    'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
+    'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_hero_width': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_height': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_fps': {'owner': 'video', 'value_type': 'integer'},

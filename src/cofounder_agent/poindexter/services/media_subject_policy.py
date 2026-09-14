@@ -71,6 +71,13 @@ class MediaPolicy:
     niche_slug: str | None = None
     human_terms: str = DEFAULT_HUMAN_TERMS
     sources: tuple[str, str] = ("default", "default")  # where each value came from
+    # On-camera presenter (persona_service): resolved here so every prompt pack
+    # that renders policy text also knows whether a talking-head shot exists.
+    presenter_slug: str = ""
+    presenter_display_name: str = ""
+    presenter_style: str = ""
+    presenter_available: bool = False
+    presenter_max_shots: int = 2
 
     @property
     def humans_allowed(self) -> bool:
@@ -114,11 +121,71 @@ def _resolve(site_config: Any, leaf: str, key: str, allowed: tuple[str, ...], de
     return default, "default"
 
 
+PRESENTER_MAX_SHOTS_KEY = "video_presenter_shots_max"
+DEFAULT_PRESENTER_MAX_SHOTS = 2
+
+
+def _get_int(site_config: Any, key: str, default: int) -> int:
+    raw = _get(site_config, key)
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("[media_policy] %s=%r is not an integer; using %d", key, raw, default)
+        return default
+
+
+def _resolve_presenter(site_config: Any, niche_slug: str | None, *, human: str, style: str) -> tuple[str, str, str, bool]:
+    """``(slug, display_name, style, available)`` for the niche's presenter persona.
+
+    Available means: a persona resolves (``persona_service``), it is enabled,
+    it has a portrait, and its style is allowed by the policy above — a
+    photoreal presenter needs ``human_subjects=allow`` + ``style_policy=any``,
+    a stylized one needs people allowed at all. Anything else is loud and
+    unavailable, so the director is told "never emit presenter" rather than
+    the renderer failing shots later.
+    """
+    from poindexter.services.persona_service import resolve_persona_for_niche
+
+    persona = resolve_persona_for_niche(site_config, niche_slug)
+    if persona is None:
+        return "", "", "", False
+    display = persona.display_name or persona.slug
+    if not persona.has_portrait:
+        logger.warning(
+            "[media_policy] presenter %r resolves for niche %r but has no portrait — "
+            "run `poindexter personas portrait %s`; presenter shots disabled",
+            persona.slug, niche_slug, persona.slug,
+        )
+        return persona.slug, display, persona.style_policy, False
+    if persona.style_policy == "photoreal" and not (human == "allow" and style == "any"):
+        logger.warning(
+            "[media_policy] presenter %r is photoreal but niche %r policy is human_subjects=%s "
+            "style_policy=%s — presenter shots disabled (loosen the niche policy or use a stylized persona)",
+            persona.slug, niche_slug, human, style,
+        )
+        return persona.slug, display, persona.style_policy, False
+    if human == "none":
+        logger.warning(
+            "[media_policy] presenter %r cannot appear: niche %r forbids people (human_subjects=none)",
+            persona.slug, niche_slug,
+        )
+        return persona.slug, display, persona.style_policy, False
+    return persona.slug, display, persona.style_policy, True
+
+
 def resolve_media_policy(site_config: Any, niche_slug: str | None = None) -> MediaPolicy:
     human, h_src = _resolve(site_config, "human_subjects", HUMAN_SUBJECTS_KEY, _HUMAN_VALUES, DEFAULT_HUMAN_SUBJECTS, niche_slug)
     style, s_src = _resolve(site_config, "style_policy", STYLE_POLICY_KEY, _STYLE_VALUES, DEFAULT_STYLE_POLICY, niche_slug)
     terms = _get(site_config, HUMAN_TERMS_KEY) or DEFAULT_HUMAN_TERMS
-    return MediaPolicy(human_subjects=human, style_policy=style, niche_slug=niche_slug, human_terms=terms, sources=(h_src, s_src))  # type: ignore[arg-type]
+    slug, display, pstyle, available = _resolve_presenter(site_config, niche_slug, human=human, style=style)
+    max_shots = _get_int(site_config, PRESENTER_MAX_SHOTS_KEY, DEFAULT_PRESENTER_MAX_SHOTS)
+    return MediaPolicy(
+        human_subjects=human, style_policy=style, niche_slug=niche_slug, human_terms=terms, sources=(h_src, s_src),
+        presenter_slug=slug, presenter_display_name=display, presenter_style=pstyle,
+        presenter_available=available, presenter_max_shots=max_shots,
+    )  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +333,26 @@ def image_decision_people_rule(policy: MediaPolicy) -> str:
     )
 
 
+def video_presenter_policy(policy: MediaPolicy) -> str:
+    """The PRESENTER section of the director prompts: whether a talking-head
+    shot exists for this niche and how it may be used."""
+    if not policy.presenter_available:
+        return (
+            'No on-camera presenter is configured for this niche. NEVER emit '
+            'source "presenter".'
+        )
+    return (
+        f'PRESENTER AVAILABLE. "{policy.presenter_display_name}" is this channel\'s '
+        'on-camera presenter: source "presenter" renders a talking-head clip of them '
+        "speaking that shot's narration, lip-synced to the voice track. Use it for the "
+        'opening address, the close, or one direct-address beat where a person speaking '
+        f'to the viewer lands harder than footage. At most {policy.presenter_max_shots} '
+        'presenter shots per video, each 3-10 seconds. No "query" and no "demo_id"; an '
+        'optional "prompt" is a one-line delivery note (mood, framing), never a scene '
+        'description. A presenter shot MAY open or close the video.'
+    )
+
+
 def prompt_variables(policy: MediaPolicy) -> dict[str, str]:
     """Every policy-derived template variable, for call sites that render several packs."""
     return {
@@ -275,4 +362,5 @@ def prompt_variables(policy: MediaPolicy) -> dict[str, str]:
         "image_subject_rule": writer_image_subject_rule(policy),
         "people_sentence": image_people_sentence(policy),
         "people_rule": image_decision_people_rule(policy),
+        "presenter_policy": video_presenter_policy(policy),
     }

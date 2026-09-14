@@ -293,6 +293,7 @@ async def render_from_state(
             ):
                 result = await render_shot_list(
                     post_id=str(task_id or ""),
+                    niche_slug=str(state.get("niche_slug") or "") or None,
                     shot_list=shot_list,
                     audio_path=narration,
                     output_path=out_path,

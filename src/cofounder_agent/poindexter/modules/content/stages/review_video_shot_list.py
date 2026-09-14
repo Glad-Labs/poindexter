@@ -114,6 +114,7 @@ class ReviewVideoShotListStage:
                 now_iso=now_iso,
                 site_name=site_name,
                 human_subject_rule=(policy_vars or {}).get("human_subject_rule", ""),
+                presenter_policy=(policy_vars or {}).get("presenter_policy", ""),
                 **{script_var: script},
             )
         except Exception as exc:

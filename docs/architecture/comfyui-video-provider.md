@@ -140,6 +140,10 @@ spike exercised single chunks.** The first multi-chunk render should be watched
 for a seam at the 4.8 s boundary (the Extend node's motion reference is what
 prevents it).
 
+In the pipeline the caller is `shot_list_renderer._render_presenter_clip`
+(`source: "presenter"`, see [media-personas](media-personas.md)); ad-hoc
+callers pass the same two files.
+
 Operational rules that follow from the numbers:
 
 - Admit the render through the GPU scheduler with the whole card as the

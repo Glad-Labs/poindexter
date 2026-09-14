@@ -43,12 +43,15 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from poindexter.plugins.media_compositor import CompositionRequest, CompositionScene
 from poindexter.schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
@@ -115,6 +118,13 @@ _REGENERABLE_SOURCES = frozenset(
 # Hero sources — generative image-to-video clips. The most expensive +
 # failure-prone source, so the per-video count is capped (spec §3.3).
 _HERO_SOURCES = frozenset({"generative", "wan21"})
+
+# Presenter source — a talking-head clip of the niche's persona speaking the
+# shot's narration window (ComfyUI provider speech path, Wan 2.2 S2V). ~7 min
+# and the whole card per 4.8 s chunk, so it is capped per video like heroes
+# and deliberately NOT regenerable: a vision-QA "regen" would cost another
+# full render for a stochastic gain.
+_PRESENTER_SOURCE = "presenter"
 
 
 @dataclass
@@ -990,8 +1000,15 @@ async def _render_generative_clip(
     width: int | None = None,
     height: int | None = None,
     fps: int | None = None,
+    extra_config: dict[str, Any] | None = None,
+    provider_override: str | None = None,
 ) -> tuple[bool, str]:
     """Render one hero clip to ``output_path`` via the configured provider.
+
+    ``extra_config`` is merged into the provider config last (the presenter
+    branch passes ``audio_path`` + ``audio_duration_s`` to select the speech
+    path); ``provider_override`` pins the provider regardless of
+    ``video_generative_provider`` (speech needs the ComfyUI provider).
 
     When ``image_path`` is set it's the shot's stylized image-gen still, passed
     as the image-to-video init frame (animating the brand still keeps visual
@@ -1030,7 +1047,9 @@ async def _render_generative_clip(
     # 14B via the ComfyUI sidecar). Read per clip, so flipping is a settings
     # change, not a deploy.
     provider_choice = "wan21"
-    if site_config is not None:
+    if provider_override:
+        provider_choice = provider_override
+    elif site_config is not None:
         try:
             provider_choice = str(
                 site_config.get("video_generative_provider", "wan21") or "wan21",
@@ -1057,6 +1076,8 @@ async def _render_generative_clip(
         config["height"] = int(height)
     if fps:
         config["fps"] = int(fps)
+    if extra_config:
+        config.update(extra_config)
     try:
         results = await provider.fetch(
             prompt,
@@ -1774,8 +1795,14 @@ async def _render_one_shot(
     orientation: str = "landscape",
     post_id: str = "",
     attempt: int = 0,
+    narration_path: str | None = None,
+    niche_slug: str | None = None,
 ) -> ShotRenderResult:
     """Produce a clip file for one shot.
+
+    ``narration_path`` / ``niche_slug`` feed the ``presenter`` branch only: a
+    talking-head shot cuts its own window from the narration track and speaks
+    it with the niche's persona.
 
     Returns a ``ShotRenderResult`` with ``clip_path`` set on success.
     Holdover shots reuse ``prior_clip`` (V1 simplification — a true
@@ -1974,6 +2001,17 @@ async def _render_one_shot(
             duration_s=shot.duration_s,
         )
 
+    if source == _PRESENTER_SOURCE:
+        return await _render_presenter_clip(
+            shot,
+            work_dir=work_dir,
+            site_config=site_config,
+            http_client_factory=http_client_factory,
+            orientation=orientation,
+            post_id=post_id,
+            narration_path=narration_path,
+            niche_slug=niche_slug,
+        )
     if source in ("generative", "wan21"):
         still_result = await _render_hero_still(
             shot,
@@ -1998,6 +2036,203 @@ async def _render_one_shot(
         source=source,
         success=False,
         error=f"unknown source {source!r}",
+    )
+
+
+def _cap_presenter_shots(
+    shots: list[Shot], max_presenter: int, *, available: bool,
+) -> list[Shot]:
+    """Keep at most ``max_presenter`` presenter shots (none at all when no
+    enabled persona with a portrait resolves); the rest become
+    ``image_kenburns`` carrying the shot's delivery note or intent as the
+    prompt — the same downgrade the hero cap applies. A negative cap keeps
+    every presenter shot. Order and other shots are preserved."""
+    out: list[Shot] = []
+    seen = 0
+    for s in shots:
+        if s.source == _PRESENTER_SOURCE:
+            seen += 1
+            over = max_presenter >= 0 and seen > max_presenter
+            if not available or over:
+                out.append(s.model_copy(update={
+                    "source": "image_kenburns",
+                    "prompt": (s.prompt or s.intent or "a presenter addressing the viewer"),
+                }))
+                continue
+        out.append(s)
+    return out
+
+
+def _compose_presenter_prompt(shot: Shot, persona: Any, site_config: Any) -> str:
+    """S2V render prompt: the DB template with the persona's name, then the
+    persona's own suffix, then the shot's delivery note."""
+    template = (
+        "{display_name} speaks directly to the camera in a studio, natural facial "
+        "expressions, lips synchronized with the speech, subtle head movements, "
+        "steady framing, soft key light, sharp focus"
+    )
+    if site_config is not None:
+        try:
+            template = str(site_config.get("video_presenter_render_prompt", "") or "").strip() or template
+        except Exception:  # noqa: BLE001  # silent-ok: settings read must not
+            # decide a render's fate; the code template stands.
+            pass
+    name = getattr(persona, "display_name", "") or getattr(persona, "slug", "") or "The presenter"
+    parts = [template.replace("{display_name}", name)]
+    suffix = (getattr(persona, "render_prompt_suffix", "") or "").strip()
+    if suffix:
+        parts.append(suffix)
+    note = (shot.prompt or "").strip()
+    if note:
+        parts.append(note)
+    return ". ".join(p.rstrip(".") for p in parts) + "."
+
+
+async def _fetch_presenter_portrait(
+    url: str, dest: Path, http_client_factory: Any,
+) -> str | None:
+    """Materialise the persona portrait next to the render (a local path is
+    copied, an http(s) URL is downloaded). ``None`` when it cannot be had."""
+    try:
+        if url.startswith("file://"):
+            url = url[len("file://"):]
+        if not url.lower().startswith(("http://", "https://")):
+            if os.path.exists(url):
+                shutil.copyfile(url, dest)
+                return str(dest)
+            return None
+        factory = http_client_factory or httpx.AsyncClient
+        async with factory(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200 or not resp.content:
+            logger.warning(
+                "[SHOT_LIST] presenter portrait fetch failed: HTTP %s for %s",
+                getattr(resp, "status_code", "?"), url,
+            )
+            return None
+        dest.write_bytes(resp.content)
+        return str(dest)
+    except Exception as exc:  # noqa: BLE001 — reported by the caller as a fallback finding
+        logger.warning("[SHOT_LIST] presenter portrait fetch raised for %s: %s", url, describe_exception(exc))
+        return None
+
+
+async def _cut_narration_window(
+    narration_path: str, dest: str, *, offset_s: float, duration_s: float,
+) -> bool:
+    """Cut ``[offset, offset+duration]`` of the narration to a mono 16 kHz WAV
+    (what the S2V audio encoder expects)."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-loglevel", "error", "-y",
+            "-ss", f"{max(0.0, offset_s):.3f}", "-t", f"{max(0.1, duration_s):.3f}",
+            "-i", narration_path, "-ac", "1", "-ar", "16000", dest,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.communicate()
+    except Exception as exc:  # noqa: BLE001 — reported by the caller as a fallback finding
+        logger.warning("[SHOT_LIST] narration window cut raised: %s", describe_exception(exc))
+        return False
+    return proc.returncode == 0 and os.path.exists(dest) and os.path.getsize(dest) > 0
+
+
+def _emit_presenter_fallback_finding(*, shot: Shot, post_id: str, reason: str) -> None:
+    emit_finding(
+        source="shot_list_renderer",
+        kind="presenter_render_fallback",
+        title=f"presenter shot {shot.idx} not rendered — falling back",
+        body=(
+            f"Shot {shot.idx} of post {post_id} asked for the on-camera presenter "
+            f"but the talking-head render did not happen: {reason}. The shot goes "
+            "to the substitution ladder like any failed shot; the video still ships."
+        ),
+        severity="warn",
+        dedup_key=f"presenter_render_fallback:{post_id}:{shot.idx}",
+        extra={"shot_idx": shot.idx, "post_id": post_id, "reason": reason[:300]},
+    )
+
+
+async def _render_presenter_clip(
+    shot: Shot,
+    *,
+    work_dir: Path,
+    site_config: Any,
+    http_client_factory: Any,
+    orientation: str,
+    post_id: str,
+    narration_path: str | None,
+    niche_slug: str | None,
+) -> ShotRenderResult:
+    """Render a talking-head clip: the niche's persona speaks this shot's
+    narration window through the ComfyUI provider's speech path.
+
+    Every miss returns ``success=False`` with a ``presenter_render_fallback``
+    finding so the substitution ladder fills the slot — a presenter that
+    silently became a still would read as a broken promise to the viewer, and
+    a hard failure would sink a whole video for one shot.
+    """
+    from poindexter.services.media_subject_policy import resolve_media_policy
+    from poindexter.services.persona_service import resolve_persona_for_niche
+
+    def _fail(reason: str) -> ShotRenderResult:
+        _emit_presenter_fallback_finding(shot=shot, post_id=post_id, reason=reason)
+        return ShotRenderResult(idx=shot.idx, source=shot.source, success=False, error=reason)
+
+    policy = resolve_media_policy(site_config, niche_slug)
+    persona = resolve_persona_for_niche(site_config, niche_slug) if policy.presenter_available else None
+    if persona is None or not persona.has_portrait:
+        return _fail("no enabled persona with a portrait is allowed for this niche")
+    if not narration_path or not os.path.exists(narration_path):
+        return _fail("narration track missing — a presenter shot lip-syncs to the rendered narration")
+    portrait = await _fetch_presenter_portrait(
+        persona.portrait_url, work_dir / f"presenter_{persona.slug}.png", http_client_factory,
+    )
+    if not portrait:
+        return _fail(f"could not fetch the persona portrait {persona.portrait_url}")
+    segment = str(work_dir / f"presenter_{shot.idx}.wav")
+    if not await _cut_narration_window(
+        narration_path, segment,
+        offset_s=float(shot.narration_offset_s), duration_s=float(shot.duration_s),
+    ):
+        return _fail("ffmpeg could not cut the narration window")
+    # The speech path needs the whole card: reclaim image-gen first, then
+    # refuse to start below the floor rather than OOM mid-video.
+    await _clear_image_gen_for_hero(site_config)
+    min_free = 26.0
+    if site_config is not None:
+        try:
+            min_free = float(site_config.get_float("video_presenter_min_free_vram_gb", 26.0))
+        except Exception:  # noqa: BLE001  # silent-ok: settings read must not
+            # decide a render's fate; the code floor stands.
+            min_free = 26.0
+    free = await _live_free_vram_gb(site_config)
+    if free is not None and free < min_free:
+        return _fail(
+            f"only {free:.1f} GB free on the card; a presenter chunk needs "
+            f"~{min_free:.0f} GB (video_presenter_min_free_vram_gb)"
+        )
+    width, height, fps = _hero_render_dims(orientation, site_config)
+    clip_path = str(work_dir / f"presenter_{shot.idx}.mp4")
+    ok, error = await _render_generative_clip(
+        prompt=_compose_presenter_prompt(shot, persona, site_config),
+        output_path=clip_path,
+        image_path=portrait,
+        duration_s=int(shot.duration_s),
+        site_config=site_config,
+        width=width,
+        height=height,
+        fps=fps,
+        extra_config={
+            "audio_path": segment,
+            "audio_duration_s": float(shot.duration_s),
+        },
+        provider_override="comfyui",
+    )
+    if not ok:
+        return _fail(error)
+    return ShotRenderResult(
+        idx=shot.idx, source=shot.source, success=True,
+        clip_path=clip_path, duration_s=shot.duration_s,
     )
 
 
@@ -2998,6 +3233,7 @@ async def render_shot_list(
     narration_fit_min_shot_s: float = 0.0,
     narration_fit_hold_s: float | None = None,
     endcard_cta_text: str = "",
+    niche_slug: str | None = None,
 ) -> ShotListRenderResult:
     """Render a full video from a shot list.
 
@@ -3103,6 +3339,8 @@ async def render_shot_list(
         pexels_key=pexels_key,
         orientation=orientation,
         post_id=post_id,
+        narration_path=audio_path or None,
+        niche_slug=niche_slug,
     )
 
     # Two-pass to stop the image-gen↔vision-model GPU thrash: render every shot
@@ -3119,6 +3357,32 @@ async def render_shot_list(
         if site_config is not None else 3
     )
     capped_shots = _cap_hero_shots(list(shot_list.shots), max_hero)
+    # Presenter shots: same shape of cap (GPU budget), plus "none at all" when
+    # no enabled persona with a portrait is allowed for this niche — the
+    # director was told so, this is the safety net.
+    from poindexter.services.media_subject_policy import resolve_media_policy
+
+    _presenter_policy = resolve_media_policy(site_config, niche_slug)
+    n_presenter = sum(1 for _s in capped_shots if _s.source == _PRESENTER_SOURCE)
+    if n_presenter and not _presenter_policy.presenter_available:
+        emit_finding(
+            source="shot_list_renderer",
+            kind="presenter_unavailable",
+            title=f"{n_presenter} presenter shot(s) downgraded — no presenter for this niche",
+            body=(
+                f"The shot list for post {post_id} asked for {n_presenter} presenter "
+                f"shot(s) but no enabled persona with a portrait is allowed for niche "
+                f"{niche_slug!r} (see media_default_persona / niche.<slug>.media.persona "
+                "and `poindexter personas`). They render as Ken-Burns stills."
+            ),
+            severity="warn",
+            dedup_key=f"presenter_unavailable:{post_id}",
+            extra={"post_id": post_id, "niche_slug": niche_slug or "", "count": n_presenter},
+        )
+    capped_shots = _cap_presenter_shots(
+        capped_shots, _presenter_policy.presenter_max_shots,
+        available=_presenter_policy.presenter_available,
+    )
 
     states = await _render_pass(
         capped_shots, render_kwargs=render_kwargs, progress_cb=progress_cb,
