@@ -2045,15 +2045,15 @@ grpc = ["grpcio (>=1.41.0,<2.0.0)", "grpcio (>=1.49.1,<2.0.0) ; python_version >
 
 [[package]]
 name = "google-api-python-client"
-version = "2.198.0"
+version = "2.200.0"
 description = "Google API Client Library for Python"
 optional = true
-python-versions = ">=3.7"
+python-versions = ">=3.10"
 groups = ["main"]
 markers = "extra == \"youtube\""
 files = [
-    {file = "google_api_python_client-2.198.0-py3-none-any.whl", hash = "sha256:fabac935474e817da5e662ff61bf7139439d6f92b32d332a7318a2d45931e03e"},
-    {file = "google_api_python_client-2.198.0.tar.gz", hash = "sha256:dfe3e16fb241af6e9c460a33f65085b3450e05cea09364f6b5d8997fb7e43e2a"},
+    {file = "google_api_python_client-2.200.0-py3-none-any.whl", hash = "sha256:c0c2c4072a110b7fcc30ac151744d4410cddaba99c53cb4e815463308952b638"},
+    {file = "google_api_python_client-2.200.0.tar.gz", hash = "sha256:82aa18b851328ea04867fd51c5a0c8da2e1b86ec45ce08487e902e7726d4ee50"},
 ]
 
 [package.dependencies]
@@ -9930,4 +9930,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "b8acc2935eac6e143ea87f624997dc46aec063ffb32685cbe2c1755504643f60"
+content-hash = "daaecbc3399fe2306e7d1e856ecccdb8ab4db4c51ed063d9de309df3c0039278"
