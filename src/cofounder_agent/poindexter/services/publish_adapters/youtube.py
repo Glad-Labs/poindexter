@@ -370,6 +370,14 @@ class YouTubePublishAdapter:
                 "selfDeclaredMadeForKids": made_for_kids,
             },
         }
+        # Altered/synthetic-content disclosure (YouTube requires it for a
+        # realistic synthetic person — our photoreal presenter shots). The
+        # caller derives it from the post's shot list + persona policy
+        # (``media_distribute``); None leaves the field off the request so
+        # older callers keep their exact body.
+        synthetic = kwargs.get("contains_synthetic_media")
+        if synthetic is not None:
+            body["status"]["containsSyntheticMedia"] = bool(synthetic)
         if scheduled_at:
             # YouTube only schedules when privacyStatus is "private"
             # at upload — flip it for the operator and let the API

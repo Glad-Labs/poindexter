@@ -353,6 +353,29 @@ def video_presenter_policy(policy: MediaPolicy) -> str:
     )
 
 
+def video_contains_synthetic_media(policy: MediaPolicy, shot_list: Any) -> bool:
+    """Does this video show a realistic synthetic person?
+
+    True when the shot list holds a ``presenter`` shot and the niche's persona
+    is photoreal — a stylized presenter is a character, not a likeness. This
+    is what YouTube's ``status.containsSyntheticMedia`` disclosure asks about;
+    ``media_distribute`` derives the flag from it unless
+    ``youtube_contains_synthetic_media`` forces a value.
+    """
+    shots: Any = None
+    if isinstance(shot_list, dict):
+        shots = shot_list.get("shots")
+    elif shot_list is not None:
+        shots = getattr(shot_list, "shots", None)
+    if not shots:
+        return False
+    for shot in shots:
+        source = shot.get("source") if isinstance(shot, dict) else getattr(shot, "source", "")
+        if str(source or "") == "presenter":
+            return policy.presenter_style == "photoreal"
+    return False
+
+
 def prompt_variables(policy: MediaPolicy) -> dict[str, str]:
     """Every policy-derived template variable, for call sites that render several packs."""
     return {

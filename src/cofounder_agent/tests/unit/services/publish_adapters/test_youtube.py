@@ -915,3 +915,39 @@ def test_insufficient_scope_classifier_matches_the_refresh_time_shape():
         "'error_description': 'Bad Request'})"
     )
     assert _is_insufficient_scope(Exception(real)) is True
+
+
+class TestSyntheticMediaDisclosure:
+    """``contains_synthetic_media`` → ``status.containsSyntheticMedia``; None
+    leaves the field off so older callers keep their exact request body."""
+
+    @staticmethod
+    def _capture(tmp_path, monkeypatch):
+        adapter = _make_adapter(enabled=True, secrets=_FULL_SECRETS)
+        monkeypatch.setattr(adapter, "_build_credentials", staticmethod(lambda secrets: MagicMock()))
+        captured: dict[str, Any] = {}
+
+        def fake_upload(*, credentials, media_path, body):
+            captured["body"] = body
+            return {"id": "x", "snippet": {}, "status": {}}
+
+        monkeypatch.setattr(adapter, "_do_resumable_upload_blocking", staticmethod(fake_upload))
+        return adapter, captured
+
+    @pytest.mark.asyncio
+    async def test_true_sets_the_disclosure(self, tmp_path, monkeypatch):
+        adapter, captured = self._capture(tmp_path, monkeypatch)
+        await adapter.publish(media_path=_make_media_file(tmp_path), title="t", contains_synthetic_media=True)
+        assert captured["body"]["status"]["containsSyntheticMedia"] is True
+
+    @pytest.mark.asyncio
+    async def test_false_states_it_explicitly(self, tmp_path, monkeypatch):
+        adapter, captured = self._capture(tmp_path, monkeypatch)
+        await adapter.publish(media_path=_make_media_file(tmp_path), title="t", contains_synthetic_media=False)
+        assert captured["body"]["status"]["containsSyntheticMedia"] is False
+
+    @pytest.mark.asyncio
+    async def test_absent_leaves_the_body_untouched(self, tmp_path, monkeypatch):
+        adapter, captured = self._capture(tmp_path, monkeypatch)
+        await adapter.publish(media_path=_make_media_file(tmp_path), title="t")
+        assert "containsSyntheticMedia" not in captured["body"]["status"]

@@ -204,3 +204,26 @@ async def test_handler_propagates_adapter_failure(stub_site_config) -> None:
     assert result["success"] is False
     assert "disabled" in result["error"]
     assert result["post_id"] is None
+
+
+async def test_handler_threads_the_synthetic_media_disclosure(stub_site_config) -> None:
+    """``contains_synthetic_media`` (derived upstream by media_distribute) must
+    reach the adapter unchanged; a missing key is passed as None so the
+    adapter leaves the field off."""
+    handler = registry.lookup("publishing", "youtube")
+    fake_adapter = MagicMock()
+    fake_adapter.publish = AsyncMock(return_value=_publish_result())
+    with patch(
+        "poindexter.services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
+        return_value=fake_adapter,
+    ):
+        await handler(
+            {"media_path": "/tmp/v.mp4", "title": "Clip", "contains_synthetic_media": True},
+            site_config=stub_site_config, row={"name": "youtube_main"}, pool=None,
+        )
+        assert fake_adapter.publish.await_args.kwargs["contains_synthetic_media"] is True
+        await handler(
+            {"media_path": "/tmp/v.mp4", "title": "Clip"},
+            site_config=stub_site_config, row={"name": "youtube_main"}, pool=None,
+        )
+        assert fake_adapter.publish.await_args.kwargs["contains_synthetic_media"] is None

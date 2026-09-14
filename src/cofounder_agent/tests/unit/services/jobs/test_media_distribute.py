@@ -777,3 +777,63 @@ async def test_concurrent_dispatch_double_uploads_without_the_guard(tmp_path):
         await asyncio.gather(job.run(pool, cfg), job.run(pool, cfg))
 
     assert disp.await_count == 2, "neutered guard should let both passes upload"
+
+
+# ---------------------------------------------------------------------------
+# synthetic-media disclosure derivation
+# ---------------------------------------------------------------------------
+
+def _presenter_row(**over):
+    row = {
+        "post_id": "p1", "title": "Clip", "content": "c", "excerpt": "e", "seo_keywords": "",
+        "slug": "s", "storage_path": "/tmp/v.mp4", "niche_slug": "glad-labs",
+        "video_shot_list": {"shots": [{"source": "pexels"}, {"source": "presenter"}]},
+    }
+    row.update(over)
+    return row
+
+
+def _persona_sc(**extra):
+    base = {
+        "media_default_persona": "presenter",
+        "persona.presenter.display_name": "Ada",
+        "persona.presenter.portrait_url": "https://cdn/p.png",
+        "persona.presenter.style_policy": "photoreal",
+        "persona.presenter.enabled": "true",
+        "media_human_subjects": "allow",
+        "media_style_policy": "any",
+    }
+    base.update(extra)
+    return _sc(**base)
+
+
+def test_disclosure_auto_derives_from_presenter_shot_and_photoreal_persona():
+    assert md._contains_synthetic_media(_presenter_row(), _persona_sc()) is True
+    assert md._contains_synthetic_media(_presenter_row(video_shot_list={"shots": [{"source": "pexels"}]}), _persona_sc()) is False
+    assert md._contains_synthetic_media(_presenter_row(video_shot_list=None), _persona_sc()) is False
+
+
+def test_disclosure_accepts_a_json_string_shot_list():
+    import json
+    row = _presenter_row(video_shot_list=json.dumps({"shots": [{"source": "presenter"}]}))
+    assert md._contains_synthetic_media(row, _persona_sc()) is True
+
+
+def test_disclosure_setting_forces_the_answer():
+    assert md._contains_synthetic_media(_presenter_row(video_shot_list=None), _persona_sc(youtube_contains_synthetic_media="true")) is True
+    assert md._contains_synthetic_media(_presenter_row(), _persona_sc(youtube_contains_synthetic_media="false")) is False
+
+
+@pytest.mark.asyncio
+async def test_dispatch_payload_carries_the_disclosure():
+    pool = AsyncMock()
+    pool.fetch = AsyncMock(return_value=[
+        {"name": "yt", "platform": "youtube", "handler_name": "youtube", "config": {}, "metadata": {}},
+    ])
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID1", "url": "https://youtu.be/VID1"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _persona_sc(media_pipeline_trigger_enabled="true"), _presenter_row(), shorts=False)
+    payload = dispatch.await_args.args[2]
+    assert payload["contains_synthetic_media"] is True

@@ -91,6 +91,8 @@ async def youtube(
         # classification marker injected by the adapter. Long uploads
         # leave it off.
         shorts=bool(payload.get("shorts", False)),
+        # Synthetic-media disclosure, derived upstream (None = not stated).
+        contains_synthetic_media=payload.get("contains_synthetic_media"),
         _pool=pool,
         _site_config=site_config,
     )

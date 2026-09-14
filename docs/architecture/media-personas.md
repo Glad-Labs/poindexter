@@ -91,8 +91,12 @@ shot's optional delivery note.
 - A persona's `style_policy` must be allowed by the niche's media policy
   ([media-subject-policy](media-subject-policy.md)); the shot-list validator
   will refuse a photoreal presenter on a niche that forbids people.
-- Publishing a realistic synthetic presenter to YouTube needs
-  `status.containsSyntheticMedia`; it derives from `style_policy=photoreal`
-  and lands before any such upload.
+- Publishing a realistic synthetic presenter to YouTube carries the
+  altered/synthetic-content disclosure: `media_distribute` sets
+  `status.containsSyntheticMedia` from the post's shot list + persona
+  (`video_contains_synthetic_media`: a `presenter` shot with a photoreal
+  persona → true; a stylized presenter is a character, not a likeness).
+  `youtube_contains_synthetic_media` = `auto` | `true` | `false` overrides
+  per channel.
 - Speech-to-video cost: ~420 s and ~31.9 GB per 4.8 s chunk on a 5090
   ([comfyui-video-provider](comfyui-video-provider.md)).

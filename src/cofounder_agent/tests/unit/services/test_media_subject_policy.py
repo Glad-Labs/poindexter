@@ -135,3 +135,29 @@ def test_photoreal_persona_needs_photoreal_people_policy(caplog):
 def test_people_forbidden_disables_the_presenter():
     p = mp.resolve_media_policy(_presenter_sc(media_human_subjects="none", **{"persona.presenter.style_policy": "stylized"}), None)
     assert p.presenter_available is False
+
+
+# ---------------------------------------------------------------------------
+# synthetic-media disclosure
+# ---------------------------------------------------------------------------
+
+def test_synthetic_media_needs_a_presenter_shot_and_a_photoreal_persona():
+    photo = mp.resolve_media_policy(_presenter_sc(), None)
+    shots = {"shots": [{"source": "pexels"}, {"source": "presenter"}]}
+    assert mp.video_contains_synthetic_media(photo, shots) is True
+    assert mp.video_contains_synthetic_media(photo, {"shots": [{"source": "pexels"}]}) is False
+    assert mp.video_contains_synthetic_media(photo, None) is False
+    stylized = mp.resolve_media_policy(
+        _presenter_sc(media_style_policy="stylized", **{"persona.presenter.style_policy": "stylized"}), None,
+    )
+    assert mp.video_contains_synthetic_media(stylized, shots) is False
+
+
+def test_synthetic_media_accepts_model_objects_too():
+    from poindexter.schemas.video_shot_list import Shot
+
+    class _List:
+        shots = [Shot(idx=0, duration_s=5.0, intent="open", source="presenter", narration_offset_s=0.0)]
+
+    photo = mp.resolve_media_policy(_presenter_sc(), None)
+    assert mp.video_contains_synthetic_media(photo, _List()) is True

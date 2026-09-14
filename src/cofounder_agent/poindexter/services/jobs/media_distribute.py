@@ -134,6 +134,7 @@ _APPROVED_UNDISPATCHED_SQL = """
                ma.medium,
                ma.created_at AS _appr_created,
                p.title, p.content, p.excerpt, p.seo_keywords, p.slug,
+               p.video_shot_list, p.niche_slug,
                mas.id::text AS asset_id,
                mas.task_id,
                mas.storage_path
@@ -171,6 +172,42 @@ _ADAPTERS_SQL = """
        AND COALESCE(surface, 'social') = 'media'
        AND platform = ANY($1::text[])
 """
+
+
+def _contains_synthetic_media(row: dict[str, Any], site_config: Any) -> bool:
+    """YouTube's altered/synthetic-content disclosure for this post's video.
+
+    ``youtube_contains_synthetic_media``: ``auto`` (default) derives it — true
+    when the shot list has a ``presenter`` shot and the niche's persona is
+    photoreal (``media_subject_policy.video_contains_synthetic_media``);
+    ``true`` / ``false`` force the answer for the whole channel.
+    """
+    import json as _json
+
+    from poindexter.services.media_subject_policy import (
+        resolve_media_policy,
+        video_contains_synthetic_media,
+    )
+
+    mode = "auto"
+    if site_config is not None:
+        try:
+            mode = str(site_config.get("youtube_contains_synthetic_media", "auto") or "auto").strip().lower()
+        except Exception:  # noqa: BLE001  # silent-ok: a settings read must not
+            # decide an upload; derive from the video itself.
+            mode = "auto"
+    if mode in ("true", "1", "yes"):
+        return True
+    if mode in ("false", "0", "no"):
+        return False
+    shot_list = row.get("video_shot_list")
+    if isinstance(shot_list, str):
+        try:
+            shot_list = _json.loads(shot_list)
+        except ValueError:
+            shot_list = None
+    policy = resolve_media_policy(site_config, str(row.get("niche_slug") or "") or None)
+    return video_contains_synthetic_media(policy, shot_list)
 
 
 async def _dispatch_asset(
@@ -236,6 +273,7 @@ async def _dispatch_asset(
         "tags": tags or None,
         "post_id": row["post_id"],
         "shorts": shorts,
+        "contains_synthetic_media": _contains_synthetic_media(row, site_config),
     }
 
     results: list[_PlatformDispatchResult] = []

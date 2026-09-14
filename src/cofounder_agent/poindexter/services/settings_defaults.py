@@ -690,6 +690,10 @@ DEFAULTS: dict[str, str] = {
     # persona (docs/architecture/media-personas.md). ~420 s and ~31.9 GB per
     # 4.8 s chunk on a 5090 (2026-09-14), so the cap is GPU budget, not taste.
     'video_presenter_shots_max': '2',
+    # YouTube altered/synthetic-content disclosure: auto = true when the video
+    # has a presenter shot and the niche's persona is photoreal; true/false
+    # force it for the channel.
+    'youtube_contains_synthetic_media': 'auto',
     # Free VRAM the render insists on before starting a chunk; below it the
     # shot falls back rather than OOM-ing the card mid-video.
     'video_presenter_min_free_vram_gb': '26',
@@ -4878,6 +4882,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_shots_max': {'owner': 'video', 'value_type': 'integer'},
+    'youtube_contains_synthetic_media': {'owner': 'video', 'value_type': 'string'},
     'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_hero_width': {'owner': 'video', 'value_type': 'integer'},
