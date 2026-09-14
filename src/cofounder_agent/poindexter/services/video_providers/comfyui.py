@@ -68,6 +68,20 @@ Config (all in app_settings; per-call ``config`` overrides win where noted):
   ``__CFG__``, ``__SHIFT__``, ``__FILENAME_PREFIX__``) are substituted
   (typed) before submission. Empty → the code-built 14B two-expert graph.
 
+Speech-to-video (talking heads, 2026-09-14 spike): when the caller passes
+``config["audio_path"]`` the same provider renders **Wan 2.2 S2V 14B** instead.
+The init still becomes the presenter reference, the speech file is uploaded
+through the same ``/upload/image`` endpoint (ComfyUI's input store is
+type-agnostic) and encoded by wav2vec2, and the clip runs in chunks of
+``video_comfyui_s2v_length_frames`` (77 @ 16 fps = 4.8 s) chained with
+``WanSoundImageToVideoExtend`` up to ``video_comfyui_s2v_max_chunks`` — the
+chunk count follows the audio (``config["audio_duration_s"]`` or an ffprobe).
+Settings: ``video_comfyui_s2v_{model,audio_encoder,steps,cfg,shift,sampler,
+length_frames,max_chunks,timeout_per_chunk_s,workflow_override_json}``; the
+override contract adds ``__AUDIO__`` (server-side name of the uploaded speech).
+Measured on an idle 5090: ~420 s and 31.9 GB peak per chunk — the render owns
+the card, so admit it through the GPU scheduler, never beside Ollama.
+
 Kind: ``"generate"``.
 """
 
@@ -76,6 +90,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import random
 import time
@@ -84,6 +99,7 @@ from typing import Any
 import httpx
 
 from poindexter.plugins.video_provider import VideoResult
+from poindexter.services.podcast_sting_mixer import probe_duration_s
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +144,24 @@ _DEFAULT_NEGATIVE = (
 # the half that matters.
 _MAX_REASON_CHARS = 400
 
+# Speech-to-video (Wan 2.2 S2V 14B fp8, same repackaged repo). 20 / 6.0 / 8.0 /
+# uni_pc is the regime the 2026-09-14 spike validated (identity + lip shapes
+# held for the whole chunk); 77 frames is one S2V chunk at the model's 16 fps.
+_DEFAULT_S2V_MODEL = "wan2.2_s2v_14B_fp8_scaled.safetensors"
+_DEFAULT_S2V_AUDIO_ENCODER = "wav2vec2_large_english_fp16.safetensors"
+_DEFAULT_S2V_STEPS = 20
+_DEFAULT_S2V_CFG = 6.0
+_DEFAULT_S2V_SHIFT = 8.0
+_DEFAULT_S2V_SAMPLER = "uni_pc"
+_DEFAULT_S2V_LENGTH = 77
+_DEFAULT_S2V_MAX_CHUNKS = 6
+_DEFAULT_S2V_TIMEOUT_PER_CHUNK_S = 900.0
+_S2V_FILENAME_PREFIX = "poindexter_talking_head"
+_AUDIO_CONTENT_TYPES = {
+    ".wav": "audio/wav", ".mp3": "audio/mpeg", ".flac": "audio/flac",
+    ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".aac": "audio/aac",
+}
+
 # Placeholder tokens the workflow-override substitution recognises, mapped to
 # whether the substituted value is numeric (replaces the string leaf with an
 # int/float) or textual (stays a string).
@@ -137,6 +171,7 @@ _OVERRIDE_NUMERIC = {
 }
 _OVERRIDE_TEXTUAL = {
     "__PROMPT__", "__NEGATIVE__", "__INIT_IMAGE__", "__FILENAME_PREFIX__",
+    "__AUDIO__",  # speech path only: server-side name of the uploaded audio
 }
 
 
@@ -293,6 +328,133 @@ def substitute_override(template: Any, values: dict[str, Any]) -> Any:
     return template
 
 
+def s2v_chunks_for(audio_s: float, length: int, fps: int, max_chunks: int) -> int:
+    """How many S2V chunks cover ``audio_s`` seconds of speech.
+
+    One chunk is ``length`` frames at ``fps`` (77 @ 16 = 4.8125 s). Always at
+    least one, never more than ``max_chunks`` — the caller reads the cap back
+    as ``audio_truncated`` in the result metadata rather than rendering a
+    clip that silently outlives its render budget.
+    """
+    if length <= 0 or fps <= 0 or audio_s <= 0:
+        return 1
+    per_chunk_s = length / fps
+    wanted = math.ceil(audio_s / per_chunk_s - 1e-9)
+    return max(1, min(wanted, max(1, int(max_chunks))))
+
+
+def _audio_content_type(path: str) -> str:
+    return _AUDIO_CONTENT_TYPES.get(
+        os.path.splitext(path)[1].lower(), "application/octet-stream",
+    )
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out > 0 else None
+
+
+async def _probe_audio_seconds(path: str) -> float | None:
+    """Duration of the speech file via the shared ffprobe helper (``None``
+    when ffprobe cannot read it — the caller then needs ``audio_duration_s``)."""
+    return await probe_duration_s(path)
+
+
+def build_s2v_graph(
+    *,
+    prompt: str,
+    negative: str,
+    ref_image_name: str,
+    audio_name: str,
+    width: int,
+    height: int,
+    length: int,
+    fps: int,
+    seed: int,
+    steps: int,
+    cfg: float,
+    shift: float,
+    sampler: str,
+    chunks: int,
+    model: str = _DEFAULT_S2V_MODEL,
+    audio_encoder: str = _DEFAULT_S2V_AUDIO_ENCODER,
+    text_encoder: str = _DEFAULT_TEXT_ENCODER,
+    vae: str = _DEFAULT_VAE,
+    filename_prefix: str = _S2V_FILENAME_PREFIX,
+) -> dict[str, Any]:
+    """Build the Wan 2.2 S2V talking-head graph in ComfyUI API format.
+
+    Chunk 1 is ``WanSoundImageToVideo`` (reference still + audio embedding);
+    every further chunk is ``WanSoundImageToVideoExtend`` fed the previous
+    chunk's sampled latent as its motion reference, so the presenter carries
+    across chunk boundaries. Each chunk is sampled and decoded on its own and
+    the frames are concatenated with ``ImageBatch`` before ``CreateVideo``
+    muxes the full speech track back in. Module-level and pure so the wiring
+    is testable without HTTP.
+    """
+    chunks = max(1, int(chunks))
+    graph: dict[str, Any] = {
+        "1": {"class_type": "UNETLoader", "inputs": {
+            "unet_name": model, "weight_dtype": "default"}},
+        "3": {"class_type": "CLIPLoader", "inputs": {
+            "clip_name": text_encoder, "type": "wan", "device": "default"}},
+        "4": {"class_type": "VAELoader", "inputs": {"vae_name": vae}},
+        "5": {"class_type": "AudioEncoderLoader", "inputs": {
+            "audio_encoder_name": audio_encoder}},
+        "6": {"class_type": "LoadAudio", "inputs": {"audio": audio_name}},
+        "7": {"class_type": "AudioEncoderEncode", "inputs": {
+            "audio_encoder": ["5", 0], "audio": ["6", 0]}},
+        "8": {"class_type": "LoadImage", "inputs": {"image": ref_image_name}},
+        "9": {"class_type": "CLIPTextEncode", "inputs": {
+            "clip": ["3", 0], "text": prompt}},
+        "10": {"class_type": "CLIPTextEncode", "inputs": {
+            "clip": ["3", 0], "text": negative}},
+        "11": {"class_type": "ModelSamplingSD3", "inputs": {
+            "model": ["1", 0], "shift": shift}},
+        "12": {"class_type": "WanSoundImageToVideo", "inputs": {
+            "positive": ["9", 0], "negative": ["10", 0], "vae": ["4", 0],
+            "width": width, "height": height, "length": length,
+            "batch_size": 1,
+            "audio_encoder_output": ["7", 0], "ref_image": ["8", 0]}},
+        "13": {"class_type": "KSampler", "inputs": {
+            "model": ["11", 0], "seed": seed, "steps": steps, "cfg": cfg,
+            "sampler_name": sampler, "scheduler": "simple",
+            "positive": ["12", 0], "negative": ["12", 1],
+            "latent_image": ["12", 2], "denoise": 1.0}},
+        "14": {"class_type": "VAEDecode", "inputs": {
+            "samples": ["13", 0], "vae": ["4", 0]}},
+    }
+    images_src: list[Any] = ["14", 0]
+    prev_latent: list[Any] = ["13", 0]
+    nid = 20
+    for k in range(1, chunks):
+        ext, samp, dec, batch = (str(nid), str(nid + 1), str(nid + 2), str(nid + 3))
+        nid += 4
+        graph[ext] = {"class_type": "WanSoundImageToVideoExtend", "inputs": {
+            "positive": ["9", 0], "negative": ["10", 0], "vae": ["4", 0],
+            "length": length, "video_latent": prev_latent,
+            "audio_encoder_output": ["7", 0], "ref_image": ["8", 0]}}
+        graph[samp] = {"class_type": "KSampler", "inputs": {
+            "model": ["11", 0], "seed": seed + k, "steps": steps, "cfg": cfg,
+            "sampler_name": sampler, "scheduler": "simple",
+            "positive": [ext, 0], "negative": [ext, 1],
+            "latent_image": [ext, 2], "denoise": 1.0}}
+        graph[dec] = {"class_type": "VAEDecode", "inputs": {
+            "samples": [samp, 0], "vae": ["4", 0]}}
+        graph[batch] = {"class_type": "ImageBatch", "inputs": {
+            "image1": images_src, "image2": [dec, 0]}}
+        images_src, prev_latent = [batch, 0], [samp, 0]
+    graph["90"] = {"class_type": "CreateVideo", "inputs": {
+        "images": images_src, "fps": float(fps), "audio": ["6", 0]}}
+    graph["91"] = {"class_type": "SaveVideo", "inputs": {
+        "video": ["90", 0], "filename_prefix": filename_prefix,
+        "format": "mp4", "codec": "h264"}}
+    return graph
+
+
 class ComfyUIProvider:
     """Wan 2.2 14B image-to-video via a headless ComfyUI sidecar.
 
@@ -343,6 +505,15 @@ class ComfyUIProvider:
             return []
 
         server_url = _resolve_server_url(config, site_config).rstrip("/")
+        audio_path = str(config.get("audio_path", "") or "")
+        if audio_path:
+            # Speech-driven (talking head): same sidecar, S2V graph, clip
+            # length follows the audio. See _fetch_speech.
+            return await self._fetch_speech(
+                prompt=prompt, config=config, site_config=site_config,
+                image_path=image_path, output_path=output_path,
+                server_url=server_url, audio_path=audio_path,
+            )
         width = int(config.get("width") or 0) or 832
         height = int(config.get("height") or 0) or 480
         # Deliberately NOT honouring config["fps"]: the 14B pair has one
@@ -496,16 +667,34 @@ class ComfyUIProvider:
         self, client: httpx.AsyncClient, server_url: str, image_path: str,
     ) -> tuple[str, str]:
         """Upload the init still; returns the server-side filename."""
-        raw = await asyncio.to_thread(_read_bytes, image_path)
-        basename = os.path.basename(image_path) or "init.png"
+        return await self._upload_file(
+            client, server_url, image_path,
+            content_type="image/png", label="init-image",
+        )
+
+    async def _upload_file(
+        self,
+        client: httpx.AsyncClient,
+        server_url: str,
+        path: str,
+        *,
+        content_type: str,
+        label: str,
+    ) -> tuple[str, str]:
+        """Put a local file into the sidecar's input store via
+        ``/upload/image`` — ComfyUI's one upload endpoint, type-agnostic (the
+        stock frontend sends LoadAudio files through it too). Returns the
+        server-side filename, or ``("", reason)``."""
+        raw = await asyncio.to_thread(_read_bytes, path)
+        basename = os.path.basename(path) or f"{label}.bin"
         resp = await client.post(
             f"{server_url}/upload/image",
-            files={"image": (basename, raw, "image/png")},
+            files={"image": (basename, raw, content_type)},
             data={"overwrite": "true"},
         )
         if resp.status_code != 200:
             return "", (
-                f"init-image upload failed: HTTP {resp.status_code}: "
+                f"{label} upload failed: HTTP {resp.status_code}: "
                 f"{(resp.text or '')[:150]}"
             )
         try:
@@ -513,7 +702,7 @@ class ComfyUIProvider:
         except Exception:  # noqa: BLE001
             name = ""
         if not name:
-            return "", "init-image upload returned no filename"
+            return "", f"{label} upload returned no filename"
         return name, ""
 
     def _resolve_graph(
@@ -568,6 +757,226 @@ class ComfyUIProvider:
                 "(ComfyUI API-format graph)"
             )
         return graph, ""
+
+    def _resolve_s2v_graph(
+        self, *, site_config: Any, **values: Any,
+    ) -> tuple[dict[str, Any] | None, str]:
+        """Code-built S2V graph, or the operator's S2V override template with
+        placeholders (incl. ``__AUDIO__``) substituted. An override renders
+        whatever the template wires — chunking is the template's business."""
+        override = str(
+            _sc_get(site_config, "video_comfyui_s2v_workflow_override_json", ""),
+        ).strip()
+        if not override:
+            graph = build_s2v_graph(
+                model=str(_sc_get(
+                    site_config, "video_comfyui_s2v_model", _DEFAULT_S2V_MODEL)),
+                audio_encoder=str(_sc_get(
+                    site_config, "video_comfyui_s2v_audio_encoder",
+                    _DEFAULT_S2V_AUDIO_ENCODER)),
+                text_encoder=str(_sc_get(
+                    site_config, "video_comfyui_text_encoder", _DEFAULT_TEXT_ENCODER)),
+                vae=str(_sc_get(site_config, "video_comfyui_vae", _DEFAULT_VAE)),
+                **values,
+            )
+            return graph, ""
+        try:
+            template = json.loads(override)
+        except ValueError as e:
+            return None, (
+                "video_comfyui_s2v_workflow_override_json is set but is not "
+                f"valid JSON ({e}) — fix or clear the setting"
+            )
+        sub = {
+            "__PROMPT__": values["prompt"],
+            "__NEGATIVE__": values["negative"],
+            "__INIT_IMAGE__": values["ref_image_name"],
+            "__AUDIO__": values["audio_name"],
+            "__FILENAME_PREFIX__": _S2V_FILENAME_PREFIX,
+            "__WIDTH__": int(values["width"]),
+            "__HEIGHT__": int(values["height"]),
+            "__LENGTH__": int(values["length"]),
+            "__FPS__": int(values["fps"]),
+            "__SEED__": int(values["seed"]),
+            "__STEPS__": int(values["steps"]),
+            "__CFG__": float(values["cfg"]),
+            "__SHIFT__": float(values["shift"]),
+        }
+        graph = substitute_override(template, sub)
+        if not isinstance(graph, dict):
+            return None, (
+                "video_comfyui_s2v_workflow_override_json must be a JSON "
+                "object (ComfyUI API-format graph)"
+            )
+        return graph, ""
+
+    async def _fetch_speech(
+        self,
+        *,
+        prompt: str,
+        config: dict[str, Any],
+        site_config: Any,
+        image_path: str,
+        output_path: str,
+        server_url: str,
+        audio_path: str,
+    ) -> list[VideoResult]:
+        """Speech-driven render (Wan 2.2 S2V): the init still is the
+        presenter reference, ``audio_path`` drives lips and motion, and the
+        clip length follows the audio in whole chunks."""
+        if not os.path.exists(audio_path):
+            self.last_error = (
+                f"speech audio missing at {audio_path!r} — config['audio_path'] "
+                "must point at a rendered narration file"
+            )
+            return []
+        width = int(config.get("width") or 0) or 832
+        height = int(config.get("height") or 0) or 480
+        fps = int(_sc_num(site_config, "video_comfyui_fps", _DEFAULT_FPS))
+        length = int(_sc_num(
+            site_config, "video_comfyui_s2v_length_frames", _DEFAULT_S2V_LENGTH))
+        max_chunks = int(_sc_num(
+            site_config, "video_comfyui_s2v_max_chunks", _DEFAULT_S2V_MAX_CHUNKS))
+        steps = int(_sc_num(site_config, "video_comfyui_s2v_steps", _DEFAULT_S2V_STEPS))
+        cfg = _sc_num(site_config, "video_comfyui_s2v_cfg", _DEFAULT_S2V_CFG)
+        shift = _sc_num(site_config, "video_comfyui_s2v_shift", _DEFAULT_S2V_SHIFT)
+        sampler = str(_sc_get(
+            site_config, "video_comfyui_s2v_sampler", _DEFAULT_S2V_SAMPLER))
+        per_chunk_s = _sc_num(
+            site_config, "video_comfyui_s2v_timeout_per_chunk_s",
+            _DEFAULT_S2V_TIMEOUT_PER_CHUNK_S)
+        ready_wait_s = _sc_num(
+            site_config, "video_comfyui_ready_wait_s", _DEFAULT_READY_WAIT_S)
+        negative = str(config.get("negative_prompt", "") or "") or str(
+            _sc_get(site_config, "video_comfyui_negative_prompt", _DEFAULT_NEGATIVE),
+        )
+
+        audio_s = _as_float(config.get("audio_duration_s"))
+        if audio_s is None:
+            audio_s = await _probe_audio_seconds(audio_path)
+        if not audio_s or audio_s <= 0:
+            self.last_error = (
+                f"could not determine the speech duration of {audio_path!r} "
+                "(ffprobe failed and config['audio_duration_s'] was not given)"
+            )
+            return []
+        chunks = s2v_chunks_for(audio_s, length, fps, max_chunks)
+        covered_s = chunks * length / fps if fps else 0.0
+        truncated = audio_s > covered_s + 1e-6
+        if truncated:
+            logger.warning(
+                "[ComfyUIProvider] speech is %.1fs but video_comfyui_s2v_max_chunks"
+                "=%d covers only %.1fs — the clip stops early; raise the cap or "
+                "split the narration.",
+                audio_s, max_chunks, covered_s,
+            )
+        seed = random.randrange(2**62)
+        timeout_s = per_chunk_s * chunks
+
+        client_timeout = httpx.Timeout(30.0, connect=10.0)
+        try:
+            async with httpx.AsyncClient(timeout=client_timeout) as client:
+                ok, reason = await self._wait_ready(client, server_url, ready_wait_s)
+                if not ok:
+                    self.last_error = reason
+                    return []
+                ref_name, reason = await self._upload_init(
+                    client, server_url, image_path,
+                )
+                if not ref_name:
+                    self.last_error = reason
+                    return []
+                audio_name, reason = await self._upload_file(
+                    client, server_url, audio_path,
+                    content_type=_audio_content_type(audio_path),
+                    label="speech-audio",
+                )
+                if not audio_name:
+                    self.last_error = reason
+                    return []
+                graph, reason = self._resolve_s2v_graph(
+                    site_config=site_config,
+                    prompt=prompt, negative=negative,
+                    ref_image_name=ref_name, audio_name=audio_name,
+                    width=width, height=height, length=length, fps=fps,
+                    seed=seed, steps=steps, cfg=cfg, shift=shift,
+                    sampler=sampler, chunks=chunks,
+                )
+                if graph is None:
+                    self.last_error = reason
+                    return []
+                prompt_id, reason = await self._submit(client, server_url, graph)
+                if not prompt_id:
+                    self.last_error = reason
+                    return []
+                filename, reason = await self._poll(
+                    client, server_url, prompt_id, timeout_s,
+                )
+                if not filename:
+                    self.last_error = reason
+                    return []
+                ok, reason = await self._download(
+                    client, server_url, filename, output_path,
+                )
+                if not ok:
+                    self.last_error = reason
+                    return []
+        except Exception as e:
+            logger.error(
+                "[ComfyUIProvider] speech render failed against %s: %s: %s. "
+                "Stand up the ComfyUI sidecar (docker compose --profile comfyui "
+                "up -d) with the S2V weights mounted, or set "
+                "video_comfyui_server_url.",
+                server_url, type(e).__name__, e,
+            )
+            self.last_error = (
+                f"comfyui unreachable/failed at {server_url}: "
+                f"{type(e).__name__}: {e}"
+            )[:_MAX_REASON_CHARS]
+            return []
+
+        file_size = 0
+        try:
+            file_size = os.path.getsize(output_path)
+        except OSError:  # silent-ok: size is cosmetic metadata — the file's
+            # existence was just verified by the download step.
+            pass
+
+        return [
+            VideoResult(
+                file_url=f"file://{output_path}",
+                file_path=output_path,
+                duration_s=int(covered_s),
+                width=width,
+                height=height,
+                fps=fps,
+                codec="h264",
+                format="mp4",
+                source=self.name,
+                prompt=prompt,
+                metadata={
+                    "local_path": output_path,
+                    "file_size_bytes": file_size,
+                    "negative_prompt": negative,
+                    "steps": steps,
+                    "guidance_scale": cfg,
+                    "shift": shift,
+                    "sampler": sampler,
+                    "seed": seed,
+                    "model": "wan2.2-s2v-14b-fp8",
+                    "model_repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+                    "license": "apache-2.0",
+                    "i2v": False,
+                    "s2v": True,
+                    "audio_path": audio_path,
+                    "audio_seconds": round(float(audio_s), 3),
+                    "chunks": chunks,
+                    "chunk_frames": length,
+                    "audio_truncated": truncated,
+                    "server_url": server_url,
+                },
+            ),
+        ]
 
     async def _submit(
         self, client: httpx.AsyncClient, server_url: str, graph: dict[str, Any],

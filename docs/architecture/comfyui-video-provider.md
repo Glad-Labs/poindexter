@@ -28,6 +28,14 @@ quality class, so it is the provider's default regime.
   ComfyUI's REST API: `/upload/image` (init still in), `/prompt` (API-format
   graph), `/history/{id}` (poll), `/view` (MP4 out). **No shared bind mounts
   with the worker** — everything crosses the HTTP boundary.
+- **Speech path (talking heads, 2026-09-14)** — the same provider renders
+  **Wan 2.2 S2V 14B** when the caller passes `config["audio_path"]`: the init
+  still is the presenter reference, the speech file goes up through the same
+  `/upload/image` endpoint (ComfyUI's input store is type-agnostic), wav2vec2
+  encodes it, and the clip runs in 77-frame chunks chained with
+  `WanSoundImageToVideoExtend` until the audio is covered (or
+  `video_comfyui_s2v_max_chunks` stops it — then `metadata.audio_truncated`
+  is true). Details in [Speech-to-video](#speech-to-video-talking-heads).
 - **Selection seam** — `shot_list_renderer._render_generative_clip` reads
   `video_generative_provider` per clip: `wan21` (default) or `comfyui`.
   Flipping is a settings change, no deploy. Provider failures surface
@@ -64,6 +72,12 @@ quality class, so it is the provider's default regime.
 | `video_comfyui_timeout_s`                                                     | `900`                            | End-to-end render budget (20-step 960×544 measured 644s)                                                                                                         |
 | `video_comfyui_ready_wait_s`                                                  | `90`                             | Cold-boot wait before first submit                                                                                                                               |
 | `video_comfyui_workflow_override_json`                                        | `''`                             | Full graph swap: API-format JSON with `__PROMPT__`/`__WIDTH__`/… placeholders, substituted typed                                                                 |
+| `video_comfyui_s2v_model` / `_audio_encoder`                                  | `wan2.2_s2v_14B_fp8_scaled…` / `wav2vec2_large_english_fp16…` | Speech-path weights (same repackaged repo + its `audio_encoders/`)         |
+| `video_comfyui_s2v_steps` / `_cfg` / `_shift` / `_sampler`                     | `20` / `6.0` / `8.0` / `uni_pc`  | S2V sampler regime (spike-validated: identity + lip shapes hold)          |
+| `video_comfyui_s2v_length_frames`                                             | `77`                             | One S2V chunk at the model's 16 fps (4.8 s)                               |
+| `video_comfyui_s2v_max_chunks`                                                | `6`                              | Longest clip = chunks × 4.8 s (~29 s); longer speech is flagged truncated |
+| `video_comfyui_s2v_timeout_per_chunk_s`                                       | `900`                            | Render budget per chunk (an idle 5090 needs ~420 s)                       |
+| `video_comfyui_s2v_workflow_override_json`                                    | `''`                             | S2V graph swap; same placeholders plus `__AUDIO__`                        |
 | `comfyui_ram_recycle_{enabled,watermark_gb,cooldown_minutes}`                 | `true` / `20` / `60`             | Brain-side host-RAM recycle: queue-idle-verified `docker restart` when the sidecar's PID-1 RSS+swap crosses the watermark ([details](video-render-vram-gate.md)) |
 
 ## Operator runbook (enable on a host)
@@ -75,6 +89,12 @@ quality class, so it is the provider's default regime.
    - `text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors`
    - `vae/wan_2.1_vae.safetensors`
    - `loras/wan2.2_i2v_lightx2v_4steps_lora_v1_{high,low}_noise.safetensors`
+   - **Talking heads (optional, +17 GB):**
+     `diffusion_models/wan2.2_s2v_14B_fp8_scaled.safetensors` and
+     `audio_encoders/wav2vec2_large_english_fp16.safetensors`. The compose
+     service mounts `audio_encoders/` read-only; the image ships that dir
+     empty, so without the mount the speech path fails at ComfyUI validation
+     naming the missing encoder.
 2. `docker compose -f docker-compose.local.yml --profile comfyui up -d --build`
 3. Verify: `curl -s localhost:8188/system_stats | head -c 200`
 4. Flip: `poindexter settings set video_generative_provider comfyui`
@@ -84,6 +104,55 @@ quality class, so it is the provider's default regime.
 VRAM reality on a 32GB card shared with a desktop: 832×480 peaks ~25-29GB,
 960×544 ~28GB, **1280×720×81f does not fit** (spike OOM at 31.9GB) — full
 720p needs block-swap custom nodes (security review first) or an idle card.
+
+## Speech-to-video (talking heads)
+
+The 2026-09-14 spike rendered a photoreal and a flat-vector presenter from a
+Qwen Image portrait plus 4.8 s of the pipeline's narration: identity, light
+and background held for every frame, mouth shapes tracked the speech, and the
+stylized reference did not drift toward photoreal. Cost was the finding —
+**~420 s and 31.9 GB peak per 4.8 s chunk on an otherwise idle 5090**, so a
+render owns the whole card for its duration.
+
+How the provider does it (`_fetch_speech`):
+
+1. `config["audio_path"]` selects the path; `config["image_path"]` is the
+   presenter reference (a portrait, not a scene still).
+2. Duration comes from `config["audio_duration_s"]` when the caller knows it
+   (the shot-list renderer does), else an ffprobe via the shared
+   `podcast_sting_mixer.probe_duration_s`. Unknown duration fails loud — a
+   one-chunk guess would ship a clip that stops mid-sentence.
+3. `s2v_chunks_for(audio_s, length, fps, max_chunks)` picks the chunk count;
+   `build_s2v_graph` wires chunk 1 as `WanSoundImageToVideo` and every later
+   chunk as `WanSoundImageToVideoExtend` fed the previous chunk's sampled
+   latent (its motion reference), decodes each chunk, concatenates with
+   `ImageBatch`, and `CreateVideo` muxes the **full** speech track back in.
+4. Upload still → upload audio → `/prompt` → `/history` (budget =
+   `timeout_per_chunk_s × chunks`) → `/view`, the same ladder as i2v; every
+   failure returns `[]` with `last_error` naming the step.
+
+Result metadata: `s2v: true`, `model: wan2.2-s2v-14b-fp8`, `chunks`,
+`chunk_frames`, `audio_seconds`, `audio_truncated`, `sampler`. `source` stays
+the plugin name — mode is metadata, not a new provider.
+
+**Multi-chunk is wired per the node contract and unit-tested for wiring; the
+spike exercised single chunks.** The first multi-chunk render should be watched
+for a seam at the 4.8 s boundary (the Extend node's motion reference is what
+prevents it).
+
+Operational rules that follow from the numbers:
+
+- Admit the render through the GPU scheduler with the whole card as the
+  reservation. The spike's 28 GB left Ollama primary 3.9 GB and the live
+  integration tests on the self-hosted runner failed with a 500 (2026-09-14).
+- Keep the reference portrait in the niche's media policy
+  (`niche.<slug>.media.style_policy` / `human_subjects`, see
+  `docs/architecture/media-subject-policy.md`); a photoreal presenter on a
+  niche that forbids people is a policy error upstream, not a render error.
+- Publishing a realistic synthetic presenter to YouTube needs
+  `status.containsSyntheticMedia`, which `publish_adapters/youtube.py` does
+  not send yet — that gate lands with the presenter-persona work, before any
+  such upload.
 
 ## Non-goals (this iteration)
 

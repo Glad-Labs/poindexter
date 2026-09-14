@@ -782,6 +782,28 @@ DEFAULTS: dict[str, str] = {
     # substituted typed before submission. Empty = the code-built 14B
     # two-expert graph. See services/video_providers/comfyui.py docstring.
     'video_comfyui_workflow_override_json': '',
+    # Speech-to-video (talking heads) through the SAME sidecar — Wan 2.2 S2V 14B
+    # fp8 + the wav2vec2 audio encoder (Comfy-Org/Wan_2.2_ComfyUI_Repackaged).
+    # Selected per call by config['audio_path']; one chunk = length_frames at
+    # video_comfyui_fps (77 @ 16 = 4.8 s), longer audio chains
+    # WanSoundImageToVideoExtend up to max_chunks. Spike 2026-09-14: 20 steps /
+    # cfg 6 / shift 8 / uni_pc held identity + lip shapes; ~7 min and ~31.9 GB
+    # peak per chunk on a 5090, so the render owns the card.
+    'video_comfyui_s2v_model': 'wan2.2_s2v_14B_fp8_scaled.safetensors',
+    'video_comfyui_s2v_audio_encoder': 'wav2vec2_large_english_fp16.safetensors',
+    'video_comfyui_s2v_steps': '20',
+    'video_comfyui_s2v_cfg': '6.0',
+    'video_comfyui_s2v_shift': '8.0',
+    'video_comfyui_s2v_sampler': 'uni_pc',
+    'video_comfyui_s2v_length_frames': '77',
+    'video_comfyui_s2v_max_chunks': '6',
+    # Per-chunk render budget; the call's timeout is this x chunks (a 20-step
+    # chunk took ~420 s on an otherwise idle 5090).
+    'video_comfyui_s2v_timeout_per_chunk_s': '900',
+    # Same placeholder contract as video_comfyui_workflow_override_json plus
+    # __AUDIO__ (server-side filename of the uploaded speech) — empty → the
+    # code-built S2V graph.
+    'video_comfyui_s2v_workflow_override_json': '',
     # Canonical short-form target length in seconds (issue #867): drives BOTH the
     # short prompt's narration ask (generate_media_scripts._build_scene_prompt)
     # AND the shot-list duration clamp (generate_video_shot_list.
@@ -4842,6 +4864,16 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_comfyui_timeout_s': {'owner': 'video', 'value_type': 'integer'},
     'video_comfyui_ready_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_comfyui_workflow_override_json': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_s2v_model': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_s2v_audio_encoder': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_s2v_steps': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_s2v_cfg': {'owner': 'video', 'value_type': 'float'},
+    'video_comfyui_s2v_shift': {'owner': 'video', 'value_type': 'float'},
+    'video_comfyui_s2v_sampler': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_s2v_length_frames': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_s2v_max_chunks': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_s2v_timeout_per_chunk_s': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_s2v_workflow_override_json': {'owner': 'video', 'value_type': 'string'},
     'video_short_target_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_short_max_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_render_min_shot_ratio': {'owner': 'media_render', 'value_type': 'float'},

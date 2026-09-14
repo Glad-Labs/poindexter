@@ -1464,6 +1464,9 @@ services:
       - ${USERPROFILE:-${HOME}}/.poindexter/comfyui/models/text_encoders:/comfyui/models/text_encoders:ro
       - ${USERPROFILE:-${HOME}}/.poindexter/comfyui/models/vae:/comfyui/models/vae:ro
       - ${USERPROFILE:-${HOME}}/.poindexter/comfyui/models/loras:/comfyui/models/loras:ro
+      # Wan 2.2 S2V talking heads (video_providers/comfyui.py speech path) read
+      # the wav2vec2 audio encoder from here; the image ships the dir empty.
+      - ${USERPROFILE:-${HOME}}/.poindexter/comfyui/models/audio_encoders:/comfyui/models/audio_encoders:ro
     deploy:
       resources:
         reservations:
