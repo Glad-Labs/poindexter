@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## [0.138.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.137.0...v0.138.0) (2026-09-14)
+
+
+### Features
+
+* **brain:** page on any container restart loop, with the crashing traceback attached ([#3744](https://github.com/Glad-Labs/glad-labs-stack/issues/3744)) ([ec9ddaa](https://github.com/Glad-Labs/glad-labs-stack/commit/ec9ddaa3a1cb93f61c7b2476fbaf7ac40d7993b9))
+* **deploy:** health-gate every rebuilt service and roll back to the previous image when it fails ([#3746](https://github.com/Glad-Labs/glad-labs-stack/issues/3746)) ([dc7e42b](https://github.com/Glad-Labs/glad-labs-stack/commit/dc7e42bc4b680977b51aa84b0c4fb5cacac292e6))
+* **media:** brand subject/style rules become a per-niche policy; people allowed by default ([#3758](https://github.com/Glad-Labs/glad-labs-stack/issues/3758)) ([baf1a2b](https://github.com/Glad-Labs/glad-labs-stack/commit/baf1a2b7353c8e8b20552b21e01ef80240caa60d))
+* **ops:** auto-merge green production minors, holding only what the suite cannot see ([#3735](https://github.com/Glad-Labs/glad-labs-stack/issues/3735)) ([697488e](https://github.com/Glad-Labs/glad-labs-stack/commit/697488ecd47fb8232f55073099ec08077df88331))
+
+
+### Bug Fixes
+
+* **affiliate:** never match a keyword inside an identifier ([#3747](https://github.com/Glad-Labs/glad-labs-stack/issues/3747)) ([b4ffe63](https://github.com/Glad-Labs/glad-labs-stack/commit/b4ffe63c4d2f97e1b95f7b4d8dcc092f32356f72))
+* **brain:** keep paging while the MCP connector stays down; alert on restart loops ([#3731](https://github.com/Glad-Labs/glad-labs-stack/issues/3731)) ([ea87c9a](https://github.com/Glad-Labs/glad-labs-stack/commit/ea87c9a6cd0451763cf7553b288842b2f7bf06e4))
+* **retention:** anchor the ttl_prune backlog count at the policy's last run ([#3742](https://github.com/Glad-Labs/glad-labs-stack/issues/3742)) ([6cf2339](https://github.com/Glad-Labs/glad-labs-stack/commit/6cf2339638cc2497aedfc3d48146909918bb5d9c))
+* **topics:** score the per-goal breakdown shape instead of degrading every candidate ([#3743](https://github.com/Glad-Labs/glad-labs-stack/issues/3743)) ([d5a58f3](https://github.com/Glad-Labs/glad-labs-stack/commit/d5a58f30e48f709d0cd78860784eafdd49b1a90e))
+* **tts:** copy _voice_paths.py into the chatterbox image — the sidecar has been crash-looping since [#3730](https://github.com/Glad-Labs/glad-labs-stack/issues/3730) ([#3741](https://github.com/Glad-Labs/glad-labs-stack/issues/3741)) ([a343fac](https://github.com/Glad-Labs/glad-labs-stack/commit/a343fac848a014f8fb8c76daafa777b9965ee612))
+
 ## [0.137.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.136.1...v0.137.0) (2026-09-13)
 
 
