@@ -474,3 +474,45 @@ async def test_no_history_at_all_is_not_yet_a_fault():
         _BlindPool(hours_since_sample=None), {"_site_config": _SC()},
     )
     assert res.ok is True
+
+
+def test_ttl_prune_backlog_anchors_at_the_policys_last_run():
+    """Rows that crossed the TTL after the last pass are inflow, not backlog."""
+    from datetime import UTC, datetime
+
+    from poindexter.services.integrations.retention_backlog import build_backlog_query
+
+    run_at = datetime(2026, 9, 13, 19, 54, 55, tzinfo=UTC)
+    q = build_backlog_query("ttl_prune", {
+        "name": "live_activity", "table_name": "live_activity",
+        "age_column": "finished_at", "ttl_days": 2, "last_run_at": run_at,
+    })
+    assert q is not None
+    assert "finished_at < $2::timestamptz - make_interval(days => $1)" in q.sql
+    assert "now()" not in q.sql
+    assert q.params == (2, run_at)
+
+
+def test_ttl_prune_backlog_accepts_an_iso_string_anchor():
+    from datetime import UTC, datetime
+
+    from poindexter.services.integrations.retention_backlog import build_backlog_query
+
+    q = build_backlog_query("ttl_prune", {
+        "table_name": "live_activity", "age_column": "finished_at", "ttl_days": 2,
+        "last_run_at": "2026-09-13T19:54:55Z",
+    })
+    assert q is not None
+    assert q.params == (2, datetime(2026, 9, 13, 19, 54, 55, tzinfo=UTC))
+
+
+def test_ttl_prune_backlog_without_a_run_falls_back_to_now():
+    from poindexter.services.integrations.retention_backlog import build_backlog_query
+
+    q = build_backlog_query("ttl_prune", {
+        "table_name": "live_activity", "age_column": "finished_at", "ttl_days": 2,
+        "last_run_at": None,
+    })
+    assert q is not None
+    assert "finished_at < now() - make_interval(days => $1)" in q.sql
+    assert q.params == (2,)

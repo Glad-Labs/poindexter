@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from poindexter.services.integrations.registry import register_handler
@@ -134,6 +135,25 @@ async def ttl_prune(
     return {"deleted": total_deleted, "table": table_name, "ttl_days": ttl_days}
 
 
+def _run_anchor(value: Any) -> datetime | None:
+    """``last_run_at`` as a tz-aware datetime, or None when the row has none.
+
+    Rows straight from asyncpg carry a datetime; rows that travelled through
+    JSON carry an ISO string, and asyncpg refuses a str for a timestamptz bind.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
+
+
 @register_backlog("ttl_prune")
 def ttl_prune_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
     """Rows this policy's own predicate still matches (poindexter#933).
@@ -143,11 +163,21 @@ def ttl_prune_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
     own WHERE clause matches is exactly the right question. A correct policy
     drains this to ~0 each run; a broken one accumulates.
 
-    A non-zero reading is NOT itself a fault: it is also just inflow since the
-    last pass, and a short-TTL high-volume table like ``live_activity``
-    legitimately shows hundreds of rows minutes after a successful prune.
-    Persistence across consecutive probes is the signal, which is the caller's
-    job (see ``services/jobs/probe_retention_backlog.py``).
+    The count is anchored at the policy's own ``last_run_at`` when the row
+    carries one: only rows that were ALREADY past the TTL when the pruner last
+    ran are counted, so inflow since that pass never shows up as backlog. A
+    correct policy therefore reads ~0 at any moment after its run; a broken one
+    reads the rows it left behind. A row fetched without ``last_run_at`` falls
+    back to ``now()``, which measures residue plus inflow.
+
+    Earned 2026-09-13: ``live_activity`` (2-day TTL, ~9 rows/min of inflow)
+    drained completely every run — ``last_run_deleted`` in the thousands,
+    ``last_error`` NULL — yet read 141 "overdue" rows a quarter-hour after each
+    pass and paged ``retention_backlog`` four times a day, because the probe's
+    persistence rule cannot tell steady inflow from a steady residue. Persistence
+    across consecutive probes remains the caller's signal (see
+    ``services/jobs/probe_retention_backlog.py``); this anchor makes the number
+    it persists over mean what the finding says.
 
     A ``dry_run`` policy deletes nothing by design, so its backlog is
     meaningless as a fault signal and it declares none rather than alarming
@@ -169,7 +199,14 @@ def ttl_prune_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
     table_name = _validate_identifier(row.get("table_name") or "", "table_name")
     age_column = _validate_identifier(row.get("age_column") or "created_at", "age_column")
 
-    where_parts = [f"{age_column} < now() - make_interval(days => $1)"]
+    anchor = _run_anchor(row.get("last_run_at"))
+    params: tuple[Any, ...]
+    if anchor is not None:
+        where_parts = [f"{age_column} < $2::timestamptz - make_interval(days => $1)"]
+        params = (ttl_days, anchor)
+    else:
+        where_parts = [f"{age_column} < now() - make_interval(days => $1)"]
+        params = (ttl_days,)
     filter_sql = row.get("filter_sql") or ""
     if filter_sql.strip():
         where_parts.append(f"({filter_sql})")
@@ -177,5 +214,5 @@ def ttl_prune_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
 
     return BacklogQuery(
         sql=f"SELECT COUNT(*)::bigint FROM {table_name} WHERE {where_clause}",  # nosec B608  # identifiers validated above; filter_sql is an operator-controlled migration seed (see module docstring)
-        params=(ttl_days,),
+        params=params,
     )

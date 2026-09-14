@@ -108,7 +108,26 @@ minutes and records a reading for a policy **only** when:
   state and let the persistence rule call them a trend.
 
 Two schedules can drift apart; a policy's own `last_run_at` cannot lie about
-when it last ran. A tick where no policy is in-window records **nothing** and
+when it last ran.
+
+## Count the residue, not the inflow
+
+Sampling inside the window was necessary but not sufficient. A short-TTL,
+high-volume table keeps crossing the TTL line between the pass and the
+reading: `live_activity` (2-day TTL, roughly nine rows a minute) drained
+completely every run — `last_run_deleted` in the thousands, `last_error` NULL —
+and still read 141 "overdue" rows a quarter-hour later, three passes running,
+so it paged `retention_backlog` four times a day for a policy that was doing
+its job (2026-09-13).
+
+The `ttl_prune` backlog expression is therefore anchored at the policy's own
+`last_run_at`: it counts rows whose age column is older than
+`last_run_at - ttl`, i.e. rows that were **already due when the pruner ran and
+are still there**. Inflow after the pass is invisible to it by construction; a
+correct policy reads ~0 at any moment after its run, and a broken one reads
+exactly what it left behind. A row fetched without `last_run_at` falls back to
+`now()`, which measures residue plus inflow — the old, pessimistic number.
+ A tick where no policy is in-window records **nothing** and
 says so — writing an empty sample would break every persistence streak.
 
 A policy that has never run is not a backlog signal either: `RunRetentionJob`'s
