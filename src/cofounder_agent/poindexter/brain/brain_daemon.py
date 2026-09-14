@@ -231,6 +231,11 @@ except ImportError:  # pragma: no cover — package-qualified path
     _HAS_MCP_HTTP_PROBE = False
 
 try:
+    from poindexter.brain.container_restart_loop_probe import run_container_restart_loop_probe
+    _HAS_CONTAINER_RESTART_LOOP_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    _HAS_CONTAINER_RESTART_LOOP_PROBE = False
+try:
     from poindexter.brain.outlet_guard_probe import run_outlet_guard_probe
     _HAS_OUTLET_GUARD_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
@@ -324,6 +329,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Discord bot uptime monitor offline"),
     ("_HAS_MCP_HTTP_PROBE", "poindexter/brain/mcp_http_probe.py",
      "MCP HTTP server reachability monitor offline"),
+    ("_HAS_CONTAINER_RESTART_LOOP_PROBE", "poindexter/brain/container_restart_loop_probe.py",
+     "Container restart-loop watch offline — a crash-looping container pages nobody until a downstream probe notices (2026-09-13: chatterbox, 507 restarts, 8 h)"),
     ("_HAS_OUTLET_GUARD_PROBE", "poindexter/brain/outlet_guard_probe.py",
      "Outlet guard offline — a metered wall plug that opens with mains present "
      "drains the UPS to a clean shutdown and stays dark until a human presses "
@@ -3178,6 +3185,25 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] mcp_http probe failed: %s", e)
+
+    # Container restart-loop watch (2026-09-13). One `docker inspect` over every
+    # poindexter-* container per cycle; a RestartCount that climbs by the
+    # threshold within a cycle, or a `restarting` container already past it,
+    # pages critical ONCE with the container's last log lines (the traceback),
+    # reminds hourly while it continues, and writes a recovery note after two
+    # calm cycles. Chatterbox restarted 507 times behind a green board before
+    # this existed; the only page named the downstream symptom.
+    if _HAS_CONTAINER_RESTART_LOOP_PROBE:
+        try:
+            cycle_stage.set_stage("run_container_restart_loop_probe")
+            crl_summary = await run_container_restart_loop_probe(pool)
+            probe_results["container_restart_loop"] = {
+                "ok": bool(crl_summary.get("ok", False)),
+                "detail": crl_summary.get("detail", ""),
+                "summary": crl_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] container_restart_loop probe failed: %s", e)
 
     # Outlet guard (2026-09-06). Reads the PC's own Shelly plug every cycle;
     # if the relay is OFF with mains present on its input and the UPS is on
