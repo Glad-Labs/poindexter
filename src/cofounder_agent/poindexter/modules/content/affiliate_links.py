@@ -39,7 +39,16 @@ def _find_eligible_span(line: str, keyword: str) -> tuple[int, int] | None:
     (so it won't fire inside an existing ``[kw](url)`` or a ``/go/kw`` path)
     and not inside an inline-code span.
     """
-    pattern = re.compile(r"(?<![\w`/\[\]])(" + re.escape(keyword) + r")(?![\w`\]])")
+    # Whole word, and not a fragment of an identifier: ``glm-4.7-5090:latest``
+    # must not become ``glm-4.7-[ASUS ROG Astral RTX 5090](/go/…):latest``
+    # (2026-09-13, a queued post). A ``-``/``.``/``:``/``_`` that joins the
+    # keyword to another word character on either side marks a model tag, a
+    # version, a hostname or a path segment — never prose. Sentence-final
+    # punctuation ("… a 5090." / "5090, which") is still followed by a
+    # non-word character, so ordinary mentions keep matching.
+    pattern = re.compile(
+        r"(?<![\w`/\[\]])(?<!\w[-.:_])(" + re.escape(keyword) + r")(?![\w`\]])(?![-.:_]\w)"
+    )
     for m in pattern.finditer(line):
         if _inside_inline_code(line, m.start()):
             continue

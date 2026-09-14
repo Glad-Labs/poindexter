@@ -121,3 +121,39 @@ def test_shared_keyword_winner_injects_once_across_its_recurring_keywords():
     assert out.count("/go/psu") == 1  # first mention only, across all its keywords
     assert "/go/headset" not in out  # the losing link is never injected
     assert out.count("[PSU](/go/psu)") == 1
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-13: a keyword inside an identifier is not a mention. A queued post's
+# model tag ``glm-4.7-5090:latest`` came out as
+# ``glm-4.7-[ASUS ROG Astral RTX 5090](/go/…):latest``.
+# ---------------------------------------------------------------------------
+
+def test_keyword_inside_a_model_tag_or_version_is_not_eligible():
+    from poindexter.modules.content.affiliate_links import _find_eligible_span
+
+    assert _find_eligible_span("pinned to glm-4.7-5090:latest on GPU 1", "5090") is None
+    assert _find_eligible_span("the model glm-4.7-5090 is pinned", "5090") is None
+    assert _find_eligible_span("driver v5090.2 shipped", "5090") is None
+    assert _find_eligible_span("see rtx_5090_build for the parts", "5090") is None
+    assert _find_eligible_span("host gpu-5090:8000/health", "5090") is None
+
+
+def test_ordinary_mentions_with_punctuation_still_match():
+    from poindexter.modules.content.affiliate_links import _find_eligible_span
+
+    assert _find_eligible_span("runs on an RTX 5090.", "5090") == (15, 19)
+    assert _find_eligible_span("a 5090, which has 32GB", "5090") == (2, 6)
+    assert _find_eligible_span("5090", "5090") == (0, 4)
+    assert _find_eligible_span("(RTX 5090)", "5090") == (5, 9)
+
+
+def test_injection_leaves_model_tags_alone_end_to_end():
+    from poindexter.modules.content.affiliate_links import AffiliateLink, inject_affiliate_links
+
+    link = AffiliateLink(code="asus-rog-astral-nvidia-geforce-rtx", url="https://x", display_text="ASUS ROG Astral RTX 5090", keywords=["5090"])
+    md = "- **glm-4.7-5090:latest**: 177 tok/s decode.\n\nIt runs on an RTX 5090 with room to spare."
+    out, injected = inject_affiliate_links(md, [link], cap=3, last_used={}, rng=None)
+    assert "glm-4.7-5090:latest" in out
+    assert "[ASUS ROG Astral RTX 5090](/go/asus-rog-astral-nvidia-geforce-rtx)" in out
+    assert injected == ["asus-rog-astral-nvidia-geforce-rtx"]
