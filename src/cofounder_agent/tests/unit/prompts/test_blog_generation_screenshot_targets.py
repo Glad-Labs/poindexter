@@ -26,6 +26,7 @@ _CALL_SITE_KWARGS = {
     "internal_link_titles": "none",
     "screenshot_targets": "- qa-rails: The QA Rails board",
     "chart_targets": "- llm-decode-vs-delivered: decode vs delivered",
+    "image_subject_rule": "People may appear in an image subject when the section is about them.",
     "target_length": 1200,
     "word_count": 1200,
     "style": "technical",

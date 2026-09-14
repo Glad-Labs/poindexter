@@ -4,7 +4,7 @@ description: >
   Video director — given a post body + narration script + target duration,
   produces a JSON shot list (ordered shots with per-shot source plugin,
   prompt/query, and duration) for the post's video. Enforces the
-  no-AI-humans + stylized-not-photoreal policies. Used by the
+  per-niche human-subject + style policies (services/media_subject_policy.py). Used by the
   generate_video_shot_list pipeline stage. Operator brand is templated via
   {site_name}.
 license: Apache-2.0
@@ -138,31 +138,11 @@ SHOT SOURCES AVAILABLE
 
 HUMAN-SUBJECT POLICY
 --------------------
-People are welcome in AI-rendered shots, in the STYLIZED styles below. (This
-reverses an older blanket ban written when diffusion models produced melted
-faces and six-fingered hands; the current image model renders people cleanly
-in illustration styles, re-verified 2026-08-27.) Two rules still hold, because
-they are what keeps AI people clean:
-- NEVER photoreal for a human — "photorealistic" / "8K" / "DSLR" humans still
-  land in uncanny territory. Stylized illustration is the house style anyway.
-- Keep the human ACTION specific and simple: one or two figures doing
-  something concrete and relevant ("speaking into a headset microphone",
-  "pointing at a dashboard"). Crowds and complex hand work are where any model
-  is weakest.
-Never render a "diagram" or "chart" as the SUBJECT of an AI shot (diffusion
-models fill those with garbled fake labels); abstract data shapes on a screen
-are fine.
+{human_subject_policy}
 
 STYLE POLICY FOR AI SOURCES
 ---------------------------
-image_gen / image_kenburns / generative prompts must be STYLIZED, not photoreal —
-photorealistic AI output reads as slop. Pick a stylized modifier:
-flat vector illustration / cinematic illustration / isometric 3D /
-line art / cyberpunk neon / glassmorphism / low poly / watercolor /
-pixel art / paper cutout. Never include "photorealistic", "8K", "DSLR",
-"hyper-realistic", "cinematic photography" — those trigger the AI tell.
-
-Pexels is exempt from the style policy — it IS real footage.
+{style_policy}
 
 HARD RULES
 ----------
@@ -184,10 +164,7 @@ HARD RULES
    rejected outright, so split a long beat into multiple shots instead
    of holding one shot past 30 seconds.
 8. AI-source prompts (image_gen / image_kenburns / generative) MUST follow the
-   HUMAN-SUBJECT POLICY and STYLE POLICY above. Human subject →
-   source="pexels" (or a faceless silhouette only if it MUST be AI).
-   Never name a human noun in an AI prompt, not even as "no people".
-   No photorealism.
+   HUMAN-SUBJECT POLICY and STYLE POLICY above. {human_subject_rule}
 9. Set director_model to "{model}" and director_prompt_version to "v1.4".
 10. Set director_decided_at to the current UTC ISO timestamp: "{now_iso}"
 
@@ -358,27 +335,11 @@ wide horizon).
 
 HUMAN-SUBJECT POLICY (same policy as the long director)
 -------------------------------------------------------
-People are welcome in AI-rendered shots, in the STYLIZED styles below. (This
-reverses an older blanket ban written when diffusion models produced melted
-faces and six-fingered hands; the current image model renders people cleanly
-in illustration styles, re-verified 2026-08-27.) Two rules still hold, because
-they are what keeps AI people clean:
-- NEVER photoreal for a human — "photorealistic" / "8K" / "DSLR" humans still
-  land in uncanny territory. Stylized illustration is the house style anyway.
-- Keep the human ACTION specific and simple: one or two figures doing
-  something concrete and relevant ("speaking into a headset microphone",
-  "pointing at a dashboard"). Crowds and complex hand work are where any model
-  is weakest.
-Never render a "diagram" or "chart" as the SUBJECT of an AI shot (diffusion
-models fill those with garbled fake labels); abstract data shapes on a screen
-are fine.
+{human_subject_policy}
 
 STYLE POLICY FOR AI SOURCES (unchanged)
 ---------------------------------------
-image_gen / image_kenburns / generative prompts must be STYLIZED, not photoreal. Pick a
-modifier: flat vector illustration / cinematic illustration / isometric 3D /
-line art / cyberpunk neon / glassmorphism / low poly. Never "photorealistic",
-"8K", "DSLR", "hyper-realistic". Pexels is exempt — it IS real footage.
+{style_policy}
 
 HARD RULES (short-form)
 -----------------------
@@ -397,9 +358,8 @@ HARD RULES (short-form)
    cuts frequent.
 8. Never more than 2 consecutive shots from the same source. First and last
    shots MUST NOT be "generative".
-9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above —
-   human subject → source="pexels", and never a human noun (not even
-   "no people") in an image_gen / image_kenburns / generative prompt.
+9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above.
+   {human_subject_rule}
 10. Set director_model to "{model}", director_prompt_version to "short_v1.3",
     director_decided_at to "{now_iso}".
 
@@ -490,8 +450,7 @@ CONSTRAINTS (keep the draft valid):
   A generative / image_gen / image_kenburns shot with an empty or missing "prompt" is
   INVALID and the whole revision is discarded - always write the "prompt" when
   you choose those sources.
-- HUMAN-SUBJECT POLICY unchanged: humans go to source "pexels"; never name a
-  human noun in an image_gen / image_kenburns / generative prompt, not even as "no people".
+- HUMAN-SUBJECT POLICY unchanged: {human_subject_rule}
 - shots idx 0-indexed and contiguous; sum of duration_s equals total_duration_s
   within 0.5s; duration_s never exceeds 30.0 per shot and the list never
   exceeds 30 shots (hard schema caps); narration_offset_s is REQUIRED on every
@@ -526,11 +485,10 @@ REVISE for retention, then output the REVISED list:
 3. VARIETY + HERO - vary source; upgrade at most 1-2 mid-clip beats to "generative"
    for motion (never the first or last shot; never more than 2 generative in a short).
 4. ON-BRAND + HUMAN/STYLE POLICY - identical to the long director (dark-techno
-   palette, stylized not photoreal, humans go to pexels, no human noun in an AI
-   prompt).
+   palette, per the style policy). {human_subject_rule}
 
 CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; image_gen /
-image_kenburns / generative use a non-empty on-brand "prompt" (no humans) and NO
+image_kenburns / generative use a non-empty on-brand "prompt" (per the human-subject policy) and NO
 "query"; generative ALSO carries "motion" (one sentence: camera move + what
 physically moves - preserve it when keeping a generative shot, write one when
 upgrading to generative); holdover uses neither. When you change a shot's

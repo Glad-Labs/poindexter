@@ -12,6 +12,9 @@ import json
 
 from poindexter.modules.content.stages.generate_video_shot_list import _extract_json_object
 from poindexter.schemas.video_shot_list import scan_for_human_tokens
+from poindexter.services.media_subject_policy import prompt_variables, resolve_media_policy
+
+_POLICY_VARS = prompt_variables(resolve_media_policy(None, None))
 from poindexter.services.prompt_manager import UnifiedPromptManager
 
 _KEY = "video.director_v1"
@@ -48,6 +51,7 @@ def test_director_renders_operator_brand_no_literal_placeholder() -> None:
         now_iso="2026-05-30T00:00:00Z",
         site_name="Glad Labs",
         demo_catalog="- demo_id=\"posts-list\" (6.5s, content): Recent posts.",
+        **_POLICY_VARS,
     )
     assert "video director for a Glad Labs blog post" in rendered
     assert "{site_name}" not in rendered
@@ -69,6 +73,7 @@ def test_director_renders_clean_with_empty_site_name() -> None:
         now_iso="2026-05-30T00:00:00Z",
         site_name="",
         demo_catalog="NONE AVAILABLE",
+        **_POLICY_VARS,
     )
     assert "{site_name}" not in rendered
     assert "blog post" in rendered
@@ -111,6 +116,7 @@ def test_short_director_renders_9x16_and_brand() -> None:
         now_iso="2026-06-08T00:00:00Z",
         site_name="Glad Labs",
         demo_catalog="- demo_id=\"posts-list\" (6.5s, content): Recent posts.",
+        **_POLICY_VARS,
     )
     assert "short-form video director for a Glad Labs post" in rendered
     assert "{site_name}" not in rendered
@@ -162,6 +168,7 @@ def test_long_director_example_ai_prompts_have_no_human_tokens() -> None:
         target_duration_s="60.0", model="m",
         now_iso="2026-05-30T00:00:00Z", site_name="Glad Labs",
         demo_catalog="NONE AVAILABLE",
+        **_POLICY_VARS,
     )
     ai_prompts = _example_ai_prompts(rendered)
     assert ai_prompts, "expected at least one AI-source example shot to scan"
@@ -181,6 +188,7 @@ def test_short_director_example_ai_prompts_have_no_human_tokens() -> None:
         target_duration_s="20.0", model="m",
         now_iso="2026-06-08T00:00:00Z", site_name="Glad Labs",
         demo_catalog="NONE AVAILABLE",
+        **_POLICY_VARS,
     )
     ai_prompts = _example_ai_prompts(rendered)
     assert ai_prompts, "expected at least one AI-source example shot to scan"
@@ -209,6 +217,7 @@ def test_long_director_offers_cli_demo_with_the_catalogue() -> None:
         target_duration_s="60.0", model="m",
         now_iso="2026-07-29T00:00:00Z", site_name="Glad Labs",
         demo_catalog='- demo_id="ops-sweep" (20.0s, process): An operator sweep.',
+        **_POLICY_VARS,
     )
     assert '"cli_demo"' in rendered
     assert "ops-sweep" in rendered
@@ -225,6 +234,7 @@ def test_long_director_states_when_no_demos_are_baked() -> None:
         target_duration_s="60.0", model="m",
         now_iso="2026-07-29T00:00:00Z", site_name="Glad Labs",
         demo_catalog="NONE AVAILABLE — no demo clips are baked on this install.",
+        **_POLICY_VARS,
     )
     assert "NONE AVAILABLE" in rendered
 
@@ -238,6 +248,7 @@ def test_short_director_forbids_cli_demo() -> None:
     pm = UnifiedPromptManager()
     rendered = pm.get_prompt(
         "video.director_short_v1",
+        **_POLICY_VARS,
         title="T", content="C", short_script="S",
         target_duration_s="45.0", model="m",
         now_iso="2026-07-29T00:00:00Z", site_name="Glad Labs",
@@ -255,6 +266,7 @@ def test_review_prompt_restates_the_cli_demo_field_contract() -> None:
     pm = UnifiedPromptManager()
     rendered = pm.get_prompt(
         "video.review_v1",
+        human_subject_rule=_POLICY_VARS["human_subject_rule"],
         current_shot_list="{}", podcast_script="S",
         title="T", content="C",
         target_duration_s="60.0", model="m",

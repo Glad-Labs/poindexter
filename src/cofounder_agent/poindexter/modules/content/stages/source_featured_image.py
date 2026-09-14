@@ -72,6 +72,11 @@ from poindexter.services.image_prompt_sanitizer import (
     clean_image_prompt,
     subject_fallback_prompt,
 )
+from poindexter.services.media_subject_policy import (
+    image_people_sentence,
+    negative_prompt,
+    resolve_media_policy,
+)
 from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
@@ -94,8 +99,7 @@ DEFAULT_STYLES: tuple[tuple[str, str], ...] = (
 
 
 DEFAULT_NEGATIVE = (
-    "text, words, letters, watermark, face, person, hands, blurry, "
-    "low quality, distorted, ugly, deformed"
+    "text, words, letters, watermark, blurry, low quality, distorted, ugly, deformed"
 )
 
 
@@ -467,6 +471,7 @@ class SourceFeaturedImageStage:
                 site_config=site_config,
                 platform=platform,
                 pool=getattr(_db, "pool", None) if _db else None,
+                niche_slug=context.get("niche_slug"),
             )
             if gen_image is not None:
                 stages["3_featured_image_found"] = True
@@ -794,6 +799,7 @@ async def _try_image_gen_featured(
     site_config: Any = None,
     platform: Any = None,
     pool: Any = None,
+    niche_slug: str | None = None,
 ) -> GeneratedImage | None:
     """Full image-gen path: pick style → build prompt → render → upload to R2.
 
@@ -806,15 +812,15 @@ async def _try_image_gen_featured(
     """
     # site_config is the DI seam (glad-labs-stack#330) — passed by execute().
     try:
-        negative = (
-            site_config.get("image_negative_prompt", DEFAULT_NEGATIVE)
-            if site_config is not None else DEFAULT_NEGATIVE
+        negative = negative_prompt(
+            resolve_media_policy(site_config, niche_slug),
+            (site_config.get("image_negative_prompt", DEFAULT_NEGATIVE) if site_config is not None else DEFAULT_NEGATIVE) or DEFAULT_NEGATIVE,
         )
         img_gen_prompt = existing_prompt
         if not img_gen_prompt:
             img_gen_prompt = await _build_image_gen_prompt(
                 subject, on_style_picked, style_tracker,
-                site_config=site_config, platform=platform,
+                site_config=site_config, platform=platform, niche_slug=niche_slug,
             )
 
         image_gen_url = (
@@ -979,9 +985,9 @@ def _resolve_image_prompt(key: str, **kwargs: Any) -> str:
         return (
             f"Write a Stable Diffusion XL image prompt for a {style} illustration "
             f"depicting a concrete, specific scene about: {subject}. {style_tags}. "
-            "Commit to the named art style. People are fine when the subject "
-            "involves them — stylized, never photoreal, doing something "
-            "concrete. No text or lettering. "
+            "Commit to the named art style. "
+            f"{kwargs.get('people_sentence', '')} "
+            "No text or lettering. "
             "1-2 sentences. Output ONLY the prompt."
         )
 
@@ -1047,6 +1053,7 @@ async def _build_image_gen_prompt(
     *,
     site_config: Any = None,
     platform: Any = None,
+    niche_slug: str | None = None,
 ) -> str:
     """Pick a rotation style + ask the LLM for an editorial prompt.
 
@@ -1080,6 +1087,7 @@ async def _build_image_gen_prompt(
         subject=subject,
         style=chosen_style,
         style_tags=style_tags,
+        people_sentence=image_people_sentence(resolve_media_policy(site_config, niche_slug)),
     )
 
     pool = getattr(site_config, "_pool", None) if site_config is not None else None

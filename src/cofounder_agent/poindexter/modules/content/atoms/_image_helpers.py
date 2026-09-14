@@ -47,6 +47,11 @@ from typing import Any
 import httpx
 
 from poindexter.services.image_prompt_sanitizer import clean_image_prompt
+from poindexter.services.media_subject_policy import (
+    image_people_sentence,
+    negative_prompt,
+    resolve_media_policy,
+)
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
@@ -113,8 +118,7 @@ INLINE_STYLES: tuple[str, ...] = (
 
 
 IMAGE_GEN_NEGATIVE_PROMPT = (
-    "text, words, letters, watermark, face, person, hands, blurry, "
-    "low quality, distorted, ugly, deformed"
+    "text, words, letters, watermark, blurry, low quality, distorted, ugly, deformed"
 )
 
 
@@ -130,12 +134,17 @@ def _default_render_timeout() -> int:
     return default_int("image_render_timeout_seconds")
 
 
-def _get_image_gen_negative_prompt(site_config: Any) -> str:
-    """Return operator-configured negative prompt, or the safe default."""
-    if site_config is None:
-        return IMAGE_GEN_NEGATIVE_PROMPT
-    override = (site_config.get("image_negative_prompt", "") or "").strip()
-    return override if override else IMAGE_GEN_NEGATIVE_PROMPT
+def _get_image_gen_negative_prompt(site_config: Any, niche_slug: str | None = None) -> str:
+    """Operator negative prompt (or the default), shaped by the niche's media policy.
+
+    ``services/media_subject_policy.py`` strips the human terms from the base and appends
+    them only when the niche forbids people, so one row serves every niche.
+    """
+    base = IMAGE_GEN_NEGATIVE_PROMPT
+    if site_config is not None:
+        override = (site_config.get("image_negative_prompt", "") or "").strip()
+        base = override if override else base
+    return negative_prompt(resolve_media_policy(site_config, niche_slug), base)
 
 
 def _apply_base_style(prompt: str, site_config: Any) -> str:
@@ -171,7 +180,7 @@ def _load_inline_styles(site_config: Any) -> tuple[str, ...]:
 
 
 def _build_inline_prompt_instruction(
-    search_query: str, style: str,
+    search_query: str, style: str, *, site_config: Any = None, niche_slug: str | None = None,
 ) -> str:
     """LLM instruction for an inline image-gen prompt.
 
@@ -190,15 +199,15 @@ def _build_inline_prompt_instruction(
         return get_prompt_manager().get_prompt(
             "image.inline_illustration",
             search_query=search_query, style=style,
+            people_sentence=image_people_sentence(resolve_media_policy(site_config, niche_slug)),
         )
     except Exception:  # noqa: BLE001 — prompt resolution is best-effort
         return (
             f"Write a Stable Diffusion XL image prompt for a {style} blog "
             f"illustration depicting a concrete, specific scene about: "
-            f"{search_query}. Commit to the named art "
-            "style. People are fine when the subject involves them — "
-            "stylized, never photoreal. No text or lettering. 1 sentence. "
-            "Output ONLY the prompt."
+            f"{search_query}. Commit to the named art style. "
+            f"{image_people_sentence(resolve_media_policy(site_config, niche_slug))} "
+            "No text or lettering. 1 sentence. Output ONLY the prompt."
         )
 
 
@@ -240,6 +249,7 @@ async def _plan_and_inject_placeholders(
     site_config: Any,
     max_images: int = 3,
     start_num: int = 1,
+    niche_slug: str | None = None,
 ) -> tuple[str, dict[str, Any] | None]:
     """Ask the Image Decision Agent to decide + inject [IMAGE-N] placeholders.
 
@@ -272,6 +282,7 @@ async def _plan_and_inject_placeholders(
         plan = await plan_images(
             content_text, topic, category, max_images=max_images,
             site_config=site_config,
+            niche_slug=niche_slug,
         )
     except Exception as agent_err:
         logger.exception("[IMAGE_AGENT] Image Decision Agent FAILED: %s", agent_err)
@@ -441,6 +452,7 @@ async def _try_image_gen(
     site_config: Any,
     task_id: str | None,
     platform: Any = None,
+    niche_slug: str | None = None,
 ) -> str | None:
     """Generate an image-gen image and return its final URL (R2 or local).
 
@@ -458,6 +470,7 @@ async def _try_image_gen(
         inline_style = random.choice(_load_inline_styles(site_config))
         img_prompt_req = _build_inline_prompt_instruction(
             search_query, inline_style,
+            site_config=site_config, niche_slug=niche_slug,
         )
 
         # Step 1: dispatcher generates the image-gen prompt. When no pool is
@@ -502,7 +515,7 @@ async def _try_image_gen(
         logger.info("  [IMAGE-%s] image-gen prompt: %s...", num, img_gen_prompt[:60])
 
         # Step 2: image-gen renders the image
-        neg_prompt = _get_image_gen_negative_prompt(site_config)
+        neg_prompt = _get_image_gen_negative_prompt(site_config, niche_slug)
         _render_default = _default_render_timeout()
         render_timeout = (
             site_config.get_int("image_render_timeout_seconds", _render_default)
@@ -671,6 +684,7 @@ async def _batch_generate_inline_image_urls(
     site_config: Any,
     task_id: str | None,
     platform: Any,
+    niche_slug: str | None = None,
 ) -> list[str | None]:
     """Render image-gen images for ALL placeholders using two batched GPU locks.
 
@@ -709,7 +723,7 @@ async def _batch_generate_inline_image_urls(
 
     image_gen_url = site_config.get("image_gen_server_url", "http://image-gen-server:9836")
     model = site_config.get("inline_image_prompt_model", "llama3:latest")
-    neg_prompt = _get_image_gen_negative_prompt(site_config)
+    neg_prompt = _get_image_gen_negative_prompt(site_config, niche_slug)
 
     # ------------------------------------------------------------------ #
     # Phase 1: build ALL prompts under a single Ollama lock              #
@@ -734,6 +748,7 @@ async def _batch_generate_inline_image_urls(
                 inline_style = random.choice(_load_inline_styles(site_config))
                 img_prompt_req = _build_inline_prompt_instruction(
                     search_query, inline_style,
+                    site_config=site_config, niche_slug=niche_slug,
                 )
                 try:
                     result = await platform.dispatch.complete(

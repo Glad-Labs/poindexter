@@ -17,11 +17,16 @@ SKILL.md loader normalizes every template to YAML ``|`` clip semantics
 from __future__ import annotations
 
 import json
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from poindexter.services.image_decision_agent import ImagePlanResult, plan_images
+from poindexter.services.media_subject_policy import (
+    image_decision_people_rule,
+    resolve_media_policy,
+)
 from poindexter.services.prompt_manager import UnifiedPromptManager
 from poindexter.services.site_config import SiteConfig
 
@@ -62,7 +67,7 @@ RULES:
 2. For each, decide: image_gen or pexels? What style? What specific image?
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
-5. People are permitted and often clearer than a metaphor — render them STYLIZED (never photorealistic), one or two figures, doing something concrete and relevant. (This reverses an older blanket ban from when diffusion models produced melted faces and hands; re-verified 2026-08-27 against the current model.) Never put text, words, or letters in AI-generated images — and never ask for a "diagram" or "chart" specifically, since diffusion models render those with garbled fake labels; describe the underlying object or scene instead.
+5. People are permitted and often clearer than a metaphor — render them STYLIZED (never photorealistic), one or two figures, doing something concrete and relevant. Never put text, words, or letters in AI-generated images — and never ask for a "diagram" or "chart" specifically, since diffusion models render those with garbled fake labels; describe the underlying object or scene instead.
 6. Ground each image's subject in the section's excerpt — depict what that section actually discusses, not a generic Test Category image.
 
 Output ONLY valid JSON (no markdown, no explanation):
@@ -96,6 +101,7 @@ class TestImageDecisionPromptSnapshot:
     def test_image_decision_snapshot(self, pm: UnifiedPromptManager):
         actual = pm.get_prompt(
             "image.decision",
+            people_rule=image_decision_people_rule(resolve_media_policy(None, None)),
             topic="Test Topic",
             category="Test Category",
             section_list="  1. Section One\n  2. Section Two",
@@ -103,36 +109,27 @@ class TestImageDecisionPromptSnapshot:
         )
         assert actual == _IMAGE_DECISION_EXPECTED
 
-    def test_image_decision_forbids_human_depiction(self, pm: UnifiedPromptManager):
-        """The prompt must forbid people/hands/figures, not just faces.
+    def test_image_decision_people_clause_follows_the_niche_policy(self, pm: UnifiedPromptManager):
+        """The people clause is rendered from services/media_subject_policy.py.
 
-        Brand style is "no detailed humans" (feedback_image_style), and the live
-        image model (z_image_turbo) is guidance-distilled — it runs at CFG 0 and
-        IGNORES the negative prompt, so the positive prompt is the only lever.
-        Validation finding 2026-06-21: a "hands typing on a keyboard" inline image
-        shipped because RULE 5 banned only "faces" and the pexels source invited
-        "people working".
+        2026-09-14: the blanket no-people rule became a per-niche setting with
+        people allowed by default. Under the default the prompt permits one or two
+        stylized figures and still never invites a generic "people working" scene;
+        under ``media_human_subjects=none`` it forbids people, hands and figures.
         """
-        import re
-
-        rendered = pm.get_prompt(
+        common = dict(topic="AI in Healthcare", category="healthcare", section_list="- Intro\n- Body", max_images=3)
+        permissive = pm.get_prompt("image.decision", people_rule=image_decision_people_rule(resolve_media_policy(None, None)), **common)
+        assert "People are permitted" in permissive and "STYLIZED (never photorealistic)" in permissive
+        assert "people working" not in permissive
+        strict = pm.get_prompt(
             "image.decision",
-            topic="T",
-            category="C",
-            section_list="  1. S",
-            max_images=3,
-        ).lower()
-        assert "people working" not in rendered, (
-            "image.decision must not invite 'people working' — brand style is no "
-            "detailed humans"
+            people_rule=image_decision_people_rule(resolve_media_policy(SiteConfig(initial_config={"media_human_subjects": "none"}), None)),
+            **common,
         )
-        assert re.search(
-            r"(never|no|avoid|without)[^.\n]*\b(people|hands|human|figure)", rendered
-        ), (
-            "image.decision must explicitly forbid people/hands/human figures — "
-            "z_image_turbo ignores the negative prompt, so the positive prompt "
-            "must avoid all human subjects"
+        assert re.search(r"(never|no|avoid|without)[^.\n]*\b(people|hands|human|figure)", strict, re.IGNORECASE), (
+            "under media_human_subjects=none the prompt must explicitly forbid people/hands/figures"
         )
+        assert "People are permitted" not in strict
 
 
 # ---------------------------------------------------------------------------

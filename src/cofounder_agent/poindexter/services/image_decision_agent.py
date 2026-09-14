@@ -25,6 +25,10 @@ from poindexter.services.langfuse_shim import observe
 from poindexter.services.llm_providers.dispatcher import dispatch_complete
 from poindexter.services.llm_providers.thinking_models import strip_think_blocks
 from poindexter.services.logger_config import get_logger
+from poindexter.services.media_subject_policy import (
+    image_decision_people_rule,
+    resolve_media_policy,
+)
 from poindexter.services.prompt_manager import get_prompt_manager
 from poindexter.services.site_config import SiteConfig
 
@@ -114,6 +118,7 @@ async def plan_images(
     max_images: int = 4,
     *,
     site_config: SiteConfig,
+    niche_slug: str | None = None,
 ) -> ImagePlanResult:
     """Analyze article content and plan image placement + sourcing.
 
@@ -182,6 +187,7 @@ async def plan_images(
         category=category,
         section_list=section_list,
         max_images=max_images,
+        people_rule=image_decision_people_rule(resolve_media_policy(_sc, niche_slug)),
     )
 
     if pool is None:

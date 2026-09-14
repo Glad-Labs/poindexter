@@ -2312,7 +2312,20 @@ DEFAULTS: dict[str, str] = {
     # Leave empty to keep "text, words, letters, watermark, face, person, ..."
     # (Ignored by guidance-distilled models like z_image_turbo, which run at
     # CFG 0 and take no negative prompt.)
-    'image_negative_prompt': 'text, words, letters, numbers, watermark, signature, logo, face, person, human, hands, fingers, blurry, low quality, distorted, deformed',
+    # Human terms (face, person, human, hands, fingers) moved out of this base
+    # on 2026-09-14: services/media_subject_policy.py appends them only when the
+    # niche's ``media_human_subjects`` is ``none``.
+    'image_negative_prompt': 'text, words, letters, numbers, watermark, signature, logo, blurry, low quality, distorted, deformed',
+    # ----- Media subject / style policy (services/media_subject_policy.py, 2026-09-14) -----
+    # Whether AI media may show people and whether it may be photoreal, resolved
+    # niche-first: ``niche.<slug>.media.human_subjects`` / ``.style_policy``
+    # override these. Values: allow | stylized_only | none; stylized | any.
+    # The blanket no-people rule was written for models that melted faces and
+    # hands; the current models do not, so people are allowed by default and a
+    # niche can opt back out.
+    'media_human_subjects': 'allow',
+    'media_style_policy': 'stylized',
+    'media_negative_prompt_human_terms': 'face, person, human, hands, fingers',
     # Style suffix appended to every image-gen prompt — niche brand voice.
     # Examples: "cyberpunk, neon accents" (tech), "natural light, botanical" (gardening)
     'image_base_style_prompt': '',
@@ -5444,6 +5457,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_gen_server_url': {'value_type': 'url'},
     'image_model': {'value_type': 'model'},
     'image_negative_prompt': {'value_type': 'string'},
+    'media_human_subjects': {'owner': 'media_policy', 'value_type': 'string'},
+    'media_style_policy': {'owner': 'media_policy', 'value_type': 'string'},
+    'media_negative_prompt_human_terms': {'owner': 'media_policy', 'value_type': 'string'},
     'image_fanout_enabled': {'value_type': 'boolean'},
     'image_fanout_candidates': {'value_type': 'string'},
     'image_fanout_priority': {'value_type': 'string'},

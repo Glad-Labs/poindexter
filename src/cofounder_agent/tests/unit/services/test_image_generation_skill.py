@@ -57,6 +57,11 @@ def test_image_templates_carry_placeholders() -> None:
     # images as garbled text when it contained a proper noun/product name.
     inline = pm.prompts["image.inline_illustration"]["template"]
     assert "{search_query}" in inline
+    # The people clause is policy-driven (services/media_policy.py), never hardcoded.
+    assert "{people_sentence}" in inline and "{people_sentence}" in featured
+    assert "{people_rule}" in pm.prompts["image.decision"]["template"]
+    for key in ("image.featured_image", "image.inline_illustration", "image.decision"):
+        assert "never photoreal" not in pm.prompts[key]["template"].lower() or "{" in pm.prompts[key]["template"]
     assert "{topic}" not in inline
     assert "{style}" in inline
 

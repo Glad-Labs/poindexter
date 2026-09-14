@@ -7,7 +7,7 @@ A hero for a post about Poindexter wants the brand mark. A mark means type.
 
 Asked for a branded hero, image-gen produced the words "Poindexter Philosophy"
 in mangled letterforms across the top of the frame, over two human figures with
-six-fingered hands — breaking the no-text rule _and_ the no-people rule from
+six-fingered hands — breaking the no-text rule _and_ the then-blanket no-people rule (now the per-niche policy in `media-subject-policy.md`) from
 [`blog-generation/SKILL.md`](../../src/cofounder_agent/skills/content/blog-generation/SKILL.md)
 in a single image. The image-gen OCR gate exists because this keeps happening.
 

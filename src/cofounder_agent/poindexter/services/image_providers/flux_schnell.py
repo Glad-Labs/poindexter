@@ -249,7 +249,12 @@ def _resolve_negative(config: dict[str, Any], site_config: Any) -> str:
     if site_config is None:
         return ""
     try:
-        return str(site_config.get("image_negative_prompt", "") or "")
+        from poindexter.services.media_subject_policy import negative_prompt, resolve_media_policy
+
+        return negative_prompt(
+            resolve_media_policy(site_config, config.get("niche_slug")),
+            str(site_config.get("image_negative_prompt", "") or ""),
+        )
     except Exception:
         return ""
 

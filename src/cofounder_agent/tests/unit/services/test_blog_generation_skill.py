@@ -43,6 +43,7 @@ _BLOG_KEYS = (
 _REQUIRED_PLACEHOLDERS = {
     "blog_generation.initial_draft": (
         "{topic}",
+        "{image_subject_rule}",
         "{style}",
         "{tone}",
         "{target_length}",

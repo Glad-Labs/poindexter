@@ -85,6 +85,8 @@ class ReviewVideoShotListStage:
         model: str,
         timeout_s: int,
         prompt_key: str,
+        policy_vars: dict[str, str] | None = None,
+        human_subjects: str = "none",
         script_var: str,
         script: str,
         current: dict[str, Any],
@@ -111,6 +113,7 @@ class ReviewVideoShotListStage:
                 model=model,
                 now_iso=now_iso,
                 site_name=site_name,
+                human_subject_rule=(policy_vars or {}).get("human_subject_rule", ""),
                 **{script_var: script},
             )
         except Exception as exc:
@@ -178,7 +181,7 @@ class ReviewVideoShotListStage:
             return None
         try:
             parsed = _reconcile_shot_list(_tolerant_json_loads(body))
-            revised = VideoShotList.model_validate(parsed)
+            revised = VideoShotList.model_validate(parsed, context={"human_subjects": human_subjects})
         except Exception as exc:
             logger.warning("[VIDEO_REVIEW] revised list invalid (%s): %s", prompt_key, exc)
             return None
@@ -240,6 +243,9 @@ class ReviewVideoShotListStage:
         title = context.get("title", "")
         content_text = context.get("content", "")
         task_id = context.get("task_id")
+        from poindexter.services.media_subject_policy import prompt_variables, resolve_media_policy
+        _policy = resolve_media_policy(context.get("site_config"), context.get("niche_slug"))
+        _policy_vars = prompt_variables(_policy)
         # Disable the reasoning channel (default) — same rationale as the
         # director: leaving it on starves the revised JSON (see
         # _resolve_director_think). Same output-token + retry budget too.
@@ -261,6 +267,7 @@ class ReviewVideoShotListStage:
             or context.get("podcast_script", "")
         )
         revised = await self._review_one(
+                policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
             platform=platform, pool=pool, model=model, timeout_s=review_timeout,
             prompt_key="video.review_v1", script_var="podcast_script",
             script=long_narration_script, current=current,
@@ -276,6 +283,7 @@ class ReviewVideoShotListStage:
         short = context.get("short_shot_list")
         if short:
             revised_short = await self._review_one(
+                policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
                 platform=platform, pool=pool, model=model, timeout_s=review_timeout,
                 prompt_key="video.review_short_v1", script_var="short_script",
                 script=context.get("short_summary_script", ""), current=short,

@@ -243,7 +243,7 @@
     },
     {
       "key": "image_negative_prompt",
-      "value": "text, words, letters, numbers, watermark, signature, logo, face, person, human, hands, fingers, blurry, low quality, distorted, deformed",
+      "value": "text, words, letters, numbers, watermark, signature, logo, blurry, low quality, distorted, deformed",
       "category": "image",
       "description": "Negative prompt for all image-gen generations"
     },

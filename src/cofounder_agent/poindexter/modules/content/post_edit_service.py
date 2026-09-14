@@ -505,7 +505,15 @@ class PostEditService:
 
         negative = ""
         if self._site_config is not None:
-            negative = self._site_config.get("image_negative_prompt", "") or ""
+            from poindexter.services.media_subject_policy import (
+                negative_prompt,
+                resolve_media_policy,
+            )
+
+            negative = negative_prompt(
+                resolve_media_policy(self._site_config, None),
+                self._site_config.get("image_negative_prompt", "") or "",
+            )
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             out_path = tmp.name

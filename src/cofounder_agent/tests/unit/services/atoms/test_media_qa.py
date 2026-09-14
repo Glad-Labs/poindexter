@@ -708,3 +708,28 @@ def test_atom_meta_shape():
     assert ATOM_META.produces == ("media_qa_result",)
     out_names = {f.name for f in ATOM_META.outputs}
     assert "media_qa_result" in out_names
+
+
+async def test_photoreal_human_check_is_skipped_when_the_niche_allows_photoreal_people(monkeypatch, tmp_path):
+    """media_style_policy=any + media_human_subjects=allow → the vision check is not even attempted."""
+    from poindexter.modules.content.atoms import media_qa as mq
+
+    called = []
+
+    async def _boom(*a, **kw):
+        called.append(1)
+        return "human_found"
+
+    monkeypatch.setattr(mq, "_detect_human_in_frame", _boom)
+    monkeypatch.setattr(mq, "_measure_av_sync", lambda *a, **kw: None, raising=False)
+    sc = _site_config(media_qa_frame_detection_enabled="true", media_style_policy="any", media_human_subjects="allow")
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    state = {"task_id": "t1", "site_config": sc, "long_video_path": str(video), "video_shot_list": None,
+             "long_narration_audio_path": "", "niche_slug": "glad-labs"}
+    out = await mq.run(state)
+    res = out.get("media_qa_result") or {}
+    assets = res.get("assets") or res.get("videos") or {}
+    flat = str(res)
+    assert not called, "vision human-detect must not run when the niche allows photoreal people"
+    assert "policy_allows" in flat or assets == {}

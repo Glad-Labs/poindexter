@@ -527,6 +527,8 @@ class GenerateVideoShotListStage:
         site_name: str,
         demo_catalog: str,
         timeout_s: int,
+        policy_vars: dict[str, str] | None = None,
+        human_subjects: str = "none",
         think: bool | None = None,
         max_tokens: int = _DIRECTOR_MAX_TOKENS_DEFAULT,
         max_retries: int = 0,
@@ -564,6 +566,7 @@ class GenerateVideoShotListStage:
                 # {site_name} (migrated to skills/content/video-director).
                 site_name=site_name,
                 demo_catalog=demo_catalog,
+                **(policy_vars or {}),
                 **{script_param: script},
             )
         except Exception as exc:
@@ -717,7 +720,7 @@ class GenerateVideoShotListStage:
             # no-ops Stage-2 video. Creative fields untouched.
             parsed = _tolerant_json_loads(json_body)
             parsed = _reconcile_shot_list(parsed)
-            shot_list = VideoShotList.model_validate(parsed)
+            shot_list = VideoShotList.model_validate(parsed, context={"human_subjects": human_subjects})
         except Exception as exc:
             await _log_audit(
                 pool,
@@ -773,6 +776,9 @@ class GenerateVideoShotListStage:
             (context.get("video_long_script") or "").strip() or podcast_script
         )
         task_id = context.get("task_id")
+        from poindexter.services.media_subject_policy import prompt_variables, resolve_media_policy
+        _policy = resolve_media_policy(context.get("site_config"), context.get("niche_slug"))
+        _policy_vars = prompt_variables(_policy)
 
         if not content_text or not title:
             return StageResult(
@@ -861,6 +867,7 @@ class GenerateVideoShotListStage:
         # prompt's template var is still named {podcast_script} for backcompat
         # with frozen prompt overrides; the CONTENT is the narration script.
         long_shot_list = await self._produce_shot_list(
+                policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
             platform=platform,
             pool=pool,
             model=model,
@@ -915,6 +922,7 @@ class GenerateVideoShotListStage:
             short_summary_script = ""
         if short_summary_script:
             short_shot_list = await self._produce_shot_list(
+                policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
                 platform=platform,
                 pool=pool,
                 model=model,

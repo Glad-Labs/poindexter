@@ -413,3 +413,41 @@ def test_motion_scanned_for_human_tokens(
 def test_motion_over_length_rejected() -> None:
     with pytest.raises(ValidationError):
         Shot.model_validate(_valid_shot(0, "generative", motion="x" * 501))
+
+
+# ---------------------------------------------------------------------------
+# Per-niche media policy (services/media_policy.py): the human-noun scan is the
+# ``none`` branch. Callers pass the policy through pydantic's validation context.
+# ---------------------------------------------------------------------------
+
+def test_human_scan_is_skipped_when_the_niche_allows_people(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="poindexter.schemas.video_shot_list"):
+        shot = Shot.model_validate(
+            _valid_shot(0, "image_kenburns", prompt="a developer typing at a keyboard"),
+            context={"human_subjects": "allow"},
+        )
+    assert shot.source == "image_kenburns"
+    assert "human-indicator" not in caplog.text
+
+
+def test_human_scan_runs_when_the_niche_forbids_people(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="poindexter.schemas.video_shot_list"):
+        Shot.model_validate(
+            _valid_shot(0, "generative", prompt="a developer typing at a keyboard", motion="slow push in"),
+            context={"human_subjects": "none"},
+        )
+    assert "human-indicator" in caplog.text
+
+
+def test_shot_list_context_reaches_nested_shots(caplog: pytest.LogCaptureFixture) -> None:
+    data = {
+        "version": 1, "aspect": "16:9", "total_duration_s": 5.0,
+        "shots": [{**_valid_shot(0, "image_gen", prompt="a person waving"), "duration_s": 5.0, "narration_offset_s": 0.0}],
+        "director_model": "m", "director_prompt_version": "v1", "director_decided_at": "2026-09-14T00:00:00Z",
+    }
+    with caplog.at_level(logging.WARNING, logger="poindexter.schemas.video_shot_list"):
+        try:
+            VideoShotList.model_validate(data, context={"human_subjects": "allow"})
+        except ValidationError:
+            pass  # other list-level rules may reject this minimal fixture; the scan is what is under test
+    assert "human-indicator" not in caplog.text

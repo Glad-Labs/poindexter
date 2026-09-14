@@ -97,6 +97,7 @@ class TestGetPrompt:
         result = pm.get_prompt(
             "blog_generation.initial_draft",
             topic="Machine Learning",
+            image_subject_rule="People may appear in an image subject when the section is about them.",
             style="professional",
             tone="informative",
             target_length=1500,

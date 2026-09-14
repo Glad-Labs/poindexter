@@ -48,9 +48,10 @@ import tempfile
 from typing import Any
 
 from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.services.media_quality_service import _probe_duration, _run_argv
 
 # Reuse the audit-era ffprobe/subprocess helpers rather than reinventing them.
-from poindexter.services.media_quality_service import _probe_duration, _run_argv
+from poindexter.services.media_subject_policy import resolve_media_policy
 from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -487,7 +488,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 )
 
             # --- Check C: frame human-detection (vision, gated + fail-soft) ---
-            human_detection = await _detect_human_in_frame(
+            _policy = resolve_media_policy(site_config, state.get("niche_slug"))
+            human_detection = "policy_allows" if _policy.photoreal_humans_allowed else await _detect_human_in_frame(
                 video_path,
                 duration_s=actual,
                 site_config=site_config,

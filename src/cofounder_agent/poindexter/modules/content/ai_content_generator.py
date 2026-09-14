@@ -39,6 +39,7 @@ from typing import Any
 import httpx
 
 from poindexter.services.logger_config import get_logger
+from poindexter.services.media_subject_policy import resolve_media_policy, writer_image_subject_rule
 from poindexter.services.prompt_manager import get_prompt_manager
 from poindexter.services.rag_excerpt import excerpt_around_query
 
@@ -568,6 +569,9 @@ class AIContentGenerator:
                     texts=(topic, ", ".join(tags) if tags else ""),
                 ),
                 chart_targets=_describe_chart_targets(self._site_config),
+                image_subject_rule=writer_image_subject_rule(
+                    resolve_media_policy(self._site_config, getattr(self, "niche_slug", None))
+                ),
                 target_length=target_length,
                 word_count=target_length,  # legacy alias for premium override
                 style=style,
@@ -1599,6 +1603,7 @@ async def generate_with_context(
     think: bool | None = None,
     prompt_metrics: dict[str, int] | None = None,
     topic_kind: str | None = None,
+    niche_slug: str | None = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
@@ -1674,6 +1679,7 @@ async def generate_with_context(
         screenshot_targets=screenshot_targets_for_post(
             _sc, topic_kind=topic_kind, texts=(topic, angle),
         ),
+        image_subject_rule=writer_image_subject_rule(resolve_media_policy(_sc, niche_slug)),
     )
     if prompt_metrics is not None:
         prompt_metrics["prompt_chars"] = len(prompt)

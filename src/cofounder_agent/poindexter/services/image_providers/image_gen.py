@@ -55,9 +55,15 @@ class ImageGenProvider:
             # DI seam (glad-labs-stack#330) — image_provider plugins receive
             # `_site_config` from the dispatcher per CLAUDE.md.
             sc = config.get("_site_config")
-            negative = (
-                sc.get("image_negative_prompt", "") if sc is not None else ""
-            ) or ""
+            from poindexter.services.media_subject_policy import (
+                negative_prompt,
+                resolve_media_policy,
+            )
+
+            negative = negative_prompt(
+                resolve_media_policy(sc, config.get("niche_slug")),
+                (sc.get("image_negative_prompt", "") if sc is not None else "") or "",
+            )
 
         # Delegate to the in-process ImageService — it owns the torch/
         # diffusers pipeline and GPU cache. We just hand it a path.

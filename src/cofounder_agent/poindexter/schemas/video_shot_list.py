@@ -20,7 +20,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +192,7 @@ class Shot(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_source_inputs(self) -> Shot:
+    def _validate_source_inputs(self, info: ValidationInfo) -> Shot:
         """Each source requires its specific input fields.
 
         Fail loud per ``feedback_no_silent_defaults`` — a director that
@@ -236,7 +236,13 @@ class Shot(BaseModel):
             if start <= 0 or end <= 0:
                 raise ValueError("kenburns_zoom values must be positive")
 
-        if self.source in ("image_gen", "image_kenburns", "wan21", "generative"):
+        # The human-noun scan is the ``none`` branch of the per-niche media policy
+        # (services/media_subject_policy.py). Callers that know the niche pass
+        # ``context={"human_subjects": policy.human_subjects}``; with no context the
+        # scan runs (the pre-policy behaviour), so an unaware caller stays strict.
+        ctx = info.context or {}
+        scan_humans = str(ctx.get("human_subjects", "none")) == "none"
+        if scan_humans and self.source in ("image_gen", "image_kenburns", "wan21", "generative"):
             for field_name, text in (("prompt", self.prompt), ("motion", self.motion)):
                 if not text:
                     continue

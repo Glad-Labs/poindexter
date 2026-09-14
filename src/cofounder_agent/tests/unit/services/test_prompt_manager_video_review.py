@@ -21,6 +21,7 @@ def test_review_prompt_renders_and_substitutes(key: str, script_kwarg: str) -> N
         title="My Title",
         content="Body content.",
         current_shot_list='{"shots": []}',
+        human_subject_rule="Human subjects are allowed in AI prompts.",
         model="ollama/gemma-4-31B-it-qat:latest",
         now_iso="2026-06-19T00:00:00Z",
         **{script_kwarg: "the narration script"},

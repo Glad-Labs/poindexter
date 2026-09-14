@@ -874,6 +874,7 @@ async def _draft_node(state: _State) -> _State:
             think=_resolve_writer_think(site_config),
             prompt_metrics=draft_metrics,
             topic_kind=state.get("topic_kind") or None,
+            niche_slug=state.get("niche_slug") or None,
         )
 
     min_substance_words = _resolve_min_substance_words(site_config)
