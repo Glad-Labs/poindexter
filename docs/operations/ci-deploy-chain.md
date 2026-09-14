@@ -646,6 +646,41 @@ Unit-template changes for the connector remain manual, same as the session
 units: copy the rendered template to `/etc/systemd/system`, then
 `sudo systemctl daemon-reload && sudo systemctl restart poindexter-mcp-http`.
 
+## Automatic rollback: the post-deploy health gate
+
+Since 2026-09-13 the deploy sync does not walk away from an image it rebuilt.
+`scripts/linux/deploy_health_gate.py` (stdlib, system `python3`) runs in two
+halves around the rebuild:
+
+1. **snapshot** — before `start-stack.sh build`, record each rebuilt service's
+   running container, image ref and image id (`~/.poindexter/deploy-gate-snapshot.json`).
+2. **verify** — after compose-apply (and after the bind-mount bounce), poll each
+   unit until it is `healthy` (or, for services without a healthcheck, `running`
+   for `deploy_health_gate_settle_seconds`). A definitive failure —
+   `restarting`, `exited`/`dead`, `unhealthy`, or a `RestartCount` of 2+ on the
+   fresh container — triggers, for rebuilt services with a snapshot and
+   `deploy_rollback_on_unhealthy=true`: `docker tag <old id> <image ref>` and a
+   `--force-recreate` of that one service, so the container is back on the
+   image it ran before. Either way a **critical** `alert_events` row carries
+   the failed container's last 20 log lines (the traceback), so the page names
+   the cause. A timeout without a verdict pages **warning** and does not roll
+   back — a slow worker start is not a broken image.
+
+A rolled-back service's sha is written to `~/.poindexter/deploy-rolled-back-sha`
+and that service is **not rebuilt again at that sha**; the fix must merge as a
+new commit, at which point the marker no longer matches and the normal path
+resumes. Bounced bind-mount containers (`poindexter-worker`,
+`poindexter-pipeline-bot`) are verified by name and paged, never rolled back —
+their rollback is the manual pin below. `--no-gate` skips the step. The pass
+still records its marker on a rollback (the sha was handled; the alert is the
+follow-up), so the brain's `deploy_sync` probe does not read a rollback as a
+broken deploy path.
+
+Why: the sync rebuilt `chatterbox` on a merged change, recreated it, logged
+"Pipeline now running …", and the container died on `ModuleNotFoundError` 507
+times over eight hours. Nothing between "build succeeded" and "a downstream
+probe noticed" had looked at the container.
+
 ## Fast rollback (pin deploy clone to a known-good SHA)
 
 The durable rollback path is `git revert` + CI + full sync — ~30+ minutes.

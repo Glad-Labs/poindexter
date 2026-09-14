@@ -48,6 +48,18 @@
 #      a deliberately-stopped service (parked voice-agent) is `exited`, so this
 #      cannot resurrect one. Runs even on a clean apply, and is reported in the
 #      status file, because a silent self-heal hides a recurring fault.
+#   6b. health gate (scripts/linux/deploy_health_gate.py, 2026-09-13): every
+#      rebuilt service is watched until it is healthy; a container that comes up
+#      `restarting`/`exited`/`unhealthy` is ROLLED BACK onto the image it ran
+#      before the rebuild (snapshot taken before `build`), a critical alert
+#      carries its last log lines, and the sha is recorded in
+#      deploy-rolled-back-sha so the same broken build is not retried every
+#      10 minutes — the fix must merge as a new commit. Bounced bind-mount
+#      containers are watched too (page only; their rollback is a code revert).
+#      Chatterbox restarted 507 times behind "Pipeline now running …" before
+#      this existed. Settings: deploy_health_gate_seconds,
+#      deploy_health_gate_settle_seconds, deploy_rollback_on_unhealthy;
+#      --no-gate skips it.
 #   7. bounce-on-change: restart the long-lived bind-mount app containers
 #      (worker, pipeline-bot) so changed Python is re-imported. prefect-worker
 #      is deliberately NOT bounced (each flow run is a fresh subprocess that
@@ -125,9 +137,12 @@ MARKER_FILE="$POINDEXTER_HOME/deploy-last-restarted-sha"
 # only a fully clean pass writes and which drives the code-advanced diff.
 BOUNCE_MARKER_FILE="$POINDEXTER_HOME/deploy-last-bounced-sha"
 CONNECTOR_MARKER_FILE="$POINDEXTER_HOME/deploy-last-connector-sha"
+ROLLBACK_MARKER_FILE="$POINDEXTER_HOME/deploy-rolled-back-sha"
+GATE_SNAPSHOT_FILE="$POINDEXTER_HOME/deploy-gate-snapshot.json"
+HEALTH_GATE="$DEPLOY_DIR/scripts/linux/deploy_health_gate.py"
 LOG_MAX_BYTES="${POINDEXTER_DEPLOY_LOG_MAX_BYTES:-5242880}"
 
-NO_RESTART=0; NO_FLOW_CHECK=0
+NO_RESTART=0; NO_FLOW_CHECK=0; NO_GATE=0
 for arg in "$@"; do
   case "$arg" in
     --status)
@@ -139,6 +154,7 @@ for arg in "$@"; do
       exit 0 ;;
     --no-restart) NO_RESTART=1 ;;
     --no-flow-check) NO_FLOW_CHECK=1 ;;
+      --no-gate) NO_GATE=1 ;;
     --force-flow-reset) FORCE_FLOW_RESET=1 ;;
   esac
 done
@@ -381,6 +397,26 @@ fi
 rebuild_services="$(echo "$rebuild_services" | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ' | sed 's/ $//')"
 
 build_failed=0
+# A service rolled back at THIS sha is not rebuilt again — the same image would
+# fail the same gate every 10 minutes. The marker clears itself when HEAD moves.
+gate_skipped=""
+if [ -n "$rebuild_services" ] && [ -f "$ROLLBACK_MARKER_FILE" ]; then
+  rb_sha="$(head -n1 "$ROLLBACK_MARKER_FILE" 2>/dev/null | awk '{print $1}')"
+  if [ "$rb_sha" = "$head_sha" ]; then
+    rb_services="$(head -n1 "$ROLLBACK_MARKER_FILE" | cut -d' ' -f2-)"
+    kept=""
+    for svc in $rebuild_services; do
+      case " $rb_services " in *" $svc "*) gate_skipped="${gate_skipped:+$gate_skipped }$svc" ;; *) kept="${kept:+$kept }$svc" ;; esac
+    done
+    rebuild_services="$kept"
+    [ -n "$gate_skipped" ] && log "Not rebuilding $gate_skipped: rolled back at $short_head (deploy-rolled-back-sha); merge a fix to retry." WARN
+  fi
+fi
+gate_pre_ok=0
+if [ -n "$rebuild_services" ] && [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ]; then
+  # shellcheck disable=SC2086
+  if python3 "$HEALTH_GATE" snapshot --services $rebuild_services > "$GATE_SNAPSHOT_FILE" 2>>"$LOG_FILE"; then gate_pre_ok=1; else log "health gate: snapshot failed; rollback unavailable this pass" WARN; fi
+fi
 if [ -n "$rebuild_services" ]; then
   log "Build inputs changed in $last_short..$short_head; rebuilding: $rebuild_services"
   # shellcheck disable=SC2086 — deliberate word-split of the service list
@@ -487,6 +523,32 @@ while IFS= read -r c; do
 done < <(bash "$DEPLOY_DIR/scripts/start-stack.sh" ps --status=created --format '{{.Name}}' 2>/dev/null || true)
 [ -n "$stranded_started" ] && log "Recovered stranded containers: $stranded_started" WARN
 
+# ---- health gate: did what we just rebuilt / restarted actually come up? ----
+# Rebuilt services: watch until healthy; on a definitive failure roll back onto
+# the pre-rebuild image (from the snapshot above) and page critical with the
+# container's last log lines. Bounced bind-mount containers: watch and page only.
+gate_result=""; gate_rolled_back=""
+if [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ] && { [ -n "$rebuild_services" ] || [ -n "$restarted" ]; }; then
+  gate_units=""
+  [ "$build_failed" = "0" ] && gate_units="$rebuild_services"
+  for c in $(echo "$restarted" | tr ',' ' '); do gate_units="${gate_units:+$gate_units }container:$c"; done
+  if [ -n "$gate_units" ]; then
+    gate_args=(verify --sha "$head_sha" --stack-cmd "bash $DEPLOY_DIR/scripts/start-stack.sh")
+    if [ "$gate_pre_ok" = "1" ]; then gate_args+=(--snapshot "$GATE_SNAPSHOT_FILE"); else gate_args+=(--no-rollback); fi
+    # shellcheck disable=SC2086
+    gate_json="$(python3 "$HEALTH_GATE" "${gate_args[@]}" --services $gate_units 2>>"$LOG_FILE")"; gate_rc=$?
+    case "$gate_rc" in
+      0) log "health gate: all healthy ($gate_units)"; gate_result="healthy" ;;
+      2) gate_rolled_back="$(printf '%s' "$gate_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(" ".join(k for k,v in d.items() if v.get("rolled_back")))' 2>/dev/null)"
+         printf '%s %s\n' "$head_sha" "$gate_rolled_back" > "$ROLLBACK_MARKER_FILE"
+         log "health gate: ROLLED BACK $gate_rolled_back at $short_head — previous image restored, critical alert sent, this sha will not be rebuilt for them. $gate_json" ERROR
+         gate_result="rolled back: $gate_rolled_back" ;;
+      1) log "health gate: unhealthy without rollback: $gate_json" ERROR; gate_result="unhealthy (see alert)" ;;
+      *) log "health gate: gate itself failed (rc=$gate_rc): $gate_json" ERROR; gate_result="gate error rc=$gate_rc" ;;
+    esac
+  fi
+fi
+
 # ---- claude.ai-connector sync (host systemd unit, not compose) -------------
 # poindexter-mcp-http.service runs mcp-server/http_server.py out of THIS
 # clone; before 2026-08-16 it ran from the operator checkout and mcp-server
@@ -564,6 +626,8 @@ if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$restart_failed"
   # had to act means the apply raced, and a silent self-heal is how a recurring
   # fault stays invisible.
   [ -n "$stranded_started" ] && detail="${detail:+$detail; }recovered stranded: $stranded_started"
+    [ -n "$gate_result" ] && detail="${detail:+$detail; }health gate: $gate_result"
+    [ -n "$gate_skipped" ] && detail="${detail:+$detail; }not rebuilt (rolled back at this sha): $gate_skipped"
   log "Pipeline now running $short_head. ${detail}"
   write_status deployed "$head_sha" "$last_deployed" "$restarted" "$detail"
 else

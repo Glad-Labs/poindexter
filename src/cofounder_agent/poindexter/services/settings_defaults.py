@@ -4251,6 +4251,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # catching genuine sustained outages (#1301).
     'mcp_http_probe_min_consecutive_failures': '3',
 
+    # ----- Deploy health gate (scripts/linux/deploy_health_gate.py, 2026-09-13) -----
+    # After the deploy sync rebuilds an image it waits for the recreated
+    # container to be healthy and rolls back onto the previous image when it
+    # comes up restarting/exited/unhealthy (chatterbox: 507 restarts behind a
+    # "deployed" log line). Seconds to wait; how long a no-healthcheck service
+    # must stay running; whether to roll back or only page.
+    'deploy_health_gate_seconds': '300',
+    'deploy_health_gate_settle_seconds': '30',
+    'deploy_rollback_on_unhealthy': 'true',
     # ----- Container restart-loop watch (poindexter/brain/container_restart_loop_probe.py) -----
     # A poindexter-* container whose RestartCount grows by >= threshold within
     # one brain cycle (~5 min), or sits `restarting` past it, pages critical
@@ -5506,6 +5515,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'max_log_backup_count': {'value_type': 'integer'},
     'max_log_size_mb': {'value_type': 'integer'},
     'mcp_http_probe_min_consecutive_failures': {'owner': 'mcp_http_probe', 'value_type': 'integer'},
+    'deploy_health_gate_seconds': {'owner': 'deploy_sync', 'value_type': 'integer'},
+    'deploy_health_gate_settle_seconds': {'owner': 'deploy_sync', 'value_type': 'integer'},
+    'deploy_rollback_on_unhealthy': {'owner': 'deploy_sync', 'value_type': 'boolean'},
     'container_restart_loop_probe_enabled': {'owner': 'container_restart_loop_probe', 'value_type': 'boolean'},
     'container_restart_loop_reminder_hours': {'owner': 'container_restart_loop_probe', 'value_type': 'integer'},
     'container_restart_loop_threshold': {'owner': 'container_restart_loop_probe', 'value_type': 'integer'},
