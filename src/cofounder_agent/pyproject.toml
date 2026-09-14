@@ -109,7 +109,7 @@ python-multipart = ">=0.0.31"
 # in this lock. <2.12 bounds the pin so a re-lock can't silently jump to
 # a new CUDA-major torch (the 2.12/CUDA-13 split that bit #1891). See
 # docs/superpowers/specs/2026-06-23-worker-cpu-torch-design.md.
-torch = { version = ">=2.13.0,<2.14", source = "pytorch-cpu", optional = true }
+torch = { version = ">=2.14.0,<2.15", source = "pytorch-cpu", optional = true }
 # Floor at 5.3.0 closes CVE-2026-4372 (HIGH) + CVE-2026-1839 (RCE via
 # malicious checkpoint / Text2Text pipeline). The 5.x line requires the
 # sentence-transformers >=5.6 bump below (3.x hard-caps transformers <5).
