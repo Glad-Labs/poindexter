@@ -87,7 +87,7 @@ def _artifact_zip_bytes(payload: dict[str, Any] | None = None) -> bytes:
     return buf.getvalue()
 
 
-def _sc(repo: str = "Glad-Labs/glad-labs-stack") -> MagicMock:
+def _sc(repo: str = "Glad-Labs/poindexter") -> MagicMock:
     sc = MagicMock()
     sc.get.side_effect = lambda key, default="": {
         "benchmark_ingest_repo": repo,
