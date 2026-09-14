@@ -57,3 +57,5 @@ stylized people, and the writer prompt and negative prompt had not — the rule
 had drifted apart across surfaces and could not be tuned per vertical. People
 are now allowed by default; the house style stays stylized until a niche opts
 into `any`.
+
+Related: [media personas](media-personas.md) — a presenter is a face bound to a voice (`persona.<slug>.*`), selected per niche by `niche.<slug>.media.persona`; its `style_policy` must be allowed by the policy above.

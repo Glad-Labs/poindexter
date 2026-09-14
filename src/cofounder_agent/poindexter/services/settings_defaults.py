@@ -2348,6 +2348,26 @@ DEFAULTS: dict[str, str] = {
     'media_human_subjects': 'allow',
     'media_style_policy': 'stylized',
     'media_negative_prompt_human_terms': 'face, person, human, hands, fingers',
+    # Presenter personas — a face bound to a voice, one key family per slug
+    # (docs/architecture/media-personas.md). Selection: niche.<slug>.media.persona
+    # → media_default_persona → none. The seeded default inherits the install's
+    # narration voice (empty voice_id = podcast_tts_voice) so nothing changes
+    # until an operator pins a voice or a portrait.
+    'media_default_persona': 'presenter',
+    'persona.presenter.display_name': 'Presenter',
+    'persona.presenter.description': (
+        'a friendly technology presenter in their thirties, head and shoulders, '
+        'looking straight into the camera'
+    ),
+    'persona.presenter.voice_provider': 'kokoro',
+    'persona.presenter.voice_id': '',
+    'persona.presenter.voice_ref_audio_url': '',
+    'persona.presenter.portrait_url': '',
+    'persona.presenter.portrait_prompt': '',
+    'persona.presenter.portrait_seed': '',
+    'persona.presenter.style_policy': 'photoreal',
+    'persona.presenter.enabled': 'true',
+    'persona.presenter.render_prompt_suffix': '',
     # Style suffix appended to every image-gen prompt — niche brand voice.
     # Examples: "cyberpunk, neon accents" (tech), "natural light, botanical" (gardening)
     'image_base_style_prompt': '',
@@ -5492,6 +5512,18 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_human_subjects': {'owner': 'media_policy', 'value_type': 'string'},
     'media_style_policy': {'owner': 'media_policy', 'value_type': 'string'},
     'media_negative_prompt_human_terms': {'owner': 'media_policy', 'value_type': 'string'},
+    'media_default_persona': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.display_name': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.description': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.voice_provider': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.voice_id': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.voice_ref_audio_url': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.portrait_url': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.portrait_prompt': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.portrait_seed': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.style_policy': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.enabled': {'owner': 'media_policy', 'value_type': 'boolean'},
+    'persona.presenter.render_prompt_suffix': {'owner': 'media_policy', 'value_type': 'string'},
     'image_fanout_enabled': {'value_type': 'boolean'},
     'image_fanout_candidates': {'value_type': 'string'},
     'image_fanout_priority': {'value_type': 'string'},

@@ -1959,3 +1959,40 @@ class TestNormalizeDashes:
             "9-5 at -5 degrees on 2026-05-04", site_config=_TEST_SC
         )
         assert _normalize_dashes(once, site_config=_TEST_SC) == once
+
+
+class TestSelectVoicePersona:
+    """A resolved presenter persona owns the narration voice (rotation off), so
+    the face the speech-to-video render animates always matches the voice."""
+
+    def _sc(self, **extra):
+        base = {
+            "podcast_tts_voice": "bf_emma",
+            "media_default_persona": "presenter",
+            "persona.presenter.display_name": "Presenter",
+            "persona.presenter.voice_id": "",
+            "persona.presenter.enabled": "true",
+            "persona.host.display_name": "Host",
+            "persona.host.voice_id": "bm_george",
+            "persona.host.enabled": "true",
+        }
+        base.update(extra)
+        return SiteConfig(initial_config=base)
+
+    def test_niche_persona_voice_wins_when_rotation_is_off(self):
+        sc = self._sc(**{"niche.dev-diary.media.persona": "host"})
+        assert _select_voice(sc, "post-1", niche_slug="dev-diary") == "bm_george"
+
+    def test_default_persona_with_empty_voice_inherits_podcast_tts_voice(self):
+        sc = self._sc()
+        assert _select_voice(sc, "post-1", niche_slug="glad-labs") == "bf_emma"
+        assert _select_voice(sc, "post-1") == "bf_emma"
+
+    def test_disabled_persona_falls_back_to_the_fixed_voice(self):
+        sc = self._sc(**{"niche.dev-diary.media.persona": "host", "persona.host.enabled": "false"})
+        assert _select_voice(sc, "post-1", niche_slug="dev-diary") == "bf_emma"
+
+    def test_rotation_on_still_wins_over_the_persona(self):
+        sc = self._sc(**{"tts_voice_rotation_enabled": "true", "niche.dev-diary.media.persona": "host"})
+        picks = {_select_voice(sc, f"post-{i}", niche_slug="dev-diary") for i in range(50)}
+        assert picks <= set(VOICE_POOL) and len(picks) > 1

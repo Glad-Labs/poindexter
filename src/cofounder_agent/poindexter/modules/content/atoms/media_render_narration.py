@@ -57,6 +57,14 @@ ATOM_META = AtomMeta(
 )
 
 
+
+def _niche_kw(state: dict) -> dict:
+    """``{"niche_slug": …}`` only when the task knows its niche — the persona
+    seam is opt-in, and every existing ``render_narration`` double keeps its
+    original keyword shape."""
+    slug = str(state.get("niche_slug") or "").strip()
+    return {"niche_slug": slug} if slug else {}
+
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Render long + short narration audio. Best-effort — never raises."""
     from poindexter.modules.content.atoms._narration_render import render_narration
@@ -75,6 +83,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         site_config=site_config,
         task_id=task_id,
         key=f"{task_id}_long",
+        **_niche_kw(state),
     )
 
     # Short: its own script only (a "short" narrated by the full article would
@@ -85,6 +94,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         site_config=site_config,
         task_id=task_id,
         key=f"{task_id}_short",
+        **_niche_kw(state),
     )
 
     return {

@@ -28,6 +28,7 @@ from .media import media_group
 from .memory import memory_group
 from .migrate import migrate_group
 from .model_eval import model_eval_group
+from .personas import personas_group
 from .pipeline import pipeline_group
 from .posts import post_group, posts_group
 from .pro import pro_group
@@ -145,6 +146,7 @@ main.add_command(firefighter_group, name="firefighter")
 # These were on disk under poindexter/cli/ but had never been registered
 # here — wired up 2026-05-09 alongside the OSS migration plan's Lane B.
 main.add_command(taps_group, name="taps")
+main.add_command(personas_group, name="personas")
 main.add_command(retention_group, name="retention")
 main.add_command(webhooks_group, name="webhooks")
 main.add_command(qa_gates_group, name="qa-gates")

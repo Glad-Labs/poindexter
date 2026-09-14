@@ -49,6 +49,14 @@ ATOM_META = AtomMeta(
 )
 
 
+
+def _niche_kw(state: dict) -> dict:
+    """``{"niche_slug": …}`` only when the task knows its niche — the persona
+    seam is opt-in, and every existing ``render_narration`` double keeps its
+    original keyword shape."""
+    slug = str(state.get("niche_slug") or "").strip()
+    return {"niche_slug": slug} if slug else {}
+
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Render the podcast narration MP3, returning its temp path (or '').
 
@@ -79,6 +87,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         site_config=site_config,
         task_id=task_id,
         key=str(task_id),
+        **_niche_kw(state),
     )
 
     # Intro/outro sting mix (poindexter#690, finished 2026-08): wrap the

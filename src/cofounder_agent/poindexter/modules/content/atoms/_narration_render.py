@@ -152,8 +152,12 @@ async def render_narration(
     site_config: Any,
     task_id: Any,
     key: str,
+    niche_slug: str | None = None,
 ) -> str:
     """Synthesize ``script`` (+ the CTA at ``cta_key``) to an MP3.
+
+    ``niche_slug`` lets the voice seam resolve the niche's presenter persona
+    (``persona_service``), so narration and the presenter's face agree.
 
     Returns the temp render path, or ``""`` on any fail-soft condition (empty
     script, no ``site_config``, or a TTS exception). NEVER raises — a narration
@@ -199,8 +203,13 @@ async def render_narration(
             heartbeat_seconds=live_activity.resolve_heartbeat_seconds(site_config),
         ) as act:
             await act.update(step="synthesizing narration")
+            # ``niche_slug`` only when known: the persona seam is opt-in and every
+            # existing synthesize double (tests, forks) keeps its two-arg shape.
+            synth_kwargs: dict[str, Any] = {"key": key}
+            if niche_slug:
+                synth_kwargs["niche_slug"] = niche_slug
             path, _duration = await PodcastService(site_config=site_config).synthesize(
-                text, key=key,
+                text, **synth_kwargs,
             )
     except Exception as exc:  # noqa: BLE001 — TTS failure must not halt the graph
         logger.warning(

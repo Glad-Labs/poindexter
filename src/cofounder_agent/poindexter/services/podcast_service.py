@@ -36,6 +36,7 @@ from typing import Any
 
 from poindexter.services.image_markers import strip_unresolved_image_markers
 from poindexter.services.logger_config import get_logger
+from poindexter.services.persona_service import resolve_persona_for_niche
 from poindexter.services.site_config import SiteConfig
 from poindexter.utils.exception_format import describe_exception
 
@@ -119,8 +120,20 @@ def _resolve_voice_pool(site_config: "SiteConfig | None") -> list[str]:
     return pool or list(VOICE_POOL)
 
 
-def _select_voice(site_config: "SiteConfig | None", rotation_key: str) -> str:
+def _select_voice(
+    site_config: "SiteConfig | None",
+    rotation_key: str,
+    niche_slug: str | None = None,
+) -> str:
     """Pick the narration voice. **Rotation is opt-in.**
+
+    With rotation off, a resolved presenter persona wins: ``niche.<slug>.media
+    .persona`` → ``media_default_persona`` (``persona_service``), and its
+    ``voice_id`` is the narration voice, so the face the speech-to-video render
+    animates always matches the voice. An empty persona ``voice_id`` inherits
+    ``podcast_tts_voice`` — the seeded default persona changes nothing until an
+    operator pins a voice. Rotation on still wins over the persona: the
+    operator asked for variety explicitly.
 
     ``tts_voice_rotation_enabled`` (default ``false``) is the master switch:
 
@@ -144,6 +157,9 @@ def _select_voice(site_config: "SiteConfig | None", rotation_key: str) -> str:
         except Exception:  # noqa: BLE001 — defensive; any read failure → no rotation
             rotate = False
         if not rotate:
+            persona = resolve_persona_for_niche(site_config, niche_slug)
+            if persona is not None and persona.voice_id:
+                return persona.voice_id
             try:
                 fixed = str(site_config.get("podcast_tts_voice", "") or "").strip() or VOICE_POOL[0]
             except Exception:  # noqa: BLE001
@@ -1293,6 +1309,7 @@ class PodcastService:
         *,
         output_path: "Path | str | None" = None,
         key: str = "",
+        niche_slug: str | None = None,
     ) -> tuple[str, int]:
         """Render ``script`` to an MP3 via Kokoro/Speaches TTS with deterministic
         voice rotation. Returns ``(file_path, duration_seconds)``; raises
@@ -1319,7 +1336,7 @@ class PodcastService:
             out.parent.mkdir(parents=True, exist_ok=True)
 
         voice_pool = _resolve_voice_pool(self._site_config)
-        selected = _select_voice(self._site_config, key or script)
+        selected = _select_voice(self._site_config, key or script, niche_slug=niche_slug)
         voices_to_try = [
             selected,
             *[v for v in voice_pool if v != selected],
