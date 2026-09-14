@@ -431,6 +431,14 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/brain_import_isolation_lint.py
 
+      # Sidecar Dockerfiles COPY source files by name, no CI job builds the CUDA
+      # images, and the deploy sync rebuilds them on any scripts/ change — so a
+      # sibling module that is imported but not copied ships as a restart loop
+      # (2026-09-13: chatterbox, 507 restarts). Unconditional: a Dockerfile-only
+      # push must run it. Stdlib, ~1 s.
+      - name: Dockerfile COPY-closure lint (every imported sibling is copied)
+        run: python scripts/ci/dockerfile_copy_closure_lint.py
+
       # Information-disclosure guard (security audit L2, #724): no
       # HTTPException whose detail= echoes a caught exception to the client
       # (resolved IPs from an httpx ConnectError, which JWT claim failed...).

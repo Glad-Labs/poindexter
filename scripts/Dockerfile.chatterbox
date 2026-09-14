@@ -51,9 +51,9 @@ WORKDIR /app
 # before the container's USER applies), so appuser can't write a sibling
 # dir there either — /tmp is always world-writable regardless of mounts.
 ENV NUMBA_CACHE_DIR=/tmp/numba_cache
-COPY --chown=appuser tts_sidecars/text_chunking.py /app/text_chunking.py
-COPY --chown=appuser tts_sidecars/audio_join.py /app/audio_join.py
-COPY --chown=appuser tts_sidecars/_voice_paths.py /app/_voice_paths.py
+# Every sidecar module ships (glob), so a new sibling import never needs a
+# Dockerfile edit; dockerfile_copy_closure_lint still verifies the closure.
+COPY --chown=appuser tts_sidecars/*.py /app/
 COPY --chown=appuser tts_sidecars/chatterbox_server.py /app/server.py
 
 EXPOSE 8000
