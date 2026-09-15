@@ -590,6 +590,10 @@ class TestFinalizeCardStateMerge:
         assert any("chat_plans" in q for q, _ in pool.queries)
 
 
+async def _ok_handler(ctx, **kwargs):
+    return "ok"
+
+
 @pytest.mark.unit
 class TestFabricatedToolClaims:
     """Live 2026-09-15: the model answered "[used tool plan_pipeline — ok] …
@@ -650,3 +654,43 @@ class TestFabricatedToolClaims:
             ],
         )
         assert "empty reply" in _events_of(events, "text")[0]["text"]
+
+
+
+    def test_outcome_claim_without_a_call_gets_one_corrective_round(self, monkeypatch):
+        """Second observed shape: no marker, just prose asserting a result
+        ("has been planned … Plan ID: …") with zero tool calls."""
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs,
+            completions=[
+                _completion(text="The pipeline has been planned with exactly these steps. Plan ID: 4321879a."),
+                _completion(tool_calls=[_tool_call("plan_pipeline", '{"intent": "x"}')]),
+                _completion(text="Plan ready: 12 steps (plan b8d69ec4)."),
+            ],
+            tool_specs={"plan_pipeline": _spec("plan_pipeline", _ok_handler)},
+        )
+        kinds = [e["event"] for e in events]
+        assert kinds == ["turn_started", "tool_start", "tool_result", "text", "done"]
+        assert "4321879a" not in _events_of(events, "text")[0]["text"]
+
+    def test_plain_answers_are_not_mistaken_for_outcome_claims(self, monkeypatch):
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs,
+            completions=[_completion(text="Nothing is waiting for approval or running right now.")],
+        )
+        assert [e["event"] for e in events] == ["turn_started", "text", "done"]
+        assert _events_of(events, "text")[0]["text"].startswith("Nothing is waiting")
+
+    def test_outcome_claim_after_a_real_call_is_left_alone(self, monkeypatch):
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs,
+            completions=[
+                _completion(tool_calls=[_tool_call("plan_pipeline", '{"intent": "x"}')]),
+                _completion(text="The plan has been created. Plan ID: b8d69ec4."),
+            ],
+            tool_specs={"plan_pipeline": _spec("plan_pipeline", _ok_handler)},
+        )
+        assert _events_of(events, "text")[0]["text"] == "The plan has been created. Plan ID: b8d69ec4."

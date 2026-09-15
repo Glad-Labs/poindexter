@@ -138,15 +138,33 @@ def _args_digest(raw_arguments: str, cap: int = 300) -> str:
 # loop can catch the claim, and strips it from anything shown to the operator.
 _TOOL_TRACE_RE = re.compile(r"^[ \t]*\[used tool [\w.\-]+ — (?:ok|failed)\][ \t]*$", re.MULTILINE)
 _FABRICATION_NUDGE = (
-    "You did not call any tool this turn — a \"[used tool …]\" line is a "
-    "transcript marker, not a result, and nothing was run or created. If the "
-    "request needs a tool, call it now through tool_calls; otherwise answer "
-    "plainly without claiming tool use."
+    "You did not call any tool this turn, so nothing was planned, created, "
+    "queued or changed — a \"[used tool …]\" line is a transcript marker, not "
+    "a result, and an id you did not receive from a tool this turn does not "
+    "exist. If the request needs a tool, call it now through tool_calls; "
+    "otherwise answer plainly without claiming an outcome."
+)
+
+
+# Second observed shape (2026-09-15, same night, same model): no marker at
+# all, just prose asserting a tool outcome — "The pipeline … has been planned
+# … Plan ID: 4321879a" / "has been created and queued" — with zero tool calls
+# in the turn. Only ids and creation verbs count; ordinary answers ("nothing is
+# waiting for approval") never match.
+_OUTCOME_CLAIM_RE = re.compile(
+    r"(?:\b(?:Plan|Task)\s+ID\s*:|\bhas been (?:planned|created|queued|scheduled|"
+    r"submitted|updated|cancelled|canceled|approved|rejected)\b|\bI(?:'ve| have) "
+    r"(?:created|queued|planned|scheduled|cancelled|canceled|updated)\b)",
+    re.IGNORECASE,
 )
 
 
 def _claims_tool_use(text: str) -> bool:
     return bool(_TOOL_TRACE_RE.search(text or ""))
+
+
+def _claims_tool_outcome(text: str) -> bool:
+    return bool(_OUTCOME_CLAIM_RE.search(text or ""))
 
 
 def _strip_tool_trace(text: str) -> str:
@@ -369,7 +387,9 @@ async def run_turn(
                     turn_tool_calls = recovered
             if not turn_tool_calls:
                 final_text = (completion.text or "").strip()
-                if _claims_tool_use(final_text):
+                if _claims_tool_use(final_text) or (
+                    executed == 0 and _claims_tool_outcome(final_text)
+                ):
                     if executed == 0 and not fabrication_nudged:
                         # The model echoed the transcript marker instead of
                         # calling the tool. One corrective round; the marker
