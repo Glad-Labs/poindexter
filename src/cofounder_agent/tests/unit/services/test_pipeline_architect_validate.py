@@ -386,3 +386,128 @@ def test_versioned_unknown_atom_still_fails_with_the_bare_name_in_the_hint():
         ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
     assert ok is False
     assert any("'zzz'" in e and "not in catalog" in e for e in errors), errors
+
+
+# --- structural faults a requires/produces walk cannot see (2026-09-15) -----
+
+
+def _meta_par(name, parallelizable, *, requires=(), produces=()):
+    return AtomMeta(
+        name=name, type="atom", version="1.0.0", description=name,
+        requires=tuple(requires), produces=tuple(produces),
+        parallelizable=parallelizable,
+    )
+
+
+class TestConcurrentFanOutOntoAnExclusiveNode:
+    """Live failure, plan task 59151278: the architect wired
+    transcribe_narration to BOTH video renders. LangGraph runs sibling
+    branches concurrently in one process, both reached for the exclusive
+    gpu.lock('video'), and the loser waited out the 900s timeout and raised
+    GpuLockTimeoutError — the task wedged in_progress."""
+
+    def _catalog(self):
+        return {
+            "a": _meta_par("a", True, produces=("x",)),
+            "long": _meta_par("long", False, requires=("x",)),
+            "short": _meta_par("short", False, requires=("x",)),
+            "ok_sibling": _meta_par("ok_sibling", True, requires=("x",)),
+        }
+
+    def test_two_exclusive_siblings_are_rejected(self):
+        spec = _spec(
+            [{"id": "n1", "atom": "a"}, {"id": "nl", "atom": "long"}, {"id": "ns", "atom": "short"}],
+            [{"from": "n1", "to": "nl"}, {"from": "n1", "to": "ns"},
+             {"from": "nl", "to": "END"}, {"from": "ns", "to": "END"}],
+            entry="n1",
+        )
+        with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(self._catalog())):
+            ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+        assert ok is False
+        assert any("cannot run concurrently" in e for e in errors), errors
+        assert any("Chain them instead" in e for e in errors), errors
+
+    def test_an_exclusive_node_beside_a_parallel_one_is_still_rejected(self):
+        """The exclusive node is the one that breaks — it cannot tolerate ANY
+        sibling, however well-behaved."""
+        spec = _spec(
+            [{"id": "n1", "atom": "a"}, {"id": "nl", "atom": "long"}, {"id": "nk", "atom": "ok_sibling"}],
+            [{"from": "n1", "to": "nl"}, {"from": "n1", "to": "nk"},
+             {"from": "nl", "to": "END"}, {"from": "nk", "to": "END"}],
+            entry="n1",
+        )
+        with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(self._catalog())):
+            ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+        assert ok is False
+        assert any("'nl'" in e and "cannot run concurrently" in e for e in errors), errors
+
+    def test_parallelizable_siblings_are_fine(self):
+        catalog = dict(self._catalog())
+        catalog["p1"] = _meta_par("p1", True, requires=("x",))
+        catalog["p2"] = _meta_par("p2", True, requires=("x",))
+        spec = _spec(
+            [{"id": "n1", "atom": "a"}, {"id": "q1", "atom": "p1"}, {"id": "q2", "atom": "p2"}],
+            [{"from": "n1", "to": "q1"}, {"from": "n1", "to": "q2"},
+             {"from": "q1", "to": "END"}, {"from": "q2", "to": "END"}],
+            entry="n1",
+        )
+        with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(catalog)):
+            ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+        assert ok is True, errors
+
+    def test_a_branch_fan_out_is_not_concurrency(self):
+        """The QA rescue cycle and the preview_gate regen paths fan out on
+        branch/loop edges — conditional routes, never concurrent ones."""
+        spec = _spec(
+            [{"id": "n1", "atom": "a"}, {"id": "nl", "atom": "long"}, {"id": "ns", "atom": "short"}],
+            [{"from": "n1", "to": "nl"},
+             {"from": "n1", "to": "ns", "branch": True},
+             {"from": "nl", "to": "END"}, {"from": "ns", "to": "END"}],
+            entry="n1",
+        )
+        with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(self._catalog())):
+            ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+        assert ok is True, errors
+
+
+class TestUnreachableNode:
+    """Same live spec hung ensure_terminal_status off qa.audio, which had NO
+    inbound edge — so the terminal status could never be written and the task
+    sat in_progress until a sweep reclaimed it."""
+
+    def test_a_node_nothing_reaches_is_rejected(self):
+        catalog = {"a": _meta_par("a", True, produces=("x",)), "b": _meta_par("b", True)}
+        spec = _spec(
+            [{"id": "n1", "atom": "a"}, {"id": "orphan", "atom": "b"}, {"id": "term", "atom": "b"}],
+            [{"from": "n1", "to": "END"}, {"from": "orphan", "to": "term"}],
+            entry="n1",
+        )
+        with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(catalog)):
+            ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+        assert ok is False
+        assert any("'orphan'" in e and "nothing reaches it" in e for e in errors), errors
+        assert any("'term'" in e for e in errors), errors
+
+    def test_a_fully_reachable_chain_passes(self):
+        catalog = {"a": _meta_par("a", True, produces=("x",)), "b": _meta_par("b", True, requires=("x",))}
+        spec = _spec(
+            [{"id": "n1", "atom": "a"}, {"id": "n2", "atom": "b"}],
+            [{"from": "n1", "to": "n2"}, {"from": "n2", "to": "END"}],
+            entry="n1",
+        )
+        with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(catalog)):
+            ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+        assert ok is True, errors
+
+
+def test_the_shipped_render_atoms_declare_they_are_exclusive():
+    """AtomMeta.parallelizable means 'safe to run concurrently with siblings'.
+    Both video renders hold the exclusive gpu.lock('video'), so both must say
+    False — the True they shipped with is what let the architect fan them out."""
+    from poindexter.modules.content.atoms import (
+        media_render_long_video,
+        media_render_short_video,
+    )
+
+    assert media_render_long_video.ATOM_META.parallelizable is False
+    assert media_render_short_video.ATOM_META.parallelizable is False

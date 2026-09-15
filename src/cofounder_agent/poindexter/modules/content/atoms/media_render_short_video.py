@@ -45,7 +45,13 @@ ATOM_META = AtomMeta(
     idempotent=False,
     side_effects=("filesystem",),
     retry=RetryPolicy(max_attempts=1, backoff_s=0.0, retry_on=()),
-    parallelizable=True,
+    # NOT parallelizable: this render takes the EXCLUSIVE gpu.lock('video')
+    # for its whole duration. Declaring it safe to run beside a sibling is
+    # what let the architect fan the short render out next to the other
+    # one — both grabbed for the same lock, the loser waited out the 900s
+    # timeout and raised GpuLockTimeoutError, and the task wedged
+    # in_progress (2026-09-15, plan task 59151278).
+    parallelizable=False,
 )
 
 

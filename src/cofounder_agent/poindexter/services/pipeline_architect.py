@@ -555,6 +555,79 @@ def _strip_atom_version(atom: str) -> str:
     return _ATOM_VERSION_SUFFIX_RE.sub("", atom).strip()
 
 
+def _unsafe_concurrency_and_orphans(
+    spec: dict[str, Any], node_atoms: dict[str, str],
+) -> list[str]:
+    """Two structural faults a requires/produces check cannot see.
+
+    Both were live plan-run failures on 2026-09-15 (task 59151278):
+
+    1. **Concurrent fan-out onto an exclusive node.** The architect wired
+       ``transcribe_narration`` to BOTH video renders. LangGraph runs sibling
+       branches concurrently in ONE process, both renders reach for the
+       exclusive ``gpu.lock('video')``, and the loser waits out the 900s
+       timeout and raises ``GpuLockTimeoutError``. An atom already declares
+       whether it may run beside a sibling — ``AtomMeta.parallelizable`` — so
+       this is a contract the compiler can enforce rather than a guess.
+       Branch/loop edges are exempt: they are conditional routes, never
+       concurrent ones (the QA rescue cycle and the preview_gate regen paths
+       both rely on that).
+
+    2. **An unreachable node.** The same spec hung ``ensure_terminal_status``
+       off ``qa.audio``, which had no inbound edge at all — so the terminal
+       status could never be written and the task sat ``in_progress`` until a
+       sweep reclaimed it.
+    """
+    errors: list[str] = []
+    entry = spec.get("entry")
+    edges = [e for e in (spec.get("edges") or []) if isinstance(e, dict)]
+
+    concurrent_succ: dict[str, list[str]] = {}
+    for e in edges:
+        if e.get("branch") or e.get("loop"):
+            continue
+        src, dst = e.get("from"), e.get("to")
+        if not isinstance(src, str) or not isinstance(dst, str) or dst == "END":
+            continue
+        concurrent_succ.setdefault(src, []).append(dst)
+    for src, outs in concurrent_succ.items():
+        if len(outs) < 2:
+            continue
+        for dst in outs:
+            meta = get_atom_meta(node_atoms.get(dst, ""))
+            if meta is not None and getattr(meta, "parallelizable", False) is False:
+                siblings = [o for o in outs if o != dst]
+                errors.append(
+                    f"FIX node {dst!r}: atom {node_atoms.get(dst)!r} cannot run "
+                    f"concurrently (parallelizable=false — it holds an exclusive "
+                    f"resource), but {src!r} fans out to it alongside {siblings}. "
+                    f"Chain them instead: {src} -> {dst} -> {siblings[0]}."
+                )
+
+    if isinstance(entry, str) and entry:
+        adjacency: dict[str, list[str]] = {}
+        for e in edges:
+            src, dst = e.get("from"), e.get("to")
+            if isinstance(src, str) and isinstance(dst, str):
+                adjacency.setdefault(src, []).append(dst)
+        reachable = {entry}
+        frontier = [entry]
+        while frontier:
+            for nxt in adjacency.get(frontier.pop(), []):
+                if nxt not in reachable:
+                    reachable.add(nxt)
+                    frontier.append(nxt)
+        for nid in node_atoms:
+            if nid not in reachable:
+                errors.append(
+                    f"FIX node {nid!r}: nothing reaches it from the entry node "
+                    f"{entry!r} — add an edge INTO it, or drop it. An unreachable "
+                    f"node never runs, and anything hanging off it (a "
+                    f"terminal-status write, a gate) never runs either."
+                )
+    return errors
+
+
 def _validate_spec(
     spec: dict[str, Any], *, seed_keys: set[str] | None = None
 ) -> tuple[bool, list[str]]:
@@ -582,6 +655,8 @@ def _validate_spec(
         return False, errors
 
     seen_ids: set[str] = set()
+    # node id -> resolved atom name, for the structural checks after the loop
+    node_atoms: dict[str, str] = {}
     for i, n in enumerate(nodes):
         if not isinstance(n, dict):
             errors.append(
@@ -603,6 +678,7 @@ def _validate_spec(
             )
             continue
         seen_ids.add(nid)
+        node_atoms[nid] = atom if isinstance(atom, str) else ""
         if not isinstance(atom, str) or not atom.strip():
             errors.append(
                 f"FIX node {nid!r}: add 'atom' field naming an atom "
@@ -642,6 +718,7 @@ def _validate_spec(
                 # Rewrite the spec in-place to the canonical name so
                 # later compilation finds the atom cleanly.
                 n["atom"] = candidates[0]
+                node_atoms[nid] = candidates[0]
             elif len(candidates) > 1:
                 errors.append(
                     f"FIX node {nid!r}: atom {atom!r} is ambiguous — "
@@ -776,6 +853,11 @@ def _validate_spec(
                 )
             if meta:
                 available |= set(meta.produces)
+
+    # Structural faults the requires/produces walk above cannot see: a
+    # concurrent fan-out onto a node that declares it cannot be concurrent,
+    # and a node nothing reaches. Both wedged a live plan run (2026-09-15).
+    errors.extend(_unsafe_concurrency_and_orphans(spec, node_atoms))
 
     return (not errors), errors
 
