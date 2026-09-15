@@ -31,7 +31,20 @@ LINT = "pipe_to_grep_lint"
 WORKFLOWS = REPO / ".github" / "workflows"
 SCRIPTS = REPO / "scripts"
 
-PATTERN = re.compile(r"""echo\s+"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?"\s*\|\s*grep\s+-[A-Za-z]*q""")
+# Any producer that writes a SHELL VARIABLE into an early-exit grep, not just
+# `echo`. Widened 2026-09-15 after stack#3779: the offsite coverage check used
+# `printf '%s\n' "${listing}" | grep -qxF` and this lint was blind to it, so a
+# 23,763-line listing made a present bootstrap.toml read as missing and paged
+# CRITICAL on the backup a restore depends on. The producer was never the
+# point — writing an unbounded variable into a grep that exits early is.
+#
+# Scoped to `"$var"` expansions deliberately: a fixed-output command
+# (`docker ps | grep -q`, `uname | grep -q`) writes far less than the 64 KB
+# pipe buffer and finishes before grep can exit, so it cannot take SIGPIPE.
+# Widening to every command would bury the real signal in those.
+PATTERN = re.compile(
+    r"""\b(?:echo|printf)\b[^|]*"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?"[^|]*\|\s*grep\s+-[A-Za-z]*q"""
+)
 PIPEFAIL = re.compile(r"set\s+-[a-zA-Z]*o\s+pipefail|set\s+-o\s+pipefail|pipefail")
 
 
@@ -63,7 +76,7 @@ def main() -> int:
             findings.append(f"{sh.relative_to(REPO)}:{lineno}: {text}")
     require_scanned(scanned, lint=LINT, what="workflow/shell files", roots=(WORKFLOWS, SCRIPTS))
     if findings:
-        print(f"{LINT}: {len(findings)} `echo \"$var\" | grep -q` classifier(s) under pipefail -- these report")
+        print(f"{LINT}: {len(findings)} `echo/printf \"$var\" | grep -q` classifier(s) under pipefail -- these report")
         print("  \"no match\" on large inputs (SIGPIPE, exit 141). Use `grep -qE PAT <<<\"$var\"` or `grep -c`:")
         for f in findings:
             print(f"    {f}")

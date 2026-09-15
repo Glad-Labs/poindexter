@@ -62,3 +62,55 @@ if grep -qE "^src/cofounder_agent/" <<<"$changed"; then echo here=match; else ec
     out = proc.stdout.split()
     assert "here=match" in out, proc.stdout + proc.stderr
     assert "pipe=nomatch" in out, "bash no longer reproduces the SIGPIPE flip -- re-examine whether this lint still earns its keep"
+
+
+# --- the producer was never the point (stack#3779) --------------------------
+#
+# This lint originally matched `echo "$var" | grep -q` only. The offsite
+# coverage check used `printf '%s\n' "${listing}" | grep -qxF`, so the lint
+# passed clean while the identical hazard shipped: a 23,763-line listing made a
+# PRESENT bootstrap.toml read as missing and paged CRITICAL on the backup a
+# restore depends on.
+#
+# A guard that matches one spelling of a hazard is not coverage of the hazard.
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "line,caught,why",
+    [
+        (
+            """        if ! printf '%s\\n' "${listing}" | grep -qxF "${artifact}"; then""",
+            True,
+            "printf producer — the shape that actually shipped (stack#3779)",
+        ),
+        (
+            '''    if echo "$changed" | grep -q foo; then''',
+            True,
+            "echo producer — the original shape (stack#3652)",
+        ),
+        (
+            '''    if printf '%s\\n' "${listing}" | grep -q "$needle"; then''',
+            True,
+            "printf with a variable needle too",
+        ),
+        (
+            """if ! docker ps --format '{{.Names}}' | grep -q poindexter; then""",
+            False,
+            "fixed-output command: far under the 64 KB pipe buffer, cannot SIGPIPE",
+        ),
+        (
+            """    if uname -s | grep -qiE 'mingw|msys'; then""",
+            False,
+            "same — no variable, tiny output",
+        ),
+        (
+            '''    if grep -qxF "${artifact}" <<<"${listing}"; then''',
+            False,
+            "the here-string fix must not be flagged",
+        ),
+    ],
+)
+def test_pattern_matches_the_hazard_not_one_spelling(line, caught, why):
+    mod = _load()
+    assert bool(mod.PATTERN.search(line)) is caught, why
