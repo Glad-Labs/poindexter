@@ -348,7 +348,8 @@ class TestExtractContentEdgeCases:
     async def test_no_article_or_main_or_body_returns_empty(self):
         """If the page has none of the expected containers, extract returns ''."""
         researcher = WebResearcher(site_config=SiteConfig())
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO), \
+                patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.text = "<html></html>"  # no body
@@ -364,7 +365,8 @@ class TestExtractContentEdgeCases:
     @pytest.mark.asyncio
     async def test_strips_script_and_style(self):
         researcher = WebResearcher(site_config=SiteConfig())
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO), \
+                patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.text = """
@@ -391,7 +393,8 @@ class TestExtractContentEdgeCases:
         from poindexter.services.web_research import MAX_CONTENT_CHARS
         researcher = WebResearcher(site_config=SiteConfig())
         long_text = "lorem ipsum " * 1000  # ~12000 chars
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO), \
+                patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.text = f"<html><body><article>{long_text}</article></body></html>"
@@ -407,7 +410,8 @@ class TestExtractContentEdgeCases:
     @pytest.mark.asyncio
     async def test_network_error_returns_empty(self):
         researcher = WebResearcher(site_config=SiteConfig())
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO), \
+                patch("httpx.AsyncClient") as mock_client:
             mock_instance = AsyncMock()
             mock_instance.get = AsyncMock(side_effect=Exception("connection refused"))
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
