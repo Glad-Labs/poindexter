@@ -157,17 +157,33 @@ def _read(site_config: Any, key: str, default: Any) -> Any:
     return default if val in (None, "") else val
 
 
+# pipeline_tasks has no metadata column. A task's metadata (discovered_by,
+# research_context, …) is persisted by tasks_db.add_task into
+# pipeline_versions.stage_data->'task_metadata' at version 1, so it is there
+# from creation — before QA runs. The first shipped query read
+# pipeline_tasks.metadata and failed on every run ("task lookup skipped
+# (reduced coverage)"), silently dropping the news-source signal and the
+# created_at fallback; test_freshness_task_facts_sql executes this against
+# the real schema so that cannot recur.
+_TASK_FACTS_SQL = """
+    SELECT pt.created_at,
+           (SELECT pv.stage_data -> 'task_metadata' ->> 'discovered_by'
+              FROM pipeline_versions pv
+             WHERE pv.task_id = pt.task_id
+             ORDER BY pv.version DESC
+             LIMIT 1) AS discovered_by
+      FROM pipeline_tasks pt
+     WHERE pt.task_id = $1
+"""
+
+
 async def _task_facts(pool: Any, task_id: str) -> tuple[date | None, str]:
     """``(created_at date, discovered_by)`` from pipeline_tasks, or ``(None, "")``."""
     if pool is None or not task_id:
         return None, ""
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT created_at, metadata->>'discovered_by' AS discovered_by "
-                "FROM pipeline_tasks WHERE task_id::text = $1",
-                str(task_id),
-            )
+            row = await conn.fetchrow(_TASK_FACTS_SQL, str(task_id))
     except Exception as exc:  # noqa: BLE001 — DB layer is optional coverage
         logger.warning("[qa.freshness] task lookup skipped (reduced coverage): %s", exc)
         return None, ""
