@@ -624,9 +624,38 @@ def _docker_stop(container_name: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _docker_start(container_name: str) -> tuple[bool, str]:
+    """``docker start`` one stopped container (game-mode restore). ``(ok, message)``."""
+    try:
+        result = subprocess.run(
+            ["docker", "start", container_name],
+            capture_output=True, text=True, timeout=DOCKER_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"docker start {container_name} timed out after {DOCKER_COMMAND_TIMEOUT_SECONDS}s"
+    except (OSError, ValueError) as exc:
+        return False, f"docker start {container_name} failed to launch: {exc}"
+    if result.returncode != 0:
+        return False, (result.stderr or result.stdout or "").strip()[:300] or f"rc={result.returncode}"
+    return True, ""
+
+
 def _inspect_running(inspect: dict[str, Any] | None) -> bool:
     state = (inspect or {}).get("State")
     return bool(isinstance(state, dict) and state.get("Running"))
+
+
+# Container exists but is not running and is not on its way anywhere: what
+# `docker stop` (game mode, an operator, an OOM kill) leaves behind. Deliberately
+# NOT `restarting` (the restart-loop probe owns that) and NOT `paused`.
+_STOPPED_STATUSES = frozenset({"exited", "created", "dead"})
+
+
+def _inspect_stopped(inspect: dict[str, Any] | None) -> bool:
+    state = (inspect or {}).get("State")
+    if not isinstance(state, dict) or state.get("Running"):
+        return False
+    return str(state.get("Status") or "").lower() in _STOPPED_STATUSES
 
 
 def _diff_service(
@@ -644,6 +673,7 @@ def _diff_service(
             "missing_ports": [host_ports],    # in YAML, not in container
             "image_mismatch": (yaml, live) or None,
             "container_missing": bool,        # container doesn't exist
+            "container_stopped": bool,        # exists but exited/created/dead
         }
 
     Only "missing in container" deltas count as drift — extra runtime
@@ -657,11 +687,25 @@ def _diff_service(
         "missing_ports": [],
         "image_mismatch": None,
         "container_missing": False,
+        "container_stopped": False,
     }
 
     if inspect is None:
         out["drifted"] = True
         out["container_missing"] = True
+        return out
+
+    # Stopped is drift too. Game mode ends by clearing game_mode_until and
+    # promising "parked services restart on the next compose-drift cycle" —
+    # but a stopped container still answers `docker inspect`, so this diff
+    # used to call it healthy and nothing ever revived it (2026-09-15: the
+    # sidecars sat `exited` after the game until a hand-run `docker start`,
+    # while the running pipeline's image renders failed against a dead
+    # image-gen). The on-demand / inactive-profile suppression below applies
+    # to stopped exactly as it does to missing.
+    if _inspect_stopped(inspect):
+        out["drifted"] = True
+        out["container_stopped"] = True
         return out
 
     yaml_env = _yaml_env_keys(yaml_block.get("environment"))
@@ -702,6 +746,8 @@ def _summarize_diff(diff: dict[str, Any]) -> str:
     """Human-readable one-liner for a drift summary (no secret values)."""
     if diff.get("container_missing"):
         return "container not running"
+    if diff.get("container_stopped"):
+        return "container stopped (exited)"
     parts: list[str] = []
     if diff.get("missing_env"):
         # Just key names — values never logged.
@@ -766,6 +812,33 @@ async def _read_on_demand_services(pool, parked: set[str] | None = None) -> set[
     if parked is None:
         parked = await _read_game_mode_parked(pool)
     return services | parked
+
+
+async def _read_game_mode_state(pool) -> tuple[bool, set[str]]:
+    """``(active, parked_list)`` — the parked list is returned even when game
+    mode is OFF, because that is exactly when the brain has to put the
+    services back (see the restore branch in the diff loop)."""
+    val = await _read_setting(
+        pool,
+        "game_mode_parked_services",
+        default="speaches,chatterbox,stable-audio,image-gen-server,wan-server",
+    )
+    parked = {s.strip() for s in val.split(",") if s.strip()}
+    raw = await _read_setting(pool, "game_mode_until", default="")
+    if not raw or not raw.strip():
+        return False, parked
+    try:
+        until = datetime.fromisoformat(raw.strip())
+    except ValueError:
+        logger.warning(
+            "[COMPOSE_DRIFT] app_settings.game_mode_until is not ISO-8601 (%r) — "
+            "treating game mode as OFF",
+            raw,
+        )
+        return False, parked
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=UTC)
+    return datetime.now(UTC) < until, parked
 
 
 async def _read_game_mode_parked(pool) -> set[str]:
@@ -1106,6 +1179,7 @@ async def run_compose_drift_probe(
     docker_reachable_fn=None,
     host_recover_fn=None,
     stop_fn=None,
+    start_fn=None,
 ) -> dict[str, Any]:
     """Single execution of the compose-spec drift probe.
 
@@ -1119,6 +1193,8 @@ async def run_compose_drift_probe(
             to :func:`_recreate_services`.
         stop_fn: ``container_name -> (ok, msg)`` used to park a game-mode
             service that is still running. Defaults to :func:`_docker_stop`.
+        start_fn: ``container_name -> (ok, msg)`` used to restore a parked
+            service once game mode is over. Defaults to :func:`_docker_start`.
         yaml_loader: ``path -> dict | None``. Defaults to
             :func:`_load_compose_yaml`.
         sleep_fn: async callable used to wait between recreate and re-probe
@@ -1135,6 +1211,7 @@ async def run_compose_drift_probe(
     notify_fn = notify_fn or notify_operator
     inspect_fn = inspect_fn or _docker_inspect
     stop_fn = stop_fn or _docker_stop
+    start_fn = start_fn or _docker_start
     yaml_loader = yaml_loader or _load_compose_yaml
     # Default to "assume reachable" so callers that don't pass docker_reachable_fn
     # (including tests) see the normal flow. ComposeDriftProbe.check() wires the
@@ -1144,6 +1221,7 @@ async def run_compose_drift_probe(
 
     compose_path = await _read_compose_path(pool)
     skip_services = await _read_skip_services(pool)
+    game_mode_active, game_mode_parked_list = await _read_game_mode_state(pool)
     parked_services = await _read_game_mode_parked(pool)
     on_demand_services = await _read_on_demand_services(pool, parked_services)
     active_profiles = await _read_active_profiles(pool)
@@ -1253,6 +1331,8 @@ async def run_compose_drift_probe(
             continue
         inspect = await asyncio.to_thread(inspect_fn, container_name)
         inspected_count += 1
+        svc_profiles = _service_profiles(svc_block)
+        profile_inactive = bool(svc_profiles) and not (svc_profiles & active_profiles)
         # Game mode: a parked service that is still running holds VRAM the
         # operator asked for. Enabling from the phone (MCP) cannot reach
         # docker, so the brain does the stop; an already-stopped one falls
@@ -1272,6 +1352,33 @@ async def run_compose_drift_probe(
                 extra={"service": svc_name, "container": container_name},
             )
             continue
+        # Game mode OFF: a service on the parked list that is sitting stopped
+        # is the brain's own doing — put it back regardless of the general
+        # auto-recover flag (`game off` promises "restart on the next cycle").
+        # Not for on-demand / inactive-profile services (allowed to be down,
+        # and we do not know whether they ran before the game). Only
+        # exited/created/dead, never restarting; a failed start falls through
+        # to the ordinary drift handling below.
+        if (
+            not game_mode_active
+            and svc_name in game_mode_parked_list
+            and svc_name not in on_demand_services
+            and not profile_inactive
+            and _inspect_stopped(inspect)
+        ):
+            ok, msg = await asyncio.to_thread(start_fn, container_name)
+            if ok:
+                detail = f"game mode over: restored parked service {svc_name} ({container_name})"
+                logger.info("[COMPOSE_DRIFT] %s", detail)
+                await _emit_audit_event(
+                    pool, "probe.game_mode_parked_restored", detail,
+                    extra={"service": svc_name, "container": container_name},
+                )
+                continue
+            logger.warning(
+                "[COMPOSE_DRIFT] game mode over: could not start parked service %s (%s): %s",
+                svc_name, container_name, msg,
+            )
         diff = _diff_service(svc_block, inspect)
         # Suppress `container_missing` (only) for services that are EXPECTED to
         # be down: (1) on-demand services (wan-server, image-gen-server) that spin up
@@ -1281,14 +1388,12 @@ async def run_compose_drift_probe(
         # exporter serves GPU metrics (incident 2026-06-21). Both keep diffing
         # if the container IS running, so genuine env/mount/port drift still
         # surfaces.
-        svc_profiles = _service_profiles(svc_block)
-        profile_inactive = bool(svc_profiles) and not (svc_profiles & active_profiles)
-        if diff["container_missing"] and (
+        if (diff["container_missing"] or diff["container_stopped"]) and (
             svc_name in on_demand_services or profile_inactive
         ):
             logger.debug(
-                "[COMPOSE_DRIFT] %s missing but suppressed (%s) — skipping "
-                "container_missing alert",
+                "[COMPOSE_DRIFT] %s down but suppressed (%s) — skipping "
+                "container_missing/stopped alert",
                 svc_name,
                 ON_DEMAND_SERVICES_SETTING_KEY
                 if svc_name in on_demand_services
@@ -1348,6 +1453,7 @@ async def run_compose_drift_probe(
                 "missing_ports": info["diff"]["missing_ports"],
                 "image_mismatch": info["diff"]["image_mismatch"],
                 "container_missing": info["diff"]["container_missing"],
+                "container_stopped": info["diff"].get("container_stopped", False),
                 "auto_recover_enabled": auto_recover_enabled,
             },
         )

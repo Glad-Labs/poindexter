@@ -797,3 +797,195 @@ async def test_game_mode_stop_failure_is_recorded_not_raised():
     )
     assert summary["status"] == "no_drift"
     assert "probe.game_mode_parked_stop_failed" in _audit_event_types(pool)
+
+
+# --- a stopped container is drift (game mode's "restart on the next cycle") ---
+
+_EXITED = {
+    "State": {"Running": False, "Status": "exited"},
+    "Config": {"Env": [], "Image": ""},
+    "HostConfig": {"Binds": [], "PortBindings": {}},
+    "Mounts": [],
+}
+_RESTARTING = {
+    "State": {"Running": False, "Status": "restarting"},
+    "Config": {"Env": [], "Image": ""},
+    "HostConfig": {"Binds": [], "PortBindings": {}},
+    "Mounts": [],
+}
+
+
+async def _no_sleep(_s):
+    return None
+
+
+@pytest.mark.asyncio
+async def test_exited_service_is_drift_and_pages_when_auto_recover_off():
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool()
+    spec = _spec({"worker": {"container_name": "poindexter-worker"}})
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify,
+        inspect_fn=lambda _name: _EXITED,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    assert summary["status"] == "drift_detected_no_recover"
+    assert "worker" in summary["drifted_services"]
+    assert "container stopped (exited)" in summary["detail"]
+    notify.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_exited_service_is_recreated_when_auto_recover_on():
+    """Game mode ends → the brain must actually start what it parked."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={cd.AUTO_RECOVER_SETTING_KEY: "true"})
+    # worker is NOT on the game-mode parked list, so this exercises the general
+    # recreate path rather than the game-mode restore branch.
+    spec = _spec({"worker": {"container_name": "poindexter-worker"}})
+    state = {"recreated": False}
+
+    def _inspect(_name):
+        return _RUNNING if state["recreated"] else _EXITED
+
+    def _recreate(path, services):
+        state["recreated"] = True
+        state["services"] = list(services)
+        return True, "ok"
+
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=MagicMock(),
+        inspect_fn=_inspect, recreate_fn=_recreate, sleep_fn=_no_sleep,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    assert state["services"] == ["worker"]
+    assert summary["status"] == "recovered"
+
+
+@pytest.mark.asyncio
+async def test_exited_on_demand_service_is_suppressed_like_missing():
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={cd.ON_DEMAND_SERVICES_SETTING_KEY: "wan-server"})
+    spec = _spec({"wan-server": {"container_name": "poindexter-wan-server"}})
+    notify = MagicMock()
+    start = MagicMock(return_value=(True, ""))
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify,
+        inspect_fn=lambda _name: _EXITED, start_fn=start,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    assert summary["status"] == "no_drift"
+    start.assert_not_called()  # on-demand: allowed to be down, not restored
+    notify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_exited_parked_service_under_game_mode_is_left_parked():
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={
+        "game_mode_until": _FUTURE,
+        "game_mode_parked_services": "chatterbox",
+    })
+    spec = _spec({"chatterbox": {"container_name": "poindexter-chatterbox"}})
+    stop = MagicMock(return_value=(True, ""))
+    recreate = MagicMock(return_value=(True, "ok"))
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=MagicMock(),
+        inspect_fn=lambda _name: _EXITED, stop_fn=stop, recreate_fn=recreate,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    stop.assert_not_called()
+    recreate.assert_not_called()
+    assert summary["status"] == "no_drift"
+
+
+@pytest.mark.asyncio
+async def test_restarting_container_is_not_treated_as_stopped():
+    """A restart loop belongs to the restart-loop probe; recreating it here
+    would double-page and fight that probe."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool()
+    spec = _spec({"worker": {"container_name": "poindexter-worker"}})
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify,
+        inspect_fn=lambda _name: _RESTARTING,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    assert summary["status"] == "no_drift"
+    notify.assert_not_called()
+
+
+def test_inspect_stopped_classification():
+    assert cd._inspect_stopped(_EXITED) is True
+    assert cd._inspect_stopped(_RUNNING) is False
+    assert cd._inspect_stopped(_RESTARTING) is False
+    assert cd._inspect_stopped(None) is False
+    assert cd._inspect_stopped({"State": {"Running": False, "Status": "created"}}) is True
+
+
+@pytest.mark.asyncio
+async def test_game_mode_over_restores_a_parked_service_even_with_auto_recover_off():
+    """`poindexter game off` promises the parked services come back on the
+    next cycle. That must not depend on the general auto-recover flag: the
+    stop was the brain's own doing."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={
+        "game_mode_until": "",  # off
+        "game_mode_parked_services": "chatterbox",
+    })
+    spec = _spec({"chatterbox": {"container_name": "poindexter-chatterbox"}})
+    started: list[str] = []
+
+    def _start(name):
+        started.append(name)
+        return True, ""
+
+    notify = MagicMock()
+    recreate = MagicMock(return_value=(True, "ok"))
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify,
+        inspect_fn=lambda _name: _EXITED, start_fn=_start, recreate_fn=recreate,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    assert started == ["poindexter-chatterbox"]
+    assert summary["status"] == "no_drift"
+    assert "probe.game_mode_parked_restored" in _audit_event_types(pool)
+    recreate.assert_not_called()
+    notify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_game_mode_over_failed_start_falls_through_to_drift():
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={"game_mode_parked_services": "chatterbox"})
+    spec = _spec({"chatterbox": {"container_name": "poindexter-chatterbox"}})
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify,
+        inspect_fn=lambda _name: _EXITED, start_fn=lambda _n: (False, "boom"),
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    assert summary["status"] == "drift_detected_no_recover"
+    assert "chatterbox" in summary["drifted_services"]
+    notify.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_game_mode_over_does_not_touch_a_running_or_unlisted_service():
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={"game_mode_parked_services": "chatterbox"})
+    spec = _spec({
+        "chatterbox": {"container_name": "poindexter-chatterbox"},
+        "worker": {"container_name": "poindexter-worker"},
+    })
+    start = MagicMock(return_value=(True, ""))
+    payload = {"poindexter-chatterbox": _RUNNING, "poindexter-worker": _EXITED}
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=MagicMock(),
+        inspect_fn=lambda name: payload[name], start_fn=start,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    start.assert_not_called()  # chatterbox is running; worker is not on the parked list
+    assert summary["drifted_services"] == ["worker"]
