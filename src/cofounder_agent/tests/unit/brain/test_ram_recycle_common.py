@@ -133,3 +133,39 @@ def test_restart_container_reports_failure_without_raising(monkeypatch):
     ok, msg = rc.restart_container("c")
     assert ok is False
     assert "docker CLI not on PATH" in msg
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "Error response from daemon: container 444342c2f8ae is not running",
+        "Error response from daemon: No such container: poindexter-wan-server",
+    ],
+)
+def test_mem_read_of_a_stopped_container_is_quiet(monkeypatch, caplog, stderr):
+    """A parked (game mode) or down sidecar is an expected state: None, and no
+    WARNING per cycle (2026-09-15: three warnings every 30 s for a whole game
+    session)."""
+
+    class _R:
+        returncode = 1
+        stdout = ""
+
+    _R.stderr = stderr
+    monkeypatch.setattr(rc.subprocess, "run", lambda *a, **k: _R())
+    with caplog.at_level("DEBUG", logger=rc.logger.name):
+        assert rc.read_container_main_rss_swap_gb("poindexter-wan-server") is None
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("is not running" in r.getMessage() for r in caplog.records)
+
+
+def test_mem_read_other_docker_error_still_warns(monkeypatch, caplog):
+    class _R:
+        returncode = 1
+        stdout = ""
+        stderr = "permission denied while trying to connect to the Docker daemon socket"
+
+    monkeypatch.setattr(rc.subprocess, "run", lambda *a, **k: _R())
+    with caplog.at_level("WARNING", logger=rc.logger.name):
+        assert rc.read_container_main_rss_swap_gb("c") is None
+    assert any(r.levelname == "WARNING" and "exit 1" in r.getMessage() for r in caplog.records)

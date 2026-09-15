@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 from typing import Any
 
@@ -110,6 +111,13 @@ def parse_status_rss_swap_gb(status_text: str) -> tuple[float, float] | None:
     return (rss_kb / 1024 / 1024, (swap_kb or 0) / 1024 / 1024)
 
 
+# docker's own wording for a container that exists but is stopped / was never
+# started. A parked sidecar (game mode) or a profile that is simply down is an
+# expected state, not a read failure — before 2026-09-15 each one logged a
+# WARNING per watch cycle for the whole game session.
+_NOT_RUNNING_RE = re.compile(r"is not running|No such container", re.IGNORECASE)
+
+
 def read_container_main_rss_swap_gb(container: str) -> tuple[float, float] | None:
     """VmRSS + VmSwap of the container's PID 1, in GB.
 
@@ -140,9 +148,13 @@ def read_container_main_rss_swap_gb(container: str) -> tuple[float, float] | Non
         )
         return None
     if result.returncode != 0:
+        err = (result.stderr or "").strip()
+        if _NOT_RUNNING_RE.search(err):
+            logger.debug("[RAM_RECYCLE] %s is not running — no footprint to read", container)
+            return None
         logger.warning(
             "[RAM_RECYCLE] docker exec %s exit %s: %s",
-            container, result.returncode, (result.stderr or "").strip()[:200],
+            container, result.returncode, err[:200],
         )
         return None
     return parse_status_rss_swap_gb(result.stdout or "")
