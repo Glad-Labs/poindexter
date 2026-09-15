@@ -638,6 +638,51 @@ async def process_content_generation_task(
         # already updates the row to ``awaiting_approval`` (or auto-
         # publishes when the score clears the gate).
         result.update(_tmpl_summary.final_state)
+
+        # A node that RAISED is recorded as a halt (ok=False, detail
+        # "raised <Exc>: …") so the graph stops cleanly — but that is a
+        # failure, not a pause, and nothing downstream knew the difference:
+        # the task sat in_progress on the node's stage, the 30-minute stale
+        # sweep re-ran it (and it raised again), and post_pipeline_actions
+        # announced "awaiting approval" for a run that produced nothing
+        # (2026-09-15, plan task 6906afd8: content.load_existing_post raised
+        # at node 1 for a missing post_id). Designed halts — qa.aggregate's
+        # reject, an approval gate's pause — carry ok=True, so they are not
+        # touched here.
+        _raised = next(
+            (
+                r for r in (_tmpl_summary.records or [])
+                if getattr(r, "halted", False)
+                and not getattr(r, "ok", True)
+                and str(getattr(r, "detail", "") or "").startswith("raised ")
+            ),
+            None,
+        )
+        if _raised is not None and result.get("status") in (None, "", "pending", "in_progress"):
+            _raised_msg = f"{_raised.name} {_raised.detail}"
+            logger.error(
+                "[BG-TASK] node %s raised — marking task %s failed: %s",
+                _raised.name, task_id, _raised_msg[:300],
+            )
+            try:
+                await database_service.update_task(
+                    task_id, {"status": "failed", "error_message": _raised_msg[:500]},
+                )
+            except Exception as _upd_exc:  # noqa: BLE001 — the run is already lost; never mask it with the bookkeeping error
+                logger.error("[BG-TASK] failed to mark task %s failed after node raised: %s", task_id, _upd_exc)
+            result["status"] = "failed"
+            result["error"] = _raised_msg
+            audit_log_bg(
+                "error", "content_router",
+                {
+                    "error": _raised_msg[:500],
+                    "template": template_slug,
+                    "halted_at": _tmpl_summary.halted_at,
+                    "reason": "node raised",
+                },
+                task_id=task_id,
+            )
+
         audit_log_bg(
             "template_completed", "content_router",
             {

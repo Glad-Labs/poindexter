@@ -712,3 +712,63 @@ async def test_registered_settings_service_is_not_replaced():
 
     context = tmpl_runner.run.call_args.args[1]
     assert context["settings_service"] is sentinel
+
+
+@pytest.mark.asyncio
+async def test_node_that_raised_marks_the_task_failed():
+    """The architect wrapper records a raising atom as a halt (ok=False,
+    detail "raised …"). That is a failure: the task must be marked failed
+    with the atom's message — not left in_progress for the stale sweep to
+    re-run and for post_pipeline_actions to announce as awaiting approval
+    (2026-09-15, plan task 6906afd8)."""
+    from poindexter.services.content_router_service import process_content_generation_task
+
+    db = _make_db(template_slug="plan_x")
+    summary = _make_template_summary(
+        ok=False, halted_at="node1",
+        final_state={"status": "pending"},
+        records=[SimpleNamespace(
+            name="content.load_existing_post", ok=False, halted=True,
+            detail="raised RuntimeError: content.load_existing_post: post_id + database_service are required",
+            node_id="node1",
+        )],
+    )
+    overrides, _runner, site_config_obj = _patch_externals(template_summary=summary)
+    with _ImportPatchContext(overrides, site_config_obj) as ctx:
+        result = await process_content_generation_task(
+            topic="t", style="s", tone="t", target_length=100, tags=[],
+            generate_featured_image=False, database_service=db,
+            task_id="6906afd8-79c2-4ecc-ad44-fba823ef9363", site_config=site_config_obj,
+        )
+    assert result["status"] == "failed"
+    assert "post_id" in result["error"]
+    db.update_task.assert_awaited()
+    _tid, patch_dict = db.update_task.call_args.args
+    assert patch_dict["status"] == "failed"
+    assert patch_dict["error_message"].startswith("content.load_existing_post raised RuntimeError")
+    audit_events = [c.args[0] for c in ctx._audit_mock.call_args_list]
+    assert "error" in audit_events
+
+
+@pytest.mark.asyncio
+async def test_designed_halt_is_not_a_failure():
+    """qa.aggregate's reject / an approval gate's pause halt with ok=True —
+    the raised-node rule must leave those alone."""
+    from poindexter.services.content_router_service import process_content_generation_task
+
+    db = _make_db(template_slug="canonical_blog")
+    summary = _make_template_summary(
+        ok=True, halted_at="preview_gate",
+        final_state={"status": "awaiting_approval", "quality_score": 80.0},
+        records=[SimpleNamespace(name="atoms.approval_gate", ok=True, halted=True, detail="paused", node_id="preview_gate")],
+    )
+    overrides, _runner, site_config_obj = _patch_externals(template_summary=summary)
+    with _ImportPatchContext(overrides, site_config_obj):
+        result = await process_content_generation_task(
+            topic="t", style="s", tone="t", target_length=100, tags=[],
+            generate_featured_image=False, database_service=db,
+            task_id="11111111-2222-3333-4444-555555555555", site_config=site_config_obj,
+        )
+    assert result["status"] == "awaiting_approval"
+    for call in db.update_task.call_args_list:
+        assert call.args[1].get("status") != "failed"
