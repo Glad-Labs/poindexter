@@ -134,7 +134,7 @@ _APPROVED_UNDISPATCHED_SQL = """
                ma.medium,
                ma.created_at AS _appr_created,
                p.title, p.content, p.excerpt, p.seo_keywords, p.slug,
-               p.video_shot_list, p.niche_slug,
+               p.video_shot_list, pt.niche_slug,
                mas.id::text AS asset_id,
                mas.task_id,
                mas.storage_path
@@ -143,6 +143,11 @@ _APPROVED_UNDISPATCHED_SQL = """
           JOIN media_assets mas
             ON mas.post_id = ma.post_id
            AND mas.type = ma.medium
+          -- niche lives on the task, not the post (posts has no niche_slug —
+          -- the #3767 join selected p.niche_slug and every media_distribute
+          -- cycle failed its query for three hours before anyone read the log).
+          LEFT JOIN pipeline_tasks pt
+            ON pt.task_id = mas.task_id
          WHERE ma.status = 'approved'
            AND ma.dispatched_at IS NULL
            -- Never re-deliver grandfathered media: grandfathering only blesses it
