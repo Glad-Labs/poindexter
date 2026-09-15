@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -128,6 +129,28 @@ def _digest(text: str, max_chars: int) -> str:
 def _args_digest(raw_arguments: str, cap: int = 300) -> str:
     raw = (raw_arguments or "").strip()
     return raw[:cap]
+
+
+# The context-tail trace below ("[used tool X — ok]") is a transcript marker
+# for the model's memory. A small model will echo it INSTEAD of calling the
+# tool — live turn 2026-09-15: "[used tool plan_pipeline — ok] … Plan ID:
+# 4321879a" with zero tool calls; no such plan existed. This matches it so the
+# loop can catch the claim, and strips it from anything shown to the operator.
+_TOOL_TRACE_RE = re.compile(r"^[ \t]*\[used tool [\w.\-]+ — (?:ok|failed)\][ \t]*$", re.MULTILINE)
+_FABRICATION_NUDGE = (
+    "You did not call any tool this turn — a \"[used tool …]\" line is a "
+    "transcript marker, not a result, and nothing was run or created. If the "
+    "request needs a tool, call it now through tool_calls; otherwise answer "
+    "plainly without claiming tool use."
+)
+
+
+def _claims_tool_use(text: str) -> bool:
+    return bool(_TOOL_TRACE_RE.search(text or ""))
+
+
+def _strip_tool_trace(text: str) -> str:
+    return re.sub(r"\n{3,}", "\n\n", _TOOL_TRACE_RE.sub("", text or "")).strip()
 
 
 def _content_of(message_row: dict[str, Any]) -> str:
@@ -314,6 +337,7 @@ async def run_turn(
         deadline = time.monotonic() + turn_timeout
         executed = 0
         seen_calls: dict[str, int] = {}
+        fabrication_nudged = False
 
         # Round cap: max_tool_calls executions can span at most that many
         # LLM rounds, +2 for the opening call and the closing answer. A
@@ -345,6 +369,20 @@ async def run_turn(
                     turn_tool_calls = recovered
             if not turn_tool_calls:
                 final_text = (completion.text or "").strip()
+                if _claims_tool_use(final_text):
+                    if executed == 0 and not fabrication_nudged:
+                        # The model echoed the transcript marker instead of
+                        # calling the tool. One corrective round; the marker
+                        # never reaches the operator either way.
+                        fabrication_nudged = True
+                        logger.warning(
+                            "[chat] model claimed tool use without a tool call "
+                            "(model=%s) — one corrective round", model,
+                        )
+                        messages.append({"role": "assistant", "content": final_text})
+                        messages.append({"role": "user", "content": _FABRICATION_NUDGE})
+                        continue
+                    final_text = _strip_tool_trace(final_text)
                 if not final_text:
                     final_text = (
                         "(the model returned an empty reply — try rephrasing)"

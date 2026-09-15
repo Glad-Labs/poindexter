@@ -588,3 +588,65 @@ class TestFinalizeCardStateMerge:
         assert cards and cards[0]["state"] == "ran"
         assert cards[0]["task_id"] == "task-9"
         assert any("chat_plans" in q for q, _ in pool.queries)
+
+
+@pytest.mark.unit
+class TestFabricatedToolClaims:
+    """Live 2026-09-15: the model answered "[used tool plan_pipeline — ok] …
+    Plan ID: 4321879a" without calling anything; no such plan existed. The
+    "[used tool …]" line is the context-tail transcript marker."""
+
+    def test_claim_without_a_call_gets_one_corrective_round(self, monkeypatch):
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs,
+            completions=[
+                _completion(text="[used tool plan_pipeline — ok]\nPlan ID: 4321879a."),
+                _completion(text="I have not run anything yet — which post is this for?"),
+            ],
+        )
+        assert [e["event"] for e in events] == ["turn_started", "text", "done"]
+        assert _events_of(events, "text")[0]["text"] == (
+            "I have not run anything yet — which post is this for?"
+        )
+        assert [p["type"] for p in fs.finalized["parts"]] == ["markdown"]
+        assert "4321879a" not in fs.finalized["parts"][0]["text"]
+
+    def test_second_claim_is_shown_without_the_marker(self, monkeypatch):
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs,
+            completions=[
+                _completion(text="[used tool plan_pipeline — ok]\nPlan ID: 1."),
+                _completion(text="[used tool plan_pipeline — ok]\n\nThe plan is ready."),
+            ],
+        )
+        assert _events_of(events, "text")[0]["text"] == "The plan is ready."
+
+    def test_marker_after_a_real_call_is_stripped_not_nudged(self, monkeypatch):
+        async def handler(ctx, **kwargs):
+            return "41"
+
+        specs = {"list_tasks": _spec("list_tasks", handler)}
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs, tool_specs=specs,
+            completions=[
+                _completion(tool_calls=[_tool_call("list_tasks", "{}")]),
+                _completion(text="[used tool list_tasks — ok]\nThere are 41 tasks."),
+            ],
+        )
+        kinds = [e["event"] for e in events]
+        assert kinds == ["turn_started", "tool_start", "tool_result", "text", "done"]
+        assert _events_of(events, "text")[0]["text"] == "There are 41 tasks."
+
+    def test_claim_that_is_only_the_marker_becomes_the_empty_reply_notice(self, monkeypatch):
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs,
+            completions=[
+                _completion(text="[used tool get_budget — ok]"),
+                _completion(text="[used tool get_budget — ok]"),
+            ],
+        )
+        assert "empty reply" in _events_of(events, "text")[0]["text"]
