@@ -1245,11 +1245,18 @@ class GPUScheduler:
         # the lock is actually held (racing an unload against the current
         # holder would evict the model it is mid-inference on).
         evict_before_yield = False
+        reclaim_sidecars_before_yield = False
         if max_wait_s is not None and _cfg_bool("gpu_sched_enabled", False):
             decision = await self._admission_check(
                 owner=owner, model=model, phase=phase, max_wait_s=max_wait_s
             )
             evict_before_yield = decision.action == "grant_after_unload"
+            # The fit only closed once the media sidecars were counted, so
+            # unloading Ollama alone would not make the room admission
+            # promised (poindexter#1054).
+            reclaim_sidecars_before_yield = bool(
+                getattr(decision, "needs_sidecar_reclaim", False)
+            )
 
         # Wait for gaming to stop before acquiring lock
         await self._wait_for_gaming_clear()
@@ -1396,11 +1403,23 @@ class GPUScheduler:
             if owner in ("image_gen", "video"):
                 await self._unload_ollama_models()
             elif evict_before_yield:
-                # Admission said the model only fits with the resident Ollama
-                # models evicted (grant_after_unload) — load→compute→unload
-                # doctrine, poindexter#914 P1. Safe here: the lock is held, so
-                # nothing is mid-inference on what we evict.
-                await self._unload_ollama_models()
+                # Admission said the model only fits with something evicted
+                # (grant_after_unload) — load→compute→unload doctrine,
+                # poindexter#914 P1. Safe here: the lock is held, so nothing
+                # is mid-inference on what we evict.
+                if reclaim_sidecars_before_yield:
+                    # The credit that closed the fit came from the MEDIA
+                    # SIDECARS, so run the whole ladder — unloading Ollama
+                    # alone would leave the card exactly as full as it was
+                    # and send the load at a GPU that cannot hold it.
+                    logger.info(
+                        "[GPU] admission granted on sidecar credit — running "
+                        "the reclaim ladder before yielding",
+                        owner=owner, model=model, phase=phase,
+                    )
+                    await self.reclaim_render_vram(include_ollama=True)
+                else:
+                    await self._unload_ollama_models()
             yield
         finally:
             duration = time.monotonic() - self._acquired_at
@@ -1590,6 +1609,7 @@ class GPUScheduler:
                     index=idx,
                     free_gb=await registry.free_gb(idx),
                     evictable_gb=await registry.evictable_ollama_gb(idx),
+                    sidecar_reclaimable_gb=await self._sidecar_credit_gb(registry, idx),
                     headroom_gb=self._card_headroom_gb(idx),
                 ))
         except Exception:
@@ -2317,6 +2337,32 @@ class GPUScheduler:
         if not isinstance(body, dict):
             return True
         return body.get("status") not in _UNLOAD_ACTED_STATUSES
+
+    @staticmethod
+    async def _sidecar_credit_gb(registry: Any, gpu_index: int) -> float | None:
+        """Sidecar reclaim credit for one card, or ``None`` when unanswerable.
+
+        Guarded on its own, deliberately. The card-assembly loop that calls
+        this is wrapped in a broad ``except`` that empties ``cards`` — which
+        DISABLES the fit gate entirely (it fails open). A registry that
+        predates this tier, or any future failure inside it, must therefore
+        degrade to "unknown sidecar credit" and leave the free-VRAM and Ollama
+        tiers intact; it must never take the whole gate down with it. Same
+        lesson as the partial-probe-stub GPU flake: stub every seam the path
+        crosses, and make a missing one local.
+        """
+        fn = getattr(registry, "reclaimable_sidecar_gb", None)
+        if fn is None:
+            return None
+        try:
+            return await fn(gpu_index)
+        except Exception as exc:  # noqa: BLE001 — one tier's failure is not the gate's
+            logger.warning(
+                "[GPU] sidecar reclaim credit unreadable for gpu%d (%s: %s) — "
+                "treating as unknown; the free/Ollama tiers still apply",
+                gpu_index, type(exc).__name__, exc,
+            )
+            return None
 
     async def _verify_reclaim_or_restart(
         self,

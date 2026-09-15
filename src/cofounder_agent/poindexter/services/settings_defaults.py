@@ -1297,6 +1297,14 @@ DEFAULTS: dict[str, str] = {
     # errored — it just never granted eviction credit. Read by
     # services/gpu_registry.py::evictable_ollama_gb.
     'gpu_evictable_process_pattern': 'llama-server,ollama',
+    # Second admission credit tier (poindexter#1054): processes the media
+    # sidecar ladder (gpu_scheduler.reclaim_render_vram) can reclaim —
+    # image-gen, chatterbox, wan, stable-audio, comfyui, all python
+    # entrypoints. Disjoint from the Ollama pattern above ('python' is not
+    # a substring of 'llama-server'). Keep it in step with the ladder's
+    # levers: naming something the ladder cannot evict grants capacity
+    # that never arrives.
+    'gpu_sidecar_process_pattern': 'python',
     # GPU-serialize fix: hold gpu.lock("ollama") around every LOCAL LLM dispatch
     # (services/llm_providers/dispatcher.py::dispatch_complete) so scheduled
     # worker jobs (topic research, SEO, newsletter) can't load the ~19GB writer
@@ -5559,6 +5567,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'gpu1_headroom_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
     'gpu_admission_assumed_num_ctx': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'gpu_evictable_process_pattern': {'owner': 'gpu_registry', 'value_type': 'csv'},
+    'gpu_sidecar_process_pattern': {'owner': 'gpu_registry', 'value_type': 'csv'},
     'gpu_evictable_unattributed_tolerance_gb': {'owner': 'gpu_registry', 'value_type': 'float'},
     'gpu_external_workload_wait_enabled': {'owner': 'gpu_scheduler', 'value_type': 'boolean'},
     'gpu_lock_acquire_timeout_seconds': {'owner': 'gpu_scheduler', 'value_type': 'integer'},

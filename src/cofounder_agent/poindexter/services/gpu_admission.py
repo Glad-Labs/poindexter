@@ -71,6 +71,11 @@ class CardVram:
     index: int
     free_gb: float | None = None
     evictable_gb: float | None = None
+    # VRAM held by the MEDIA SIDECARS on this card, reclaimable by
+    # gpu_scheduler.reclaim_render_vram (poindexter#1054). A SECOND, slower
+    # credit tier: Ollama unloads in-process in seconds, a sidecar needs an
+    # /unload call or a container restart. Same None-vs-0.0 contract.
+    sidecar_reclaimable_gb: float | None = None
     headroom_gb: float = 6.0
 
 
@@ -126,6 +131,11 @@ class AdmissionDecision:
     action: str  # "grant" | "grant_after_unload" | "reject"
     reason: str | None = None  # set on reject: "eta_exceeds_budget" | "no_fit"
     eta_seconds: float | None = None
+    # True when the fit only closes after the MEDIA SIDECARS are reclaimed, so
+    # the caller must run the full ladder (reclaim_render_vram) rather than
+    # only unloading Ollama's models. Purely informational to this pure fold;
+    # gpu_scheduler acts on it.
+    needs_sidecar_reclaim: bool = False
 
 
 def decide(i: AdmissionInputs) -> AdmissionDecision:
@@ -184,4 +194,34 @@ def decide(i: AdmissionInputs) -> AdmissionDecision:
         b for b in with_credit if b > 0.0
     ):
         return AdmissionDecision(action="grant_after_unload", eta_seconds=eta)
+
+    # --- Second credit tier: the media sidecars (poindexter#1054) ---------
+    # Ollama's models alone do not close the gap. The card may still be held
+    # by sidecars the scheduler's ladder can reclaim — and until this tier
+    # existed, such a card read as permanently full: `no_fit`, `eta=null`,
+    # the ladder never invoked because admission rejects before it runs.
+    # Measured 2026-09-15: 20.6 GB of stable-audio + speaches + chatterbox on
+    # a 32 GB card refused an 18.5 GB director model, so the shot list came
+    # back empty and the run reported success with no video.
+    #
+    # UNKNOWN sidecar credit does NOT fail open here, unlike the Ollama tier
+    # above. That asymmetry is deliberate: by this point the model is known
+    # not to fit the free budget OR the Ollama credit, so granting on
+    # ignorance would send a load at a card we have no evidence can hold it —
+    # an OOM on the render GPU is the failure this subsystem exists to
+    # prevent. Ignorance keeps the old answer.
+    if any(c.sidecar_reclaimable_gb is None for c in cards):
+        return AdmissionDecision(action="reject", reason="no_fit", eta_seconds=eta)
+    with_sidecars = [
+        w + (c.sidecar_reclaimable_gb or 0.0)
+        for w, c in zip(with_credit, cards, strict=True)
+    ]
+    if i.model_estimate_gb <= max(with_sidecars) or i.model_estimate_gb <= sum(
+        b for b in with_sidecars if b > 0.0
+    ):
+        return AdmissionDecision(
+            action="grant_after_unload",
+            eta_seconds=eta,
+            needs_sidecar_reclaim=True,
+        )
     return AdmissionDecision(action="reject", reason="no_fit", eta_seconds=eta)

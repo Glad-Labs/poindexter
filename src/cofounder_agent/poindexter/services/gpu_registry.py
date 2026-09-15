@@ -43,6 +43,13 @@ _FREE_MEMO_TTL_SEC = 15.0
 # the bare "ollama" that shipped as the default matched nothing on this host, so
 # the eviction credit was silently 0.0 for the entire P1 soak.
 _DEFAULT_EVICTABLE_PROCESS_PATTERN = "llama-server,ollama"
+# Processes the MEDIA-SIDECAR ladder (`gpu_scheduler.reclaim_render_vram`) can
+# reclaim: image-gen, chatterbox, wan, stable-audio, comfyui. Every one of them
+# runs a python entrypoint, and "python" is not a substring of "llama-server",
+# so the two credit tiers stay disjoint. Keep this list in step with the
+# ladder's levers — a pattern naming something the ladder cannot evict would
+# grant capacity that never arrives.
+_DEFAULT_SIDECAR_PROCESS_PATTERN = "python"
 # Per-card VRAM that `nvidia_gpu_process_memory_mib` may leave unattributed
 # before the process list is treated as stale (poindexter#914). Driver/context
 # overhead is never charged to a PID, so a small gap is normal; a multi-GB gap
@@ -146,7 +153,46 @@ class GPURegistry:
             self._site_config.get("gpu_evictable_process_pattern", "")
             or _DEFAULT_EVICTABLE_PROCESS_PATTERN
         )
-        patterns = [p.strip().lower() for p in str(raw).split(",") if p.strip()]
+        return await self._matched_process_gb(gpu_index, raw)
+
+    async def reclaimable_sidecar_gb(self, gpu_index: int) -> float | None:
+        """VRAM (GB) the MEDIA SIDECARS hold on this card.
+
+        Same telemetry, same None-vs-0.0 contract and same staleness guard as
+        :meth:`evictable_ollama_gb` — a different pattern list
+        (``gpu_sidecar_process_pattern``), because the two are reclaimed by
+        different machinery on different timescales: Ollama models by an
+        in-process unload (seconds), media sidecars by
+        ``gpu_scheduler.reclaim_render_vram`` (an ``/unload`` call, or a
+        container restart when the sidecar's allocator cannot return the CUDA
+        context — see stack#3796).
+
+        Why this exists (poindexter#1054, measured 2026-09-15): the fit gate
+        counted only the Ollama tier, so a 32 GB card holding 20.6 GB of
+        *evictable sidecars* (stable-audio ~10 GB resident from an ambient-bed
+        render, plus speaches and chatterbox) read as permanently full. The
+        director's 18.5 GB model was refused with ``no_fit`` / ``eta=null``,
+        the shot list came back empty, and the run reported success with no
+        video — while the ladder that could have freed exactly that memory
+        never ran, because admission rejects before it.
+        """
+        raw = (
+            self._site_config.get("gpu_sidecar_process_pattern", "")
+            or _DEFAULT_SIDECAR_PROCESS_PATTERN
+        )
+        return await self._matched_process_gb(gpu_index, raw)
+
+    async def _matched_process_gb(
+        self, gpu_index: int, raw_patterns: str,
+    ) -> float | None:
+        """GB on ``gpu_index`` held by processes matching ``raw_patterns``.
+
+        ``None`` = UNKNOWN (metric absent, card not enumerated, or the process
+        list is too stale to corroborate against the card's used total);
+        ``0.0`` = a known "nothing matched". Shared by both credit tiers so
+        neither can drift away from the staleness guard.
+        """
+        patterns = [p.strip().lower() for p in str(raw_patterns).split(",") if p.strip()]
         if not patterns:
             # Operator explicitly cleared the pattern: nothing is DECLARED
             # evictable. That is a real answer, not missing telemetry.

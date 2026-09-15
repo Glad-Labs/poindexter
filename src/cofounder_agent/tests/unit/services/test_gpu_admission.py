@@ -419,3 +419,92 @@ class TestMultiCardFit:
             cards=(_card(0, 13.5),),
         ))
         assert legacy.action == multi.action == "reject"
+
+
+# ---------------------------------------------------------------------------
+# Second credit tier: the media sidecars (poindexter#1054)
+# ---------------------------------------------------------------------------
+
+
+def _tier_card(*, free, evictable, sidecar=None, headroom=6.0, index=0):
+    return CardVram(
+        index=index, free_gb=free, evictable_gb=evictable,
+        sidecar_reclaimable_gb=sidecar, headroom_gb=headroom,
+    )
+
+
+def _tier_inputs(cards, *, estimate, max_wait_s=120.0):
+    return AdmissionInputs(
+        max_wait_s=max_wait_s, model_estimate_gb=estimate, cards=tuple(cards),
+    )
+
+
+class TestSidecarCreditTier:
+    """The measured case, 2026-09-15: a 32 GB card holding 20.6 GB of media
+    sidecars (stable-audio ~10 GB resident from an ambient bed, plus speaches
+    and chatterbox) refused an 18.5 GB director model with no_fit/eta=null —
+    while the ladder that frees exactly that memory never ran, because
+    admission rejects before it.
+    """
+
+    def test_the_live_case_now_grants_and_asks_for_the_ladder(self):
+        # Measured: 32.6 GB card, 20.6 GB used → free 12.0, desktop headroom
+        # 6.0 → budget 6.0. Ollama held nothing evictable. The sidecars held
+        # 13.4 (stable-audio ~10.0 + speaches ~2.7 + chatterbox ~0.7), which
+        # takes the budget to 19.4 — enough for the 18.5 GB director model.
+        d = decide(_tier_inputs(
+            [_tier_card(free=12.0, evictable=0.0, sidecar=13.4)], estimate=18.5,
+        ))
+        assert d.action == "grant_after_unload"
+        assert d.needs_sidecar_reclaim is True
+
+    def test_ollama_credit_alone_still_wins_without_touching_sidecars(self):
+        d = decide(_tier_inputs(
+            [_tier_card(free=12.0, evictable=14.0, sidecar=10.0)], estimate=18.5,
+        ))
+        assert d.action == "grant_after_unload"
+        assert d.needs_sidecar_reclaim is False
+
+    def test_free_budget_alone_never_reaches_the_tiers(self):
+        d = decide(_tier_inputs(
+            [_tier_card(free=30.0, evictable=0.0, sidecar=0.0)], estimate=18.5,
+        ))
+        assert d.action == "grant"
+        assert d.needs_sidecar_reclaim is False
+
+    def test_still_rejects_when_even_the_sidecars_do_not_close_the_gap(self):
+        """The tier adds capacity, it does not invent it: 2.0 + 1.0 < 18.5."""
+        d = decide(_tier_inputs(
+            [_tier_card(free=8.0, evictable=0.0, sidecar=1.0)], estimate=18.5,
+        ))
+        assert d.action == "reject"
+        assert d.reason == "no_fit"
+        assert d.needs_sidecar_reclaim is False
+
+    def test_unknown_sidecar_credit_keeps_the_old_answer(self):
+        """Deliberately NOT fail-open: by this point the model is known not to
+        fit the free budget or the Ollama credit, so granting on ignorance
+        would send a load at a card with no evidence it can hold it."""
+        d = decide(_tier_inputs(
+            [_tier_card(free=8.0, evictable=0.0, sidecar=None)], estimate=18.5,
+        ))
+        assert d.action == "reject"
+        assert d.reason == "no_fit"
+
+    def test_unknown_ollama_credit_still_fails_open_before_the_new_tier(self):
+        d = decide(_tier_inputs(
+            [_tier_card(free=8.0, evictable=None, sidecar=None)], estimate=18.5,
+        ))
+        assert d.action == "grant_after_unload"
+        assert d.needs_sidecar_reclaim is False
+
+    def test_sidecar_credit_splits_across_cards_like_the_other_tiers(self):
+        d = decide(_tier_inputs(
+            [
+                _tier_card(index=0, free=8.0, evictable=0.0, sidecar=6.0),
+                _tier_card(index=1, free=8.0, evictable=0.0, sidecar=6.0, headroom=0.0),
+            ],
+            estimate=18.0,
+        ))
+        assert d.action == "grant_after_unload"
+        assert d.needs_sidecar_reclaim is True

@@ -351,6 +351,9 @@ class _FakeRegistry:
     async def evictable_ollama_gb(self, idx):
         return self._evictable.get(idx)
 
+    async def reclaimable_sidecar_gb(self, idx):
+        return getattr(self, "_sidecar", {}).get(idx)
+
 
 def _fake_sc(values: dict):
     sc = MagicMock()
