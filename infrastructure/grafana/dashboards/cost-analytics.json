@@ -321,23 +321,46 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "type": "prometheus",
+        "uid": "local-prometheus"
       },
-      "description": "Whether electricity in this window comes from the brain's measured PSU rows (any present) or would fall back to the per-call kWh estimate. Mirrors cost_ledger's electricity_source signal.",
+      "description": "Which instrument the electricity cost is actually being computed from, right now. The brain falls back shelly -> iCUE -> software estimate and writes cost rows on ALL THREE, so 'are there electricity rows?' cannot tell a metered figure from a modelled one — it reported 'measured' straight through a dead meter. This reads the meter series itself: psu_total_power_watts exists only while something is really metering the outlet. 2 = metered, 1 = software estimate only (cost is a model), 0 = no power signal at all. (PromQL note: the `> bool 0` comparisons are required — a bare `>` in PromQL filters and returns the SERIES VALUE, not 1, so the first cut of this panel rendered 895.8 instead of 2 and matched no value mapping.)",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "fixedColor": "text",
-            "mode": "fixed"
-          },
-          "mappings": [],
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "2": {
+                  "text": "Metered (outlet)",
+                  "index": 0
+                },
+                "1": {
+                  "text": "ESTIMATE ONLY — modelled",
+                  "index": 1
+                },
+                "0": {
+                  "text": "NO POWER SIGNAL",
+                  "index": 2
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "blue",
+                "value": 2
               }
             ]
           }
@@ -352,24 +375,23 @@
       },
       "id": 52,
       "options": {
-        "colorMode": "none",
+        "colorMode": "background",
         "graphMode": "none",
+        "textMode": "value",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
-          "fields": "/.*/",
+          "fields": "",
           "values": false
-        },
-        "textMode": "auto"
+        }
       },
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawSql": "SELECT CASE WHEN COUNT(*) FILTER (WHERE cost_type LIKE 'electricity%') > 0 THEN 'measured' ELSE 'estimated' END AS source FROM cost_logs WHERE $__timeFilter(created_at)",
-          "refId": "A"
+          "refId": "A",
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "expr": "((count(last_over_time(psu_total_power_watts[10m]) > 0) or on() vector(0)) > bool 0) * 2 + (1 - ((count(last_over_time(psu_total_power_watts[10m]) > 0) or on() vector(0)) > bool 0)) * ((count(last_over_time(system_total_power_estimate_watts[10m]) > 0) or on() vector(0)) > bool 0)",
+          "legendFormat": "power source"
         }
       ],
       "title": "Electricity source",
