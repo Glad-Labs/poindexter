@@ -1390,6 +1390,11 @@ DEFAULTS: dict[str, str] = {
     'vram_reclaim_settle_seconds': '6.0',
     'vram_reclaim_min_freed_gb': '1.0',
     'vram_reclaim_restart_cooldown_minutes': '30',
+    # A sidecar is only restarted for squatting while the render GPU has
+    # less than this much free VRAM (GB). Above it, freeing nothing means
+    # holding nothing; below it, even a nothing_to_reclaim decline is
+    # treated as a squat (the allocator view cannot see the CUDA context).
+    'vram_reclaim_restart_below_free_gb': '12.0',
 
     'pipeline_idle_probe_enabled': 'true',
     'pipeline_idle_max_hours': '12',
@@ -5077,6 +5082,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'vram_reclaim_settle_seconds': {'owner': 'gpu_scheduler', 'value_type': 'float'},
     'vram_reclaim_min_freed_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
     'vram_reclaim_restart_cooldown_minutes': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
+    'vram_reclaim_restart_below_free_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
     'pipeline_idle_probe_enabled': {'owner': 'probe_pipeline_idle', 'value_type': 'boolean'},
     'pipeline_idle_max_hours': {'owner': 'probe_pipeline_idle', 'value_type': 'integer'},
     'qa_rescue_yield_probe_enabled': {'owner': 'probe_rescue_yield', 'value_type': 'boolean'},

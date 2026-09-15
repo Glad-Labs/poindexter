@@ -2366,41 +2366,71 @@ class GPUScheduler:
         and a per-container cooldown stops a squatting sidecar from being
         restarted on every ladder pass.
         """
-        if declined:
-            logger.info(
-                "[GPU] %s declined the hard unload (nothing_to_reclaim) — "
-                "below its reserved-pool floor, nothing to verify",
-                service,
-            )
-            return
-        if before_gb is None:
-            logger.info(
-                "[GPU] %s hard rung: free-VRAM unreadable, cannot verify the "
-                "unload — declining restart rather than bouncing blind",
-                service,
-            )
-            return
-
         sc = _sc()
-        settle = sc.get_float("vram_reclaim_settle_seconds", 6.0) or 6.0
-        await asyncio.sleep(settle)
+        # A restart is only ever worth it while the render GPU is actually
+        # short. Below this much free VRAM a squat matters; above it, a sidecar
+        # that freed nothing is simply one that held nothing (ComfyUI idles at
+        # ~0.5 GB and can never "free 1 GB" — it was bounced eight times on
+        # 2026-09-15 for exactly that), and a sidecar that DECLINED may still be
+        # the squatter: stable-audio answered nothing_to_reclaim from its
+        # caching allocator's view (reserved=0) while its process held 9-11 GB
+        # the driver never returned (poindexter#999 measured the same for a
+        # soft unload) — the director then got no_fit on a "full" GPU.
+        below_free_gb = sc.get_float("vram_reclaim_restart_below_free_gb", 12.0) or 12.0
 
-        after_gb = await self._render_free_vram_gb()
-        if after_gb is None:
-            logger.info(
-                "[GPU] %s hard rung: post-unload VRAM unreadable — declining restart",
-                service,
+        if declined:
+            after_gb = await self._render_free_vram_gb()
+            if after_gb is None or after_gb >= below_free_gb:
+                logger.info(
+                    "[GPU] %s declined the hard unload (nothing_to_reclaim) — "
+                    "render GPU free=%s GB, trusting the decline",
+                    service, "?" if after_gb is None else f"{after_gb:.1f}",
+                )
+                return
+            logger.warning(
+                "[GPU] %s declined the hard unload (nothing_to_reclaim) but the "
+                "render GPU has only %.1f GB free (< %.1f GB) — its allocator view "
+                "cannot see a CUDA context the driver never returned; treating "
+                "the decline as a squat",
+                service, after_gb, below_free_gb,
             )
-            return
+            freed = 0.0
+            min_freed = sc.get_float("vram_reclaim_min_freed_gb", 1.0) or 1.0
+        else:
+            if before_gb is None:
+                logger.info(
+                    "[GPU] %s hard rung: free-VRAM unreadable, cannot verify the "
+                    "unload — declining restart rather than bouncing blind",
+                    service,
+                )
+                return
 
-        freed = after_gb - before_gb
-        min_freed = sc.get_float("vram_reclaim_min_freed_gb", 1.0) or 1.0
-        if freed >= min_freed:
-            logger.info(
-                "[GPU] %s released %.1f GB (>= %.1f GB floor) — no restart needed",
-                service, freed, min_freed,
-            )
-            return
+            settle = sc.get_float("vram_reclaim_settle_seconds", 6.0) or 6.0
+            await asyncio.sleep(settle)
+
+            after_gb = await self._render_free_vram_gb()
+            if after_gb is None:
+                logger.info(
+                    "[GPU] %s hard rung: post-unload VRAM unreadable — declining restart",
+                    service,
+                )
+                return
+
+            freed = after_gb - before_gb
+            min_freed = sc.get_float("vram_reclaim_min_freed_gb", 1.0) or 1.0
+            if freed >= min_freed:
+                logger.info(
+                    "[GPU] %s released %.1f GB (>= %.1f GB floor) — no restart needed",
+                    service, freed, min_freed,
+                )
+                return
+            if after_gb >= below_free_gb:
+                logger.info(
+                    "[GPU] %s freed only %.1f GB but the render GPU has %.1f GB free "
+                    "(>= %.1f GB) — nothing to reclaim from it, no restart",
+                    service, freed, after_gb, below_free_gb,
+                )
+                return
 
         # A render may have started during the settle window.
         if busy_check is not None and await busy_check():
@@ -2423,6 +2453,19 @@ class GPUScheduler:
             return
 
         pool = _container_pool()
+        if pool is not None:
+            # The in-memory cooldown above dies with this process (Prefect runs
+            # each flow in a fresh subprocess); the queue is the durable record.
+            from poindexter.services.service_restart_requests import seconds_since_last_request
+
+            age_s = await seconds_since_last_request(pool, container)
+            if age_s is not None and age_s < cooldown_min * 60:
+                logger.info(
+                    "[GPU] %s still squatting (%.1f GB freed) but a restart was "
+                    "queued %.0fs ago by another pass — within the %.0f-minute cooldown",
+                    service, freed, age_s, cooldown_min,
+                )
+                return
         if pool is None:
             logger.warning(
                 "[GPU] %s freed only %.1f GB and a restart is warranted, but "

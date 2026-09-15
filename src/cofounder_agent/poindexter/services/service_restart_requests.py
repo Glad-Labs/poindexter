@@ -9,9 +9,13 @@ Route: ``routes/service_restart_routes.py`` (poindexter#909).
 
 from __future__ import annotations
 
+import logging
+import numbers
 import re
 import uuid
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Every poindexter-managed container is named by the compose ``container_name:``
 # convention. This is a SHAPE check only (defense against garbage/injection in
@@ -88,6 +92,33 @@ async def create_restart_request(
             requested_by,
         )
     return dict(row)
+
+
+async def seconds_since_last_request(pool: Any, container: str) -> float | None:
+    """Age in seconds of the newest request for ``container`` — ``None`` when
+    there is none or the read fails.
+
+    The gpu_scheduler's restart cooldown used to live in a module dict, which a
+    Prefect flow (a fresh subprocess per run) never carries over: on 2026-09-15
+    ComfyUI was bounced eight times in a day, every pass a "first" one. The
+    queue itself is the durable record, so the cooldown reads it.
+    """
+    try:
+        async with pool.acquire() as conn:
+            age = await conn.fetchval(
+                """
+                SELECT EXTRACT(EPOCH FROM (now() - MAX(requested_at)))
+                  FROM service_restart_requests
+                 WHERE container = $1
+                """,
+                container,
+            )
+    except Exception as exc:  # noqa: BLE001 — a failed read means "unknown", never "block the reclaim"
+        logger.warning("[restart_requests] cooldown read failed for %s: %s", container, exc)
+        return None
+    # asyncpg hands EXTRACT(EPOCH …) back as a Decimal; anything that is not a
+    # real number (a test double, an unexpected driver type) is "unknown".
+    return float(age) if isinstance(age, numbers.Number) else None
 
 
 async def get_restart_request(pool: Any, request_id: str) -> dict[str, Any] | None:

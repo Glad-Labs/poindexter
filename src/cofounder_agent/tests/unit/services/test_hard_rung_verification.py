@@ -31,6 +31,7 @@ class _SC:
             "vram_reclaim_settle_seconds": 0.0,
             "vram_reclaim_min_freed_gb": 1.0,
             "vram_reclaim_restart_cooldown_minutes": 30.0,
+            "vram_reclaim_restart_below_free_gb": 12.0,
         }
 
     def get(self, key, default=None):
@@ -104,18 +105,73 @@ class TestDeclineDetection:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestVerifierRespectsTheDecline:
-    async def test_a_declining_service_is_never_restarted(self):
+    async def test_a_declining_service_is_left_alone_while_the_gpu_has_room(self):
         """The mistake a naive version would make: bouncing a healthy sidecar
-        that correctly reported it had nothing to free."""
+        that correctly reported it had nothing to free. With 22 GB free on the
+        render GPU there is nothing to reclaim from anyone."""
         s = _sched()
         created = AsyncMock()
         with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
              patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
-             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=11.7)), \
-             patch("poindexter.services.service_restart_requests.create_restart_request", created):
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=22.0)), \
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=None)):
             await s._verify_reclaim_or_restart(
                 service="wan", container="poindexter-wan-server",
-                before_gb=11.7, declined=True,
+                before_gb=22.0, declined=True,
+            )
+        created.assert_not_awaited()
+
+    async def test_a_decline_while_the_render_gpu_is_short_is_treated_as_a_squat(self):
+        """2026-09-15: stable-audio answered nothing_to_reclaim from its caching
+        allocator (reserved=0) while its process held 9-11 GB the driver never
+        returned; the director then got no_fit on a 'full' GPU. A decline with
+        the render GPU still short is not trusted."""
+        s = _sched()
+        created = AsyncMock(return_value={"id": "r1"})
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=6.5)), \
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=None)):
+            await s._verify_reclaim_or_restart(
+                service="image-gen", container="poindexter-image-gen-server",
+                before_gb=6.5, declined=True,
+            )
+        created.assert_awaited_once()
+        assert created.await_args.args[1] == "poindexter-image-gen-server"
+
+    async def test_freeing_nothing_while_the_gpu_has_room_is_not_a_squat(self):
+        """ComfyUI idles at ~0.5 GB and can never 'free 1 GB'; it was bounced
+        eight times on 2026-09-15 while the render GPU had plenty of room."""
+        s = _sched()
+        created = AsyncMock()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=20.0)), \
+             patch("asyncio.sleep", new=AsyncMock()), \
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=None)):
+            await s._verify_reclaim_or_restart(
+                service="comfyui", container="poindexter-comfyui",
+                before_gb=20.0, declined=False,
+            )
+        created.assert_not_awaited()
+
+    async def test_cooldown_is_read_from_the_queue_across_processes(self):
+        """The module dict dies with the Prefect subprocess; the queue is the
+        durable record."""
+        s = _sched()
+        created = AsyncMock()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=6.0)), \
+             patch("asyncio.sleep", new=AsyncMock()), \
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=120.0)):
+            await s._verify_reclaim_or_restart(
+                service="comfyui", container="poindexter-comfyui",
+                before_gb=6.0, declined=False,
             )
         created.assert_not_awaited()
 
@@ -128,7 +184,8 @@ class TestVerifierRespectsTheDecline:
              patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
              patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=11.7)), \
              patch("asyncio.sleep", new=AsyncMock()), \
-             patch("poindexter.services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=None)):
             await s._verify_reclaim_or_restart(
                 service="stable-audio", container="poindexter-stable-audio",
                 before_gb=11.7, declined=False,
@@ -163,7 +220,8 @@ class TestCooldownIsPerContainer:
              patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
              patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=11.7)), \
              patch("asyncio.sleep", new=AsyncMock()), \
-             patch("poindexter.services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=None)):
             for svc, ctr in (
                 ("wan", "poindexter-wan-server"),
                 ("stable-audio", "poindexter-stable-audio"),
@@ -186,7 +244,8 @@ class TestCooldownIsPerContainer:
              patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
              patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=11.7)), \
              patch("asyncio.sleep", new=AsyncMock()), \
-             patch("poindexter.services.service_restart_requests.create_restart_request", created):
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=None)):
             for _ in range(3):
                 await s._verify_reclaim_or_restart(
                     service="wan", container="poindexter-wan-server",

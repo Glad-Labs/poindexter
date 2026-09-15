@@ -158,3 +158,15 @@ class TestSelfDefeatingGuard:
         assert is_self_defeating("poindexter-brain-daemon")
         assert not is_self_defeating("poindexter-worker")
         assert not issubclass(SelfDefeatingRestart, InvalidContainerName)
+
+
+@pytest.mark.asyncio
+async def test_seconds_since_last_request_ignores_non_numeric_rows():
+    """A MagicMock pool (or an odd driver type) must read as unknown, not as
+    'one second ago' — MagicMock.__float__ returns 1.0 and silently held the
+    gpu_scheduler cooldown shut in tests."""
+    from unittest.mock import MagicMock
+
+    from poindexter.services.service_restart_requests import seconds_since_last_request
+
+    assert await seconds_since_last_request(MagicMock(), "poindexter-comfyui") is None
