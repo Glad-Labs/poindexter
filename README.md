@@ -7,7 +7,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Unit tests](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml)
 [![Release](https://img.shields.io/github/v/release/Glad-Labs/poindexter)](https://github.com/Glad-Labs/poindexter/releases)
-[![Tests](https://img.shields.io/badge/tests-17%2C000%2B-brightgreen)](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml)
+[![Tests](https://img.shields.io/badge/tests-18%2C000%2B-brightgreen)](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](#project-status)
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
@@ -103,7 +103,7 @@ Run it on your machine. Own your data. No cloud lock-in.
 
 ## Built to reject its own work
 
-Most AI content tools optimize for output volume. Poindexter optimizes for **curation**: it generates candidates, then makes each one survive 15 QA rails — cross-model LLM critics, DeepEval and Ragas evaluations, deterministic anti-hallucination validators, citation verification against the research corpus, and vision QA on every generated image. Roughly half of all drafts don't make it.
+Most AI content tools optimize for output volume. Poindexter optimizes for **curation**: it generates candidates, then makes each one survive 16 QA rails — cross-model LLM critics, DeepEval and Ragas evaluations, deterministic anti-hallucination validators, citation verification against the research corpus, and vision QA on every generated image. Roughly half of all drafts don't make it.
 
 <img src="docs/assets/readme/grafana-qa-reviewers.png" alt="Grafana QA Rails panel — average score per reviewer across 17 signals, from internal_consistency at 100 down to content_originality at 19.1" width="100%">
 
@@ -159,7 +159,7 @@ flowchart LR
     kernel --> store --> fe
 ```
 
-The content pipeline itself is a declarative LangGraph DAG stored in the database — 47 nodes covering research, writing, image generation, the 15 QA rails, SEO, and publish. Swap any piece as long as it writes the same tables. Full diagrams and design rationale in [`docs/architecture/`](https://gladlabs.mintlify.app/docs/architecture/overview).
+The content pipeline itself is a declarative LangGraph DAG stored in the database — 48 nodes covering research, writing, image generation, the 16 QA rails, SEO, and publish. Swap any piece as long as it writes the same tables. Full diagrams and design rationale in [`docs/architecture/`](https://gladlabs.mintlify.app/docs/architecture/overview).
 
 ## Key features
 
@@ -176,7 +176,7 @@ The content pipeline itself is a declarative LangGraph DAG stored in the databas
 | **Self-healing**             | Watchdog daemon monitors all services, restarts failures, alerts via Telegram/Discord       |
 | **Production observability** | Grafana, Prometheus, Loki, Pyroscope (CPU profiling), Sentry-compatible (GlitchTip)         |
 | **OAuth 2.1 throughout**     | Every consumer (CLI, MCP, scripts) mints scoped JWTs. No static API keys.                   |
-| **17,000+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                   |
+| **18,000+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                   |
 
 ## Stack
 
@@ -257,7 +257,7 @@ Poindexter is in **alpha**. Honest snapshot:
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Pop!\_OS). Single-operator content business publishing daily.
 - 200+ live posts on [gladlabs.io](https://www.gladlabs.io) (380+ posts total, 2,000+ pipeline runs).
-- 17,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
+- 18,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
 - `poindexter setup` takes a fresh clone to a healthy local stack — no `.env` file, no manual secret wrangling.
 - Live in-place upgrades — schema changes applied to a running instance with zero data loss.
 - Multi-model QA with deterministic validators, an LLM critic chain, and a programmatic anti-hallucination layer.
