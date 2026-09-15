@@ -17,6 +17,17 @@ allow on the consent screen, and the script captures the auth code via
 a local HTTP loopback (no copy-paste needed). It then exchanges the
 code for a refresh_token and prints it.
 
+The loopback listener binds an **OS-assigned free port** by default.
+``docs/integrations/setup-gsc-and-ga4.md`` has you create a **Desktop app**
+OAuth client, and Google matches a loopback redirect_uri on the address
+only -- ignoring the port -- for that client type, so no port needs
+registering anywhere. A fixed default buys nothing and can collide: the
+previous hardcoded 8765 lost to an unrelated local service that had been
+listening for hours, and the flow died with ``OSError: [Errno 98] Address
+already in use`` before the browser ever opened. ``--port`` is still there
+for a Web-application client, where the exact redirect_uri IS matched and
+must be registered.
+
 Scopes requested:
   https://www.googleapis.com/auth/webmasters.readonly  (GSC)
   https://www.googleapis.com/auth/analytics.readonly   (GA4)
@@ -42,9 +53,12 @@ def main() -> int:
     parser.add_argument("--client-id", required=True, help="OAuth 2.0 Client ID from Google Cloud Console")
     parser.add_argument("--client-secret", required=True, help="OAuth 2.0 Client Secret")
     parser.add_argument(
-        "--port", type=int, default=8765,
-        help="Local port for the OAuth redirect (default 8765). Must match the redirect_uri "
-             "registered in your OAuth client."
+        "--port", type=int, default=0,
+        help="Local port for the OAuth redirect. Default 0 lets the OS pick a free port, "
+             "which is what a Desktop-app client wants: Google matches loopback redirects "
+             "on the address only and ignores the port, so nothing needs registering and "
+             "nothing can collide. Pin a port only for a Web-application client, whose "
+             "exact redirect_uri must be registered."
     )
     args = parser.parse_args()
 
@@ -69,7 +83,10 @@ def main() -> int:
     }
 
     flow = InstalledAppFlow.from_client_config(client_config, scopes=SCOPES)
-    print(f"Opening browser for OAuth (port {args.port})...")
+    # port=0 means "OS picks"; run_local_server rewrites self.redirect_uri from
+    # the bound socket's real port, so the auth URL always carries the live port.
+    port_label = f"port {args.port}" if args.port else "an OS-assigned free port"
+    print(f"Opening browser for OAuth ({port_label})...")
     print("Sign in with the Google account that has access to your GSC + GA4 properties.")
     print()
     creds = flow.run_local_server(port=args.port, prompt="consent", access_type="offline")
