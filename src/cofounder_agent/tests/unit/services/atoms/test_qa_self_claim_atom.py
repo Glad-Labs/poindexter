@@ -267,3 +267,122 @@ class TestRun:
         # Only the version offender — the Q-claim was skipped, not judged.
         assert review["feedback"].count("version claim") == 1
         assert "quality-score claim" not in review["feedback"]
+
+
+# ---------------------------------------------------------------------------
+# layers 5-6: named capabilities + install specs vs the operating record
+# ---------------------------------------------------------------------------
+
+from poindexter.services.operating_record import GpuFact, OperatingRecord  # noqa: E402
+
+
+def _record(**over):
+    base = dict(
+        known_names=frozenset({"ollama", "poindexter", "google search console", "claude"}),
+        ram_gb=60.5,
+        gpus=(GpuFact("rtx 5090", 32.0), GpuFact("rtx 3090", 24.0)),
+    )
+    base.update(over)
+    return OperatingRecord(**base)
+
+
+class TestCapabilityClaims:
+    def test_run_class_verbs_extract_capitalised_names(self):
+        text = ("We also run Jettison, which takes a single sentence and turns it into assets. "
+                "We use Google Search Console data. We rely on Ollama on GPU 0. "
+                "Our Poindexter pipeline is the thing.")
+        assert atom.extract_capability_claims(text) == ["Jettison", "Google Search Console", "Ollama"]
+
+    def test_build_class_verbs_and_lowercase_are_not_extracted(self):
+        assert atom.extract_capability_claims("We built Presenter Personas last week and we use a small script.") == []
+
+    def test_unknown_name_is_an_offender_known_ones_are_not(self):
+        offenders = atom.check_capabilities(["Jettison", "Ollama", "Claude Sonnet"], _record())
+        assert len(offenders) == 1 and '"Jettison"' in offenders[0]
+
+
+class TestInstallSpecs:
+    def test_specs_only_count_in_our_context(self):
+        ours = "Our Poindexter box is a self-hosted RTX 5090 with 128GB of system RAM and 32GB of VRAM."
+        theirs = "The reviewer tested on an RTX 4090 with 24GB of VRAM and 64GB of system RAM."
+        assert atom.extract_install_specs(ours, ["poindexter"]) == [("ram_gb", "128"), ("vram_gb", "32"), ("gpu", "RTX 5090")]
+        assert atom.extract_install_specs(theirs, ["poindexter"]) == []
+
+    def test_checks_against_the_record(self):
+        offenders, checked = atom.check_install_specs(
+            [("ram_gb", "128"), ("ram_gb", "64"), ("vram_gb", "32"), ("vram_gb", "56"), ("vram_gb", "40"),
+             ("gpu", "RTX 5090"), ("gpu", "RTX 4090")], _record(),
+        )
+        assert checked is True
+        assert any("128GB of system RAM" in o for o in offenders)
+        assert any("40GB of VRAM" in o for o in offenders)
+        assert any("RTX 4090" in o for o in offenders)
+        assert not any(o.startswith(("claims 64GB", "claims 32GB", "claims 56GB", "names a RTX 5090")) for o in offenders)
+
+    def test_unknown_facts_are_skipped_not_judged(self):
+        offenders, checked = atom.check_install_specs([("gpu", "RTX 4090"), ("vram_gb", "48")], _record(gpus=()))
+        assert offenders == [] and checked is False
+
+
+def _patch_required_gate(monkeypatch):
+    """qa_gates.self_claim.required_to_pass=true — the posture since migration
+    20260915_014128: a failing review stays approved=False and vetoes."""
+    async def _states(_qa):
+        return {"self_claim": (True, True)}
+    monkeypatch.setattr(atom, "resolve_gate_states", _states)
+    monkeypatch.setattr(
+        "poindexter.modules.content.multi_model_qa.MultiModelQA.__init__",
+        lambda self, **kw: None,
+    )
+
+
+class TestRunWithOperatingRecord:
+    @pytest.mark.asyncio
+    async def test_jettison_vetoes_when_the_gate_is_required(self, monkeypatch):
+        _patch_required_gate(monkeypatch)
+        monkeypatch.setattr(
+            "poindexter.services.operating_record.load_operating_record",
+            AsyncMock(return_value=_record()),
+        )
+        content = ("At Glad Labs, our content pipeline runs on Poindexter. "
+                   "We also run Jettison, which takes a single sentence and turns it into campaign assets.")
+        out = await atom.run({"content": content, "topic": "zero-click", "site_config": _sc()})
+        review = out["qa_rail_reviews"][0]
+        assert review["approved"] is False and "Jettison" in review["feedback"]
+        assert review.get("advisory") is False
+
+    @pytest.mark.asyncio
+    async def test_jettison_is_advisory_when_the_gate_is_demoted(self, monkeypatch):
+        _patch_gates(monkeypatch)  # required_to_pass=false (the poindexter#454 lever)
+        monkeypatch.setattr(
+            "poindexter.services.operating_record.load_operating_record",
+            AsyncMock(return_value=_record()),
+        )
+        content = "Our Poindexter pipeline is fine. We also run Jettison for campaigns."
+        out = await atom.run({"content": content, "topic": "t", "site_config": _sc()})
+        review = out["qa_rail_reviews"][0]
+        assert review["advisory"] is True and "Jettison" in review["feedback"]
+
+    @pytest.mark.asyncio
+    async def test_true_capabilities_and_specs_pass(self, monkeypatch):
+        _patch_gates(monkeypatch)
+        monkeypatch.setattr(
+            "poindexter.services.operating_record.load_operating_record",
+            AsyncMock(return_value=_record()),
+        )
+        content = ("Our Poindexter pipeline runs on a self-hosted RTX 5090 with 64GB of system RAM, "
+                   "and we rely on Ollama for local inference.")
+        out = await atom.run({"content": content, "topic": "local llms", "site_config": _sc()})
+        review = out["qa_rail_reviews"][0]
+        assert review["approved"] is True and review["score"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_record_failure_skips_the_layers_without_a_verdict(self, monkeypatch):
+        _patch_gates(monkeypatch)
+        monkeypatch.setattr(
+            "poindexter.services.operating_record.load_operating_record",
+            AsyncMock(side_effect=RuntimeError("no host")),
+        )
+        content = "Our Poindexter pipeline runs on Poindexter. We also run Jettison for campaigns."
+        out = await atom.run({"content": content, "topic": "t", "site_config": _sc()})
+        assert out == {}  # nothing checkable → no review, never a fake pass

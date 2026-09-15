@@ -72,19 +72,28 @@ OWN system (product-name markers from `qa_self_claim_product_names` +
 `site_name`, or first-person-plural system prose — the precision gate that
 keeps another product's version numbers out of scope), it verifies the
 claims the truth-oriented rails structurally cannot: the corpus for these is
-the repo and the live database, not the research bundle. Four layers:
+the repo, the live database and the host, not the research bundle. Six layers:
 version strings claimed for our release vs the running `pyproject.toml`
 version; quality-score claims ("a Q of 85") vs the real `pipeline_tasks`
 distribution (±1); backticked settings-shaped keys vs `app_settings`;
-package-relative file paths vs the tree on disk. Three fabricated/stale
-self-claims reached `awaiting_approval` at Q94–95 on 2026-08-09 — the
-deterministic layers catch two of the three outright (invented scores, a
-stale version); the invented-mechanism class needs the grounded-LLM
-treatment and is deliberately deferred. A draft with no falsifiable
-self-claims appends no review at all (dev-diary prose must not fire, and a
-vacuous 100 would skew the all-rail average). DB layers skip silently
-without a pool — reduced coverage, never a fake verdict. Advisory-first via
-`qa_gates.self_claim`.
+package-relative file paths vs the tree on disk; **named capabilities** ("we
+run/use/rely on X", "our X tool") vs the **operating record**
+(`services/operating_record.py`: `qa_self_claim_known_components` + product
+names + `site_name` + every `plugin.<kind>.<name>.*` settings segment + the
+`cost_logs` models of the trailing 90 days); and **install specs** in our-system
+context (system RAM vs `/proc/meminfo`, VRAM and GPU model vs
+`operating_record_gpus` / `gpu_model`). Build-class verbs ("we built X") are
+not extracted — they name our own features, which no record enumerates. The
+last two layers landed 2026-09-15 after the queue review found "We also run
+Jettison" (a contrast lifted from one of our own published posts) and "a 5090
+with 128GB of system RAM" (the host has 64) at QA 95–97; earlier, three
+fabricated/stale self-claims reached `awaiting_approval` at Q94–95 on
+2026-08-09 (invented scores, a stale version). The invented-mechanism class
+still needs the grounded-LLM treatment. A draft with no falsifiable self-claims
+appends no review at all (dev-diary prose must not fire, and a vacuous 100 would
+skew the all-rail average). A fact the record cannot derive is skipped, never
+guessed. **Required since 2026-09-15** (migration `20260915_014128`); the
+poindexter#454 lever demotes it without a deploy.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the (other) atoms
 delegate to.

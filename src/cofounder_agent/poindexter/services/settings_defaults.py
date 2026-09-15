@@ -1870,6 +1870,28 @@ DEFAULTS: dict[str, str] = {
     'qa_self_claim_enabled': 'true',
     'qa_self_claim_product_names': 'poindexter',
     'qa_self_claim_offender_penalty': '25',
+    # Operating record (services/operating_record.py) — what qa.self_claim
+    # checks named capabilities ("we run X") and install specs (RAM, GPUs,
+    # VRAM) against. Names: this CSV + product names + site_name + the
+    # plugin.<kind>.<name>.* settings + cost_logs models. Seeded with the stack
+    # a Poindexter install runs; extend it rather than hardcode exceptions.
+    'qa_self_claim_known_components': (
+        'poindexter, python, postgres, postgresql, pgvector, docker, docker compose, '
+        'ollama, litellm, langgraph, langfuse, llamaindex, ragas, deepeval, prefect, fastapi, '
+        'next.js, nextjs, vercel, cloudflare, r2, grafana, prometheus, loki, tempo, pyroscope, '
+        'glitchtip, sentry, uptime kuma, alertmanager, comfyui, wan, wan 2.2, wan 2.1, qwen, '
+        'qwen image, flux, flux.2, sdxl, z-image, kokoro, chatterbox, speaches, whisper, '
+        'faster-whisper, pexels, postiz, livekit, tailscale, telegram, discord, github, '
+        'github actions, dependabot, playwright, ffmpeg, pgadmin, mintlify, anthropic, claude, '
+        'claude sonnet, gemma, phi, phi4, granite, llama.cpp, nvidia, cuda, rtx 5090, rtx 3090, '
+        'pop!_os, ubuntu, linux, systemd, google search console, search console, google analytics, '
+        'adsense, youtube, linkedin, x, twitter, reddit, mastodon, tiktok, instagram, dev.to, '
+        'hacker news, wikipedia, restic'
+    ),
+    # GPUs as "NAME:VRAM_GB,..." (e.g. "RTX 5090:32,RTX 3090:24"); empty falls
+    # back to parsing gpu_model. Host RAM: 'auto' = /proc/meminfo, or a number.
+    'operating_record_gpus': '',
+    'operating_record_ram_gb': 'auto',
 
     # ----- qa.numeric_fidelity (arithmetic source-grounding rail) -----
     # Master switch. Advisory-first via qa_gates.numeric_fidelity, so 'true'
@@ -4858,6 +4880,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_self_claim_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'qa_self_claim_product_names': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_self_claim_offender_penalty': {'owner': 'multi_model_qa', 'value_type': 'float'},
+    'qa_self_claim_known_components': {'owner': 'multi_model_qa', 'value_type': 'string'},
+    'operating_record_gpus': {'owner': 'multi_model_qa', 'value_type': 'string'},
+    'operating_record_ram_gb': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_numeric_fidelity_allow_derived': {'owner': 'qa_numeric_fidelity', 'value_type': 'boolean'},
     'qa_numeric_fidelity_attribution_markers': {'owner': 'qa_numeric_fidelity'},
     'qa_numeric_fidelity_enabled': {'owner': 'qa_numeric_fidelity', 'value_type': 'boolean'},

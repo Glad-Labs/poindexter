@@ -22,6 +22,16 @@ no LLM call:
    table.
 4. **Package-relative file paths** (``services/x.py`` …) vs the tree on
    disk.
+5. **Named capabilities** — "we run/use/rely on X" and "our X tool" — vs
+   the operating record (``services/operating_record.py``: the stack CSV,
+   product names, ``plugin.*`` settings, ``cost_logs`` models). Added
+   2026-09-15 after "We also run Jettison" reached the queue at QA 95: the
+   name had been lifted from a *contrast* in one of our own published posts.
+   Build-verbs ("we built X") are deliberately not extracted — they name our
+   own features, which the record cannot enumerate.
+6. **Install specs** in our-system context — system RAM, VRAM and GPU model
+   names — vs the host the worker runs on. "128GB of system RAM" on a 64 GB
+   box reached the queue at QA 97 the same week.
 
 The fuzzier "named mechanism vs repo symbol" layer (instance 1) needs the
 grounded-LLM treatment (propose → verify the symbol resolves, the
@@ -40,10 +50,12 @@ nothing checkable does not fire). DB-dependent layers (2, 3) skip
 silently without a pool — the file/version layers still run; a skipped
 layer is reduced coverage, never a fake verdict.
 
-Advisory-first: seeded ``qa_gates.self_claim.required_to_pass=false`` so
-it scores + surfaces offenders in ``qa_feedback`` (QA Rails dashboard)
-but does not veto until an operator graduates it. Master switch
-``qa_self_claim_enabled`` (default true).
+Advisory at birth (seeded ``qa_gates.self_claim.required_to_pass=false``),
+**required since 2026-09-15** (migration ``20260915_014128``): with the
+capability and install-spec layers the rail catches the fabrication class
+that actually reaches the queue, so a confirmed-false self-claim vetoes and
+the rescue cycle gets the offender list. The poindexter#454 lever demotes it
+without a deploy. Master switch ``qa_self_claim_enabled`` (default true).
 
 Chain position: after ``qa.title_coherence``, before ``qa.web_factcheck``.
 """
@@ -68,9 +80,10 @@ ATOM_META = AtomMeta(
     description=(
         "Deterministic verification of the draft's claims about our own "
         "system: version strings vs pyproject, quality-score claims vs "
-        "pipeline_tasks, backticked settings keys vs app_settings, and "
-        "package file paths vs the tree. Advisory-first (DB-driven via "
-        "qa_gates.self_claim)."
+        "pipeline_tasks, backticked settings keys vs app_settings, package "
+        "file paths vs the tree, named capabilities (\"we run X\") and install "
+        "specs (RAM/VRAM/GPU) vs the operating record. Gate status DB-driven "
+        "via qa_gates.self_claim (required since 2026-09-15)."
     ),
     inputs=(
         FieldSpec(name="content", type="str", description="draft to review"),
@@ -125,6 +138,139 @@ _SETTINGS_SUFFIXES = (
 _PATH_RE = re.compile(
     r"\b((?:services|modules|routes|plugins|utils|poindexter)/[\w./-]+?\.py)\b"
 )
+
+
+# Layer 5 — named capabilities. Only RUN-class verbs: "we run/use/rely on X"
+# names something external the operating record can enumerate. Build-class
+# verbs ("we built/shipped X") name our own features, which it cannot, so
+# they are not extracted at all — a wrong "not in the record" is worse than
+# a missed one.
+_CAP_VERBS = (
+    r"run|runs|running|ran|use|uses|using|used|operate|operates|operating|"
+    r"maintain|maintains|deploy|deploys|deployed|rely\s+on|relies\s+on|"
+    r"adopted|integrated|host|hosts|hosting|self-host|self-hosts"
+)
+_CAP_NAME = r"((?-i:[A-Z][\w.+-]*(?:\s+[A-Z][\w.+-]*){0,2}))"
+_CAP_RE = re.compile(
+    rf"\b(?:we|our\s+team|our\s+stack)\s+(?:also\s+|now\s+|still\s+|currently\s+|already\s+)?"
+    rf"(?:{_CAP_VERBS})\s+(?:a\s+|an\s+|the\s+|our\s+own\s+|our\s+)?{_CAP_NAME}",
+    re.IGNORECASE,
+)
+_OUR_TOOL_RE = re.compile(
+    rf"\bour\s+{_CAP_NAME}\s+(?:tool|engine|generator|service|product|app|bot|agent|"
+    r"sidecar|platform|module|plugin)\b",
+    re.IGNORECASE,
+)
+_CAP_STOPWORDS = {
+    "ai", "llm", "llms", "gpu", "gpus", "qa", "seo", "rag", "api", "apis", "ci",
+    "i", "a", "an", "the", "it", "this", "that", "these", "those", "our", "we",
+    "one", "two", "three", "several", "every", "each", "both",
+}
+
+# Layer 6 — install specs, checked only in our-system context.
+_RAM_RE = re.compile(
+    r"\b(\d{2,4})\s?GB\s+(?:of\s+)?(?:system\s+|host\s+|unified\s+)?RAM\b", re.IGNORECASE,
+)
+_VRAM_RE = re.compile(r"\b(\d{1,3})\s?GB\s+(?:of\s+)?VRAM\b", re.IGNORECASE)
+_GPU_CLAIM_RE = re.compile(
+    r"\b((?:GeForce\s+)?(?:RTX|GTX)\s?\d{4}(?:\s?(?:Ti|Super))?)\b", re.IGNORECASE,
+)
+
+
+def extract_capability_claims(content: str) -> list[str]:
+    """Capitalised names the draft says WE run/use/rely on, in order, deduped."""
+    names: list[str] = []
+    for rx in (_CAP_RE, _OUR_TOOL_RE):
+        for m in rx.finditer(content):
+            name = m.group(1).strip().rstrip(".,;:")
+            if not name:
+                continue
+            if name.split()[0].lower() in _CAP_STOPWORDS:
+                continue
+            if name not in names:
+                names.append(name)
+    return names
+
+
+def check_capabilities(names: list[str], record: Any) -> list[str]:
+    from poindexter.services.operating_record import name_is_known
+
+    return [
+        f'names "{n}" as something we run or use — not in the operating record '
+        "(qa_self_claim_known_components, plugin.* settings, cost_logs models)"
+        for n in names if not name_is_known(n, record)
+    ]
+
+
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+|\n{2,}")
+
+
+def _sentence_is_ours(content: str, start: int, markers: list[str]) -> bool:
+    """Same-sentence version of ``_window_is_ours``: a spec counts as OURS only
+    when the sentence that states it names our system or speaks as "we/our".
+    The 140-char window bled a neighbouring "Our Poindexter…" sentence into
+    "The reviewer's RTX 4090…" during the 2026-09-15 probe."""
+    lo = 0
+    for m in _SENTENCE_END_RE.finditer(content):
+        if m.end() <= start:
+            lo = m.end()
+        else:
+            break
+    hi_m = _SENTENCE_END_RE.search(content, start)
+    hi = hi_m.start() if hi_m else len(content)
+    sentence = content[lo:hi].lower()
+    if any(mk in sentence for mk in markers):
+        return True
+    return bool(re.search(r"\b(?:we|our)\b", sentence))
+
+
+def extract_install_specs(content: str, markers: list[str]) -> list[tuple[str, str]]:
+    """``(kind, value)`` for RAM / VRAM / GPU-model claims made in a sentence
+    about our own system."""
+    specs: list[tuple[str, str]] = []
+    for kind, rx in (("ram_gb", _RAM_RE), ("vram_gb", _VRAM_RE), ("gpu", _GPU_CLAIM_RE)):
+        for m in rx.finditer(content):
+            if not _sentence_is_ours(content, m.start(), markers):
+                continue
+            specs.append((kind, m.group(1)))
+    return specs
+
+
+def _norm_gpu(name: str) -> str:
+    n = re.sub(r"\s+", " ", name.strip().lower()).replace("geforce ", "")
+    return re.sub(r"^(rtx|gtx)(\d)", r"\1 \2", n)
+
+
+def check_install_specs(specs: list[tuple[str, str]], record: Any) -> tuple[list[str], bool]:
+    """``(offenders, checked_any)`` — a spec the record cannot judge is skipped."""
+    offenders: list[str] = []
+    checked = False
+    per_gpu = [g.vram_gb for g in getattr(record, "gpus", ()) if getattr(g, "vram_gb", None)]
+    gpu_names = [g.name for g in getattr(record, "gpus", ())]
+    for kind, value in specs:
+        if kind == "ram_gb" and getattr(record, "ram_gb", None):
+            checked = True
+            claimed = float(value)
+            if not (0.85 * record.ram_gb <= claimed <= 1.3 * record.ram_gb):
+                offenders.append(
+                    f"claims {value}GB of system RAM — this host reports ~{round(record.ram_gb)}GB"
+                )
+        elif kind == "vram_gb" and per_gpu:
+            checked = True
+            claimed = float(value)
+            candidates = per_gpu + [sum(per_gpu)]
+            if not any(abs(claimed - v) <= 0.15 * v for v in candidates):
+                offenders.append(
+                    f"claims {value}GB of VRAM — the cards here have "
+                    + ", ".join(f"{int(v)}GB" for v in per_gpu)
+                )
+        elif kind == "gpu" and gpu_names:
+            checked = True
+            if _norm_gpu(value) not in gpu_names:
+                offenders.append(
+                    f"names a {value} — the GPUs here are " + ", ".join(gpu_names).upper()
+                )
+    return offenders, checked
 
 
 def _is_enabled(site_config: Any) -> bool:
@@ -312,6 +458,28 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 "never a fake verdict): %s", e,
             )
 
+    # Layers 5-6: named capabilities + install specs vs the operating record.
+    capability_names = extract_capability_claims(content)
+    install_specs = extract_install_specs(content, markers)
+    capabilities_checked = specs_checked = False
+    if capability_names or install_specs:
+        try:
+            from poindexter.services.operating_record import load_operating_record
+
+            record = await load_operating_record(site_config, pool)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[qa.self_claim] operating record unavailable — capability/spec "
+                "layers skipped (reduced coverage, never a fake verdict): %s", e,
+            )
+            record = None
+        if record is not None:
+            if capability_names:
+                capabilities_checked = True
+                offenders += check_capabilities(capability_names, record)
+            if install_specs:
+                spec_offenders, specs_checked = check_install_specs(install_specs, record)
+                offenders += spec_offenders
     # Nothing falsifiable EXTRACTED → no review at all. Prose ABOUT the
     # pipeline that asserts nothing checkable must not fire (issue
     # acceptance), and a vacuous 100 would skew the all-rail average.
@@ -319,6 +487,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         versions_checked
         or bool(paths)
         or (checked_db_layers and bool(qscore_claims or settings_tokens))
+        or capabilities_checked
+        or specs_checked
     )
     if not offenders and not checked_anything:
         return {}

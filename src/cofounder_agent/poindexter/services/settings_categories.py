@@ -168,6 +168,7 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("trusted_source", "content"),
     # quality
     ("qa_", "quality"),
+    ("operating_record", "quality"),
     ("qa.", "quality"),
     ("quality", "quality"),
     ("deepeval", "quality"),
