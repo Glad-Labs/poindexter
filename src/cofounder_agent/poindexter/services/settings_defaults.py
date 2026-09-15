@@ -2702,6 +2702,14 @@ DEFAULTS: dict[str, str] = {
     # (Stable Audio Open `/generate`) to render one clip. Was a hardcoded
     # literal in services/audio_gen_providers/stable_audio_open.py.
     'audio_render_timeout_seconds': '180',
+    # generate_media_scripts node-timeout floor (llm_calls x llm_budget +
+    # audio_render_timeout_seconds + cold-load allowance + overhead = 600 s).
+    # The static 300 s killed the ambient bed's stable-audio cold load
+    # (~125 s) and the stage errored at exactly 300 s five times in 30 days.
+    'media_scripts_llm_call_budget_seconds': '120',
+    'media_scripts_llm_calls': '2',
+    'audio_gen_cold_load_allowance_seconds': '150',
+    'media_scripts_stage_overhead_seconds': '30',
     # Stage-2 media trigger (#689 Plan 7) — the dispatch_media_pipeline job is
     # scheduled but DORMANT until media_pipeline_trigger_enabled flips on; this
     # is what takes media_pipeline from dormant to LIVE in prod.
@@ -5264,6 +5272,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'atom_runs_output_preview_max_bytes': {'owner': 'pipeline_architect', 'value_type': 'integer'},
     'audio_gen_engine': {'owner': 'audio_gen_service'},
     'audio_render_timeout_seconds': {'owner': 'stable_audio_open', 'value_type': 'integer'},
+    'media_scripts_llm_call_budget_seconds': {'owner': 'generate_media_scripts', 'value_type': 'integer'},
+    'media_scripts_llm_calls': {'owner': 'generate_media_scripts', 'value_type': 'integer'},
+    'audio_gen_cold_load_allowance_seconds': {'owner': 'generate_media_scripts', 'value_type': 'integer'},
+    'media_scripts_stage_overhead_seconds': {'owner': 'generate_media_scripts', 'value_type': 'integer'},
     'auto_embed_max_age_hours': {'owner': 'auto_embed_watch', 'value_type': 'integer'},
     'auto_embed_watch_enabled': {'owner': 'auto_embed_watch', 'value_type': 'boolean'},
     'auto_embed_watch_max_retries': {'owner': 'auto_embed_watch', 'value_type': 'integer'},

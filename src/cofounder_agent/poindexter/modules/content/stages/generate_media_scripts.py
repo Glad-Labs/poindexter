@@ -79,10 +79,55 @@ logger = logging.getLogger(__name__)
 _WORDS_PER_SECOND = 2.5
 
 
+# Node-timeout floor for this stage, derived from its own budgets (the same
+# shape source_featured_image uses — see resolve_stage_timeout_seconds there).
+#
+# The static 300 could not contain the stage's real work: two LLM calls plus
+# the video ambient bed, which is a stable-audio render (audio_render_timeout_
+# seconds, 180) that first COLD-LOADS its model whenever the GPU scheduler has
+# hard-unloaded the sidecar for an Ollama load (~125 s measured 2026-08-07).
+# Measured over the last 30 days of atom_runs: ok runs average 210-280 s and
+# the stage errored at exactly 300 s on 08-27, 09-06, 09-08 and twice on
+# 09-15 — each time the wrapper killed the ambient render, the whole stage
+# returned error, no podcast_script reached the director, and the post ended
+# with no shot list (5 of the last 29 canonical posts; poindexter#1001).
+DEFAULT_LLM_CALL_BUDGET_SECONDS = 120
+DEFAULT_LLM_CALLS = 2
+DEFAULT_AUDIO_COLD_LOAD_ALLOWANCE_SECONDS = 150
+DEFAULT_STAGE_OVERHEAD_SECONDS = 30
+
+
+def _get_int(site_config: Any, key: str, default: int) -> int:
+    if site_config is None:
+        return default
+    try:
+        getter = getattr(site_config, "get_int", None)
+        val = getter(key, default) if getter is not None else site_config.get(key, default)
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def resolve_stage_timeout_seconds(site_config: Any) -> int:
+    """``llm_calls x llm_budget + audio_render_timeout + cold_load + overhead``.
+
+    Used as a one-directional FLOOR on the node timeout (raise above it freely,
+    never below), so the wrapper cannot kill the ambient render it asked for.
+    Every term is a setting; the defaults sum to 600 s.
+    """
+    llm_budget = _get_int(site_config, "media_scripts_llm_call_budget_seconds", DEFAULT_LLM_CALL_BUDGET_SECONDS)
+    llm_calls = _get_int(site_config, "media_scripts_llm_calls", DEFAULT_LLM_CALLS)
+    audio_render = _get_int(site_config, "audio_render_timeout_seconds", 180)
+    cold_load = _get_int(site_config, "audio_gen_cold_load_allowance_seconds", DEFAULT_AUDIO_COLD_LOAD_ALLOWANCE_SECONDS)
+    overhead = _get_int(site_config, "media_scripts_stage_overhead_seconds", DEFAULT_STAGE_OVERHEAD_SECONDS)
+    return max(1, llm_calls) * max(1, llm_budget) + max(0, audio_render) + max(0, cold_load) + max(0, overhead)
+
+
 class GenerateMediaScriptsStage:
     name = "generate_media_scripts"
     description = "Generate podcast script, video scenes, and short summary"
-    # Two LLM calls, each up to 120s. Budget 300 for slow disks.
+    # Static fallback only — resolve_timeout_seconds() below raises the node
+    # timeout to what the stage's own budgets need (600 s with defaults).
     timeout_seconds = 300
     halts_on_failure = False  # Legacy marked this "non-critical".
     # Surfaced onto the virtual atom's contract (poindexter#983) so the
@@ -90,6 +135,11 @@ class GenerateMediaScriptsStage:
     # renderers. Mirrors the docstring's Context reads/writes.
     atom_requires = ("content",)
     atom_produces = ("podcast_script", "video_scenes", "short_summary_script")
+
+    def resolve_timeout_seconds(self, site_config: Any) -> int:
+        """Node-timeout floor from this stage's own budgets — see
+        :func:`resolve_stage_timeout_seconds`."""
+        return resolve_stage_timeout_seconds(site_config)
 
     async def execute(
         self,
