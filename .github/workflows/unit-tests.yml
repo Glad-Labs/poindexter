@@ -638,6 +638,32 @@ jobs:
       - name: "Integration tests — full tests/integration/ sweep (#1078)"
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
+        env:
+          # The real-model tests (glm-4.7 / qwen3.5) share this host's two GPUs
+          # with the live pipeline, so they take the pipeline's Postgres
+          # ADVISORY lock and queue at priority=background rather than racing
+          # it. Three CI failures in two days were that collision — a read
+          # timeout, a cudaMalloc OOM, and a forced 21.7 GB evict+reload — none
+          # a defect in the code under test (stack#3799).
+          #
+          # It must be the SAME database the pipeline uses: a disposable test
+          # Postgres would take an advisory lock nobody else holds, which is no
+          # coordination at all. Points at postgres-local:5432 (the compose
+          # service) because this runner is a container on that network; the
+          # host's published 5433 is not what it sees.
+          #
+          # Unset (forks, or a runner off this network) is a supported state:
+          # the tests fall back to waiting for VRAM headroom and skip honestly
+          # rather than failing. See _gpu_serialized in the test module.
+          #
+          # DEDICATED NAME, NOT `DATABASE_URL`. tests/integration/conftest.py
+          # and test_niche_discovery_e2e.py resolve a DSN and then CREATE and
+          # DROP databases on it. Exporting a production DSN under the generic
+          # name would hand a live server to code that does that — today those
+          # fixtures skip because REAL_SERVICES_TESTS is unset here, but that
+          # is one env var away from being untrue. Only _gpu_serialized reads
+          # this key, and it only ever takes an advisory lock.
+          POINDEXTER_GPU_LOCK_DSN: ${{ secrets.CI_GPU_LOCK_DATABASE_URL }}
         run: $PYTEST tests/integration/ -q --tb=short -p no:cacheprovider $COV
 
       # #995: ADVISORY coverage signal. Combines the `.coverage` data the

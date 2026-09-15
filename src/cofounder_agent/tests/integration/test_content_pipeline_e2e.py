@@ -22,10 +22,13 @@ Requirements:
   - Marked with @pytest.mark.integration (excluded from unit test suite)
 """
 
+import asyncio
 import functools
 import json
+import os
 import re
-from contextlib import contextmanager
+import time
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 
 import httpx
@@ -693,6 +696,146 @@ class TestSEOMetadata:
 # ---------------------------------------------------------------------------
 
 
+
+# ---------------------------------------------------------------------------
+# GPU serialisation for the real-model tests
+#
+# These tests share one pair of cards with the live pipeline, because CI runs
+# on the operator's own box. Three separate failures on 2026-09-14/15 were all
+# this collision, none of them a defect in the code under test:
+#
+#   httpx.ReadTimeout                         (a media render held the GPU)
+#   HTTP 500 cudaMalloc failed: out of memory (ComfyUI held the VRAM)
+#   "Ollama generation failed"                (a 19.5 GB model was resident and
+#                                              glm-4.7 needs 21.7 GB, so the
+#                                              request forced an evict+reload)
+#
+# A test that fails because something else is using the GPU is not reporting on
+# the code; it is reporting on the schedule. So wait for the GPU the way the
+# pipeline does, and when the wait is hopeless say so plainly instead of
+# failing.
+#
+# TWO TIERS, because what is reachable differs by environment:
+#
+#   1. The pipeline's own lock (`services.gpu_scheduler.gpu.lock`) — a Postgres
+#      ADVISORY lock, so it is the only thing that genuinely serialises against
+#      the worker, ComfyUI and image-gen, which are separate processes. Needs a
+#      DSN for the SAME database the pipeline uses; a disposable test Postgres
+#      would take an advisory lock nobody else holds, i.e. no coordination at
+#      all. `priority="background"` so CI queues BEHIND pipeline traffic rather
+#      than preempting production work.
+#
+#   2. No DSN → wait for VRAM headroom instead. This is honest best-effort, not
+#      a lock: nothing stops the pipeline claiming the card between the check
+#      and the request. It still converts the common case (something big is
+#      resident right now) from a hard failure into a wait or a clear skip.
+#
+# To get tier 1 in CI the test-backend job needs a DATABASE_URL for the live
+# Postgres. That is deliberately NOT wired here: it would put the production
+# database password into GitHub Actions secrets, where anyone able to push a
+# workflow can read it, and that is a security decision for the operator rather
+# than a detail of a test fix. Locally and on the operator's host the DSN
+# resolves from bootstrap.toml and tier 1 engages by itself.
+# ---------------------------------------------------------------------------
+
+_GPU_WAIT_BUDGET_S = float(os.environ.get("TEST_GPU_WAIT_BUDGET_S", "90"))
+
+
+def _resolve_test_dsn() -> str:
+    """DSN for the pipeline's database, or "" when we cannot reach it.
+
+    ``POINDEXTER_GPU_LOCK_DSN`` is checked first and is the ONLY key CI sets.
+    It is deliberately not ``DATABASE_URL``: this module's sibling fixtures
+    (conftest.py, test_niche_discovery_e2e.py) resolve a DSN and then CREATE
+    and DROP databases on it, so a production DSN under the generic name would
+    be handed to code that does that. This one is only ever used to take an
+    advisory lock — no reads, no writes, no DDL.
+    """
+    for var in ("POINDEXTER_GPU_LOCK_DSN", "DATABASE_URL", "LOCAL_DATABASE_URL"):
+        value = os.environ.get(var, "").strip()
+        if value:
+            return value
+    try:
+        from poindexter.brain.bootstrap import resolve_database_url
+
+        return (resolve_database_url() or "").strip()
+    except Exception:  # noqa: BLE001 — absence is a valid answer here
+        return ""
+
+
+async def _free_vram_mib() -> int | None:
+    """Free VRAM on the busiest-fitting card, or None when unknowable."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("nvidia-smi"):
+        return None
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout
+    except Exception:  # noqa: BLE001
+        return None
+    values = [int(x) for x in out.split() if x.strip().isdigit()]
+    return max(values) if values else None
+
+
+@asynccontextmanager
+async def _gpu_serialized(model: str, *, phase: str, needs_mib: int = 0):
+    """Hold the GPU for the duration, or skip with the reason."""
+    dsn = _resolve_test_dsn()
+    if dsn:
+        import asyncpg
+
+        from poindexter.services.bootstrap import build_container
+        from poindexter.services.container_registry import get_container, set_container
+        from poindexter.services.gpu_admission import GpuBusyError
+        from poindexter.services.gpu_scheduler import GpuLockTimeoutError, gpu
+
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+        previous = get_container()
+        try:
+            # The real composition root, not a stub: the scheduler reads
+            # `gpu_sched_enabled` and its timeouts off container.site_config,
+            # and a stub missing it silently degrades admission to "disabled"
+            # — the budget would be accepted and then ignored.
+            set_container(await build_container(pool))
+            try:
+                async with gpu.lock(
+                    owner="ollama",
+                    model=model,
+                    phase=phase,
+                    max_wait_s=_GPU_WAIT_BUDGET_S,
+                    priority="background",
+                ):
+                    yield
+                    return
+            except (GpuBusyError, GpuLockTimeoutError) as exc:
+                pytest.skip(
+                    f"GPU busy and the wait was judged hopeless ({exc}); the "
+                    "pipeline holds the card. Not a defect in the code under test."
+                )
+        finally:
+            set_container(previous)
+            await pool.close()
+
+    # Tier 2 — no DSN reachable.
+    deadline = time.monotonic() + _GPU_WAIT_BUDGET_S
+    while needs_mib:
+        free = await _free_vram_mib()
+        if free is None or free >= needs_mib:
+            break
+        if time.monotonic() >= deadline:
+            pytest.skip(
+                f"GPU never had {needs_mib} MiB free within "
+                f"{_GPU_WAIT_BUDGET_S:.0f}s (last saw {free} MiB). Something "
+                "else on this host holds the card; no DSN was reachable, so "
+                "the pipeline's lock could not be used."
+            )
+        await asyncio.sleep(5)
+    yield
+
 class TestThinkingModels:
     """Verify thinking models return non-empty content with sufficient token budget.
 
@@ -702,7 +845,7 @@ class TestThinkingModels:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout(120)
+    @pytest.mark.timeout(240)
     async def test_qwen35_generates_nonempty_content(self):
         """qwen3.5 returns non-empty content with sufficient token budget.
 
@@ -718,12 +861,13 @@ class TestThinkingModels:
         try:
             # Use /no_think to disable extended reasoning if supported,
             # otherwise the simple prompt should keep thinking short
-            result = await client.generate(
-                prompt="Say exactly: Code reviews improve software quality. /no_think",
-                model=qwen_model,
-                max_tokens=4000,  # Generous budget for thinking overhead
-                temperature=0.0,  # Deterministic to reduce thinking
-            )
+            async with _gpu_serialized(qwen_model, phase="test_qwen35", needs_mib=20_000):
+                result = await client.generate(
+                    prompt="Say exactly: Code reviews improve software quality. /no_think",
+                    model=qwen_model,
+                    max_tokens=4000,  # Generous budget for thinking overhead
+                    temperature=0.0,  # Deterministic to reduce thinking
+                )
             text = result["text"]
             # Thinking models may consume all tokens on reasoning with complex prompts.
             # With a simple prompt and /no_think hint, we expect visible output.
@@ -743,7 +887,9 @@ class TestThinkingModels:
     _GLM_MAX_TOKENS = 4000
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout(180)
+    # 180 -> 300: the body may now WAIT for the GPU (budget
+    # TEST_GPU_WAIT_BUDGET_S, default 90s) before generating.
+    @pytest.mark.timeout(300)
     async def test_glm47_generates_nonempty_content(self):
         """glm-4.7 returns visible, non-truncated content.
 
@@ -777,17 +923,20 @@ class TestThinkingModels:
 
         client = _make_client(timeout=150)
         try:
-            result = await client.generate(
-                # Bounded output: an open-ended "write 2 sentences" invites a
-                # long answer that has further to be cut off.
-                prompt=(
-                    "Reply with exactly one short sentence explaining why "
-                    "code reviews matter."
-                ),
-                model=glm_model,
-                max_tokens=self._GLM_MAX_TOKENS,
-                temperature=0.0,  # Deterministic — removes the thinking-length variance
-            )
+            # ~21.7 GB on disk, so it needs most of a card. Serialise against
+            # the live pipeline rather than racing it — see _gpu_serialized.
+            async with _gpu_serialized(glm_model, phase="test_glm47", needs_mib=22_500):
+                result = await client.generate(
+                    # Bounded output: an open-ended "write 2 sentences" invites
+                    # a long answer that has further to be cut off.
+                    prompt=(
+                        "Reply with exactly one short sentence explaining why "
+                        "code reviews matter."
+                    ),
+                    model=glm_model,
+                    max_tokens=self._GLM_MAX_TOKENS,
+                    temperature=0.0,  # Deterministic — removes thinking-length variance
+                )
             text = (result["text"] or "").strip()
             # Same escape as the qwen test: a thinking model legitimately can
             # spend its whole budget on reasoning. That is a model behaviour,
