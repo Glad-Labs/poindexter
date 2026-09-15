@@ -60,6 +60,15 @@
 #      this existed. Settings: deploy_health_gate_seconds,
 #      deploy_health_gate_settle_seconds, deploy_rollback_on_unhealthy;
 #      --no-gate skips it.
+#   6c. game-mode re-park (2026-09-15): `up -d` starts EVERY project service,
+#      including the GPU sidecars the operator parked with `poindexter game on`
+#      (they sit `exited`, which compose reads as "start me"). The brain
+#      re-parks them on its next cycle, but that is up to five minutes of
+#      chatterbox / image-gen / speaches / stable-audio / wan-server warming
+#      back onto the card mid-game. This step reads the same app_settings keys
+#      the brain and CLI read and stops what the apply woke. It runs AFTER the
+#      health gate on purpose: a rebuilt sidecar must come up healthy before it
+#      is parked again, or the gate would roll back a build for being parked.
 #   7. bounce-on-change: restart the long-lived bind-mount app containers
 #      (worker, pipeline-bot) so changed Python is re-imported. prefect-worker
 #      is deliberately NOT bounced (each flow run is a fresh subprocess that
@@ -547,6 +556,39 @@ if [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ] && { [ -n "$rebuild_services" ]
       *) log "health gate: gate itself failed (rc=$gate_rc): $gate_json" ERROR; gate_result="gate error rc=$gate_rc" ;;
     esac
   fi
+fi
+
+# ---- game-mode re-park (step 6c) ------------------------------------------
+# Same keys as services/game_mode.py + brain/compose_drift_probe.py; the
+# timestamp compare happens in Postgres (ISO-8601 in bash is not worth getting
+# wrong), NULLIF turns the "off" sentinel '' into no row. Fail-open: an
+# unreachable DB means "not in game mode" — never block a deploy on this.
+game_mode_active() {
+  local active
+  active="$(docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -tA \
+      -c "SELECT (NULLIF(value,'')::timestamptz > now())::int FROM app_settings WHERE key='game_mode_until'" 2>/dev/null \
+      | tr -d '[:space:]')" || return 1
+  [ "${active:-0}" = "1" ]
+}
+game_mode_setting() { # game_mode_setting <key> <default>
+  local v
+  v="$(docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -tA \
+      -c "SELECT value FROM app_settings WHERE key='$1'" 2>/dev/null | tr -d '[:space:]')"
+  echo "${v:-$2}"
+}
+reparked=""; repark_failed=0
+if game_mode_active; then
+  prefix="$(game_mode_setting game_mode_container_prefix poindexter-)"
+  for svc in $(game_mode_setting game_mode_parked_services "speaches,chatterbox,stable-audio,image-gen-server,wan-server" | tr ',' ' '); do
+    c="${prefix}${svc}"
+    [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ] || continue
+    if docker stop -t 20 "$c" >>"$LOG_FILE" 2>&1; then
+      reparked="${reparked:+$reparked,}$c"
+    else
+      repark_failed=1; log "game mode: FAILED to re-park '$c'" ERROR
+    fi
+  done
+  [ -n "$reparked" ] && log "game mode active: re-parked $reparked (compose-apply had started them)" WARN
 fi
 
 # ---- claude.ai-connector sync (host systemd unit, not compose) -------------
