@@ -678,6 +678,9 @@ restic() {
                 printf '%s\\n' "${FAKE_LS_OUTPUT_2:-${FAKE_LS_OUTPUT:-}}"
                 return "${FAKE_LS_RC:-0}"
             fi
+            if [[ -n "${FAKE_LS_FILE:-}" ]]; then
+                cat "${FAKE_LS_FILE}"; return "${FAKE_LS_RC:-0}"
+            fi
             printf '%s\\n' "${FAKE_LS_OUTPUT:-}"; return "${FAKE_LS_RC:-0}" ;;
         dump) printf '%s' "${FAKE_DUMP_CONTENT:-}"; return "${FAKE_DUMP_RC:-0}" ;;
     esac
@@ -705,8 +708,7 @@ def _run_coverage_harness(
     on_disk: str | None = _SECRET_BODY,
     stored: str | None = _SECRET_BODY,
     listed: bool = True,
-    listed_on_retry: bool | None = None,
-    retry_ls_rc: int = 0,
+    listing: str | None = None,
     ls_rc: int = 0,
     settings: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess, Path]:
@@ -723,16 +725,14 @@ def _run_coverage_harness(
         "FAKE_LS_OUTPUT": artifact.as_posix() if listed else "/config/other/file",
         "FAKE_DUMP_CONTENT": stored if stored is not None else "",
         "SETTING_offsite_backup_verify_config_artifacts": artifact.as_posix(),
-        # Keep the re-read instant; the delay exists for a real object store.
-        "VERIFY_CONFIG_RECHECK_DELAY_SECONDS": "0",
         "LS_COUNT_FILE": (tmp_path / ".ls_calls").as_posix(),
     }
-    if listed_on_retry is not None:
-        env["FAKE_LS_OUTPUT_2"] = (
-            artifact.as_posix() if listed_on_retry else "/config/other/file"
-        )
-    if retry_ls_rc:
-        env["FAKE_LS_RC_2"] = str(retry_ls_rc)
+    if listing is not None:
+        # Via a file, not the environment: a listing large enough to exercise
+        # the pipe-buffer hazard is ~800 KB and exceeds the env size limit.
+        listing_file = tmp_path / "ls_output.txt"
+        listing_file.write_text(listing + "\n", encoding="utf-8")
+        env["FAKE_LS_FILE"] = listing_file.as_posix()
     for k, v in (settings or {}).items():
         env[f"SETTING_{k}"] = v
     result = subprocess.run(
@@ -828,47 +828,69 @@ def test_default_database_list_matches_the_pre_891_behaviour():
     assert _default_setting("DEFAULT_DATABASES") == "poindexter_brain"
 
 
-# --- the re-read before paging (2026-09-15) --------------------------------
+# --- pipefail + `grep -q` reported a MATCH as a miss (2026-09-15) -----------
 #
-# verify_config_coverage runs seconds after writing a snapshot to an object
-# store, and a listing that comes back SHORT — not empty, just incomplete — is
-# indistinguishable from a real absence: the artifact is missing from both, and
-# only the empty case was guarded. That paged CRITICAL for a bootstrap.toml
-# which was present in the very snapshot the run had just written, and in every
-# snapshot before it.
+# `run.sh` sets `set -euo pipefail` globally. The coverage check asked
+# `printf '%s\n' "$listing" | grep -qxF "$artifact"`. `grep -q` exits the
+# instant it matches, so if any listing remained unwritten printf took SIGPIPE
+# (141), pipefail propagated it, and a SUCCESSFUL MATCH read as a failure —
+# paging CRITICAL that bootstrap.toml was missing from a snapshot that
+# demonstrably contained it.
 #
-# A false critical on the one artifact a restore depends on is the most
-# expensive alert this system can emit, so the verdict is re-read once. The
-# re-read may only ever DOWNGRADE — both directions are pinned here, because a
-# retry that can suppress a real gap is worse than the false positive it fixes.
+# It hid for the worst possible reason: SIGPIPE only fires when enough output
+# follows the match to overrun the 64 KB pipe buffer. A 4,152-entry listing
+# passed; a 23,763-entry one failed on the same present file. Small fixtures
+# CANNOT catch it, which is why the earlier tests here were green throughout.
+# The fixture below is deliberately large enough to overrun the buffer.
 
 
 @pytest.mark.skipif(_BASH is None, reason="bash not available")
-def test_artifact_absent_then_present_on_reread_does_not_page(tmp_path):
-    result, _ = _run_coverage_harness(tmp_path, listed=False, listed_on_retry=True)
+def test_present_artifact_is_not_reported_missing_in_a_large_listing(tmp_path):
+    """The regression, through the real function: a match must be believed no
+    matter how much listing follows it.
+
+    ~40k trailing lines puts the match far behind the 64 KB pipe buffer, which
+    is what made `printf | grep -q` take SIGPIPE under pipefail. A small
+    fixture passes either way — the size IS the test.
+    """
+    artifact = tmp_path / "bootstrap.toml"
+    artifact.write_text(_SECRET_BODY)
+    big = "\n".join(
+        ["/config/other/head"] * 20000
+        + [artifact.as_posix()]
+        + ["/config/other/tail"] * 20000
+    )
+    result, _ = _run_coverage_harness(tmp_path, listing=big)
     assert "ALERT severity=critical" not in result.stdout, result.stdout
-    assert "present on re-read" in result.stdout, result.stdout
+    assert "MISSING from newest config snapshot" not in result.stdout, result.stdout
 
 
 @pytest.mark.skipif(_BASH is None, reason="bash not available")
-def test_artifact_absent_from_both_reads_still_pages(tmp_path):
-    result, _ = _run_coverage_harness(tmp_path, listed=False, listed_on_retry=False)
+def test_the_old_pipe_idiom_would_have_failed(tmp_path):
+    """Pins WHY the fix is a here-string, so nobody 'simplifies' it back.
+
+    If this ever starts reporting MATCH, the SIGPIPE hazard is gone from the
+    platform and the here-string is merely stylistic. Until then it is load
+    bearing, and this test is the evidence.
+    """
+    script = (
+        "set -euo pipefail\n"
+        'listing=$(printf "%s\\n" "$(seq 1 40000)"; echo /config/poindexter/bootstrap.toml; '
+        'printf "%s\\n" "$(seq 1 40000)")\n'
+        'if printf "%s\\n" "$listing" | grep -qxF /config/poindexter/bootstrap.toml; '
+        "then echo MATCH; else echo MISS; fi\n"
+    )
+    out = subprocess.run([_BASH, "-c", script], capture_output=True, text=True, timeout=60)
+    assert out.stdout.strip() == "MISS", (
+        "the pipe idiom no longer loses the match — re-evaluate the comment in "
+        "verify_config_coverage",
+        out.stdout,
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="bash not available")
+def test_genuinely_missing_artifact_still_pages(tmp_path):
+    """The fix must not make the check unable to fail."""
+    result, _ = _run_coverage_harness(tmp_path, listed=False)
     assert "ALERT severity=critical" in result.stdout, result.stdout
     assert "MISSING from newest config snapshot" in result.stdout, result.stdout
-
-
-@pytest.mark.skipif(_BASH is None, reason="bash not available")
-def test_failed_reread_fails_closed_and_pages(tmp_path):
-    """An errored re-read is not evidence of presence."""
-    result, _ = _run_coverage_harness(
-        tmp_path, listed=False, listed_on_retry=True, retry_ls_rc=1
-    )
-    assert "ALERT severity=critical" in result.stdout, result.stdout
-
-
-@pytest.mark.skipif(_BASH is None, reason="bash not available")
-def test_artifact_present_first_time_never_re_reads(tmp_path):
-    """The happy path stays one listing — no extra object-store traffic."""
-    result, _ = _run_coverage_harness(tmp_path, listed=True)
-    assert "ALERT severity=critical" not in result.stdout, result.stdout
-    assert "LS_CALL_2" not in result.stderr, result.stderr
