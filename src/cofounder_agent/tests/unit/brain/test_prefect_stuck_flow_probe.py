@@ -131,6 +131,19 @@ def _iso_minutes_ago(minutes: int) -> str:
     return when.isoformat().replace("+00:00", "Z")
 
 
+@pytest.fixture(autouse=True)
+def _no_host_docker(monkeypatch):
+    """The orphan rule (2026-09-15) reads the worker container's start time via
+    ``docker inspect``. A unit test must never consult the HOST's docker — on a
+    dev box it answers with the real container's clock, which is newer than
+    every synthetic run in this file and would make all of them look orphaned.
+    Tests that exercise the rule inject ``worker_started_at_fn`` explicitly.
+    """
+    monkeypatch.setattr(
+        psfp, "_worker_container_started_at", lambda _container: None,
+    )
+
+
 def _run(*, run_id: str, name: str, minutes_ago: int) -> dict[str, Any]:
     """Build a fake Prefect flow_run dict — minimum fields the probe reads."""
     return {
@@ -1555,3 +1568,147 @@ async def test_reap_independent_of_backlog_page_decision():
     detail = notify.call_args.kwargs["detail"]
     assert "4" in detail
     assert "90m" in detail  # oldest overdue surfaced, not just the count
+
+
+# ---------------------------------------------------------------------------
+# Orphan rule — a run whose worker container restarted under it (2026-09-15)
+# ---------------------------------------------------------------------------
+
+
+def _container_started(minutes_ago: int):
+    """A ``worker_started_at_fn`` stub reporting a container start time."""
+    when = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    return lambda _container: when
+
+
+class TestOrphanPredicate:
+    def test_run_that_predates_the_container_is_orphaned(self):
+        started = datetime.now(timezone.utc) - timedelta(minutes=10)
+        run = _run(run_id="r1", name="robust-woodlouse", minutes_ago=20)
+        assert psfp._is_orphaned_by_worker_restart(run, started) is True
+
+    def test_run_that_started_after_the_container_is_not(self):
+        started = datetime.now(timezone.utc) - timedelta(minutes=30)
+        run = _run(run_id="r1", name="fine", minutes_ago=5)
+        assert psfp._is_orphaned_by_worker_restart(run, started) is False
+
+    def test_unknown_container_clock_never_orphans(self):
+        run = _run(run_id="r1", name="fine", minutes_ago=999)
+        assert psfp._is_orphaned_by_worker_restart(run, None) is False
+
+    def test_pending_is_excluded(self):
+        """A PENDING run may be mid-startup right now; its own 5m threshold
+        owns that case."""
+        started = datetime.now(timezone.utc) - timedelta(minutes=1)
+        run = _pending_run(run_id="r1", name="starting", minutes_ago=3)
+        assert psfp._is_orphaned_by_worker_restart(run, started) is False
+
+    def test_missing_start_time_is_not_orphaned(self):
+        started = datetime.now(timezone.utc)
+        assert psfp._is_orphaned_by_worker_restart(
+            {"id": "r", "state": {"type": "RUNNING"}}, started,
+        ) is False
+
+
+@pytest.mark.asyncio
+async def test_orphaned_run_is_crashed_immediately_below_the_flat_threshold():
+    """The live case: robust-woodlouse was submitted at 14:03:06, the deploy
+    restarted poindexter-prefect-worker at 14:04:42, and the run then held the
+    concurrency=1 slot with 29 SCHEDULED runs piling up behind it — 13 minutes
+    short of the 30m RUNNING threshold that would have reaped it."""
+    notify = MagicMock()
+    pool = _make_pool(setting_values={
+        "prefect_stuck_flow_probe_enabled": "true",
+        "prefect_stuck_flow_threshold_minutes": "30",
+        "prefect_stuck_flow_auto_crash": "true",
+    })
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="robust-woodlouse", minutes_ago=17)],
+        ),
+        "/set_state": _MockResponse(201, json_data={"status": "ACCEPT"}),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+        worker_started_at_fn=_container_started(15),
+    )
+    assert summary["auto_crashed_count"] == 1
+    # Force-CRASHED, not cancel-requested: there is no process to cooperate with.
+    assert summary.get("cancel_requested_count", 0) == 0
+    detail = " ".join(str(c.kwargs.get("detail", "")) for c in notify.call_args_list)
+    assert "infrastructure is GONE" in detail
+
+
+@pytest.mark.asyncio
+async def test_run_started_after_the_restart_is_left_alone():
+    notify = MagicMock()
+    pool = _make_pool(setting_values={
+        "prefect_stuck_flow_probe_enabled": "true",
+        "prefect_stuck_flow_threshold_minutes": "30",
+        "prefect_stuck_flow_auto_crash": "true",
+    })
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="healthy", minutes_ago=5)],
+        ),
+        "/set_state": _MockResponse(201, json_data={"status": "ACCEPT"}),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+        worker_started_at_fn=_container_started(60),
+    )
+    assert summary["auto_crashed_count"] == 0
+    assert summary["stuck_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_unreadable_container_clock_falls_back_to_the_thresholds():
+    """Fail-safe: the rule can only ever reap SOONER, never reap something the
+    old code would have spared."""
+    notify = MagicMock()
+    pool = _make_pool(setting_values={
+        "prefect_stuck_flow_probe_enabled": "true",
+        "prefect_stuck_flow_threshold_minutes": "30",
+        "prefect_stuck_flow_auto_crash": "true",
+    })
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="young", minutes_ago=17)],
+        ),
+        "/set_state": _MockResponse(201, json_data={"status": "ACCEPT"}),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+        worker_started_at_fn=lambda _c: None,
+    )
+    assert summary["auto_crashed_count"] == 0
+    assert summary["stuck_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_orphan_reaping_can_be_switched_off():
+    notify = MagicMock()
+    pool = _make_pool(setting_values={
+        "prefect_stuck_flow_probe_enabled": "true",
+        "prefect_stuck_flow_threshold_minutes": "30",
+        "prefect_stuck_flow_auto_crash": "true",
+        "prefect_stuck_flow_orphan_reap_enabled": "false",
+    })
+    called = []
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="robust-woodlouse", minutes_ago=17)],
+        ),
+        "/set_state": _MockResponse(201, json_data={"status": "ACCEPT"}),
+    })
+
+    def _fn(container):
+        called.append(container)
+        return datetime.now(timezone.utc)
+
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+        worker_started_at_fn=_fn,
+    )
+    assert called == []  # no docker call at all when the rule is off
+    assert summary["auto_crashed_count"] == 0

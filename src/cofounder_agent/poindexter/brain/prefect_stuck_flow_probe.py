@@ -117,6 +117,7 @@ Standalone — stdlib + ``httpx`` only (same brain-only deps as
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import UTC, datetime
@@ -200,6 +201,39 @@ WATCHED_STATE_TYPES: list[str] = ["RUNNING", "PENDING", "CANCELLING"]
 # smoky-chowchow 50h PENDING) so hands-off recovery is the safe default.
 # The operator can still flip the app_setting back to false for
 # page-only behaviour (see the page before the brain takes action).
+# ---------------------------------------------------------------------------
+# Orphan rule (2026-09-15): proof beats patience.
+#
+# A deploy that rebuilds the prefect-worker image recreates the container, and
+# every flow subprocess it had submitted dies with it — but Prefect keeps the
+# run in RUNNING, and on a concurrency=1 pool that one zombie blocks the whole
+# queue. Measured: run `robust-woodlouse` was submitted 14:03:06, the container
+# restarted 14:04:42, and by 14:20 the probe was correctly paging about 29
+# overdue SCHEDULED runs (oldest 62m) while the zombie itself still had 13
+# minutes to go before the flat 30m RUNNING threshold would touch it.
+#
+# The thresholds above are heuristics about time. This is not: a run whose
+# start_time precedes the worker container's StartedAt CANNOT still own a
+# subprocess — the restart killed it. Such a run is force-CRASHED immediately,
+# skipping the cooperative-cancel path (there is no process left to cooperate).
+#
+# Fail-safe: if the container's start time is unreadable for any reason
+# (docker unavailable, wrong container name, parse failure) the rule yields
+# nothing and every run falls through to the existing thresholds — this can
+# only ever reap SOONER, never reap something the old code would have spared.
+#
+# PENDING is deliberately excluded: a PENDING run may have been submitted
+# moments ago and be legitimately mid-startup, and its threshold is already
+# 5 minutes. RUNNING and CANCELLING both assert infrastructure exists, which
+# is exactly the claim the restart falsified.
+# Bounded so a wedged docker CLI cannot stall the brain cycle.
+DOCKER_INSPECT_TIMEOUT_SECONDS = 10
+ORPHAN_REAP_SETTING_KEY = "prefect_stuck_flow_orphan_reap_enabled"
+ORPHAN_REAP_DEFAULT = True
+WORKER_CONTAINER_SETTING_KEY = "prefect_stuck_flow_worker_container"
+WORKER_CONTAINER_DEFAULT = "poindexter-prefect-worker"
+ORPHANABLE_STATE_TYPES = ("RUNNING", "CANCELLING")
+
 AUTO_CRASH_SETTING_KEY = "prefect_stuck_flow_auto_crash"
 AUTO_CRASH_DEFAULT = "true"
 
@@ -532,19 +566,27 @@ def _age_minutes(start_time_iso: str | None) -> int | None:
     caller treats None as "skip this run, can't reason about its
     age safely".
     """
-    if not start_time_iso:
+    start = _parse_iso(start_time_iso)
+    if start is None:
         return None
-    try:
-        # Prefect emits ISO-8601 with a trailing 'Z' or '+00:00'; both
-        # are valid for fromisoformat once we normalize the Z form.
-        normalized = start_time_iso.replace("Z", "+00:00")
-        start = datetime.fromisoformat(normalized)
-    except (TypeError, ValueError):
-        return None
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=UTC)
     delta = datetime.now(UTC) - start
     return int(delta.total_seconds() // 60)
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    """UTC-aware datetime from an ISO-8601 string, or ``None``.
+
+    Shared by the age helpers and the orphan rule so Prefect timestamps and
+    docker's (nanosecond-precision, 'Z'-suffixed) StartedAt are read the same
+    way. Naive input is assumed UTC, matching what both sources emit.
+    """
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
 
 
 def _run_age_minutes(run: dict[str, Any]) -> int | None:
@@ -614,6 +656,54 @@ async def _read_inprogress_progress(pool) -> dict[str, Any] | None:
         "task_id": str(row["task_id"]),
         "minutes": float(minutes) if minutes is not None else None,
     }
+
+
+def _worker_container_started_at(container: str) -> datetime | None:
+    """``docker inspect`` the worker container's StartedAt, or ``None``.
+
+    ``None`` means "unknown" and disables the orphan rule for this cycle — the
+    probe never crashes a run on an unreadable clock.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.StartedAt}}", container],
+            capture_output=True, text=True, timeout=DOCKER_INSPECT_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+        logger.warning(
+            "[PREFECT_STUCK_FLOW] could not read %s start time (%s) — "
+            "orphan reaping disabled this cycle", container, exc,
+        )
+        return None
+    if result.returncode != 0:
+        logger.warning(
+            "[PREFECT_STUCK_FLOW] docker inspect %s exit %s: %s — "
+            "orphan reaping disabled this cycle",
+            container, result.returncode, (result.stderr or "").strip()[:200],
+        )
+        return None
+    return _parse_iso(result.stdout.strip())
+
+
+def _is_orphaned_by_worker_restart(
+    run: dict[str, Any], worker_started_at: datetime | None,
+) -> bool:
+    """True when this run's infrastructure was killed by a worker restart.
+
+    The run started before the container that hosts its subprocess did, so the
+    subprocess cannot exist. Unknown container start time, an unparseable run
+    start, or a state that never had infrastructure all answer False.
+    """
+    if worker_started_at is None:
+        return False
+    if ((run.get("state") or {}).get("type") or "") not in ORPHANABLE_STATE_TYPES:
+        return False
+    started = _parse_iso(run.get("start_time"))
+    if started is None:
+        return False
+    return started < worker_started_at
 
 
 def _running_is_stuck(
@@ -687,6 +777,7 @@ async def run_prefect_stuck_flow_probe(
     *,
     notify_fn=None,
     http_client_factory=None,
+    worker_started_at_fn=None,
 ) -> dict[str, Any]:
     """Single execution of the stuck-flow probe. Returns a structured summary.
 
@@ -695,6 +786,10 @@ async def run_prefect_stuck_flow_probe(
         notify_fn: operator notifier callable (defaults to
             :func:`brain.operator_notifier.notify_operator`). Tests inject
             a spy here.
+        worker_started_at_fn: ``container -> datetime | None`` used by the
+            orphan rule (defaults to :func:`_worker_container_started_at`, a
+            ``docker inspect``). Unit tests inject a stub so they never read
+            the host's docker.
         http_client_factory: zero-arg callable returning an
             ``httpx.AsyncClient`` context manager — tests inject a mock.
     """
@@ -742,6 +837,16 @@ async def run_prefect_stuck_flow_probe(
         "CANCELLING": cancelling_threshold_min,
     }
     auto_crash = await _read_bool(pool, AUTO_CRASH_SETTING_KEY, True)
+    orphan_reap = await _read_bool(pool, ORPHAN_REAP_SETTING_KEY, ORPHAN_REAP_DEFAULT)
+    worker_container = (
+        await _read_setting(pool, WORKER_CONTAINER_SETTING_KEY, WORKER_CONTAINER_DEFAULT)
+    ).strip() or WORKER_CONTAINER_DEFAULT
+    # One docker call per cycle, not per run.
+    started_at_fn = worker_started_at_fn or _worker_container_started_at
+    worker_started_at = (
+        await asyncio.to_thread(started_at_fn, worker_container)
+        if orphan_reap else None
+    )
     queue_depth_threshold = await _read_int(
         pool, QUEUE_DEPTH_THRESHOLD_SETTING_KEY, QUEUE_DEPTH_THRESHOLD_DEFAULT,
     )
@@ -811,7 +916,20 @@ async def run_prefect_stuck_flow_probe(
                 age = _run_age_minutes(run)
                 if age is None:
                     continue
-                if state_type == "RUNNING":
+                # Proof beats patience: a run that started before the worker
+                # container did lost its subprocess to that restart, so the
+                # time-based thresholds have nothing left to wait for.
+                orphaned = _is_orphaned_by_worker_restart(run, worker_started_at)
+                if orphaned:
+                    logger.warning(
+                        "[PREFECT_STUCK_FLOW] %s (%s) started %s, before %s restarted at %s — "
+                        "its subprocess is gone; reaping now instead of waiting out the "
+                        "%dm %s threshold",
+                        name, run_id[:12], run.get("start_time"), worker_container,
+                        worker_started_at.isoformat() if worker_started_at else "?",
+                        threshold_for_state, state_type,
+                    )
+                elif state_type == "RUNNING":
                     if not _running_is_stuck(
                         age_minutes=age,
                         flat_threshold_minutes=threshold_for_state,
@@ -857,7 +975,11 @@ async def run_prefect_stuck_flow_probe(
                 # force-CANCELLED — finishing the already-requested cancel,
                 # which likewise frees the concurrency slot. The manual-unstick
                 # hint in the page mirrors whichever the probe would apply.
-                if state_type == "CANCELLING":
+                if orphaned:
+                    # No process to cooperate with — the cancel handshake has
+                    # no one on the other end.
+                    remediation_type, remediation_name = "CRASHED", "Crashed"
+                elif state_type == "CANCELLING":
                     remediation_type, remediation_name = "CANCELLED", "Cancelled"
                 elif state_type == "RUNNING":
                     remediation_type, remediation_name = "CANCELLING", "Cancelling"
@@ -865,10 +987,16 @@ async def run_prefect_stuck_flow_probe(
                     remediation_type, remediation_name = "CRASHED", "Crashed"
 
                 # Detail string used in both notify_operator + audit_log.
+                orphan_note = (
+                    f" Its infrastructure is GONE: the run started "
+                    f"{run.get('start_time')}, before {worker_container} restarted at "
+                    f"{worker_started_at.isoformat() if worker_started_at else '?'}, so the "
+                    f"subprocess was killed by that restart and the run can never finish."
+                ) if orphaned else ""
                 detail = (
                     f"Prefect flow run '{name}' (id {run_id[:12]}…) has "
                     f"been in state={state_type} for {age} minutes — threshold "
-                    f"is {threshold_for_state}.{progress_note} While it holds the "
+                    f"is {threshold_for_state}.{progress_note}{orphan_note} While it holds the "
                     f"deployment's slot, subsequent scheduled runs queue up and "
                     f"the content pipeline stays idle. Manual unstick: "
                     f"curl -X POST {base_url}/flow_runs/{run_id}/set_state "
@@ -919,7 +1047,41 @@ async def run_prefect_stuck_flow_probe(
                     dedup_key=f"prefect_stuck_flow:{run_id}",
                 )
 
-                if auto_crash and state_type == "CANCELLING":
+                if auto_crash and orphaned:
+                    crashed = await _force_flow_run_state(
+                        client, base_url, run_id,
+                        target_type="CRASHED", target_name="Crashed",
+                        message=(
+                            f"Auto-crashed by brain.prefect_stuck_flow_probe — "
+                            f"infrastructure orphaned: the run started "
+                            f"{run.get('start_time')}, before {worker_container} restarted "
+                            f"at {worker_started_at.isoformat() if worker_started_at else '?'}. "
+                            f"Its subprocess died with that container; the run held the "
+                            f"concurrency slot for {age} minutes."
+                        ),
+                    )
+                    if crashed:
+                        crashed_runs.append({
+                            "id": run_id, "name": name,
+                            "state": state_type, "age_minutes": age,
+                        })
+                        await _emit_audit_event(
+                            pool,
+                            "probe.prefect_stuck_flow_orphan_reaped",
+                            f"Auto-crashed {name} ({run_id[:12]}…) orphaned by a "
+                            f"{worker_container} restart after {age}m in {state_type}",
+                            payload={
+                                "run_id": run_id, "name": name, "state": state_type,
+                                "age_minutes": age, "worker_container": worker_container,
+                                "reason": "infrastructure_orphaned",
+                            },
+                        )
+                    else:
+                        crash_failed.append({
+                            "id": run_id, "name": name,
+                            "state": state_type, "age_minutes": age,
+                        })
+                elif auto_crash and state_type == "CANCELLING":
                     # Force-CANCELLED — complete the hung cancel so the slot frees.
                     cancelled = await _force_flow_run_state(
                         client, base_url, run_id,

@@ -4024,6 +4024,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # prefect_stuck_flow_auto_crash master switch as the RUNNING/PENDING crash
     # path. Tune DOWN for tighter detection. See project_prefect_concurrency_zombie_stall.
     'prefect_stuck_flow_cancelling_threshold_minutes': '10',
+    # Orphan rule: a flow run that started BEFORE the prefect-worker
+    # container did lost its subprocess to that restart and can never
+    # finish — force-CRASH it immediately instead of waiting out the
+    # 30-minute RUNNING threshold while the concurrency=1 pool backs up
+    # (2026-09-15: 29 SCHEDULED runs queued behind one such zombie).
+    'prefect_stuck_flow_orphan_reap_enabled': 'true',
+    'prefect_stuck_flow_worker_container': 'poindexter-prefect-worker',
 
     # ----- Operator-page cooldown (2026-07-01 alert-noise audit) -----
     # Repeat-suppression window for the brain's direct notify_operator()
@@ -5882,6 +5889,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'postiz_queue_watch_retry_delay_seconds': {'owner': 'postiz_queue_watch', 'value_type': 'integer'},
     'prefect_content_flow_concurrency': {'owner': 'deploy_content_flow', 'value_type': 'integer'},
     'prefect_stuck_flow_cancelling_threshold_minutes': {'owner': 'prefect_stuck_flow_probe', 'value_type': 'integer'},
+    'prefect_stuck_flow_orphan_reap_enabled': {'owner': 'prefect_stuck_flow_probe', 'value_type': 'boolean'},
+    'prefect_stuck_flow_worker_container': {'owner': 'prefect_stuck_flow_probe', 'value_type': 'string'},
     'prefect_stuck_flow_progress_stall_minutes': {'owner': 'prefect_stuck_flow_probe', 'value_type': 'integer'},
     'prefect_stuck_flow_queue_depth_threshold': {'owner': 'prefect_stuck_flow_probe', 'value_type': 'integer'},
     'prefect_stuck_flow_queue_reap_minutes': {'owner': 'prefect_stuck_flow_probe', 'value_type': 'integer'},
