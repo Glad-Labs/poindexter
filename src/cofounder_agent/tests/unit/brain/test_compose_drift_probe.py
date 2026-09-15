@@ -702,3 +702,98 @@ async def test_naive_game_mode_timestamp_treated_as_utc():
         "game_mode_parked_services": "speaches",
     })
     assert await cd._read_game_mode_parked(pool) == {"speaches"}
+
+
+# --- game mode parks running services (2026-09-15) --------------------------
+
+_RUNNING = {
+    "State": {"Running": True},
+    "Config": {"Env": [], "Image": ""},
+    "HostConfig": {"Binds": [], "PortBindings": {}},
+    "Mounts": [],
+}
+_FUTURE = "2999-01-01T00:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_game_mode_stops_a_parked_service_that_is_still_running():
+    """Enabling game mode from the phone only writes the DB keys, so the
+    containers keep running and holding VRAM. The brain owns the docker
+    socket: it stops them and records the stop."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={
+        "game_mode_until": _FUTURE,
+        "game_mode_parked_services": "wan-server",
+    })
+    spec = _spec({"wan-server": {"container_name": "poindexter-wan-server"}})
+    stopped: list[str] = []
+
+    def _stop(name):
+        stopped.append(name)
+        return True, ""
+
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify,
+        inspect_fn=lambda _name: _RUNNING,
+        stop_fn=_stop,
+        yaml_loader=lambda _path: spec,
+        docker_reachable_fn=lambda: (True, ""),
+    )
+    assert stopped == ["poindexter-wan-server"]
+    assert summary["status"] == "no_drift"
+    assert "probe.game_mode_parked_stopped" in _audit_event_types(pool)
+    notify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_game_mode_off_leaves_a_running_service_alone():
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={"game_mode_parked_services": "wan-server"})
+    spec = _spec({"wan-server": {"container_name": "poindexter-wan-server"}})
+    stop = MagicMock(return_value=(True, ""))
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=MagicMock(),
+        inspect_fn=lambda _name: _RUNNING, stop_fn=stop,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    stop.assert_not_called()
+    assert summary["status"] == "no_drift"
+
+
+@pytest.mark.asyncio
+async def test_game_mode_parked_and_already_down_is_not_stopped_again():
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={
+        "game_mode_until": _FUTURE,
+        "game_mode_parked_services": "wan-server",
+    })
+    spec = _spec({"wan-server": {"container_name": "poindexter-wan-server"}})
+    stop = MagicMock(return_value=(True, ""))
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify,
+        inspect_fn=lambda _name: None, stop_fn=stop,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    stop.assert_not_called()
+    assert summary["status"] == "no_drift"  # parked ⇒ on-demand ⇒ missing is fine
+    notify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_game_mode_stop_failure_is_recorded_not_raised():
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={
+        "game_mode_until": _FUTURE,
+        "game_mode_parked_services": "wan-server",
+    })
+    spec = _spec({"wan-server": {"container_name": "poindexter-wan-server"}})
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=MagicMock(),
+        inspect_fn=lambda _name: _RUNNING,
+        stop_fn=lambda _name: (False, "permission denied"),
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    assert summary["status"] == "no_drift"
+    assert "probe.game_mode_parked_stop_failed" in _audit_event_types(pool)

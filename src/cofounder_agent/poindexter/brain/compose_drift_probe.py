@@ -608,6 +608,27 @@ def _live_image_tag(inspect: dict[str, Any]) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _docker_stop(container_name: str) -> tuple[bool, str]:
+    """``docker stop`` one container (game-mode parking). ``(ok, message)``."""
+    try:
+        result = subprocess.run(
+            ["docker", "stop", "-t", "20", container_name],
+            capture_output=True, text=True, timeout=DOCKER_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"docker stop {container_name} timed out after {DOCKER_COMMAND_TIMEOUT_SECONDS}s"
+    except (OSError, ValueError) as exc:
+        return False, f"docker stop {container_name} failed to launch: {exc}"
+    if result.returncode != 0:
+        return False, (result.stderr or result.stdout or "").strip()[:300] or f"rc={result.returncode}"
+    return True, ""
+
+
+def _inspect_running(inspect: dict[str, Any] | None) -> bool:
+    state = (inspect or {}).get("State")
+    return bool(isinstance(state, dict) and state.get("Running"))
+
+
 def _diff_service(
     yaml_block: dict[str, Any],
     inspect: dict[str, Any] | None,
@@ -735,25 +756,33 @@ async def _read_skip_services(pool) -> set[str]:
     return {s.strip() for s in val.split(",") if s.strip()}
 
 
-async def _read_on_demand_services(pool) -> set[str]:
+async def _read_on_demand_services(pool, parked: set[str] | None = None) -> set[str]:
     val = await _read_setting(
         pool,
         ON_DEMAND_SERVICES_SETTING_KEY,
         default=ON_DEMAND_SERVICES_DEFAULT,
     )
     services = {s.strip() for s in val.split(",") if s.strip()}
-    return services | await _read_game_mode_parked(pool)
+    if parked is None:
+        parked = await _read_game_mode_parked(pool)
+    return services | parked
 
 
 async def _read_game_mode_parked(pool) -> set[str]:
     """Services the operator has parked via game mode (empty when inactive).
 
-    Folding these into the on-demand set is the whole enforcement mechanism:
+    Folding these into the on-demand set is half the enforcement mechanism:
     on-demand services are the ones this probe already knows may legitimately
     be down, so a parked service stops being paged AND stops being revived by
     ``docker compose up -d``. Without this, ``poindexter game on`` would be
     undone within one brain cycle — which is exactly what happened when the
     operator stopped the GPU containers by hand.
+
+    The other half is the STOP: the diff loop ``docker stop``s a parked service
+    that is still running. Only the CLI adapter stops containers on enable;
+    the MCP/phone path just writes the DB keys, so on 2026-09-15 game mode
+    read "STILL UP … GPU is not fully free" for 20 minutes until someone ran
+    ``docker stop`` by hand. The brain owns the docker socket — it parks.
 
     Deliberately re-implements the timestamp parse instead of importing
     ``services.game_mode``: the brain is a standalone daemon that must run on
@@ -1076,6 +1105,7 @@ async def run_compose_drift_probe(
     sleep_fn=asyncio.sleep,
     docker_reachable_fn=None,
     host_recover_fn=None,
+    stop_fn=None,
 ) -> dict[str, Any]:
     """Single execution of the compose-spec drift probe.
 
@@ -1087,6 +1117,8 @@ async def run_compose_drift_probe(
             :func:`_docker_inspect`.
         recreate_fn: ``(compose_path, [services]) -> (ok, msg)``. Defaults
             to :func:`_recreate_services`.
+        stop_fn: ``container_name -> (ok, msg)`` used to park a game-mode
+            service that is still running. Defaults to :func:`_docker_stop`.
         yaml_loader: ``path -> dict | None``. Defaults to
             :func:`_load_compose_yaml`.
         sleep_fn: async callable used to wait between recreate and re-probe
@@ -1102,6 +1134,7 @@ async def run_compose_drift_probe(
 
     notify_fn = notify_fn or notify_operator
     inspect_fn = inspect_fn or _docker_inspect
+    stop_fn = stop_fn or _docker_stop
     yaml_loader = yaml_loader or _load_compose_yaml
     # Default to "assume reachable" so callers that don't pass docker_reachable_fn
     # (including tests) see the normal flow. ComposeDriftProbe.check() wires the
@@ -1111,7 +1144,8 @@ async def run_compose_drift_probe(
 
     compose_path = await _read_compose_path(pool)
     skip_services = await _read_skip_services(pool)
-    on_demand_services = await _read_on_demand_services(pool)
+    parked_services = await _read_game_mode_parked(pool)
+    on_demand_services = await _read_on_demand_services(pool, parked_services)
     active_profiles = await _read_active_profiles(pool)
     auto_recover_enabled = await _read_auto_recover_enabled(pool)
     project_name = await _read_compose_project_name(pool)
@@ -1219,6 +1253,25 @@ async def run_compose_drift_probe(
             continue
         inspect = await asyncio.to_thread(inspect_fn, container_name)
         inspected_count += 1
+        # Game mode: a parked service that is still running holds VRAM the
+        # operator asked for. Enabling from the phone (MCP) cannot reach
+        # docker, so the brain does the stop; an already-stopped one falls
+        # through to the on-demand suppression below.
+        if svc_name in parked_services and _inspect_running(inspect):
+            ok, msg = await asyncio.to_thread(stop_fn, container_name)
+            if ok:
+                detail = f"game mode: stopped parked service {svc_name} ({container_name})"
+                logger.info("[COMPOSE_DRIFT] %s", detail)
+            else:
+                detail = f"game mode: could not stop parked service {svc_name} ({container_name}): {msg}"
+                logger.warning("[COMPOSE_DRIFT] %s", detail)
+            await _emit_audit_event(
+                pool,
+                "probe.game_mode_parked_stopped" if ok else "probe.game_mode_parked_stop_failed",
+                detail,
+                extra={"service": svc_name, "container": container_name},
+            )
+            continue
         diff = _diff_service(svc_block, inspect)
         # Suppress `container_missing` (only) for services that are EXPECTED to
         # be down: (1) on-demand services (wan-server, image-gen-server) that spin up
