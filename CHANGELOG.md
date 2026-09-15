@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+## [0.139.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.138.0...v0.139.0) (2026-09-15)
+
+
+### Features
+
+* **backups:** POINDEXTER_BACKUP_ROOT — move the whole tree off the OS disk ([#3771](https://github.com/Glad-Labs/glad-labs-stack/issues/3771)) ([ad3c10f](https://github.com/Glad-Labs/glad-labs-stack/commit/ad3c10f1f4a707ae34c25616082f2a2e33369dbb))
+* **host:** protect the desktop from reclaim, and stop ollama re-reading models ([#3777](https://github.com/Glad-Labs/glad-labs-stack/issues/3777)) ([0906ee7](https://github.com/Glad-Labs/glad-labs-stack/commit/0906ee7c9010f5ab55b29147dff9eade84dedc39))
+* **media:** a persona owns the TTS engine and its clone reference ([#3768](https://github.com/Glad-Labs/glad-labs-stack/issues/3768)) ([f78ffcb](https://github.com/Glad-Labs/glad-labs-stack/commit/f78ffcb216a31062048f61477744be7358129bbd))
+* **media:** presenter personas — a face bound to a voice ([#3765](https://github.com/Glad-Labs/glad-labs-stack/issues/3765)) ([241a774](https://github.com/Glad-Labs/glad-labs-stack/commit/241a774d1965dcc9b449350a4e46cd746d7f91d0))
+* **monitoring:** instrument the water loop — pump, coolant, fans ([#3763](https://github.com/Glad-Labs/glad-labs-stack/issues/3763)) ([9a538a1](https://github.com/Glad-Labs/glad-labs-stack/commit/9a538a19998b3c8c423f745105a891cd1182b40d))
+* **qa:** add the qa.freshness rail — a stale news take is vetoed, not rewritten ([#3778](https://github.com/Glad-Labs/glad-labs-stack/issues/3778)) ([577616b](https://github.com/Glad-Labs/glad-labs-stack/commit/577616b9c3fb15f70f31bafa3f280380e38f45c2))
+* **qa:** self_claim checks capabilities and install specs against an operating record, and gates ([#3775](https://github.com/Glad-Labs/glad-labs-stack/issues/3775)) ([2bdd5d9](https://github.com/Glad-Labs/glad-labs-stack/commit/2bdd5d9b999cc0022853b362bfd3fcdc4b5111ed))
+* **qa:** unlinked_attribution sees the shapes fabrications take, and gates ([#3774](https://github.com/Glad-Labs/glad-labs-stack/issues/3774)) ([208f817](https://github.com/Glad-Labs/glad-labs-stack/commit/208f817ad5e9253bc4aa907470b84e8eb10e2c6e))
+* **video:** presenter shots — the niche's persona on camera in a video ([#3766](https://github.com/Glad-Labs/glad-labs-stack/issues/3766)) ([432ae17](https://github.com/Glad-Labs/glad-labs-stack/commit/432ae17dfae2aaf2a2890fedc06cdbce1623cca6))
+* **video:** speech-to-video talking heads through the ComfyUI provider ([#3764](https://github.com/Glad-Labs/glad-labs-stack/issues/3764)) ([91bff0b](https://github.com/Glad-Labs/glad-labs-stack/commit/91bff0b17daa365cf315e0e7289f9afc5ae737ee))
+* **youtube:** synthetic-media disclosure derived from presenter shots ([#3767](https://github.com/Glad-Labs/glad-labs-stack/issues/3767)) ([3e29754](https://github.com/Glad-Labs/glad-labs-stack/commit/3e29754b693ac3e6a32ba88f4c5da3ea28ce0ea6))
+
+
+### Bug Fixes
+
+* **architect:** tolerate a copied version suffix on atom references ([#3780](https://github.com/Glad-Labs/glad-labs-stack/issues/3780)) ([3b14448](https://github.com/Glad-Labs/glad-labs-stack/commit/3b14448fa0ea5dda71d5f4d28031b95a17ea8dba))
+* **backup:** pipefail + `grep -q` reported a MATCH as a miss ([#3779](https://github.com/Glad-Labs/glad-labs-stack/issues/3779)) ([0a12de3](https://github.com/Glad-Labs/glad-labs-stack/commit/0a12de352a3333ce1d0b949fc979ff540c29ad9d))
+* **backup:** re-read before paging that the offsite config snapshot lost bootstrap.toml ([#3773](https://github.com/Glad-Labs/glad-labs-stack/issues/3773)) ([cc7f7d1](https://github.com/Glad-Labs/glad-labs-stack/commit/cc7f7d135b3ddb069efaf39f724dae0c6ebb8c75))
+* **brain:** a stopped container is drift, and game mode's parked services come back ([#3787](https://github.com/Glad-Labs/glad-labs-stack/issues/3787)) ([33ff588](https://github.com/Glad-Labs/glad-labs-stack/commit/33ff588f45910900b4e02f1836f58f9f2b6750a4))
+* **brain:** game mode stops a parked GPU sidecar that is still running ([#3781](https://github.com/Glad-Labs/glad-labs-stack/issues/3781)) ([0bce32d](https://github.com/Glad-Labs/glad-labs-stack/commit/0bce32d6e27844c5c74af069cd33d47c73f8543a))
+* **brain:** RAM watch treats a stopped sidecar as down, not as a read failure ([#3783](https://github.com/Glad-Labs/glad-labs-stack/issues/3783)) ([65da8f0](https://github.com/Glad-Labs/glad-labs-stack/commit/65da8f0e1324ab871ea01bee02ef9d203c8fe9c6))
+* **chat:** catch a model that claims tool use without calling the tool ([#3782](https://github.com/Glad-Labs/glad-labs-stack/issues/3782)) ([d5aecab](https://github.com/Glad-Labs/glad-labs-stack/commit/d5aecab5357500b275851a7cb47e951ece60bf6c))
+* **chat:** catch prose outcome claims made without a tool call ([#3789](https://github.com/Glad-Labs/glad-labs-stack/issues/3789)) ([89e3c56](https://github.com/Glad-Labs/glad-labs-stack/commit/89e3c564119bbaeaa0fa7ecb0c46bf2f46147680))
+* **ci:** COPY-closure lint broke on the self-hosted runner's Python 3.8 ([#3772](https://github.com/Glad-Labs/glad-labs-stack/issues/3772)) ([56510b4](https://github.com/Glad-Labs/glad-labs-stack/commit/56510b449cac7195e14cac266eef2a3be16c5ac0))
+* **ci:** the pipe-to-grep lint matched one spelling, not the hazard ([#3793](https://github.com/Glad-Labs/glad-labs-stack/issues/3793)) ([31db523](https://github.com/Glad-Labs/glad-labs-stack/commit/31db523843b8dd88087a190322ae8c91d248af9a))
+* **deploy:** re-park game-mode sidecars that compose-apply woke ([#3784](https://github.com/Glad-Labs/glad-labs-stack/issues/3784)) ([3ab3745](https://github.com/Glad-Labs/glad-labs-stack/commit/3ab3745f1c9ec3f8bd1d087b7b0f6543fdef64e0))
+* **gpu:** restart a squatting sidecar only while the render GPU is short, and remember it across processes ([#3796](https://github.com/Glad-Labs/glad-labs-stack/issues/3796)) ([8f57ef0](https://github.com/Glad-Labs/glad-labs-stack/commit/8f57ef0ebf7f595d85472d8aea5e6031979cce2c))
+* **grafana:** electricity-source stat could not see a dead meter ([#3770](https://github.com/Glad-Labs/glad-labs-stack/issues/3770)) ([6fe349e](https://github.com/Glad-Labs/glad-labs-stack/commit/6fe349e2676cb04ec1b0b587157185cbf983fccd))
+* **media:** generate_media_scripts' node timeout contains its own work ([#3797](https://github.com/Glad-Labs/glad-labs-stack/issues/3797)) ([1d03417](https://github.com/Glad-Labs/glad-labs-stack/commit/1d03417b35ab9b22eece08586dc268e89dc5f7f1))
+* **media:** media_distribute reads the niche from the task, not the post ([#3786](https://github.com/Glad-Labs/glad-labs-stack/issues/3786)) ([0b1ff72](https://github.com/Glad-Labs/glad-labs-stack/commit/0b1ff723b79efe761d2a3419772d4049201918b7))
+* **monitoring:** ingest openlinkhub_* — and gate the allowlist that dropped it ([#3769](https://github.com/Glad-Labs/glad-labs-stack/issues/3769)) ([d85906f](https://github.com/Glad-Labs/glad-labs-stack/commit/d85906f7c4f3caf1d9f8947b80863f597d160566))
+* **oauth-helper:** bind an OS-assigned port instead of a hardcoded 8765 ([#3776](https://github.com/Glad-Labs/glad-labs-stack/issues/3776)) ([bcfd62f](https://github.com/Glad-Labs/glad-labs-stack/commit/bcfd62fa2127134a9b4ee29de495be03802a803c))
+* **qa:** freshness reads task facts from the real schema ([#3795](https://github.com/Glad-Labs/glad-labs-stack/issues/3795)) ([b474c0d](https://github.com/Glad-Labs/glad-labs-stack/commit/b474c0d1b60c79c1f2f27fc61fc308595ed6380c))
+* **writer:** the image-subject rule reads the niche's media policy, quietly ([#3788](https://github.com/Glad-Labs/glad-labs-stack/issues/3788)) ([aabeedc](https://github.com/Glad-Labs/glad-labs-stack/commit/aabeedc4220cb05cfe1cc1cd5e423483e64d049f))
+
 ## [0.138.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.137.0...v0.138.0) (2026-09-14)
 
 
