@@ -656,10 +656,29 @@ _COVERAGE_HARNESS = """
 source "${RUN_SH}"
 
 # restic stub dispatching on the subcommand (args are: -r <repo> <sub> ...).
+# NB: file-backed counter. `restic` is invoked inside $(...), which is a
+# SUBSHELL — a plain variable increment is lost the moment it returns, so
+# every call would see the first branch and the re-read could never be
+# exercised.
 restic() {
     shift 2
+    local _n
     case "$1" in
-        ls)   printf '%s\\n' "${FAKE_LS_OUTPUT:-}"; return "${FAKE_LS_RC:-0}" ;;
+        ls)
+            _n=$(( $(cat "${LS_COUNT_FILE}" 2>/dev/null || echo 0) + 1 ))
+            echo "${_n}" > "${LS_COUNT_FILE}"
+            echo "LS_CALL_${_n}" >&2
+            # A second `ls` only happens on the re-read before paging. When
+            # FAKE_LS_OUTPUT_2 is unset it repeats the first answer, which is
+            # what every pre-existing test expects.
+            if [[ "${_n}" -ge 2 ]]; then
+                if [[ -n "${FAKE_LS_RC_2:-}" && "${FAKE_LS_RC_2}" != "0" ]]; then
+                    return "${FAKE_LS_RC_2}"
+                fi
+                printf '%s\\n' "${FAKE_LS_OUTPUT_2:-${FAKE_LS_OUTPUT:-}}"
+                return "${FAKE_LS_RC:-0}"
+            fi
+            printf '%s\\n' "${FAKE_LS_OUTPUT:-}"; return "${FAKE_LS_RC:-0}" ;;
         dump) printf '%s' "${FAKE_DUMP_CONTENT:-}"; return "${FAKE_DUMP_RC:-0}" ;;
     esac
     return 0
@@ -686,6 +705,8 @@ def _run_coverage_harness(
     on_disk: str | None = _SECRET_BODY,
     stored: str | None = _SECRET_BODY,
     listed: bool = True,
+    listed_on_retry: bool | None = None,
+    retry_ls_rc: int = 0,
     ls_rc: int = 0,
     settings: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess, Path]:
@@ -702,7 +723,16 @@ def _run_coverage_harness(
         "FAKE_LS_OUTPUT": artifact.as_posix() if listed else "/config/other/file",
         "FAKE_DUMP_CONTENT": stored if stored is not None else "",
         "SETTING_offsite_backup_verify_config_artifacts": artifact.as_posix(),
+        # Keep the re-read instant; the delay exists for a real object store.
+        "VERIFY_CONFIG_RECHECK_DELAY_SECONDS": "0",
+        "LS_COUNT_FILE": (tmp_path / ".ls_calls").as_posix(),
     }
+    if listed_on_retry is not None:
+        env["FAKE_LS_OUTPUT_2"] = (
+            artifact.as_posix() if listed_on_retry else "/config/other/file"
+        )
+    if retry_ls_rc:
+        env["FAKE_LS_RC_2"] = str(retry_ls_rc)
     for k, v in (settings or {}).items():
         env[f"SETTING_{k}"] = v
     result = subprocess.run(
@@ -796,3 +826,49 @@ def test_default_verified_artifact_is_the_master_key_file():
 
 def test_default_database_list_matches_the_pre_891_behaviour():
     assert _default_setting("DEFAULT_DATABASES") == "poindexter_brain"
+
+
+# --- the re-read before paging (2026-09-15) --------------------------------
+#
+# verify_config_coverage runs seconds after writing a snapshot to an object
+# store, and a listing that comes back SHORT — not empty, just incomplete — is
+# indistinguishable from a real absence: the artifact is missing from both, and
+# only the empty case was guarded. That paged CRITICAL for a bootstrap.toml
+# which was present in the very snapshot the run had just written, and in every
+# snapshot before it.
+#
+# A false critical on the one artifact a restore depends on is the most
+# expensive alert this system can emit, so the verdict is re-read once. The
+# re-read may only ever DOWNGRADE — both directions are pinned here, because a
+# retry that can suppress a real gap is worse than the false positive it fixes.
+
+
+@pytest.mark.skipif(_BASH is None, reason="bash not available")
+def test_artifact_absent_then_present_on_reread_does_not_page(tmp_path):
+    result, _ = _run_coverage_harness(tmp_path, listed=False, listed_on_retry=True)
+    assert "ALERT severity=critical" not in result.stdout, result.stdout
+    assert "present on re-read" in result.stdout, result.stdout
+
+
+@pytest.mark.skipif(_BASH is None, reason="bash not available")
+def test_artifact_absent_from_both_reads_still_pages(tmp_path):
+    result, _ = _run_coverage_harness(tmp_path, listed=False, listed_on_retry=False)
+    assert "ALERT severity=critical" in result.stdout, result.stdout
+    assert "MISSING from newest config snapshot" in result.stdout, result.stdout
+
+
+@pytest.mark.skipif(_BASH is None, reason="bash not available")
+def test_failed_reread_fails_closed_and_pages(tmp_path):
+    """An errored re-read is not evidence of presence."""
+    result, _ = _run_coverage_harness(
+        tmp_path, listed=False, listed_on_retry=True, retry_ls_rc=1
+    )
+    assert "ALERT severity=critical" in result.stdout, result.stdout
+
+
+@pytest.mark.skipif(_BASH is None, reason="bash not available")
+def test_artifact_present_first_time_never_re_reads(tmp_path):
+    """The happy path stays one listing — no extra object-store traffic."""
+    result, _ = _run_coverage_harness(tmp_path, listed=True)
+    assert "ALERT severity=critical" not in result.stdout, result.stdout
+    assert "LS_CALL_2" not in result.stderr, result.stderr

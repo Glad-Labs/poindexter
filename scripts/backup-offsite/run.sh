@@ -47,6 +47,10 @@ DEFAULT_RESTIC_HOST="poindexter"
 # In-container paths whose presence in the newest `config` snapshot is what
 # makes a restore actually usable (see verify_config_coverage).
 DEFAULT_VERIFY_CONFIG_ARTIFACTS="/config/poindexter/bootstrap.toml"
+# Pause before re-reading a listing that did not contain an artifact. Long
+# enough for an object store to settle, short enough that a genuine absence
+# still pages in the same run. Only ever delays an alert, never suppresses.
+VERIFY_CONFIG_RECHECK_DELAY_SECONDS="${VERIFY_CONFIG_RECHECK_DELAY_SECONDS:-15}"
 # In-container mount points for the config surface (see run_config_backup).
 # These are the paths the compose file binds ~/.poindexter and ~/.claude to,
 # read-only — NOT host paths.
@@ -437,6 +441,22 @@ verify_config_coverage() {
     # One listing for the whole snapshot, reused for every artifact. `latest`
     # resolves against the --tag/--host filters, so this is the same snapshot
     # run_config_backup just wrote.
+    #
+    # Re-read once before believing a MISSING verdict. This check runs seconds
+    # after the snapshot is written to an object store, and a listing that came
+    # back partial — not empty, just short — is indistinguishable from a real
+    # absence: both leave the artifact out, and only the empty case was guarded.
+    # A partial read then pages CRITICAL against the backup that a restore
+    # depends on, which is the most expensive false positive the system can
+    # emit. Observed 2026-09-15: bootstrap.toml was present in the very
+    # snapshot the run had just written, and in every snapshot before it, while
+    # the check reported it missing 7 s later.
+    #
+    # A second read is cheap (one listing), and the two failure modes separate
+    # cleanly: a genuinely absent file is absent from both reads, while a
+    # transient resolves. The retry only ever DOWNGRADES an alert, so it cannot
+    # hide a real gap — if the file is truly missing, both reads agree and the
+    # page still fires.
     local listing rc=0
     listing=$(restic -r "${repo}" ls latest --tag config --host "${restic_host}" 2>/dev/null) || rc=$?
     if [[ "${rc}" -ne 0 || -z "${listing}" ]]; then
@@ -458,6 +478,19 @@ verify_config_coverage() {
         checked=$((checked + 1))
         # -x -F: whole-line, fixed-string. A path is not a regex.
         if ! printf '%s\n' "${listing}" | grep -qxF "${artifact}"; then
+            # Re-read before paging — see the partial-listing note above.
+            local recheck rrc=0
+            sleep "${VERIFY_CONFIG_RECHECK_DELAY_SECONDS}"
+            recheck=$(restic -r "${repo}" ls latest --tag config \
+                --host "${restic_host}" 2>/dev/null) || rrc=$?
+            if [[ "${rrc}" -eq 0 ]] \
+                && printf '%s\n' "${recheck}" | grep -qxF "${artifact}"; then
+                log "config coverage: ${artifact} absent from first listing, present on re-read — transient, not paging"
+                # Adopt the complete listing so later artifacts are judged
+                # against it rather than the short one.
+                listing="${recheck}"
+                continue
+            fi
             log "config coverage: MISSING from newest config snapshot: ${artifact}"
             missing=$((missing + 1))
             emit_alert "critical" \
