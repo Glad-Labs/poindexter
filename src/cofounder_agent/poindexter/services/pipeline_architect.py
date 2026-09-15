@@ -40,6 +40,7 @@ import copy
 import hashlib
 import json
 import logging
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -198,7 +199,9 @@ HARD RULES:
 1. Use atom names exactly as they appear in the ATOM CATALOG. Names
    are namespaced — atoms.* are native composable atoms, stage.* are
    legacy stages surfaced as virtual atoms. If the closest name in
-   the catalog has a different prefix, use the catalog form.
+   the catalog has a different prefix, use the catalog form. Write the
+   NAME only: the " v1.0.0" after it in the catalog header is the
+   atom's version, not part of its name.
 2. Build the graph as a DAG — every edge moves the pipeline forward
    toward END.
 3. Every non-terminal node has at least one outgoing edge.
@@ -541,6 +544,17 @@ def _find_config_placeholder(config: Any) -> str | None:
     return None
 
 
+# "<name> v1.0.0" / "<name>@1.0.0" — the catalog header carries the version
+# right after the name and rule 1 says "exactly as they appear", so models
+# copy both. The version is not part of the name.
+_ATOM_VERSION_SUFFIX_RE = re.compile(r"(?:\s+v?\d+(?:\.\d+)*|@v?\d+(?:\.\d+)*)\s*$")
+
+
+def _strip_atom_version(atom: str) -> str:
+    """``"content.load_existing_post v1.0.0"`` → ``"content.load_existing_post"``."""
+    return _ATOM_VERSION_SUFFIX_RE.sub("", atom).strip()
+
+
 def _validate_spec(
     spec: dict[str, Any], *, seed_keys: set[str] | None = None
 ) -> tuple[bool, list[str]]:
@@ -609,6 +623,13 @@ def _validate_spec(
                 "automatically."
             )
             continue
+        # The model copied the catalog header's version along with the name
+        # ("content.load_existing_post v1.0.0"). Live compose (2026-09-15)
+        # failed twice on exactly that and the agent shrank its intent to get
+        # past it. Strip the version and store the bare name on the spec.
+        bare = _strip_atom_version(atom)
+        if bare != atom:
+            n["atom"] = atom = bare
         # Tolerant lookup: LLMs sometimes drop the namespace prefix.
         # Resolve "narrate_bundle" → "atoms.narrate_bundle" if the
         # bare name isn't registered but a single namespaced match is.

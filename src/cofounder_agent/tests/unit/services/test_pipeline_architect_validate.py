@@ -347,3 +347,42 @@ def test_validate_placeholder_scan_reaches_nested_config() -> None:
     }
     ok, errors = pipeline_architect._validate_spec(spec)
     assert not ok and any("template syntax" in e for e in errors)
+
+
+# --- version suffix tolerance (live compose failure, 2026-09-15) ------------
+
+
+@pytest.mark.parametrize(
+    "written, bare",
+    [
+        ("a v1.0.0", "a"),
+        ("a@1.0.0", "a"),
+        ("a v2", "a"),
+        ("a  v1.2.3 ", "a"),
+    ],
+)
+def test_versioned_atom_reference_validates_and_is_rewritten(written, bare):
+    """The catalog header reads "<name> v<version>" and rule 1 says "exactly as
+    it appears", so the model copies the version. It is not part of the name:
+    the spec must validate and carry the bare name for compilation."""
+    catalog = {"a": _meta("a")}
+    spec = _spec([{"id": "na", "atom": written}], [{"from": "na", "to": "END"}])
+    with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(catalog)):
+        ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+    assert ok is True, errors
+    assert spec["nodes"][0]["atom"] == bare
+
+
+def test_digit_in_atom_name_is_not_a_version():
+    assert pipeline_architect._strip_atom_version("qa.self_claim2") == "qa.self_claim2"
+    assert pipeline_architect._strip_atom_version("image.flux.2") == "image.flux.2"
+
+
+def test_versioned_unknown_atom_still_fails_with_the_bare_name_in_the_hint():
+    catalog = {"a": _meta("a")}
+    spec = _spec([{"id": "nb", "atom": "zzz v1.0.0"}], [{"from": "nb", "to": "END"}])
+    with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(catalog)), \
+         patch.object(pipeline_architect, "list_atoms", lambda: [_meta("a")]):
+        ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+    assert ok is False
+    assert any("'zzz'" in e and "not in catalog" in e for e in errors), errors

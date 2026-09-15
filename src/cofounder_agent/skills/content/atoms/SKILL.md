@@ -263,7 +263,9 @@ HARD RULES:
 1. Use atom names exactly as they appear in the ATOM CATALOG. Names
    are namespaced — atoms.* are native composable atoms, stage.* are
    legacy stages surfaced as virtual atoms. If the closest name in
-   the catalog has a different prefix, use the catalog form.
+   the catalog has a different prefix, use the catalog form. Write the
+   NAME only: the " v1.0.0" after it in the catalog header is the
+   atom's version, not part of its name.
 2. Build the graph as a DAG — every edge moves the pipeline forward
    toward END.
 3. Every non-terminal node has at least one outgoing edge.
