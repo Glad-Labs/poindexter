@@ -224,7 +224,13 @@ def check_image(copies: ImageCopies, repo_root: Path) -> tuple[list[str], int]:
             continue
         examined += 1
         image_dir = image_path.rsplit("/", 1)[0] if "/" in image_path else ""
-        rel_py = host.relative_to(repo_root).as_posix() if host.is_relative_to(repo_root) else str(host)
+        # NB: try/except, not Path.is_relative_to — that is 3.9+, and this
+        # script is pinned to the runner's SYSTEM interpreter (see the
+        # workflow step comment), which on the self-hosted runner is 3.8.10.
+        try:
+            rel_py = host.relative_to(repo_root).as_posix()
+        except ValueError:
+            rel_py = str(host)
         rel_df = copies.dockerfile.relative_to(repo_root).as_posix()
         for name, lineno in sibling_imports(host):
             module = host.parent / f"{name}.py"
