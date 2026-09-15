@@ -24,7 +24,7 @@ REPO_ROOT = next(
 SCRIPT = REPO_ROOT / "scripts" / "ci" / "notify_operator_issue.py"
 
 TITLE = "⚠️ poindexter mirror sync FAILED"
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 
 
 @pytest.fixture(scope="module")
