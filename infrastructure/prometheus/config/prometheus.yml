@@ -57,13 +57,17 @@ scrape_configs:
         # priority-tiered cliff where a full zram pushes every new page onto
         # dm-crypt. ollama_runner_.* = per-systemd-unit host memory of ollama's
         # llama-server runners, which leak ~6.9 MiB/request and are invisible to
-        # cadvisor (host units, not containers). NOTE this keep-list is an
+        # cadvisor (host units, not containers). openlinkhub_.* = water-loop
+        # telemetry — pump RPM, coolant temp, iCUE LINK fans (stack#3763);
+        # this family was the allowlist's next victim and was caught only
+        # because the deploy verified INGESTION, not just that the exporter
+        # served it. NOTE this keep-list is an
         # allowlist: any NEW metric
         # family the exporter grows must be added here or Prometheus drops it
         # silently at ingestion (the exporter serves it, the scrape reads up=1,
         # and the series just never exists — exactly how the 12vhpwr family
         # shipped dark for one deploy).
-        regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*|psu_.*|gpu_12vhpwr_.*|host_swap_device_.*|zram_.*|ollama_runner_.*'
+        regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*|psu_.*|gpu_12vhpwr_.*|host_swap_device_.*|zram_.*|ollama_runner_.*|openlinkhub_.*'
         action: keep
 
   # (RETIRED at the Pop!_OS migration) The `nvidia-smi-host` job scraped the
