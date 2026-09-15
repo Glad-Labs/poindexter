@@ -1,5 +1,35 @@
 """CodebaseSource — semantic topic ideation across pgvector embeddings.
 
+RETIRED 2026-09-15 — NOT REGISTERED, NOTHING CAN SCHEDULE IT.
+=============================================================
+Superseded by ``services/internal_rag_source.py::InternalRagSource`` (the
+poindexter#822 "writing pivot"), which mines the same ``embeddings`` table with
+storyworthy ranking against the niche's weighted goal vectors. The
+``tap.builtin_topic_source`` handler branches to it by name because it is not an
+entry-point plugin.
+
+Evidence for retiring rather than wiring: across this install InternalRagSource
+produced 6,508 topic records over two taps while CodebaseSource produced 0 — it
+had no ``external_taps`` row, and a plugin row only PERMITS a source, it never
+schedules one. Meanwhile its config block below still advertised
+``enabled (default true)``, so every config surface read as if it were live.
+That is the same false-claim shape as the retired guardrails rails.
+
+It is not worth wiring: the heuristic below is conservative by its own
+admission (only ``posts`` yields usable candidates, "the others generate
+noise"), and ``topic_batch_service`` already caps the internal-source share of a
+batch because internal sources crowd out external ones. Adding a second, weaker
+internal miner would spend that cap on worse topics.
+
+The code is kept, not deleted, so the seed-query approach stays available if it
+ever earns a place. Reviving it means re-adding the ``_SAMPLES`` entry AND
+creating an ``external_taps`` row — deliberately two steps, so a single edit
+cannot resurrect a source that produces nothing. An unregistered source fails
+loud (``ValueError: ... is not a registered topic_source plugin``), never
+silently.
+
+The config block below documents what it WOULD read if revived.
+
 Poindexter's differentiator: it knows YOUR data. Every tap (memory,
 posts, audit, issues, brain) writes embeddings into the ``embeddings``
 table; this source runs a set of seed queries against those embeddings

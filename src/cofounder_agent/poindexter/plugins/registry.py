@@ -1098,7 +1098,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("topic_sources", "poindexter.services.topic_sources.devto", "DevtoSource"),
         ("topic_sources", "poindexter.services.topic_sources.web_search", "WebSearchSource"),
         ("topic_sources", "poindexter.services.topic_sources.knowledge", "KnowledgeSource"),
-        ("topic_sources", "poindexter.services.topic_sources.codebase", "CodebaseSource"),
+        # ("topic_sources", ...codebase..., "CodebaseSource") — RETIRED 2026-09-15.
+        # Superseded by InternalRagSource (poindexter#822), which the
+        # builtin_topic_source handler branches to directly. CodebaseSource never
+        # produced a topic on any install while its successor produced 6,508.
+        # Registering it again would let an operator schedule a source whose own
+        # docstring says the non-posts tables "generate noise". See codebase.py.
         # Dev_diary topic source — pulls 24h of PRs/commits/decisions for
         # the daily build-in-public post (PR #160).
         ("topic_sources", "poindexter.services.topic_sources.dev_diary_source", "DevDiarySource"),
