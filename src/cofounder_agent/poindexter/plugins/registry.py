@@ -885,6 +885,10 @@ def get_core_samples() -> dict[str, list[Any]]:
         # advisory disabled_capabilities finding so silence never reads as
         # "working" (glad-labs-stack#2133).
         ("jobs", "poindexter.services.jobs.probe_disabled_capabilities", "ProbeDisabledCapabilitiesJob"),
+        # ProbeUnproductiveCapabilitiesJob — the complement: capabilities that
+        # are ON and have never produced their artifact. Seven such bugs landed
+        # inside two weeks, none of which raised anything.
+        ("jobs", "poindexter.services.jobs.probe_unproductive_capabilities", "ProbeUnproductiveCapabilitiesJob"),
         # ProbeRescueYieldJob — daily watchdog for the QA rescue loop's
         # conversion rate: emits an advisory qa_rescue_yield_zero finding on a
         # 0-for-N rewrite streak so rescue burn is never silent again (the

@@ -3813,6 +3813,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.disabled_capabilities.fallback': 'log_only',
     'findings.disabled_capabilities.cooldown_minutes': '10080',
     'findings.disabled_capabilities.min_severity': 'warn',
+    'findings.unproductive_capabilities.delivery': 'discord',
+    'findings.unproductive_capabilities.fallback': 'log_only',
+    'findings.unproductive_capabilities.cooldown_minutes': '10080',
+    'findings.unproductive_capabilities.min_severity': 'warn',
     # Prompt-catalog drift. SyncPromptCatalogToLangfuseJob emits
     # prompt_catalog_drift (dot-free kind — same 3-segment parser note as
     # above) at severity='warn' for orphaned Langfuse names (key gone from the
@@ -3942,6 +3946,8 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # opt-in capability flags (writer self-review, self-consistency QA,
     # video/podcast/newsletter/social) that ship disabled.
     'disabled_capabilities_probe_enabled': 'true',
+    'unproductive_capabilities_probe_enabled': 'true',
+    'unproductive_capabilities_min_runs': '20',
     # Langfuse prompt mirror (SyncPromptCatalogToLangfuseJob): pushes SKILL.md
     # catalog defaults into Langfuse every 6h so the UI shows all production
     # prompts for review. No-ops quietly when Langfuse isn't configured, so
@@ -5385,6 +5391,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'devto_syndicate_min_quality': {'owner': 'crosspost_to_devto', 'value_type': 'integer'},
     'disable_auth_for_dev': {'owner': 'token_validation', 'value_type': 'boolean'},
     'disabled_capabilities_probe_enabled': {'owner': 'probe_disabled_capabilities', 'value_type': 'boolean'},
+    'unproductive_capabilities_probe_enabled': {'owner': 'probe_unproductive_capabilities', 'value_type': 'boolean'},
+    'unproductive_capabilities_min_runs': {'owner': 'probe_unproductive_capabilities', 'value_type': 'integer'},
     'distribution_ref_enabled': {'owner': 'distribution_ref', 'value_type': 'boolean'},
     'distribution_ref_medium_param': {'owner': 'distribution_ref', 'value_type': 'string'},
     'distribution_ref_source_param': {'owner': 'distribution_ref', 'value_type': 'string'},
@@ -5439,6 +5447,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.default.min_severity': {'value_type': 'string'},
     'findings.disabled_capabilities.cooldown_minutes': {'value_type': 'integer'},
     'findings.disabled_capabilities.delivery': {'value_type': 'string'},
+    'findings.unproductive_capabilities.cooldown_minutes': {'value_type': 'integer'},
+    'findings.unproductive_capabilities.delivery': {'value_type': 'string'},
     'findings.disabled_capabilities.fallback': {'value_type': 'string'},
     'findings.disabled_capabilities.min_severity': {'value_type': 'string'},
     'findings.duplicate_post.delivery': {'value_type': 'string'},

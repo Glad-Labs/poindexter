@@ -295,6 +295,11 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("analytics", "observability"),
     ("performance", "observability"),
     ("probe_webhook", "observability"),
+    # Capability-visibility probes: one watches capabilities that ship OFF,
+    # its complement watches ones that are ON and have never produced. Both
+    # are observability, and both families were falling to "general".
+    ("disabled_capabilities", "observability"),
+    ("unproductive_capabilities", "observability"),
     ("webhook_freshness", "observability"),
     ("cadence_slo", "observability"),
     ("nvidia_exporter", "observability"),
