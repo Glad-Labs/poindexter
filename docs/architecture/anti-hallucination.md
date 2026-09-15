@@ -747,16 +747,21 @@ at draft time, the fix is a deterministic lookup, not a guess:
   graduation. Gated by `citation_reconcile_llm_enabled` (default on); model pin
   `citation_reconcile_llm_model` (empty → `structured_extraction_model`).
 
-- **`qa.unlinked_attribution`** (advisory rail, after `qa.citations`): sees the
+- **`qa.unlinked_attribution`** (hard gate since 2026-09-15, after `qa.citations`): sees the
   RESIDUAL — attribution subjects that match no corpus source and aren't already
-  linked (author names / unknown brands a deterministic linker can't safely
-  repair). It scores that density (gentle penalty, floored) and lists the
-  offenders in its feedback (→ `qa_feedback` + the QA Rails dashboard, which
-  groups by reviewer dynamically). **Advisory** via
-  `qa_gates.unlinked_attribution.required_to_pass` (seeded `false`) — it surfaces
-  feedback but neither vetoes nor feeds the gated score (advisory rails are
-  excluded from the weighted mean); graduate it with the poindexter#454 lever. Returns nothing when there's no corpus (real-vs-fabricated is then
-  `content.llm_reconcile_citations`' job — the grounded-LLM pass above).
+  linked (author names / unknown brands / phantom "pieces" a deterministic linker
+  can't safely repair). It scores that density (gentle penalty, floored) and lists
+  the offenders in its feedback (→ `qa_feedback` + the QA Rails dashboard). Born
+  advisory (poindexter#765); **graduated to `required_to_pass=true`** by migration
+  `20260915_013131` after the 2026-09-14 queue review found three phantom sources at
+  QA 97 that the frames could not see — "the VRLA Tech piece", "the AiCybr
+  writeup", "according to the breakdown at Tutorials Point" — plus an unlinked real
+  one ("per a recent LinkedIn analysis"). The frames now cover `per <X> <noun>`,
+  `the <X> <noun>` and `a <noun> from/by/at/in <X>`, with topic acronyms (AI, GPU,
+  LLM…) stopworded so they never read as sources. A hit vetoes; the rescue cycle
+  can link or drop the phrase before the terminal reject; the poindexter#454 lever
+  demotes it back to advisory without a deploy. Returns nothing when there's no
+  corpus (real-vs-fabricated is then `content.llm_reconcile_citations`' job).
 
 A grounded LLM citation pass is intentionally deferred — measure the
 deterministic coverage first. `test_citation_match.py` (matching core),

@@ -271,7 +271,8 @@ _SUBJ_FIRST_REPAIR_RE = re.compile(
 # a broad frame just widens the candidate set; the domain gate decides.
 _CONTENT_NOUN = (
     r"(?:piece|post|article|report|analysis|study|write-?up|breakdown|"
-    r"newsletter|blog|column|essay|thread|take)"
+    r"newsletter|blog|column|essay|thread|take|comparison|guide|benchmark|"
+    r"overview|review|survey|explainer|tutorial|roundup|writeup)"
 )
 _PIECE_VERB = (
     r"(?:makes?|made|frames?|framed|calls?|called|argues?|argued|notes?|"
@@ -288,7 +289,39 @@ _PIECE_ON_REPAIR_RE = re.compile(
     rf"\b(?:a|an|the)\s+{_CONTENT_NOUN}\s+(?:on|from|by|in|at)\s+({_SUBJECT_CS})",
     re.IGNORECASE,
 )
-_ACCORDING_RE = re.compile(rf"according\s+to\s+({_SUBJECT_CS})", re.IGNORECASE)
+# "according to X", and the 2026-09-14 shape "according to the breakdown at
+# Tutorials Point": an optional article + content noun + preposition may sit
+# between "according to" and the (still capitalised) subject.
+_ACCORDING_RE = re.compile(
+    rf"according\s+to\s+(?:(?:the|a|an)\s+)?"
+    rf"(?:{_CONTENT_NOUN}\s+(?:at|from|by|in|of|on)\s+)?"
+    rf"(?:(?:the|a|an)\s+)?({_SUBJECT_CS})",
+    re.IGNORECASE,
+)
+# "per a recent LinkedIn analysis", "per Gartner's 2026 report" — the subject
+# must be followed by a content noun, so "tokens per GPU" never matches.
+_PER_RE = re.compile(
+    rf"\bper\s+(?:(?:a|an|the)\s+)?(?:(?:recent|new|latest|earlier|\d{{4}})\s+)?"
+    rf"({_SUBJECT_CS})(?:['’]s)?(?:\s+\d{{4}})?\s+{_CONTENT_NOUN}\b",
+    re.IGNORECASE,
+)
+# Advisory-grade piece frames (the repair-only ones below require a verb):
+# "the VRLA Tech piece is right that…", "the AiCybr writeup lands on…",
+# "the VRLA Tech comparison frames it as…" — a named source owning a content
+# noun is an attribution whatever follows it.
+_THE_PIECE_RE = re.compile(
+    rf"\b(?:a|an|the)\s+(?:(?:recent|new|latest|earlier|\d{{4}})\s+)?"
+    rf"({_SUBJECT_CS})(?:['’]s)?(?:\s+\d{{4}})?\s+{_CONTENT_NOUN}\b",
+    re.IGNORECASE,
+)
+# "a report from Gartner", "the breakdown at Tutorials Point", "a piece in
+# The Verge". "on" is deliberately excluded here: "an article on Kubernetes"
+# names a topic, not a source.
+_PIECE_FROM_RE = re.compile(
+    rf"\b(?:a|an|the)\s+(?:(?:recent|new|latest|earlier|\d{{4}})\s+)?"
+    rf"{_CONTENT_NOUN}\s+(?:from|by|at|in)\s+({_SUBJECT_CS})",
+    re.IGNORECASE,
+)
 _PAREN_RE = re.compile(rf"\(\s*({_SUBJECT_CS})\s*\)")
 
 _MD_LINK_TEXT_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
@@ -296,11 +329,33 @@ _MD_LINK_TEXT_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
 # Subjects that are rhetoric / first-person / generic, not named external
 # sources. Compared against the lowercased first subject token.
 _SUBJECT_STOPWORDS = {
-    "this", "that", "these", "those", "it", "they", "we", "our", "he", "she",
+    "this", "that", "these", "those", "they", "we", "our", "he", "she",
     "here", "there", "the", "a", "an", "i", "you", "research", "studies",
     "study", "data", "experts", "analysts", "sources", "many", "some", "most",
     "one", "reportedly", "glad",
+    # Sentence-initial conjunctions/adverbs that precede an attribution verb
+    # ("As noted by…", "However, X argues…") are grammar, not a subject.
+    "as", "and", "but", "however", "while", "when", "if", "so", "yet", "then",
+    "also", "still", "which", "what", "who", "because", "since", "although",
+    "though", "meanwhile", "instead", "indeed", "nevertheless", "otherwise",
+    "unless", "until", "whether", "even", "now", "today", "yesterday",
 }
+
+# Capitalised topic words / acronyms the piece frames would otherwise read as
+# a source ("the AI report", "the GPU benchmark", "the LLM guide"). Applied
+# ONLY to single-token subjects: "AI Insights" or "GPU Mag" are brands.
+_TOPIC_ACRONYMS = {
+    "ai", "llm", "llms", "gpu", "gpus", "cpu", "cpus", "api", "apis", "seo",
+    "b2b", "b2c", "ram", "vram", "rag", "qa", "ci", "cd", "ui", "ux", "os",
+    "ml", "nlp", "saas", "pc", "it", "hn", "faq", "kpi", "roi", "ceo", "cto",
+    "openai", "youtube",  # platforms named in passing far more than cited
+}
+
+
+def _is_topic_word(subject: str) -> bool:
+    toks = subject.split()
+    return len(toks) == 1 and toks[0].lower().rstrip(".") in _TOPIC_ACRONYMS
+
 
 
 def _markdown_link_text_spans(content: str) -> list[tuple[int, int]]:
@@ -361,7 +416,13 @@ def find_attributions(
     link_spans = _markdown_link_text_spans(content)
     seen: set[int] = set()
     results: list[Attribution] = []
-    frames = [_PREP_RE, subj_first_rx, _ACCORDING_RE, _PAREN_RE]
+    frames = [
+        _PREP_RE, subj_first_rx, _ACCORDING_RE, _PAREN_RE,
+        # 2026-09-14: every fabricated source that reached the approval queue
+        # that week used one of these shapes, and none of the frames above
+        # saw them (per / the-X-piece / a-report-from-X).
+        _PER_RE, _THE_PIECE_RE, _PIECE_FROM_RE,
+    ]
     if repair:
         # Repair-only "piece" frames — safe because the domain gate downstream
         # decides what actually gets linked (see the regex comments above).
@@ -369,10 +430,16 @@ def find_attributions(
     for rx in frames:
         for m in rx.finditer(content):
             subject = m.group(1).strip()
+            # A sentence-final period rides along on the last token ("Tutorials
+            # Point.") because the token grammar admits dots for initials
+            # ("M."). Drop it unless the last token really is an initial.
+            last = subject.split()[-1] if subject else ""
+            if last.endswith(".") and len(last.rstrip(".")) > 2:
+                subject = subject[: len(subject) - (len(last) - len(last.rstrip(".")))]
             if not subject:
                 continue
             first_tok = subject.split()[0].lower().rstrip(".")
-            if first_tok in _SUBJECT_STOPWORDS:
+            if first_tok in _SUBJECT_STOPWORDS or _is_topic_word(subject):
                 continue
             if rx is _PAREN_RE and not _looks_like_source_name(subject):
                 # Single-word simple-title-case brands (Keychron, Razer, Cherry)
@@ -654,7 +721,7 @@ def strip_unmatched_attributions(
             if not subject:
                 continue
             first_tok = subject.split()[0].lower().rstrip(".")
-            if first_tok in _SUBJECT_STOPWORDS:
+            if first_tok in _SUBJECT_STOPWORDS or _is_topic_word(subject):
                 continue
             if rx is _STRIP_PAREN_RE and not _looks_like_source_name(subject):
                 continue  # editorial aside, not a source

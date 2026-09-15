@@ -13,12 +13,16 @@ already linked — i.e. author-name and unknown-brand attributions a determinist
 linker can't safely repair. It scores that residual density and lists the
 offenders in its feedback (which lands in qa_feedback + the QA Rails dashboard).
 
-ADVISORY by design (Matt's call on #765): it scores — nudging the weighted QA
-mean and surfacing the offenders — but never vetoes. Status is DB-driven via
-``qa_gates.unlinked_attribution.required_to_pass`` (seeded false); an operator
-graduates it to a hard gate via the poindexter#454 lever, no code deploy. The
-score penalty is deliberately gentle (a few points per offender, floored) so a
-single missing link nudges rather than sinks an otherwise-good post.
+Advisory at birth (Matt's call on #765), **required since 2026-09-15**
+(migration ``20260915_013131``, poindexter#1052): once the frames covered the
+shapes real fabrications take ("the VRLA Tech piece", "according to the
+breakdown at Tutorials Point", "per a recent LinkedIn analysis"), an unlinked
+subject that matches no corpus source is a fabricated citation until proven
+otherwise, so a hit now VETOES. The QA rescue cycle gets the offender list in
+``qa_feedback`` and can link or drop the phrase before the terminal reject.
+Status stays DB-driven via ``qa_gates.unlinked_attribution.required_to_pass``
+— the poindexter#454 lever demotes it back to advisory with no deploy. The
+score penalty is still gentle (a few points per offender, floored).
 
 Returns nothing (no review) when disabled, when there's no research corpus to
 match against (can't tell real from fabricated without one — that's the deferred
@@ -41,11 +45,11 @@ ATOM_META = AtomMeta(
     type="atom",
     version="1.0.0",
     description=(
-        "Advisory rail (#765): scores attribution-shaped phrases naming a source "
-        "with no inline link and no research-corpus match (author names / unknown "
-        "brands). Runs after content.reconcile_citations so it sees only the "
-        "residual. Advisory via qa_gates.unlinked_attribution.required_to_pass "
-        "(false → scores + lists offenders, never vetoes)."
+        "Fabricated-citation rail (#765, hard gate since 2026-09-15): flags "
+        "attribution-shaped phrases naming a source with no inline link and no "
+        "research-corpus match (author names / unknown brands / phantom pieces). "
+        "Runs after content.reconcile_citations so it sees only the residual. "
+        "Gate status is DB-driven via qa_gates.unlinked_attribution.required_to_pass."
     ),
     inputs=(
         FieldSpec(name="content", type="str", description="draft to scan"),
@@ -142,8 +146,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         site_config=site_config, platform=state.get("platform"),
     )
     gate_states = await resolve_gate_states(qa)
-    # Advisory is DB-driven: seeded required_to_pass=false → advisory (scores,
-    # never vetoes). An operator can graduate it to a hard gate (poindexter#454).
+    # Gate status is DB-driven: required_to_pass=true since migration
+    # 20260915_013131 (a hit vetoes); an operator can demote it to advisory
+    # (poindexter#454) — the rail itself never hardcodes either posture.
     MultiModelQA._mark_advisory_if_configured(review, gate_states, "unlinked_attribution")
     return {"qa_rail_reviews": [reviewer_to_dict(review)]}
 
