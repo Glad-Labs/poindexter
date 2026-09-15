@@ -1337,16 +1337,29 @@ class PodcastService:
 
         voice_pool = _resolve_voice_pool(self._site_config)
         selected = _select_voice(self._site_config, key or script, niche_slug=niche_slug)
-        voices_to_try = [
-            selected,
-            *[v for v in voice_pool if v != selected],
-            *VOICE_FALLBACKS,
-        ]
+        # A persona whose voice is a Chatterbox clone owns the engine AND the
+        # reference clip for this render; if the clone fails, the ladder below
+        # falls back to the install's normal voices WITHOUT the persona so a
+        # broken reference degrades to the house voice, never to silence.
+        persona = resolve_persona_for_niche(self._site_config, niche_slug)
+        attempts: list[tuple[str, Any]] = []
+        if persona is not None and persona.voice_provider == "chatterbox":
+            attempts.append(("default", persona))
+        attempts.extend(
+            (voice, None) for voice in [
+                selected,
+                *[v for v in voice_pool if v != selected],
+                *VOICE_FALLBACKS,
+            ]
+        )
 
         last_error: str | None = None
-        for voice in voices_to_try:
+        for voice, voice_persona in attempts:
             try:
-                result = await self._generate_with_voice(script, voice, out)
+                # ``persona=`` only when there is one: every existing
+                # _generate_with_voice double keeps its (script, voice, out) shape.
+                gen_kwargs: dict[str, Any] = {"persona": voice_persona} if voice_persona is not None else {}
+                result = await self._generate_with_voice(script, voice, out, **gen_kwargs)
                 if result.success:
                     return str(out), int(result.duration_seconds or 0)
                 last_error = result.error
@@ -1778,7 +1791,7 @@ class PodcastService:
             )
 
     async def _generate_with_voice(
-        self, script: str, voice: str, output_path: Path
+        self, script: str, voice: str, output_path: Path, *, persona: Any = None,
     ) -> EpisodeResult:
         """Generate audio via the configured ``podcast_tts_engine``.
 
@@ -1798,8 +1811,17 @@ class PodcastService:
         script = _normalize_for_speech(script, site_config=self._site_config)
 
         engine = str(self._site_config.get("podcast_tts_engine", "") or "").strip()
+        audio_prompt_path: str | None = None
+        persona_provider = str(getattr(persona, "voice_provider", "") or "").strip()
+        if persona_provider == "chatterbox":
+            engine = "chatterbox"
+            audio_prompt_path = str(getattr(persona, "voice_ref_audio_url", "") or "").strip() or None
+        elif persona_provider == "kokoro":
+            engine = "speaches"
         if engine == "chatterbox":
-            return await self._generate_with_chatterbox(script, voice, output_path)
+            return await self._generate_with_chatterbox(
+                script, voice, output_path, audio_prompt_path=audio_prompt_path,
+            )
 
         audio_bytes = await tts_service.synthesize_speech(
             script,
@@ -1830,7 +1852,8 @@ class PodcastService:
         )
 
     async def _generate_with_chatterbox(
-        self, script: str, voice: str, output_path: Path
+        self, script: str, voice: str, output_path: Path,
+        *, audio_prompt_path: str | None = None,
     ) -> EpisodeResult:
         """Generate audio via the Chatterbox sidecar (Phase 2 engine cutover).
 
@@ -1860,8 +1883,11 @@ class PodcastService:
             "exaggeration": sc.get("plugin.tts_provider.chatterbox.exaggeration", "0.5"),
             "cfg_weight": sc.get("plugin.tts_provider.chatterbox.cfg_weight", "0.5"),
             "timeout_s": sc.get("plugin.tts_provider.chatterbox.timeout_s", "600"),
-            "audio_prompt_path": sc.get(
-                "plugin.tts_provider.chatterbox.audio_prompt_path", "",
+            # A persona's own clone reference wins over the install-wide one.
+            "audio_prompt_path": (
+                audio_prompt_path
+                if audio_prompt_path is not None
+                else sc.get("plugin.tts_provider.chatterbox.audio_prompt_path", "")
             ),
             "atempo": sc.get("plugin.tts_provider.chatterbox.atempo", ""),
             "chunk_gap_seconds": sc.get(

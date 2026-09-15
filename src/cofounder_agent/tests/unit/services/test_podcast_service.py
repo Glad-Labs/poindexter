@@ -1996,3 +1996,99 @@ class TestSelectVoicePersona:
         sc = self._sc(**{"tts_voice_rotation_enabled": "true", "niche.dev-diary.media.persona": "host"})
         picks = {_select_voice(sc, f"post-{i}", niche_slug="dev-diary") for i in range(50)}
         assert picks <= set(VOICE_POOL) and len(picks) > 1
+
+
+
+class TestPersonaDrivenEngine:
+    """A resolved persona owns the TTS engine: a Chatterbox persona renders
+    through Chatterbox with its own clone reference whatever the global
+    engine says; a Kokoro persona stays on Speaches; a failed clone falls back
+    to the house voices without the persona."""
+
+    def _matt_sc(self, **extra):
+        base = {
+            "podcast_tts_voice": "bf_emma",
+            "media_default_persona": "matt",
+            "persona.matt.display_name": "Matt",
+            "persona.matt.voice_provider": "chatterbox",
+            "persona.matt.voice_ref_audio_url": "/app/voices/matt-voice.wav",
+            "persona.matt.enabled": "true",
+            "plugin.tts_provider.chatterbox.audio_prompt_path": "/app/voices/podcast-voice.wav",
+        }
+        base.update(extra)
+        return SiteConfig(initial_config=base)
+
+    @pytest.mark.asyncio
+    async def test_chatterbox_persona_forces_the_engine_and_its_reference(self, tmp_path):
+        from poindexter.services.persona_service import get_persona
+        sc = self._matt_sc()  # podcast_tts_engine unset → speaches by default
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        seen = {}
+
+        async def _fake_synthesize(self, text, output_path, *, voice=None, config=None):
+            seen.update(config or {})
+            output_path.write_bytes(b"CLONE")
+            return TTSResult(audio_path=output_path, duration_seconds=3, voice=voice or "default",
+                             file_size_bytes=5, metadata={"engine": "chatterbox"})
+
+        with patch("poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize", new=_fake_synthesize), \
+             patch("poindexter.services.tts_service.synthesize_speech", new=AsyncMock()) as speaches:
+            result = await svc._generate_with_voice("hello", "default", tmp_path / "m.mp3", persona=get_persona(sc, "matt"))
+        speaches.assert_not_called()
+        assert result.success
+        assert seen["audio_prompt_path"] == "/app/voices/matt-voice.wav"
+
+    @pytest.mark.asyncio
+    async def test_kokoro_persona_keeps_speaches_even_when_the_global_engine_is_chatterbox(self, tmp_path):
+        from poindexter.services.persona_service import get_persona
+        sc = self._matt_sc(**{
+            "podcast_tts_engine": "chatterbox",
+            "persona.host.display_name": "Host", "persona.host.voice_provider": "kokoro",
+            "persona.host.voice_id": "bm_george", "persona.host.enabled": "true",
+        })
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+
+        async def _fake_speaches(text, *, site_config, output_path, voice):
+            Path(output_path).write_bytes(b"KOKORO")
+            return b"KOKORO"
+
+        with patch("poindexter.services.tts_service.synthesize_speech", new=AsyncMock(side_effect=_fake_speaches)) as speaches, \
+             patch("poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize") as chatterbox:
+            result = await svc._generate_with_voice("hello", "bm_george", tmp_path / "h.mp3", persona=get_persona(sc, "host"))
+        speaches.assert_awaited_once()
+        chatterbox.assert_not_called()
+        assert result.success
+
+    @pytest.mark.asyncio
+    async def test_synthesize_tries_the_clone_first_then_falls_back_without_the_persona(self, tmp_path):
+        sc = self._matt_sc()
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        calls = []
+
+        async def _fake_gen(script, voice, out, *, persona=None):
+            calls.append((voice, getattr(persona, "slug", None)))
+            if persona is not None:
+                return EpisodeResult(success=False, error="sidecar down")
+            out.write_bytes(b"HOUSE")
+            return EpisodeResult(success=True, file_path=str(out), duration_seconds=2, file_size_bytes=5)
+
+        svc._generate_with_voice = _fake_gen  # type: ignore[method-assign]
+        path, dur = await svc.synthesize("hello there", output_path=tmp_path / "n.mp3", key="t1", niche_slug="glad-labs")
+        assert path.endswith("n.mp3") and dur == 2
+        assert calls[0] == ("default", "matt")      # the clone, first
+        assert calls[1] == ("bf_emma", None)        # then the house voice, no persona
+
+    @pytest.mark.asyncio
+    async def test_no_persona_means_the_old_ladder(self, tmp_path):
+        sc = SiteConfig(initial_config={"podcast_tts_voice": "bf_emma"})
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        calls = []
+
+        async def _fake_gen(script, voice, out, *, persona=None):
+            calls.append((voice, persona))
+            out.write_bytes(b"X")
+            return EpisodeResult(success=True, file_path=str(out), duration_seconds=1, file_size_bytes=1)
+
+        svc._generate_with_voice = _fake_gen  # type: ignore[method-assign]
+        await svc.synthesize("hello", output_path=tmp_path / "n.mp3", key="t1")
+        assert calls == [("bf_emma", None)]

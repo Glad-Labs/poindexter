@@ -40,6 +40,15 @@ narration atoms pass the task's niche through `render_narration(niche_slug=)`.
 Rotation (`tts_voice_rotation_enabled`) stays an explicit opt-in that wins over
 the persona — an operator who turned rotation on asked for variety.
 
+**Engine follows the persona.** `synthesize` resolves the persona once: a
+`voice_provider=chatterbox` persona renders through the Chatterbox sidecar
+with its own `voice_ref_audio_url` as the zero-shot clone reference (a path
+inside the sidecar, e.g. `/app/voices/matt-voice.wav`), whatever
+`podcast_tts_engine` says; a `kokoro` persona renders through Speaches. If the
+clone fails, the ladder falls back to the install's normal voices *without*
+the persona, so a broken reference degrades to the house voice, never to
+silence.
+
 ## Operator surface
 
 ```bash
