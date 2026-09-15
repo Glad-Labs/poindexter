@@ -21,7 +21,7 @@
 # Models are NOT baked (they're ~38GB): the compose service bind-mounts
 # ~/.poindexter/comfyui/models/* read-only. See
 # docs/architecture/comfyui-video-provider.md for the weights layout.
-FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git ffmpeg libgl1 libglib2.0-0 wget \

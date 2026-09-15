@@ -10,7 +10,7 @@
 # repo is GATED: the operator's HF account must accept the license once,
 # and the container needs HF_TOKEN. Until both are true the server runs
 # DEGRADED with the reason on /health — loud, never silent.
-FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 
 WORKDIR /app
 
