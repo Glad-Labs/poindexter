@@ -151,23 +151,29 @@ def _resolve_presenter(site_config: Any, niche_slug: str | None, *, human: str, 
     persona = resolve_persona_for_niche(site_config, niche_slug)
     if persona is None:
         return "", "", "", False
+    # A niche-less resolution is a generic policy read (the writer's image
+    # subject rule, the post-edit negative prompt) — nothing there can put
+    # the presenter on camera, so an "unavailable" verdict is not news. Only
+    # the niche-bound callers (director, renderer, media dispatch) should be
+    # loud: 18 WARNINGs in six hours came from the writer path alone.
+    _say = logger.warning if niche_slug is not None else logger.debug
     display = persona.display_name or persona.slug
     if not persona.has_portrait:
-        logger.warning(
+        _say(
             "[media_policy] presenter %r resolves for niche %r but has no portrait — "
             "run `poindexter personas portrait %s`; presenter shots disabled",
             persona.slug, niche_slug, persona.slug,
         )
         return persona.slug, display, persona.style_policy, False
     if persona.style_policy == "photoreal" and not (human == "allow" and style == "any"):
-        logger.warning(
+        _say(
             "[media_policy] presenter %r is photoreal but niche %r policy is human_subjects=%s "
             "style_policy=%s — presenter shots disabled (loosen the niche policy or use a stylized persona)",
             persona.slug, niche_slug, human, style,
         )
         return persona.slug, display, persona.style_policy, False
     if human == "none":
-        logger.warning(
+        _say(
             "[media_policy] presenter %r cannot appear: niche %r forbids people (human_subjects=none)",
             persona.slug, niche_slug,
         )

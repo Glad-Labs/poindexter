@@ -230,6 +230,7 @@ class GenerateContentStage:
                     tags=tags,
                     preferred_model=preferred_model,
                     preferred_provider=preferred_provider,
+                    niche_slug=niche_slug,
                     writing_style_context=(
                         "\n\n".join(
                             p

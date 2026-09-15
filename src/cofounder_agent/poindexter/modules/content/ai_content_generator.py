@@ -458,6 +458,7 @@ class AIContentGenerator:
         target_audience: str | None = None,
         domain: str | None = None,
         topic_kind: str | None = None,
+        niche_slug: str | None = None,
     ) -> tuple[str, str, Any]:
         """Load system prompt, generation prompt, and refinement prompt getter from prompt manager.
 
@@ -569,8 +570,13 @@ class AIContentGenerator:
                     texts=(topic, ", ".join(tags) if tags else ""),
                 ),
                 chart_targets=_describe_chart_targets(self._site_config),
+                # The niche's media policy (people allowed? photoreal or
+                # stylized?) shapes the writer's image-subject rule. It used
+                # to read getattr(self, "niche_slug", None) — an attribute
+                # nothing ever set — so every draft was written against the
+                # global default policy regardless of niche.
                 image_subject_rule=writer_image_subject_rule(
-                    resolve_media_policy(self._site_config, getattr(self, "niche_slug", None))
+                    resolve_media_policy(self._site_config, niche_slug)
                 ),
                 target_length=target_length,
                 word_count=target_length,  # legacy alias for premium override
@@ -625,6 +631,7 @@ class AIContentGenerator:
         target_audience: str | None = None,
         domain: str | None = None,
         topic_kind: str | None = None,
+        niche_slug: str | None = None,
     ) -> dict[str, Any]:
         """Set up logging, check providers, load prompts, and initialize metrics.
 
@@ -669,6 +676,7 @@ class AIContentGenerator:
             target_audience=target_audience,
             domain=domain,
             topic_kind=topic_kind,
+            niche_slug=niche_slug,
         )
 
         # Inject writing style context into system prompt if provided
@@ -1335,6 +1343,7 @@ class AIContentGenerator:
         target_audience: str | None = None,
         domain: str | None = None,
         topic_kind: str | None = None,
+        niche_slug: str | None = None,
     ) -> tuple[str, str, dict[str, Any]]:
         """
         Generate a blog post using best available model with self-checking.
@@ -1371,6 +1380,7 @@ class AIContentGenerator:
             target_audience=target_audience,
             domain=domain,
             topic_kind=topic_kind,
+            niche_slug=niche_slug,
         )
 
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)

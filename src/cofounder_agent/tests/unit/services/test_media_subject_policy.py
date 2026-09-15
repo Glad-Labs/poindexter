@@ -115,15 +115,29 @@ def test_no_persona_means_never_emit_presenter():
 
 
 def test_persona_without_portrait_is_unavailable_and_loud(caplog):
+    # Loud for a niche-bound caller (director / renderer / media dispatch).
     with caplog.at_level("WARNING"):
-        p = mp.resolve_media_policy(_presenter_sc(**{"persona.presenter.portrait_url": ""}), None)
+        p = mp.resolve_media_policy(_presenter_sc(**{"persona.presenter.portrait_url": ""}), "glad-labs")
     assert p.presenter_available is False and p.presenter_slug == "presenter"
     assert "no portrait" in caplog.text
 
 
+def test_niche_less_policy_read_is_quiet_about_the_presenter(caplog):
+    """The writer's image-subject rule and the post-edit negative prompt read
+    the policy with no niche; nothing there can put the presenter on camera,
+    so an "unavailable" verdict is DEBUG, not a WARNING per draft (18 of them
+    in six hours on 2026-09-15)."""
+    import logging
+    with caplog.at_level(logging.DEBUG, logger="poindexter.services.media_subject_policy"):
+        p = mp.resolve_media_policy(_presenter_sc(media_style_policy="stylized"), None)
+    assert p.presenter_available is False
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("photoreal" in r.getMessage() for r in caplog.records)
+
+
 def test_photoreal_persona_needs_photoreal_people_policy(caplog):
     with caplog.at_level("WARNING"):
-        p = mp.resolve_media_policy(_presenter_sc(media_style_policy="stylized"), None)
+        p = mp.resolve_media_policy(_presenter_sc(media_style_policy="stylized"), "glad-labs")
     assert p.presenter_available is False
     assert "photoreal" in caplog.text
     stylized = mp.resolve_media_policy(
