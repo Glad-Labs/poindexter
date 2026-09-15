@@ -10,6 +10,19 @@ Environment=OLLAMA_HOST=0.0.0.0:11434
 Environment=OLLAMA_MAX_LOADED_MODELS=1
 Environment=OLLAMA_CONTEXT_LENGTH=8192
 Environment=OLLAMA_MODELS=/data/ollama/models
+# Keep a loaded model resident for an hour instead of ollama's 5-minute
+# default. Measured 2026-09-14: 627 model loads in 24 h on primary — one
+# every 2.3 minutes — and each load pulls an 18-22 GB model through the page
+# cache, which evicts the desktop to swap and freezes the machine (peak 73%
+# full memory stall). A large share of those loads were models expiring in
+# ordinary gaps between pipeline steps and being re-read unchanged.
+#
+# This does NOT raise VRAM pressure: MAX_LOADED_MODELS=1 already caps
+# residency at one model, so the ceiling is unchanged — the model simply
+# stops being dropped and re-read between uses. Switching to a DIFFERENT
+# model still evicts immediately, so alternating models is unaffected; that
+# floor is a MAX_LOADED_MODELS question, which is a VRAM-budget decision.
+Environment=OLLAMA_KEEP_ALIVE=1h
 # Runs ollama-primary.sh so the GPU-0 pin is applied and ENFORCED
 # (the script exits non-zero rather than starting unpinned). See
 # the script header for why the pin is load-bearing for the GPU

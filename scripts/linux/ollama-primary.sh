@@ -43,6 +43,12 @@ export CUDA_VISIBLE_DEVICES="$uuid"
 export OLLAMA_VULKAN=false
 export OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0:11434}"
 export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
+# 1h, not ollama's 5m default: measured 627 loads/24h on this instance, one
+# every 2.3 min, each pulling an 18-22 GB model through the page cache and
+# evicting the desktop to swap (73% peak full memory stall). Many were models
+# expiring in ordinary gaps between pipeline steps, then re-read unchanged.
+# Costs no extra VRAM — MAX_LOADED_MODELS=1 still caps residency at one.
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-1h}"
 export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-8192}"
 export OLLAMA_MODELS="${OLLAMA_MODELS:-/data/ollama/models}"
 exec ollama serve

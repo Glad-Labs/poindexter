@@ -43,7 +43,12 @@ echo "installed: $OOMD_CONF"
 # opting it in makes each a separate kill candidate instead of one blob.
 # docker/containerd get `avoid` because killing either cascades to all ~47
 # containers — strictly worse than losing the one sidecar causing the pressure.
-for d in system.slice.d docker.service.d containerd.service.d; do
+# user.slice.d is NOT an oomd policy — it is kernel reclaim protection for
+# the interactive desktop (MemoryLow). It ships here because this bundle is
+# the host's memory-policy surface and the two are only meaningful together:
+# oomd decides what dies under swap exhaustion, MemoryLow decides what gets
+# reclaimed on the way there.
+for d in system.slice.d user.slice.d docker.service.d containerd.service.d; do
   sudo mkdir -p "$UNIT_DIR/$d"
   for f in "$SRC/$d"/*.conf; do
     sudo install -m 644 "$f" "$UNIT_DIR/$d/$(basename "$f")"
@@ -65,4 +70,16 @@ if ! sudo oomctl | grep -qE '^\s+Path: /system\.slice$'; then
   exit 1
 fi
 echo "OK: systemd-oomd is monitoring /system.slice for swap exhaustion."
+
+# Same doctrine as the oomctl check: assert the KERNEL took the value, not
+# that the file exists. A typo in the drop-in leaves memory.low at 0 and the
+# desktop unprotected, with nothing else to notice.
+DESKTOP_LOW=$(cat /sys/fs/cgroup/user.slice/memory.low 2>/dev/null || echo 0)
+if [[ "${DESKTOP_LOW}" == "0" ]]; then
+  echo "FATAL: user.slice memory.low is 0 — desktop reclaim protection is inert." >&2
+  echo "       Check $UNIT_DIR/user.slice.d/ and that cgroup2 is mounted with" >&2
+  echo "       memory_recursiveprot (mount | grep cgroup2)." >&2
+  exit 1
+fi
+echo "OK: desktop reclaim protection active (user.slice memory.low=$(( DESKTOP_LOW / 1073741824 )) GiB)."
 sudo oomctl | sed -n '1,10p'
