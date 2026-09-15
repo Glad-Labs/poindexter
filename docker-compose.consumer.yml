@@ -286,7 +286,7 @@ services:
       - ./infrastructure/prometheus/secrets:/host-prometheus/secrets:rw
       # Backup watcher: read-only access to the host backup directory so
       # it can verify dump freshness via file mtime.
-      - ${USERPROFILE:-${HOME}}/.poindexter/backups:/host-backups:ro
+      - ${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}:/host-backups:ro
       - ${USERPROFILE:-${HOME}}/.poindexter/logs:/host-backup-logs:ro
       # DEDICATED deploy checkout for the migration-drift probe's self-heal
       # step. RW because the probe can `git reset --hard origin/main` here
@@ -366,7 +366,7 @@ services:
       # shot silently falls back to a branded card. Same shape as the #906
       # bug: appuser media mounts added to `worker` but not `prefect-worker`.
       - ${USERPROFILE:-.}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
-      - ${USERPROFILE:-.}/.poindexter/backups:/home/appuser/.poindexter/backups
+      - ${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}:/home/appuser/.poindexter/backups
       # Legacy /root mount for code paths that still reference /root/.poindexter.
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/home/appuser/Downloads/glad-labs-generated-images
@@ -684,7 +684,7 @@ services:
       # Bind mount (NOT named volume) so backups survive `docker volume prune`
       # and Docker Desktop reinstalls. Override POINDEXTER_BACKUP_DIR to put
       # dumps on a second drive.
-      - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups
+      - ${POINDEXTER_BACKUP_DIR:-${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}/auto}:/backups
     depends_on:
       postgres-local:
         condition: service_healthy
@@ -713,7 +713,7 @@ services:
       PGPASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
       TZ: ${TZ:-UTC}
     volumes:
-      - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups
+      - ${POINDEXTER_BACKUP_DIR:-${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}/auto}:/backups
     depends_on:
       postgres-local:
         condition: service_healthy
@@ -759,7 +759,7 @@ services:
       - path: .poindexter-backup-offsite.env
         required: false
     volumes:
-      - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups:ro
+      - ${POINDEXTER_BACKUP_DIR:-${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}/auto}:/backups:ro
       # Config surface for the second (tag=config) snapshot — bootstrap.toml
       # holds poindexter_secret_key. Without this the offsite repo is
       # unopenable after a disk loss (poindexter#889). See run_config_backup

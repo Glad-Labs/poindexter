@@ -31,14 +31,66 @@ container restart needed when you tune cadence or retention:
 | `backup_hourly_retention` | `24`    | Older dumps pruned after each successful run |
 | `backup_daily_retention`  | `7`     |                                              |
 
-Override the host directory by setting `POINDEXTER_BACKUP_DIR`
-(e.g. to a second drive) before `docker compose up`.
+### Where the backup tree lives
+
+Two variables, both defaulting to the historical `~/.poindexter/backups`, so an
+install that sets neither is unchanged:
+
+| Variable                 | Moves                                                                                                          | Use when                           |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `POINDEXTER_BACKUP_ROOT` | The **whole** tree — the `auto/` restic-style repo _and_ the `pg_dump` files `DbBackupJob` writes one level up | `$HOME` is on a small disk         |
+| `POINDEXTER_BACKUP_DIR`  | Only the `auto/` repo                                                                                          | The two tiers need different disks |
+
+Set them in `~/.poindexter/bootstrap.toml` (`poindexter_backup_root = "..."`);
+`start-stack.sh` exports every bootstrap key as an uppercase env var, so the
+value keeps one home.
+
+**Changing either needs `--force-recreate`, not a restart** — bind mounts are
+established at container-create time:
+
+```bash
+bash scripts/start-stack.sh up -d --force-recreate \
+    backup-hourly backup-daily backup-offsite brain-daemon worker
+```
+
+All five matter: the two writer tiers, the offsite uploader, the brain's
+read-only watcher mount, and the worker (which runs `DbBackupJob`). Miss one and
+it keeps reading the old path — a watcher left behind goes blind while the
+backups themselves are fine, which is the worst of both worlds.
+
+**Container paths are unchanged by a move.** `backup_watcher_backup_dir` is
+`/host-backups/auto` and `DbBackupJob` writes to `$HOME/.poindexter/backups`
+_inside_ the worker — both are container-side, so relocating the host directory
+needs no `app_settings` edit.
+
+> The operator rig sets `poindexter_backup_root = "/data/poindexter-backups"`
+> (2026-09-14). The tree is ~26 GB against a 147 GB root filesystem; moving it
+> took root from 79% to 61%. `/data` is also a physically different NVMe from
+> the OS disk, which is strictly better for recovery.
+
+### Verifying a move
+
+Never delete the source until the destination is proven. In order:
+
+```bash
+# 1. byte-for-byte, not just sizes (slow on a large tree — run it anyway)
+sudo rsync -an --checksum --itemize-changes <src>/ <dst>/    # expect no output
+
+# 2. a real backup lands at the new path
+docker logs poindexter-backup-hourly --since 5m   # expect "dump OK" + prune
+
+# 3. the watcher can still see them
+docker exec poindexter-brain-daemon ls /host-backups/auto
+
+# 4. the worker can still write
+docker exec poindexter-worker touch /home/appuser/.poindexter/backups/.probe
+```
 
 ### Restore
 
 ```bash
 # pick the dump
-ls ~/.poindexter/backups/auto/hourly/
+ls "${POINDEXTER_BACKUP_ROOT:-$HOME/.poindexter/backups}/auto/hourly/"
 
 # restore (drop+recreate first if the DB exists)
 docker exec -i poindexter-postgres-local pg_restore \

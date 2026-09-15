@@ -444,7 +444,7 @@ services:
       # so the "backups stopped writing" alert never fires. Audit
       # 2026-05-08 (.shared-context/audits/2026-05-08-self-healing-...).
       # Pair with: setting backup_watcher_backup_dir to /host-backups/auto.
-      - ${USERPROFILE:-${HOME}}/.poindexter/backups:/host-backups:ro
+      - ${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}:/host-backups:ro
       # Glad-Labs/poindexter#444 — sentinel files dropped by the
       # host-side dr-backup scripts at ~/.poindexter/scripts/dr-backup/
       # when the script's primary Telegram alert path failed (creds
@@ -633,7 +633,7 @@ services:
       # root-owned. GlitchTip #223 first seen 2026-05-27. Backups stop
       # silently when this is missing, so the read-only /host-backups
       # bind on the backup_watcher service (line 270) appears empty.
-      - ${USERPROFILE:-${HOME}}/.poindexter/backups:/home/appuser/.poindexter/backups
+      - ${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}:/home/appuser/.poindexter/backups
       # Singer tap venvs (GA4 / GSC — docs/integrations/setup-gsc-and-ga4.md).
       # Host-persisted so `pip install tap-ga4 tap-google-search-console`
       # survives container recreates. The old Windows-era layout reached these
@@ -2443,7 +2443,16 @@ services:
       # dumps and paged "33h stale" continuously. Operators can
       # override POINDEXTER_BACKUP_DIR (e.g. to a second drive)
       # without editing compose.
-      - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups
+      #
+      # POINDEXTER_BACKUP_ROOT moves the WHOLE backup tree (this restic
+      # repo AND the pg_dump files DbBackupJob writes one level up) in a
+      # single setting; POINDEXTER_BACKUP_DIR still overrides just this
+      # repo when the two need to live on different disks. Both default
+      # to the historical path, so an install that sets neither is
+      # unchanged. The operator rig sets the ROOT to /data because the
+      # backup tree is ~26 GB and $HOME is on the small root filesystem
+      # — see docs/operations/backups.md.
+      - ${POINDEXTER_BACKUP_DIR:-${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}/auto}:/backups
     depends_on:
       postgres-local:
         condition: service_healthy
@@ -2487,7 +2496,7 @@ services:
       # dumps and paged "33h stale" continuously. Operators can
       # override POINDEXTER_BACKUP_DIR (e.g. to a second drive)
       # without editing compose.
-      - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups
+      - ${POINDEXTER_BACKUP_DIR:-${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}/auto}:/backups
     depends_on:
       postgres-local:
         condition: service_healthy
@@ -2552,7 +2561,7 @@ services:
         required: false
     volumes:
       # Read-only: the offsite tier only READS the Tier 1 dumps and ships them.
-      - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups:ro
+      - ${POINDEXTER_BACKUP_DIR:-${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}/auto}:/backups:ro
       # Config surface for the second (tag=config) snapshot — bootstrap.toml
       # holds poindexter_secret_key, and the Claude memory tree is
       # unreproducible. Both were carried ONLY by the Tier-3 DR USB job until
