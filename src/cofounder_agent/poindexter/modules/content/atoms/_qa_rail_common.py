@@ -41,7 +41,9 @@ _GATE_PROVIDERS = (
 # ``http_head`` is the citation_verifier dead-link-ratio rail: the writer re-runs
 # from the same research bundle and re-cites the same dead URL, so a rewrite burns
 # a pass without fixing it — flag directly, same as the single-link url_verifier.
-_NON_TEXT_FIXABLE_PROVIDERS = ("vision_gate", "url_verifier", "http_head")
+# "freshness": a stale news take is a calendar problem — rewriting the words
+# cannot make a late piece current, so its veto is never a rescue candidate.
+_NON_TEXT_FIXABLE_PROVIDERS = ("vision_gate", "url_verifier", "http_head", "freshness")
 
 
 def reviewer_to_dict(r: Any) -> dict[str, Any]:

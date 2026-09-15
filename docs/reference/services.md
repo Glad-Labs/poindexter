@@ -36,7 +36,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 - [`services/video_providers/`](#servicesvideoproviders) (3 files)
 - [`services/video_renderers/`](#servicesvideorenderers) (4 files)
 - [`modules/content/`](#modulescontent) (18 files)
-- [`modules/content/atoms/`](#modulescontentatoms) (72 files)
+- [`modules/content/atoms/`](#modulescontentatoms) (73 files)
 - [`modules/content/jobs/`](#modulescontentjobs) (3 files)
 - [`modules/content/stages/`](#modulescontentstages) (17 files)
 
@@ -678,6 +678,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `qa_content_originality.py` | qa.content_originality — flag drafts whose content near-duplicates a |
 | `qa_critic.py` | qa.critic — the legacy adversarial LLM critic as a composable atom. |
 | `qa_deepeval.py` | qa.deepeval — the DeepEval rail family as one composable atom. |
+| `qa_freshness.py` | qa.freshness — is a news-shaped draft still timely when it reaches QA? |
 | `qa_numeric_fidelity.py` | qa.numeric_fidelity — does every sourced number reconcile with the research? |
 | `qa_programmatic.py` | qa.programmatic — the programmatic ContentValidator as a composable QA rail. |
 | `qa_ragas.py` | qa.ragas — the Ragas rail as one composable atom. |
@@ -730,9 +731,9 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 
 ---
 
-## Content pipeline (`canonical_blog` graph_def) — 47 nodes
+## Content pipeline (`canonical_blog` graph_def) — 48 nodes
 
-Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF` (10 `stage.*` + 16 `content.*` + 17 `qa.*` + 1 `seo.*` + 2 `atoms.approval_gate` + 1 `social.*`). `stage.*` atoms live in `modules/content/stages/`; `content.*` / `qa.*` / `seo.*` / `social.*` and the approval gate in `modules/content/atoms/`.
+Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF` (10 `stage.*` + 16 `content.*` + 18 `qa.*` + 1 `seo.*` + 2 `atoms.approval_gate` + 1 `social.*`). `stage.*` atoms live in `modules/content/stages/`; `content.*` / `qa.*` / `seo.*` / `social.*` and the approval gate in `modules/content/atoms/`.
 
 1. `verify_task` → `stage.verify_task`
 2. `generate_draft` → `content.generate_draft`
@@ -767,20 +768,21 @@ Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLO
 31. `qa_content_originality` → `qa.content_originality`
 32. `qa_title_coherence` → `qa.title_coherence`
 33. `qa_self_claim` → `qa.self_claim`
-34. `qa_web_factcheck` → `qa.web_factcheck`
-35. `qa_aggregate` → `qa.aggregate`
-36. `qa_rewrite` → `qa.rewrite`
-37. `seo_all_metadata` → `seo.generate_all_metadata`
-38. `generate_media_scripts` → `stage.generate_media_scripts`
-39. `generate_video_shot_list` → `stage.generate_video_shot_list`
-40. `review_video_shot_list` → `stage.review_video_shot_list`
-41. `capture_training_data` → `stage.capture_training_data`
-42. `compile_meta` → `content.compile_meta`
-43. `persist_task` → `content.persist_task`
-44. `social_generate_drafts` → `social.generate_drafts`
-45. `record_pipeline_version` → `content.record_pipeline_version`
-46. `preview_gate` → `atoms.approval_gate`
-47. `evaluate_auto_publish` → `content.evaluate_auto_publish`
+34. `qa_freshness` → `qa.freshness`
+35. `qa_web_factcheck` → `qa.web_factcheck`
+36. `qa_aggregate` → `qa.aggregate`
+37. `qa_rewrite` → `qa.rewrite`
+38. `seo_all_metadata` → `seo.generate_all_metadata`
+39. `generate_media_scripts` → `stage.generate_media_scripts`
+40. `generate_video_shot_list` → `stage.generate_video_shot_list`
+41. `review_video_shot_list` → `stage.review_video_shot_list`
+42. `capture_training_data` → `stage.capture_training_data`
+43. `compile_meta` → `content.compile_meta`
+44. `persist_task` → `content.persist_task`
+45. `social_generate_drafts` → `social.generate_drafts`
+46. `record_pipeline_version` → `content.record_pipeline_version`
+47. `preview_gate` → `atoms.approval_gate`
+48. `evaluate_auto_publish` → `content.evaluate_auto_publish`
 
 ---
 

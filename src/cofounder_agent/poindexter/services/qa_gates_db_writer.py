@@ -111,6 +111,7 @@ _REVIEWER_TO_GATE: dict[str, str] = {
     # verification (versions / scores / settings keys / file paths).
     # Identity alias; gate row seeded advisory-first alongside the rail.
     "self_claim": "self_claim",
+    "freshness": "freshness",
     # Aliases — the inline reviewer name and the gate-row name diverged
     # historically; preserve both rather than rename either side.
     "image_relevance": "vision_gate",

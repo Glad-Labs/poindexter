@@ -155,6 +155,7 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # these are the most falsifiable claims we ship). Advisory-first
         # (DB-gated via qa_gates.self_claim).
         {"id": "qa_self_claim", "atom": "qa.self_claim"},
+        {"id": "qa_freshness", "atom": "qa.freshness"},
         {"id": "qa_web_factcheck", "atom": "qa.web_factcheck"},
         {"id": "qa_aggregate", "atom": "qa.aggregate"},
         # QA rescue cycle: qa.aggregate emits _goto="qa_rewrite" on a rescuable
@@ -230,7 +231,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_self_consistency", "to": "qa_content_originality"},
         {"from": "qa_content_originality", "to": "qa_title_coherence"},
         {"from": "qa_title_coherence", "to": "qa_self_claim"},
-        {"from": "qa_self_claim", "to": "qa_web_factcheck"},
+        {"from": "qa_self_claim", "to": "qa_freshness"},
+        {"from": "qa_freshness", "to": "qa_web_factcheck"},
         {"from": "qa_web_factcheck", "to": "qa_aggregate"},
         # seo.* collapsed (#734) — single structured call
         {"from": "qa_aggregate", "to": "seo_all_metadata"},

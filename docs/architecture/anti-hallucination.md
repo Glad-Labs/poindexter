@@ -22,7 +22,8 @@ to the LLM and HTTP reviewers.
 `qa.deepeval` → `qa.ragas` → `qa.vision` →
 `qa.topic_delivery` → `qa.citations` → `qa.unlinked_attribution` →
 `qa.consistency` → `qa.self_consistency` → `qa.content_originality` →
-`qa.title_coherence` → `qa.self_claim` → `qa.web_factcheck` → `qa.aggregate`.
+`qa.title_coherence` → `qa.self_claim` → `qa.freshness` → `qa.web_factcheck` →
+`qa.aggregate`.
 Each rail atom delegates to the matching `MultiModelQA` rail methods (the
 `_review_with_cloud_model` critic plus the per-rail DeepEval, Ragas, vision,
 topic-delivery, citation, consistency, self-consistency, and web-factcheck
@@ -645,6 +646,26 @@ mean — see the scoring contract above), to be graduated later via
   hard-veto escape (`< qa_consistency_veto_threshold`) lived in `review()`, not
   the rail aggregator, and is intentionally NOT re-introduced — that would be a
   new veto path, out of scope for the additive restore.
+- **`qa.freshness`** (no `MultiModelQA` method — deterministic, reviewer and
+  provider `freshness`; 2026-09-15) — the stale news-take veto. The
+  2026-09-14 queue review found a reaction to OpenAI's September 8 paper that
+  reached approval on the 11th reading "OpenAI put out a paper this week" and
+  was still there on the 14th; every truth rail passed it because none of them
+  knows what day it is. Two signals: relative-time phrasing in the draft
+  ("this week", "yesterday", "earlier today", "just announced", "hours ago",
+  "breaking") and the event's age — the newest dated source line in
+  `research_context` ("Sep 8, 2026" / "8 September 2026" / "2026-09-08"), else
+  the task's `created_at`. A draft is news-shaped when it carries that
+  phrasing or its topic came from a source in `qa_freshness_news_sources`
+  (`pipeline_tasks.metadata->>'discovered_by'`); news-shaped and older than
+  `qa_freshness_max_age_days` (default 5) → veto. The veto is deliberately
+  **non-rescuable** (`freshness` sits in
+  `_qa_rail_common._NON_TEXT_FIXABLE_PROVIDERS`): a rewrite can make the words
+  current but not the piece — publish today or drop it. Evergreen drafts get
+  no review at all, and so does anchored prose with nothing to date it (the
+  rail never guesses an age). A hard gate from day one
+  (`qa_gates.freshness.required_to_pass=true`); `qa_freshness_enabled` is the
+  master switch. Ordered after `qa.self_claim`, before `qa.web_factcheck`.
 - **`qa.web_factcheck`** (`_web_fact_check` → reviewer `web_factcheck`,
   `web_factcheck` provider; Glad-Labs/poindexter#661) — DuckDuckGo product/spec
   verification (the training-cutoff override). Ordered **last** in the qa block,

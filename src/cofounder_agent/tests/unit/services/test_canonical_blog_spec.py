@@ -128,7 +128,11 @@ class TestCanonicalBlogSpec:
         assert ("qa_self_consistency", "qa_content_originality") in edges
         assert ("qa_content_originality", "qa_title_coherence") in edges
         assert ("qa_title_coherence", "qa_self_claim") in edges
-        assert ("qa_self_claim", "qa_web_factcheck") in edges
+        # qa_freshness (stale news-take veto, 2026-09-15) sits between
+        # qa_self_claim and qa_web_factcheck.
+        assert ("qa_self_claim", "qa_freshness") in edges
+        assert ("qa_freshness", "qa_web_factcheck") in edges
+        assert ("qa_self_claim", "qa_web_factcheck") not in edges
         assert ("qa_title_coherence", "qa_web_factcheck") not in edges
         assert ("qa_content_originality", "qa_web_factcheck") not in edges
         assert ("qa_self_consistency", "qa_web_factcheck") not in edges
@@ -236,4 +240,4 @@ class TestCanonicalBlogSpec:
         # +1 net: stage.writer_self_review (1 node) -> content.detect_contradictions
         #   + content.revise_contradictions (2 nodes), 2026-08-28
         # + qa.numeric_fidelity (arithmetic source-grounding rail, 2026-09-01)
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 47
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 48

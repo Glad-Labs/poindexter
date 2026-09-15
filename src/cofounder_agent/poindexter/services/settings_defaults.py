@@ -1931,6 +1931,12 @@ DEFAULTS: dict[str, str] = {
     'qa_web_factcheck_snippet_chars': '500',
     'qa_web_factcheck_min_term_len': '2',
     'qa_web_factcheck_max_claims': '3',
+    # qa.freshness — stale news-take veto (2026-09-15). A draft anchored to a
+    # moment (relative-time phrasing) or sourced from a news feed must reach QA
+    # within max_age_days of its newest dated source; older = non-rescuable veto.
+    'qa_freshness_enabled': 'true',
+    'qa_freshness_max_age_days': '5',
+    'qa_freshness_news_sources': 'rss,hacker_news,hn,google_news,news,reddit,search_autocomplete',
     # QA rescue cycle: max bounded rewrite passes before a salvageable reject is
     # hard-rejected. Default 2 = write -> qa -> revise -> qa -> revise (the
     # one-shot default was 0-for-4 at saving a post). 0 disables; clamped [0,3].
@@ -5945,6 +5951,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_web_factcheck_min_term_len': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_web_factcheck_num_results': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_web_factcheck_snippet_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_freshness_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'qa_freshness_max_age_days': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_freshness_news_sources': {'owner': 'multi_model_qa', 'value_type': 'csv'},
     'rag_default_top_k': {'owner': 'rag_engine', 'value_type': 'integer'},
     'rag_embed_retry_attempts': {'owner': 'rag_engine', 'value_type': 'integer'},
     'rag_embed_retry_base_delay_seconds': {'owner': 'rag_engine', 'value_type': 'float'},
