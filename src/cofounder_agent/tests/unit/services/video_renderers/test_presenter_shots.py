@@ -75,7 +75,7 @@ class TestComposePrompt:
 
 @pytest.fixture
 def quiet_gpu(monkeypatch):
-    monkeypatch.setattr(slr, "_clear_image_gen_for_hero", AsyncMock())
+    monkeypatch.setattr(slr, "_reclaim_card_for_presenter", AsyncMock())
     monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=30.0))
     monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
 
@@ -216,3 +216,33 @@ class TestPortraitFetch:
     @pytest.mark.asyncio
     async def test_missing_local_file_is_none(self, tmp_path):
         assert await slr._fetch_presenter_portrait(str(tmp_path / "nope.png"), tmp_path / "d.png", None) is None
+
+
+class TestPresenterReclaimsTheWholeCard:
+    """2026-09-15: the gate cleared image-gen + Ollama and then measured. The
+    card still held stable-audio (~10 GB from the ambient bed), speaches and
+    chatterbox, so free VRAM never reached the 26 GB floor and the presenter
+    shot could not start — the memory was reclaimable the whole time."""
+
+    @pytest.mark.asyncio
+    async def test_it_runs_the_shared_ladder_including_ollama(self, monkeypatch):
+        calls = {}
+
+        class _Gpu:
+            async def reclaim_render_vram(self, *, include_ollama=True):
+                calls["include_ollama"] = include_ollama
+
+        import poindexter.services.gpu_scheduler as gs
+        monkeypatch.setattr(gs, "gpu", _Gpu())
+        await slr._reclaim_card_for_presenter()
+        assert calls == {"include_ollama": True}
+
+    @pytest.mark.asyncio
+    async def test_a_failed_reclaim_is_not_a_certain_skip(self, monkeypatch):
+        class _Gpu:
+            async def reclaim_render_vram(self, *, include_ollama=True):
+                raise RuntimeError("docker socket gone")
+
+        import poindexter.services.gpu_scheduler as gs
+        monkeypatch.setattr(gs, "gpu", _Gpu())
+        await slr._reclaim_card_for_presenter()  # must not raise

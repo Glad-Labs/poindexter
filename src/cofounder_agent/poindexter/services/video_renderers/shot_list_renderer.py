@@ -749,6 +749,29 @@ def _compose_hero_wan_prompt(
     return f"{base}. Camera and motion: {direction}"
 
 
+async def _reclaim_card_for_presenter() -> None:
+    """Run the shared VRAM ladder so a presenter chunk can have the card.
+
+    Separate from :func:`_clear_image_gen_for_hero` on purpose: the hero/wan
+    path clears image-gen + Ollama, which is the right subset for it, while a
+    presenter chunk (speech-to-video) needs essentially the whole card and so
+    must also clear the media sidecars. Best-effort — the caller re-measures
+    free VRAM afterwards and refuses below the floor rather than OOM'ing.
+    """
+    try:
+        from poindexter.services.gpu_scheduler import gpu
+
+        await gpu.reclaim_render_vram(include_ollama=True)
+    except Exception as exc:  # noqa: BLE001 — a failed reclaim must not become a certain skip
+        from poindexter.utils.exception_format import describe_exception
+
+        logger.warning(
+            "[presenter] VRAM reclaim ladder failed (continuing to the floor "
+            "check, which will refuse if the card is still full): %s",
+            describe_exception(exc),
+        )
+
+
 async def _clear_image_gen_for_hero(site_config: Any) -> None:
     """Hard-unload image-gen AND evict Ollama so the wan hero load has the card.
 
@@ -2195,9 +2218,18 @@ async def _render_presenter_clip(
         offset_s=float(shot.narration_offset_s), duration_s=float(shot.duration_s),
     ):
         return _fail("ffmpeg could not cut the narration window")
-    # The speech path needs the whole card: reclaim image-gen first, then
-    # refuse to start below the floor rather than OOM mid-video.
-    await _clear_image_gen_for_hero(site_config)
+    # The speech path needs the WHOLE card, so run the shared ladder rather
+    # than the image-gen + Ollama subset _clear_image_gen_for_hero covers.
+    # Measured 2026-09-15: after the director's 18.5 GB model was evicted the
+    # card still held stable-audio (~10 GB, resident from the ambient bed),
+    # speaches and chatterbox — so free VRAM sat far below the 26 GB floor and
+    # the presenter shot could never start. reclaim_render_vram is the one
+    # ladder every caller needing render-GPU headroom is supposed to use
+    # ("add new rungs HERE, not at a call site"); this path was not using it.
+    # Best-effort, exactly like the helper it replaces: a reclaim that fails
+    # must not turn a possible render into a certain skip — the floor check
+    # below still refuses rather than OOM'ing mid-video.
+    await _reclaim_card_for_presenter()
     min_free = 26.0
     if site_config is not None:
         try:
