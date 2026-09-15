@@ -7,7 +7,7 @@
 # for execution on the device" on the UMT5 text-encoder pass.
 # image-gen-server stays on the older 2.5.1/12.4 image because the image-gen model doesn't
 # hit the offending kernels; Wan's text encoder does.
-FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
 
 WORKDIR /app
 

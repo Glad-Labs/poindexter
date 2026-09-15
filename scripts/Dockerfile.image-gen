@@ -6,7 +6,7 @@
 # torch 2.5.1's bundled arch list stopped at sm_90, so every GPU op
 # failed with "no kernel image is available for execution on the
 # device" — see Glad-Labs/glad-labs-stack#334.
-FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
+FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
 
 WORKDIR /app
 
