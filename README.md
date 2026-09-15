@@ -168,7 +168,7 @@ The content pipeline itself is a declarative LangGraph DAG stored in the databas
 | **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                  |
 | **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard |
 | **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                      |
-| **DB-as-config**             | 1,700+ settings in PostgreSQL. Change with SQL, REST, or CLI. No deploys, no .env sprawl.   |
+| **DB-as-config**             | 1,800+ settings in PostgreSQL. Change with SQL, REST, or CLI. No deploys, no .env sprawl.   |
 | **LangGraph pipelines**      | Declarative DAGs with Postgres checkpointing — resumable mid-run                            |
 | **Multi-modal output**       | Markdown posts, AI images, podcast audio, text-to-video (alpha)                             |
 | **Push-only output**         | Static JSON + RSS + JSON Feed 1.1 to any S3-compatible storage                              |
@@ -256,7 +256,7 @@ Poindexter is in **alpha**. Honest snapshot:
 **What works today**
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Pop!\_OS). Single-operator content business publishing daily.
-- 200+ live posts on [gladlabs.io](https://www.gladlabs.io) (370+ posts total, 2,000+ pipeline runs).
+- 200+ live posts on [gladlabs.io](https://www.gladlabs.io) (380+ posts total, 2,000+ pipeline runs).
 - 17,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
 - `poindexter setup` takes a fresh clone to a healthy local stack — no `.env` file, no manual secret wrangling.
 - Live in-place upgrades — schema changes applied to a running instance with zero data loss.
