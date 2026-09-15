@@ -26,6 +26,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests.unit._nonempty import nonempty
+
 # scripts/ci is a flat directory (no __init__.py); import the linter by file
 # path. Same pattern as test_check_shell_line_endings.py / test_grafana_panels_lint.py.
 REPO_ROOT = next(
@@ -162,7 +164,7 @@ class TestParseComposeHostPorts:
     def test_line_numbers_point_at_the_mapping(self) -> None:
         ports = LINT.parse_compose_host_ports(_SAMPLE_COMPOSE)
         lines = _SAMPLE_COMPOSE.splitlines()
-        for p in ports:
+        for p in nonempty(ports, "ports"):
             if p.port == 8080:
                 assert "8080:80" in lines[p.line - 1]
 
@@ -212,7 +214,7 @@ class TestParseMarkdownHostPorts:
     def test_line_numbers(self) -> None:
         rows = LINT.parse_markdown_host_ports(_SAMPLE_DOC)
         lines = _SAMPLE_DOC.splitlines()
-        for r in rows:
+        for r in nonempty(rows, "rows"):
             assert str(r.port) in lines[r.line - 1]
 
 

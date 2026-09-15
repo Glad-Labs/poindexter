@@ -13,6 +13,7 @@ import pytest
 
 from poindexter.services.operator_leak_patterns import OPERATOR_SCRUB_PATTERNS
 from poindexter.services.rag_scrub import scrub_rag_text
+from tests.unit._nonempty import nonempty
 
 
 def _scrub(text: str) -> str:
@@ -118,7 +119,7 @@ def test_patterns_are_subset_of_leak_guard():
     # LeakPattern's compiled-regex field is `.regex`; `.pattern` on the compiled
     # regex gives the source string.
     guard_sources = {lp.regex.pattern for lp in guard._LEAK_PATTERNS}
-    for rx, _repl in OPERATOR_SCRUB_PATTERNS:
+    for rx, _repl in nonempty(OPERATOR_SCRUB_PATTERNS, "OPERATOR_SCRUB_PATTERNS"):
         assert rx.pattern in guard_sources, f"{rx.pattern!r} not in leak guard"
 
 

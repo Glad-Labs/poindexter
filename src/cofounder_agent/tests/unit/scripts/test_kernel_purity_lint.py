@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._nonempty import nonempty
+
 
 def _find_repo_root(start: Path) -> Path:
     for parent in start.resolve().parents:
@@ -110,7 +112,8 @@ class TestLineDriftImmunity:
 
 class TestBaselineFormat:
     def test_every_key_is_path_and_module_target(self):
-        for key in LINT.KERNEL_PURITY_BASELINE:
+        for key in nonempty(LINT.KERNEL_PURITY_BASELINE, "LINT.KERNEL_PURITY_BASELINE"):
+
             rel, _, target = key.partition("::")
             assert rel.endswith(".py"), f"{key}: left side must be a .py path"
             assert target.startswith("modules"), f"{key}: right side must be a modules.* target"

@@ -12,6 +12,7 @@ import pytest
 
 from poindexter.services.research_service import KNOWN_REFERENCES, ResearchService
 from poindexter.services.site_config import SiteConfig
+from tests.unit._nonempty import nonempty
 
 # #272 Phase-2b: research_service's constructor + free functions take a
 # keyword-required ``site_config``. Tests pass this empty instance — the
@@ -235,7 +236,8 @@ class TestBuildContext:
             context = await service.build_context("FastAPI guide")
         # The snippet in the context should be truncated
         # Find the line with the web result
-        for line in context.split("\n"):
+        for line in nonempty(context.split("\n"), "context.split('\n')"):
+
             if "Long" in line and "example.com" in line:
                 # After the ): should be at most 100 chars of snippet
                 snippet_part = line.split("): ")[1] if "): " in line else ""
@@ -488,13 +490,13 @@ class TestConstructor:
 class TestKnownReferences:
     def test_all_entries_have_title_and_url(self):
         for keyword, refs in KNOWN_REFERENCES.items():
-            for ref in refs:
+            for ref in nonempty(refs, "refs"):
                 assert "title" in ref, f"Missing title in {keyword}"
                 assert "url" in ref, f"Missing url in {keyword}"
                 assert ref["url"].startswith("http"), f"Bad URL in {keyword}: {ref['url']}"
 
     def test_no_duplicate_urls_within_keyword(self):
-        for keyword, refs in KNOWN_REFERENCES.items():
+        for keyword, refs in nonempty(KNOWN_REFERENCES.items(), "KNOWN_REFERENCES.items()"):
             urls = [r["url"] for r in refs]
             assert len(urls) == len(set(urls)), f"Duplicate URLs under {keyword}"
 

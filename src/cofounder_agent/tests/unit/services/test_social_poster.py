@@ -25,6 +25,7 @@ from poindexter.services.social_poster import (
     _twitter_char_limit,
     generate_social_posts,
 )
+from tests.unit._nonempty import nonempty
 
 # SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
 # ``set_site_config`` were removed; the public entries and every internal
@@ -498,7 +499,7 @@ class TestGenerateSocialPosts:
         posts = await generate_social_posts(
             SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
-        for post in posts:
+        for post in nonempty(posts, "posts"):
             assert SAMPLE_SLUG in post.post_url
             # The URL now carries the surface that placed it — the bare path is
             # still the prefix, the tag is the suffix.
@@ -511,7 +512,7 @@ class TestGenerateSocialPosts:
         posts = await generate_social_posts(
             SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
-        for post in posts:
+        for post in nonempty(posts, "posts"):
             assert isinstance(post, SocialPost)
             assert isinstance(post.created_at, datetime)
             assert post.posted is False

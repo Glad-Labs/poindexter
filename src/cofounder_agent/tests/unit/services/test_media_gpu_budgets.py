@@ -35,6 +35,7 @@ from types import SimpleNamespace
 import pytest
 
 from poindexter.services.site_config import SiteConfig
+from tests.unit._nonempty import nonempty
 
 try:  # pragma: no cover - import shape differs only under partial installs
     from unittest.mock import patch
@@ -158,7 +159,11 @@ def test_media_locks_use_background_priority(filename):
     """Media is the lowest-value work in the queue; it must not outrank the
     pipeline traffic it is supposed to wait behind."""
     path = _STAGES_DIR / filename
-    for call in _gpu_lock_calls(path):
+    for call in nonempty(_gpu_lock_calls(path), "_gpu_lock_calls(path)"):
+
+        # No floor: an empty value here is a LEGAL state of the thing under test,
+        # not a bug. The outer loop's floor already proves this test examined
+        # something.
         for kw in call.keywords:
             if kw.arg == "priority":
                 assert isinstance(kw.value, ast.Constant)

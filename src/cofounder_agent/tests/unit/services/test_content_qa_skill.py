@@ -16,6 +16,7 @@ See docs/architecture/business-os-endgame.md.
 from __future__ import annotations
 
 from poindexter.services.prompt_manager import PromptCategory, UnifiedPromptManager
+from tests.unit._nonempty import nonempty
 
 # Every key the content_qa pack provides, with the placeholders the
 # template must still contain after migration. Guards against silent
@@ -53,7 +54,7 @@ def test_content_qa_keys_keep_their_placeholders() -> None:
     pm = UnifiedPromptManager()
     for key, placeholders in _CONTENT_QA_KEYS.items():
         template = pm.prompts[key]["template"]
-        for placeholder in placeholders:
+        for placeholder in nonempty(placeholders, "placeholders"):
             assert placeholder in template, f"{key} lost placeholder {placeholder}"
 
 

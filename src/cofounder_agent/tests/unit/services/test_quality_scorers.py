@@ -24,6 +24,7 @@ from poindexter.services.quality_scorers import (
     score_seo,
 )
 from poindexter.services.site_config import SiteConfig
+from tests.unit._nonempty import nonempty
 
 # Default config for testing (avoids DB calls)
 _CFG = {
@@ -441,7 +442,7 @@ class TestQaCfg:
     def test_threshold_values_are_numeric(self):
         from poindexter.services.quality_scorers import qa_cfg
         cfg = qa_cfg(site_config=_SC)
-        for k, v in cfg.items():
+        for k, v in nonempty(cfg.items(), "cfg.items()"):
             assert isinstance(v, (int, float)), f"{k} should be numeric, got {type(v).__name__}"
 
     def test_clarity_ranges_have_sensible_ordering(self):

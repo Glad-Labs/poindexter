@@ -26,6 +26,7 @@ import pytest
 
 from poindexter.plugins import Tap
 from poindexter.services.taps.memory import MemoryFilesTap, _build_source_id, _discover_memory_dirs
+from tests.unit._nonempty import anonempty
 
 
 class TestDiscoverMemoryDirs:
@@ -325,13 +326,16 @@ class TestMemoryFilesTapExtract:
         tap = MemoryFilesTap()
 
         docs = []
-        async for doc in tap.extract(
-            pool=None,
-            config={
-                "claude_projects_dir": str(projects),
-                "openclaw_memory_dir": str(openclaw),
-                "shared_context_dir": "__skip__",
-            },
+        async for doc in anonempty(
+            tap.extract(
+                pool=None,
+                config={
+                    "claude_projects_dir": str(projects),
+                    "openclaw_memory_dir": str(openclaw),
+                    "shared_context_dir": "__skip__",
+                },
+            ),
+            "tap.extract",
         ):
             docs.append(doc)
 
@@ -343,13 +347,16 @@ class TestMemoryFilesTapExtract:
         tap = MemoryFilesTap()
 
         source_ids = set()
-        async for doc in tap.extract(
-            pool=None,
-            config={
-                "claude_projects_dir": str(projects),
-                "openclaw_memory_dir": str(openclaw),
-                "shared_context_dir": "__skip__",
-            },
+        async for doc in anonempty(
+            tap.extract(
+                pool=None,
+                config={
+                    "claude_projects_dir": str(projects),
+                    "openclaw_memory_dir": str(openclaw),
+                    "shared_context_dir": "__skip__",
+                },
+            ),
+            "tap.extract",
         ):
             source_ids.add(doc.source_id)
 
@@ -364,13 +371,16 @@ class TestMemoryFilesTapExtract:
         projects, openclaw = populated_projects
         tap = MemoryFilesTap()
 
-        async for doc in tap.extract(
-            pool=None,
-            config={
-                "claude_projects_dir": str(projects),
-                "openclaw_memory_dir": str(openclaw),
-                "shared_context_dir": "__skip__",
-            },
+        async for doc in anonempty(
+            tap.extract(
+                pool=None,
+                config={
+                    "claude_projects_dir": str(projects),
+                    "openclaw_memory_dir": str(openclaw),
+                    "shared_context_dir": "__skip__",
+                },
+            ),
+            "tap.extract",
         ):
             if doc.source_id.startswith("claude-code/"):
                 assert doc.writer == "claude-code"
@@ -380,13 +390,16 @@ class TestMemoryFilesTapExtract:
         projects, openclaw = populated_projects
         tap = MemoryFilesTap()
 
-        async for doc in tap.extract(
-            pool=None,
-            config={
-                "claude_projects_dir": str(projects),
-                "openclaw_memory_dir": str(openclaw),
-                "shared_context_dir": "__skip__",
-            },
+        async for doc in anonempty(
+            tap.extract(
+                pool=None,
+                config={
+                    "claude_projects_dir": str(projects),
+                    "openclaw_memory_dir": str(openclaw),
+                    "shared_context_dir": "__skip__",
+                },
+            ),
+            "tap.extract",
         ):
             assert "type" in doc.metadata
             assert "chars" in doc.metadata
@@ -414,13 +427,16 @@ class TestMemoryFilesTapExtract:
 
         tap = MemoryFilesTap()
         docs = []
-        async for doc in tap.extract(
-            pool=None,
-            config={
-                "claude_projects_dir": str(projects),
-                "openclaw_memory_dir": str(openclaw),
-                "shared_context_dir": "__skip__",
-            },
+        async for doc in anonempty(
+            tap.extract(
+                pool=None,
+                config={
+                    "claude_projects_dir": str(projects),
+                    "openclaw_memory_dir": str(openclaw),
+                    "shared_context_dir": "__skip__",
+                },
+            ),
+            "tap.extract",
         ):
             docs.append(doc)
 
@@ -442,13 +458,16 @@ class TestMemoryFilesTapExtract:
 
         tap = MemoryFilesTap()
         docs = []
-        async for doc in tap.extract(
-            pool=None,
-            config={
-                "claude_projects_dir": str(projects),
-                "openclaw_memory_dir": str(openclaw),
-                "shared_context_dir": "__skip__",
-            },
+        async for doc in anonempty(
+            tap.extract(
+                pool=None,
+                config={
+                    "claude_projects_dir": str(projects),
+                    "openclaw_memory_dir": str(openclaw),
+                    "shared_context_dir": "__skip__",
+                },
+            ),
+            "tap.extract",
         ):
             docs.append(doc)
 

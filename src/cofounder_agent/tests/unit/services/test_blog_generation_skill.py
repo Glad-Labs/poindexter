@@ -28,6 +28,7 @@ from __future__ import annotations
 import pytest
 
 from poindexter.services.prompt_manager import PromptCategory, UnifiedPromptManager
+from tests.unit._nonempty import nonempty
 
 _BLOG_KEYS = (
     "blog_generation.initial_draft",
@@ -100,7 +101,7 @@ def test_blog_template_carries_required_placeholders(
 ) -> None:
     """Each template must keep the placeholders the pipeline formats in."""
     template = pm.prompts[key]["template"]
-    for placeholder in _REQUIRED_PLACEHOLDERS[key]:
+    for placeholder in nonempty(_REQUIRED_PLACEHOLDERS[key], "_REQUIRED_PLACEHOLDERS[key]"):
         assert placeholder in template, (
             f"{key} dropped placeholder {placeholder} during migration"
         )

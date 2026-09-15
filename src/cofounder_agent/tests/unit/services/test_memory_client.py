@@ -26,6 +26,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from poindexter.memory import MemoryClient, MemoryHit
+from tests.unit._nonempty import nonempty
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -309,5 +310,5 @@ async def test_search_decisions_uses_memory_source_table(mem):
     """search_decisions should filter to source_table='memory'."""
     hits = await mem.search_decisions("test query", limit=1)
     # Verify all returned hits (if any) are from source_table='memory'
-    for h in hits:
+    for h in nonempty(hits, "hits"):
         assert h.source_table == "memory"

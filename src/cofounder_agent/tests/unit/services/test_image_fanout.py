@@ -28,6 +28,7 @@ from poindexter.services.image_fanout import (
     run_featured_fanout,
     schnell_graph,
 )
+from tests.unit._nonempty import nonempty
 
 
 class _FakeSiteConfig:
@@ -106,7 +107,7 @@ class TestGraphs:
         agree. A name in ``_COMFY_CANDIDATES`` with no builder branch would
         be silently skipped at render time (``graph is None`` → ``continue``),
         so the candidate would just never appear — no error, no audit row."""
-        for name in _COMFY_CANDIDATES:
+        for name in nonempty(_COMFY_CANDIDATES, "_COMFY_CANDIDATES"):
             g = _build_candidate_graph(
                 name, prompt="p", negative="n", seed=1,
                 site_config=_FakeSiteConfig(),
@@ -136,7 +137,7 @@ class TestCandidateDimensions:
     def test_inherits_global_when_unset(self):
         sc = _FakeSiteConfig({
             "image_fanout_width": "1152", "image_fanout_height": "640"})
-        for name in _COMFY_CANDIDATES:
+        for name in nonempty(_COMFY_CANDIDATES, "_COMFY_CANDIDATES"):
             assert _candidate_dimensions(name, sc) == (1152, 640)
 
     def test_empty_string_inherits(self):

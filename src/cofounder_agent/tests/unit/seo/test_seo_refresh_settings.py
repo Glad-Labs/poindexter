@@ -1,6 +1,7 @@
 """Phase-2 seo_refresh settings must be seeded (SEO Harvest Loop #763)."""
 
 from poindexter.services.settings_defaults import DEFAULTS
+from tests.unit._nonempty import nonempty
 
 
 def test_seo_refresh_settings_seeded():
@@ -36,7 +37,7 @@ def test_striking_distance_min_impressions_floor_default_seeded():
 
 def test_no_seo_refresh_default_is_empty():
     # app_settings.value is NOT NULL; '' is the unset sentinel and would crash CI.
-    for key, value in DEFAULTS.items():
+    for key, value in nonempty(DEFAULTS.items(), "DEFAULTS.items()"):
         if key.startswith("seo.refresh.") or key == "pipeline_gate_seo_refresh_gate":
             assert value != "", f"{key} must have a non-empty default"
 

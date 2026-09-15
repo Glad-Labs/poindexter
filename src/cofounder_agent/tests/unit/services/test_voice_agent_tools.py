@@ -26,6 +26,7 @@ import pytest
 # isort: off
 from tests.unit.services import test_voice_agent_service_mode  # noqa: F401
 import poindexter.services.voice_agent_livekit as voice_agent_livekit  # noqa: E402
+from tests.unit._nonempty import nonempty
 # isort: on
 
 
@@ -639,7 +640,8 @@ def test_every_tool_has_a_text_helper():
     ``store_memory``) take additional positional args in their helper
     form, so we only check existence + callability here.
     """
-    for fn in voice_agent_livekit._DEFAULT_TOOLS:
+    for fn in nonempty(voice_agent_livekit._DEFAULT_TOOLS, "voice_agent_livekit._DEFAULT_TOOLS"):
+
         helper_name = f"_{fn.__name__}_text"
         helper = getattr(voice_agent_livekit, helper_name, None)
         assert helper is not None, (

@@ -16,6 +16,7 @@ from poindexter.modules.content.content_validator import (
     _get_company_facts,
     validate_content,
 )
+from tests.unit._nonempty import nonempty
 
 
 class TestValidateContentClean:
@@ -685,7 +686,7 @@ class TestLateAcronymExpansion:
         result = validate_content("Title", content, "tech", site_config=_SC)
         late_issues = [i for i in result.issues if i.category == "late_acronym_expansion"]
         # If matched, should be warning severity
-        for i in late_issues:
+        for i in nonempty(late_issues, "late_issues"):
             assert i.severity == "warning"
 
 
@@ -751,7 +752,7 @@ class TestEdgeCases:
         long_match = "[IMAGE-1: " + "x" * 200 + "]"
         result = validate_content("Title", long_match, "topic", site_config=_SC)
         image_issues = [i for i in result.issues if i.category == "image_placeholder"]
-        for i in image_issues:
+        for i in nonempty(image_issues, "image_issues"):
             assert len(i.matched_text) <= 100
 
 

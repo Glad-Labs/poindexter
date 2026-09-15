@@ -16,6 +16,7 @@ from poindexter.services.settings_categories import (
     resolve_category,
 )
 from poindexter.services.settings_defaults import DEFAULTS
+from tests.unit._nonempty import nonempty
 
 
 def test_thirteen_canonical_categories():
@@ -72,7 +73,7 @@ def test_determinism():
 
 
 def test_every_default_key_resolves_to_a_canonical_id():
-    for k in DEFAULTS:
+    for k in nonempty(DEFAULTS, "DEFAULTS"):
         assert resolve_category(k) in (CATEGORY_IDS | {"general"})
 
 

@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from poindexter.services import prometheus_rule_builder as rb
+from tests.unit._nonempty import nonempty
 
 
 class _FakePool:
@@ -1087,7 +1088,8 @@ class TestRestartGapBridging:
             # clock is safe on a raw read (poindexter#1021 swap alert).
             "PoindexterHostSwapExhausted",
         }
-        for name, rule in rb.DEFAULT_RULES.items():
+        for name, rule in nonempty(rb.DEFAULT_RULES.items(), "rb.DEFAULT_RULES.items()"):
+
             m = re.fullmatch(r"(\d+)([mh])", str(rule["for"]))
             assert m, f"{name}: unparseable for: {rule['for']!r}"
             minutes = int(m.group(1)) * (60 if m.group(2) == "h" else 1)

@@ -15,6 +15,7 @@ See docs/architecture/business-os-endgame.md.
 from __future__ import annotations
 
 from poindexter.services.prompt_manager import UnifiedPromptManager
+from tests.unit._nonempty import nonempty
 
 # (key, required placeholders) — byte-fidelity guard against silent drift.
 _SEO_KEYS = (
@@ -40,7 +41,7 @@ def test_seo_templates_have_placeholders() -> None:
     pm = UnifiedPromptManager()
     for key, placeholders in _SEO_KEYS:
         template = pm.prompts[key]["template"]
-        for placeholder in placeholders:
+        for placeholder in nonempty(placeholders, "placeholders"):
             assert placeholder in template, f"{key} missing {placeholder}"
 
 

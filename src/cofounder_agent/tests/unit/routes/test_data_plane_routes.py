@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from poindexter.utils.route_utils import get_database_dependency
+from tests.unit._nonempty import nonempty
 from tests.unit.routes.conftest import make_mock_db
 
 _SVC = "poindexter.services.declarative_config_service"
@@ -115,6 +116,7 @@ class TestDataPlaneRoutes:
         # route declares the verify_api_token dependency.
         from poindexter.routes.data_plane_routes import router
 
-        for route in router.routes:
+        for route in nonempty(router.routes, "router.routes"):
+
             calls = {d.call for d in route.dependant.dependencies}
             assert verify_api_token in calls, f"{route.path} missing auth dependency"

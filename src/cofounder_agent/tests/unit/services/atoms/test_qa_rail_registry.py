@@ -7,6 +7,7 @@ import pytest
 
 from poindexter.services import pipeline_architect
 from poindexter.services.atom_registry import discover, get_atom_callable, get_atom_meta
+from tests.unit._nonempty import nonempty
 
 _RAILS = (
     "qa.programmatic", "qa.deepeval", "qa.ragas", "qa.critic",
@@ -22,7 +23,7 @@ _ALL = _RAILS + ("qa.aggregate",)
 class TestQaRailRegistry:
     def test_all_atoms_discovered(self):
         discover()  # idempotent
-        for name in _ALL:
+        for name in nonempty(_ALL, "_ALL"):
             assert get_atom_meta(name) is not None, f"{name} not registered"
             assert callable(get_atom_callable(name)), f"{name} has no callable"
 

@@ -175,7 +175,8 @@ def test_niche_override_set_uses_allowlisted_columns_only():
     may only use the allowlisted columns."""
     oo = pytest.importorskip("poindexter.services.operator_overrides")
 
-    for entry in oo.OPERATOR_NICHE_OVERRIDES:
+    for entry in nonempty(oo.OPERATOR_NICHE_OVERRIDES, "oo.OPERATOR_NICHE_OVERRIDES"):
+
         unknown = set(entry["set"]) - set(NICHE_OVERRIDE_COLUMNS)
         assert not unknown, (
             f"niche override for {entry['match_slug']!r} sets non-allowlisted "
@@ -192,7 +193,8 @@ def test_niche_override_expect_matches_baseline_seed():
     oo = pytest.importorskip("poindexter.services.operator_overrides")
     seeds = _baseline_niche_map()
 
-    for entry in oo.OPERATOR_NICHE_OVERRIDES:
+    for entry in nonempty(oo.OPERATOR_NICHE_OVERRIDES, "oo.OPERATOR_NICHE_OVERRIDES"):
+
         slug = entry["match_slug"]
         assert slug in seeds, (
             f"niche override matches slug {slug!r} but the baseline never seeds "
@@ -211,7 +213,8 @@ def test_niche_override_set_differs_from_expect():
     (and a sign the genericised seed leaked back to the branded text)."""
     oo = pytest.importorskip("poindexter.services.operator_overrides")
 
-    for entry in oo.OPERATOR_NICHE_OVERRIDES:
+    for entry in nonempty(oo.OPERATOR_NICHE_OVERRIDES, "oo.OPERATOR_NICHE_OVERRIDES"):
+
         new_prompt = entry["set"].get("writer_prompt_override")
         if new_prompt is not None:
             assert new_prompt != entry["expect_writer_prompt_override"], (
@@ -315,6 +318,7 @@ def test_remediation_rules_seeded_by_neither_baseline_nor_overlay():
 # --- seed_operator_subreddit_profiles: fresh-install bootstrap of the
 #     operator's community-draft targets (seed-if-EMPTY) -----------------------
 from poindexter.services.settings_defaults import seed_operator_subreddit_profiles  # noqa: E402
+from tests.unit._nonempty import nonempty
 
 
 class _SeedPool:

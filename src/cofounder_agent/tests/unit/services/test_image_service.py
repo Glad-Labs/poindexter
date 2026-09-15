@@ -24,6 +24,7 @@ from poindexter.services.image_service import (
     get_image_service,
 )
 from poindexter.services.site_config import SiteConfig
+from tests.unit._nonempty import nonempty
 
 # SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
 # ``set_site_config`` were removed; ``ImageService`` / ``get_image_service`` /
@@ -505,11 +506,11 @@ class TestImageModelRegistry:
         }
 
     def test_all_entries_are_image_model_config(self):
-        for model, cfg in IMAGE_MODEL_REGISTRY.items():
+        for model, cfg in nonempty(IMAGE_MODEL_REGISTRY.items(), "IMAGE_MODEL_REGISTRY.items()"):
             assert isinstance(cfg, ImageModelConfig), f"{model} value is not ImageModelConfig"
 
     def test_all_entries_have_required_fields(self):
-        for model, cfg in IMAGE_MODEL_REGISTRY.items():
+        for model, cfg in nonempty(IMAGE_MODEL_REGISTRY.items(), "IMAGE_MODEL_REGISTRY.items()"):
             assert cfg.model_id, f"{model} missing model_id"
             assert cfg.display_name, f"{model} missing display_name"
             assert cfg.default_steps > 0, f"{model} has non-positive default_steps"
@@ -1122,7 +1123,7 @@ class TestModelIntrospection:
 
     def test_list_available_models_entries_have_metadata(self):
         models = ImageService.list_available_models()
-        for _value, meta in models.items():
+        for _value, meta in nonempty(models.items(), "models.items()"):
             assert "display_name" in meta
             assert "default_steps" in meta
             assert "vram_gb" in meta

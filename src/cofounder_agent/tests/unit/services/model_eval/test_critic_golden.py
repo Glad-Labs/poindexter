@@ -6,6 +6,7 @@ import pytest
 
 from poindexter.services.model_eval.golden_sets.critic import build_critic_golden_set
 from poindexter.services.site_config import SiteConfig
+from tests.unit._nonempty import nonempty
 
 
 class _FakeConn:
@@ -72,7 +73,8 @@ class TestCriticGoldenSet:
         from poindexter.modules.content.content_validator import detect_truncated_content
 
         golden = await build_critic_golden_set(pool=_FakePool(_posts(2)), site_config=_sc(2))
-        for c in golden.cases:
+        for c in nonempty(golden.cases, "golden.cases"):
+
             reasons = detect_truncated_content(c.payload["content"])
             if c.payload["kind"] == "truncated":
                 assert reasons, "truncated corruption must trip the detector"
@@ -114,7 +116,8 @@ class TestDeliberationCorruption:
         )
 
         golden = await build_critic_golden_set(pool=_FakePool(_posts(2)), site_config=_sc(2))
-        for c in golden.cases:
+        for c in nonempty(golden.cases, "golden.cases"):
+
             evidence = detect_planning_dump_preamble(
                 _strip_code_spans(c.payload["content"])
             )

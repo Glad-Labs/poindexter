@@ -109,9 +109,18 @@ class TestGetTelegramBotToken:
 
         await tg.get_telegram_bot_token()
 
-        for call in mock_sc.get.mock_calls:
-            if call.args:
-                assert call.args[0] != "telegram_bot_token"
+        # NB: no loop floor here — an EMPTY mock_calls is the passing
+        # condition, because the whole point is that `.get` is never reached
+        # for this key. Stated as a direct assertion so it cannot be read as
+        # a vacuous loop, and so the failure names what went wrong.
+        leaked = [
+            c for c in mock_sc.get.mock_calls
+            if c.args and c.args[0] == "telegram_bot_token"
+        ]
+        assert not leaked, (
+            "bot_token was read through the sync .get (returns ciphertext for "
+            f"an is_secret row); calls: {leaked}"
+        )
 
 
 # ---------------------------------------------------------------------------

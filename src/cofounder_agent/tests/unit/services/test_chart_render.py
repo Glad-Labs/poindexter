@@ -21,6 +21,7 @@ from poindexter.services.chart_render import (
     nice_ticks,
     render_chart,
 )
+from tests.unit._nonempty import nonempty
 
 
 def _bar(**over) -> ChartSpec:
@@ -135,7 +136,8 @@ class TestBuildChartHtml:
     def test_text_never_wears_the_series_color(self):
         """Values/labels use ink tokens; identity comes from the mark beside them."""
         doc = build_chart_html(_bar())
-        for match in re.findall(r'<text[^>]*fill="([^"]+)"', doc):
+        for match in nonempty(re.findall(r'<text[^>]*fill="([^"]+)"', doc), "re.findall('<text[^>]*fill='([^']+)'', doc)"):
+
             assert match in {"#0b0b0b", "#52514e", "#84837d"}, match
 
     def test_escapes_markup_in_user_supplied_text(self):

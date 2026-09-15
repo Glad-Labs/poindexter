@@ -3,6 +3,7 @@ import pytest
 
 import poindexter.services.pipeline_architect as pa
 from poindexter.plugins.atom import AtomMeta, FieldSpec
+from tests.unit._nonempty import nonempty
 
 
 def _meta(
@@ -50,7 +51,7 @@ def _spec():
 class TestStamp:
     def test_stamps_every_node(self, registry):
         out = pa.stamp_graph_def(_spec())
-        for n in out["nodes"]:
+        for n in nonempty(out["nodes"], "out['nodes']"):
             assert n["_contract_fp"] and n["_atom_version"] == "1.0.0"
 
     def test_does_not_mutate_input(self, registry):

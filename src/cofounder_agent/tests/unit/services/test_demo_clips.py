@@ -24,6 +24,7 @@ from poindexter.services.demo_clips import (
     render_preamble,
     tapes_dir,
 )
+from tests.unit._nonempty import nonempty
 
 VALID = """\
 # title: Recent posts
@@ -277,7 +278,8 @@ def test_every_tape_waits_for_output() -> None:
     flag or an empty table fail the bake instead of shipping a clip of a
     blank terminal into a published video.
     """
-    for tape in load_tapes():
+    for tape in nonempty(load_tapes(), "load_tapes()"):
+
         assert "Wait" in tape.body, f"{tape.slug} has no Wait directive"
 
 

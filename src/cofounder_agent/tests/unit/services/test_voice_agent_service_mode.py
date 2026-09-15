@@ -242,6 +242,7 @@ _ensure_pipecat_stubs()
 
 # Now that stubs are in place, importing the module is safe.
 from poindexter.services import voice_agent_livekit  # noqa: E402
+from tests.unit._nonempty import nonempty
 
 
 class _FakeSiteConfig:
@@ -887,7 +888,8 @@ def test_default_tools_match_pipecat_direct_function_protocol():
     import asyncio
     import inspect
 
-    for fn in voice_agent_livekit._DEFAULT_TOOLS:
+    for fn in nonempty(voice_agent_livekit._DEFAULT_TOOLS, "voice_agent_livekit._DEFAULT_TOOLS"):
+
         assert asyncio.iscoroutinefunction(fn), (
             f"voice tool {fn.__name__} must be `async def` per Pipecat's "
             "DirectFunctionWrapper contract; sync functions are silently "

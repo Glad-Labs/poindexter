@@ -23,6 +23,7 @@ from poindexter.modules.content.atoms.narrate_bundle import (
     _scrub_private_repo_refs,
     run,
 )
+from tests.unit._nonempty import nonempty
 
 # ---------------------------------------------------------------------------
 # Repro fixture: the actual PR that triggered #354.
@@ -720,7 +721,7 @@ class TestRunEmitsTitle:
             })
 
         title = result.get("title", "")
-        for pat in _DATE_ONLY_PATTERNS:
+        for pat in nonempty(_DATE_ONLY_PATTERNS, "_DATE_ONLY_PATTERNS"):
             assert not pat.match(title), (
                 f"title {title!r} matches a date-only pattern — structural gate would block"
             )
@@ -1014,7 +1015,8 @@ class TestTitleVarietyGuidance:
     async def test_guidance_does_not_paste_the_recent_titles(self):
         """Showing the corpus primes the habit — describe it instead."""
         prompt = await self._capture_prompt(db=_DBWithTitles(self.RECENT))
-        for title in self.RECENT:
+        for title in nonempty(self.RECENT, "self.RECENT"):
+
             assert title not in prompt, (
                 f"recent title {title!r} was pasted into the dev_diary prompt"
             )

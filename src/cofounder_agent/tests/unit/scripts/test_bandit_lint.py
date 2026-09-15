@@ -22,6 +22,8 @@ Two things this suite pins that the other three ratchets don't have to:
 import importlib.util
 from pathlib import Path
 
+from tests.unit._nonempty import nonempty
+
 
 def _find_repo_root(start: Path) -> Path:
     for parent in start.resolve().parents:
@@ -100,7 +102,8 @@ class TestPrivateOverlayExclusion:
         assert LINT.counts_from_findings(findings) == {}
 
     def test_every_declared_private_file_is_excluded(self):
-        for rel in LINT.PRIVATE_OVERLAY_FILES:
+        for rel in nonempty(LINT.PRIVATE_OVERLAY_FILES, "LINT.PRIVATE_OVERLAY_FILES"):
+
             assert LINT.counts_from_findings([_finding(rel, "B608")]) == {}, rel
 
     def test_non_private_neighbour_still_counted(self):
@@ -166,13 +169,15 @@ class TestBaselineFile:
                 assert isinstance(n, int) and n > 0, f"{rel}.{test_id} must be a positive int"
 
     def test_baseline_paths_are_normalized_and_relative(self):
-        for rel in LINT.load_baseline():
+        for rel in nonempty(LINT.load_baseline(), "LINT.load_baseline()"):
+
             assert "\\" not in rel, f"{rel!r} carries a Windows separator"
             assert not Path(rel).is_absolute(), f"{rel!r} must be repo-relative"
 
     def test_baseline_carries_no_private_overlay_path(self):
         """Guards the public-mirror leak directly, not just via the scan."""
-        for rel in LINT.load_baseline():
+        for rel in nonempty(LINT.load_baseline(), "LINT.load_baseline()"):
+
             assert rel not in LINT.PRIVATE_OVERLAY_FILES, f"{rel} is mirror-stripped"
 
 

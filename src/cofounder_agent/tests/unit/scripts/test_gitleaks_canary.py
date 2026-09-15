@@ -27,6 +27,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._nonempty import nonempty
+
 REPO_ROOT = next(
     p for p in Path(__file__).resolve().parents
     if (p / "pyproject.toml").exists() and (p / "src").exists()
@@ -60,7 +62,8 @@ class TestCorpusShape:
         assert not (set(labels) & set(canary.NEGATIVE))
 
     def test_every_case_declares_a_rule_and_body(self, canary) -> None:
-        for c in canary.CASES:
+        for c in nonempty(canary.CASES, "canary.CASES"):
+
             assert c.expected_rule, c.label
             assert c.body.strip(), c.label
 

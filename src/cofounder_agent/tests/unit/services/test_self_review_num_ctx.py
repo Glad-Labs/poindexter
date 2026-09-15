@@ -41,6 +41,7 @@ import pytest
 
 from poindexter.services.self_review import self_review_and_revise
 from poindexter.services.site_config import SiteConfig
+from tests.unit._nonempty import nonempty
 
 # Draft must exceed the 500-char floor so the self-review path actually runs.
 _DRAFT = "This draft has enough substance for a cross-section review. " * 15
@@ -179,7 +180,8 @@ async def test_self_review_num_ctx_falls_back_to_global_when_phase_unset():
         is_paid=False,
     )
 
-    for call in provider.complete.await_args_list:
+    for call in nonempty(provider.complete.await_args_list, "provider.complete.await_args_list"):
+
         assert call.kwargs["num_ctx"] == 8192
 
 

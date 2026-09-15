@@ -19,6 +19,8 @@ import asyncio
 import re
 from unittest.mock import AsyncMock, MagicMock
 
+from tests.unit._nonempty import nonempty
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -453,7 +455,8 @@ class TestSeedAllDefaults:
         _run(seed_all_defaults(pool))
 
         # Inspect only INSERT SQL calls (not UPDATE metadata calls)
-        for call in conn.execute.await_args_list:
+        for call in nonempty(conn.execute.await_args_list, "conn.execute.await_args_list"):
+
             sql = call.args[0]
             if "INSERT INTO app_settings" not in sql:
                 continue  # skip METADATA UPDATE calls
@@ -811,7 +814,7 @@ class TestDeprecatedSettings:
         superseded_by must point at a key that still exists in DEFAULTS."""
         from poindexter.services.settings_defaults import DEFAULTS, METADATA
 
-        for key, meta in METADATA.items():
+        for key, meta in nonempty(METADATA.items(), "METADATA.items()"):
             if not meta.get("deprecated"):
                 continue
             target = meta.get("superseded_by")
@@ -845,7 +848,8 @@ class TestDataFabricUrlsAreInternalDns:
     def test_data_fabric_defaults_use_internal_dns(self):
         from poindexter.services.settings_defaults import DEFAULTS
 
-        for key, expected in self.EXPECTED.items():
+        for key, expected in nonempty(self.EXPECTED.items(), "self.EXPECTED.items()"):
+
             actual = DEFAULTS.get(key)
             assert actual == expected, (
                 f"{key} default = {actual!r}; expected {expected!r}. A "
@@ -892,7 +896,8 @@ class TestConfigExternalisationAuditKeys:
     def test_audit_keys_present_with_expected_defaults(self):
         from poindexter.services.settings_defaults import DEFAULTS
 
-        for key, val in self.EXPECTED.items():
+        for key, val in nonempty(self.EXPECTED.items(), "self.EXPECTED.items()"):
+
             assert key in DEFAULTS, f"{key} missing from DEFAULTS (audit regression)"
             assert DEFAULTS[key] == val, (
                 f"{key} default drifted: {DEFAULTS[key]!r} != {val!r}"

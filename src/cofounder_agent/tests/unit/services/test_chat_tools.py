@@ -30,6 +30,7 @@ from poindexter.services.chat_tools import (
     to_openai_tools,
     tool_names_csv,
 )
+from tests.unit._nonempty import nonempty
 
 
 def _ctx(**overrides) -> ChatToolContext:
@@ -74,7 +75,8 @@ class TestRegistryShape:
         assert all(inspect.iscoroutinefunction(t.handler) for t in CHAT_TOOLS)
 
     def test_schemas_well_formed(self):
-        for payload in to_openai_tools():
+        for payload in nonempty(to_openai_tools(), "to_openai_tools()"):
+
             assert payload["type"] == "function"
             fn = payload["function"]
             assert fn["name"] and fn["description"]
@@ -82,6 +84,9 @@ class TestRegistryShape:
             assert params["type"] == "object"
             assert isinstance(params["properties"], dict)
             assert isinstance(params["required"], list)
+            # No floor: an empty value here is a LEGAL state of the thing under test,
+            # not a bug. The outer loop's floor already proves this test examined
+            # something.
             for req in params["required"]:
                 assert req in params["properties"]
 

@@ -16,6 +16,7 @@ from poindexter.services.prompt_manager import (
     UnifiedPromptManager,
     get_prompt_manager,
 )
+from tests.unit._nonempty import nonempty
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -232,7 +233,7 @@ class TestListPrompts:
 
     def test_result_contains_expected_fields(self, pm: UnifiedPromptManager):
         result = pm.list_prompts()
-        for _key, data in result.items():
+        for _key, data in nonempty(result.items(), "result.items()"):
             assert "category" in data
             assert "description" in data
             assert "output_format" in data
@@ -264,19 +265,20 @@ class TestExportPromptsAsJson:
 
     def test_exported_json_contains_all_keys(self, pm: UnifiedPromptManager):
         parsed = json.loads(pm.export_prompts_as_json())
-        for key in pm.prompts:
+        for key in nonempty(pm.prompts, "pm.prompts"):
+
             assert key in parsed
 
     def test_each_entry_has_required_fields(self, pm: UnifiedPromptManager):
         parsed = json.loads(pm.export_prompts_as_json())
         required_fields = {"template", "category", "description", "output_format", "version"}
-        for key, entry in parsed.items():
+        for key, entry in nonempty(parsed.items(), "parsed.items()"):
             missing = required_fields - set(entry.keys())
             assert not missing, f"Prompt '{key}' missing fields: {missing}"
 
     def test_template_is_nonempty_string(self, pm: UnifiedPromptManager):
         parsed = json.loads(pm.export_prompts_as_json())
-        for _key, entry in parsed.items():
+        for _key, entry in nonempty(parsed.items(), "parsed.items()"):
             assert isinstance(entry["template"], str)
             assert len(entry["template"]) > 0
 
@@ -325,7 +327,7 @@ class TestPromptCategoryEnum:
         assert expected == actual
 
     def test_category_values_are_strings(self):
-        for cat in PromptCategory:
+        for cat in nonempty(PromptCategory, "PromptCategory"):
             assert isinstance(cat.value, str)
 
 

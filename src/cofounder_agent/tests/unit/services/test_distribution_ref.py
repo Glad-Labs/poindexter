@@ -19,6 +19,7 @@ from poindexter.services.distribution_ref import (
     tag_for,
     tag_url,
 )
+from tests.unit._nonempty import nonempty
 
 POST = "https://www.gladlabs.io/posts/a-morse-code-headline-28431849"
 
@@ -174,7 +175,7 @@ def test_tag_for_threads_config_through():
 def test_every_mapped_surface_is_a_legal_token():
     """The map's own keys have to satisfy the validator, or a surface would be
     classified in code and rejected at call time."""
-    for surface in SURFACE_MEDIUM:
+    for surface in nonempty(SURFACE_MEDIUM, "SURFACE_MEDIUM"):
         assert tag_url(POST, surface=surface)
 
 

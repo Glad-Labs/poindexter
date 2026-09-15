@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from poindexter.brain import compose_drift_probe as cdp
+from tests.unit._nonempty import nonempty
 
 
 def _make_pool(setting_values: dict[str, str] | None = None):
@@ -309,7 +310,11 @@ class TestDriftAutoRecoverDisabled:
             sleep_fn=AsyncMock(),
         )
 
-        for call in pool.execute.call_args_list:
+        for call in nonempty(pool.execute.call_args_list, "pool.execute.call_args_list"):
+
+            # No floor: an empty value here is a LEGAL state of the thing under test,
+            # not a bug. The outer loop's floor already proves this test examined
+            # something.
             for arg in call.args:
                 if isinstance(arg, str):
                     assert secret_value not in arg, (

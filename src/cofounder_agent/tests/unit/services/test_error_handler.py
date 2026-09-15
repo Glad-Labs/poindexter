@@ -21,6 +21,7 @@ from poindexter.services.error_handler import (
     ValidationError,
     handle_error,
 )
+from tests.unit._nonempty import nonempty
 
 # ---------------------------------------------------------------------------
 # AppError base class
@@ -371,7 +372,7 @@ class TestAppErrorEdgeCases:
 @pytest.mark.unit
 class TestErrorCodeEnum:
     def test_all_codes_are_strings(self):
-        for code in ErrorCode:
+        for code in nonempty(ErrorCode, "ErrorCode"):
             assert isinstance(code.value, str)
             assert code.value == code.value.upper()  # all UPPER_SNAKE
 

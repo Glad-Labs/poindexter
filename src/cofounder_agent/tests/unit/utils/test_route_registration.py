@@ -21,6 +21,7 @@ from poindexter.utils.route_registration import (
     _WORKER_ROUTES,
     register_all_routes,
 )
+from tests.unit._nonempty import nonempty
 
 # Marker — FinanceModule is private (Glad Labs operator overlay). The
 # sync filter strips ``src/cofounder_agent/poindexter/modules/finance/`` from the
@@ -50,26 +51,26 @@ class TestRouteManifestStructure:
         assert len(_ROUTE_MANIFEST) > 0
 
     def test_each_entry_has_four_elements(self):
-        for entry in _ROUTE_MANIFEST:
+        for entry in nonempty(_ROUTE_MANIFEST, "_ROUTE_MANIFEST"):
             assert len(entry) == 4, f"Expected 4-tuple, got {entry}"
 
     def test_all_module_paths_are_non_empty_strings(self):
-        for module_path, _, _, _ in _ROUTE_MANIFEST:
+        for module_path, _, _, _ in nonempty(_ROUTE_MANIFEST, "_ROUTE_MANIFEST"):
             assert isinstance(module_path, str)
             assert module_path
 
     def test_all_router_attrs_are_non_empty_strings(self):
-        for _, router_attr, _, _ in _ROUTE_MANIFEST:
+        for _, router_attr, _, _ in nonempty(_ROUTE_MANIFEST, "_ROUTE_MANIFEST"):
             assert isinstance(router_attr, str)
             assert router_attr
 
     def test_all_status_keys_are_non_empty_strings(self):
-        for _, _, status_key, _ in _ROUTE_MANIFEST:
+        for _, _, status_key, _ in nonempty(_ROUTE_MANIFEST, "_ROUTE_MANIFEST"):
             assert isinstance(status_key, str)
             assert status_key
 
     def test_all_descriptions_are_non_empty_strings(self):
-        for _, _, _, description in _ROUTE_MANIFEST:
+        for _, _, _, description in nonempty(_ROUTE_MANIFEST, "_ROUTE_MANIFEST"):
             assert isinstance(description, str)
             assert description
 
@@ -93,7 +94,7 @@ class TestRouteManifestStructure:
     def test_coordinator_is_subset_of_worker(self):
         """Every coordinator route should also exist in worker manifest."""
         worker_keys = {entry[2] for entry in _WORKER_ROUTES}
-        for entry in _COORDINATOR_ROUTES:
+        for entry in nonempty(_COORDINATOR_ROUTES, "_COORDINATOR_ROUTES"):
             assert entry[2] in worker_keys, f"Coordinator route {entry[2]} not in worker"
 
     def test_worker_manifest_has_expected_routes(self):
@@ -155,7 +156,7 @@ class TestRouteManifestStructure:
 
     def test_worker_manifest_structure_valid(self):
         """All worker manifest entries should be valid 4-tuples."""
-        for entry in _WORKER_ROUTES:
+        for entry in nonempty(_WORKER_ROUTES, "_WORKER_ROUTES"):
             assert len(entry) == 4
             for field in entry:
                 assert isinstance(field, str)
@@ -187,7 +188,7 @@ class TestRegisterAllRoutes:
             mock_import.return_value = mock_module
             result = register_all_routes(app)
         # All manifest routes should succeed (mock returns a router)
-        for _, _, status_key, _ in _ROUTE_MANIFEST:
+        for _, _, status_key, _ in nonempty(_ROUTE_MANIFEST, "_ROUTE_MANIFEST"):
             assert result[status_key] is True, f"Expected True for {status_key}"
 
     def test_import_error_sets_status_to_false(self):
@@ -198,7 +199,7 @@ class TestRegisterAllRoutes:
             side_effect=ImportError("no module"),
         ):
             result = register_all_routes(app)
-        for _, _, status_key, _ in _ROUTE_MANIFEST:
+        for _, _, status_key, _ in nonempty(_ROUTE_MANIFEST, "_ROUTE_MANIFEST"):
             assert result[status_key] is False, f"Expected False for {status_key}"
 
     def test_generic_exception_sets_status_to_false(self):
@@ -208,7 +209,7 @@ class TestRegisterAllRoutes:
             side_effect=RuntimeError("boom"),
         ):
             result = register_all_routes(app)
-        for _, _, status_key, _ in _ROUTE_MANIFEST:
+        for _, _, status_key, _ in nonempty(_ROUTE_MANIFEST, "_ROUTE_MANIFEST"):
             assert result[status_key] is False
 
     def test_does_not_raise_on_import_failure(self):

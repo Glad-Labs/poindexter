@@ -42,6 +42,7 @@ from poindexter.services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
 from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
 from poindexter.services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
 from poindexter.services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
+from tests.unit._nonempty import nonempty
 
 # Committed snapshot of per-atom contract fingerprints, keyed by atom name.
 # Regenerate after an INTENTIONAL atom-contract change (see module docstring).
@@ -193,7 +194,8 @@ class TestActiveSpecsAgainstLiveRegistry:
         a renamed / deleted atom (``stamp_graph_def`` raises) — the failure mode
         the tautological stamp→assert pair *does* catch."""
         discover()
-        for name, spec in _active_specs().items():
+        for name, spec in nonempty(_active_specs().items(), "_active_specs().items()"):
+
             try:
                 pa.assert_graph_def_current(pa.stamp_graph_def(spec))
             except pa.GraphContractError as exc:  # pragma: no cover - failure path

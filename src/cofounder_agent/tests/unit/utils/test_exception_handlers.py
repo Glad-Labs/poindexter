@@ -29,6 +29,7 @@ from poindexter.utils.exception_handlers import (
     register_exception_handlers,
     validation_error_handler,
 )
+from tests.unit._nonempty import nonempty
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -294,7 +295,7 @@ class TestHttpExceptionHandler:
     async def test_maps_all_known_status_codes(self):
         import json
 
-        for code, expected_error_code in _STATUS_TO_ERROR_CODE.items():
+        for code, expected_error_code in nonempty(_STATUS_TO_ERROR_CODE.items(), "_STATUS_TO_ERROR_CODE.items()"):
             req = _make_request()
             exc = StarletteHTTPException(status_code=code, detail="test")
             resp = await http_exception_handler(req, exc)

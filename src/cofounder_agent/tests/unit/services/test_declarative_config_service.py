@@ -26,6 +26,7 @@ from poindexter.services.declarative_config_service import (
     resolve_surface,
     upsert_row,
 )
+from tests.unit._nonempty import nonempty
 
 
 def _make_pool(*, fetch=None, fetchrow=None, execute=None):
@@ -72,12 +73,12 @@ def test_resolve_unknown_surface_raises():
 
 
 def test_key_column_is_always_in_mutable_columns():
-    for spec in _SURFACES.values():
+    for spec in nonempty(_SURFACES.values(), "_SURFACES.values()"):
         assert spec.key_column in spec.mutable_columns
 
 
 def test_json_columns_subset_of_mutable():
-    for spec in _SURFACES.values():
+    for spec in nonempty(_SURFACES.values(), "_SURFACES.values()"):
         assert spec.json_columns <= set(spec.mutable_columns)
 
 
