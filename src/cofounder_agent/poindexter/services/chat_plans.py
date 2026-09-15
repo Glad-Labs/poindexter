@@ -283,6 +283,16 @@ async def run_plan(
     task_type = infer_task_type(spec)
 
     task_id = str(uuid_lib.uuid4())
+    # A plan can declare which niche it runs in. Params otherwise land only in
+    # task metadata, but every niche-scoped policy reads the pipeline_tasks
+    # COLUMN — content_router_service seeds `niche_slug` into graph context
+    # from there, and media_subject_policy keys the media style, the persona
+    # and the presenter off it. Without this promotion an ad-hoc plan always
+    # resolved the GLOBAL defaults: measured 2026-09-15, a presenter-video
+    # plan rendered 2m34s of stills because the niche-less policy read
+    # style_policy=stylized and disabled the photoreal presenter, even though
+    # niche.glad-labs.media.style_policy is "any".
+    niche_slug = clean_params.get("niche_slug")
     task_data = {
         "id": task_id,
         "task_name": f"Plan run: {topic}",
@@ -291,6 +301,7 @@ async def run_plan(
         "template_slug": slug,
         "status": "pending",
         "user_id": user_id,
+        **({"niche_slug": niche_slug} if isinstance(niche_slug, str) and niche_slug.strip() else {}),
         "metadata": {
             **clean_params,
             "created_via": "chat_plan",

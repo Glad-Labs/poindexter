@@ -211,6 +211,41 @@ class TestRunPlan:
         ))
         assert db.added["topic"] == "Better topic"
 
+    def test_niche_slug_param_reaches_the_task_column(self, plan_env):
+        """Niche-scoped policy (media style, persona, presenter) reads the
+        pipeline_tasks COLUMN, not task metadata — a param that stopped at
+        metadata left every ad-hoc plan resolving the GLOBAL defaults.
+        Measured 2026-09-15: a presenter-video plan rendered 2m34s of stills
+        because the niche-less policy read style_policy=stylized and disabled
+        the photoreal presenter."""
+        pool, plan, _, _ = self._mk(plan_env)
+        db = FakeDb()
+        asyncio.run(chat_plans.run_plan(
+            pool=pool, db_service=db, plan_id=plan["plan_id"],
+            params={"post_id": "p1", "niche_slug": "glad-labs"},
+        ))
+        assert db.added["niche_slug"] == "glad-labs"
+        # still recorded in metadata, which documents the run
+        assert db.added["metadata"]["niche_slug"] == "glad-labs"
+
+    def test_no_niche_param_leaves_the_column_unset(self, plan_env):
+        pool, plan, _, _ = self._mk(plan_env)
+        db = FakeDb()
+        asyncio.run(chat_plans.run_plan(
+            pool=pool, db_service=db, plan_id=plan["plan_id"],
+            params={"post_id": "p1"},
+        ))
+        assert "niche_slug" not in db.added
+
+    def test_blank_niche_param_is_not_promoted(self, plan_env):
+        pool, plan, _, _ = self._mk(plan_env)
+        db = FakeDb()
+        asyncio.run(chat_plans.run_plan(
+            pool=pool, db_service=db, plan_id=plan["plan_id"],
+            params={"post_id": "p1", "niche_slug": "   "},
+        ))
+        assert "niche_slug" not in db.added
+
     def test_one_shot(self, plan_env):
         pool, plan, _, _ = self._mk(plan_env)
         db = FakeDb()
