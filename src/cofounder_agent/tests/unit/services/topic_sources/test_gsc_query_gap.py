@@ -258,3 +258,74 @@ class TestPermutationClustersAreDropped:
         ])
         topics = await source.extract(pool, {"_site_config": BRAND, "max_topics": 3})
         assert len(topics) == 3
+
+
+class _ArgCapturingConn(_FakeConn):
+    """Records the bind args, since the thresholds live in SQL not Python."""
+
+    def __init__(self, setting_value, gap_rows, sink):
+        super().__init__(setting_value, gap_rows)
+        self._sink = sink
+
+    async def fetch(self, query, *args):
+        self._sink.append(args)
+        return await super().fetch(query, *args)
+
+
+class _ArgCapturingPool(_FakePool):
+    def __init__(self, sink, **kw):
+        super().__init__(**kw)
+        self._sink = sink
+
+    def acquire(self):
+        return _ArgCapturingConn(self._setting_value, self._gap_rows, self._sink)
+
+
+class TestDefaultThresholdsAreReachable:
+    """The shipped defaults must be able to match something on a real site.
+
+    Calibrated 2026-09-15. The original 28d + 50-impression pair needed one
+    poorly-ranked query to draw ~1.8 impressions/day. Measured on this install:
+    over 28 days the whole corpus was 103 queries with a median of 2
+    impressions, and the only two clearing 50 ranked at positions 3.8 and 5.4 --
+    ranking well, so they failed ``min_position`` as well. The two conditions
+    could not both be satisfied, and the source returned 0 rows on all 187 runs
+    while reporting ``success`` every time.
+
+    A threshold nothing can reach is indistinguishable from a broken tap, and
+    that is what this pins.
+    """
+
+    @pytest.mark.asyncio
+    async def test_default_window_is_ninety_days(self):
+        sink: list[tuple] = []
+        source = GscQueryGapSource()
+        await source.extract(_ArgCapturingPool(sink, setting_value="true", gap_rows=[]), {})
+        assert sink, "the gap query never ran"
+        window_days = sink[0][0]
+        assert window_days == 90, (
+            "28 days is too short to accumulate impressions on a small site; "
+            "the 90d corpus is where the real gaps show up"
+        )
+
+    @pytest.mark.asyncio
+    async def test_default_impression_floor_is_reachable(self):
+        sink: list[tuple] = []
+        source = GscQueryGapSource()
+        await source.extract(_ArgCapturingPool(sink, setting_value="true", gap_rows=[]), {})
+        min_impressions = sink[0][1]
+        assert min_impressions == 20.0, (
+            "50 was unreachable: no poorly-ranked query on this site had ever "
+            "cleared it in a 28d window"
+        )
+
+    @pytest.mark.asyncio
+    async def test_explicit_config_still_overrides_the_defaults(self):
+        sink: list[tuple] = []
+        source = GscQueryGapSource()
+        await source.extract(
+            _ArgCapturingPool(sink, setting_value="true", gap_rows=[]),
+            {"window_days": 14, "min_impressions": 200},
+        )
+        assert sink[0][0] == 14
+        assert sink[0][1] == 200.0

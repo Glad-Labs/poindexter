@@ -14,12 +14,25 @@ ordinary topic-proposal pipeline.
 Config (``plugin.topic_source.gsc_query_gap`` in app_settings -- no seed
 required, defaults are Python-side, matching every other TopicSource):
 
-- ``config.min_impressions`` (default 50) -- floor on summed impressions over
+- ``config.min_impressions`` (default 20) -- floor on summed impressions over
   the window for a query to count as a real gap, not sampling noise.
 - ``config.min_position`` (default 15) -- average position must be *worse*
   than this (higher number) to count as a gap; ranking well already means
   it's not a gap.
-- ``config.window_days`` (default 28) -- lookback window over ``external_metrics.date``.
+- ``config.window_days`` (default 90) -- lookback window over ``external_metrics.date``.
+
+The window/floor pair was CALIBRATED, not guessed (2026-09-15). The shipped
+28d + 50-impression defaults assume a site big enough for one poorly-ranked
+query to draw ~1.8 impressions a day. Measured against this install: over 28
+days the entire corpus was 103 queries, median 2 impressions, and the only two
+clearing 50 ranked at positions 3.8 and 5.4 -- i.e. ranking WELL, so they failed
+``min_position`` too. The two conditions were mutually exclusive at this traffic
+level and the source returned 0 rows on all 187 of its runs while reporting
+success. At 90d + 20 the same corpus yields 7 candidates -> 6 topics, led by
+"content pipeline automation" (134 impressions, average position 43, ZERO
+clicks) and "ai content pipeline" (74, position 37) -- precisely the gap this
+source exists to find. Dropping the floor further (90d + 10) starts admitting
+quiz-style and hardware-photo queries, so 20 is where signal stops improving.
 - ``config.max_topics`` (default 10) -- cap per run; the shared dedup/ranking
   pass downstream (``topic_sources/runner.py``) handles cross-source ranking,
   this cap just bounds one source's contribution.
@@ -107,9 +120,9 @@ class GscQueryGapSource:
         if str(enabled_raw or "").strip().lower() != "true":
             return []
 
-        min_impressions = float(config.get("min_impressions", 50) or 50)
+        min_impressions = float(config.get("min_impressions", 20) or 20)
         min_position = float(config.get("min_position", 15) or 15)
-        window_days = int(config.get("window_days", 28) or 28)
+        window_days = int(config.get("window_days", 90) or 90)
         max_topics = int(config.get("max_topics", 10) or 10)
         min_variants = int(config.get("permutation_min_variants", 5) or 5)
 

@@ -132,9 +132,33 @@ _URLISH_RE = re.compile(r"https?://|\bwww\.|\S+/\S+")
 # Nothing to write about: no letters at all (`8000-6400`, `2026 2027`).
 _NO_LETTERS_RE = re.compile(r"^[^A-Za-z]*$")
 
+# Image-search intent. These queries earn their impressions from a post's
+# PHOTOS, never from its prose -- Google Images shows the picture, the searcher
+# wants a picture, and no article can satisfy them. They therefore bank
+# impressions and can never bank a click, which is the exact zero-click shape
+# this module exists to reject.
+#
+# Deliberately high-precision. Bare "image" / "photo" / "picture" are NOT here:
+# "docker image", "image generation" and "ai image model" are all legitimate
+# topics for an AI/infra site, and a lazy \bimage\b would eat them. Measured
+# 2026-09-15 against the full 597-query GSC corpus: 6 matches, all six genuine
+# image searches (ddr5 / ryzen hardware close-ups), zero false positives.
+#
+# These also defeat permutation_clusters: "ddr5 ram module close up",
+# "ddr5 ram modules close up" and "ddr5 ram close up pins" are four near-variants
+# but not token-bag reorderings, so the cluster rule cannot see them.
+_IMAGE_INTENT_RE = re.compile(
+    r"\b(?:close[ -]?ups?|wallpapers?|clip ?art|stock (?:photo|image)s?|"
+    r"royalty[ -]free|\d+x\d+ ?(?:px|pixels?)?)\b",
+    re.IGNORECASE,
+)
+
 
 def is_junk_search_query(query: str, *, brand_tokens: tuple[str, ...] = ()) -> bool:
     """True when a GSC query is not reader demand and must not become a topic.
+
+    Rejects: empty, letterless, search operators, URL/repo paths, image-search
+    intent (see ``_IMAGE_INTENT_RE``), and brand navigation.
 
     ``brand_tokens`` are matched as substrings and should be full brand
     phrases / domains ("glad labs", "gladlabs.io"), never bare words — a
@@ -149,6 +173,8 @@ def is_junk_search_query(query: str, *, brand_tokens: tuple[str, ...] = ()) -> b
     if _SEARCH_OPERATOR_RE.search(q):
         return True
     if _URLISH_RE.search(q):
+        return True
+    if _IMAGE_INTENT_RE.search(q):
         return True
     lowered = q.lower()
     return any(t and t in lowered for t in brand_tokens)
