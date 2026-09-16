@@ -35,6 +35,7 @@ import httpx
 import pytest
 
 from poindexter.brain.docker_utils import IN_DOCKER
+from tests.integration.conftest import requires_real_services
 
 # ---------------------------------------------------------------------------
 # The one URL — the guard and the code under test must agree on it
@@ -836,12 +837,27 @@ async def _gpu_serialized(model: str, *, phase: str, needs_mib: int = 0):
         await asyncio.sleep(5)
     yield
 
+@requires_real_services
 class TestThinkingModels:
     """Verify thinking models return non-empty content with sufficient token budget.
 
     Thinking models (qwen3.5, glm-4.7) use internal chain-of-thought tokens
     before producing visible output. They need a larger max_tokens budget
     to account for the reasoning overhead.
+
+    Gated behind the real-services harness (2026-09-16). Both tests load a
+    multi-GB model into a GPU this box SHARES with the live pipeline, ComfyUI,
+    speaches and chatterbox — so a pass depends on who happens to hold VRAM at
+    that second, not on the code under test. Observed failure: glm-4.7 asked
+    for a 14 GB CUDA0 buffer, got `cudaMalloc failed: out of memory`,
+    llama-server exited, Ollama returned 500. The qwen sibling is the same
+    shape and only survived by being smaller, so the gate goes on the CLASS
+    rather than the one test that happened to fail first.
+
+    These still earn their keep — they are what catches a thinking model
+    returning empty `content` (the `think=False` trap). Run them deliberately:
+        INTEGRATION_TESTS=1 REAL_SERVICES_TESTS=1 pytest -m integration \
+            tests/integration/test_content_pipeline_e2e.py -k ThinkingModels
     """
 
     @pytest.mark.asyncio
