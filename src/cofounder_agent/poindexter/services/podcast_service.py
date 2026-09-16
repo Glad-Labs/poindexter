@@ -496,6 +496,108 @@ def _spoken_iso_date(m: "re.Match[str]") -> str:
     return f"{_MONTH_NAMES[month - 1]} {day}, {year}"
 
 
+# ---------------------------------------------------------------------------
+# Numbers, units and quotes at the TTS boundary (2026-09-16)
+# ---------------------------------------------------------------------------
+# Measured on the first presenter video (task 3f5990c6), whisper over the
+# RENDERED narration (the transcript is the right instrument for "which words
+# came out"; silencedetect for timing):
+#
+#   written                         heard
+#   ------------------------------  -------------------------------------
+#   "decodes at 236.7 tok/s"        "decodes at 2036.7 talks"
+#   "105.5 tok/s, 55.4% gone"       "105 talks by 5, 4% gone"
+#   "a 2,068 ms overhead"           "a 2068 misses overhead"
+#   "from 2,218 production calls"   "from 2000 to 2008 production calls"
+#
+# Each raw form reads correctly in a short isolated sentence; the damage only
+# appears in the real utterance where they cluster ("tok/s, 55.4%", a
+# thousands comma two words from a decimal). Handing the engine unambiguous
+# spoken forms removes the ambiguity instead of hoping its number parser gets
+# the context right:
+#
+#   thousands comma   2,218 → 2218            (the comma is a pause to it)
+#   unit after digit  2068 ms → 2068 milliseconds; 236.7 tok/s → 236.7 tokens
+#                     per second; 55.4% → 55.4 percent
+#   tok/s anywhere    "measured in tok/s" → "measured in tokens per second"
+#
+# Verified 2026-09-16 on the prod voice (bf_emma, Kokoro via speaches): the
+# rewritten qwen sentence came back from whisper as "236.7 tokens per second
+# ... 105.5 tokens per second, 55.4% ... 2068 milliseconds". Decimals stay as
+# digits — spelling "236 point 7" read identically, so it buys nothing and
+# would cost the money/version edge cases.
+#
+# Quotes: a quoted word ("evalduration.", "real") is a visual device the
+# engine cannot voice; straight quotes are dropped and single quotes that
+# WRAP a word are unwrapped, apostrophes inside words untouched. Measured at
+# most 0.08 s of extra gap in isolation, but the operator heard breaks around
+# quoted words in the full narration, and the characters carry nothing.
+#
+# Speech boundary only — stored scripts keep the written forms, per the
+# 2026-08-01 generation/speech split. Unit map is DB-tunable
+# (`tts_unit_expansions`, JSON written→spoken, matched only after a digit
+# except for keys containing "/" which match anywhere as whole tokens);
+# `tts_number_normalization_enabled` and `tts_strip_quotes` are the switches.
+_THOUSANDS_COMMA_RE = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+_PERCENT_AFTER_DIGIT_RE = re.compile(r"(?<=\d)\s*%")
+_DEFAULT_UNIT_EXPANSIONS: dict[str, str] = {
+    "tok/s": "tokens per second",
+    "t/s": "tokens per second",
+    "ms": "milliseconds",
+}
+
+
+def _get_unit_expansions(*, site_config: "SiteConfig | None" = None) -> dict[str, str]:
+    _sc = _resolve_site_config(site_config)
+    raw = str(_sc.get("tts_unit_expansions", "") or "").strip()
+    if not raw:
+        return dict(_DEFAULT_UNIT_EXPANSIONS)
+    try:
+        import json
+
+        data = json.loads(raw)
+    except ValueError:
+        logger.warning("[TTS] tts_unit_expansions is not valid JSON — using the built-in map")
+        return dict(_DEFAULT_UNIT_EXPANSIONS)
+    if not isinstance(data, dict):
+        return dict(_DEFAULT_UNIT_EXPANSIONS)
+    return {str(k).strip(): str(v).strip() for k, v in data.items() if str(k).strip() and str(v).strip()}
+
+
+def _normalize_numbers_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    """Thousands commas, digit-anchored units and percent → spoken forms."""
+    _sc = _resolve_site_config(site_config)
+    enabled_raw = str(_sc.get("tts_number_normalization_enabled", "") or "").strip().lower()
+    if enabled_raw and enabled_raw not in ("true", "1", "yes", "on"):
+        return text
+    text = _THOUSANDS_COMMA_RE.sub("", text)
+    text = _PERCENT_AFTER_DIGIT_RE.sub(" percent", text)
+    for written, spoken in _get_unit_expansions(site_config=site_config).items():
+        esc = re.escape(written)
+        if "/" in written:
+            # A slash unit ("tok/s") is unambiguous wherever it appears.
+            text = re.sub(rf"(?<![\w/]){esc}(?![\w/])", spoken, text)
+        else:
+            # A bare abbreviation ("ms") only after a number — "Ms. Smith"
+            # and "the ms in the name" are not units.
+            text = re.sub(rf"(?<=\d)\s*{esc}\b", f" {spoken}", text)
+    return text
+
+
+_WRAPPING_SINGLE_QUOTES_RE = re.compile(r"(?<!\w)'([^'\n]{1,80}?)'(?!\w)")
+
+
+def _strip_quotes_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    """Drop straight double quotes; unwrap 'quoted' words; keep apostrophes."""
+    _sc = _resolve_site_config(site_config)
+    enabled_raw = str(_sc.get("tts_strip_quotes", "") or "").strip().lower()
+    if enabled_raw and enabled_raw not in ("true", "1", "yes", "on"):
+        return text
+    text = text.replace('"', "")
+    text = _WRAPPING_SINGLE_QUOTES_RE.sub(r"\1", text)
+    return re.sub(r"  +", " ", text)
+
+
 def _normalize_dashes(text: str, *, site_config: "SiteConfig | None" = None) -> str:
     """Give digit-adjacent dashes their spoken meaning (see the rules above)."""
     _sc = _resolve_site_config(site_config)
@@ -605,6 +707,8 @@ def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None)
     # replacement/structural passes (whose " - " → ", " and em-dash → pause
     # rules would otherwise turn a spaced digit range into a comma).
     text = _normalize_dashes(text, site_config=site_config)
+    # Thousands commas, digit-anchored units, percent (see the rules above).
+    text = _normalize_numbers_for_speech(text, site_config=site_config)
     # Simple replacements (DB-configurable via tts_pronunciations).
     for written, spoken in _get_tts_replacements(site_config=site_config):
         text = _apply_spoken_replacement(text, written, spoken)
@@ -618,6 +722,9 @@ def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None)
     # (URLs, filenames, pronunciation keys), so spacing compounds any earlier
     # pulls those matches apart. See _space_compound_hyphens.
     text = _space_compound_hyphens(text, site_config=site_config)
+    # Quotes last: the structural pass above has already turned smart quotes
+    # into straight ones, and every earlier rule matched on the written form.
+    text = _strip_quotes_for_speech(text, site_config=site_config)
     return text
 
 

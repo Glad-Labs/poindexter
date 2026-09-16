@@ -2092,3 +2092,86 @@ class TestPersonaDrivenEngine:
         svc._generate_with_voice = _fake_gen  # type: ignore[method-assign]
         await svc.synthesize("hello", output_path=tmp_path / "n.mp3", key="t1")
         assert calls == [("bf_emma", None)]
+
+
+class TestNumbersUnitsQuotesAtTheBoundary:
+    """2026-09-16, first presenter video (task 3f5990c6), whisper over the
+    RENDERED narration: "236.7 tok/s" → "2036.7 talks"; "105.5 tok/s, 55.4%
+    gone" → "105 talks by 5, 4% gone"; "2,068 ms" → "2068 misses"; "2,218
+    production calls" → "2000 to 2008 production calls". Each raw form reads
+    fine alone; clustered they confuse the engine's number parser, so the
+    boundary hands it unambiguous spoken forms instead. Verified on the prod
+    voice: the rewritten sentence came back as "236.7 tokens per second ...
+    105.5 tokens per second. 55.4% gone with a 2068 milliseconds overhead"."""
+
+    QWEN = ("Then there's qwen2.5:7b, which decodes at 236.7 tok/s but delivers "
+            "just 105.5 tok/s, 55.4% gone with a 2,068 ms overhead.")
+
+    def test_the_measured_sentence_comes_out_unambiguous(self):
+        out = _normalize_for_speech(self.QWEN, site_config=_pron_sc())
+        assert "236.7 tokens per second" in out
+        assert "105.5 tokens per second" in out
+        assert "55.4 percent" in out
+        assert "2068 milliseconds" in out
+        assert "tok/s" not in out and "%" not in out and "2,068" not in out
+
+    def test_thousands_commas_are_dropped_but_list_commas_stay(self):
+        out = _normalize_for_speech("from 2,218 calls; 1,000,000 users; 1, 2, 3", site_config=_pron_sc())
+        assert "2218 calls" in out
+        assert "1000000 users" in out
+        assert "1, 2, 3" in out
+
+    def test_bare_unit_only_fires_after_a_digit(self):
+        out = _normalize_for_speech("Ms. Smith waited 40 ms for the ms server.", site_config=_pron_sc())
+        assert out.startswith("Ms. Smith")
+        assert "40 milliseconds" in out
+        assert "the ms server" in out
+
+    def test_slash_unit_fires_anywhere_as_a_whole_token(self):
+        out = _normalize_for_speech("measured in tok/s and t/s, not in km/h", site_config=_pron_sc())
+        assert out.count("tokens per second") == 2
+        assert "km/h" in out
+
+    def test_double_quotes_dropped_and_wrapping_single_quotes_unwrapped(self):
+        out = _normalize_for_speech(
+            "what Ollama calls \"evalduration.\" It's 'fine' and don't worry.", site_config=_pron_sc(),
+        )
+        assert '"' not in out
+        assert "calls evalduration." in out
+        assert "It's fine and don't worry" in out
+
+    def test_money_and_versions_untouched(self):
+        out = _normalize_for_speech("costs $1.65 trillion on v2.0 at 79.7%", site_config=_pron_sc())
+        assert "$1.65 trillion" in out
+        assert "version 2.0" in out
+        assert "79.7 percent" in out
+
+    def test_stored_script_pass_keeps_written_forms(self):
+        """The generation-side pass must NOT bake spoken forms into the script."""
+        out = _normalize_for_script(self.QWEN + ' He said "real".', site_config=_pron_sc())
+        assert "236.7 tok/s" in out and "2,068 ms" in out and "55.4%" in out
+        assert '"real"' in out
+
+    def test_switches_turn_the_rules_off(self):
+        import json
+
+        from poindexter.services.site_config import SiteConfig
+        sc = SiteConfig(initial_config={
+            "tts_number_normalization_enabled": "false",
+            "tts_strip_quotes": "false",
+            "tts_pronunciations": json.dumps({}),
+        })
+        out = _normalize_for_speech('a 2,068 ms "overhead"', site_config=sc)
+        assert "2,068 ms" in out and '"overhead"' in out
+
+    def test_unit_map_is_db_tunable(self):
+        import json
+
+        from poindexter.services.site_config import SiteConfig
+        sc = SiteConfig(initial_config={
+            "tts_unit_expansions": json.dumps({"fps": "frames per second"}),
+            "tts_pronunciations": json.dumps({}),
+        })
+        out = _normalize_for_speech("renders at 24 fps and 30 ms", site_config=sc)
+        assert "24 frames per second" in out
+        assert "30 ms" in out  # the operator's map replaces the default, not extends it

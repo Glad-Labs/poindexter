@@ -3025,6 +3025,15 @@ DEFAULTS: dict[str, str] = {
     # glued to a leading digit → "negative 5", and YYYY-MM-DD → "May 4,
     # 2026". Word-word compounds ("state-of-the-art") are untouched.
     'tts_dash_normalization_enabled': 'true',
+    # Numbers/units/quotes at the TTS boundary (2026-09-16). Measured on the
+    # first presenter video: "236.7 tok/s" was voiced as "2036.7 talks",
+    # "2,068 ms" as "2068 misses", "2,218" as "2000 to 2008". The map is
+    # written→spoken; bare abbreviations fire only after a digit, slash
+    # units anywhere as whole tokens. Percent after a digit is always
+    # spoken and thousands commas dropped while the switch is on.
+    'tts_number_normalization_enabled': 'true',
+    'tts_unit_expansions': '{"tok/s": "tokens per second", "t/s": "tokens per second", "ms": "milliseconds"}',
+    'tts_strip_quotes': 'true',
     # Word-word hyphens ("state-of-the-art") → a space at the render boundary.
     # Chatterbox gives a compound hyphen a small breath rather than running the
     # words together, so compound-dense narration comes out choppy: measured
@@ -6138,6 +6147,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tts_domain_tld_pronunciations': {'owner': 'podcast_service', 'value_type': 'json'},
     'tts_model_name_families': {'owner': 'podcast_service', 'value_type': 'csv'},
     'tts_pronunciations': {'owner': 'podcast_service', 'value_type': 'json'},
+    'tts_number_normalization_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
+    'tts_unit_expansions': {'owner': 'podcast_service', 'value_type': 'json'},
+    'tts_strip_quotes': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'tts_voice_pool': {'owner': 'podcast_service'},
     'tts_voice_rotation_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'unlinked_attribution_enabled': {'owner': 'qa_unlinked_attribution', 'value_type': 'boolean'},

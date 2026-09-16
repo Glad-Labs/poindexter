@@ -58,6 +58,51 @@ Known accepted misread: a model pin whose family is not in
 read as a range. The fix is adding the family to that CSV, not touching the
 dash pass.
 
+## The number, unit and quote rules (2026-09-16)
+
+Measured on the first presenter video, running whisper over the **rendered** narration
+(the instrument for "which words came out"):
+
+| written                       | heard before                      | spoken now                              |
+| ----------------------------- | --------------------------------- | --------------------------------------- |
+| `decodes at 236.7 tok/s`      | "decodes at 2036.7 talks"         | "236.7 tokens per second"               |
+| `105.5 tok/s, 55.4% gone`     | "105 talks by 5, 4% gone"         | "105.5 tokens per second, 55.4 percent" |
+| `a 2,068 ms overhead`         | "a 2068 misses overhead"          | "a 2068 milliseconds overhead"          |
+| `from 2,218 production calls` | "from 2000 to 2008 production…"   | "from 2218 production calls"            |
+| `calls "evalduration."`       | quote voiced as a break           | "calls evalduration."                   |
+| `Ms. Smith`, `it's`, `$1.65`  | unchanged                         | unchanged                               |
+
+Every raw form reads correctly in a short isolated sentence; the damage only appears in the
+real utterance where they cluster (a slash unit next to a percent, a thousands comma two
+words from a decimal). Rather than hope the engine's number parser gets the context right,
+the boundary hands it unambiguous forms. Decimals stay as digits: spelling "236 point 7"
+read identically on the prod voice, so it buys nothing and would cost the money/version
+edge cases.
+
+Rules, all speech-boundary only (stored scripts keep the written forms):
+
+- **Thousands commas** between digit groups are dropped (`2,218` → `2218`). List commas
+  (`1, 2, 3`) have a space and are untouched.
+- **Units after a digit** expand via `tts_unit_expansions` (JSON, written → spoken; default
+  `tok/s`, `t/s`, `ms`). A bare abbreviation fires only after a number — `Ms. Smith` and
+  "the ms server" are not units — while a slash unit fires anywhere as a whole token
+  (`km/h` is not in the map and is left alone).
+- **Percent after a digit** is spoken ("55.4 percent").
+- **Quotes**: straight double quotes are dropped; single quotes that *wrap* a word are
+  unwrapped; apostrophes inside words stay. Timing measured at most 0.08 s of extra gap in
+  isolation — the quote characters carry nothing the engine can voice, so they go.
+
+Switches: `tts_number_normalization_enabled`, `tts_strip_quotes` (both default on).
+
+Verification (prod voice `bf_emma`, Kokoro via speaches, then `Systran/faster-whisper-medium`):
+the rewritten qwen sentence came back as *"236.7 tokens per second, but delivers just 105.5
+tokens per second. 55.4% gone with a 2068 milliseconds overhead"*, the calls sentence as
+*"2218 production calls"*, and the quoted phrase as *"calls eval duration."* Gaps ≥ 0.3 s
+fell only at commas and sentence ends.
+
+Known, separate: the model-name collapse emits `qwen 2.5 7b`, which the engine runs together
+("2.57b"); a separator between version and size is a follow-up.
+
 ## Measuring a pronunciation fix — pick the right instrument
 
 **This is the part that is easy to get wrong.** There are two questions, and
