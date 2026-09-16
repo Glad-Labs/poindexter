@@ -16,23 +16,33 @@
 
 ---
 
+> **Status as of 2026-09-16** (audited against the repo, not from memory):
+> **1.4 the copy pack is DONE** — all five artifacts exist, and every factual
+> claim in them has been verified against the live system (stack#3818/#3819/#3822).
+> **1.1 Evening A is DONE** — the capture toolkit is committed at `scripts/demo/`.
+> Remaining before launch: **record the demo** (1.1 Evening B, needs you and a
+> running stack), **three README items** (demo config, the one-line provenance
+> link, embedding the GIF), **the funnel check** (1.3), and the four remaining
+> `[FILL]`s in the copy — now down to the 1am failure, the relicensing reason,
+> and tooling/subscription spend.
+
 ## Phase 1 — Prep (≈ 6 evenings, ~8–10 hours of your time)
 
 ### 1.1 Demo GIF/video — 2 evenings ~ 3 hrs · **[YOU record, Claude scripts]**
 
 The single highest-value asset you're missing.
 
-- [ ] Evening A: Have a Claude Code session extend `scripts/capture-readme-screenshots.mjs` (or use asciinema + a screen recorder) into a capture plan for the core loop: `poindexter tasks create` → Grafana pipeline filling in → draft landing in approval queue with QA scores → approve → post live on gladlabs.io.
+- [x] Evening A (DONE 2026-09-16 — `scripts/demo/` committed: build-demo.sh, VHS tape templates, capture-frames.mjs, README): Have a Claude Code session extend `scripts/capture-readme-screenshots.mjs` (or use asciinema + a screen recorder) into a capture plan for the core loop: `poindexter tasks create` → Grafana pipeline filling in → draft landing in approval queue with QA scores → approve → post live on gladlabs.io.
 - [ ] Evening B: Record it against your running stack, trim to 30–60 seconds, compress (GIF <10 MB for GitHub, or an MP4 link). Place it directly under the banner in the README.
 - Done when: a stranger can watch the full loop without reading a word.
 
 ### 1.2 README fixes — 1 evening ~ 1.5 hrs · **[CLAUDE DRAFTS, you review]**
 
-- [ ] Retitle away from "factory" → lead with rejection (e.g., "the content pipeline that rejects half of what it writes").
-- [ ] Put the actual Pro price in the tier table.
+- [x] Retitle away from "factory" → lead with rejection (e.g., "the content pipeline that rejects half of what it writes").
+- [x] Put the actual Pro price in the tier table. **(DONE 2026-09-16 — $19/mo / $180/yr now in the table, replacing the "See gladlabs.ai" deferral.)**
 - [ ] Add a "kick the tires in 10 minutes" demo config (one small model in every role, clearly labeled demo-quality) for people below 8 GB VRAM or below 30 GB of patience.
 - [ ] Add one line + link in Project Status: built by one person directing AI agents (links to the story post from 1.4).
-- [ ] Enable GitHub Discussions and seed it with 2–3 starter threads (a welcome/intro thread, a "what are you running it on?" thread).
+- [x] Enable GitHub Discussions (verified on 2026-09-16) and seed it with 2–3 starter threads (a welcome/intro thread, a "what are you running it on?" thread).
 
 ### 1.3 Funnel check — 1 evening ~ 1 hr · **[YOU]**
 

@@ -27,4 +27,4 @@ Happy to answer anything about running LLM workloads as boring, monitored, self-
 
 ---
 
-_Mechanics: post the same week as the story post (Phase 2.3). This sub reliably asks about resource usage — idle RAM/CPU, disk growth — so know your numbers before posting. **[FILL: idle + under-load resource footprint of the 4-container default stack, roughly.]**_
+_Mechanics: post the same week as the story post (Phase 2.3). This sub reliably asks about resource usage — idle RAM/CPU, disk growth — so know your numbers before posting. Rough numbers for the default stack: it targets **8-16 GB VRAM and 32 GB RAM** (5060 Ti / 5070 class), with an **idle RAM target of ~4-6 GB** — the full operator stack I run is 20+ GB, which is why the consumer compose file exists as a separate thing. Disk is dominated by models and generated media, not the containers._

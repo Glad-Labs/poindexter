@@ -54,7 +54,7 @@ For launch days, on your phone. These are pre-written so 10pm-after-work-and-bed
 
 **"What does it cost to run?"**
 
-> Hardware was **[FILL: rough 5090 rig cost]**, and after that it's about 54 kWh a month — call it $59 on my rates. No API costs by default: the shipped writer is a local Ollama model, and cloud is an opt-in plugin behind a spend guard. (I've pinned mine to Claude Sonnet, which runs about $10/mo — worth saying out loud rather than letting someone find it.)
+> Hardware was around $10k of parts in May 2025 — before RAM prices went stupid, so the same build is worse value today. After that it's about 54 kWh a month — call it $59 on my rates. No API costs by default: the shipped writer is a local Ollama model, and cloud is an opt-in plugin behind a spend guard. (I've pinned mine to Claude Sonnet, which runs about $10/mo — worth saying out loud rather than letting someone find it.)
 
 **"Why Postgres as a message bus? Why not Kafka/NATS/Redis?"**
 
@@ -76,11 +76,11 @@ For launch days, on your phone. These are pre-written so 10pm-after-work-and-bed
 
 **"What's the catch with Pro?"**
 
-> Engine's Apache 2.0 with nothing feature-gated. Pro is the production-tuned prompt packs and dashboard configs from my live system — the months-of-tuning layer, not the capability layer. **[FILL: price]**, and if you'd rather tune your own from the baselines, that's a fully supported path, not a crippled one.
+> Engine's Apache 2.0 with nothing feature-gated. Pro is the production-tuned prompt packs and dashboard configs from my live system — the months-of-tuning layer, not the capability layer. $19/mo, or $180/yr, and if you'd rather tune your own from the baselines, that's a fully supported path, not a crippled one.
 
 **"Why Apache 2.0? / I saw it was AGPL before."**
 
-> Relicensed from AGPL in April. **[FILL: your actual reason in one sentence — likely some version of: AGPL was scaring off the users I most wanted, and a solo alpha project needs adoption more than it needs copyleft protection.]**
+> Relicensed from AGPL in April, to a permissive licence, for the boring reason: I want people to actually use it. AGPL was a barrier for exactly the users I was hoping for, and an alpha project with five stars needs adoption more than it needs copyleft protection.
 
 **"Are you making money? What's the business?"**
 
