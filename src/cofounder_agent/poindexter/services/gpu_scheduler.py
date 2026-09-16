@@ -62,7 +62,7 @@ Usage:
 import asyncio
 import itertools
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -2007,7 +2007,9 @@ class GPUScheduler:
                     host or "primary", exc,
                 )
 
-    async def reclaim_render_vram(self, *, include_ollama: bool = True) -> None:
+    async def reclaim_render_vram(
+        self, *, include_ollama: bool = True, exclude: Collection[str] = (),
+    ) -> None:
         """Run the render-GPU VRAM reclaim ladder — every idle media sidecar.
 
         One ladder, shared by every caller that needs render-GPU headroom:
@@ -2022,6 +2024,11 @@ class GPUScheduler:
         are how stable-audio sat unreachable while "the ladder" dutifully
         evicted services holding almost nothing (poindexter#999) — add new
         rungs HERE, not at a call site.
+
+        ``exclude`` names levers the caller must keep alive because it is
+        about to use that sidecar (the presenter render excludes ``comfyui``).
+        A reclaimed-then-restarted callee loses the prompt the caller just
+        submitted, so this is correctness, not an optimisation.
 
         ``include_ollama=False`` is the LLM-side variant: it clears the
         media sidecars to make room FOR an Ollama load, where evicting
@@ -2043,7 +2050,20 @@ class GPUScheduler:
             ("stable-audio", lambda: self._unload_stable_audio(hard=True)),
             ("comfyui", lambda: self._unload_comfyui(hard=True)),
         ))
+        skip = {str(x).strip().lower() for x in (exclude or ())}
         for name, call in levers:
+            if name in skip:
+                # The caller is about to USE this sidecar. Reclaiming it here
+                # is self-defeating: the hard rung frees ~0 GB on an idle
+                # ComfyUI, the squat rule (GPU short) then queues a RESTART,
+                # and the brain bounces the container seconds after the
+                # caller has submitted its prompt — the prompt dies with the
+                # process and the caller polls a ghost until its timeout.
+                # 2026-09-16 17:02Z: presenter render, restart request
+                # 17:02:35, ComfyUI back at 17:02:56, hero prompt lost, the
+                # render sat idle for its whole 900 s budget.
+                logger.info("[GPU] VRAM reclaim lever %r skipped — the caller needs it", name)
+                continue
             try:
                 await call()
             except Exception as exc:  # noqa: BLE001 — best-effort by contract

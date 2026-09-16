@@ -761,7 +761,9 @@ async def _reclaim_card_for_presenter() -> None:
     try:
         from poindexter.services.gpu_scheduler import gpu
 
-        await gpu.reclaim_render_vram(include_ollama=True)
+        # ComfyUI is the S2V engine this very clip is about to call — never
+        # let the ladder restart it out from under the prompt (17:02Z today).
+        await gpu.reclaim_render_vram(include_ollama=True, exclude=("comfyui",))
     except Exception as exc:  # noqa: BLE001 — a failed reclaim must not become a certain skip
         from poindexter.utils.exception_format import describe_exception
 

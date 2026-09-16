@@ -1337,3 +1337,44 @@ class TestGpuLockAcquireTimeout:
             await gpu._release_pg_advisory_lock()
         mock_conn.terminate.assert_called_once()
         assert gpu._pg_lock_conn is None
+
+
+@pytest.mark.asyncio
+class TestReclaimLadderSparesTheCallee:
+    """2026-09-16 17:02Z: the presenter render ran the full ladder, ComfyUI
+    'freed 0.0 GB' on an idle card, the squat rule queued a restart, the
+    brain bounced the container at 17:02:56 — seconds after the render had
+    submitted its next prompt to it. The prompt died with the process and the
+    render polled a ghost for its whole 900 s budget. A caller must be able to
+    keep alive the sidecar it is about to use."""
+
+    def _scheduler_with_mocked_rungs(self):
+        from unittest.mock import AsyncMock
+
+        s = GPUScheduler()
+        for name in ("_unload_ollama_models", "_unload_image_gen", "_unload_chatterbox",
+                     "_unload_wan", "_unload_stable_audio", "_unload_comfyui"):
+            setattr(s, name, AsyncMock())
+        return s
+
+    async def test_excluded_rung_is_skipped_and_the_rest_still_run(self):
+        s = self._scheduler_with_mocked_rungs()
+        await s.reclaim_render_vram(include_ollama=True, exclude=("comfyui",))
+        s._unload_comfyui.assert_not_awaited()
+        s._unload_ollama_models.assert_awaited_once()
+        s._unload_image_gen.assert_awaited_once_with(hard=True)
+        s._unload_stable_audio.assert_awaited_once_with(hard=True)
+        s._unload_wan.assert_awaited_once_with(hard=True)
+        s._unload_chatterbox.assert_awaited_once()
+
+    async def test_exclude_is_case_and_whitespace_tolerant(self):
+        s = self._scheduler_with_mocked_rungs()
+        await s.reclaim_render_vram(exclude=(" ComfyUI ", "WAN"))
+        s._unload_comfyui.assert_not_awaited()
+        s._unload_wan.assert_not_awaited()
+        s._unload_image_gen.assert_awaited_once_with(hard=True)
+
+    async def test_no_exclude_keeps_the_full_ladder(self):
+        s = self._scheduler_with_mocked_rungs()
+        await s.reclaim_render_vram(include_ollama=True)
+        s._unload_comfyui.assert_awaited_once_with(hard=True)
