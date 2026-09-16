@@ -16,7 +16,7 @@ For launch days, on your phone. These are pre-written so 10pm-after-work-and-bed
 
 **"So you didn't actually build this — Claude did. What did you even do?"**
 
-> Wrote the specs, reviewed every change, rejected the work that was wrong (a lot of it), designed the architecture constraints, and enforced the test gate that keeps 10k commits coherent. Whether that's "building" is a fair question — my honest answer is it felt like being an engineering manager with an infinitely fast, slightly overconfident team. The artifact ships daily and survives an 18,000-test suite; I'll let that carry the argument either way.
+> Wrote the specs, designed the architecture constraints, corrected the design whenever it drifted from what the system actually needed, and enforced the test gate that keeps 10,500 commits coherent. What I did not do is read every line or reject much — at this volume that isn't a real option, and it would be pretentious to think I'd out-write a frontier model on the code itself. The corrections are almost all architecture and planning: the case nobody considered, the decision that was locally fine and globally wrong. Misses in design, not errors in code. Whether that's "building" is a fair question — my honest answer is it felt like being an engineering manager with an infinitely fast, slightly overconfident team. The artifact ships daily and survives an 18,000-test suite; I'll let that carry the argument either way.
 
 **"Did AI write this comment too?"**
 
@@ -26,7 +26,7 @@ For launch days, on your phone. These are pre-written so 10pm-after-work-and-bed
 
 **"This is why software engineering is dying / you're not a real engineer."**
 
-> Maybe. I spent most of the year embarrassed about exactly this, so I'm not the guy who'll give you a confident speech about the future of the field. What I can report is one data point: this way of working produced a system I couldn't have built alone in the hours I have, and it only worked because of very traditional engineering discipline — tests, CI, review, saying no. Take from that what you want.
+> Maybe. I spent most of the year embarrassed about exactly this, so I'm not the guy who'll give you a confident speech about the future of the field. What I can report is one data point: this way of working produced a system I couldn't have built alone in the hours I have, and it only worked because of very traditional engineering discipline — tests, CI, a merge gate nothing gets past, saying no. Take from that what you want.
 
 ## The content-ethics questions
 
