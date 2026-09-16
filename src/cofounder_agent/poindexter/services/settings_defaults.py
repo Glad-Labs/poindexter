@@ -1394,10 +1394,23 @@ DEFAULTS: dict[str, str] = {
     #   settle   — seconds to wait before re-reading (release is not instant)
     #   min_freed — GB that must be released for the unload to count as working
     #   cooldown — minutes between queued restarts PER CONTAINER, so a
-    #              persistently squatting sidecar is not bounced every pass
+    #              persistently squatting sidecar is not bounced every pass.
+    #              5, not 30 (2026-09-15): the storm this guarded against —
+    #              ComfyUI bounced 8x/day for idling at 0.5 GB — is now stopped
+    #              upstream by vram_reclaim_restart_below_free_gb, which refuses
+    #              to restart anything while the render GPU has room. At 30 the
+    #              cooldown blocked the ONE restart a presenter render needed:
+    #              every sidecar answered nothing_to_reclaim while holding its
+    #              CUDA context, the card sat at 5.6 GB free, and the log read
+    #              "a restart was requested 676s ago — within the 30-minute
+    #              cooldown". The presenter shot fell back to a brand card and
+    #              the hero animation degraded to a still. Restarts are only
+    #              ever queued while the GPU is short, so 5 minutes is enough
+    #              to stop thrash inside one busy window without out-waiting
+    #              the render that asked.
     'vram_reclaim_settle_seconds': '6.0',
     'vram_reclaim_min_freed_gb': '1.0',
-    'vram_reclaim_restart_cooldown_minutes': '30',
+    'vram_reclaim_restart_cooldown_minutes': '5',
     # A sidecar is only restarted for squatting while the render GPU has
     # less than this much free VRAM (GB). Above it, freeing nothing means
     # holding nothing; below it, even a nothing_to_reclaim decline is

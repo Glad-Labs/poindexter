@@ -2487,7 +2487,7 @@ class GPUScheduler:
             )
             return
 
-        cooldown_min = sc.get_float("vram_reclaim_restart_cooldown_minutes", 30.0) or 30.0
+        cooldown_min = sc.get_float("vram_reclaim_restart_cooldown_minutes", 5.0) or 5.0
         now = time.monotonic()
         last = _LAST_RESTART_REQUEST.get(container)
         if last is not None and (now - last) < cooldown_min * 60:

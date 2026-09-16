@@ -17,11 +17,13 @@ service for correctly declining. That case is the first test below.
 
 from __future__ import annotations
 
+import pathlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import poindexter.services.gpu_scheduler as gs
+from poindexter.services import gpu_scheduler
 from poindexter.services.gpu_scheduler import GPUScheduler
 
 
@@ -308,3 +310,18 @@ class TestEveryHardRungIsWired:
              patch.object(s, "_verify_reclaim_or_restart", verify):
             await s._unload_wan(hard=False)
         verify.assert_not_awaited()
+
+
+def test_restart_cooldown_default_is_five_minutes():
+    """30 out-waited the render that asked for the card (2026-09-15): every
+    sidecar answered nothing_to_reclaim while holding its CUDA context, and the
+    one restart that would have freed it was refused as "requested 676s ago —
+    within the 30-minute cooldown". The room check (restart_below_free_gb) is
+    now the storm guard, so the cooldown only has to stop thrash inside one
+    busy window. Pin the seeded default AND the reader's code fallback so they
+    cannot drift apart."""
+    from poindexter.services import settings_defaults as sd
+
+    assert sd.DEFAULTS["vram_reclaim_restart_cooldown_minutes"] == "5"
+    src = pathlib.Path(gpu_scheduler.__file__).read_text()
+    assert 'get_float("vram_reclaim_restart_cooldown_minutes", 5.0) or 5.0' in src
