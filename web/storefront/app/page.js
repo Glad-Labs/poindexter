@@ -36,9 +36,9 @@ export default function Landing() {
               style={{ maxWidth: '640px' }}
             >
               A full content factory on one PC: a post a day at 80+ quality,
-              with images, podcast episodes, and social drafts riding along.
-              Runs local with Ollama — no paid APIs, no vendor deciding what
-              you&apos;re allowed to write about.
+              with images, podcast episodes, video, YouTube Shorts, and social
+              drafts riding along. Runs local with Ollama — no paid APIs, no
+              vendor deciding what you&apos;re allowed to write about.
             </p>
 
             <div className="sf-reveal sf-reveal--4 sf-hero__ctas">
@@ -66,7 +66,7 @@ export default function Landing() {
               <div className="sf-card__num">01 · TUNING</div>
               <h3 className="sf-card__title">Production Tuning</h3>
               <p className="sf-card__body">
-                The 950+ live-tuned settings that run Matt&apos;s content
+                The 1,700+ live-tuned settings that run Matt&apos;s content
                 business — exported from the running system every week, not a
                 frozen snapshot, and adopted safely in one command. Skip the
                 months of trial and error. This is the product.

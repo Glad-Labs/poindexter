@@ -66,7 +66,7 @@ export default function GuidePage() {
             </li>
             <li>
               <span>
-                <strong>THE LIVE-TUNED CONFIG SEED</strong> — 950+ production
+                <strong>THE LIVE-TUNED CONFIG SEED</strong> — 1,700+ production
                 values from the running business: quality thresholds, QA-rail
                 strictness, cadence, routing, cost controls. One command —
                 <code> poindexter pro apply</code> — adopts them safely, never

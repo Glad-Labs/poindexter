@@ -279,12 +279,14 @@ If any of those would block your use case, that's worth knowing before you start
 
 The engine is free and open-source under Apache 2.0. **Pro** is for operators who want production-grade output without months of tuning.
 
-| Tier     | Price             | What you get                                                                                                                                                                     |
-| -------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Free** | $0                | Full pipeline engine, nothing feature-gated — baseline prompts, all Grafana dashboards this repo ships, GitHub issues support                                                    |
-| **Pro**  | $19/mo or $180/yr | Production-tuned prompt packs exported from the live system, curated dashboard refreshes, prompt updates as the system is tuned, private VIP Discord, the Poindexter book (perk) |
+| Tier     | Price                                | What you get                                                                                                                                                                     |
+| -------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Free** | $0                                   | Full pipeline engine, nothing feature-gated — baseline prompts, all Grafana dashboards this repo ships, GitHub issues support                                                    |
+| **Pro**  | $19/mo or $180/yr — 7-day free trial | Production-tuned prompt packs exported from the live system, curated dashboard refreshes, prompt updates as the system is tuned, private VIP Discord, the Poindexter book (perk) |
 
 Pro exists for the obvious case: you've installed the OSS, you've seen output that's _almost_ there, and you want the version that's actually shipping content on gladlabs.io daily.
+
+Pro starts with a **7-day free trial**, and the current price is a **Founding Member rate, locked for life**. The free engine never needs a subscription either way.
 
 **[See Poindexter Pro → gladlabs.ai](https://www.gladlabs.ai)**
 
