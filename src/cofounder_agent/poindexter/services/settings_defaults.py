@@ -697,6 +697,10 @@ DEFAULTS: dict[str, str] = {
     # Free VRAM the render insists on before starting a chunk; below it the
     # shot falls back rather than OOM-ing the card mid-video.
     'video_presenter_min_free_vram_gb': '26',
+    # After the reclaim ladder queues sidecar restarts, the brain executes
+    # them seconds later; the presenter floor polls free VRAM (+ ComfyUI's
+    # own reusable pool) for up to this long before refusing the shot.
+    'video_presenter_reclaim_wait_s': '60',
     # S2V render prompt; {display_name} is the persona's display name. The
     # persona's render_prompt_suffix and the shot's delivery note are appended.
     'video_presenter_render_prompt': (
@@ -4976,6 +4980,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_presenter_shots_max': {'owner': 'video', 'value_type': 'integer'},
     'youtube_contains_synthetic_media': {'owner': 'video', 'value_type': 'string'},
     'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
+    'video_presenter_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_hero_width': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_height': {'owner': 'video', 'value_type': 'integer'},

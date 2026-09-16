@@ -749,6 +749,71 @@ def _compose_hero_wan_prompt(
     return f"{base}. Camera and motion: {direction}"
 
 
+async def _comfyui_reserved_gb(site_config: Any) -> float:
+    """VRAM ComfyUI already holds in its torch pool, in GB — 0.0 when unknown.
+
+    The presenter clip is rendered BY ComfyUI, so memory ComfyUI has reserved
+    is memory the render can reuse — exactly the way ``_live_free_vram_gb``
+    adds wan's own pool back for the hero path. Read from ComfyUI's
+    ``/system_stats`` (``torch_vram_total`` = torch reserved on its device).
+    Fail-soft to 0.0: under-counting only makes the floor stricter.
+    """
+    try:
+        import httpx
+
+        from poindexter.services.video_providers.comfyui import _resolve_server_url as _comfy_url
+
+        url = _comfy_url({}, site_config).rstrip("/") + "/system_stats"
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return 0.0
+        devices = (resp.json() or {}).get("devices") or []
+        if not devices:
+            return 0.0
+        reserved = float(devices[0].get("torch_vram_total") or 0.0)
+        return max(0.0, reserved / (1024 ** 3))
+    except Exception:  # noqa: BLE001
+        # silent-ok: a refinement of the headroom reading, not the reading
+        # itself — ComfyUI unreachable means "count none of its pool", which
+        # only makes the floor stricter; the live free-VRAM read still decides.
+        return 0.0
+
+
+async def _presenter_headroom_gb(site_config: Any) -> float | None:
+    """Free VRAM plus ComfyUI's own reserved pool — what an S2V chunk can use."""
+    free = await _live_free_vram_gb(site_config)
+    if free is None:
+        return None
+    return free + await _comfyui_reserved_gb(site_config)
+
+
+async def _wait_for_presenter_headroom(
+    site_config: Any, min_free: float,
+) -> float | None:
+    """Poll the headroom until it clears the floor or the wait budget ends.
+
+    The ladder queues sidecar RESTARTS (stable-audio, wan) that the brain
+    executes seconds later — measured 2026-09-16 21:00:54: the floor was read
+    0.2 s after the restart requests were queued, saw 0.7 GB free on a card
+    the restarts were about to clear, and the closing presenter shot became a
+    brand card. Budget is ``video_presenter_reclaim_wait_s`` (default 60);
+    polls every 5 s; returns the last reading (None = unknown, fail open).
+    """
+    wait_s = 60.0
+    if site_config is not None:
+        try:
+            wait_s = float(site_config.get_float("video_presenter_reclaim_wait_s", 60.0))
+        except Exception:  # noqa: BLE001  # silent-ok: settings read must not decide a render
+            wait_s = 60.0
+    deadline = time.monotonic() + max(0.0, wait_s)
+    headroom = await _presenter_headroom_gb(site_config)
+    while headroom is not None and headroom < min_free and time.monotonic() < deadline:
+        await asyncio.sleep(5.0)
+        headroom = await _presenter_headroom_gb(site_config)
+    return headroom
+
+
 async def _reclaim_card_for_presenter() -> None:
     """Run the shared VRAM ladder so a presenter chunk can have the card.
 
@@ -2239,11 +2304,17 @@ async def _render_presenter_clip(
         except Exception:  # noqa: BLE001  # silent-ok: settings read must not
             # decide a render's fate; the code floor stands.
             min_free = 26.0
-    free = await _live_free_vram_gb(site_config)
+    # Headroom = free VRAM + what ComfyUI already holds (it is the engine that
+    # renders this clip, so its pool is reusable), polled while the ladder's
+    # queued restarts land. 2026-09-16: shot 12 was refused at "0.7 GB free"
+    # 0.2 s after restarts were queued, on a card where ComfyUI itself held
+    # 16.8 GB of reusable pool — a second S2V chunk needed nothing new.
+    free = await _wait_for_presenter_headroom(site_config, min_free)
     if free is not None and free < min_free:
         return _fail(
-            f"only {free:.1f} GB free on the card; a presenter chunk needs "
-            f"~{min_free:.0f} GB (video_presenter_min_free_vram_gb)"
+            f"only {free:.1f} GB usable on the card (free + ComfyUI's own pool) "
+            f"after waiting for reclaim; a presenter chunk needs ~{min_free:.0f} GB "
+            f"(video_presenter_min_free_vram_gb)"
         )
     width, height, fps = _hero_render_dims(orientation, site_config)
     clip_path = str(work_dir / f"presenter_{shot.idx}.mp4")

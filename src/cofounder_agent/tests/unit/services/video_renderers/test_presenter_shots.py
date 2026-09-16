@@ -77,6 +77,8 @@ class TestComposePrompt:
 def quiet_gpu(monkeypatch):
     monkeypatch.setattr(slr, "_reclaim_card_for_presenter", AsyncMock())
     monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=30.0))
+    monkeypatch.setattr(slr, "_comfyui_reserved_gb", AsyncMock(return_value=0.0))
+    monkeypatch.setattr(slr.asyncio, "sleep", AsyncMock())
     monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
 
 
@@ -158,10 +160,11 @@ class TestRenderPresenterClip:
         render = AsyncMock(return_value=(True, ""))
         monkeypatch.setattr(slr, "_render_generative_clip", render)
         result = await slr._render_one_shot(
-            _shot(0), prior_clip=None, work_dir=tmp_path, image_gen_url="", site_config=_sc(),
+            _shot(0), prior_clip=None, work_dir=tmp_path, image_gen_url="",
+            site_config=_sc(video_presenter_reclaim_wait_s=0),
             http_client_factory=None, narration_path=str(narration), niche_slug=None,
         )
-        assert result.success is False and "GB free" in (result.error or "")
+        assert result.success is False and "GB usable" in (result.error or "")
         render.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -249,3 +252,72 @@ class TestPresenterReclaimsTheWholeCard:
         import poindexter.services.gpu_scheduler as gs
         monkeypatch.setattr(gs, "gpu", _Gpu())
         await slr._reclaim_card_for_presenter()  # must not raise
+
+
+class TestPresenterHeadroomCountsComfyAndWaits:
+    """2026-09-16 21:00:54: the closing presenter shot was refused at
+    "0.7 GB free" 0.2 s after the ladder queued sidecar restarts, on a card
+    where ComfyUI itself held 16.8 GB of reusable pool. ComfyUI renders the
+    clip, so its pool counts; and the restarts land seconds later, so the
+    floor waits before deciding."""
+
+    @pytest.mark.asyncio
+    async def test_headroom_is_free_plus_comfyui_pool(self, monkeypatch):
+        monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=0.7))
+        monkeypatch.setattr(slr, "_comfyui_reserved_gb", AsyncMock(return_value=16.8))
+        assert await slr._presenter_headroom_gb(_sc()) == pytest.approx(17.5)
+
+    @pytest.mark.asyncio
+    async def test_unknown_free_reading_stays_unknown(self, monkeypatch):
+        monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=None))
+        monkeypatch.setattr(slr, "_comfyui_reserved_gb", AsyncMock(return_value=16.8))
+        assert await slr._presenter_headroom_gb(_sc()) is None
+
+    @pytest.mark.asyncio
+    async def test_waits_until_the_restarts_land(self, monkeypatch):
+        readings = iter([2.0, 9.0, 27.5])
+        monkeypatch.setattr(slr, "_presenter_headroom_gb", AsyncMock(side_effect=lambda sc: next(readings)))
+        slept = []
+
+        async def _sleep(s):
+            slept.append(s)
+
+        monkeypatch.setattr(slr.asyncio, "sleep", _sleep)
+        got = await slr._wait_for_presenter_headroom(_sc(video_presenter_reclaim_wait_s=60), 26.0)
+        assert got == 27.5
+        assert slept == [5.0, 5.0]
+
+    @pytest.mark.asyncio
+    async def test_gives_up_after_the_budget_and_returns_the_last_reading(self, monkeypatch):
+        monkeypatch.setattr(slr, "_presenter_headroom_gb", AsyncMock(return_value=3.0))
+        import itertools
+
+        clock = itertools.chain(iter([0.0, 0.0]), itertools.repeat(61.0))
+        monkeypatch.setattr(slr.time, "monotonic", lambda: next(clock))
+        monkeypatch.setattr(slr.asyncio, "sleep", AsyncMock())
+        got = await slr._wait_for_presenter_headroom(_sc(video_presenter_reclaim_wait_s=60), 26.0)
+        assert got == 3.0
+
+    @pytest.mark.asyncio
+    async def test_comfyui_reserved_reads_torch_pool_and_fails_soft(self, monkeypatch):
+        class _Resp:
+            status_code = 200
+
+            def json(self):
+                return {"devices": [{"torch_vram_total": 16.8 * 1024 ** 3, "vram_free": 1}]}
+
+        class _Client:
+            def __init__(self, *a, **k): ...
+            async def __aenter__(self): return self
+            async def __aexit__(self, *e): return False
+            async def get(self, url): return _Resp()
+
+        import httpx
+        monkeypatch.setattr(httpx, "AsyncClient", _Client)
+        assert await slr._comfyui_reserved_gb(_sc()) == pytest.approx(16.8)
+
+        class _Boom(_Client):
+            async def get(self, url): raise RuntimeError("down")
+
+        monkeypatch.setattr(httpx, "AsyncClient", _Boom)
+        assert await slr._comfyui_reserved_gb(_sc()) == 0.0
