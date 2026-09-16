@@ -367,8 +367,9 @@ def _get_model_families(*, site_config: "SiteConfig | None" = None) -> tuple[str
 def _normalize_model_names(text: str, *, families: tuple[str, ...]) -> str:
     """Speak model identifiers as family + version/size, dropping config noise.
 
-    ``gemma-4-31B-it-qat:latest`` → ``gemma 4 31B``, ``glm-4.7-5090`` →
-    ``glm 4.7``, ``qwen3:30b`` → ``qwen 3 30b``, ``phi4`` → ``phi 4``.
+    ``gemma-4-31B-it-qat:latest`` → ``gemma 4, 31B``, ``glm-4.7-5090`` →
+    ``glm 4.7``, ``qwen3:30b`` → ``qwen 3, 30b``, ``phi4`` → ``phi 4``. The
+    comma keeps the engine from fusing version and size into one number.
 
     Only tokens anchored on a known *family* AND carrying a real version/size
     (a ``\\d+B`` size, a ``\\d.\\d`` decimal, or a family-glued version) are
@@ -410,7 +411,21 @@ def _normalize_model_names(text: str, *, families: tuple[str, ...]) -> str:
         if not model_like:
             return m.group(0)
         kept = ([ver] if ver else []) + [s for s in segs if _keep(s)]
-        return fam + "".join(f" {k}" for k in kept)
+        # A comma between a version and the size that follows it. Spoken as
+        # "qwen 2.5 7b" the engine runs the two numbers together — whisper
+        # over the rendered 2026-09-16 narration heard "QN2.57b", and
+        # "phi 4 14b" came back "PHY 414b". With the comma ("qwen 2.5, 7b")
+        # the same voice separated them cleanly ("QN2.5-7B"); spacing the
+        # size ("7 B") did not help ("2.57b" again). Measured on bf_emma via
+        # speaches + faster-whisper-medium, same day.
+        out = fam
+        prev_was_version = False
+        for k in kept:
+            is_size = re.fullmatch(r"\d+[Bb]", k) is not None
+            sep = ", " if (is_size and prev_was_version) else " "
+            out += sep + k
+            prev_was_version = not is_size
+        return out
 
     return pattern.sub(_repl, text)
 

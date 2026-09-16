@@ -498,7 +498,7 @@ class TestNormalizeModelNames:
         from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("we use gemma-4-31B-it-qat:latest", families=self.FAMS)
-            == "we use gemma 4 31B"
+            == "we use gemma 4, 31B"
         )
 
     def test_strips_gpu_suffix_keeps_decimal_version(self):
@@ -512,12 +512,12 @@ class TestNormalizeModelNames:
         from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("runs gemma-4:31b locally", families=self.FAMS)
-            == "runs gemma 4 31b locally"
+            == "runs gemma 4, 31b locally"
         )
 
     def test_glued_ollama_version(self):
         from poindexter.services.podcast_service import _normalize_model_names
-        assert _normalize_model_names("qwen3:30b", families=self.FAMS) == "qwen 3 30b"
+        assert _normalize_model_names("qwen3:30b", families=self.FAMS) == "qwen 3, 30b"
 
     def test_glued_family_version_no_tail(self):
         from poindexter.services.podcast_service import _normalize_model_names
@@ -535,7 +535,7 @@ class TestNormalizeModelNames:
         from poindexter.services.podcast_service import _normalize_model_names
         assert (
             _normalize_model_names("It runs on gemma-4-31B.", families=self.FAMS)
-            == "It runs on gemma 4 31B."
+            == "It runs on gemma 4, 31B."
         )
 
     def test_prose_family_words_untouched(self):
@@ -574,7 +574,7 @@ class TestNormalizeModelNames:
             _normalize_model_names(
                 "gemma-4-31B-it-qat:latest writes, glm-4.7 revises", families=self.FAMS
             )
-            == "gemma 4 31B writes, glm 4.7 revises"
+            == "gemma 4, 31B writes, glm 4.7 revises"
         )
 
     def test_empty_families_is_noop(self):
@@ -1950,7 +1950,7 @@ class TestNormalizeDashes:
         """gemma-4-31B is a model pin, not two ranges — the model-name pass
         runs first and removes its dashes before the range rule can fire."""
         out = _normalize_for_speech("we run gemma-4-31B locally", site_config=_TEST_SC)
-        assert "gemma 4 31B" in out
+        assert "gemma 4, 31B" in out
         assert " to " not in out
 
     def test_idempotent_on_already_spoken_forms(self):
@@ -2175,3 +2175,34 @@ class TestNumbersUnitsQuotesAtTheBoundary:
         out = _normalize_for_speech("renders at 24 fps and 30 ms", site_config=sc)
         assert "24 frames per second" in out
         assert "30 ms" in out  # the operator's map replaces the default, not extends it
+
+
+class TestModelNameVersionSizeSeparator:
+    """Whisper over the rendered 2026-09-16 narration heard "qwen 2.5 7b" as
+    "QN2.57b" and "phi 4 14b" as "PHY 414b" — the engine fused version and
+    size into one number. A comma between them ("qwen 2.5, 7b") separated
+    them cleanly on the same voice; spacing the size ("7 B") did not."""
+
+    FAMS = ("gemma", "glm", "qwen", "phi")
+
+    def test_decimal_version_then_size_gets_a_comma(self):
+        from poindexter.services.podcast_service import _normalize_model_names
+
+        assert _normalize_model_names("qwen2.5:7b", families=self.FAMS) == "qwen 2.5, 7b"
+
+    def test_integer_version_then_size_gets_a_comma(self):
+        from poindexter.services.podcast_service import _normalize_model_names
+
+        assert _normalize_model_names("phi4:14b", families=self.FAMS) == "phi 4, 14b"
+
+    def test_version_without_size_has_no_comma(self):
+        from poindexter.services.podcast_service import _normalize_model_names
+
+        assert _normalize_model_names("glm-4.7-5090", families=self.FAMS) == "glm 4.7"
+        assert _normalize_model_names("phi4", families=self.FAMS) == "phi 4"
+
+    def test_the_comma_survives_the_full_speech_pass(self):
+        out = _normalize_for_speech(
+            "Then there's qwen2.5:7b, which decodes at 236.7 tok/s.", site_config=_pron_sc(),
+        )
+        assert "qwen 2.5, 7b, which" in out

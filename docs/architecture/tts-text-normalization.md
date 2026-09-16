@@ -100,8 +100,10 @@ tokens per second. 55.4% gone with a 2068 milliseconds overhead"*, the calls sen
 *"2218 production calls"*, and the quoted phrase as *"calls eval duration."* Gaps ≥ 0.3 s
 fell only at commas and sentence ends.
 
-Known, separate: the model-name collapse emits `qwen 2.5 7b`, which the engine runs together
-("2.57b"); a separator between version and size is a follow-up.
+Model names: the collapse now puts a comma between a version and the size that follows it
+(`qwen2.5:7b` → "qwen 2.5, 7b"). Spoken as "qwen 2.5 7b" the engine fused the numbers
+("QN2.57b", "PHY 414b" in the rendered narration); with the comma the same voice separated them
+("QN2.5-7B"). Spacing the size ("7 B") did not help.
 
 ## Measuring a pronunciation fix — pick the right instrument
 
