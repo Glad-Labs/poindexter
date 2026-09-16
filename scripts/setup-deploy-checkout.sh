@@ -44,7 +44,7 @@ set -euo pipefail
 DEPLOY_DIR="${DEPLOY_DIR:-${HOME}/.poindexter/deploy/glad-labs-stack}"
 
 # The deploy checkout tracks the SAME source of truth the worker runs from:
-# origin = Glad-Labs/glad-labs-stack (private full tree). We derive the URL
+# origin = Glad-Labs/poindexter (private full tree). We derive the URL
 # from THIS repo's `origin` remote so the script never hardcodes a URL and
 # works for any fork/operator.
 SOURCE_REMOTE="${SOURCE_REMOTE:-origin}"
