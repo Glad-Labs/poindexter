@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## [0.140.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.139.0...v0.140.0) (2026-09-16)
+
+
+### Features
+
+* **chat:** a plan can declare which niche it runs in ([#3803](https://github.com/Glad-Labs/glad-labs-stack/issues/3803)) ([e699212](https://github.com/Glad-Labs/glad-labs-stack/commit/e699212e781f4eb273583c59836b7890b2437a2e))
+* **probe:** surface capabilities that are ON and have never produced anything ([#3807](https://github.com/Glad-Labs/glad-labs-stack/issues/3807)) ([e7f1188](https://github.com/Glad-Labs/glad-labs-stack/commit/e7f1188afcea833d9577444b91d96171974fe383))
+
+
+### Bug Fixes
+
+* **architect:** refuse graphs that deadlock or strand a node ([#3808](https://github.com/Glad-Labs/glad-labs-stack/issues/3808)) ([66ca793](https://github.com/Glad-Labs/glad-labs-stack/commit/66ca7936363f25f789c6337b1a4e6cef031e8c45))
+* **brain:** reap flow runs orphaned by a prefect-worker restart ([#3800](https://github.com/Glad-Labs/glad-labs-stack/issues/3800)) ([680eac9](https://github.com/Glad-Labs/glad-labs-stack/commit/680eac96391c7a55d963ff52c996a19199ca0247))
+* **gpu:** admission counts the VRAM its own ladder can reclaim ([#3802](https://github.com/Glad-Labs/glad-labs-stack/issues/3802)) ([b66e161](https://github.com/Glad-Labs/glad-labs-stack/commit/b66e161e8bc5c20bcce8d7e496201d0fb5d6126d))
+* **router:** a node that raised marks its task failed ([#3790](https://github.com/Glad-Labs/glad-labs-stack/issues/3790)) ([dcac898](https://github.com/Glad-Labs/glad-labs-stack/commit/dcac8981c86e24702cdc9c758cd23a9deef0b2af))
+* **topics:** calibrate the gsc_query_gap thresholds to a reachable pair ([#3805](https://github.com/Glad-Labs/glad-labs-stack/issues/3805)) ([e0a1ecd](https://github.com/Glad-Labs/glad-labs-stack/commit/e0a1ecd8556959178980f30acbd4951b4b7df799))
+* **topics:** retire the codebase topic source instead of leaving it half-wired ([#3806](https://github.com/Glad-Labs/glad-labs-stack/issues/3806)) ([911f614](https://github.com/Glad-Labs/glad-labs-stack/commit/911f6145e6473234287a10a7b0a94295e8b01d10))
+* **video:** the presenter gate reclaims the whole card before measuring it ([#3804](https://github.com/Glad-Labs/glad-labs-stack/issues/3804)) ([891054b](https://github.com/Glad-Labs/glad-labs-stack/commit/891054b43234a632a7cc57244d264e9b2e432e41))
+
 ## [0.139.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.138.0...v0.139.0) (2026-09-15)
 
 
