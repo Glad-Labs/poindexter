@@ -599,6 +599,89 @@ def _normalize_numbers_for_speech(text: str, *, site_config: "SiteConfig | None"
     return text
 
 
+# Numbers as WORDS (2026-09-16, second presenter render). The digit forms
+# survived every short probe — "236.7" and "2218" read correctly alone and in
+# the exact sentence — yet whisper over the RENDERED narration still heard
+# "2036.7" and "218 production calls". The engine's number parser is
+# context-sensitive in ways a probe cannot reproduce, so the boundary stops
+# giving it digits to parse at all: "236.7" → "two hundred thirty-six point
+# seven", "2218" → "two thousand two hundred eighteen". Words are unambiguous
+# to every engine. A whisper round-trip still verifies the result, because
+# whisper writes spoken numbers back as digits.
+#
+# Left as digits, deliberately: money ("$1.65 trillion" — the engine reads
+# currency well and the words form is awkward), anything glued to a letter
+# ("7b", "14B", "phi4", "v2" — identifiers, not quantities), and dotted or
+# colon-joined sequences (versions, times, IPs). Four-digit 1900–2099 numbers
+# that stand alone are spoken as years ("twenty twenty-six", "two thousand
+# nine") because that is how a reader says them.
+_ONES = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+         "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+         "seventeen", "eighteen", "nineteen"]
+_TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+_SCALES = [(1_000_000_000_000, "trillion"), (1_000_000_000, "billion"), (1_000_000, "million"), (1_000, "thousand")]
+
+
+def _int_to_words(n: int) -> str:
+    if n == 0:
+        return "zero"
+    if n >= 1_000_000_000_000_000:
+        return str(n)  # beyond what prose says out loud; leave the digits
+    parts: list[str] = []
+    for value, name in _SCALES:
+        if n >= value:
+            parts.append(f"{_int_to_words(n // value)} {name}")
+            n %= value
+    if n >= 100:
+        parts.append(f"{_ONES[n // 100]} hundred")
+        n %= 100
+    if n >= 20:
+        parts.append(_TENS[n // 10] + (f"-{_ONES[n % 10]}" if n % 10 else ""))
+    elif n:
+        parts.append(_ONES[n])
+    return " ".join(parts)
+
+
+def _year_to_words(n: int) -> str:
+    if 2000 <= n <= 2009:
+        return _int_to_words(n)
+    hi, lo = divmod(n, 100)
+    return f"{_int_to_words(hi)} {'oh-' + _ONES[lo] if 0 < lo < 10 else _int_to_words(lo) if lo else 'hundred'}"
+
+
+# A standalone number: not glued to a letter, a currency sign, a dot/colon
+# neighbour, or a slash — those are identifiers, money, versions and ratios.
+_NUMBER_RE = re.compile(r"(?<![\w$€£.:/-])(\d+)(?:\.(\d+))?(?![\w.:/])")
+_YEAR_UNIT_RE = re.compile(r"^\s*(percent|milliseconds|seconds|tokens|ms|GB|MB|TB|bytes|users|calls|posts|points?)\b", re.I)
+
+
+def _spell_numbers_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    """Replace standalone digit sequences with their spoken words."""
+    _sc = _resolve_site_config(site_config)
+    enabled_raw = str(_sc.get("tts_spell_numbers_enabled", "") or "").strip().lower()
+    if enabled_raw and enabled_raw not in ("true", "1", "yes", "on"):
+        return text
+
+    # A thousands-grouped number is ONE number. Strip its commas here as well
+    # (idempotent with the units pass), or with that pass switched off
+    # "2,068" would be spelled as "two" and "sixty eight" — caught by the
+    # switch test on 2026-09-16.
+    text = _THOUSANDS_COMMA_RE.sub("", text)
+
+    def _repl(m: "re.Match[str]") -> str:
+        whole, frac = m.group(1), m.group(2)
+        if len(whole) > 15:
+            return m.group(0)
+        n = int(whole)
+        if frac is not None:
+            return f"{_int_to_words(n)} point {' '.join(_ONES[int(d)] if d != '0' else 'zero' for d in frac)}"
+        if len(whole) == 4 and 1900 <= n <= 2099 and not _YEAR_UNIT_RE.match(text[m.end():]):
+            return _year_to_words(n)
+        return _int_to_words(n)
+
+    return _NUMBER_RE.sub(_repl, text)
+
+
 _WRAPPING_SINGLE_QUOTES_RE = re.compile(r"(?<!\w)'([^'\n]{1,80}?)'(?!\w)")
 
 
@@ -724,6 +807,9 @@ def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None)
     text = _normalize_dashes(text, site_config=site_config)
     # Thousands commas, digit-anchored units, percent (see the rules above).
     text = _normalize_numbers_for_speech(text, site_config=site_config)
+    # Then every standalone number becomes words, so the engine has nothing
+    # left to parse (see _spell_numbers_for_speech).
+    text = _spell_numbers_for_speech(text, site_config=site_config)
     # Simple replacements (DB-configurable via tts_pronunciations).
     for written, spoken in _get_tts_replacements(site_config=site_config):
         text = _apply_spoken_replacement(text, written, spoken)

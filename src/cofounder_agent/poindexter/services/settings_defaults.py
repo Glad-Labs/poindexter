@@ -3034,6 +3034,11 @@ DEFAULTS: dict[str, str] = {
     'tts_number_normalization_enabled': 'true',
     'tts_unit_expansions': '{"tok/s": "tokens per second", "t/s": "tokens per second", "ms": "milliseconds"}',
     'tts_strip_quotes': 'true',
+    # Numbers as words at the TTS boundary: digit forms read right in every
+    # probe yet the rendered narration still said "2036.7" for 236.7 and
+    # "218" for 2218 — the engine's number parser is context-sensitive.
+    # Money, identifiers glued to letters, versions and times stay digits.
+    'tts_spell_numbers_enabled': 'true',
     # Word-word hyphens ("state-of-the-art") → a space at the render boundary.
     # Chatterbox gives a compound hyphen a small breath rather than running the
     # words together, so compound-dense narration comes out choppy: measured
@@ -6150,6 +6155,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tts_number_normalization_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'tts_unit_expansions': {'owner': 'podcast_service', 'value_type': 'json'},
     'tts_strip_quotes': {'owner': 'podcast_service', 'value_type': 'boolean'},
+    'tts_spell_numbers_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'tts_voice_pool': {'owner': 'podcast_service'},
     'tts_voice_rotation_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'unlinked_attribution_enabled': {'owner': 'qa_unlinked_attribution', 'value_type': 'boolean'},

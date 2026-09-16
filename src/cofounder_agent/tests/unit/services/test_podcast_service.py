@@ -25,7 +25,9 @@ from poindexter.services.site_config import SiteConfig
 # site_config (the module-global fallback was deleted). Tests thread this
 # shared empty SiteConfig — empty config exercises the same ``.get(key,
 # default)`` defaults the old empty module global provided.
-_TEST_SC = SiteConfig()
+# Digits kept: these tests exercise rules OTHER than number spelling (the
+# file-extension guard, the dash rules), so they opt out of the words pass.
+_TEST_SC = SiteConfig(initial_config={"tts_spell_numbers_enabled": "false"})
 
 # SiteConfig with tts_pronunciations seeded — used by word-boundary tests that
 # verify pronunciation entries are DB-driven (not hardcoded in _SPOKEN_REPLACEMENTS).
@@ -635,6 +637,7 @@ class TestNormalizeForSpeechModelNames:
         sc = SiteConfig(initial_config={
             "tts_pronunciations": DEFAULTS["tts_pronunciations"],
             "tts_acronym_replacements": "",
+            "tts_spell_numbers_enabled": "false",
         })
         result = _normalize_for_speech("the glm-4.7-5090 model", site_config=sc)
         assert "5090" not in result
@@ -1675,6 +1678,14 @@ from poindexter.services.podcast_service import (  # noqa: E402
 )
 
 
+def _pron_sc_digits():
+    """_pron_sc with number spelling OFF — for tests about units, quotes and
+    model names, whose assertions are easier to read on digits."""
+    sc = _pron_sc()
+    sc._config["tts_spell_numbers_enabled"] = "false"  # noqa: SLF001 — test seam
+    return sc
+
+
 def _pron_sc():
     import json
 
@@ -1879,6 +1890,7 @@ class TestNormalizeDashes:
 
     def test_compound_rule_has_its_own_switch(self):
         sc = SiteConfig(initial_config={
+            "tts_spell_numbers_enabled": "false",
             "tts_compound_hyphen_to_space_enabled": "false",
         })
         # Own switch off: compounds keep their hyphen, digit rules still run.
@@ -2108,7 +2120,7 @@ class TestNumbersUnitsQuotesAtTheBoundary:
             "just 105.5 tok/s, 55.4% gone with a 2,068 ms overhead.")
 
     def test_the_measured_sentence_comes_out_unambiguous(self):
-        out = _normalize_for_speech(self.QWEN, site_config=_pron_sc())
+        out = _normalize_for_speech(self.QWEN, site_config=_pron_sc_digits())
         assert "236.7 tokens per second" in out
         assert "105.5 tokens per second" in out
         assert "55.4 percent" in out
@@ -2116,39 +2128,39 @@ class TestNumbersUnitsQuotesAtTheBoundary:
         assert "tok/s" not in out and "%" not in out and "2,068" not in out
 
     def test_thousands_commas_are_dropped_but_list_commas_stay(self):
-        out = _normalize_for_speech("from 2,218 calls; 1,000,000 users; 1, 2, 3", site_config=_pron_sc())
+        out = _normalize_for_speech("from 2,218 calls; 1,000,000 users; 1, 2, 3", site_config=_pron_sc_digits())
         assert "2218 calls" in out
         assert "1000000 users" in out
         assert "1, 2, 3" in out
 
     def test_bare_unit_only_fires_after_a_digit(self):
-        out = _normalize_for_speech("Ms. Smith waited 40 ms for the ms server.", site_config=_pron_sc())
+        out = _normalize_for_speech("Ms. Smith waited 40 ms for the ms server.", site_config=_pron_sc_digits())
         assert out.startswith("Ms. Smith")
         assert "40 milliseconds" in out
         assert "the ms server" in out
 
     def test_slash_unit_fires_anywhere_as_a_whole_token(self):
-        out = _normalize_for_speech("measured in tok/s and t/s, not in km/h", site_config=_pron_sc())
+        out = _normalize_for_speech("measured in tok/s and t/s, not in km/h", site_config=_pron_sc_digits())
         assert out.count("tokens per second") == 2
         assert "km/h" in out
 
     def test_double_quotes_dropped_and_wrapping_single_quotes_unwrapped(self):
         out = _normalize_for_speech(
-            "what Ollama calls \"evalduration.\" It's 'fine' and don't worry.", site_config=_pron_sc(),
+            "what Ollama calls \"evalduration.\" It's 'fine' and don't worry.", site_config=_pron_sc_digits(),
         )
         assert '"' not in out
         assert "calls evalduration." in out
         assert "It's fine and don't worry" in out
 
     def test_money_and_versions_untouched(self):
-        out = _normalize_for_speech("costs $1.65 trillion on v2.0 at 79.7%", site_config=_pron_sc())
+        out = _normalize_for_speech("costs $1.65 trillion on v2.0 at 79.7%", site_config=_pron_sc_digits())
         assert "$1.65 trillion" in out
         assert "version 2.0" in out
         assert "79.7 percent" in out
 
     def test_stored_script_pass_keeps_written_forms(self):
         """The generation-side pass must NOT bake spoken forms into the script."""
-        out = _normalize_for_script(self.QWEN + ' He said "real".', site_config=_pron_sc())
+        out = _normalize_for_script(self.QWEN + ' He said "real".', site_config=_pron_sc_digits())
         assert "236.7 tok/s" in out and "2,068 ms" in out and "55.4%" in out
         assert '"real"' in out
 
@@ -2157,6 +2169,7 @@ class TestNumbersUnitsQuotesAtTheBoundary:
 
         from poindexter.services.site_config import SiteConfig
         sc = SiteConfig(initial_config={
+            "tts_spell_numbers_enabled": "false",
             "tts_number_normalization_enabled": "false",
             "tts_strip_quotes": "false",
             "tts_pronunciations": json.dumps({}),
@@ -2169,6 +2182,7 @@ class TestNumbersUnitsQuotesAtTheBoundary:
 
         from poindexter.services.site_config import SiteConfig
         sc = SiteConfig(initial_config={
+            "tts_spell_numbers_enabled": "false",
             "tts_unit_expansions": json.dumps({"fps": "frames per second"}),
             "tts_pronunciations": json.dumps({}),
         })
@@ -2203,6 +2217,84 @@ class TestModelNameVersionSizeSeparator:
 
     def test_the_comma_survives_the_full_speech_pass(self):
         out = _normalize_for_speech(
-            "Then there's qwen2.5:7b, which decodes at 236.7 tok/s.", site_config=_pron_sc(),
+            "Then there's qwen2.5:7b, which decodes at 236.7 tok/s.", site_config=_pron_sc_digits(),
         )
         assert "qwen 2.5, 7b, which" in out
+
+
+class TestNumbersAsWordsAtTheBoundary:
+    """Second presenter render, 2026-09-16: the digit forms read right in every
+    probe — "236.7" and "2218" alone and in the exact sentence — yet whisper
+    over the RENDERED narration still heard "2036.7" and "218 production
+    calls". The engine's number parser is context-sensitive in ways a probe
+    cannot reproduce, so the boundary stops handing it digits at all."""
+
+    def test_the_two_misread_numbers_become_words(self):
+        out = _normalize_for_speech(
+            "with a reported 236.7 tok/s decode speed; we delved into 2,218 production calls",
+            site_config=_pron_sc(),
+        )
+        assert "two hundred thirty six point seven tokens per second" in out
+        assert "two thousand two hundred eighteen production calls" in out
+
+    def test_percent_and_units_spell_too(self):
+        out = _normalize_for_speech("55.4% gone with a 2,068 ms overhead", site_config=_pron_sc())
+        assert "fifty five point four percent" in out
+        assert "two thousand sixty eight milliseconds" in out
+
+    def test_money_identifiers_versions_and_times_stay_digits(self):
+        out = _normalize_for_speech(
+            "phi4:14b costs $1.65 trillion on v2.0 at 12:30 with 10 GB", site_config=_pron_sc(),
+        )
+        assert "14b" in out
+        assert "$1.65 trillion" in out
+        assert "2.0" in out
+        assert "12:30" in out
+        assert "ten GB" in out
+
+    def test_standalone_years_read_as_years(self):
+        out = _normalize_for_speech("back in 1999 and again in 2026, then 2005", site_config=_pron_sc())
+        assert "nineteen ninety nine" in out
+        assert "twenty twenty six" in out
+        assert "two thousand five" in out
+
+    def test_a_four_digit_quantity_before_a_unit_is_not_a_year(self):
+        out = _normalize_for_speech("2068 milliseconds and 2026 users", site_config=_pron_sc())
+        assert "two thousand sixty eight milliseconds" in out
+        assert "two thousand twenty six users" in out
+
+    def test_int_to_words_edges(self):
+        from poindexter.services.podcast_service import _int_to_words
+
+        assert _int_to_words(0) == "zero"
+        assert _int_to_words(105) == "one hundred five"
+        assert _int_to_words(1_000_000) == "one million"
+        assert _int_to_words(2_218) == "two thousand two hundred eighteen"
+
+    def test_idempotent_on_words(self):
+        once = _normalize_for_speech("about 236.7 tok/s in 2,218 calls", site_config=_pron_sc())
+        assert _normalize_for_speech(once, site_config=_pron_sc()) == once
+
+    def test_switch_off_keeps_digits(self):
+        import json
+
+        from poindexter.services.site_config import SiteConfig
+        sc = SiteConfig(initial_config={"tts_spell_numbers_enabled": "false", "tts_pronunciations": json.dumps({})})
+        out = _normalize_for_speech("about 236.7 tok/s", site_config=sc)
+        assert "236.7 tokens per second" in out
+
+    def test_stored_script_pass_keeps_digits(self):
+        out = _normalize_for_script("about 236.7 tok/s in 2,218 calls", site_config=_pron_sc())
+        assert "236.7 tok/s" in out and "2,218" in out
+
+
+def test_thousands_grouped_number_is_one_number_even_with_units_pass_off():
+    """With tts_number_normalization_enabled=false the units pass no longer
+    strips thousands commas, and the words pass then saw "2,068" as "2" and
+    "068" — "two,sixty eight". The words pass strips them itself."""
+    import json
+
+    from poindexter.services.site_config import SiteConfig
+    sc = SiteConfig(initial_config={"tts_number_normalization_enabled": "false", "tts_pronunciations": json.dumps({})})
+    out = _normalize_for_speech("a 2,068 ms overhead", site_config=sc)
+    assert "two thousand sixty eight" in out
