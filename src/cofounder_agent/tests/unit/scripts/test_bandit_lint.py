@@ -92,6 +92,24 @@ class TestCountsFromFindings:
         assert LINT.counts_from_findings([_finding(abs_path)]) == {"src/cofounder_agent/poindexter/brain/foo.py": {"B608": 1}}
 
 
+class TestScanRoots:
+    """The scan surface is the whole point of the gate; a root silently missing
+    from it makes the gate green over code it never read."""
+
+    def test_modules_tree_is_scanned(self):
+        """modules/ was absent until 2026-09-16 because BANDIT_TARGETS was
+        inherited verbatim from the pre-Module-v1 ops session. When content
+        code moved services/ -> modules/content/, 33k LOC left the gate and
+        nothing reported it. This pins the root so that cannot recur."""
+        assert any(
+            t.endswith("poindexter/modules/") for t in LINT.BANDIT_TARGETS
+        ), f"modules/ missing from BANDIT_TARGETS: {LINT.BANDIT_TARGETS}"
+
+    def test_core_roots_still_present(self):
+        for expected in ("brain/", "scripts/", "services/", "routes/"):
+            assert any(t.endswith(expected) for t in LINT.BANDIT_TARGETS), expected
+
+
 class TestPrivateOverlayExclusion:
     """The baseline JSON ships in the public mirror, so a finding in a
     mirror-stripped operator file must never enter it (mirrors
@@ -105,6 +123,30 @@ class TestPrivateOverlayExclusion:
         for rel in nonempty(LINT.PRIVATE_OVERLAY_FILES, "LINT.PRIVATE_OVERLAY_FILES"):
 
             assert LINT.counts_from_findings([_finding(rel, "B608")]) == {}, rel
+
+    def test_private_overlay_dir_is_dropped_by_prefix(self):
+        """A per-file allowlist stops covering a tree the moment someone adds
+        file N+1. modules/finance/ is wholly git rm'd from the mirror, so the
+        exclusion is a prefix — this asserts a file NOT named anywhere in the
+        lint is still dropped."""
+        never_listed = (
+            "src/cofounder_agent/poindexter/modules/finance/"
+            "a_file_added_after_this_test_was_written.py"
+        )
+        assert never_listed not in LINT.PRIVATE_OVERLAY_FILES
+        assert LINT.counts_from_findings([_finding(never_listed, "B608")]) == {}
+
+    def test_every_declared_private_dir_is_excluded(self):
+        for prefix in nonempty(LINT.PRIVATE_OVERLAY_DIRS, "LINT.PRIVATE_OVERLAY_DIRS"):
+            rel = prefix + "some_module.py"
+            assert LINT.counts_from_findings([_finding(rel, "B608")]) == {}, rel
+
+    def test_public_modules_are_NOT_excluded(self):
+        """The prefix must not over-reach: modules/content/ ships in the mirror
+        and must keep being counted, or widening the scan roots would buy
+        nothing for the 112 files that motivated it."""
+        rel = "src/cofounder_agent/poindexter/modules/content/affiliate_links.py"
+        assert LINT.counts_from_findings([_finding(rel, "B608")]) == {rel: {"B608": 1}}
 
     def test_non_private_neighbour_still_counted(self):
         findings = [_finding("src/cofounder_agent/poindexter/services/publish_service.py", "B608")]

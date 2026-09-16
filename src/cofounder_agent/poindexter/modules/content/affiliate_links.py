@@ -169,6 +169,8 @@ async def _fetch_links(pool: Any, *, active_only: bool) -> list[AffiliateLink]:
         "  FILTER (WHERE alk.keyword IS NOT NULL), '{}') AS keywords "
         "FROM affiliate_links al "
         "LEFT JOIN affiliate_link_keywords alk ON alk.link_id = al.id "
+        # nosec B608 - `where` is a literal ternary on the `active_only` bool
+        # (either a fixed WHERE clause or ""), never caller- or user-supplied.
         + where + "GROUP BY al.id ORDER BY al.id"
     )
     return [

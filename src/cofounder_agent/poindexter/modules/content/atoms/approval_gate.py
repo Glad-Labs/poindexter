@@ -691,7 +691,12 @@ async def _consume_regen(pool: Any, task_id: str, component: str) -> None:
     col = "regen_images_pending" if component == "images" else "regen_text_pending"
     async with pool.acquire() as conn:
         await conn.execute(
-            f"UPDATE pipeline_tasks SET {col} = false WHERE task_id::text = $1",
+            # `col` is a literal ternary between two hardcoded column names;
+            # the only caller-supplied value (task_id) rides the $1 bind param
+            # — the sanctioned identifier+bind pattern. The nosec must sit ON
+            # the flagged line: bandit matches the node's own line span, and a
+            # comment above a single-line f-string falls outside it.
+            f"UPDATE pipeline_tasks SET {col} = false WHERE task_id::text = $1",  # nosec B608
             str(task_id),
         )
 

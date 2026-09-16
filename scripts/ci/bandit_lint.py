@@ -49,7 +49,16 @@ Public-mirror safety
 --------------------
 ``bandit_baseline.json`` ships in the public mirror, so mirror-stripped operator
 files must never enter it (same reasoning as ``adapter_purity_lint``'s
-``mcp-server-gladlabs`` exclusion) — see ``PRIVATE_OVERLAY_FILES``.
+``mcp-server-gladlabs`` exclusion) — see ``PRIVATE_OVERLAY_FILES`` for one-off
+files and ``PRIVATE_OVERLAY_DIRS`` for whole stripped trees. The path itself is
+the leak: a baseline entry naming a file under a stripped operator tree would
+disclose that tree's contents even with no finding detail attached.
+``check_public_mirror_safety.py`` guards the same paths as a second line of
+defence, but this gate should never produce the leak for it to catch.
+
+(Writing this docstring produced exactly that leak once: an earlier draft named
+a specific private file as the illustration, and the mirror-safety gate failed
+the commit. Illustrate with the tree, never with a filename.)
 
 Run:
     python scripts/ci/bandit_lint.py                    # check
@@ -75,6 +84,12 @@ BANDIT_TARGETS = (
     "scripts/",
     "src/cofounder_agent/poindexter/services/",
     "src/cofounder_agent/poindexter/routes/",
+    # modules/ was NOT in the ops session's historical list because it predates
+    # Module v1 — so when business code moved out of services/ into
+    # modules/content/, 33k LOC silently left this gate's surface and nothing
+    # said so. Added 2026-09-16. The inherited-parity comment above is why the
+    # gap existed; it is not a reason to keep it.
+    "src/cofounder_agent/poindexter/modules/",
 )
 
 # Severity floor — parity with the ops session's `-ll` (medium and above).
@@ -85,6 +100,16 @@ SEVERITY_FLAG = "-ll"
 # ships in that mirror, so a finding in one of these must never enter it — the
 # path itself would leak the private file's existence. Mirrors
 # adapter_purity_lint's exclusion of mcp-server-gladlabs/.
+# Whole directories that sync-to-github.sh removes from the mirror. A prefix
+# rather than a file list, because these trees GROW: modules/finance/ is 14
+# files today, and a per-file allowlist would silently stop covering the 15th.
+# Exact-match PRIVATE_OVERLAY_FILES below stays for one-off files whose
+# directory is otherwise public.
+PRIVATE_OVERLAY_DIRS = (
+    "src/cofounder_agent/poindexter/modules/finance/",
+    "src/cofounder_agent/tests/unit/modules/finance/",
+)
+
 PRIVATE_OVERLAY_FILES = frozenset(
     {
         "src/cofounder_agent/poindexter/services/operator_overrides.py",
@@ -120,7 +145,7 @@ def counts_from_findings(findings: list[dict]) -> dict[str, dict[str, int]]:
     counts: dict[str, dict[str, int]] = {}
     for finding in findings:
         rel = _normalize_path(finding["filename"])
-        if rel in PRIVATE_OVERLAY_FILES:
+        if rel in PRIVATE_OVERLAY_FILES or rel.startswith(PRIVATE_OVERLAY_DIRS):
             continue
         counts.setdefault(rel, {})
         test_id = finding["test_id"]
