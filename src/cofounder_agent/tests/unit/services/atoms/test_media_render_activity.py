@@ -151,3 +151,43 @@ async def test_progress_cb_updates_the_row():
             output_key="long_video_path",
         )
     assert updates == [("shot 1/1", 99)]
+
+
+@pytest.mark.asyncio
+async def test_progress_cb_stamps_node_progress_for_the_stuck_flow_probe():
+    """A finished shot is graph progress. Only node boundaries stamped
+    ``pipeline_tasks.last_progress_at`` before, so ``media.render_long_video``
+    — one node that legitimately runs 20-40 min — read as stalled and the
+    brain's prefect_stuck_flow_probe cancelled a healthy render mid-presenter
+    chunk (2026-09-16 15:34Z, ambrosial-rottweiler: "No graph-node progress
+    for 25m (stall threshold 20m)"). The per-shot callback now goes through the
+    same stamp the graph runner uses."""
+    from unittest.mock import ANY
+
+    class _FakeCtx:
+        async def __aenter__(self):
+            async def _upd(*, step=None, pct=None):
+                return None
+
+            return SimpleNamespace(update=_upd, fail=lambda: None)
+
+        async def __aexit__(self, *exc):
+            return False
+
+    async def render_and_report(*, progress_cb, **kw):
+        await progress_cb("shot 1/3", 33)
+        await progress_cb("shot 2/3", 66)
+        return _ok_result()
+
+    stamp = AsyncMock()
+    with patch.object(
+        _media_render.live_activity, "track", lambda pool, **kw: _FakeCtx()
+    ), patch.object(_media_render, "render_shot_list", render_and_report), \
+         patch("poindexter.services.template_runner._mark_progress", stamp):
+        await _media_render.render_from_state(
+            {"task_id": "t6", "video_shot_list": _LONG},
+            shot_list_key="video_shot_list",
+            output_key="long_video_path",
+        )
+    assert stamp.await_count == 2
+    stamp.assert_awaited_with(ANY, "t6")

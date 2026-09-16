@@ -276,6 +276,20 @@ async def render_from_state(
 
             async def _progress(step: str, pct: int | None) -> None:
                 await act.update(step=step, pct=pct)
+                # A shot finishing IS graph progress. last_progress_at is what
+                # the brain's prefect_stuck_flow_probe reads, and until now
+                # only node boundaries stamped it — so this one node, which
+                # legitimately runs 20–40 min (two S2V presenter chunks at
+                # ~7 min each plus hero renders), read as "no progress for
+                # 25m" and the probe cancelled a healthy render mid-chunk
+                # (2026-09-16 15:34Z, run ambrosial-rottweiler). Same
+                # best-effort contract as the node stamp: never raises.
+                # Lazy: template_runner is the graph engine and pulls in
+                # langgraph; importing it at module scope from an atom
+                # helper would weigh every registry walk and invite a cycle.
+                from poindexter.services.template_runner import _mark_progress
+
+                await _mark_progress(pool, task_id)
 
             # Hold the GPU for the whole render. The render drives wan + image-gen
             # over HTTP and never went through the scheduler before (validation
