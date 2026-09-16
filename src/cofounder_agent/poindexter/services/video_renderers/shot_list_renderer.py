@@ -1092,8 +1092,13 @@ async def _render_generative_clip(
     fps: int | None = None,
     extra_config: dict[str, Any] | None = None,
     provider_override: str | None = None,
+    heartbeat_cb: Any = None,
 ) -> tuple[bool, str]:
     """Render one hero clip to ``output_path`` via the configured provider.
+
+    ``heartbeat_cb`` rides into the provider config as ``_heartbeat_cb`` so a
+    long-running prompt can report progress while it executes (see
+    ``ComfyUIProvider._poll``).
 
     ``extra_config`` is merged into the provider config last (the presenter
     branch passes ``audio_path`` + ``audio_duration_s`` to select the speech
@@ -1168,6 +1173,8 @@ async def _render_generative_clip(
         config["fps"] = int(fps)
     if extra_config:
         config.update(extra_config)
+    if heartbeat_cb is not None:
+        config["_heartbeat_cb"] = heartbeat_cb
     try:
         results = await provider.fetch(
             prompt,
@@ -1887,6 +1894,7 @@ async def _render_one_shot(
     attempt: int = 0,
     narration_path: str | None = None,
     niche_slug: str | None = None,
+    heartbeat_cb: Any = None,
 ) -> ShotRenderResult:
     """Produce a clip file for one shot.
 
@@ -2101,6 +2109,7 @@ async def _render_one_shot(
             post_id=post_id,
             narration_path=narration_path,
             niche_slug=niche_slug,
+            heartbeat_cb=heartbeat_cb,
         )
     if source in ("generative", "wan21"):
         still_result = await _render_hero_still(
@@ -2252,6 +2261,7 @@ async def _render_presenter_clip(
     post_id: str,
     narration_path: str | None,
     niche_slug: str | None,
+    heartbeat_cb: Any = None,
 ) -> ShotRenderResult:
     """Render a talking-head clip: the niche's persona speaks this shot's
     narration window through the ComfyUI provider's speech path.
@@ -2319,6 +2329,7 @@ async def _render_presenter_clip(
     width, height, fps = _hero_render_dims(orientation, site_config)
     clip_path = str(work_dir / f"presenter_{shot.idx}.mp4")
     ok, error = await _render_generative_clip(
+        heartbeat_cb=heartbeat_cb,
         prompt=_compose_presenter_prompt(shot, persona, site_config),
         output_path=clip_path,
         image_path=portrait,
@@ -2407,6 +2418,7 @@ async def _animate_hero(
     site_config: Any,
     orientation: str,
     post_id: str,
+    heartbeat_cb: Any = None,
 ) -> ShotRenderResult:
     """Animate a hero shot's pre-rendered still via wan (poindexter#966).
 
@@ -2458,6 +2470,7 @@ async def _animate_hero(
     hero_w, hero_h = plate
     clip_path = str(Path(still_path).with_suffix(".mp4"))
     clip_ok, clip_error = await _render_generative_clip(
+        heartbeat_cb=heartbeat_cb,
         prompt=_compose_hero_wan_prompt(shot.prompt, shot.motion, site_config),
         output_path=clip_path,
         image_path=still_path,
@@ -2676,6 +2689,7 @@ async def _render_pass(
             site_config=render_kwargs["site_config"],
             orientation=render_kwargs["orientation"],
             post_id=render_kwargs.get("post_id", ""),
+            heartbeat_cb=render_kwargs.get("heartbeat_cb"),
         )
         # A holdover/pexels-miss that reused this hero's STILL during the
         # still phase now points at the finished clip — the pre-split
@@ -3338,6 +3352,7 @@ async def render_shot_list(
     narration_fit_min_shot_s: float = 0.0,
     narration_fit_hold_s: float | None = None,
     endcard_cta_text: str = "",
+    heartbeat_cb: Any = None,
     niche_slug: str | None = None,
 ) -> ShotListRenderResult:
     """Render a full video from a shot list.
@@ -3446,6 +3461,7 @@ async def render_shot_list(
         post_id=post_id,
         narration_path=audio_path or None,
         niche_slug=niche_slug,
+        heartbeat_cb=heartbeat_cb,
     )
 
     # Two-pass to stop the image-gen↔vision-model GPU thrash: render every shot

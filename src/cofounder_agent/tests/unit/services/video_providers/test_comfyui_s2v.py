@@ -261,9 +261,9 @@ class TestFetchSpeech:
         seen: dict = {}
         real_poll = provider._poll
 
-        async def spy(client, server_url, prompt_id, timeout_s):
+        async def spy(client, server_url, prompt_id, timeout_s, heartbeat_cb=None):
             seen["timeout_s"] = timeout_s
-            return await real_poll(client, server_url, prompt_id, timeout_s)
+            return await real_poll(client, server_url, prompt_id, timeout_s, heartbeat_cb=heartbeat_cb)
 
         provider._poll = spy  # type: ignore[method-assign]
         with _patched_client(fake):

@@ -121,6 +121,8 @@ _DEFAULT_FPS = 16
 _DEFAULT_TIMEOUT_S = 900.0
 _DEFAULT_READY_WAIT_S = 90.0
 _POLL_INTERVAL_S = 5.0
+# How often a still-executing prompt reports progress upstream (see _poll).
+_HEARTBEAT_EVERY_S = 30.0
 
 _DEFAULT_HIGH_MODEL = "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
 _DEFAULT_LOW_MODEL = "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
@@ -570,6 +572,7 @@ class ComfyUIProvider:
 
                 filename, reason = await self._poll(
                     client, server_url, prompt_id, timeout_s,
+                    heartbeat_cb=config.get("_heartbeat_cb"),
                 )
                 if not filename:
                     self.last_error = reason
@@ -911,6 +914,7 @@ class ComfyUIProvider:
                     return []
                 filename, reason = await self._poll(
                     client, server_url, prompt_id, timeout_s,
+                    heartbeat_cb=config.get("_heartbeat_cb"),
                 )
                 if not filename:
                     self.last_error = reason
@@ -1020,12 +1024,31 @@ class ComfyUIProvider:
         server_url: str,
         prompt_id: str,
         timeout_s: float,
+        heartbeat_cb: Any = None,
     ) -> tuple[str, str]:
         """Poll ``/history/{id}`` until the render finishes; returns the
-        output video filename."""
+        output video filename.
+
+        ``heartbeat_cb`` (optional async callable, no args) is awaited at most
+        every ``_HEARTBEAT_EVERY_S`` while the prompt is still executing. A
+        long S2V clip is 20+ minutes of legitimate work inside ONE graph node;
+        without a heartbeat the stuck-flow probe reads that as "no progress"
+        and cancels the render mid-clip (2026-09-16 22:31Z, third presenter
+        render: "No graph-node progress for 21m (stall threshold 20m)").
+        Best-effort — a failing heartbeat never disturbs the poll.
+        """
         deadline = time.monotonic() + timeout_s
+        last_beat = time.monotonic()
         while time.monotonic() < deadline:
             await asyncio.sleep(_POLL_INTERVAL_S)
+            if heartbeat_cb is not None and time.monotonic() - last_beat >= _HEARTBEAT_EVERY_S:
+                last_beat = time.monotonic()
+                try:
+                    await heartbeat_cb()
+                except Exception as exc:  # noqa: BLE001
+                    # silent-ok: the heartbeat is observability for the probe,
+                    # not part of the render; the poll must never fail on it.
+                    logger.debug("[ComfyUIProvider] heartbeat failed: %s", exc)
             try:
                 resp = await client.get(f"{server_url}/history/{prompt_id}")
             except Exception as e:  # noqa: BLE001  # silent-ok: transient

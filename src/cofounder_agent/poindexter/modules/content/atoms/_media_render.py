@@ -291,6 +291,14 @@ async def render_from_state(
 
                 await _mark_progress(pool, task_id)
 
+            async def _heartbeat() -> None:
+                # The engine is still executing our prompt — that IS progress.
+                # Stamped from ComfyUI's poll loop every ~30 s so a 20-minute
+                # S2V clip never reads as a stall (2026-09-16 22:31Z cancel).
+                from poindexter.services.template_runner import _mark_progress
+
+                await _mark_progress(pool, task_id)
+
             # Hold the GPU for the whole render. The render drives wan + image-gen
             # over HTTP and never went through the scheduler before (validation
             # findings 4b/7): the ~18GB writer/director stayed resident in Ollama
@@ -319,6 +327,7 @@ async def render_from_state(
                     ambient_path=ambient,
                     caption_path=caption,
                     progress_cb=_progress,
+                    heartbeat_cb=_heartbeat,
                     narration_fit=fit_enabled,
                     narration_fit_max_shot_s=fit_max_shot_s,
                     narration_fit_min_shot_s=fit_min_shot_s,
