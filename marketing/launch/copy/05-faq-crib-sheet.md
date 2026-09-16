@@ -16,7 +16,7 @@ For launch days, on your phone. These are pre-written so 10pm-after-work-and-bed
 
 **"So you didn't actually build this — Claude did. What did you even do?"**
 
-> Wrote the specs, reviewed every change, rejected the work that was wrong (a lot of it), designed the architecture constraints, and enforced the test gate that keeps 10k commits coherent. Whether that's "building" is a fair question — my honest answer is it felt like being an engineering manager with an infinitely fast, slightly overconfident team. The artifact ships daily and survives an 11,400-test suite; I'll let that carry the argument either way.
+> Wrote the specs, reviewed every change, rejected the work that was wrong (a lot of it), designed the architecture constraints, and enforced the test gate that keeps 10k commits coherent. Whether that's "building" is a fair question — my honest answer is it felt like being an engineering manager with an infinitely fast, slightly overconfident team. The artifact ships daily and survives an 18,000-test suite; I'll let that carry the argument either way.
 
 **"Did AI write this comment too?"**
 
@@ -50,11 +50,11 @@ For launch days, on your phone. These are pre-written so 10pm-after-work-and-bed
 
 **"Local models are worse than cloud models. Why handicap yourself?"**
 
-> They are worse, model for model. Three reasons anyway: marginal cost per draft is electricity, which changes what you can afford to reject (50% rejection on API pricing hurts); my data and drafts stay on my machine; and no per-token meter changes how you design — you can run 13 QA rails because they're free. Cloud models exist as an opt-in plugin behind a spend guard for people who want them.
+> They are worse, model for model. Three reasons anyway: marginal cost per draft is electricity, which changes what you can afford to reject (80% rejection on API pricing hurts); my data and drafts stay on my machine; and no per-token meter changes how you design — you can run 16 QA rails because they're free. Cloud models exist as an opt-in plugin behind a spend guard for people who want them.
 
 **"What does it cost to run?"**
 
-> Hardware was **[FILL: rough 5090 rig cost]**, and after that it's electricity — **[FILL: rough monthly kWh or $ if you know it]**. No API costs by default.
+> Hardware was **[FILL: rough 5090 rig cost]**, and after that it's about 54 kWh a month — call it $59 on my rates. No API costs by default: the shipped writer is a local Ollama model, and cloud is an opt-in plugin behind a spend guard. (I've pinned mine to Claude Sonnet, which runs about $10/mo — worth saying out loud rather than letting someone find it.)
 
 **"Why Postgres as a message bus? Why not Kafka/NATS/Redis?"**
 

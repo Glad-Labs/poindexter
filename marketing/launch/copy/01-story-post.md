@@ -2,17 +2,17 @@
 
 **Title options (pick one):**
 
-1. One person, ~10,000 commits, almost no hand-written code: a year of directing AI agents to build a content pipeline
-2. I spent a year managing Claude Code sessions instead of writing code. Here's the 518,000-line result.
-3. What I learned shipping 117 releases of software I mostly didn't type
+1. One person, 10,500+ commits, almost no hand-written code: a year of directing AI agents to build a content pipeline
+2. I spent a year managing Claude Code sessions instead of writing code. Here's the 700,000-line result.
+3. What I learned shipping 220 releases of software I mostly didn't type
 
 ---
 
-I'm an engineer with a full-time job and two small kids. For about the last year, roughly 9pm to 1am, I've been building [Poindexter](https://github.com/Glad-Labs/poindexter) — an open-source content pipeline that discovers topics, researches them, writes long-form posts with local models, reviews its own drafts across 13 QA rails, rejects about half of them, and publishes the survivors to [gladlabs.io](https://www.gladlabs.io).
+I'm an engineer with a full-time job and two small kids. For about the last year, roughly 9pm to 1am, I've been building [Poindexter](https://github.com/Glad-Labs/poindexter) — an open-source content pipeline that discovers topics, researches them, writes long-form posts with local models, reviews its own drafts across 16 QA rails, rejects about half of them, and publishes the survivors to [gladlabs.io](https://www.gladlabs.io).
 
 The part people find strange: I wrote almost none of the code by hand.
 
-The repo is just under 10,000 commits, about 518,000 lines of Python across 1,763 files, 11,400+ unit tests, 117 tagged releases. Nearly all of it was written by Claude Code sessions that I directed — specifying what to build, reviewing what came back, rejecting what wasn't right, and deciding what came next. I've been embarrassed about this for most of the year. I'd say "I didn't actually code it" the way you'd confess to something. I'm writing this post partly because I've stopped believing that framing.
+The repo is over 10,500 commits, about 700,000 lines of Python across 2,311 files, 18,000+ unit tests, 220 tagged releases. Nearly all of it was written by Claude Code sessions that I directed — specifying what to build, reviewing what came back, rejecting what wasn't right, and deciding what came next. I've been embarrassed about this for most of the year. I'd say "I didn't actually code it" the way you'd confess to something. I'm writing this post partly because I've stopped believing that framing.
 
 ## What "directing" actually means
 
@@ -22,9 +22,9 @@ The skills that turned out to matter were not coding skills, exactly. They were:
 
 ## The test suite is the real product
 
-The single decision that made this possible: tests are non-negotiable, and they gate every merge. AI agents have no memory of last month's regressions and no shame about reintroducing them. The 11,400 tests are the institutional memory a solo operation doesn't otherwise have. When a session breaks something, CI catches it before I merge; without that ratchet, a codebase built this way would rot in weeks. If you take one thing from this post: agent-built software without a hard test gate isn't a codebase, it's a pile.
+The single decision that made this possible: tests are non-negotiable, and they gate every merge. AI agents have no memory of last month's regressions and no shame about reintroducing them. The 18,000-odd tests are the institutional memory a solo operation doesn't otherwise have. When a session breaks something, CI catches it before I merge; without that ratchet, a codebase built this way would rot in weeks. If you take one thing from this post: agent-built software without a hard test gate isn't a codebase, it's a pile.
 
-The same philosophy ended up inside the product itself. Poindexter generates drafts and then tries hard to kill them — a critic model from a different family than the writer, deterministic anti-hallucination validators, citation checks against the research corpus. Roughly half of drafts die. It took me an embarrassingly long time to notice that the product and the process are the same idea: generation is cheap now; judgment is the scarce input. My whole job, on both sides, is rejection.
+The same philosophy ended up inside the product itself. Poindexter generates drafts and then tries hard to kill them — a critic model from a different family than the writer, deterministic anti-hallucination validators, citation checks against the research corpus. About four in five drafts that reach a verdict die — 1,530 rejected against 342 that made it. It took me an embarrassingly long time to notice that the product and the process are the same idea: generation is cheap now; judgment is the scarce input. My whole job, on both sides, is rejection.
 
 ## Things that went wrong anyway
 
@@ -36,13 +36,15 @@ The memory and session ingestion taps silently pulled in nothing for 17 days bef
 
 ## What this cost
 
-**[FILL: rough total spend — hardware aside, what did a year of this cost in tooling/subscriptions/electricity? A real number, even approximate, will be the most-quoted line in the post.]** The hardware is one machine: an RTX 5090, 64 GB of RAM, running Pop!_OS in my house. Inference is local through Ollama, so the marginal cost of a draft is electricity.
+Running it costs about $69 a month, measured over the last 30 days: roughly $59 of electricity (54 kWh) and $10 of API spend. **[FILL: what you paid for tooling and subscriptions on top of that — the Claude Code subscription is the number I can't read off the machine, and it's the one people will actually want.]** The hardware is one machine: an RTX 5090 and a 3090, 64 GB of RAM, running Pop!_OS in my house.
 
-The other cost is the one I'd warn you about. Building this way is so productive, and so private, that I spent a year doing almost nothing else. No launch, no posts, no community. As of this writing the repo has 4 stars. The machine got very good while nobody was watching — including me forgetting that "nobody is watching" is a choice you're making, not a fact about the world. This post is the start of correcting that.
+I should be precise about "local," because this is the claim I'd most want someone to push back on. The local models do the judging and the seeing — QA rails, the vision critic, title and metadata work, the aux tasks — and the shipped default writes drafts with a local model too. On my own install I've pinned the writer to Claude Sonnet, because on the thing readers actually read, it is still better than what I can run at home. That's the $10. So: local inference is real and load-bearing here, but if you install this today and change nothing, your drafts come from your own GPU, and mine don't.
+
+The other cost is the one I'd warn you about. Building this way is so productive, and so private, that I spent a year doing almost nothing else. No launch, no posts, no community. As of this writing the repo has 5 stars. The machine got very good while nobody was watching — including me forgetting that "nobody is watching" is a choice you're making, not a fact about the world. This post is the start of correcting that.
 
 ## Where it stands
 
-Poindexter is in alpha, Apache 2.0, self-host only, honest rough edges listed in the [README](https://github.com/Glad-Labs/poindexter). It runs a real publication daily — 166 live posts, 2,000+ pipeline runs. If you run local models and the idea of a pipeline that grades its own homework appeals to you, I'd genuinely like to know what breaks when someone who isn't me installs it.
+Poindexter is in alpha, Apache 2.0, self-host only, honest rough edges listed in the [README](https://github.com/Glad-Labs/poindexter). It runs a real publication daily — 207 live posts out of 2,115 pipeline runs. If you run local models and the idea of a pipeline that grades its own homework appeals to you, I'd genuinely like to know what breaks when someone who isn't me installs it.
 
 And if you're an engineer wondering whether directing agents is real engineering: I spent a year embarrassed about it, and the artifact ships daily and survives its own test suite. Draw your own conclusion — I've drawn mine.
 

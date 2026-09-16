@@ -46,7 +46,7 @@ Before sending traffic, make sure it has somewhere to land.
 
 Claude writes all of these; you edit for truth only. Five artifacts:
 
-- [ ] **The story post** (canonical, on gladlabs.io dev diary): _"One person, ~10,000 commits, zero hand-written code: a year of directing Claude Code to build a content pipeline."_ This is your best material — the thing you've been calling your fraud is the hook. Honest about what worked and what was painful.
+- [ ] **The story post** (canonical, on gladlabs.io dev diary): _"One person, ~10,500+ commits, zero hand-written code: a year of directing Claude Code to build a content pipeline."_ This is your best material — the thing you've been calling your fraud is the hook. Honest about what worked and what was painful.
 - [ ] **Show HN submission**: title options + a first-comment written in your register (who you are, why local-first, why it rejects half its drafts, what's rough). Show HN norms: it must be something people can try, no signup wall — you're fine on both.
 - [ ] **r/LocalLLaMA post**: leads with the cross-family QA design (gemma3 writes, phi4 criticizes — biases don't cancel), exact models and VRAM numbers. That sub rewards precisely this level of detail.
 - [ ] **r/selfhosted post**: leads with Docker, the watchdog daemon, self-healing, DB-as-config, S3-push output. Different audience, different hook.

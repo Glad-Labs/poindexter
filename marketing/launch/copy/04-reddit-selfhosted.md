@@ -21,7 +21,7 @@ The parts this sub will actually care about:
 
 **Output is push-only static JSON + RSS** to any S3-compatible storage (R2, B2, MinIO, S3). Your frontend is fully decoupled — Next.js, Hugo, Astro, or a single HTML file. No serving infrastructure to babysit.
 
-Honest caveats before you `git clone`: it's alpha, the DB schema still moves between releases (read the CHANGELOG before upgrading), it's one-operator-one-machine (no multi-tenant recipe), native Windows isn't supported (WSL works), and you'll want an 8 GB+ GPU for tolerable speeds. There are 11,400+ tests in CI, which is the main reason a solo alpha project is trustable at all.
+Honest caveats before you `git clone`: it's alpha, the DB schema still moves between releases (read the CHANGELOG before upgrading), it's one-operator-one-machine (no multi-tenant recipe), native Windows isn't supported (WSL works), and you'll want an 8 GB+ GPU for tolerable speeds. There are 18,000+ tests in CI, which is the main reason a solo alpha project is trustable at all.
 
 Happy to answer anything about running LLM workloads as boring, monitored, self-hosted infrastructure — that's been the actual project, more than the AI parts.
 
