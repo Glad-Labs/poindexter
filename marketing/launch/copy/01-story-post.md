@@ -16,7 +16,9 @@ The repo is over 10,500 commits, about 700,000 lines of Python across 2,311 file
 
 ## What "directing" actually means
 
-It is not "type a wish, receive software." A typical night looks like: read the state of the system, pick the one thing that matters most, write a task description precise enough that a very fast, very literal engineer can't wander off, let the session work, then review the result the way you'd review a PR from a contractor you don't fully trust yet. Maybe a third of the work comes back wrong in some way — subtly wrong being far more dangerous than obviously wrong. **[FILL: your actual rejection/redo rate if you have a feel for it — mine is a guess]**
+It is not "type a wish, receive software." A typical night looks like: read the state of the system, pick the one thing that matters most, write a task description precise enough that a very fast, very literal engineer can't wander off, and let the session work.
+
+What I do with the result is the part I had wrong for a long time. I don't really reject it. The output is too large to review the way you'd review a PR — by the time you've read it closely enough to reject it honestly, you could have refined it twice. So I take what comes back and fix what's broken or isn't good enough, and the refining is where my actual judgment goes. I haven't written code in months; I direct, then I repair. Subtly wrong is still far more dangerous than obviously wrong, and that danger is why the test gate below is non-negotiable — it catches what I've stopped pretending I'll catch by reading.
 
 The skills that turned out to matter were not coding skills, exactly. They were: knowing what to build next, writing specifications that survive contact with a literal-minded reader, smelling when something is off before the tests catch it, and being willing to throw away work — the agent's and mine — without sunk-cost flinching.
 
@@ -24,7 +26,7 @@ The skills that turned out to matter were not coding skills, exactly. They were:
 
 The single decision that made this possible: tests are non-negotiable, and they gate every merge. AI agents have no memory of last month's regressions and no shame about reintroducing them. The 18,000-odd tests are the institutional memory a solo operation doesn't otherwise have. When a session breaks something, CI catches it before I merge; without that ratchet, a codebase built this way would rot in weeks. If you take one thing from this post: agent-built software without a hard test gate isn't a codebase, it's a pile.
 
-The same philosophy ended up inside the product itself. Poindexter generates drafts and then tries hard to kill them — a critic model from a different family than the writer, deterministic anti-hallucination validators, citation checks against the research corpus. About four in five drafts that reach a verdict die — 1,530 rejected against 342 that made it. It took me an embarrassingly long time to notice that the product and the process are the same idea: generation is cheap now; judgment is the scarce input. My whole job, on both sides, is rejection.
+The same philosophy ended up inside the product itself. Poindexter generates drafts and then tries hard to kill them — a critic model from a different family than the writer, deterministic anti-hallucination validators, citation checks against the research corpus. About four in ten drafts die at the rails — and of the ones that survive and reach me, I approve a third. Two gates stacked: the machine kills 40%, I kill two thirds of the survivors, and roughly 18 of every 100 drafts started end up published. It took me an embarrassingly long time to notice that the product and the process are the same idea: generation is cheap now; judgment is the scarce input. The two sides spend it differently — on the content I reject, on the code I refine — but it's the same scarce thing, and it's the whole job.
 
 ## Things that went wrong anyway
 

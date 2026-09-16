@@ -4,7 +4,7 @@
 
 1. `Show HN: Poindexter – a content pipeline that rejects half of what it writes`
 2. `Show HN: Local-first publishing pipeline with adversarial multi-model QA`
-3. `Show HN: I run an autonomous blog on one GPU. It rejects 50% of its drafts`
+3. `Show HN: I run an autonomous blog on one GPU. It rejects 40% of its drafts, and I reject two thirds of what's left`
 
 **URL:** `https://github.com/Glad-Labs/poindexter`
 
@@ -28,7 +28,7 @@
 >
 > I'm one person with a full-time job and two small kids; this got built roughly 9pm–1am over the past year. The part I was embarrassed about until recently: I wrote almost none of the ~518k lines of Python by hand. I directed Claude Code sessions — wrote specs, reviewed output, rejected a lot of it — and enforced an 18,000-test CI gate so agent regressions can't land. Whether that counts as engineering is a fair thing to argue about in this thread; I've made my peace with it.
 >
-> The design idea I care most about: generation is cheap, so the system optimizes for rejection instead. The writer is gemma3:27b and the critic is phi4:14b on purpose — different model family, so their failure modes don't cancel. Deterministic validators catch fabricated people, stats, and quotes; near-miss drafts get one bounded revision pass, then a hard reject. Roughly 50% of drafts die. The same idea applies to how it was built, honestly — my main job all year was rejecting work.
+> The design idea I care most about: generation is cheap, so the system optimizes for rejection instead. In practice the rails kill about 40% of drafts and I approve a third of what survives — roughly 18 of every 100 drafts started get published. The writer is gemma3:27b and the critic is phi4:14b on purpose — different model family, so their failure modes don't cancel. Deterministic validators catch fabricated people, stats, and quotes; near-miss drafts get one bounded revision pass, then a hard reject. Roughly 50% of drafts die. The same idea applies to how it was built, honestly — my main job all year was rejecting work.
 >
 > What it's not: a hosted service (self-host only), stable (alpha, schema still moves between releases), or a way to flood the internet — the output feeds one site I run, and the whole point of the QA gauntlet is that publishing less, better, beats publishing more.
 >

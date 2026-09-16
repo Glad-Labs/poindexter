@@ -50,7 +50,7 @@ For launch days, on your phone. These are pre-written so 10pm-after-work-and-bed
 
 **"Local models are worse than cloud models. Why handicap yourself?"**
 
-> They are worse, model for model. Three reasons anyway: marginal cost per draft is electricity, which changes what you can afford to reject (80% rejection on API pricing hurts); my data and drafts stay on my machine; and no per-token meter changes how you design — you can run 16 QA rails because they're free. Cloud models exist as an opt-in plugin behind a spend guard for people who want them.
+> They are worse, model for model. Three reasons anyway: marginal cost per draft is electricity, which changes what you can afford to reject (rejecting 40% of drafts on API pricing hurts); my data and drafts stay on my machine; and no per-token meter changes how you design — you can run 16 QA rails because they're free. Cloud models exist as an opt-in plugin behind a spend guard for people who want them.
 
 **"What does it cost to run?"**
 

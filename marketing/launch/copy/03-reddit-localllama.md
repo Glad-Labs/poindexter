@@ -4,7 +4,7 @@
 
 1. `I run a full autonomous blog pipeline on one RTX 5090 — the writer and critic are different model families on purpose`
 2. `A year of running gemma3:27b + phi4:14b as writer/critic pairs in production — what actually works`
-3. `Open-sourced my local content pipeline: 16 QA rails, ~80% draft rejection, zero API costs`
+3. `Open-sourced my local content pipeline: 16 QA rails, ~40% draft rejection, zero API costs`
 
 ---
 
