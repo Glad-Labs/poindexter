@@ -109,6 +109,25 @@ honest-but-permanent "still in progress". Refusing beats queueing a request
 that is guaranteed to strand. Both stay restartable by hand; that is what the
 error tells the operator to do.
 
+**The reclaim ladder's requests are guarded; operator clicks are not.** Rows
+with `requested_by='gpu_vram_reclaim'` come from `gpu_scheduler`'s VRAM reclaim
+ladder, which queues a restart when a sidecar answers `nothing_to_reclaim`
+while the render GPU is short — a blind inference, since the worker has no
+per-process view of the card. On 2026-09-17 that produced 35 restarts in three
+hours, every one of an idle sidecar holding ~0.5 GB, because the card was full
+of someone *else's* work (the director LLM cold-loading 18.5 GB, ComfyUI at
+27 GB mid-S2V); restarting image-gen mid-still-phase is how illustrations turn
+into stock substitutes. Brain is the one process that sees both docker and the
+gpu-exporter's per-pid metric, so before bouncing it resolves the container's
+host pids (`docker top`) and sums their `nvidia_gpu_process_memory_mib`. Below
+`vram_reclaim_min_freed_gb` (the ladder's own squat floor) — or when the
+footprint is unknown — the row is finalized `done` with a `skipped — …` detail
+and a `service_restart_skipped` audit row; never bounce blind. Master switch:
+`vram_reclaim_restart_footprint_guard_enabled`; exporter address:
+`gpu_exporter_metrics_url`. Enqueue also dedups: an open (pending/claimed)
+intent for the same container is handed back (`deduped: true`) instead of a
+second row being inserted.
+
 For the same reason — any death between claim and finalize orphans a row —
 each poll first sweeps `claimed` rows older than 10 minutes to `failed` with an
 explanatory `detail` and a `service_restart_orphaned` audit row. It resolves to

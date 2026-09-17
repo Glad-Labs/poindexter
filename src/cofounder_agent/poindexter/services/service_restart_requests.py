@@ -71,17 +71,38 @@ def is_self_defeating(container: str) -> bool:
 async def create_restart_request(
     pool: Any, container: str, *, requested_by: str = "console"
 ) -> dict[str, Any]:
-    """Queue a restart intent.
+    """Queue a restart intent — or return the open one already queued.
 
     Raises :class:`InvalidContainerName` on a malformed name (route → 400) and
     :class:`SelfDefeatingRestart` for a container that would orphan its own row
-    (route → 409). Never a silent no-op.
+    (route → 409). Never a silent no-op: the returned row carries
+    ``deduped=True`` when an open (pending/claimed) intent for the same
+    container was handed back instead of a duplicate being inserted.
     """
     if not is_valid_container_name(container):
         raise InvalidContainerName(container)
     if is_self_defeating(container):
         raise SelfDefeatingRestart(container)
     async with pool.acquire() as conn:
+        # One open intent per container. Three identical rows landed within
+        # one second on 2026-09-17 14:16:45 — concurrent reclaim-ladder passes
+        # each read "no recent request" before any of them had inserted — and
+        # brain executed all three. An open (pending/claimed) row already
+        # means "this container will be restarted"; hand it back instead.
+        existing = await conn.fetchrow(
+            """
+            SELECT id, container, status, requested_at
+              FROM service_restart_requests
+             WHERE container = $1 AND status IN ('pending', 'claimed')
+             ORDER BY requested_at DESC
+             LIMIT 1
+            """,
+            container,
+        )
+        if existing is not None:
+            out = dict(existing)
+            out["deduped"] = True
+            return out
         row = await conn.fetchrow(
             """
             INSERT INTO service_restart_requests (container, requested_by)
@@ -91,7 +112,9 @@ async def create_restart_request(
             container,
             requested_by,
         )
-    return dict(row)
+    out = dict(row)
+    out["deduped"] = False
+    return out
 
 
 async def seconds_since_last_request(pool: Any, container: str) -> float | None:

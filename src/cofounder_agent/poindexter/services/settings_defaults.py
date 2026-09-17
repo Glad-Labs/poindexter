@@ -1420,6 +1420,17 @@ DEFAULTS: dict[str, str] = {
     # holding nothing; below it, even a nothing_to_reclaim decline is
     # treated as a squat (the allocator view cannot see the CUDA context).
     'vram_reclaim_restart_below_free_gb': '12.0',
+    # Brain-side guard on the ladder's restart requests (requested_by=
+    # gpu_vram_reclaim): before bouncing a sidecar, brain resolves its host pids
+    # (docker top) and sums their VRAM from the gpu-exporter's per-pid metric;
+    # below vram_reclaim_min_freed_gb the request is finalized as skipped.
+    # 2026-09-17: 35 restarts in 3 h, all of idle sidecars holding ~0.5 GB
+    # while the card was full of someone else's work. Console clicks bypass it.
+    'vram_reclaim_restart_footprint_guard_enabled': 'true',
+    # Where brain reads the gpu-exporter's Prometheus text (pid: host, so its
+    # pids are host pids). Empty = derive from the runtime (host.docker.internal
+    # inside a container, localhost outside).
+    'gpu_exporter_metrics_url': 'http://host.docker.internal:9835/metrics',
 
     'pipeline_idle_probe_enabled': 'true',
     'pipeline_idle_max_hours': '12',
@@ -5155,6 +5166,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'vram_reclaim_min_freed_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
     'vram_reclaim_restart_cooldown_minutes': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'vram_reclaim_restart_below_free_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
+    'vram_reclaim_restart_footprint_guard_enabled': {'owner': 'service_restart', 'value_type': 'boolean'},
+    'gpu_exporter_metrics_url': {'owner': 'service_restart', 'value_type': 'url'},
     'pipeline_idle_probe_enabled': {'owner': 'probe_pipeline_idle', 'value_type': 'boolean'},
     'pipeline_idle_max_hours': {'owner': 'probe_pipeline_idle', 'value_type': 'integer'},
     'qa_rescue_yield_probe_enabled': {'owner': 'probe_rescue_yield', 'value_type': 'boolean'},

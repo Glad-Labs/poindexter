@@ -51,9 +51,17 @@ class TestIsValidContainerName:
         assert not is_valid_container_name(name)
 
 
-def _fake_pool(fetchrow_result):
+def _fake_pool(fetchrow_result, *, existing=None):
+    """``fetchrow`` answers the open-intent check with ``existing`` and every
+    other statement (INSERT ... RETURNING, SELECT by id) with ``fetchrow_result``."""
     conn = MagicMock()
-    conn.fetchrow = AsyncMock(return_value=fetchrow_result)
+
+    async def _fetchrow(sql, *_args):
+        if "status IN ('pending', 'claimed')" in sql:
+            return existing
+        return fetchrow_result
+
+    conn.fetchrow = AsyncMock(side_effect=_fetchrow)
     pool = MagicMock()
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -72,10 +80,31 @@ class TestCreateRestartRequest:
 
         out = await create_restart_request(pool, "poindexter-pyroscope")
 
-        assert out == row
+        assert out == {**row, "deduped": False}
         sql, args = conn.fetchrow.call_args[0][0], conn.fetchrow.call_args[0][1:]
         assert "INSERT INTO service_restart_requests" in sql
         assert args == ("poindexter-pyroscope", "console")
+
+    async def test_open_intent_is_handed_back_instead_of_duplicated(self):
+        """Three identical rows landed within one second on 2026-09-17 —
+        concurrent reclaim passes — and brain restarted the sidecar three
+        times. An open pending/claimed row already IS the restart."""
+        existing = {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "container": "poindexter-wan-server",
+            "status": "pending",
+            "requested_at": datetime.now(timezone.utc),
+        }
+        pool, conn = _fake_pool(None, existing=existing)
+
+        out = await create_restart_request(
+            pool, "poindexter-wan-server", requested_by="gpu_vram_reclaim",
+        )
+
+        assert out == {**existing, "deduped": True}
+        conn.fetchrow.assert_awaited_once()  # the check only — no INSERT
+        sql = conn.fetchrow.call_args[0][0]
+        assert "INSERT" not in sql and "status IN ('pending', 'claimed')" in sql
 
     async def test_custom_requested_by_is_threaded_through(self):
         pool, conn = _fake_pool({"id": "x", "container": "c", "status": "pending", "requested_at": None})
@@ -148,8 +177,10 @@ class TestSelfDefeatingGuard:
 
         out = await create_restart_request(pool, container)
 
-        assert out == row
-        conn.fetchrow.assert_called_once()
+        assert out == {**row, "deduped": False}
+        # The open-intent check, then the INSERT — and nothing refused it.
+        assert conn.fetchrow.await_count == 2
+        assert "INSERT INTO service_restart_requests" in conn.fetchrow.call_args[0][0]
 
     def test_guard_is_distinct_from_the_shape_check(self):
         """A self-defeating name is a WELL-FORMED name — the two rejections map
