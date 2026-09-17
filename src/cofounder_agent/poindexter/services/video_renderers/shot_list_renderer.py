@@ -2606,6 +2606,7 @@ async def _render_pass(
     render_prior: str | None = None
     total = len(shots)
     pending_heroes: list[_ShotState] = []
+    pending_presenters: list[_ShotState] = []
 
     # The previous render's hero phase exits image-gen to free the card, so
     # this still phase can arrive while it is still cold-booting. Wait for
@@ -2641,6 +2642,21 @@ async def _render_pass(
             state = _ShotState(shot=shot, result=result, is_reused=False)
             if result.success and result.clip_path:
                 pending_heroes.append(state)
+        elif shot.source == _PRESENTER_SOURCE:
+            # Deferred to the final phase. A presenter clip is a Wan S2V
+            # render through ComfyUI, whose ~17 GB pool then stays resident;
+            # run inside the still phase it starved image-gen (Z-Image, ~18
+            # GB) for every illustration after it — 2026-09-16 render
+            # ea9b3fff: "CUDA out of memory ... 193 MiB free", image-gen 503
+            # on 8 of 15 shots, all filled with keyword stock. Stills first,
+            # heroes next, presenters last: each model gets the card while
+            # its whole batch runs.
+            result = ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=False,
+                error="deferred to the presenter phase",
+            )
+            state = _ShotState(shot=shot, result=result, is_reused=False)
+            pending_presenters.append(state)
         else:
             result = await _render_one_shot(
                 shot, prior_clip=render_prior, **render_kwargs,
@@ -2702,6 +2718,15 @@ async def _render_pass(
             for other in states:
                 if other.is_reused and other.result.clip_path == still_path:
                     other.result.clip_path = state.result.clip_path
+
+    # Presenter phase, last: S2V through ComfyUI. Image-gen and wan have no
+    # work left this pass, so the presenter floor's reclaim can take the card.
+    presenter_total = len(pending_presenters)
+    for j, state in enumerate(pending_presenters, start=1):
+        await _safe_progress(progress_cb, f"presenter clip {j}/{presenter_total}", None)
+        state.result = await _render_one_shot(
+            state.shot, prior_clip=None, **render_kwargs,
+        )
     return states
 
 

@@ -3588,3 +3588,73 @@ class TestRestockQueryEchoRejection:
         assert _clean_stock_query('Query: "server room cooling fans"') == (
             "server room cooling fans"
         )
+
+
+class TestPresenterRendersAfterStillsAndHeroes:
+    """2026-09-16 render ea9b3fff: the presenter S2V (ComfyUI, ~17 GB pool that
+    stays resident) ran inside the still phase, and every illustration after it
+    hit image-gen's "CUDA out of memory ... 193 MiB free" → 503 on 8 of 15
+    shots, all filled with keyword stock. Stills first, heroes next, presenters
+    last — each model gets the card for its whole batch."""
+
+    def _shots(self):
+        return [
+            Shot(idx=0, duration_s=8.0, intent="open", source="presenter",
+                 prompt="the persona speaks", narration_offset_s=0.0),
+            Shot(idx=1, duration_s=5.0, intent="mid", source="image_kenburns",
+                 prompt="abstract gradient", kenburns_zoom=(1.0, 1.1), narration_offset_s=8.0),
+            Shot(idx=2, duration_s=5.0, intent="hero", source="generative",
+                 prompt="hero subject", motion="slow push-in", narration_offset_s=13.0),
+            Shot(idx=3, duration_s=7.0, intent="close", source="presenter",
+                 prompt="the persona closes", narration_offset_s=18.0),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_presenter_clips_render_last_and_land_on_their_shots(self, tmp_path):
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+
+        order: list[str] = []
+
+        async def fake_still(*, prompt, output_path, **kwargs):
+            order.append("still")
+            with open(output_path, "wb") as fh:
+                fh.write(b"png")
+            return True
+
+        async def fake_clip(*, prompt, output_path, image_path, **kwargs):
+            order.append("hero")
+            with open(output_path, "wb") as fh:
+                fh.write(b"mp4")
+            return True, ""
+
+        real_one_shot = slr._render_one_shot
+
+        async def fake_one_shot(shot, *, prior_clip, **kwargs):
+            if shot.source == "presenter":
+                order.append(f"presenter:{shot.idx}")
+                p = tmp_path / f"presenter_{shot.idx}.mp4"
+                p.write_bytes(b"mp4")
+                return slr.ShotRenderResult(idx=shot.idx, source="presenter", success=True, clip_path=str(p), duration_s=shot.duration_s)
+            order.append(f"other:{shot.source}")
+            return await real_one_shot(shot, prior_clip=prior_clip, **kwargs)
+
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="http://image-gen:9836",
+            site_config=None, http_client_factory=None, pexels_key="",
+            orientation="landscape", post_id="p-presenter-order",
+        )
+        with patch.object(slr, "_render_image_gen_image", fake_still), \
+             patch.object(slr, "_render_generative_clip", fake_clip), \
+             patch.object(slr, "_render_one_shot", fake_one_shot):
+            states = await slr._render_pass(self._shots(), render_kwargs=render_kwargs)
+
+        # Every presenter render comes after every still and every hero.
+        first_presenter = next(i for i, c in enumerate(order) if c.startswith("presenter:"))
+        assert all(c.startswith("presenter:") for c in order[first_presenter:]), order
+        assert "hero" in order[:first_presenter] and "still" in order[:first_presenter], order
+        # Both presenter shots got real clips, in their original positions.
+        by_idx = {st.shot.idx: st for st in states}
+        assert [st.shot.idx for st in states] == [0, 1, 2, 3]
+        assert by_idx[0].result.success and by_idx[0].result.clip_path.endswith("presenter_0.mp4")
+        assert by_idx[3].result.success and by_idx[3].result.clip_path.endswith("presenter_3.mp4")
+        assert order.count("presenter:0") == 1 and order.count("presenter:3") == 1
