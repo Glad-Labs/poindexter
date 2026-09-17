@@ -158,6 +158,32 @@ Operational rules that follow from the numbers:
   not send yet — that gate lands with the presenter-persona work, before any
   such upload.
 
+## Frame-rate conformance: interpolate, don't duplicate
+
+Wan renders at its native **16 fps** (S2V; hero i2v through ComfyUI) and the
+compositor assembles the timeline at **30 fps**. Left alone, ffmpeg conforms
+the rate by duplicating frames, so every talking-head and hero shot played
+with each frame shown twice — visibly stuttery next to the 30 fps stock and
+Ken Burns scenes (operator feedback 2026-09-17, "do the interpolation anyway
+for better quality").
+
+Since stack#3841 `_render_generative_clip` motion-interpolates every clip it
+produces **in place, right after the provider writes it**, with ffmpeg's
+`minterpolate` (motion-compensated, bidirectional). Doing it there — at the
+provider's small native geometry, before the compositor scales to 1080p — is
+what keeps it cheap: measured 27 s of CPU for a 9.6 s 960x544 clip (154 → 286
+frames, 32 cores). In the compositor at 1080p the same filter would cost
+minutes per scene, which is why it does *not* live there. Stock clips (24–30
+fps already) never pass through this path.
+
+Settings: `video_clip_interpolation_enabled` (default true),
+`video_clip_interpolation_target_fps` (30 — must match the compositor's output
+rate), `video_clip_interpolation_filter` (the chain, `{fps}` substituted; swap
+in `framerate=fps={fps}` for a cheaper blend, or a RIFE node later),
+`video_clip_interpolation_timeout_s` (600). Best-effort by contract: the
+interpolated file replaces the original only after ffmpeg exits 0 with output
+on disk; any failure keeps the provider's clip and logs why.
+
 ## Presenter motion register: three settings, no code
 
 Operator feedback 2026-09-17: the talking head "doesn't look natural" — too

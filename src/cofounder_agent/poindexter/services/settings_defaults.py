@@ -717,6 +717,19 @@ DEFAULTS: dict[str, str] = {
     # and adds the talking-head failure modes. Chinese because the model was
     # trained against a Chinese negative (an English one is measurably weaker).
     # Empty = fall back to the shared Wan negative.
+    # Generative clips (Wan S2V + hero i2v) render at the model's native 16 fps
+    # while the timeline is 30 fps; without interpolation the compositor
+    # duplicates every other frame and the shot stutters next to 30 fps stock.
+    # The renderer motion-interpolates each clip in place right after the
+    # provider writes it (ffmpeg minterpolate at the clip's small native
+    # geometry — measured 27 s CPU for a 9.6 s 960x544 clip). {fps} in the
+    # filter is the target. Disable to ship the provider's frames as-is.
+    'video_clip_interpolation_enabled': 'true',
+    'video_clip_interpolation_target_fps': '30',
+    'video_clip_interpolation_filter': (
+        'minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1'
+    ),
+    'video_clip_interpolation_timeout_s': '600',
     'video_presenter_negative_prompt': (
         '色调艳丽，过曝，细节模糊不清，字幕，风格，作品，画作，画面，整体发灰，最差质量，低质量，'
         'JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，'
@@ -5020,6 +5033,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_presenter_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
+    'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},
+    'video_clip_interpolation_target_fps': {'owner': 'video', 'value_type': 'integer'},
+    'video_clip_interpolation_filter': {'owner': 'video', 'value_type': 'string'},
+    'video_clip_interpolation_timeout_s': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_width': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_height': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_fps': {'owner': 'video', 'value_type': 'integer'},

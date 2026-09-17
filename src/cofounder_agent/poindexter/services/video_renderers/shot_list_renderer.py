@@ -1117,6 +1117,117 @@ async def _clear_wan_for_stills(shots: list[Shot], site_config: Any) -> None:
         )
 
 
+_DEFAULT_INTERPOLATION_FILTER = (
+    "minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"
+)
+
+
+async def _probe_fps(path: str, *, ffprobe: str = "ffprobe") -> float | None:
+    """The clip's video frame rate, or None when unreadable."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            ffprobe, "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=r_frame_rate",
+            "-of", "default=noprint_wrappers=1:nokey=1", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except Exception:  # noqa: BLE001
+        # silent-ok: an unreadable rate means "leave the clip alone", which
+        # the caller treats as the documented no-op.
+        return None
+    raw = (out or b"").decode("utf-8", "replace").strip().splitlines()
+    if not raw:
+        return None
+    num, _, den = raw[0].partition("/")
+    try:
+        return float(num) / float(den or 1)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+async def _interpolate_clip_fps(clip_path: str, *, site_config: Any) -> tuple[bool, str]:
+    """Raise a generative clip's frame rate to the timeline's with motion
+    interpolation (ffmpeg ``minterpolate``), in place.
+
+    Wan renders at its native 16 fps (S2V; hero i2v through ComfyUI) and the
+    compositor assembles at 30, so without this every other frame in a
+    talking-head or hero shot was a duplicate — visibly stuttery next to the
+    30 fps stock and Ken Burns scenes (operator feedback 2026-09-17). Doing it
+    here, at the provider's small native geometry, keeps it cheap: measured
+    27 s of CPU for a 9.6 s 960x544 clip (154 → 286 frames, 32 cores); at
+    1080p in the compositor it would be several minutes per scene.
+
+    Returns ``(changed, detail)``. Never raises and never destroys the clip:
+    the interpolated file replaces the original only after ffmpeg exits 0
+    and the output exists. Gated by ``video_clip_interpolation_enabled``;
+    the target is ``video_clip_interpolation_target_fps`` (the compositor's
+    30) and the filter chain is ``video_clip_interpolation_filter``
+    (``{fps}`` substituted) so an operator can trade quality for time.
+    """
+    if site_config is None:
+        return False, "no site_config"
+    try:
+        if not site_config.get_bool("video_clip_interpolation_enabled", True):
+            return False, "disabled"
+        target_fps = float(site_config.get_float("video_clip_interpolation_target_fps", 30.0) or 30.0)
+        filter_tpl = str(
+            site_config.get("video_clip_interpolation_filter", "") or ""
+        ).strip() or _DEFAULT_INTERPOLATION_FILTER
+        timeout_s = float(site_config.get_float("video_clip_interpolation_timeout_s", 600.0) or 600.0)
+    except Exception:  # noqa: BLE001
+        # silent-ok: a settings read must not decide a render's fate; the
+        # clip ships as the provider made it.
+        return False, "settings unreadable"
+    src_fps = await _probe_fps(clip_path)
+    if src_fps is None:
+        return False, "source fps unreadable"
+    if src_fps >= target_fps - 0.5:
+        return False, f"already {src_fps:.3g} fps"
+    vf = filter_tpl.replace("{fps}", f"{target_fps:g}")
+    tmp_out = f"{clip_path}.interp.mp4"
+    started = time.monotonic()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-loglevel", "error", "-y", "-i", clip_path,
+            "-vf", vf, "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
+            "-pix_fmt", "yuv420p", "-c:a", "copy", tmp_out,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+        )
+        _, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[SHOT_LIST] frame interpolation of %s failed to run (%s) — keeping the %.3g fps clip",
+            os.path.basename(clip_path), describe_exception(exc), src_fps,
+        )
+        _remove_quietly(tmp_out)
+        return False, describe_exception(exc)
+    if proc.returncode != 0 or not os.path.exists(tmp_out) or os.path.getsize(tmp_out) == 0:
+        logger.warning(
+            "[SHOT_LIST] frame interpolation of %s exited %s (%s) — keeping the %.3g fps clip",
+            os.path.basename(clip_path), proc.returncode,
+            (err or b"").decode("utf-8", "replace").strip()[:200], src_fps,
+        )
+        _remove_quietly(tmp_out)
+        return False, f"ffmpeg rc={proc.returncode}"
+    os.replace(tmp_out, clip_path)
+    logger.info(
+        "[SHOT_LIST] interpolated %s %.3g -> %g fps in %.0fs",
+        os.path.basename(clip_path), src_fps, target_fps, time.monotonic() - started,
+    )
+    return True, f"{src_fps:.3g} -> {target_fps:g} fps"
+
+
+def _remove_quietly(path: str) -> None:
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        # silent-ok: a leftover temp file in the per-render work dir is
+        # swept with the work dir; it is not worth failing the render over.
+        pass
+
+
 async def _render_generative_clip(
     *,
     prompt: str,
@@ -1238,6 +1349,11 @@ async def _render_generative_clip(
         return False, (
             f"{provider_choice} provider result had no output file on disk"
         )
+    # Conform the clip to the timeline's frame rate by MOTION INTERPOLATION
+    # here, at the provider's native (small) geometry, rather than letting the
+    # compositor duplicate frames at 1080p. Best-effort: a failed or skipped
+    # interpolation leaves the provider's clip exactly as rendered.
+    await _interpolate_clip_fps(str(results[0].file_path), site_config=site_config)
     return True, ""
 
 
