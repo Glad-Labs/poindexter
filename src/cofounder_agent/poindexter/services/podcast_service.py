@@ -682,6 +682,43 @@ def _spell_numbers_for_speech(text: str, *, site_config: "SiteConfig | None" = N
     return _NUMBER_RE.sub(_repl, text)
 
 
+# An initialism right after its own expansion — "large language model (LLM)",
+# "graphics processing unit (GPU)" — is a WRITTEN device: the reader's eye
+# ties the acronym to the phrase for later reuse. Spoken, it is noise: the
+# listener just heard the expansion, and the parenthetical then turns into
+# ", L L M ," (pronunciation map + parenthetical-to-comma rule) — the
+# operator heard "large language model, L L L M" in the first presenter video
+# (2026-09-17). When the acronym's letters are the initials of the words that
+# precede it (a trailing "s" allowed), the parenthetical is dropped for
+# speech; a standalone acronym ("the LLM judge") is untouched and still gets
+# its spelled form. Stored scripts keep the written form.
+_REDUNDANT_INITIALISM_RE = re.compile(r"((?:[A-Za-z][\w'-]*\s+){2,7})\(([A-Za-z]{2,7})s?\)")
+
+
+def _drop_redundant_initialism(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    _sc = _resolve_site_config(site_config)
+    enabled_raw = str(_sc.get("tts_drop_redundant_initialism", "") or "").strip().lower()
+    if enabled_raw and enabled_raw not in ("true", "1", "yes", "on"):
+        return text
+
+    def _repl(m: "re.Match[str]") -> str:
+        words = m.group(1).split()
+        acr = m.group(2)
+        # "(LLMs)": a trailing lowercase s is the plural marker, not an initial.
+        if len(acr) > 2 and acr.endswith("s") and acr[:-1].isupper():
+            acr = acr[:-1]
+        n = len(acr)
+        if len(words) < n:
+            return m.group(0)
+        initials = "".join(w[0] for w in words[-n:]).lower()
+        if initials != acr.lower():
+            return m.group(0)
+        return m.group(1).rstrip() + " "
+
+    out = _REDUNDANT_INITIALISM_RE.sub(_repl, text)
+    return re.sub(r"\s+([,.;:])", r"\1", re.sub(r"  +", " ", out))
+
+
 _WRAPPING_SINGLE_QUOTES_RE = re.compile(r"(?<!\w)'([^'\n]{1,80}?)'(?!\w)")
 
 
@@ -800,6 +837,10 @@ def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None)
     # 31B" BEFORE the pronunciation map, so the split-off family still gets its
     # spoken form (glm → G L M) instead of being stranded in a config token.
     text = _normalize_model_names(text, families=_get_model_families(site_config=site_config))
+    # "large language model (LLM)" → "large language model": before the
+    # pronunciation map spells the acronym and the structural pass turns the
+    # parentheses into commas (see _drop_redundant_initialism).
+    text = _drop_redundant_initialism(text, site_config=site_config)
     # Digit-adjacent dashes next: after the model pass (so a pin's version
     # tail is already collapsed, not read as a range) and before the
     # replacement/structural passes (whose " - " → ", " and em-dash → pause

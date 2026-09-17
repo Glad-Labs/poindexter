@@ -2298,3 +2298,46 @@ def test_thousands_grouped_number_is_one_number_even_with_units_pass_off():
     sc = SiteConfig(initial_config={"tts_number_normalization_enabled": "false", "tts_pronunciations": json.dumps({})})
     out = _normalize_for_speech("a 2,068 ms overhead", site_config=sc)
     assert "two thousand sixty eight" in out
+
+
+class TestRedundantInitialismIsDroppedForSpeech:
+    """First presenter video, 2026-09-17: "large language model (LLM)" was voiced
+    as "large language model, L L L M". The parenthetical is a written device;
+    spoken, the listener just heard the expansion."""
+
+    def test_initialism_after_its_expansion_is_dropped(self):
+        out = _normalize_for_speech(
+            "In the world of local language model (LLM) performance, there is a divide.", site_config=_pron_sc_digits(),
+        )
+        assert "local language model performance" in out
+        assert "L L M" not in out and "LLM" not in out
+
+    def test_plural_initialism_and_multiword_expansion(self):
+        out = _normalize_for_speech(
+            "large language models (LLMs) and the graphics processing unit (GPU) matter.", site_config=_pron_sc_digits(),
+        )
+        assert "large language models and the graphics processing unit matter" in out
+
+    def test_standalone_acronym_still_spelled(self):
+        import json
+
+        from poindexter.services.site_config import SiteConfig
+        sc = SiteConfig(initial_config={"tts_pronunciations": json.dumps({"LLM": "L L M"}), "tts_spell_numbers_enabled": "false"})
+        out = _normalize_for_speech("the LLM judge runs nightly", site_config=sc)
+        assert "the L L M judge" in out
+
+    def test_non_matching_parenthetical_is_left_to_the_aside_rule(self):
+        out = _normalize_for_speech("the cache (LRU) evicts", site_config=_pron_sc_digits())
+        assert "LRU" in out  # not an initialism of "the cache" — the aside rule keeps it
+
+    def test_stored_script_keeps_the_written_form(self):
+        out = _normalize_for_script("large language model (LLM) performance", site_config=_pron_sc_digits())
+        assert "LLM" in out
+
+    def test_switch_off(self):
+        import json
+
+        from poindexter.services.site_config import SiteConfig
+        sc = SiteConfig(initial_config={"tts_drop_redundant_initialism": "false", "tts_pronunciations": json.dumps({}), "tts_spell_numbers_enabled": "false"})
+        out = _normalize_for_speech("large language model (LLM) performance", site_config=sc)
+        assert "LLM" in out
