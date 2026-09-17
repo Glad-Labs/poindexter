@@ -3658,3 +3658,78 @@ class TestPresenterRendersAfterStillsAndHeroes:
         assert by_idx[0].result.success and by_idx[0].result.clip_path.endswith("presenter_0.mp4")
         assert by_idx[3].result.success and by_idx[3].result.clip_path.endswith("presenter_3.mp4")
         assert order.count("presenter:0") == 1 and order.count("presenter:3") == 1
+
+
+class TestPresenterWindowHandoff:
+    """The presenter phase asks the planner where each presenter's audio will
+    land and hands that window to the render (2026-09-17 lip-sync fix)."""
+
+    @pytest.mark.asyncio
+    async def test_render_pass_passes_the_planned_window_to_presenter_shots(self, tmp_path):
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+
+        shots = [
+            Shot(idx=0, duration_s=8.0, intent="open", source="presenter",
+                 prompt="the persona speaks", narration_offset_s=0.0),
+            Shot(idx=1, duration_s=5.0, intent="mid", source="image_kenburns",
+                 prompt="abstract gradient", kenburns_zoom=(1.0, 1.1), narration_offset_s=8.0),
+            Shot(idx=2, duration_s=7.0, intent="close", source="presenter",
+                 prompt="the persona closes", narration_offset_s=13.0),
+        ]
+        seen: dict[int, tuple[float, float] | None] = {}
+        asked: list[tuple[int, list[float]]] = []
+
+        async def fake_still(*, prompt, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"png")
+            return True
+
+        real_one_shot = slr._render_one_shot
+
+        async def fake_one_shot(shot, *, prior_clip, presenter_window=None, **kwargs):
+            if shot.source == "presenter":
+                seen[shot.idx] = presenter_window
+                p = tmp_path / f"presenter_{shot.idx}.mp4"
+                p.write_bytes(b"mp4")
+                return slr.ShotRenderResult(idx=shot.idx, source="presenter", success=True,
+                                            clip_path=str(p), duration_s=shot.duration_s)
+            return await real_one_shot(shot, prior_clip=prior_clip, **kwargs)
+
+        async def planner(shot, states):
+            asked.append((shot.idx, [float(st.shot.duration_s) for st in states]))
+            return (shot.narration_offset_s * 1.5, shot.duration_s * 1.5)
+
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="http://image-gen:9836",
+            site_config=None, http_client_factory=None, pexels_key="",
+            orientation="landscape", post_id="p-window",
+        )
+        with patch.object(slr, "_render_image_gen_image", fake_still), \
+             patch.object(slr, "_render_one_shot", fake_one_shot):
+            await slr._render_pass(shots, render_kwargs=render_kwargs, presenter_window_fn=planner)
+
+        assert seen == {0: (0.0, 12.0), 2: (19.5, 10.5)}
+        # The planner saw every shot's state (all three) for both presenters.
+        assert [n for n, _ in asked] == [0, 2] and all(d == [8.0, 5.0, 7.0] for _, d in asked)
+
+    @pytest.mark.asyncio
+    async def test_planner_failure_falls_back_to_the_planned_window(self, tmp_path):
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+
+        shots = [Shot(idx=0, duration_s=8.0, intent="open", source="presenter",
+                      prompt="the persona speaks", narration_offset_s=0.0)]
+        seen = {}
+
+        async def fake_one_shot(shot, *, prior_clip, presenter_window=None, **kwargs):
+            seen[shot.idx] = presenter_window
+            return slr.ShotRenderResult(idx=shot.idx, source="presenter", success=True,
+                                        clip_path=str(tmp_path / "p.mp4"), duration_s=8.0)
+
+        async def boom(shot, states):
+            raise RuntimeError("ffprobe missing")
+
+        render_kwargs = dict(work_dir=tmp_path, image_gen_url="", site_config=None,
+                             http_client_factory=None, pexels_key="", orientation="landscape", post_id="p")
+        with patch.object(slr, "_render_one_shot", fake_one_shot):
+            await slr._render_pass(shots, render_kwargs=render_kwargs, presenter_window_fn=boom)
+        assert seen == {0: None}

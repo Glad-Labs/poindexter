@@ -41,6 +41,7 @@ import asyncio
 import difflib
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -1931,12 +1932,14 @@ async def _render_one_shot(
     narration_path: str | None = None,
     niche_slug: str | None = None,
     heartbeat_cb: Any = None,
+    presenter_window: tuple[float, float] | None = None,
 ) -> ShotRenderResult:
     """Produce a clip file for one shot.
 
-    ``narration_path`` / ``niche_slug`` feed the ``presenter`` branch only: a
-    talking-head shot cuts its own window from the narration track and speaks
-    it with the niche's persona.
+    ``narration_path`` / ``niche_slug`` / ``presenter_window`` feed the
+    ``presenter`` branch only: a talking-head shot cuts its own window from
+    the narration track — the fitted window when the caller planned one —
+    and speaks it with the niche's persona.
 
     Returns a ``ShotRenderResult`` with ``clip_path`` set on success.
     Holdover shots reuse ``prior_clip`` (V1 simplification — a true
@@ -2146,6 +2149,7 @@ async def _render_one_shot(
             narration_path=narration_path,
             niche_slug=niche_slug,
             heartbeat_cb=heartbeat_cb,
+            narration_window=presenter_window,
         )
     if source in ("generative", "wan21"):
         still_result = await _render_hero_still(
@@ -2298,9 +2302,21 @@ async def _render_presenter_clip(
     narration_path: str | None,
     niche_slug: str | None,
     heartbeat_cb: Any = None,
+    narration_window: tuple[float, float] | None = None,
 ) -> ShotRenderResult:
     """Render a talking-head clip: the niche's persona speaks this shot's
     narration window through the ComfyUI provider's speech path.
+
+    ``narration_window`` is ``(offset_s, duration_s)`` in the REAL narration
+    track — the window the assembled video will play under this shot. The
+    director's ``shot.narration_offset_s`` / ``duration_s`` are a plan laid
+    out on its own estimated timeline; the narration-fit at assembly
+    rescales every scene to span the actual voiceover, so the audio under a
+    shot lands wherever the fit puts it. Cutting the speech at the PLANNED
+    offset lip-synced the persona to the wrong sentences (2026-09-17 render
+    671c94b3: 13 shots planned at 209 s over a 284 s narration; the closing
+    face spoke words that had played 38 s earlier). ``None`` keeps the
+    planned window — the pre-fix contract for callers that do not fit.
 
     Every miss returns ``success=False`` with a ``presenter_render_fallback``
     finding so the substitution ladder fills the slot — a presenter that
@@ -2326,9 +2342,22 @@ async def _render_presenter_clip(
     if not portrait:
         return _fail(f"could not fetch the persona portrait {persona.portrait_url}")
     segment = str(work_dir / f"presenter_{shot.idx}.wav")
+    cut_offset = float(shot.narration_offset_s)
+    cut_duration = float(shot.duration_s)
+    if narration_window is not None:
+        cut_offset, cut_duration = float(narration_window[0]), float(narration_window[1])
+        if abs(cut_offset - float(shot.narration_offset_s)) > 0.5 or abs(
+            cut_duration - float(shot.duration_s)
+        ) > 0.5:
+            logger.info(
+                "[SHOT_LIST] presenter shot %d speaks its FITTED window %.1f+%.1fs "
+                "(director planned %.1f+%.1fs) — the assembly stretches scenes to "
+                "the real narration, so the lips follow the audio that will play",
+                shot.idx, cut_offset, cut_duration,
+                float(shot.narration_offset_s), float(shot.duration_s),
+            )
     if not await _cut_narration_window(
-        narration_path, segment,
-        offset_s=float(shot.narration_offset_s), duration_s=float(shot.duration_s),
+        narration_path, segment, offset_s=cut_offset, duration_s=cut_duration,
     ):
         return _fail("ffmpeg could not cut the narration window")
     # The speech path needs the WHOLE card, so run the shared ladder rather
@@ -2369,19 +2398,23 @@ async def _render_presenter_clip(
         prompt=_compose_presenter_prompt(shot, persona, site_config),
         output_path=clip_path,
         image_path=portrait,
-        duration_s=int(shot.duration_s),
+        duration_s=int(math.ceil(cut_duration)),
         site_config=site_config,
         width=width,
         height=height,
         fps=fps,
         extra_config={
             "audio_path": segment,
-            "audio_duration_s": float(shot.duration_s),
+            "audio_duration_s": cut_duration,
         },
         provider_override="comfyui",
     )
     if not ok:
         return _fail(error)
+    # Report the DIRECTOR's duration, not the fitted one: the assembly fits
+    # every rendered duration to the narration again, and the presenter's
+    # fitted window was derived from that same plan — reporting the fitted
+    # value would stretch it twice.
     return ShotRenderResult(
         idx=shot.idx, source=shot.source, success=True,
         clip_path=clip_path, duration_s=shot.duration_s,
@@ -2599,6 +2632,7 @@ async def _render_pass(
     *,
     render_kwargs: dict[str, Any],
     progress_cb: ProgressCb | None = None,
+    presenter_window_fn: Any = None,
 ) -> list[_ShotState]:
     """Render every shot once, in two VRAM-coherent phases (poindexter#966).
 
@@ -2757,13 +2791,95 @@ async def _render_pass(
 
     # Presenter phase, last: S2V through ComfyUI. Image-gen and wan have no
     # work left this pass, so the presenter floor's reclaim can take the card.
+    # Running last also means every other shot's rendered duration is known,
+    # which is what ``presenter_window_fn`` needs to place the persona's
+    # speech on the timeline the assembly will actually build.
     presenter_total = len(pending_presenters)
     for j, state in enumerate(pending_presenters, start=1):
         await _safe_progress(progress_cb, f"presenter clip {j}/{presenter_total}", None)
+        window: tuple[float, float] | None = None
+        if presenter_window_fn is not None:
+            try:
+                window = await presenter_window_fn(state.shot, states)
+            except Exception as exc:  # noqa: BLE001
+                # silent-ok: the window is a refinement — without it the
+                # planned window applies, exactly the pre-fix behaviour.
+                logger.warning(
+                    "[SHOT_LIST] presenter window planner failed for shot %d (%s) "
+                    "— using the director's planned window",
+                    state.shot.idx, describe_exception(exc),
+                )
         state.result = await _render_one_shot(
-            state.shot, prior_clip=None, **render_kwargs,
+            state.shot, prior_clip=None, presenter_window=window, **render_kwargs,
         )
     return states
+
+
+def _fitted_shot_window(
+    position: int,
+    shot_durations: list[float],
+    fit_target_s: float,
+    *,
+    max_shot_s: float,
+    min_shot_s: float = 0.0,
+    shortfall_hold_s: float | None = None,
+) -> tuple[float, float]:
+    """``(offset_s, duration_s)`` the shot at ``position`` occupies once the
+    narration-fit has laid the scenes out — the same ``_fit_scene_durations``
+    call the assembly makes, so the presenter speaks the audio that will
+    actually play under it. In the pathological (cycling) regime the shot's
+    FIRST occurrence is the window. Pure, so it is unit-testable."""
+    layout = _fit_scene_durations(
+        shot_durations, fit_target_s,
+        max_shot_s=max_shot_s, min_shot_s=min_shot_s, shortfall_hold_s=shortfall_hold_s,
+    )
+    offset = 0.0
+    for idx, dur in layout:
+        if idx == position:
+            return round(offset, 3), round(float(dur), 3)
+        offset += float(dur)
+    # Not in the layout (max_scenes cut the cycle short) — the planned window
+    # is the only honest answer left.
+    return round(sum(shot_durations[:position]), 3), round(float(shot_durations[position]), 3)
+
+
+def _endcard_fit_target(
+    narration_dur: float,
+    *,
+    site_config: Any,
+    caption_path: str | None,
+    endcard_cta_text: str,
+    narration_fit_hold_s: float | None,
+) -> tuple[float, float | None, tuple[float, float] | None]:
+    """The fit target the assembly will use: ``(fit_target_s, fit_hold_s,
+    endcard_plan)``. When a branded end-card covers the CTA tail, the content
+    scenes are fitted to the narration MINUS the card window, so anything
+    that must agree with the assembly's timeline (the presenter windows) has
+    to carve the same window out. ``endcard_plan`` is ``(content_target,
+    card_s)`` or None when no card will be laid."""
+    fit_target = float(narration_dur)
+    fit_hold = narration_fit_hold_s
+    if _endcard_enabled(site_config) and (endcard_cta_text or "").strip():
+        srt_text = ""
+        if caption_path and os.path.exists(caption_path):
+            try:
+                with open(caption_path, encoding="utf-8") as fh:
+                    srt_text = fh.read()
+            except OSError:
+                srt_text = ""
+        min_card_s, max_card_s = _endcard_bounds(site_config)
+        plan = _plan_endcard(
+            narration_s=float(narration_dur),
+            hold_s=narration_fit_hold_s or 0.0,
+            cta_text=endcard_cta_text,
+            srt_text=srt_text,
+            min_card_s=min_card_s,
+            max_card_s=max_card_s,
+        )
+        if plan:
+            content_target, _card_s = plan
+            return float(content_target), 0.0, plan
+    return fit_target, fit_hold, None
 
 
 async def _score_pass(
@@ -3566,8 +3682,52 @@ async def render_shot_list(
         available=_presenter_policy.presenter_available,
     )
 
+    presenter_window_fn = None
+    if narration_fit and audio_path and any(
+        _s.source == _PRESENTER_SOURCE for _s in capped_shots
+    ):
+        _probed: dict[str, float | None] = {}
+
+        async def presenter_window_fn(
+            shot: Shot, states_so_far: list[_ShotState],
+        ) -> tuple[float, float] | None:
+            """Where this presenter shot's audio will land after the fit."""
+            if "dur" not in _probed:
+                _probed["dur"] = await _probe_duration_s(audio_path)
+            narration_dur = _probed["dur"]
+            if not narration_dur:
+                return None
+            # Every shot's best-known duration, in order: rendered clips as
+            # rendered (cli_demo clamps, etc.), everything else as planned —
+            # the substitute ladder keeps the director's duration.
+            shot_durs = [
+                float(st.result.duration_s)
+                if st.result.success and st.result.clip_path and st.result.duration_s
+                else float(st.shot.duration_s)
+                for st in states_so_far
+            ]
+            position = next(
+                (i for i, st in enumerate(states_so_far) if st.shot.idx == shot.idx), None,
+            )
+            if position is None:
+                return None
+            fit_target, fit_hold, _plan = _endcard_fit_target(
+                narration_dur,
+                site_config=site_config,
+                caption_path=caption_path,
+                endcard_cta_text=endcard_cta_text,
+                narration_fit_hold_s=narration_fit_hold_s,
+            )
+            return _fitted_shot_window(
+                position, shot_durs, fit_target,
+                max_shot_s=narration_fit_max_shot_s,
+                min_shot_s=narration_fit_min_shot_s,
+                shortfall_hold_s=fit_hold,
+            )
+
     states = await _render_pass(
         capped_shots, render_kwargs=render_kwargs, progress_cb=progress_cb,
+        presenter_window_fn=presenter_window_fn,
     )
     await _score_pass(
         states, qa=qa, site_config=site_config, pool=pool,
@@ -3634,78 +3794,70 @@ async def render_shot_list(
             # rendered FIRST — if it somehow fails (PIL floor, so nearly
             # never), the fit falls back to the plain full-window layout
             # rather than leaving a hole where the card would have been.
-            fit_target = narration_dur
-            fit_hold = narration_fit_hold_s
-            if _endcard_enabled(site_config) and (endcard_cta_text or "").strip():
-                srt_text = ""
-                if caption_path and os.path.exists(caption_path):
-                    try:
-                        with open(caption_path, encoding="utf-8") as fh:
-                            srt_text = fh.read()
-                    except OSError:
-                        srt_text = ""
-                min_card_s, max_card_s = _endcard_bounds(site_config)
-                plan = _plan_endcard(
-                    narration_s=narration_dur,
-                    hold_s=narration_fit_hold_s or 0.0,
-                    cta_text=endcard_cta_text,
-                    srt_text=srt_text,
-                    min_card_s=min_card_s,
-                    max_card_s=max_card_s,
+            # One planner for the target the content scenes are fitted to,
+            # shared with the presenter-window closure above — the presenter
+            # speaks the timeline the assembly builds, so both must carve
+            # the same end-card window out of the narration.
+            fit_target, fit_hold, plan = _endcard_fit_target(
+                narration_dur,
+                site_config=site_config,
+                caption_path=caption_path,
+                endcard_cta_text=endcard_cta_text,
+                narration_fit_hold_s=narration_fit_hold_s,
+            )
+            if plan:
+                content_target, card_s = plan
+                card_path = str(work_dir / "endcard.png")
+                # On-theme card first (site gradient + flow motif + brand
+                # fonts + operator logo, 2026-08-26); the plain brand card
+                # stays the guaranteed floor when it declines.
+                from poindexter.services.video_renderers.brand_endcard import (
+                    render_endcard,
                 )
-                if plan:
-                    content_target, card_s = plan
-                    card_path = str(work_dir / "endcard.png")
-                    # On-theme card first (site gradient + flow motif + brand
-                    # fonts + operator logo, 2026-08-26); the plain brand card
-                    # stays the guaranteed floor when it declines.
-                    from poindexter.services.video_renderers.brand_endcard import (
-                        render_endcard,
-                    )
 
-                    card_ok = render_endcard(
+                card_ok = render_endcard(
+                    output_path=card_path,
+                    width=width,
+                    height=height,
+                    wordmark=wordmark,
+                    tagline=_resolve_endcard_tagline(site_config),
+                    logo_path=str(
+                        site_config.get("video_endcard_logo_path", "") or ""
+                    ).strip() if site_config is not None else "",
+                )
+                if not card_ok:
+                    card_ok = _render_brand_card(
                         output_path=card_path,
                         width=width,
                         height=height,
                         wordmark=wordmark,
                         tagline=_resolve_endcard_tagline(site_config),
-                        logo_path=str(
-                            site_config.get("video_endcard_logo_path", "") or ""
-                        ).strip() if site_config is not None else "",
+                        # Portrait captions burn middle-center — keep the
+                        # wordmark in the upper third so they never
+                        # collide; landscape captions sit in the bottom
+                        # band, so the wordmark rides just above true
+                        # center. On the end-card the brand mark IS the
+                        # shot — width/9 vs the ladder card's width/18.
+                        wordmark_y_frac=0.30 if height > width else 0.44,
+                        wordmark_px=max(48, width // 9),
                     )
-                    if not card_ok:
-                        card_ok = _render_brand_card(
-                            output_path=card_path,
-                            width=width,
-                            height=height,
-                            wordmark=wordmark,
-                            tagline=_resolve_endcard_tagline(site_config),
-                            # Portrait captions burn middle-center — keep the
-                            # wordmark in the upper third so they never
-                            # collide; landscape captions sit in the bottom
-                            # band, so the wordmark rides just above true
-                            # center. On the end-card the brand mark IS the
-                            # shot — width/9 vs the ladder card's width/18.
-                            wordmark_y_frac=0.30 if height > width else 0.44,
-                            wordmark_px=max(48, width // 9),
-                        )
-                    if card_ok:
-                        fit_target = content_target
-                        fit_hold = 0.0  # content must END where the card begins
-                        endcard_scene = CompositionScene(
-                            clip_path=card_path,
-                            narration_path=None,
-                            duration_s=card_s,
-                            # A locked-off brand frame — a Ken Burns drift on
-                            # the logo reads as a mistake (operator feedback
-                            # 2026-08-26).
-                            ken_burns=False,
-                        )
-                        logger.info(
-                            "[SHOT_LIST] end-card: content fitted to %.1fs, "
-                            "%.1fs branded card covers the CTA tail",
-                            content_target, card_s,
-                        )
+                if card_ok:
+                    fit_target = content_target
+                    fit_hold = 0.0  # content must END where the card begins
+                    endcard_scene = CompositionScene(
+                        clip_path=card_path,
+                        narration_path=None,
+                        duration_s=card_s,
+                        # A locked-off brand frame — a Ken Burns drift on
+                        # the logo reads as a mistake (operator feedback
+                        # 2026-08-26).
+                        ken_burns=False,
+                    )
+                    logger.info(
+                        "[SHOT_LIST] end-card: content fitted to %.1fs, "
+                        "%.1fs branded card covers the CTA tail",
+                        content_target, card_s,
+                    )
             scene_plan = _fit_scene_durations(
                 shot_durs,
                 fit_target,

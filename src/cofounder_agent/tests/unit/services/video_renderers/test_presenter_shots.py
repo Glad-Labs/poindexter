@@ -321,3 +321,120 @@ class TestPresenterHeadroomCountsComfyAndWaits:
 
         monkeypatch.setattr(httpx, "AsyncClient", _Boom)
         assert await slr._comfyui_reserved_gb(_sc()) == 0.0
+
+
+class TestFittedNarrationWindow:
+    """2026-09-17 render 671c94b3: 13 shots planned at 209 s over a 284 s
+    narration. The assembly stretched every scene 1.36x, so the closing
+    presenter scene played at 4:01-4:39 while its speech had been cut at the
+    director's planned offset — the words that played at 3:23-3:50. The face
+    lip-synced to sentences the viewer had already heard."""
+
+    @pytest.mark.asyncio
+    async def test_fitted_window_is_cut_and_spoken_but_the_planned_duration_is_reported(
+        self, tmp_path, quiet_gpu, monkeypatch,
+    ):
+        narration = tmp_path / "narration.mp3"
+        narration.write_bytes(b"MP3")
+
+        async def fake_fetch(url, dest, factory):
+            dest.write_bytes(b"PNG")
+            return str(dest)
+
+        cuts = []
+
+        async def fake_cut(src, dst, *, offset_s, duration_s):
+            open(dst, "wb").write(b"WAV")
+            cuts.append((offset_s, duration_s))
+            return True
+
+        seen = {}
+
+        async def fake_render(**kw):
+            seen.update(kw)
+            open(kw["output_path"], "wb").write(b"MP4")
+            return True, ""
+
+        monkeypatch.setattr(slr, "_fetch_presenter_portrait", fake_fetch)
+        monkeypatch.setattr(slr, "_cut_narration_window", fake_cut)
+        monkeypatch.setattr(slr, "_render_generative_clip", fake_render)
+        shot = _shot(12, duration_s=29.4, narration_offset_s=177.0)
+        result = await slr._render_one_shot(
+            shot, prior_clip=None, work_dir=tmp_path, image_gen_url="",
+            site_config=_sc(), http_client_factory=None, orientation="landscape", post_id="p1",
+            narration_path=str(narration), niche_slug="glad-labs",
+            presenter_window=(240.4, 39.93),
+        )
+        assert result.success is True
+        assert cuts == [(240.4, 39.93)], "the speech must be cut where the fit puts the scene"
+        assert seen["extra_config"]["audio_duration_s"] == 39.93
+        assert seen["duration_s"] == 40  # ceil of the fitted window, for the chunk count
+        # The assembly fits every rendered duration again; reporting the
+        # fitted value would stretch the presenter scene twice.
+        assert result.duration_s == 29.4
+
+    @pytest.mark.asyncio
+    async def test_no_window_keeps_the_planned_cut(self, tmp_path, quiet_gpu, monkeypatch):
+        narration = tmp_path / "narration.mp3"
+        narration.write_bytes(b"MP3")
+
+        async def fake_fetch(url, dest, factory):
+            dest.write_bytes(b"PNG")
+            return str(dest)
+
+        cuts = []
+
+        async def fake_cut(src, dst, *, offset_s, duration_s):
+            open(dst, "wb").write(b"WAV")
+            cuts.append((offset_s, duration_s))
+            return True
+
+        async def fake_render(**kw):
+            open(kw["output_path"], "wb").write(b"MP4")
+            return True, ""
+
+        monkeypatch.setattr(slr, "_fetch_presenter_portrait", fake_fetch)
+        monkeypatch.setattr(slr, "_cut_narration_window", fake_cut)
+        monkeypatch.setattr(slr, "_render_generative_clip", fake_render)
+        await slr._render_one_shot(
+            _shot(3), prior_clip=None, work_dir=tmp_path, image_gen_url="",
+            site_config=_sc(), http_client_factory=None, orientation="landscape", post_id="p1",
+            narration_path=str(narration), niche_slug="glad-labs",
+        )
+        assert cuts == [(15.0, 5.0)]
+
+
+class TestFittedShotWindow:
+    """Pure: the window a shot occupies after the narration-fit."""
+
+    def test_gentle_stretch_scales_offset_and_duration(self):
+        # The 671c94b3 shape: planned 209.4 s, narration 284.4 s, scale 1.358.
+        durs = [8.0, 14.0, 12.0, 18.0, 20.0, 15.0, 16.0, 14.0, 5.8, 22.0, 14.0, 6.2, 29.4]
+        assert round(sum(durs), 1) == 194.4
+        off, dur = slr._fitted_shot_window(12, durs, 264.0, max_shot_s=60.0)
+        scale = 264.0 / 194.4
+        assert abs(off - (194.4 - 29.4) * scale) < 0.01
+        assert abs(dur - 29.4 * scale) < 0.01
+
+    def test_no_fit_needed_keeps_the_planned_window(self):
+        durs = [8.0, 5.0, 7.0]
+        assert slr._fitted_shot_window(2, durs, 20.5, max_shot_s=9.0) == (13.0, 7.0)
+
+    def test_first_shot_always_starts_at_zero(self):
+        durs = [8.0, 5.0, 7.0]
+        off, dur = slr._fitted_shot_window(0, durs, 40.0, max_shot_s=60.0)
+        assert off == 0.0 and dur == 16.0
+
+    def test_cycling_regime_uses_the_first_occurrence(self):
+        # Pathological: average shot would exceed the ceiling → cap + cycle.
+        durs = [2.0, 2.0, 2.0]
+        off, dur = slr._fitted_shot_window(1, durs, 60.0, max_shot_s=4.0)
+        assert (off, dur) == (4.0, 4.0)
+
+    def test_endcard_carves_its_window_out_of_the_target(self, tmp_path):
+        sc = SiteConfig(initial_config={"video_endcard_enabled": "false"})
+        target, hold, plan = slr._endcard_fit_target(
+            284.4, site_config=sc, caption_path=None, endcard_cta_text="like and subscribe",
+            narration_fit_hold_s=1.5,
+        )
+        assert (target, hold, plan) == (284.4, 1.5, None)

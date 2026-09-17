@@ -158,6 +158,29 @@ Operational rules that follow from the numbers:
   not send yet — that gate lands with the presenter-persona work, before any
   such upload.
 
+## Presenter speech is cut on the FITTED timeline
+
+A presenter shot lip-syncs to a window of the narration track. The director
+plans that window (`narration_offset_s` + `duration_s`) on its **own estimated
+timeline**, but the assembly's narration-fit rescales every scene so the
+visuals span the *actual* voiceover — on 2026-09-17 (render 671c94b3) 13 shots
+planned at 209 s were stretched 1.36× over a 284 s narration. Cutting the
+speech at the planned offset put the closing face on screen at 4:01–4:39
+speaking the sentences that had played at 3:23–3:50.
+
+Since stack#3839 the presenter phase (which runs last, when every other shot's
+rendered duration is known) asks `_fitted_shot_window` where the shot will land
+once `_fit_scene_durations` has laid the scenes out — the same call, the same
+end-card carve-out (`_endcard_fit_target`), so both agree — and cuts the
+speech there. The clip reports the **director's** duration back, because the
+assembly fits every rendered duration again; reporting the fitted value would
+stretch the presenter scene twice. The rule: whoever slices audio for a scene
+must use the timeline the assembly builds, not the one the director imagined.
+
+Residual: a fitted window longer than `video_comfyui_s2v_max_chunks × 4.8 s`
+still renders short and the compositor loops the clip for the remainder — the
+renderer logs it (`speech is Xs but … covers only Ys`).
+
 ## Headroom accounting: the animator's own pool counts
 
 ComfyUI keeps its caching-allocator pool between prompts. After the first
