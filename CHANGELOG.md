@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## [0.140.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.140.0...v0.140.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **ci:** bandit never scanned modules/ — 33k LOC outside the gate ([#3814](https://github.com/Glad-Labs/glad-labs-stack/issues/3814)) ([cee638a](https://github.com/Glad-Labs/glad-labs-stack/commit/cee638a0acc862730e09914b83178ab2a01ff54a))
+* **gpu:** the reclaim ladder spares the sidecar its caller is about to use ([#3817](https://github.com/Glad-Labs/glad-labs-stack/issues/3817)) ([aef7e7b](https://github.com/Glad-Labs/glad-labs-stack/commit/aef7e7b639a772edd8e089202fceeaae53b782ec))
+* **gpu:** the reclaim restart cooldown defaults to 5 minutes, not 30 ([#3812](https://github.com/Glad-Labs/glad-labs-stack/issues/3812)) ([35dc8bc](https://github.com/Glad-Labs/glad-labs-stack/commit/35dc8bc23a310903129869a2e72c0234f554369e))
+* **media:** a finished shot is graph progress — stamp last_progress_at per shot ([#3813](https://github.com/Glad-Labs/glad-labs-stack/issues/3813)) ([5eeffb2](https://github.com/Glad-Labs/glad-labs-stack/commit/5eeffb27bb195bf1058e1b348601be1c0196cb52))
+* **tts:** a comma between a model's version and its size ([#3821](https://github.com/Glad-Labs/glad-labs-stack/issues/3821)) ([40cacba](https://github.com/Glad-Labs/glad-labs-stack/commit/40cacba576add4fe173f20af33ac79cd9aabc8bd))
+* **tts:** numbers reach the engine as words ([#3826](https://github.com/Glad-Labs/glad-labs-stack/issues/3826)) ([ae8a7a7](https://github.com/Glad-Labs/glad-labs-stack/commit/ae8a7a76471d9ca391f281bd2a26d07b429e6aa9))
+* **tts:** numbers, units and quotes reach the engine in spoken form ([#3820](https://github.com/Glad-Labs/glad-labs-stack/issues/3820)) ([c5f6ea8](https://github.com/Glad-Labs/glad-labs-stack/commit/c5f6ea85f103d3a3d615b4db413d610fcd124c3f))
+* **video:** a running ComfyUI prompt is progress — heartbeat the stall probe ([#3827](https://github.com/Glad-Labs/glad-labs-stack/issues/3827)) ([62bb57d](https://github.com/Glad-Labs/glad-labs-stack/commit/62bb57ded2d5be62f4e20deaf26823aa0e39edce))
+* **video:** the presenter floor counts ComfyUI's pool and waits for reclaim ([#3825](https://github.com/Glad-Labs/glad-labs-stack/issues/3825)) ([0ba25b5](https://github.com/Glad-Labs/glad-labs-stack/commit/0ba25b52124bb7cf5314395c0a62b2388cb06588))
+
 ## [0.140.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.139.0...v0.140.0) (2026-09-16)
 
 
