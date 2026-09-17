@@ -708,6 +708,21 @@ DEFAULTS: dict[str, str] = {
         'expressions, lips synchronized with the speech, subtle head movements, '
         'steady framing, soft key light, sharp focus'
     ),
+    # The presenter's OWN negative prompt for the S2V render. The shared Wan
+    # negative (video_comfyui_negative_prompt) is tuned for hero i2v clips and
+    # PUNISHES stillness — 静态 (static), 静止 (still), 静止不动的画面 (motionless
+    # frame) — which pushes a talking head into head-bobbing and exaggerated
+    # expressions (operator feedback 2026-09-17: "doesn't look natural"). This
+    # keeps the canonical quality terms, drops the three anti-stillness terms,
+    # and adds the talking-head failure modes. Chinese because the model was
+    # trained against a Chinese negative (an English one is measurably weaker).
+    # Empty = fall back to the shared Wan negative.
+    'video_presenter_negative_prompt': (
+        '色调艳丽，过曝，细节模糊不清，字幕，风格，作品，画作，画面，整体发灰，最差质量，低质量，'
+        'JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，'
+        '形态畸形的肢体，手指融合，杂乱的背景，背景人很多，夸张的表情，摇头晃脑，大幅度的头部动作，'
+        '手势，抖动，闪烁，镜头晃动，身体摇摆'
+    ),
     # Hero (i2v) render geometry — Wan 2.2 TI2V-5B's documented 720P@24fps
     # working range. Authored landscape-first; the renderer swaps
     # width/height for the portrait (9:16) short lane
@@ -5004,6 +5019,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
     'video_presenter_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
+    'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_hero_width': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_height': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_fps': {'owner': 'video', 'value_type': 'integer'},

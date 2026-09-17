@@ -438,3 +438,62 @@ class TestFittedShotWindow:
             narration_fit_hold_s=1.5,
         )
         assert (target, hold, plan) == (284.4, 1.5, None)
+
+
+class TestPresenterNegativePrompt:
+    """The shared Wan negative punishes stillness (静态 / 静止 / 静止不动的画面) —
+    right for a hero illustration, wrong for a person talking to camera, whom
+    it pushes into head-bobbing (operator feedback 2026-09-17: "doesn't look
+    natural"). The presenter render carries its own negative."""
+
+    def test_default_negative_drops_the_anti_stillness_terms(self):
+        from poindexter.services.settings_defaults import DEFAULTS
+        from poindexter.services.video_providers.comfyui import _DEFAULT_NEGATIVE
+
+        neg = DEFAULTS["video_presenter_negative_prompt"]
+        for term in ("静态", "静止", "静止不动的画面"):
+            assert term in _DEFAULT_NEGATIVE and term not in neg, term
+        # The quality/anatomy terms the model was trained against stay.
+        for term in ("过曝", "画得不好的脸部", "多余的手指", "字幕"):
+            assert term in neg, term
+        # And the talking-head failure modes are named.
+        assert "夸张的表情" in neg and "摇头晃脑" in neg
+
+    def test_setting_reaches_the_speech_provider_config(self):
+        sc = _sc(video_presenter_negative_prompt="夸张的表情，摇头晃脑")
+        assert slr._presenter_negative_prompt(sc) == {"negative_prompt": "夸张的表情，摇头晃脑"}
+
+    def test_empty_setting_inherits_the_shared_negative(self):
+        assert slr._presenter_negative_prompt(_sc(video_presenter_negative_prompt="")) == {}
+        assert slr._presenter_negative_prompt(None) == {}
+
+    @pytest.mark.asyncio
+    async def test_render_passes_the_negative_in_extra_config(self, tmp_path, quiet_gpu, monkeypatch):
+        narration = tmp_path / "narration.mp3"
+        narration.write_bytes(b"MP3")
+
+        async def fake_fetch(url, dest, factory):
+            dest.write_bytes(b"PNG")
+            return str(dest)
+
+        async def fake_cut(src, dst, **kw):
+            open(dst, "wb").write(b"WAV")
+            return True
+
+        seen = {}
+
+        async def fake_render(**kw):
+            seen.update(kw)
+            open(kw["output_path"], "wb").write(b"MP4")
+            return True, ""
+
+        monkeypatch.setattr(slr, "_fetch_presenter_portrait", fake_fetch)
+        monkeypatch.setattr(slr, "_cut_narration_window", fake_cut)
+        monkeypatch.setattr(slr, "_render_generative_clip", fake_render)
+        await slr._render_one_shot(
+            _shot(0), prior_clip=None, work_dir=tmp_path, image_gen_url="",
+            site_config=_sc(video_presenter_negative_prompt="摇头晃脑"), http_client_factory=None,
+            orientation="landscape", post_id="p1", narration_path=str(narration), niche_slug="glad-labs",
+        )
+        assert seen["extra_config"]["negative_prompt"] == "摇头晃脑"
+        assert seen["extra_config"]["audio_path"].endswith("presenter_0.wav")

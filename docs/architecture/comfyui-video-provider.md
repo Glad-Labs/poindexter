@@ -158,6 +158,30 @@ Operational rules that follow from the numbers:
   not send yet — that gate lands with the presenter-persona work, before any
   such upload.
 
+## Presenter motion register: three settings, no code
+
+Operator feedback 2026-09-17: the talking head "doesn't look natural" — too
+animated. The S2V model takes its motion register from three places, all
+`app_settings`:
+
+1. **`video_presenter_negative_prompt`** (stack#3840) — the presenter's own
+   negative. The shared `video_comfyui_negative_prompt` is the canonical Wan
+   negative for hero i2v clips and *penalises stillness* (静态 / 静止 /
+   静止不动的画面): exactly the pressure an illustration needs and exactly the
+   wrong one for a person talking to camera, whom it pushes into head-bobbing
+   and exaggerated expressions. The presenter default keeps the quality and
+   anatomy terms, drops the three anti-stillness terms, and names the
+   talking-head failure modes (夸张的表情, 摇头晃脑, 大幅度的头部动作, 手势, 抖动).
+   Empty inherits the shared negative. Chinese on purpose — the model was
+   trained against a Chinese negative and an English one is measurably weaker.
+2. **`video_presenter_render_prompt`** — motion language in the positive
+   prompt ("subtle head movements", "steady framing") is read literally by
+   Wan; "nearly still, shoulders relaxed, no gestures" calms it further.
+3. **`video_comfyui_s2v_cfg`** (default 6.0) and **`video_comfyui_s2v_shift`**
+   (8.0) — higher CFG amplifies prompt adherence and motion amplitude; ~4.0 is
+   the calmer end of the model's usable range. Change one at a time and A/B
+   it on the same portrait + narration (`/data/comfyui-spike/handoff/headcmp/s2v_ab.py`).
+
 ## Presenter speech is cut on the FITTED timeline
 
 A presenter shot lip-syncs to a window of the narration track. The director

@@ -2227,6 +2227,28 @@ def _compose_presenter_prompt(shot: Shot, persona: Any, site_config: Any) -> str
     return ". ".join(p.rstrip(".") for p in parts) + "."
 
 
+def _presenter_negative_prompt(site_config: Any) -> dict[str, str]:
+    """``{"negative_prompt": …}`` for the S2V render, or ``{}`` to inherit the
+    shared Wan negative.
+
+    The shared negative (``video_comfyui_negative_prompt``) is tuned for hero
+    i2v clips and penalises stillness (静态 / 静止 / 静止不动的画面) — the right
+    pressure for an illustration that should move, the wrong one for a
+    person talking to camera, whom it pushes into head-bobbing and
+    exaggerated expressions (operator feedback 2026-09-17). The presenter
+    reads its own negative from ``video_presenter_negative_prompt``.
+    """
+    if site_config is None:
+        return {}
+    try:
+        text = str(site_config.get("video_presenter_negative_prompt", "") or "").strip()
+    except Exception:  # noqa: BLE001
+        # silent-ok: a settings read must not decide a render's fate; the
+        # provider's shared negative applies.
+        return {}
+    return {"negative_prompt": text} if text else {}
+
+
 async def _fetch_presenter_portrait(
     url: str, dest: Path, http_client_factory: Any,
 ) -> str | None:
@@ -2406,6 +2428,7 @@ async def _render_presenter_clip(
         extra_config={
             "audio_path": segment,
             "audio_duration_s": cut_duration,
+            **_presenter_negative_prompt(site_config),
         },
         provider_override="comfyui",
     )
