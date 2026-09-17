@@ -201,12 +201,26 @@ animated. The S2V model takes its motion register from three places, all
    Empty inherits the shared negative. Chinese on purpose — the model was
    trained against a Chinese negative and an English one is measurably weaker.
 2. **`video_presenter_render_prompt`** — motion language in the positive
-   prompt ("subtle head movements", "steady framing") is read literally by
-   Wan; "nearly still, shoulders relaxed, no gestures" calms it further.
-3. **`video_comfyui_s2v_cfg`** (default 6.0) and **`video_comfyui_s2v_shift`**
-   (8.0) — higher CFG amplifies prompt adherence and motion amplitude; ~4.0 is
-   the calmer end of the model's usable range. Change one at a time and A/B
-   it on the same portrait + narration (`/data/comfyui-spike/handoff/headcmp/s2v_ab.py`).
+   prompt is read literally by Wan, and **this lever dominates**: the default
+   asks for "calm and composed, nearly still, minimal head movement, relaxed
+   shoulders, no hand gestures, locked-off camera".
+3. **`video_comfyui_s2v_cfg`** (default 4.0, vs 6.0 on the i2v lane) and
+   **`video_comfyui_s2v_shift`** (8.0) — CFG amplifies prompt adherence *and*
+   motion amplitude, so a talking head wants the calm end of the range.
+
+**Measured 2026-09-17** (one portrait, one 9.6 s line, one seed; motion index =
+mean mouth/head-region frame delta, tool `headcmp/motion_index.py`):
+
+| variant | motion index | peak |
+| --- | --- | --- |
+| prior defaults ("natural facial expressions, subtle head movements", cfg 6.0) | 6.57 | 28.2 |
+| + presenter negative prompt only | 6.38 | 30.0 |
+| + calm wording + cfg 4.0 (**today's defaults**) | 5.59 | 24.8 |
+
+The negative prompt alone barely moved it. **Asking for stillness beat
+forbidding motion by roughly 4x** — reach for the positive prompt first when
+tuning register, and A/B on the same portrait + narration + seed
+(`headcmp/s2v_ab.py`) rather than changing several knobs at once.
 
 ## Chunk chaining: the Extend node reads its audio offset off the latent
 

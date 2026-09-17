@@ -506,3 +506,39 @@ class TestPresenterSceneHoldsLastFrame:
         stock = slr.ShotRenderResult(idx=5, source="pexels", success=True, clip_path="/s.mp4", duration_s=5.0)
         assert slr._holds_last_frame(pres) is True
         assert slr._holds_last_frame(hero) is False and slr._holds_last_frame(stock) is False
+
+
+class TestCalmMotionDefaults:
+    """Measured 2026-09-17 (one portrait, one line, one seed): motion index
+    6.57 (prior defaults) -> 6.38 (presenter negative alone) -> 5.59 with the
+    calm wording at cfg 4.0. The POSITIVE prompt dominated the negative by ~4x,
+    so the default asks for stillness rather than only forbidding motion."""
+
+    def test_default_prompt_asks_for_stillness(self):
+        from poindexter.services.settings_defaults import DEFAULTS
+
+        text = DEFAULTS["video_presenter_render_prompt"]
+        assert "{display_name}" in text, "the template must stay per-persona"
+        for phrase in ("nearly still", "minimal head movement", "no hand gestures", "locked-off"):
+            assert phrase in text, phrase
+        assert "subtle head movements" not in text
+
+    def test_code_fallback_matches_the_seeded_default(self):
+        """A fresh install with no DB row must render the same register."""
+        from poindexter.services.persona_service import get_persona
+        from poindexter.services.settings_defaults import DEFAULTS
+
+        sc = _sc()  # no video_presenter_render_prompt key -> code fallback
+        text = slr._compose_presenter_prompt(_shot(0), get_persona(sc, "presenter"), sc)
+        seeded = DEFAULTS["video_presenter_render_prompt"].replace("{display_name}", "Ada")
+        assert text.startswith(seeded.rstrip("."))
+
+    def test_s2v_cfg_default_is_the_calm_end_and_agrees_with_the_provider(self):
+        from poindexter.services.settings_defaults import DEFAULTS
+        from poindexter.services.video_providers.comfyui import _DEFAULT_S2V_CFG
+
+        assert float(DEFAULTS["video_comfyui_s2v_cfg"]) == 4.0
+        assert _DEFAULT_S2V_CFG == float(DEFAULTS["video_comfyui_s2v_cfg"]), (
+            "a settings/provider disagreement means the seeded value and the "
+            "no-DB fallback render at different motion amplitudes"
+        )

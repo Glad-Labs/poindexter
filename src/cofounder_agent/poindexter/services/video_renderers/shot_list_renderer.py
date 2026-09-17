@@ -2322,9 +2322,10 @@ def _compose_presenter_prompt(shot: Shot, persona: Any, site_config: Any) -> str
     """S2V render prompt: the DB template with the persona's name, then the
     persona's own suffix, then the shot's delivery note."""
     template = (
-        "{display_name} speaks directly to the camera in a studio, natural facial "
-        "expressions, lips synchronized with the speech, subtle head movements, "
-        "steady framing, soft key light, sharp focus"
+        "{display_name} speaks directly to the camera in a studio, calm and "
+        "composed, nearly still, minimal head movement, relaxed shoulders, no hand "
+        "gestures, natural blinking, lips synchronized with the speech, "
+        "locked-off camera, soft key light, sharp focus"
     )
     if site_config is not None:
         try:

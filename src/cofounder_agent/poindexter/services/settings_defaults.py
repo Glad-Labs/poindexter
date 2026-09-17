@@ -703,10 +703,17 @@ DEFAULTS: dict[str, str] = {
     'video_presenter_reclaim_wait_s': '60',
     # S2V render prompt; {display_name} is the persona's display name. The
     # persona's render_prompt_suffix and the shot's delivery note are appended.
+    # Wan reads motion language LITERALLY, and the positive prompt dominates:
+    # measured 2026-09-17 on one portrait + line + seed, motion index 6.57
+    # (this wording's predecessor, "natural facial expressions / subtle head
+    # movements") -> 6.38 (presenter negative alone) -> 5.59 with THIS wording
+    # at s2v cfg 4.0, peaks 28.2 -> 24.8. Asking for stillness moved the needle
+    # ~4x further than forbidding motion did.
     'video_presenter_render_prompt': (
-        '{display_name} speaks directly to the camera in a studio, natural facial '
-        'expressions, lips synchronized with the speech, subtle head movements, '
-        'steady framing, soft key light, sharp focus'
+        '{display_name} speaks directly to the camera in a studio, calm and '
+        'composed, nearly still, minimal head movement, relaxed shoulders, no hand '
+        'gestures, natural blinking, lips synchronized with the speech, '
+        'locked-off camera, soft key light, sharp focus'
     ),
     # The presenter's OWN negative prompt for the S2V render. The shared Wan
     # negative (video_comfyui_negative_prompt) is tuned for hero i2v clips and
@@ -843,7 +850,10 @@ DEFAULTS: dict[str, str] = {
     'video_comfyui_s2v_model': 'wan2.2_s2v_14B_fp8_scaled.safetensors',
     'video_comfyui_s2v_audio_encoder': 'wav2vec2_large_english_fp16.safetensors',
     'video_comfyui_s2v_steps': '20',
-    'video_comfyui_s2v_cfg': '6.0',
+    # 4.0, not the 6.0 the i2v lane uses: CFG amplifies prompt adherence AND
+    # motion amplitude, and a talking head wants the calm end of the range
+    # (2026-09-17 measurement above). Keep in step with _DEFAULT_S2V_CFG.
+    'video_comfyui_s2v_cfg': '4.0',
     'video_comfyui_s2v_shift': '8.0',
     'video_comfyui_s2v_sampler': 'uni_pc',
     'video_comfyui_s2v_length_frames': '77',
