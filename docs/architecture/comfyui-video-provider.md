@@ -208,6 +208,27 @@ animated. The S2V model takes its motion register from three places, all
    the calmer end of the model's usable range. Change one at a time and A/B
    it on the same portrait + narration (`/data/comfyui-spike/handoff/headcmp/s2v_ab.py`).
 
+## Chunk chaining: the Extend node reads its audio offset off the latent
+
+Wan 2.2 S2V renders 77 frames (4.8 s) per chunk; longer speech is chained with
+`WanSoundImageToVideoExtend`. That node has no "offset" input — it derives
+where this chunk sits in the speech from the **length of the latent it is
+handed** (`frame_offset = video_latent.shape[-3] * 4`, then
+`wan_sound_to_video` slices the audio embedding at that offset), and uses only
+the latent's last 19 frames as motion reference. So the graph must hand every
+Extend the **whole video so far**, concatenated along time with
+`LatentConcat(dim="t")` (stack#3843). Handing it just the previous chunk — the
+obvious wiring, and what the graph did until 2026-09-17 — gave every chunk
+after the second the same 4.8 s offset: the closing talking head of render
+c1c43a8b (17.6 s, four chunks) mouthed the words from 4.8–9.6 s twice over,
+while two-chunk opening shots always looked right. Measured per chunk with a
+mouth-motion vs audio-envelope cross-correlation: chunks 1–2 aligned within
+0.1 s, chunks 3–4 off by 1–3 s and incoherent.
+
+The lesson generalizes: when a node infers a parameter from a tensor's shape,
+the wiring that "looks like" the tutorial can still be wrong — read the
+node's `execute` before chaining it.
+
 ## Presenter speech is cut on the FITTED timeline
 
 A presenter shot lip-syncs to a window of the narration track. The director

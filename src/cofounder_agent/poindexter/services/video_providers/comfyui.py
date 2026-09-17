@@ -390,12 +390,25 @@ def build_s2v_graph(
     """Build the Wan 2.2 S2V talking-head graph in ComfyUI API format.
 
     Chunk 1 is ``WanSoundImageToVideo`` (reference still + audio embedding);
-    every further chunk is ``WanSoundImageToVideoExtend`` fed the previous
-    chunk's sampled latent as its motion reference, so the presenter carries
-    across chunk boundaries. Each chunk is sampled and decoded on its own and
-    the frames are concatenated with ``ImageBatch`` before ``CreateVideo``
-    muxes the full speech track back in. Module-level and pure so the wiring
-    is testable without HTTP.
+    every further chunk is ``WanSoundImageToVideoExtend`` fed the WHOLE video
+    so far — every previous chunk's sampled latent, concatenated along time
+    with ``LatentConcat(dim="t")`` — as its ``video_latent``. Each chunk is
+    sampled and decoded on its own and the frames are concatenated with
+    ``ImageBatch`` before ``CreateVideo`` muxes the full speech track back
+    in. Module-level and pure so the wiring is testable without HTTP.
+
+    **Why the whole video, not just the previous chunk.** ComfyUI's Extend
+    node derives the chunk's position in the speech from the latent it is
+    handed: ``frame_offset = video_latent.shape[-3] * 4`` (comfy_extras/
+    nodes_wan.py), and ``wan_sound_to_video`` slices the audio embedding at
+    that offset. It only uses the latent's last 19 frames as motion
+    reference, so a longer latent costs nothing. Feeding it the previous
+    chunk alone made every chunk after the second start its audio window at
+    4.8 s again — the closing talking head of render c1c43a8b (17.6 s, four
+    chunks) mouthed the words from 4.8-9.6 s twice over (measured 2026-09-17
+    per chunk: chunks 1-2 aligned, chunks 3-4 off by 1-3 s and incoherent).
+    Two-chunk clips were never affected, which is why the 8-10 s opening
+    shots always looked right.
     """
     chunks = max(1, int(chunks))
     graph: dict[str, Any] = {
@@ -430,14 +443,18 @@ def build_s2v_graph(
             "samples": ["13", 0], "vae": ["4", 0]}},
     }
     images_src: list[Any] = ["14", 0]
-    prev_latent: list[Any] = ["13", 0]
+    # The video so far, as ONE latent. Extend reads its own audio offset off
+    # this latent's length, so it must grow with every chunk (see docstring).
+    video_so_far: list[Any] = ["13", 0]
     nid = 20
     for k in range(1, chunks):
-        ext, samp, dec, batch = (str(nid), str(nid + 1), str(nid + 2), str(nid + 3))
-        nid += 4
+        ext, samp, dec, batch, cat = (
+            str(nid), str(nid + 1), str(nid + 2), str(nid + 3), str(nid + 4),
+        )
+        nid += 5
         graph[ext] = {"class_type": "WanSoundImageToVideoExtend", "inputs": {
             "positive": ["9", 0], "negative": ["10", 0], "vae": ["4", 0],
-            "length": length, "video_latent": prev_latent,
+            "length": length, "video_latent": video_so_far,
             "audio_encoder_output": ["7", 0], "ref_image": ["8", 0]}}
         graph[samp] = {"class_type": "KSampler", "inputs": {
             "model": ["11", 0], "seed": seed + k, "steps": steps, "cfg": cfg,
@@ -448,7 +465,9 @@ def build_s2v_graph(
             "samples": [samp, 0], "vae": ["4", 0]}}
         graph[batch] = {"class_type": "ImageBatch", "inputs": {
             "image1": images_src, "image2": [dec, 0]}}
-        images_src, prev_latent = [batch, 0], [samp, 0]
+        graph[cat] = {"class_type": "LatentConcat", "inputs": {
+            "samples1": video_so_far, "samples2": [samp, 0], "dim": "t"}}
+        images_src, video_so_far = [batch, 0], [cat, 0]
     graph["90"] = {"class_type": "CreateVideo", "inputs": {
         "images": images_src, "fps": float(fps), "audio": ["6", 0]}}
     graph["91"] = {"class_type": "SaveVideo", "inputs": {

@@ -202,10 +202,14 @@ class TestBuildS2VGraph:
         assert len(_by_class(g, "VAEDecode")) == 3
         batches = _by_class(g, "ImageBatch")
         assert len(batches) == 2
-        # every Extend consumes a sampler's latent, never the raw S2V latent
+        # Every Extend consumes the video so far: chunk 2 the first sampler's
+        # latent, chunk 3 the LatentConcat of chunks 1+2 — never the raw S2V
+        # latent, and never just the previous chunk (see the wiring test below).
         sampler_ids = set(samplers)
+        cats = _by_class(g, "LatentConcat")
         for ext in exts.values():
-            assert ext["inputs"]["video_latent"][0] in sampler_ids
+            src = ext["inputs"]["video_latent"][0]
+            assert src in sampler_ids or src in cats
             assert ext["inputs"]["ref_image"] == ["8", 0]
             assert ext["inputs"]["length"] == 77
         # chunk seeds differ so the chunks don't repeat the same noise
@@ -356,3 +360,32 @@ class TestFetchSpeech:
         assert _by_class(graph, "WanImageToVideo")
         assert not _by_class(graph, "LoadAudio")
         assert out.metadata["i2v"] is True and "s2v" not in out.metadata
+
+
+    def test_each_extend_chunk_sees_the_whole_video_so_far(self):
+        """ComfyUI's Extend node derives its AUDIO OFFSET from the length of the
+        latent it is handed (frame_offset = video_latent.shape[-3] * 4). Handed
+        only the previous chunk, chunks 3+ restarted their audio window at 4.8 s:
+        the closing presenter of render c1c43a8b mouthed the words from 4.8-9.6 s
+        twice over (2026-09-17). The latent must accumulate."""
+        g = _graph(chunks=4)
+        exts = _by_class(g, "WanSoundImageToVideoExtend")
+        cats = _by_class(g, "LatentConcat")
+        samplers = _by_class(g, "KSampler")
+        assert len(exts) == 3 and len(cats) == 3
+        ext_ids = sorted(exts, key=int)
+        cat_ids = sorted(cats, key=int)
+        first_sampler = min(samplers, key=int)
+        # chunk 2 extends off chunk 1's sampled latent
+        assert exts[ext_ids[0]]["inputs"]["video_latent"] == [first_sampler, 0]
+        # chunk 3 extends off concat(chunk1, chunk2); chunk 4 off concat(that, chunk3)
+        assert exts[ext_ids[1]]["inputs"]["video_latent"] == [cat_ids[0], 0]
+        assert exts[ext_ids[2]]["inputs"]["video_latent"] == [cat_ids[1], 0]
+        for i, cid in enumerate(cat_ids):
+            cat = cats[cid]["inputs"]
+            assert cat["dim"] == "t", "time axis — a batch or spatial concat would not move the audio offset"
+            assert cat["samples1"] == ([first_sampler, 0] if i == 0 else [cat_ids[i - 1], 0])
+            # samples2 is the sampler that follows the matching Extend
+            assert cat["samples2"][0] in samplers and cat["samples2"][0] != first_sampler
+        # the decoded frames still come chunk by chunk through ImageBatch
+        assert len(_by_class(g, "ImageBatch")) == 3 and len(_by_class(g, "VAEDecode")) == 4
