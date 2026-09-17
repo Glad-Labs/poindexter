@@ -70,6 +70,12 @@ class CompositionScene:
             drifting brand frame reads as a mistake, 2026-08-26
             operator feedback); ``True`` forces motion on even
             when the global is off.
+        hold_last_frame: For a VIDEO clip shorter than ``duration_s``,
+            hold the final frame for the remainder instead of looping
+            the clip from the start. Looping is right for an abstract
+            hero clip; for a talking head it restarts the face
+            mid-sentence and breaks lip-sync (2026-09-17). Stills are
+            unaffected (they are already a held frame).
     """
 
     clip_path: str
@@ -77,6 +83,7 @@ class CompositionScene:
     duration_s: float = 0.0
     caption_text: str = ""
     ken_burns: bool | None = None
+    hold_last_frame: bool = False
 
 
 @dataclass

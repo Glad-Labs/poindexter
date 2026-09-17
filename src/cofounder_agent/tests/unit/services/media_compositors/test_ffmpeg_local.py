@@ -1397,3 +1397,45 @@ class TestSoundtrackLoopScoping:
         assert cmd[li + 1] == "-1"
         # flag must precede the SOUNDTRACK input, after the video input
         assert cmd.index("/tmp/v.mp4") < li < cmd.index("/tmp/a.wav")
+
+
+class TestHoldLastFrame:
+    """A talking head shorter than its scene must freeze on its last frame,
+    never loop back to its first (2026-09-17: the presenter's fitted window
+    can exceed what video_comfyui_s2v_max_chunks covers)."""
+
+    def _kwargs(self, scene, **over):
+        base = dict(
+            scene=scene, output_path="/tmp/out.mp4", binary="ffmpeg", width=1920, height=1080,
+            fps=30, encoder="libx264", preset="veryfast", crf=23, audio_bitrate="128k",
+            loglevel="error", hwaccel="",
+        )
+        base.update(over)
+        return base
+
+    def test_hold_scene_pads_with_tpad_and_never_stream_loops(self, tmp_path):
+        clip = tmp_path / "presenter_10.mp4"
+        clip.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+        scene = CompositionScene(clip_path=str(clip), narration_path=None, duration_s=17.6, hold_last_frame=True)
+        cmd = _build_normalize_cmd(**self._kwargs(scene))
+        assert "-stream_loop" not in cmd
+        vf = cmd[cmd.index("-vf") + 1]
+        assert "tpad=stop_mode=clone:stop_duration=17.600" in vf
+        assert vf.index("tpad=") < vf.index("fps=30"), "the hold precedes the rate pin"
+        assert cmd[cmd.index("-t") + 1] == "17.600"
+
+    def test_default_scene_still_loops(self, tmp_path):
+        clip = tmp_path / "hero.mp4"
+        clip.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+        scene = CompositionScene(clip_path=str(clip), narration_path=None, duration_s=5.0)
+        cmd = _build_normalize_cmd(**self._kwargs(scene))
+        assert cmd[cmd.index("-stream_loop") + 1] == "-1"
+        assert "tpad=" not in cmd[cmd.index("-vf") + 1]
+
+    def test_still_image_ignores_hold(self, tmp_path):
+        still = tmp_path / "card.png"
+        still.write_bytes(b"\x89PNG")
+        scene = CompositionScene(clip_path=str(still), narration_path=None, duration_s=3.0, hold_last_frame=True)
+        cmd = _build_normalize_cmd(**self._kwargs(scene))
+        assert cmd[cmd.index("-loop") + 1] == "1" and "-stream_loop" not in cmd
+        assert "tpad=" not in cmd[cmd.index("-vf") + 1]

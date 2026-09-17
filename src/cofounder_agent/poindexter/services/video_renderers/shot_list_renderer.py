@@ -2954,6 +2954,12 @@ async def _render_pass(
     return states
 
 
+def _holds_last_frame(result: ShotRenderResult) -> bool:
+    """Presenter clips freeze on their final frame when shorter than their
+    scene; every other source keeps the compositor's loop-to-fill default."""
+    return getattr(result, "source", None) == _PRESENTER_SOURCE
+
+
 def _fitted_shot_window(
     position: int,
     shot_durations: list[float],
@@ -4023,6 +4029,13 @@ async def render_shot_list(
             clip_path=rendered[idx].clip_path or "",
             narration_path=None,
             duration_s=dur,
+            # A presenter clip covers its speech in whole S2V chunks capped
+            # by video_comfyui_s2v_max_chunks, so it can run a little short
+            # of the fitted scene. The compositor's default for a short clip
+            # is to loop it — fine for an abstract hero, but a face that
+            # jumps back to its first frame mid-sentence breaks the lip-sync
+            # the fitted window just bought. Hold the last frame instead.
+            hold_last_frame=_holds_last_frame(rendered[idx]),
         )
         for idx, dur in scene_plan
     ]

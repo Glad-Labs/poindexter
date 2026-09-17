@@ -497,3 +497,12 @@ class TestPresenterNegativePrompt:
         )
         assert seen["extra_config"]["negative_prompt"] == "摇头晃脑"
         assert seen["extra_config"]["audio_path"].endswith("presenter_0.wav")
+
+
+class TestPresenterSceneHoldsLastFrame:
+    def test_only_presenter_results_hold(self):
+        pres = slr.ShotRenderResult(idx=10, source="presenter", success=True, clip_path="/p.mp4", duration_s=13.6)
+        hero = slr.ShotRenderResult(idx=4, source="generative", success=True, clip_path="/h.mp4", duration_s=5.0)
+        stock = slr.ShotRenderResult(idx=5, source="pexels", success=True, clip_path="/s.mp4", duration_s=5.0)
+        assert slr._holds_last_frame(pres) is True
+        assert slr._holds_last_frame(hero) is False and slr._holds_last_frame(stock) is False

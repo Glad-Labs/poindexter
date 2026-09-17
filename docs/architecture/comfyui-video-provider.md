@@ -227,9 +227,12 @@ assembly fits every rendered duration again; reporting the fitted value would
 stretch the presenter scene twice. The rule: whoever slices audio for a scene
 must use the timeline the assembly builds, not the one the director imagined.
 
-Residual: a fitted window longer than `video_comfyui_s2v_max_chunks × 4.8 s`
-still renders short and the compositor loops the clip for the remainder — the
-renderer logs it (`speech is Xs but … covers only Ys`).
+A fitted window longer than `video_comfyui_s2v_max_chunks × 4.8 s` still
+renders short (the renderer logs `speech is Xs but … covers only Ys`); since
+stack#3842 the presenter scene sets `CompositionScene.hold_last_frame`, so the
+compositor freezes the final frame for the remainder (`tpad=stop_mode=clone`)
+instead of looping the clip back to its first frame mid-sentence. Looping stays
+the default for every other source — an abstract hero clip loops invisibly.
 
 ## Headroom accounting: the animator's own pool counts
 

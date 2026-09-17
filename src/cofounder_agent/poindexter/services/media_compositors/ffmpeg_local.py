@@ -327,7 +327,10 @@ def _build_normalize_cmd(
     Loop handling — ffmpeg needs explicit ``-loop 1 -framerate``
     BEFORE ``-i`` for still inputs; without it the input is a single
     frame and ``-t`` does nothing. Short videos that are shorter than
-    the requested duration get ``-stream_loop -1`` to repeat. Real
+    the requested duration get ``-stream_loop -1`` to repeat — unless
+    the scene asks to ``hold_last_frame``, in which case the input is
+    not looped and ``tpad=stop_mode=clone`` freezes the final frame for
+    the remainder (a talking head must never restart mid-sentence). Real
     videos longer than ``duration_s`` are simply trimmed by ``-t``.
 
     Audio handling — narration drives the scene length. With no
@@ -342,10 +345,17 @@ def _build_normalize_cmd(
     # Pre-input loop flags — order matters, must precede the matching
     # ``-i``. Stills use ``image2`` demuxer behaviour with -loop 1;
     # videos use the input-side stream-looper.
+    hold_last_frame = bool(getattr(scene, "hold_last_frame", False)) and not _is_still_image(
+        scene.clip_path,
+    )
     if _is_still_image(scene.clip_path):
         cmd.extend(["-loop", "1", "-framerate", str(fps)])
-    else:
+    elif not hold_last_frame:
         cmd.extend(["-stream_loop", "-1"])
+    # hold_last_frame: no input-side loop — the tail is covered by ``tpad``
+    # cloning the final frame (below), so a talking head that runs a little
+    # shorter than its scene freezes on its last frame instead of restarting
+    # mid-sentence.
     cmd.extend(["-i", scene.clip_path])
 
     # Audio source: narration if provided, else generated silence.
@@ -380,9 +390,13 @@ def _build_normalize_cmd(
             variant_idx=scene_idx,
         )
     else:
+        hold = (
+            f"tpad=stop_mode=clone:stop_duration={duration_s:.3f}," if hold_last_frame else ""
+        )
         vf = (
             f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
             f"pad=w={width}:h={height}:x=(ow-iw)/2:y=(oh-ih)/2,"
+            f"{hold}"
             f"fps={fps}"
         )
     cmd.extend(["-vf", vf])
