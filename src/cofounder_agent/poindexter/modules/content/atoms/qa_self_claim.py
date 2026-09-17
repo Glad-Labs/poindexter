@@ -33,9 +33,27 @@ no LLM call:
    names — vs the host the worker runs on. "128GB of system RAM" on a 64 GB
    box reached the queue at QA 97 the same week.
 
+7. **First-person biography** — "my dad", "when I was ten", "growing up" —
+   vs the operator's declared ``qa_self_claim_founder_facts``. Added
+   2026-09-17 (poindexter#1055) after a draft invented the founder's
+   childhood, a named 1997 side project with source filenames, and a Glad
+   Labs teaching project, and reached ``awaiting_approval`` at Q94 with the
+   critic scoring it 98 and **no rail objecting**. Unlike layers 1-6 this is
+   a PROVENANCE check, not a record lookup — nothing can enumerate a
+   childhood — and it deliberately runs outside the self-reference gate.
+
 The fuzzier "named mechanism vs repo symbol" layer (instance 1) needs the
 grounded-LLM treatment (propose → verify the symbol resolves, the
 ``content.llm_reconcile_citations`` pattern) and is deliberately NOT here.
+
+**A sibling detector was measured and rejected** (2026-09-17), which is worth
+recording because it looks obvious: extract first-person build/measure claims
+("we built X", "we measured Y") and flag those whose anchor is absent from
+``research_context``. Against the real corpus it fired on **24% of 207
+published posts**, and the sample was almost entirely TRUE claims — the
+operating record that grounds "we shipped the retention CLI" simply is not in
+a post's research bundle. That is the same blindness ``qa.numeric_fidelity``
+paid for with pair-derivation. The measured biography layer fires on 0 of 207.
 
 **Self-reference gate is load-bearing for precision**: every check runs
 only when the draft is about our own system (product-name match from
@@ -82,8 +100,10 @@ ATOM_META = AtomMeta(
         "system: version strings vs pyproject, quality-score claims vs "
         "pipeline_tasks, backticked settings keys vs app_settings, package "
         "file paths vs the tree, named capabilities (\"we run X\") and install "
-        "specs (RAM/VRAM/GPU) vs the operating record. Gate status DB-driven "
-        "via qa_gates.self_claim (required since 2026-09-15)."
+        "specs (RAM/VRAM/GPU) vs the operating record, plus unsourced "
+        "first-person biography vs qa_self_claim_founder_facts (advisory). "
+        "Gate status DB-driven via qa_gates.self_claim (required since "
+        "2026-09-15)."
     ),
     inputs=(
         FieldSpec(name="content", type="str", description="draft to review"),
@@ -177,6 +197,149 @@ _GPU_CLAIM_RE = re.compile(
 )
 
 
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+|\n{2,}")
+
+
+# Layer 7 — first-person BIOGRAPHY. A different shape from layers 1-6: those
+# resolve a claim against a record that can enumerate it (the repo, the host,
+# app_settings). Nothing can enumerate the founder's childhood, so this layer
+# checks PROVENANCE instead — a first-person biographical claim is unsourced
+# unless an operator has declared the facts in ``qa_self_claim_founder_facts``.
+#
+# **research_context deliberately does NOT ground these** (poindexter#1055).
+# The draft that earned this layer was built from an article about SOMEONE
+# ELSE's father, so the corpus contained "dad" in abundance; grounding on the
+# marker word would have passed the very fabrication the layer exists to
+# catch. "My dad" is a claim about the AUTHOR, and only the author's own
+# declared facts can source it.
+#
+# It also runs OUTSIDE the self-reference gate that layers 1-6 sit behind: an
+# invented childhood is ungrounded whether or not the post is about our stack.
+#
+# Measured before wiring (2026-09-17, the numeric_fidelity discipline): these
+# patterns fire on **0 of 207 published posts / 1.3M chars** of approved prose,
+# while firing on the rejected fabrication (task 4a23f39e) in four places. The
+# sibling detector that was measured and REJECTED is recorded in the issue —
+# first-person build/measure claims ("we built X", "we measured Y") checked for
+# groundedness in research_context still flagged 24% of approved posts, nearly
+# all of them true, which is the pair-derivation blindness numeric_fidelity
+# already paid for once.
+_KIN = (
+    r"dad|mom|mum|father|mother|brother|sister|wife|husband|son|daughter|"
+    r"grandfather|grandmother|grandpa|grandma|uncle|aunt|cousin|parents"
+)
+_BIOGRAPHY_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("family", re.compile(rf"\bmy\s+(?:own\s+)?(?:{_KIN})\b", re.IGNORECASE)),
+    (
+        "childhood",
+        re.compile(
+            r"\bmy\s+(?:childhood|hometown|first\s+computer|first\s+PC|"
+            r"school|teacher|upbringing)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "age",
+        re.compile(
+            r"\bwhen\s+I\s+was\s+(?:a\s+kid|a\s+child|young|little|\d{1,2})\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "age",
+        # "I was ten, maybe eleven" — but never "I was 10x faster" / "I was 30% off".
+        re.compile(
+            r"\bI\s+was\s+(?:ten|eleven|twelve|thirteen|fourteen|fifteen|\d{1,2})\b"
+            r"(?![\s-]*(?:%|percent|x\b|times\b))",
+            re.IGNORECASE,
+        ),
+    ),
+    ("childhood", re.compile(r"\bgrowing\s+up\b", re.IGNORECASE)),
+)
+_FIRST_PERSON_RE = re.compile(r"\b(?:I|my|me|we|our)\b", re.IGNORECASE)
+
+
+def _sentence_around(content: str, start: int) -> str:
+    """The whole sentence containing offset ``start``."""
+    lo = 0
+    for m in _SENTENCE_END_RE.finditer(content):
+        if m.end() <= start:
+            lo = m.end()
+        else:
+            break
+    hi_m = _SENTENCE_END_RE.search(content, start)
+    return content[lo : hi_m.start() if hi_m else len(content)]
+
+
+def extract_biography_claims(content: str) -> list[tuple[str, str]]:
+    """``(kind, sentence)`` for first-person biographical assertions, deduped.
+
+    Every pattern additionally requires a first-person pronoun in the same
+    sentence, so a third-person retelling of a source's personal story — the
+    correct way to write about someone else's childhood — never fires.
+    """
+    claims: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for kind, rx in _BIOGRAPHY_RES:
+        for m in rx.finditer(content):
+            sentence = " ".join(_sentence_around(content, m.start()).split())
+            if not sentence or not _FIRST_PERSON_RE.search(sentence):
+                continue
+            key = sentence.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            claims.append((kind, sentence))
+    return claims
+
+
+def check_biography(claims: list[tuple[str, str]], founder_facts: str) -> list[str]:
+    """Claims not supported by the operator's declared founder facts.
+
+    With no declared facts (the default) every biographical claim is unsourced
+    by construction — which is the finding, not a gap in the check.
+    """
+    facts = (founder_facts or "").lower()
+    offenders: list[str] = []
+    for kind, sentence in claims:
+        if facts and _biography_supported(sentence, facts):
+            continue
+        excerpt = sentence if len(sentence) <= 120 else sentence[:117] + "..."
+        offenders.append(
+            f"unsourced first-person {kind} claim: \"{excerpt}\" — no "
+            "qa_self_claim_founder_facts entry supports it (research_context "
+            "cannot source a claim about the author)"
+        )
+    return offenders
+
+
+_FACT_WORD_RE = re.compile(r"[a-z][a-z0-9'-]{3,}")
+_FACT_STOPWORDS = frozenset(
+    {
+        "that", "this", "with", "from", "were", "been", "have", "what", "when",
+        "which", "would", "could", "about", "there", "their", "them", "then",
+        "into", "just", "like", "more", "most", "some", "such", "than", "they",
+        "very", "will", "your", "still", "same", "over", "only", "also", "back",
+    }
+)
+
+
+def _biography_supported(sentence: str, facts: str) -> bool:
+    """True when the declared facts carry most of the sentence's content words.
+
+    Deliberately strict: a single shared word ("dad") must not license an
+    invented anecdote about one.
+    """
+    words = {
+        w for w in _FACT_WORD_RE.findall(sentence.lower())
+        if w not in _FACT_STOPWORDS
+    }
+    if not words:
+        return False
+    hits = sum(1 for w in words if w in facts)
+    return hits >= max(2, int(0.6 * len(words)))
+
+
 def extract_capability_claims(content: str) -> list[str]:
     """Capitalised names the draft says WE run/use/rely on, in order, deduped."""
     names: list[str] = []
@@ -200,9 +363,6 @@ def check_capabilities(names: list[str], record: Any) -> list[str]:
         "(qa_self_claim_known_components, plugin.* settings, cost_logs models)"
         for n in names if not name_is_known(n, record)
     ]
-
-
-_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+|\n{2,}")
 
 
 def _sentence_is_ours(content: str, start: int, markers: list[str]) -> bool:
@@ -281,6 +441,34 @@ def _is_enabled(site_config: Any) -> bool:
         # only scores, never vetoes) when a config-read blip occurs.
         return True
     return str(raw).lower() in ("true", "1", "yes")
+
+
+def _biography_mode(site_config: Any) -> str:
+    """``off`` | ``advisory`` (default) | ``enforcing``.
+
+    Advisory at birth per poindexter#1055 even though the layer measured 0
+    false positives on 207 published posts: the rail as a whole is
+    ``required_to_pass`` since 2026-09-15, so an offender here would veto, and
+    a niche that deliberately publishes personal essay should be able to opt
+    out without a deploy.
+    """
+    try:
+        raw = str(site_config.get("qa_self_claim_biography_mode", "advisory") or "advisory")
+    except Exception:  # noqa: BLE001 — stubbed site_config
+        # silent-ok: an unreadable switch falls back to the seeded default,
+        # which only scores and never vetoes.
+        return "advisory"
+    mode = raw.strip().lower()
+    return mode if mode in ("off", "advisory", "enforcing") else "advisory"
+
+
+def _founder_facts(site_config: Any) -> str:
+    try:
+        return str(site_config.get("qa_self_claim_founder_facts", "") or "")
+    except Exception:  # noqa: BLE001 — stubbed site_config
+        # silent-ok: no declared facts is the default state, and it makes the
+        # layer stricter (nothing grounds), never laxer.
+        return ""
 
 
 def _product_markers(site_config: Any) -> list[str]:
@@ -410,14 +598,31 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     topic = str(state.get("topic") or "")
     markers = _product_markers(site_config)
-    if not is_self_referential(content, topic, markers):
+
+    # Layer 7 runs OUTSIDE the self-reference gate: an invented childhood is
+    # ungrounded whether or not the draft is about our own stack, and the
+    # essay that earned this layer barely mentioned the product.
+    bio_mode = _biography_mode(site_config)
+    bio_offenders: list[str] = []
+    bio_checked = False
+    if bio_mode != "off":
+        bio_claims = extract_biography_claims(content)
+        if bio_claims:
+            bio_checked = True
+            bio_offenders = check_biography(bio_claims, _founder_facts(site_config))
+
+    if not is_self_referential(content, topic, markers) and not bio_checked:
         return {}
 
-    real_version = current_package_version()
-    version_claims = extract_our_version_claims(content, markers)
-    paths = extract_paths(content)
-    qscore_claims = extract_qscore_claims(content)
-    settings_tokens = extract_settings_tokens(content)
+    self_referential = is_self_referential(content, topic, markers)
+
+    real_version = current_package_version() if self_referential else None
+    version_claims = (
+        extract_our_version_claims(content, markers) if self_referential else []
+    )
+    paths = extract_paths(content) if self_referential else []
+    qscore_claims = extract_qscore_claims(content) if self_referential else []
+    settings_tokens = extract_settings_tokens(content) if self_referential else []
 
     offenders: list[str] = []
     versions_checked = bool(version_claims and real_version)
@@ -459,8 +664,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             )
 
     # Layers 5-6: named capabilities + install specs vs the operating record.
-    capability_names = extract_capability_claims(content)
-    install_specs = extract_install_specs(content, markers)
+    capability_names = extract_capability_claims(content) if self_referential else []
+    install_specs = (
+        extract_install_specs(content, markers) if self_referential else []
+    )
     capabilities_checked = specs_checked = False
     if capability_names or install_specs:
         try:
@@ -489,8 +696,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         or (checked_db_layers and bool(qscore_claims or settings_tokens))
         or capabilities_checked
         or specs_checked
+        or bio_checked
     )
-    if not offenders and not checked_anything:
+    # An ENFORCING biography layer vetoes with the rest; an advisory one only
+    # scores and names the claim, so graduating it is a settings change.
+    if bio_mode == "enforcing":
+        offenders += bio_offenders
+        advisory_offenders: list[str] = []
+    else:
+        advisory_offenders = bio_offenders
+    if not offenders and not advisory_offenders and not checked_anything:
         return {}
 
     from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
@@ -504,12 +719,17 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 — stubbed site_config
         penalty = _DEFAULT_PENALTY
 
-    score = max(0.0, 100.0 - penalty * len(offenders))
-    feedback = (
-        "Self-claims verified against the running system."
-        if not offenders
-        else "False self-claims: " + "; ".join(offenders[:5])
-    )
+    # Advisory offenders move the score and the operator's read, never the gate.
+    score = max(0.0, 100.0 - penalty * (len(offenders) + len(advisory_offenders)))
+    parts = []
+    if offenders:
+        parts.append("False self-claims: " + "; ".join(offenders[:5]))
+    if advisory_offenders:
+        parts.append(
+            "Unsourced first-person claims (advisory): "
+            + "; ".join(advisory_offenders[:5])
+        )
+    feedback = " ".join(parts) or "Self-claims verified against the running system."
     review = ReviewerResult(
         reviewer="self_claim",
         approved=not offenders,
@@ -529,6 +749,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         logger.info(
             "[qa.self_claim] %d false self-claim(s): %s",
             len(offenders), "; ".join(offenders[:3]),
+        )
+    if advisory_offenders:
+        logger.info(
+            "[qa.self_claim] %d unsourced first-person claim(s), advisory "
+            "(qa_self_claim_biography_mode=%s): %s",
+            len(advisory_offenders), bio_mode, "; ".join(advisory_offenders[:3]),
         )
     return {"qa_rail_reviews": [reviewer_to_dict(review)]}
 

@@ -386,3 +386,165 @@ class TestRunWithOperatingRecord:
         content = "Our Poindexter pipeline runs on Poindexter. We also run Jettison for campaigns."
         out = await atom.run({"content": content, "topic": "t", "site_config": _sc()})
         assert out == {}  # nothing checkable → no review, never a fake pass
+
+
+# ---------------------------------------------------------------------------
+# Layer 7 — first-person biography (poindexter#1055)
+#
+# The draft that earned this layer (task 4a23f39e) reached awaiting_approval at
+# Q94 with the critic scoring it 98 and no rail objecting, having invented the
+# founder's childhood, a named 1997 side project with source filenames, and a
+# Glad Labs teaching project. Excerpts below are from that draft.
+# ---------------------------------------------------------------------------
+
+_FABRICATION = (
+    "My own dad ran almost the identical experiment on me around the same "
+    "year, minus the flair of relocating to another chair. I was ten, maybe "
+    "eleven. It was 1997 or 1998, the same stretch of my childhood when I was "
+    "also teaching myself to program on a hand-me-down 486."
+)
+
+
+def test_biography_layer_catches_the_1055_fabrication():
+    claims = atom.extract_biography_claims(_FABRICATION)
+    kinds = {k for k, _ in claims}
+    assert {"family", "childhood", "age"} <= kinds, kinds
+    # With no declared founder facts every one of them is unsourced.
+    assert len(atom.check_biography(claims, "")) == len(claims) >= 3
+
+
+def test_research_context_cannot_ground_a_claim_about_the_author():
+    """The #1055 trap: the task's corpus was an article about SOMEONE ELSE's
+    father, so it was full of the word "dad". Grounding on the corpus would
+    have passed the exact fabrication this layer exists to catch — only
+    qa_self_claim_founder_facts may license a first-person claim, and
+    check_biography takes no corpus argument at all."""
+    claims = atom.extract_biography_claims("My dad taught me to debug by hand.")
+    assert claims
+    someone_elses_story = "the author's dad taught him chess on a rainy afternoon"
+    assert atom.check_biography(claims, someone_elses_story)
+
+
+def test_declared_founder_facts_ground_a_matching_claim():
+    claims = atom.extract_biography_claims(
+        "My dad taught me chess on a hand-me-down board in 1997."
+    )
+    facts = "matt's dad taught him chess on a hand-me-down board in 1997"
+    assert atom.check_biography(claims, facts) == []
+
+
+def test_a_single_shared_word_does_not_license_an_anecdote():
+    """"dad" appearing in the declared facts must not ground an unrelated
+    invented anecdote about one."""
+    claims = atom.extract_biography_claims(
+        "My dad shipped a genetic algorithm called ColorGA on a 486 in 1997."
+    )
+    assert atom.check_biography(claims, "matt's dad is a retired electrician")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Measured against 207 published posts (1.3M chars): zero fired.
+        "We measured 10,240 MiB held ~6.5h after the last render.",
+        "We shipped 30 PRs and 28 notable commits today.",
+        "We run LiteLLM as the provider layer now.",
+        "The model I was testing came out 18% faster on single-request latency.",
+        "Throughput was 10x faster than the baseline; I was 30% off in my estimate.",
+        # Third person is the correct way to retell a source's personal story.
+        "The author's dad ran the identical experiment on him that year.",
+        "His childhood was spent programming on a hand-me-down 486.",
+    ],
+)
+def test_biography_layer_does_not_fire_on_ordinary_prose(text):
+    assert atom.extract_biography_claims(text) == []
+
+
+async def test_biography_runs_outside_the_self_reference_gate(monkeypatch):
+    """An invented childhood is ungrounded whether or not the draft is about
+    our own stack — the essay that earned the layer barely named the product."""
+    _patch_gates(monkeypatch)
+    topic = "a childhood story"
+    assert not atom.is_self_referential(_FABRICATION, topic, ["poindexter"])
+
+    result = await atom.run(
+        {"content": _FABRICATION, "topic": topic, "site_config": _sc()}
+    )
+    reviews = result.get("qa_rail_reviews") or []
+    assert len(reviews) == 1
+    assert "first-person" in reviews[0]["feedback"]
+
+
+def _patch_gates_required(monkeypatch):
+    """qa_gates.self_claim.required_to_pass=True — the live prod shape since
+    2026-09-15, where an offender really does veto."""
+    async def _states(_qa):
+        return {"self_claim": (True, True)}
+
+    monkeypatch.setattr(atom, "resolve_gate_states", _states)
+    monkeypatch.setattr(
+        "poindexter.modules.content.multi_model_qa.MultiModelQA.__init__",
+        lambda self, **kw: None,
+    )
+
+
+async def test_advisory_mode_names_the_claim_without_vetoing(monkeypatch):
+    """Advisory offenders ride in their own bucket: they move the score and
+    the operator's read, but never the pass/fail bit — so graduating the layer
+    is a settings change, not a deploy."""
+    _patch_gates_required(monkeypatch)
+    result = await atom.run(
+        {"content": _FABRICATION, "topic": "childhood", "site_config": _sc()}
+    )
+    review = result["qa_rail_reviews"][0]
+    assert review["approved"] is True, "advisory offenders must not flip the veto"
+    assert review["score"] < 100
+    assert "advisory" in review["feedback"]
+    assert "False self-claims" not in review["feedback"]
+
+
+async def test_enforcing_mode_vetoes(monkeypatch):
+    _patch_gates_required(monkeypatch)
+    result = await atom.run(
+        {
+            "content": _FABRICATION,
+            "topic": "childhood",
+            "site_config": _sc(qa_self_claim_biography_mode="enforcing"),
+        }
+    )
+    review = result["qa_rail_reviews"][0]
+    assert review["approved"] is False
+    assert review["feedback"].startswith("False self-claims")
+
+
+async def test_off_mode_skips_the_layer(monkeypatch):
+    _patch_gates(monkeypatch)
+    result = await atom.run(
+        {
+            "content": _FABRICATION,
+            "topic": "childhood",
+            "site_config": _sc(qa_self_claim_biography_mode="off"),
+        }
+    )
+    assert result == {}
+
+
+async def test_declared_founder_facts_silence_the_layer_end_to_end(monkeypatch):
+    _patch_gates(monkeypatch)
+    result = await atom.run(
+        {
+            "content": "My dad taught me chess on a hand-me-down board in 1997.",
+            "topic": "childhood",
+            "site_config": _sc(
+                qa_self_claim_founder_facts=(
+                    "matt's dad taught him chess on a hand-me-down board in 1997"
+                ),
+            ),
+        }
+    )
+    review = result["qa_rail_reviews"][0]
+    # The rail RAN and the claim resolved, so it records an honest pass rather
+    # than vanishing — the distinction poindexter#1051 is about.
+    assert review["approved"] is True
+    assert review["score"] == 100
+    assert "first-person" not in review["feedback"]

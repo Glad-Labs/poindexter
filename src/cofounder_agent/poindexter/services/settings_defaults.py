@@ -1939,6 +1939,16 @@ DEFAULTS: dict[str, str] = {
     'qa_self_claim_enabled': 'true',
     'qa_self_claim_product_names': 'poindexter',
     'qa_self_claim_offender_penalty': '25',
+    # poindexter#1055 — first-person biography layer. Advisory at birth even
+    # though it measured 0 false positives across 207 published posts, because
+    # the rail is required_to_pass and an offender would otherwise veto.
+    # 'off' | 'advisory' | 'enforcing'.
+    'qa_self_claim_biography_mode': 'advisory',
+    # The ONLY source that can license a first-person claim about the author.
+    # Empty = every such claim is unsourced, which is the intended default:
+    # research_context cannot ground a claim about us (it routinely carries
+    # someone else's personal story, which is exactly how #1055 slipped).
+    'qa_self_claim_founder_facts': '',
     # Operating record (services/operating_record.py) — what qa.self_claim
     # checks named capabilities ("we run X") and install specs (RAM, GPUs,
     # VRAM) against. Names: this CSV + product names + site_name + the
@@ -5001,6 +5011,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_self_claim_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'qa_self_claim_product_names': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_self_claim_offender_penalty': {'owner': 'multi_model_qa', 'value_type': 'float'},
+    'qa_self_claim_biography_mode': {'owner': 'multi_model_qa', 'value_type': 'string'},
+    'qa_self_claim_founder_facts': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_self_claim_known_components': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'operating_record_gpus': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'operating_record_ram_gb': {'owner': 'multi_model_qa', 'value_type': 'string'},
