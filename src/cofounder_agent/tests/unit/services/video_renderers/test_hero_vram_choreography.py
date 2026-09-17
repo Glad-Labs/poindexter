@@ -674,3 +674,66 @@ def test_no_ladder_rung_above_832x480_on_this_hardware():
 
     assert max(w for w, _h, _g in slr._HERO_PLATE_LADDER) <= 832
     assert max(h for _w, h, _g in slr._HERO_PLATE_LADDER) <= 480
+
+
+# --- the animator's own pool is headroom (2026-09-17) -----------------------
+#
+# Measured on the fifth presenter render: 25.9 GB free before hero 1, 11.3 GB
+# after it — ComfyUI's cached pool — and heroes 2 and 3 fell to Ken Burns
+# stills on a card whose only occupant was the animator about to render them.
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_comfyui_animator_counts_its_own_pool_as_headroom(monkeypatch):
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=11.3))
+    monkeypatch.setattr(slr, "_comfyui_reserved_gb", AsyncMock(return_value=15.0))
+    out = await slr._fit_hero_dims_to_free_vram(
+        832, 480, _sc(video_generative_provider="comfyui"),
+    )
+    # 26.3 GB usable: below the 27 GB top rung, above the 22 GB floor rung.
+    assert out == (704, 400), out
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wan_animator_does_not_borrow_comfyui_pool(monkeypatch):
+    """wan is a different process — ComfyUI's pool is not wan's headroom."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=11.3))
+    pool = AsyncMock(return_value=15.0)
+    monkeypatch.setattr(slr, "_comfyui_reserved_gb", pool)
+    out = await slr._fit_hero_dims_to_free_vram(
+        832, 480, _sc(video_generative_provider="wan21"),
+    )
+    assert out is None
+    pool.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_unreadable_pool_falls_back_to_live_free(monkeypatch):
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=28.0))
+    monkeypatch.setattr(slr, "_comfyui_reserved_gb", AsyncMock(return_value=0.0))
+    out = await slr._fit_hero_dims_to_free_vram(
+        832, 480, _sc(video_generative_provider="comfyui"),
+    )
+    assert out == (832, 480)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_unknown_live_reading_still_defers_to_prometheus(monkeypatch):
+    """None from the live probe keeps the Prometheus fallback path intact."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=None))
+    pool = AsyncMock(return_value=15.0)
+    monkeypatch.setattr(slr, "_comfyui_reserved_gb", pool)
+    assert await slr._hero_headroom_gb(_sc(video_generative_provider="comfyui")) is None
+    pool.assert_not_awaited()

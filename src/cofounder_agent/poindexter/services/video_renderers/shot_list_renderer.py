@@ -570,6 +570,40 @@ async def _wan_resident_gb(site_config: Any) -> float:
         return 0.0
 
 
+def _hero_animator_is_comfyui(site_config: Any) -> bool:
+    """True when ``video_generative_provider`` routes hero clips to ComfyUI."""
+    if site_config is None:
+        return False
+    try:
+        choice = str(site_config.get("video_generative_provider", "wan21") or "wan21")
+    except Exception:  # noqa: BLE001
+        # silent-ok: a settings read must not decide the geometry; the
+        # deployed default animator (wan21) has no reusable pool.
+        return False
+    return choice.strip().lower() == "comfyui"
+
+
+async def _hero_headroom_gb(site_config: Any) -> float | None:
+    """VRAM a hero clip can actually use: live free, plus ComfyUI's own pool
+    when ComfyUI is the animator.
+
+    ComfyUI keeps its caching-allocator pool between prompts, so after the
+    FIRST hero clip the device reads ~15 GB fuller than it is for the SECOND —
+    measured 2026-09-17 15:50: 25.9 GB free before hero 1, 11.3 GB after it,
+    and heroes 2 and 3 were downgraded to Ken Burns stills on a card whose
+    only occupant was the animator about to render them. The presenter floor
+    already counted that pool (stack#3825); this is the same accounting for
+    the hero gate. A wan21 animator is a different process, so ComfyUI's pool
+    is NOT its headroom and only live free counts.
+    """
+    free = await _live_free_vram_gb(site_config)
+    if free is None:
+        return None
+    if not _hero_animator_is_comfyui(site_config):
+        return free
+    return free + await _comfyui_reserved_gb(site_config)
+
+
 async def _fit_hero_dims_to_free_vram(
     width: int, height: int, site_config: Any,
 ) -> tuple[int, int] | None:
@@ -620,8 +654,10 @@ async def _fit_hero_dims_to_free_vram(
     # single sample taken 3s later still reports the PRE-reclaim figure. Take
     # the max of a few samples across one scrape interval so a stale low
     # reading cannot decide against a card that was just freed.
-    # Prefer the live device reading; Prometheus is the fallback.
-    live = await _live_free_vram_gb(site_config)
+    # Prefer the live device reading; Prometheus is the fallback. When the
+    # animator IS ComfyUI, its own cached pool is headroom too (see
+    # ``_hero_headroom_gb``) — the same accounting the presenter floor uses.
+    live = await _hero_headroom_gb(site_config)
     if live is not None:
         free_gb = live
         landscape = width >= height
@@ -637,8 +673,8 @@ async def _fit_hero_dims_to_free_vram(
                 )
                 return new_w, new_h
         logger.warning(
-            "[SHOT_LIST] only %.1fGB free (live) — NOT animating this hero; "
-            "using its Ken Burns still.", free_gb,
+            "[SHOT_LIST] only %.1fGB usable (live free + the animator's own pool) "
+            "— NOT animating this hero; using its Ken Burns still.", free_gb,
         )
         return None
 

@@ -158,6 +158,28 @@ Operational rules that follow from the numbers:
   not send yet — that gate lands with the presenter-persona work, before any
   such upload.
 
+## Headroom accounting: the animator's own pool counts
+
+ComfyUI keeps its caching-allocator pool between prompts. After the first
+hero clip the device reads ~15 GB fuller than it is for the *second* clip,
+because the memory is held by the very process about to render it. Measured
+2026-09-17 15:50 on the fifth presenter render: 25.9 GB free before hero 1,
+11.3 GB after it, and heroes 2 and 3 were downgraded to Ken Burns stills on a
+card whose only occupant was the animator.
+
+Two gates therefore read **live free + ComfyUI's `torch_vram_total`** (from
+`/system_stats`) rather than live free alone, and only when ComfyUI is the
+process that will use it:
+
+- the presenter (S2V) floor, `video_presenter_min_free_vram_gb` (stack#3825);
+- the hero plate ladder, `_fit_hero_dims_to_free_vram`, when
+  `video_generative_provider=comfyui` (stack#3838). With `wan21` as the
+  animator ComfyUI's pool is *not* wan's headroom and only live free counts.
+
+The rule generalizes: a sidecar's cached pool is headroom for **that sidecar's
+next request** and dead weight for everyone else's. Do not add it to a gate
+that admits a different process.
+
 ## Non-goals (this iteration)
 
 - Replacing wan-server (it stays the default; retire only after comfyui has
