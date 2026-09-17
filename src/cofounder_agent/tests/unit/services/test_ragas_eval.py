@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from importlib.util import find_spec
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -321,87 +321,6 @@ def _inject_fake_modules(fake_modules: dict[str, Any]):
                 sys.modules[name] = original
 
 
-_MISSING = object()
-
-
-def _snapshot_own_attrs(obj: Any, names: list[str]) -> dict[str, Any]:
-    """Snapshot attrs ``obj`` (a class or module) defines in its OWN
-    ``__dict__`` — not ones it merely inherits — so restore can tell
-    "reassign the original" from "delete the patch, fall back to the
-    inherited/default implementation" apart. See ``_isolate_nest_asyncio_patch``.
-    """
-    owned = vars(obj)
-    return {name: owned.get(name, _MISSING) for name in names}
-
-
-def _restore_own_attrs(obj: Any, snapshot: dict[str, Any]) -> None:
-    for name, value in snapshot.items():
-        if value is _MISSING:
-            with suppress(AttributeError):
-                delattr(obj, name)
-        else:
-            setattr(obj, name, value)
-
-
-@contextmanager
-def _isolate_nest_asyncio_patch():
-    """Undo ``nest_asyncio.apply()``'s process-wide monkeypatch after the block.
-
-    ``nest_asyncio`` ships no "unapply" — its whole point (Jupyter-style
-    reentrant loops) is a one-way GLOBAL patch of ``asyncio.run``, the event
-    loop policy CLASS's ``get_event_loop``, and the concrete event loop
-    CLASS's ``run_forever`` / ``run_until_complete`` / ``_run_once`` (see
-    ``nest_asyncio.apply`` / ``_patch_asyncio`` / ``_patch_policy`` /
-    ``_patch_loop`` in the installed package — all class-level assignments,
-    never undone). Left unguarded, the real
-    ``nest_asyncio.apply()`` call inside
-    ``test_embed_sync_paths_bridge_from_inside_ragas_nested_loop`` (needed
-    there to prove the reentrant bridge genuinely survives Ragas's real
-    nesting pattern, not just a mocked one) leaks past this test: the
-    patched ``asyncio.run`` routes through a loop MEMOIZED per-thread on the
-    policy instead of creating+closing a fresh one every call, so any LATER
-    test in the same pytest process that calls ``asyncio.run()`` twice
-    expecting two distinct event loops silently gets the same cached one
-    back both times — e.g.
-    test_revalidation_service.py::test_rebuilds_client_when_the_running_loop_changes,
-    which only fails when the full suite runs this ragas test first, never
-    in isolation.
-
-    Same "snapshot + restore only what changed" idiom as
-    ``_inject_fake_modules`` above, sized to exactly the attributes
-    nest_asyncio's source sets.
-    """
-    import asyncio as _asyncio
-
-    policy = _asyncio.get_event_loop_policy()
-    throwaway_loop = _asyncio.new_event_loop()
-    loop_cls = type(throwaway_loop)
-    throwaway_loop.close()
-
-    module_snapshot = _snapshot_own_attrs(_asyncio, ["run", "_nest_patched"])
-    policy_cls_snapshot = _snapshot_own_attrs(type(policy), ["get_event_loop"])
-    loop_cls_snapshot = _snapshot_own_attrs(
-        loop_cls,
-        [
-            "run_forever", "run_until_complete", "_run_once",
-            "_check_running", "_check_runnung", "_nest_patched",
-            "_num_runs_pending", "_is_proactorloop",
-        ],
-    )
-    try:
-        yield
-    finally:
-        # nest_asyncio's patched asyncio.run never closes the loop it
-        # memoizes — close it before the patched methods that know how
-        # (run_until_complete et al.) are restored away underneath it.
-        leaked_loop = getattr(policy._local, "_loop", None)
-        if leaked_loop is not None and not leaked_loop.is_closed():
-            leaked_loop.close()
-        _restore_own_attrs(loop_cls, loop_cls_snapshot)
-        _restore_own_attrs(type(policy), policy_cls_snapshot)
-        _restore_own_attrs(_asyncio, module_snapshot)
-
-
 @pytest.mark.unit
 class TestDispatcherWrappers:
     """With a ``pool``, Ragas judge + embeddings route through the
@@ -527,44 +446,186 @@ class TestDispatcherWrappers:
         assert vec == [0.1, 0.2]
         assert docs == [[0.1, 0.2], [0.1, 0.2]]
 
-    def test_embed_sync_paths_bridge_from_inside_ragas_nested_loop(self, monkeypatch):
-        """Reproduces the actual production failure: Ragas 0.4.3's
-        ResponseRelevancy.calculate_similarity (the answer_relevancy
-        metric) calls embed_query/embed_documents SYNCHRONOUSLY from
-        inside its own async _ascore — always after Ragas's own
-        Executor.results() has nest_asyncio-patched the running loop
-        (ragas/executor.py::apply_nest_asyncio). Simulates that exact
-        nesting without needing a real Ragas install, so the test proves
-        the bridge survives the actual call shape, not just the trivial
-        no-loop case above."""
+    def test_embed_sync_path_bridges_from_the_worker_thread(self, monkeypatch):
+        """Reproduces the production call shape AFTER poindexter#1053.
+
+        Ragas 0.4.3's ResponseRelevancy.calculate_similarity (the
+        answer_relevancy metric) calls embed_query/embed_documents
+        SYNCHRONOUSLY from inside its own async _ascore. That used to happen on
+        the flow's own loop, where the only way through was nest_asyncio
+        re-entrancy — which corrupted the loop's ready queue and crashed the
+        flow with ``IndexError: pop from an empty deque``.
+
+        Now ``ragas.evaluate`` runs in a worker thread, so the sync call
+        arrives from off the flow thread and the bridge hands the pool-bound
+        coroutine BACK to the flow's loop. This asserts the handoff actually
+        lands there — the whole point is that asyncpg work stays on the loop
+        that owns the pool.
+        """
         import asyncio
-        from unittest.mock import AsyncMock
+        import threading
 
-        from poindexter.services.ragas_eval import _build_dispatcher_ragas_wrappers
+        from poindexter.services.ragas_eval import (
+            _OWNING_LOOP,
+            _build_dispatcher_ragas_wrappers,
+        )
 
-        embed_mock = AsyncMock(return_value=[0.3, 0.4])
+        ran_on: dict[str, Any] = {}
+
+        async def _fake_embed(pool, text, model):
+            ran_on["loop"] = asyncio.get_running_loop()
+            ran_on["thread"] = threading.get_ident()
+            return [0.3, 0.4]
+
         monkeypatch.setattr(
-            "poindexter.services.llm_providers.dispatcher.dispatch_embed", embed_mock,
+            "poindexter.services.llm_providers.dispatcher.dispatch_embed", _fake_embed,
         )
         with _inject_fake_modules(_identity_wrapper_modules()):
             _, embeddings = _build_dispatcher_ragas_wrappers(
                 pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
             )
 
-        async def _ragas_like_ascore():
-            import nest_asyncio
+        async def _flow():
+            flow_loop = asyncio.get_running_loop()
+            _OWNING_LOOP.set((flow_loop, threading.get_ident()))
 
-            nest_asyncio.apply()
-            # Synchronous call from inside a running (now-patched) loop —
-            # exactly what ResponseRelevancy.calculate_similarity does.
-            return embeddings.embed_query("some text")
+            def _ragas_like_worker():
+                # Synchronous call from Ragas's thread — what
+                # calculate_similarity does, now off the flow thread.
+                assert threading.get_ident() != ran_on.get("flow_thread")
+                return embeddings.embed_query("some text")
 
-        # nest_asyncio.apply() above is a real, process-wide, never-undone
-        # monkeypatch — see _isolate_nest_asyncio_patch's docstring for why
-        # this leaks into unrelated later tests without this guard.
-        with _isolate_nest_asyncio_patch():
-            result = asyncio.run(_ragas_like_ascore())
+            ran_on["flow_thread"] = threading.get_ident()
+            result = await asyncio.to_thread(_ragas_like_worker)
+            return result, flow_loop
+
+        result, flow_loop = asyncio.run(_flow())
+
         assert result == [0.3, 0.4]
+        # The pool-bound coroutine ran on the FLOW's loop, in the flow's
+        # thread — not on whatever loop Ragas spun up in the worker.
+        assert ran_on["loop"] is flow_loop
+        assert ran_on["thread"] == ran_on["flow_thread"]
+
+    def test_judge_call_is_bridged_to_the_owning_loop(self, monkeypatch):
+        """The judge path touches the pool too (cost logging), and since
+        poindexter#1053 ``_agenerate`` runs on Ragas's worker loop. Assert the
+        dispatch lands on the FLOW's loop rather than driving asyncpg from a
+        foreign one."""
+        import asyncio
+        import threading
+        from types import SimpleNamespace
+
+        from poindexter.services.ragas_eval import (
+            _OWNING_LOOP,
+            _build_dispatcher_ragas_wrappers,
+        )
+
+        ran_on: dict[str, Any] = {}
+
+        async def _fake_dispatch(**kwargs):
+            ran_on["loop"] = asyncio.get_running_loop()
+            return SimpleNamespace(text="judged")
+
+        monkeypatch.setattr(
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete",
+            _fake_dispatch,
+        )
+        with _inject_fake_modules(_identity_wrapper_modules()):
+            llm, _ = _build_dispatcher_ragas_wrappers(
+                pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
+            )
+
+        async def _flow():
+            flow_loop = asyncio.get_running_loop()
+            _OWNING_LOOP.set((flow_loop, threading.get_ident()))
+
+            def _worker():
+                # Ragas's own loop, in its own thread.
+                return asyncio.run(
+                    llm._agenerate([SimpleNamespace(type="human", content="hi")])
+                )
+
+            result = await asyncio.to_thread(_worker)
+            return result, flow_loop
+
+        result, flow_loop = asyncio.run(_flow())
+        assert result.generations[0].message.content == "judged"
+        assert ran_on["loop"] is flow_loop
+
+    def test_bridge_refuses_to_re_enter_the_flow_loop(self, monkeypatch):
+        """The #1053 shape itself: reaching the sync bridge ON the owning
+        loop's thread means evaluate() was driven from the flow loop, which is
+        what nest_asyncio used to paper over by re-entering it. Refuse loudly
+        instead — a crashed flow that strands the task is far worse than a
+        degraded rail."""
+        import asyncio
+        import threading
+
+        from poindexter.services.ragas_eval import _OWNING_LOOP, _run_embed_coro
+
+        async def _noop():
+            return None
+
+        async def _on_the_flow_loop():
+            _OWNING_LOOP.set((asyncio.get_running_loop(), threading.get_ident()))
+            coro = _noop()
+            try:
+                with pytest.raises(RuntimeError, match="owning loop's thread"):
+                    _run_embed_coro(coro)
+            finally:
+                coro.close()
+
+        asyncio.run(_on_the_flow_loop())
+
+    def test_bridge_falls_back_to_asyncio_run_with_no_owning_loop(self):
+        """The CLI path — no flow, no registered loop, no running loop."""
+        from poindexter.services.ragas_eval import _OWNING_LOOP, _run_embed_coro
+
+        async def _work():
+            return "cli"
+
+        token = _OWNING_LOOP.set(None)
+        try:
+            assert _run_embed_coro(_work()) == "cli"
+        finally:
+            _OWNING_LOOP.reset(token)
+
+    def test_nest_asyncio_is_no_longer_imported_or_applied(self):
+        """poindexter#1053 — the re-entrancy is gone, not merely guarded.
+
+        A future edit that reintroduces ``nest_asyncio.apply()`` here brings
+        the flow crash back, so pin its absence in the AST rather than trust
+        the comment. Checks real usage, not the word: the module docstring
+        explains the history and must stay free to name it.
+        """
+        import ast
+        import inspect
+
+        from poindexter.services import ragas_eval
+
+        tree = ast.parse(inspect.getsource(ragas_eval))
+        imported = [
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in (node.names or [])
+            if "nest_asyncio" in (alias.name or "")
+        ] + [
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and "nest_asyncio" in (node.module or "")
+        ]
+        assert imported == [], f"nest_asyncio imported: {imported}"
+
+        applied = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "nest_asyncio"
+        ]
+        assert applied == [], "nest_asyncio.* is referenced in code"
 
 
 # ---------------------------------------------------------------------------

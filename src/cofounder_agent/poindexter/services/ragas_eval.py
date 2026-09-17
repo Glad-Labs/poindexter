@@ -32,7 +32,9 @@ automatically. No new table.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import math
+import threading
 from typing import Any
 
 from poindexter.services.gpu_admission import GpuBusyError
@@ -41,39 +43,88 @@ from poindexter.services.logger_config import get_logger
 logger = get_logger(__name__)
 
 
+# The event loop that owns our asyncpg pool. Set by ``evaluate_sample`` right
+# before it offloads the synchronous ``ragas.evaluate`` to a worker thread;
+# ``asyncio.to_thread`` copies the context, so the wrappers running inside that
+# thread can see it. None outside a flow (the CLI path).
+# Carries ``(loop, thread_ident)`` — the ident is recorded explicitly rather
+# than read off the loop, so the deadlock guard never depends on a private
+# asyncio attribute.
+_OWNING_LOOP: contextvars.ContextVar[tuple[Any, int] | None] = (
+    contextvars.ContextVar("ragas_owning_loop", default=None)
+)
+
+
+def _foreign_owning_loop() -> Any:
+    """The owning loop, when we are NOT on its thread — else None.
+
+    On its own thread a bridge back to it would deadlock (we would be asking
+    the loop we are blocking to do the work), so callers fall through to their
+    local behaviour instead.
+    """
+    entry = _OWNING_LOOP.get()
+    if entry is None:
+        return None
+    loop, owner_ident = entry
+    return loop if owner_ident != threading.get_ident() else None
+
+
 def _run_embed_coro(coro: Any) -> Any:
-    """Bridge an embedding coroutine onto whatever loop is calling us.
+    """Run an embedding coroutine that needs the FLOW's loop, from Ragas's
+    worker thread.
 
     Ragas 0.4.x's ``ResponseRelevancy.calculate_similarity`` (the
-    ``answer_relevancy`` metric) calls the LangChain ``Embeddings`` sync
-    interface — ``embed_query``/``embed_documents`` — directly and
-    synchronously from inside its own async ``_ascore``, so this is
-    reached from *within* whatever loop is already running (poindexter#847).
+    ``answer_relevancy`` metric) calls the LangChain ``Embeddings`` *sync*
+    interface — ``embed_query``/``embed_documents`` — from inside its own
+    async ``_ascore``, so this is reached from within a running loop
+    (poindexter#847). ``dispatch_embed`` drives our asyncpg pool, and asyncpg
+    connections are bound to the loop that created them, so the work has to
+    happen on the flow's loop specifically.
 
-    A fresh thread + new event loop would be the usual sync-from-async
-    bridge, but it's wrong here: ``dispatch_embed`` drives the caller's
-    asyncpg pool, and asyncpg connections are bound to the loop they were
-    created on — handing them to a second loop on another thread raises.
-    So this reuses the CURRENT loop instead. That's safe specifically
-    because Ragas's own ``Executor.results()`` always calls
-    ``nest_asyncio.apply()`` before scoring any metric (see
-    ``ragas/executor.py`` and ``ragas/async_utils.py``), which patches
-    ``asyncio.run`` to re-enter the already-running loop rather than
-    reject it. ``nest_asyncio`` is a direct dependency of ``ragas``
-    itself, so it's guaranteed importable here. Applying it again is a
-    no-op if Ragas already did (``nest_asyncio.apply`` checks
-    ``asyncio._nest_patched`` first) — this makes the bridge correct on
-    its own terms rather than implicitly trusting Ragas's internals to
-    keep doing so.
+    This used to re-enter the flow's own loop via ``nest_asyncio.apply()`` +
+    ``asyncio.run``. That crashed the flow (poindexter#1053): on 2026-09-15 a
+    ``call_soon_threadsafe`` landed while the nested ``run_until_complete``
+    was draining ``loop._ready``, the ready queue was corrupted, and the flow
+    died with ``IndexError: pop from an empty deque`` — taking the Prefect run
+    to CRASHED and stranding the task ``in_progress`` until the stale sweep.
+
+    Now ``evaluate_sample`` runs Ragas in a worker thread, so the loop being
+    blocked here is Ragas's own, not the flow's. Blocking it is safe precisely
+    because a DIFFERENT thread services the coroutine: we hand the work to the
+    flow's loop and wait on the result. No re-entrancy anywhere.
     """
+    owning = _foreign_owning_loop()
+    if owning is not None:
+        return asyncio.run_coroutine_threadsafe(coro, owning).result()
     try:
         asyncio.get_running_loop()
     except RuntimeError:
+        # No loop here and no owning loop registered — the CLI path.
         return asyncio.run(coro)
-    import nest_asyncio
+    # On the owning loop's own thread with no worker-thread hop. Reaching this
+    # means evaluate() was driven synchronously from the flow loop, which is
+    # the shape #1053 was about; refuse rather than re-enter the loop.
+    raise RuntimeError(
+        "ragas embedding bridge reached on the owning loop's thread — "
+        "ragas.evaluate must run via _evaluate_in_worker_thread so the "
+        "bridge can hand pool-bound work back to the flow loop "
+        "(poindexter#1053)"
+    )
 
-    nest_asyncio.apply()
-    return asyncio.run(coro)
+
+async def _bridge_to_owning_loop(coro: Any) -> Any:
+    """Await ``coro`` on the flow's loop from inside Ragas's worker loop.
+
+    The async twin of :func:`_run_embed_coro`, for the judge-call path
+    (``_agenerate``), which Ragas drives as a coroutine. ``wrap_future`` makes
+    the cross-loop handoff awaitable, so the worker loop is not even blocked.
+    """
+    owning = _foreign_owning_loop()
+    if owning is None:
+        return await coro
+    return await asyncio.wrap_future(
+        asyncio.run_coroutine_threadsafe(coro, owning)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +248,11 @@ def _build_dispatcher_ragas_wrappers(
             # until the 900s lock ceiling. GpuBusyError propagates to the
             # rail's existing degraded path rather than being swallowed here,
             # so a skip stays visible instead of looking like a clean pass.
-            completion = await dispatch_complete(
+            # The dispatch touches our asyncpg pool (cost logging), which is
+            # bound to the flow's loop — and since poindexter#1053 this
+            # coroutine runs on Ragas's worker loop, not the flow's. Hand it
+            # back rather than driving the pool from a foreign loop.
+            completion = await _bridge_to_owning_loop(dispatch_complete(
                 pool=self.dispatch_pool,
                 messages=payload,
                 model=self.judge_model_name,
@@ -212,7 +267,7 @@ def _build_dispatcher_ragas_wrappers(
                    if json_mode_ok else {}),
                 max_wait_s=qa_rail_wait_budget_s(),
                 priority="background",
-            )
+            ))
             text = getattr(completion, "text", "") or ""
             generation = ChatGeneration(
                 message=AIMessage(content=text),
@@ -583,17 +638,33 @@ async def evaluate_sample(
         # while the rail read as "present". The calls complete; the library
         # clock was the failure. Both dials are app_settings.
         from ragas import RunConfig
-        result = evaluate(
-            ds,
-            metrics=[faithfulness, answer_relevancy, context_precision],
-            llm=llm,
-            embeddings=embeddings,
-            raise_exceptions=False,
-            run_config=RunConfig(
-                timeout=_int_setting(site_config, "ragas_job_timeout_seconds", 600),
-                max_workers=_int_setting(site_config, "ragas_max_workers", 4),
-            ),
+        run_config = RunConfig(
+            timeout=_int_setting(site_config, "ragas_job_timeout_seconds", 600),
+            max_workers=_int_setting(site_config, "ragas_max_workers", 4),
         )
+
+        def _evaluate_in_worker_thread() -> Any:
+            """``ragas.evaluate`` is synchronous and spins its own loop.
+
+            Running it on the flow's loop thread is what crashed the flow in
+            poindexter#1053 — Ragas applies ``nest_asyncio`` and re-enters the
+            running loop, and a concurrent ``call_soon_threadsafe`` corrupted
+            the ready queue mid-drain. Off the flow thread, Ragas gets a loop
+            of its own and the flow's loop is never re-entered; the bridges
+            above hand every pool-bound call back to it.
+            """
+            return evaluate(
+                ds,
+                metrics=[faithfulness, answer_relevancy, context_precision],
+                llm=llm,
+                embeddings=embeddings,
+                raise_exceptions=False,
+                run_config=run_config,
+            )
+
+        # to_thread copies the context, so the bridges see _OWNING_LOOP.
+        _OWNING_LOOP.set((asyncio.get_running_loop(), threading.get_ident()))
+        result = await asyncio.to_thread(_evaluate_in_worker_thread)
         scores_raw = result.scores[0] if result.scores else {}  # type: ignore[union-attr]
         scores = {
             "faithfulness": _coerce_metric(scores_raw.get("faithfulness")),
