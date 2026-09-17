@@ -77,6 +77,8 @@ for _root in (ROOT, ROOT / "src" / "cofounder_agent"):
 from scripts.lib_readme_stats import (  # noqa: E402  (needs the path bootstrap above)
     FLOOR_STEPS,
     README_MD,
+    STOREFRONT_GUIDE,
+    STOREFRONT_PAGE,
     floored,
     is_warning,
     substitute_anchored,
@@ -132,6 +134,15 @@ COUNT_ANCHORS: OrderedDict[str, str] = OrderedDict([
 # CI on the PR that breaks it rather than freezing the number. ``\+?`` on the
 # post counts because README carries a floored "190+" where CLAUDE.md carries
 # an exact "198"; the pattern has to re-match its own previous output.
+# gladlabs.ai. Only the settings count is DB-derived on that site; the rest of
+# its copy is positioning, which a sync has no business rewriting.
+STOREFRONT_ANCHORS: OrderedDict[str, str] = OrderedDict([
+    # "The 1,700+ live-tuned settings that run Matt&apos;s content business"
+    ("settings_pitch", r"The [\d,]+\+? live-tuned settings"),
+    # "<strong>THE LIVE-TUNED CONFIG SEED</strong> — 1,700+ production values"
+    ("settings_guide", r"</strong> — [\d,]+\+? production"),
+])
+
 README_ANCHORS: OrderedDict[str, str] = OrderedDict([
     ("live_posts_intro", r"[\d,]+\+? live posts and counting"),
     ("live_posts_status", r"[\d,]+\+? live posts on \[gladlabs\.io\]"),
@@ -337,6 +348,43 @@ def apply_to_readme(
     ])
 
 
+def apply_to_storefront(
+    stats: OrderedDict[str, int],
+    which: str,
+    text: str | None = None,
+) -> tuple[str, list[str]]:
+    """Return ``(new_text, changes)`` for the gladlabs.ai settings claim.
+
+    ``which`` is ``"page"`` or ``"guide"``. Only the settings count is synced:
+    it is the one number on that site derived from the database, and it is the
+    Pro pitch ("this is the product"), so an understated value costs real
+    credibility. The rest of the storefront is positioning, which a counter has
+    no business rewriting.
+
+    Uses the same conservative flooring as the README, so the site and the
+    README can never disagree by more than a rounding step — the failure this
+    exists to prevent, where the README said 1,800+ and the site said 950+ on
+    the same day.
+    """
+    target = STOREFRONT_PAGE if which == "page" else STOREFRONT_GUIDE
+    current = target.read_text(encoding="utf-8") if text is None else text
+    claim = floored(stats["app_settings"], FLOOR_STEPS["app_settings"])
+
+    if which == "page":
+        specs = [(
+            "settings_pitch",
+            STOREFRONT_ANCHORS["settings_pitch"],
+            f"The {claim} live-tuned settings",
+        )]
+    else:
+        specs = [(
+            "settings_guide",
+            STOREFRONT_ANCHORS["settings_guide"],
+            f"</strong> — {claim} production",
+        )]
+    return substitute_anchored(current, specs, source=target.name)
+
+
 def _resolve_dsn(explicit: str | None) -> str:
     """Resolve the prod DSN via the brain's canonical resolver; exit 2 if none."""
     from poindexter.brain.bootstrap import (
@@ -387,6 +435,15 @@ def main(argv: list[str] | None = None) -> int:
         # Not expected on glad-labs-stack (README.md is tracked). Loud rather
         # than silent: a vanished target must never read as "already in sync".
         print(f"WARNING: {README_MD.name} not found — its counts were not synced.")
+
+    # gladlabs.ai. Absent from the public mirror by design (web/storefront is
+    # stripped by sync-to-github.sh), so a missing file here is EXPECTED on
+    # poindexter and must not warn — unlike README.md above, where absence is
+    # a real problem. Checked by path, not by repo name, so it stays correct
+    # if the filter ever changes.
+    for which, target in (("page", STOREFRONT_PAGE), ("guide", STOREFRONT_GUIDE)):
+        if target.is_file():
+            results.append((target, *apply_to_storefront(stats, which)))
 
     changes: list[str] = []
     dirty: list[tuple[Path, str]] = []

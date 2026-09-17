@@ -66,7 +66,7 @@ export default function Landing() {
               <div className="sf-card__num">01 · TUNING</div>
               <h3 className="sf-card__title">Production Tuning</h3>
               <p className="sf-card__body">
-                The 1,700+ live-tuned settings that run Matt&apos;s content
+                The 1,800+ live-tuned settings that run Matt&apos;s content
                 business — exported from the running system every week, not a
                 frozen snapshot, and adopted safely in one command. Skip the
                 months of trial and error. This is the product.

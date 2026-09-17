@@ -41,6 +41,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 README_MD = ROOT / "README.md"
 
+# The gladlabs.ai storefront. Added 2026-09-17 after its Pro pitch was found
+# quoting "950+ live-tuned settings" against a live count of 1,841 — the
+# README was correct at the same moment, because the README was in this sync
+# and the storefront was not. A public claim nobody syncs is a claim that
+# silently rots; these two files carry the only DB-derived numbers on the
+# site, so they belong here.
+STOREFRONT_PAGE = ROOT / "web" / "storefront" / "app" / "page.js"
+STOREFRONT_GUIDE = ROOT / "web" / "storefront" / "app" / "guide" / "page.js"
+
 # How coarsely each claim is floored. Sized so a claim moves at most every
 # few weeks at current rates (~1 post/day, ~40 settings/month): fine enough
 # that "190+" stays a fair description of 198, coarse enough that the nightly
@@ -77,6 +86,7 @@ def shield_escape(claim: str) -> str:
 def substitute_anchored(
     text: str,
     specs: Iterable[tuple[str, str, str]],
+    source: str = "README.md",
 ) -> tuple[str, list[str]]:
     """Apply prose-anchored rewrites. Returns ``(new_text, changes)``.
 
@@ -96,7 +106,7 @@ def substitute_anchored(
         new, n = re.subn(pattern, lambda _m, r=replacement: r, text, count=1)
         if not n:
             changes.append(
-                f"WARNING: anchor not found for {name} — its README.md wording "
+                f"WARNING: anchor not found for {name} — its {source} wording "
                 f"changed, so that claim is no longer synced. Update the "
                 f"pattern in the owning sync script.",
             )
