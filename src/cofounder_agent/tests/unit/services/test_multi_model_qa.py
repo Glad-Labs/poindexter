@@ -408,10 +408,19 @@ class TestTopicDeliveryGate:
         assert review.score == 40
         assert "11 indie hackers" in review.feedback or "names 2" in review.feedback
 
-    async def test_empty_topic_skipped(self, raw_qa):
-        """Empty topic returns None — nothing to check."""
+    async def test_empty_topic_records_an_honest_pass(self, raw_qa):
+        """No topic = nothing to check delivery AGAINST, which is a pass.
+
+        poindexter#1051: this used to return None, and because topic_delivery
+        is required_to_pass the aggregate read that absence as
+        ``missing_required:topic_delivery`` and vetoed a clean draft. The
+        review is scoreless so the honest pass cannot inflate the mean.
+        """
         review = await raw_qa._check_topic_delivery("", GOOD_CONTENT)
-        assert review is None
+        assert review is not None
+        assert review.approved is True
+        assert review.not_applicable is True
+        assert review.score == 0.0
 
     async def test_provider_unreachable_skipped(self, raw_qa):
         """When the dispatch fail-softs to None, gate returns None (skipped)."""

@@ -184,6 +184,15 @@ class ReviewerResult:
     feedback: str
     provider: str  # "ollama", "anthropic", "programmatic"
     advisory: bool = False
+    # ``not_applicable`` (poindexter#1051): the rail RAN and had nothing to
+    # judge — a post with no external URLs for citation_verifier, a task with
+    # no topic for topic_delivery. That is a pass, and it must satisfy
+    # ``required_to_pass`` honestly rather than by absence, because the
+    # aggregate reads an absent required rail as a veto. It carries NO score
+    # into the weighted mean: a vacuous 100 would read as coverage the rail
+    # never actually provided. Distinct from the fail-open contract (degraded
+    # = no review at all + a finding), which is for rails that COULD NOT run.
+    not_applicable: bool = False
 
 
 @dataclass
@@ -2379,7 +2388,28 @@ class MultiModelQA:
         # operator didn't require citations.
         if report.unique_urls == 0:
             if min_count == 0:
-                return None  # No citations to grade; skip the reviewer silently.
+                # poindexter#1051: the rail RAN and had nothing to verify, which
+                # is a pass. Returning None here read as ABSENCE to the
+                # aggregate's required-gate guard, which vetoed clean drafts
+                # with "missing_required:citation_verifier" — a data post with
+                # no external URLs sat in awaiting_approval for five days
+                # carrying a reject verdict and a 95 score. Scoreless, so the
+                # honest pass cannot inflate the mean either.
+                logger.info(
+                    "[MULTI_QA] citation_verifier: N/A (no external URLs, "
+                    "qa_citation_min_count=0)",
+                )
+                return ReviewerResult(
+                    reviewer="citation_verifier",
+                    approved=True,
+                    score=0.0,
+                    feedback=(
+                        "No external citations to verify, and "
+                        "qa_citation_min_count=0 requires none."
+                    ),
+                    provider="http_head",
+                    not_applicable=True,
+                )
             score = 0.0
         else:
             score = max(0.0, 100.0 * (1.0 - report.dead_ratio))
@@ -2406,7 +2436,17 @@ class MultiModelQA:
         hackers named in the body). Returns None if Ollama is unavailable.
         """
         if not topic or not topic.strip():
-            return None
+            # poindexter#1051 — same shape as citation_verifier above: no topic
+            # means nothing to check delivery AGAINST, which is a pass, not the
+            # absence that the required-gate guard turns into a veto.
+            return ReviewerResult(
+                reviewer="topic_delivery",
+                approved=True,
+                score=0.0,
+                feedback="No topic recorded for this task — nothing to check delivery against.",
+                provider="ollama",
+                not_applicable=True,
+            )
         # ~1000 words of opening is enough to see the thesis and main points
         opening = content[:6000]
         prompt = get_prompt_manager().get_prompt(

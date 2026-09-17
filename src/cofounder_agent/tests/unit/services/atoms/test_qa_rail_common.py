@@ -29,6 +29,7 @@ class TestReviewerToDict:
         assert d == {
             "reviewer": "ollama_qa", "approved": True, "score": 88.0,
             "feedback": "fb", "provider": "ollama", "advisory": False,
+            "not_applicable": False,
         }
 
 
@@ -669,3 +670,78 @@ async def test_rerun_critic_unpacks_tuple_and_exception_skips():
     # The crash skips that rail but the loop continues to the next one.
     assert late == []
     assert boom.calls == ["llm_critic", "consistency"]
+
+
+@pytest.mark.unit
+class TestNotApplicableRails:
+    """poindexter#1051 — a required rail that RAN and had nothing to judge.
+
+    Two drafts sat in awaiting_approval for four to five days carrying a
+    ``reject`` verdict at a 95 score, vetoed by ``missing_required:<rail>``,
+    with no content problem the gate could name: a data post with zero
+    external URLs (citation_verifier had nothing to verify) and an essay
+    where topic_delivery produced no review. Silence from a required rail is
+    indistinguishable from a rail that could not run, so the aggregate failed
+    closed on a clean post.
+
+    The fix is that "ran, nothing to judge" says so — satisfying
+    ``required_to_pass`` honestly — while carrying no score, because a
+    vacuous 100 would read as coverage the rail never provided.
+    """
+
+    def _na(self, reviewer: str) -> dict:
+        return {
+            "reviewer": reviewer, "approved": True, "score": 0.0,
+            "feedback": "nothing to judge", "provider": "http_head",
+            "advisory": False, "not_applicable": True,
+        }
+
+    def test_not_applicable_rail_satisfies_the_required_gate(self):
+        gate_states = {"citation_verifier": (True, True)}
+        assert missing_required_gates([self._na("citation_verifier")], gate_states) == []
+
+    def test_absent_rail_is_still_missing(self):
+        """The fail-closed guard must keep working for rails that truly
+        did not run — this fix narrows it, it does not remove it."""
+        gate_states = {"citation_verifier": (True, True)}
+        assert missing_required_gates([], gate_states) == ["citation_verifier"]
+
+    def test_not_applicable_does_not_move_the_score(self):
+        real = {
+            "reviewer": "programmatic_validator", "approved": True, "score": 80.0,
+            "feedback": "", "provider": "programmatic", "advisory": False,
+        }
+        without = aggregate_rail_reviews([real])
+        with_na = aggregate_rail_reviews([real, self._na("citation_verifier")])
+        assert with_na["qa_final_score"] == without["qa_final_score"] == 80.0
+        assert with_na["qa_all_rail_score"] == without["qa_all_rail_score"]
+
+    def test_the_1051_scenario_end_to_end(self):
+        """A clean draft whose only 'problem' was an empty required rail now
+        approves instead of carrying a reject verdict at a 95 score."""
+        reviews = [
+            {"reviewer": "programmatic_validator", "approved": True, "score": 95.0,
+             "feedback": "", "provider": "programmatic", "advisory": False},
+            {"reviewer": "ollama_critic", "approved": True, "score": 95.0,
+             "feedback": "", "provider": "ollama", "advisory": False},
+            self._na("citation_verifier"),
+        ]
+        gate_states = {
+            "programmatic_validator": (True, True),
+            "llm_critic": (True, True),
+            "citation_verifier": (True, True),
+        }
+        result = aggregate_rail_reviews(reviews)
+        assert result["approved"] is True
+        assert result["vetoed_by"] == []
+        assert missing_required_gates(reviews, gate_states) == []
+
+    def test_breakdown_surfaces_the_marker(self):
+        result = aggregate_rail_reviews([
+            {"reviewer": "programmatic_validator", "approved": True, "score": 80.0,
+             "feedback": "", "provider": "programmatic", "advisory": False},
+            self._na("citation_verifier"),
+        ])
+        by_name = {r["reviewer"]: r for r in result["rail_breakdown"]}
+        assert by_name["citation_verifier"]["not_applicable"] is True
+        assert by_name["programmatic_validator"]["not_applicable"] is False

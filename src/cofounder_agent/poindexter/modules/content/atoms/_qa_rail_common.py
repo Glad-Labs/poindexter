@@ -56,6 +56,7 @@ def reviewer_to_dict(r: Any) -> dict[str, Any]:
         "feedback": getattr(r, "feedback", "") or "",
         "provider": r.provider,
         "advisory": bool(getattr(r, "advisory", False)),
+        "not_applicable": bool(getattr(r, "not_applicable", False)),
     }
 
 
@@ -231,12 +232,18 @@ def aggregate_rail_reviews(
     def _counts(r: dict[str, Any]) -> bool:
         if r.get("advisory"):
             return False
+        # Ran, nothing to judge (poindexter#1051): present for the
+        # required-gate check, absent from the score.
+        if r.get("not_applicable"):
+            return False
         if _score(r) > 0:
             return True
         return (not r.get("approved")) and r.get("reviewer") in vetoed_by
 
     non_advisory_scored = [r for r in reviews if _counts(r)]
-    scored = non_advisory_scored or [r for r in reviews if _score(r) > 0]
+    scored = non_advisory_scored or [
+        r for r in reviews if _score(r) > 0 and not r.get("not_applicable")
+    ]
     if scored:
         total_w = sum(
             _weight_for(r.get("provider"), validator_weight=validator_weight,
@@ -266,7 +273,12 @@ def aggregate_rail_reviews(
     # per-rail detail (score, pass, advisory flag, feedback) so a false positive
     # is diagnosable instead of invisible. Neither gates — do NOT compare
     # ``qa_all_rail_score`` to the threshold.
-    all_scored = [r for r in reviews if _score(r) > 0]
+    # not_applicable rails are excluded here too: the all-rail score is the
+    # operator's "what did every rail think" number, and a rail that had
+    # nothing to judge thought nothing (poindexter#1051).
+    all_scored = [
+        r for r in reviews if _score(r) > 0 and not r.get("not_applicable")
+    ]
     if all_scored:
         all_w = sum(
             _weight_for(r.get("provider"), validator_weight=validator_weight,
@@ -291,6 +303,7 @@ def aggregate_rail_reviews(
             "provider": r.get("provider"),
             "score": round(_score(r), 2),
             "approved": bool(r.get("approved")),
+            "not_applicable": bool(r.get("not_applicable")),
             "advisory": bool(r.get("advisory")),
             "gated": _score(r) > 0 and not r.get("advisory"),
             "feedback": (r.get("feedback") or "")[:200],
