@@ -3945,6 +3945,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # call cold-loads mid-pipeline and the rail passes open. No-ops on installs
     # with no override map configured (the OSS single-endpoint path).
     'warm_pinned_llm_endpoints_enabled': 'true',
+    # How many of its OWN override tags one pinned endpoint may hold at once.
+    # A pinned instance normally runs OLLAMA_MAX_LOADED_MODELS=1, so when the
+    # override map routes two tags to it the warmer must warm ONE and report
+    # the other (pinned_endpoint_overcommitted) rather than evict-reload both
+    # every fire — measured 2026-09-17: two 50 s loads per fire, judge cold for
+    # real calls half the time. Raise only if the instance really holds more.
+    'warm_pinned_llm_max_models_per_endpoint': '1',
     # ----- Settings read-telemetry + orphan probe (#756 items 2-3) -----
     # SiteConfig.get records read keys in-memory; FlushSettingsReadTelemetryJob
     # stamps app_settings.last_read_at each minute; ProbeZeroReaderSettingsJob
@@ -6197,6 +6204,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'voice_agent_whisper_model': {'value_type': 'model'},
     'wan_server_url': {'owner': 'wan2_1'},
     'warm_pinned_llm_endpoints_enabled': {'owner': 'warm_pinned_llm_endpoints', 'value_type': 'boolean'},
+    'warm_pinned_llm_max_models_per_endpoint': {'owner': 'warm_pinned_llm_endpoints', 'value_type': 'integer'},
     'worker_heartbeat_interval_seconds': {'owner': 'worker_service', 'value_type': 'integer'},
     'writer_disable_thinking': {'owner': 'two_pass_writer', 'value_type': 'boolean'},
     'writer_length_expansion_enabled': {'owner': 'two_pass_writer', 'value_type': 'boolean'},

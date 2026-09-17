@@ -184,3 +184,111 @@ def test_job_is_registered_and_instantiable():
         "WarmPinnedLlmEndpointsJob is not in the registry's job samples — it "
         f"would never run. Registered jobs: {sorted(n for n in names if n)}"
     )
+
+
+# --- the shared-slot trap (2026-09-17) -------------------------------------
+#
+# A pinned instance is normally a ONE-slot instance (OLLAMA_MAX_LOADED_MODELS=1).
+# Routing two different tags to it made every fire warm A (evicting B) and then
+# warm B (evicting A): two 50 s loads per fire, the judge cold half the time.
+
+_OTHER_MODEL = "ollama/qwen3-vl:30b-a3b-instruct"
+_OTHER_TAG = "qwen3-vl:30b-a3b-instruct"
+_TWO_TAGS = {_MODEL: _PINNED, _OTHER_MODEL: _PINNED}
+
+
+def _site_config_with_cap(cap: str) -> MagicMock:
+    sc = _site_config()
+    sc.get.side_effect = lambda key, default="": {
+        "ollama_num_ctx": "8192",
+        "warm_pinned_llm_max_models_per_endpoint": cap,
+    }.get(key, default)
+    return sc
+
+
+@pytest.mark.asyncio
+async def test_second_tag_on_a_full_single_slot_endpoint_is_not_warmed():
+    """One resident pin + one absent sibling: warming the sibling would EVICT
+    the pin, so the job must leave it alone and count it as skipped."""
+    client, ctx = _client({"models": [{"name": _OTHER_TAG, "size_vram": 1}]})
+    result = await _run(ctx, _TWO_TAGS)
+
+    assert result.ok is True
+    client.post.assert_not_awaited()
+    assert result.changes_made == 0
+    assert result.metrics["already_resident"] == 1
+    assert result.metrics["skipped_shared_slot"] == 1
+    assert "skipped_shared_slot=1" in result.detail
+
+
+@pytest.mark.asyncio
+async def test_cold_endpoint_with_two_tags_warms_exactly_one():
+    """Both absent: warm the first, then the slot is full — the second tag must
+    not be loaded in the SAME fire either (that is the ping-pong's first leg)."""
+    client, ctx = _client({"models": []})
+    result = await _run(ctx, _TWO_TAGS)
+
+    client.post.assert_awaited_once()
+    assert client.post.await_args.kwargs["json"]["model"] == _TAG
+    assert result.metrics["warmed"] == 1
+    assert result.metrics["skipped_shared_slot"] == 1
+
+
+@pytest.mark.asyncio
+async def test_raising_the_per_endpoint_cap_warms_both():
+    """An instance that really runs OLLAMA_MAX_LOADED_MODELS=2 opts in via the
+    setting; the cap is DB-first, not a constant."""
+    client, ctx = _client({"models": []})
+    result = await _run(ctx, _TWO_TAGS, site_config=_site_config_with_cap("2"))
+
+    assert client.post.await_count == 2
+    assert {c.kwargs["json"]["model"] for c in client.post.await_args_list} == {_TAG, _OTHER_TAG}
+    assert result.metrics["warmed"] == 2
+    assert result.metrics["skipped_shared_slot"] == 0
+
+
+@pytest.mark.asyncio
+async def test_two_spellings_of_one_tag_are_one_model():
+    """``ollama/x`` and ``ollama_chat/x`` route the same weights; they must
+    count as ONE tag, not trip the shared-slot guard against each other."""
+    client, ctx = _client({"models": []})
+    result = await _run(ctx, {"ollama/" + _TAG: _PINNED, "ollama_chat/" + _TAG: _PINNED})
+
+    client.post.assert_awaited_once()
+    assert result.metrics["warmed"] == 1
+    assert result.metrics["skipped_shared_slot"] == 0
+    assert result.metrics["pinned_endpoints"] == 1
+
+
+@pytest.mark.asyncio
+async def test_overcommitted_endpoint_raises_a_finding_naming_the_tags():
+    """The skip must be VISIBLE: an operator who routed two tags to one slot
+    gets told which one is being held and which is not being warmed."""
+    import contextlib
+
+    client, ctx = _client({"models": [{"name": _OTHER_TAG, "size_vram": 1}]})
+    findings: list[dict[str, Any]] = []
+    with contextlib.ExitStack() as stack:
+        for p in _patches(ctx, _TWO_TAGS):
+            stack.enter_context(p)
+        stack.enter_context(
+            patch("poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)),
+        )
+        await WarmPinnedLlmEndpointsJob().run(
+            pool=MagicMock(), config={"_site_config": _site_config()},
+        )
+
+    kinds = [f["kind"] for f in findings]
+    assert kinds == ["pinned_endpoint_overcommitted"], kinds
+    body = findings[0]["body"]
+    assert _OTHER_TAG in body and _TAG in body
+    assert findings[0]["severity"] == "warn"
+    assert findings[0]["dedup_key"] == f"pinned_endpoint_overcommitted_{_PINNED}"
+
+
+def test_non_integer_cap_falls_back_to_one():
+    from poindexter.services.jobs.warm_pinned_llm_endpoints import _max_models_per_endpoint
+
+    assert _max_models_per_endpoint(_site_config_with_cap("two")) == 1
+    assert _max_models_per_endpoint(_site_config_with_cap("0")) == 1
+    assert _max_models_per_endpoint(_site_config_with_cap("3")) == 3

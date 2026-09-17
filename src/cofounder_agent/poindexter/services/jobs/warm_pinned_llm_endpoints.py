@@ -25,6 +25,19 @@ Scope is deliberately narrow: only endpoints that ``model_api_base_overrides``
 declares, and only when the model is genuinely absent. The default endpoint is
 left alone — it serves many models under ``OLLAMA_MAX_LOADED_MODELS=1``, so
 warming one there would just evict whatever the pipeline is using.
+
+**The shared-slot trap (2026-09-17).** A pinned instance is usually a one-slot
+instance too (``OLLAMA_MAX_LOADED_MODELS=1`` on the operator's :11435). When the
+override map routes TWO tags to it — measured: ``qwen3-vl:30b`` and
+``qwen3-vl:30b-a3b-instruct``, both to the 3090 — every fire warmed the first,
+evicting the second, then warmed the second, evicting the first: two 50-second
+loads and ~40 GB of PCIe traffic every five minutes, the judge cold for a real
+call half the time, and each ``pinned_endpoint_cold`` finding deduped by tag so
+nothing looked wrong. The job therefore treats each endpoint as holding at most
+``warm_pinned_llm_max_models_per_endpoint`` (default 1) of its own override
+tags: once that many are resident or just warmed, the remaining tags are left
+alone and a ``pinned_endpoint_overcommitted`` finding names them, because a
+warm that evicts a pinned sibling is not a warm.
 """
 
 from __future__ import annotations
@@ -39,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 # app_settings keys (seeded in settings_defaults.py).
 _ENABLED_KEY = "warm_pinned_llm_endpoints_enabled"
+_MAX_PER_ENDPOINT_KEY = "warm_pinned_llm_max_models_per_endpoint"
 _PROVIDER = "litellm"
 _WARM_TIMEOUT_SECONDS = 300  # a cold 18GB load is slow; well under the 5m period
 
@@ -54,6 +68,18 @@ def _resident_models(payload: Any) -> set[str]:
             if name:
                 out.add(str(name))
     return out
+
+
+def _max_models_per_endpoint(site_config: Any) -> int:
+    """How many of its own pinned tags one endpoint may hold at once (>= 1)."""
+    raw = str(site_config.get(_MAX_PER_ENDPOINT_KEY, "1") or "1").strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logger.warning(
+            "[warm_pinned] %s=%r is not an integer; using 1", _MAX_PER_ENDPOINT_KEY, raw,
+        )
+        return 1
 
 
 class WarmPinnedLlmEndpointsJob:
@@ -82,7 +108,6 @@ class WarmPinnedLlmEndpointsJob:
 
         from poindexter.services.llm_providers.dispatcher import get_provider_config
         from poindexter.services.llm_providers.litellm_provider import _coerce_override_map
-        from poindexter.services.ollama_client import resolve_num_ctx
         from poindexter.utils.findings import emit_finding
 
         provider_config = await get_provider_config(pool, _PROVIDER)
@@ -96,81 +121,95 @@ class WarmPinnedLlmEndpointsJob:
             )
         default_base = str(provider_config.get("api_base") or "").strip()
 
+        max_per_endpoint = _max_models_per_endpoint(site_config)
+
         warmed: list[str] = []
         already: list[str] = []
         failed: list[str] = []
+        skipped: list[str] = []
+
+        # Group the map by endpoint first: the ``ollama/`` and ``ollama_chat/``
+        # spellings of one tag are the same model, and two DIFFERENT tags on
+        # one endpoint are the shared-slot trap the module docstring describes.
+        by_endpoint: dict[str, list[str]] = {}
+        for model, endpoint in overrides.items():
+            endpoint = str(endpoint or "").strip().rstrip("/")
+            # An override pointing at the default endpoint is the SAME
+            # server — warming there would evict live work, not protect it.
+            if not endpoint or endpoint == default_base:
+                continue
+            tag = str(model).split("/", 1)[-1]
+            tags = by_endpoint.setdefault(endpoint, [])
+            if tag not in tags:
+                tags.append(tag)
 
         async with httpx.AsyncClient() as client:
-            for model, endpoint in overrides.items():
-                endpoint = str(endpoint or "").strip().rstrip("/")
-                # An override pointing at the default endpoint is the SAME
-                # server — warming there would evict live work, not protect it.
-                if not endpoint or endpoint == default_base:
-                    continue
-                tag = str(model).split("/", 1)[-1]
+            for endpoint, tags in by_endpoint.items():
                 try:
                     resp = await client.get(f"{endpoint}/api/ps", timeout=10)
                     resp.raise_for_status()
                     resident = _resident_models(resp.json())
                 except Exception as exc:
                     logger.warning(
-                        "[warm_pinned] %s unreachable at %s: %s", tag, endpoint, describe_exception(exc),
+                        "[warm_pinned] %s unreachable at %s: %s",
+                        ", ".join(tags), endpoint, describe_exception(exc),
                     )
-                    failed.append(tag)
+                    failed.extend(tags)
                     continue
 
-                if tag in resident:
-                    already.append(tag)
-                    continue
+                # Slots this endpoint already spends on its OWN pinned tags.
+                # A foreign model resident there is not ours to count — the
+                # warm below evicts it, which is the documented intent.
+                held = [t for t in tags if t in resident]
+                already.extend(held)
+                overcommitted: list[str] = []
 
-                # Context must match what real calls will request or Ollama
-                # reloads on first use and the warm was wasted — see module docs.
-                num_ctx = resolve_num_ctx(None, site_config=site_config)
-                try:
-                    warm = await client.post(
-                        f"{endpoint}/api/generate",
-                        json={
-                            "model": tag,
-                            "prompt": "warm",
-                            "stream": False,
-                            # -1 = never evict; the pin only pays off if it stays.
-                            "keep_alive": -1,
-                            "options": {"num_ctx": num_ctx},
-                        },
-                        timeout=_WARM_TIMEOUT_SECONDS,
-                    )
-                    warm.raise_for_status()
-                except Exception as exc:
+                for tag in tags:
+                    if tag in resident:
+                        continue
+                    if len(held) >= max_per_endpoint:
+                        # Warming this tag would evict a pinned sibling, and the
+                        # next fire would warm the sibling back: the ping-pong.
+                        overcommitted.append(tag)
+                        continue
+                    if not await self._warm(
+                        client, endpoint=endpoint, tag=tag, site_config=site_config,
+                        failed=failed,
+                    ):
+                        continue
+                    warmed.append(tag)
+                    held.append(tag)
+
+                if overcommitted:
+                    skipped.extend(overcommitted)
                     logger.warning(
-                        "[warm_pinned] failed to warm %s at %s: %s", tag, endpoint, describe_exception(exc),
+                        "[warm_pinned] %s holds %d pinned model(s) but the override "
+                        "map routes %d tags there; not warming %s (it would evict "
+                        "%s) — trim model_api_base_overrides or raise %s",
+                        endpoint, len(held), len(tags), ", ".join(overcommitted),
+                        ", ".join(held), _MAX_PER_ENDPOINT_KEY,
                     )
-                    failed.append(tag)
-                    continue
-
-                warmed.append(tag)
-                # A warm that actually fired means the endpoint WAS cold — either
-                # a restart or an unexpected eviction. Surface it: silently
-                # re-warming would hide exactly the condition #2051 was about.
-                # Called bare, like every other job: emit_finding is documented
-                # fire-and-forget and never raises, so wrapping it would only
-                # add a swallow the silent-except ratchet rightly rejects.
-                emit_finding(
-                    source="warm_pinned_llm_endpoints",
-                    kind="pinned_endpoint_cold",
-                    severity="warn",
-                    title=f"pinned endpoint was cold — warmed {tag}",
-                    body=(
-                        f"{tag} was not resident at {endpoint} (num_ctx="
-                        f"{num_ctx}). Expected after an Ollama restart; "
-                        "recurring outside restarts means something is "
-                        "evicting a model that should never be evicted."
-                    ),
-                    dedup_key=f"pinned_endpoint_cold_{tag}",
-                )
+                    emit_finding(
+                        source="warm_pinned_llm_endpoints",
+                        kind="pinned_endpoint_overcommitted",
+                        severity="warn",
+                        title=f"pinned endpoint overcommitted — {len(tags)} tags for {max_per_endpoint} slot(s)",
+                        body=(
+                            f"{endpoint} is routed {len(tags)} model tag(s) "
+                            f"({', '.join(tags)}) but can hold {max_per_endpoint} "
+                            f"(warm_pinned_llm_max_models_per_endpoint). Holding "
+                            f"{', '.join(held)}; NOT warming {', '.join(overcommitted)} "
+                            "because that would evict the resident pin and the next "
+                            "fire would evict it back. Remove the unused tag(s) from "
+                            "model_api_base_overrides, or raise the cap if the "
+                            "instance really runs OLLAMA_MAX_LOADED_MODELS>1."
+                        ),
+                        dedup_key=f"pinned_endpoint_overcommitted_{endpoint}",
+                    )
 
         detail = (
             f"warmed={len(warmed)} already_resident={len(already)} "
-            f"unreachable={len(failed)}"
+            f"unreachable={len(failed)} skipped_shared_slot={len(skipped)}"
         )
         return JobResult(
             # Unreachable endpoints are the operator's signal, but this job is
@@ -183,6 +222,61 @@ class WarmPinnedLlmEndpointsJob:
                 "warmed": len(warmed),
                 "already_resident": len(already),
                 "unreachable": len(failed),
-                "pinned_endpoints": len(overrides),
+                "skipped_shared_slot": len(skipped),
+                "pinned_endpoints": len(by_endpoint),
             },
         )
+
+    @staticmethod
+    async def _warm(
+        client: Any, *, endpoint: str, tag: str, site_config: Any, failed: list[str],
+    ) -> bool:
+        """Load ``tag`` on ``endpoint`` never-evict; False (and recorded) on failure."""
+        from poindexter.services.ollama_client import resolve_num_ctx
+        from poindexter.utils.findings import emit_finding
+
+        # Context must match what real calls will request or Ollama
+        # reloads on first use and the warm was wasted — see module docs.
+        num_ctx = resolve_num_ctx(None, site_config=site_config)
+        try:
+            warm = await client.post(
+                f"{endpoint}/api/generate",
+                json={
+                    "model": tag,
+                    "prompt": "warm",
+                    "stream": False,
+                    # -1 = never evict; the pin only pays off if it stays.
+                    "keep_alive": -1,
+                    "options": {"num_ctx": num_ctx},
+                },
+                timeout=_WARM_TIMEOUT_SECONDS,
+            )
+            warm.raise_for_status()
+        except Exception as exc:
+            logger.warning(
+                "[warm_pinned] failed to warm %s at %s: %s", tag, endpoint, describe_exception(exc),
+            )
+            failed.append(tag)
+            return False
+
+        # A warm that actually fired means the endpoint WAS cold — either
+        # a restart or an unexpected eviction. Surface it: silently
+        # re-warming would hide exactly the condition #2051 was about.
+        # Called bare, like every other job: emit_finding is documented
+        # fire-and-forget and never raises, so wrapping it would only
+        # add a swallow the silent-except ratchet rightly rejects.
+        emit_finding(
+            source="warm_pinned_llm_endpoints",
+            kind="pinned_endpoint_cold",
+            severity="warn",
+            title=f"pinned endpoint was cold — warmed {tag}",
+            body=(
+                f"{tag} was not resident at {endpoint} (num_ctx="
+                f"{num_ctx}). Expected after an Ollama restart; "
+                "recurring outside restarts means something is "
+                "evicting a model that should never be evicted."
+            ),
+            dedup_key=f"pinned_endpoint_cold_{tag}",
+        )
+        return True
+
