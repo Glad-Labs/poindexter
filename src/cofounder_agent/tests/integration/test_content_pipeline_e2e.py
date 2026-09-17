@@ -126,7 +126,13 @@ def _make_client(**kwargs):
     return OllamaClient(base_url=_ollama_base_url(), **kwargs)
 
 
-pytestmark = pytest.mark.integration
+# Gated at MODULE level (2026-09-17), not per class. An earlier pass gated only
+# TestThinkingModels — the class that happened to fail — and CI failed again two
+# days later on TestOllamaConnectivity and TestContentGeneration. FIVE of the six
+# classes here drive live Ollama; gating the failing one fixed a sixth of the
+# problem. The dependency belongs to the file, so the gate does too, and a class
+# added tomorrow inherits it. Matches every sibling real-services module.
+pytestmark = [pytest.mark.integration, requires_real_services]
 
 
 @pytest.fixture(autouse=True)
@@ -837,7 +843,6 @@ async def _gpu_serialized(model: str, *, phase: str, needs_mib: int = 0):
         await asyncio.sleep(5)
     yield
 
-@requires_real_services
 class TestThinkingModels:
     """Verify thinking models return non-empty content with sufficient token budget.
 
