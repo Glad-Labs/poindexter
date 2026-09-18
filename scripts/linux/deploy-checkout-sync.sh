@@ -369,6 +369,7 @@ declare -A REBUILD_MAP=(
   ['^scripts/(Dockerfile\.image-gen|image-gen-server\.py)$']="image-gen-server"
   ['^scripts/(Dockerfile\.wan|wan-server\.py)$']="wan-server"
   ['^scripts/(Dockerfile\.stable-audio|stable-audio-server\.py)$']="stable-audio-server"
+  ['^scripts/(Dockerfile\.rife|rife-server\.py)$']="rife-server"
   ['^scripts/Dockerfile\.chatterbox$|^scripts/tts_sidecars/']="chatterbox"
   ['^scripts/(Dockerfile\.comfyui|comfyui-extra-model-paths\.yaml)$']="comfyui"
   # auto-embed bakes a hand-picked SUBSET of the backend tree into a minimal

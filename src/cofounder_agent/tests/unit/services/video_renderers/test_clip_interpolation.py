@@ -162,3 +162,131 @@ def test_probe_fps_parses_a_rational():
 
     with patch.object(slr.asyncio, "create_subprocess_exec", fake):
         assert asyncio.run(slr._probe_fps("/x.mp4")) == 16.0
+
+
+# --- RIFE sidecar (2026-09-18) ----------------------------------------------
+#
+# ffmpeg's minterpolate warps pixels along estimated motion vectors; on a
+# talking head it morphs the mouth, where estimation fails. RIFE predicts the
+# intermediate frame with a learned flow model. The sidecar is preferred when
+# it answers and ffmpeg remains the fallback, because an ffmpeg-interpolated
+# clip is a quality regression while a missing clip is a lost shot.
+
+
+def _rife_sc(**over):
+    base = {"video_clip_interpolation_enabled": "true", "rife_server_url": "http://rife:9841"}
+    base.update(over)
+    return SiteConfig(initial_config=base)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_rife_is_preferred_and_ffmpeg_never_runs(tmp_path, monkeypatch):
+    clip = tmp_path / "presenter_0.mp4"
+    clip.write_bytes(b"native16")
+    monkeypatch.setattr(slr, "_probe_fps", AsyncMock(return_value=16.0))
+    seen = {}
+
+    async def fake_rife(path, *, site_config, target_fps, timeout_s):
+        seen.update(path=path, target_fps=target_fps, timeout_s=timeout_s)
+        return True, '{"model_calls": 1377}'
+
+    monkeypatch.setattr(slr, "_rife_interpolate", fake_rife)
+    calls: list[list[str]] = []
+    with patch.object(slr.asyncio, "create_subprocess_exec", _fake_exec(calls)):
+        changed, detail = await slr._interpolate_clip_fps(str(clip), site_config=_rife_sc())
+
+    assert changed is True and detail.startswith("rife ")
+    assert seen["target_fps"] == 30.0 and seen["path"] == str(clip)
+    assert calls == [], "ffmpeg must not run when RIFE succeeded"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_auto_falls_back_to_ffmpeg_when_rife_misses(tmp_path, monkeypatch):
+    clip = tmp_path / "hero.mp4"
+    clip.write_bytes(b"native16")
+    monkeypatch.setattr(slr, "_probe_fps", AsyncMock(return_value=16.0))
+    monkeypatch.setattr(slr, "_rife_interpolate", AsyncMock(return_value=(False, "connection refused")))
+    calls: list[list[str]] = []
+    with patch.object(slr.asyncio, "create_subprocess_exec", _fake_exec(calls)):
+        changed, detail = await slr._interpolate_clip_fps(str(clip), site_config=_rife_sc())
+
+    assert changed is True and detail == "16 -> 30 fps"
+    assert calls and "minterpolate=fps=30:" in calls[0][calls[0].index("-vf") + 1]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_engine_rife_refuses_to_fall_back(tmp_path, monkeypatch):
+    """An operator who pinned RIFE would rather ship 16 fps than morphed faces."""
+    clip = tmp_path / "hero.mp4"
+    clip.write_bytes(b"native16")
+    monkeypatch.setattr(slr, "_probe_fps", AsyncMock(return_value=16.0))
+    monkeypatch.setattr(slr, "_rife_interpolate", AsyncMock(return_value=(False, "HTTP 503")))
+    calls: list[list[str]] = []
+    with patch.object(slr.asyncio, "create_subprocess_exec", _fake_exec(calls)):
+        changed, detail = await slr._interpolate_clip_fps(
+            str(clip), site_config=_rife_sc(video_clip_interpolation_engine="rife"),
+        )
+
+    assert changed is False and "rife unavailable" in detail
+    assert calls == []
+    assert clip.read_bytes() == b"native16"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_engine_ffmpeg_never_calls_the_sidecar(tmp_path, monkeypatch):
+    clip = tmp_path / "hero.mp4"
+    clip.write_bytes(b"native16")
+    monkeypatch.setattr(slr, "_probe_fps", AsyncMock(return_value=16.0))
+    rife = AsyncMock(return_value=(True, "ok"))
+    monkeypatch.setattr(slr, "_rife_interpolate", rife)
+    calls: list[list[str]] = []
+    with patch.object(slr.asyncio, "create_subprocess_exec", _fake_exec(calls)):
+        changed, _ = await slr._interpolate_clip_fps(
+            str(clip), site_config=_rife_sc(video_clip_interpolation_engine="ffmpeg"),
+        )
+    assert changed is True
+    rife.assert_not_awaited()
+    assert calls
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_rife_call_without_a_url_is_a_clean_miss(tmp_path):
+    ok, detail = await slr._rife_interpolate(
+        str(tmp_path / "x.mp4"), site_config=_rife_sc(rife_server_url=""),
+        target_fps=30.0, timeout_s=5.0,
+    )
+    assert ok is False and "rife_server_url" in detail
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_rife_leaves_the_clip_alone_when_the_sidecar_errors(tmp_path, monkeypatch):
+    """A failed exchange must never destroy the provider's render."""
+    clip = tmp_path / "c.mp4"
+    clip.write_bytes(b"native16")
+
+    class _Resp:
+        status_code = 503
+        text = "model unavailable"
+        content = b""
+        headers: dict[str, str] = {}
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *a, **k): return _Resp()
+
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    ok, detail = await slr._rife_interpolate(
+        str(clip), site_config=_rife_sc(), target_fps=30.0, timeout_s=5.0,
+    )
+    assert ok is False and "503" in detail
+    assert clip.read_bytes() == b"native16"
+    assert not (tmp_path / "c.mp4.rife.mp4").exists()

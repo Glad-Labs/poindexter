@@ -75,6 +75,7 @@ _OVERRIDES: dict[str, str] = {
     "enabled_topic_sources": "content",
     "flux_schnell_server_url": "media",
     "wan_server_url": "media",
+    "rife_server_url": "media",
     "nvidia_exporter_url": "observability",
     "allowed_origins": "infrastructure",
     "disable_auth_for_dev": "infrastructure",

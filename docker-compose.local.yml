@@ -1381,6 +1381,40 @@ services:
   # plugin.audio_gen_provider.stable-audio-open-1.0.server_url
   # (http://stable-audio-server:9839). DEGRADED-not-dead on any config/
   # license gap — /health carries the reason.
+  # RIFE frame interpolation — raises generative clips (Wan S2V presenters,
+  # hero i2v) from the model's native 16 fps to the timeline's 30. ffmpeg's
+  # minterpolate warps pixels along estimated motion vectors and morphs faces
+  # where estimation fails; RIFE does not. Tiny (12 MB weights), unloads after
+  # 5 min idle and honours /unload, so it never squats the render card.
+  # Consumed via app_settings.rife_server_url; the renderer falls back to
+  # ffmpeg whenever this is unreachable.
+  rife-server:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.rife
+    container_name: poindexter-rife
+    restart: unless-stopped
+    oom_score_adj: 400
+    ports:
+      - "9842:9842"
+    environment:
+      RIFE_PORT: "9842"
+      RIFE_IDLE_TIMEOUT: "300"
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9842/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   stable-audio-server:
     build:
       context: ./scripts

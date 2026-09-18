@@ -184,6 +184,43 @@ in `framerate=fps={fps}` for a cheaper blend, or a RIFE node later),
 interpolated file replaces the original only after ffmpeg exits 0 with output
 on disk; any failure keeps the provider's clip and logs why.
 
+
+### The interpolator: RIFE, with ffmpeg as the fallback
+
+`minterpolate` warps pixels along estimated motion vectors. Where estimation
+fails — on a talking head that is the mouth and teeth — the result **morphs**
+(operator, 2026-09-18: "a weird morphing of the image"). It is inherent to
+block-matching motion compensation, not a tuning problem: `mi_mode=blend`
+removes the warping but ghosts moving edges, and `mi_mode=dup` is the judder we
+added interpolation to remove.
+
+Since stack#3862 the renderer prefers the **RIFE sidecar** (`rife-server`,
+`scripts/rife-server.py`), which predicts the intermediate frame with a learned
+flow model. Notes that matter:
+
+- **It is a sidecar, not a ComfyUI node.** `Dockerfile.comfyui` is deliberately
+  core-nodes-only ("custom nodes are ComfyUI's malware surface") and RIFE ships
+  as a custom node pack. A sidecar keeps that boundary *and* serves every clip
+  the renderer makes, including hero i2v from the `wan21` provider.
+- **Weights and architecture are one pinned, MIT-licensed HF repo**
+  (`TensorForger/RIFE-safetensors`, RIFE v4 / ECCV2022-RIFE, © Megvii), 12 MB,
+  vendored into the image at build time — never into the repo tree, the same
+  posture as the pinned ComfyUI clone.
+- **The model only does midpoints.** An arbitrary rate change is recursive
+  bisection to a power-of-two dense grid, then a nearest-frame resample. The
+  grid deliberately overshoots the target by `RIFE_DENSE_MULTIPLE` (2.0):
+  stopping at 32 fps for a 30 fps ask leaves up to 15.6 ms of timing error,
+  nearly half an output frame, which reads as judder; 64 fps halves it to
+  7.8 ms for 3 model calls per source pair instead of 1.
+- **It never squats the render card.** 12 MB, unloads after 5 minutes idle,
+  and honours `/unload` (soft and hard) like every other sidecar.
+
+`video_clip_interpolation_engine`: `auto` (RIFE when it answers, else ffmpeg),
+`rife` (RIFE or leave the native rate — an operator who would rather ship 16 fps
+than morphed faces), `ffmpeg` (block matching only). The fallback direction is
+deliberate: an ffmpeg-interpolated clip is a quality regression, a missing clip
+is a lost shot.
+
 ## Presenter motion register: three settings, no code
 
 Operator feedback 2026-09-17: the talking head "doesn't look natural" — too

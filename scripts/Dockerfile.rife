@@ -1,0 +1,59 @@
+# RIFE — frame-interpolation sidecar for the video renderer
+# (services/video_renderers/shot_list_renderer.py::_interpolate_clip_fps).
+#
+# WHY A SIDECAR AND NOT A COMFYUI NODE: Dockerfile.comfyui is deliberately
+# core-nodes-only ("custom nodes are ComfyUI's malware surface") and RIFE ships
+# as a custom node pack. This keeps that boundary intact, and it makes the
+# interpolator available to EVERY clip the renderer produces — hero i2v from
+# the wan21 provider as well as presenter S2V from ComfyUI — instead of only
+# to clips that happen to pass through a ComfyUI graph.
+#
+# WHY IT EXISTS AT ALL: ffmpeg's `minterpolate` warps pixels along estimated
+# motion vectors, and where estimation fails — on a talking head that is the
+# mouth and teeth — it morphs (operator, 2026-09-18: "a weird morphing of the
+# image"). RIFE estimates intermediate optical flow with a learned model and
+# does not smear faces the same way.
+#
+# WEIGHTS + ARCHITECTURE both come from one MIT-licensed HF repo, pinned by
+# commit. 12 MB. The architecture file is a clean-up of ECCV2022-RIFE's
+# model/IFNet.py (MIT, (c) Megvii Inc.) — vendored INTO THE IMAGE at build
+# time, never into the repo tree, same posture as the pinned ComfyUI clone.
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    fastapi \
+    "uvicorn[standard]" \
+    "python-multipart" \
+    pydantic \
+    asyncpg \
+    numpy \
+    safetensors
+
+# Pinned revision — bump deliberately, it changes how every clip looks.
+ARG RIFE_REV=78a62b7c2dd910536432d6c2c3a25e76f14fbf78
+ARG RIFE_BASE=https://huggingface.co/TensorForger/RIFE-safetensors/resolve/${RIFE_REV}
+RUN wget -q -O /app/interpolation_model.py ${RIFE_BASE}/interpolation_model.py && \
+    wget -q -O /app/flownet.safetensors     ${RIFE_BASE}/flownet.safetensors && \
+    wget -q -O /app/RIFE_LICENSE            ${RIFE_BASE}/LICENSE && \
+    python -c "import ast,sys; ast.parse(open('/app/interpolation_model.py').read())" && \
+    test -s /app/flownet.safetensors
+
+COPY rife-server.py /app/rife-server.py
+
+# Non-root, matching the other sidecars (Trivy DS-0002). Nothing here needs
+# root: the server reads /app and writes only to per-request temp dirs.
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
+    chown -R appuser:appgroup /app /home/appuser
+USER appuser
+
+ENV PYTHONUNBUFFERED=1
+EXPOSE 9842
+CMD ["python", "/app/rife-server.py"]

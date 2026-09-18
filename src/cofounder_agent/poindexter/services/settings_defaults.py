@@ -732,6 +732,16 @@ DEFAULTS: dict[str, str] = {
     # geometry — measured 27 s CPU for a 9.6 s 960x544 clip). {fps} in the
     # filter is the target. Disable to ship the provider's frames as-is.
     'video_clip_interpolation_enabled': 'true',
+    # Which interpolator. 'auto' = RIFE when the sidecar answers, else ffmpeg's
+    # minterpolate; 'rife' = RIFE or nothing (leave the native frame rate
+    # rather than ship morphed faces); 'ffmpeg' = the block-matching path only.
+    # minterpolate warps pixels along estimated motion vectors and morphs a
+    # talking head's mouth where estimation fails (operator, 2026-09-18);
+    # RIFE predicts the intermediate frame with a learned flow model.
+    'video_clip_interpolation_engine': 'auto',
+    # The RIFE sidecar (scripts/rife-server.py, compose service rife-server).
+    # Empty = no sidecar, so 'auto' silently uses ffmpeg.
+    'rife_server_url': 'http://rife-server:9842',
     'video_clip_interpolation_target_fps': '30',
     'video_clip_interpolation_filter': (
         'minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1'
@@ -5097,6 +5107,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},
+    'video_clip_interpolation_engine': {'owner': 'video', 'value_type': 'string'},
+    'rife_server_url': {'owner': 'video', 'value_type': 'url'},
     'video_clip_interpolation_target_fps': {'owner': 'video', 'value_type': 'integer'},
     'video_clip_interpolation_filter': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_timeout_s': {'owner': 'video', 'value_type': 'integer'},

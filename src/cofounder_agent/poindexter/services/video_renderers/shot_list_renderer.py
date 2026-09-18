@@ -1146,6 +1146,62 @@ async def _probe_fps(path: str, *, ffprobe: str = "ffprobe") -> float | None:
         return None
 
 
+async def _rife_interpolate(
+    clip_path: str, *, site_config: Any, target_fps: float, timeout_s: float,
+) -> tuple[bool, str]:
+    """Send the clip to the RIFE sidecar and replace it with the result.
+
+    ffmpeg's ``minterpolate`` warps pixels along estimated motion vectors; on a
+    talking head, estimation fails exactly where the detail is — the mouth and
+    teeth — and the result morphs (operator, 2026-09-18). RIFE predicts the
+    intermediate frame with a learned flow model instead. Transport is HTTP
+    upload/download: no shared mount, the same boundary the ComfyUI provider
+    keeps.
+
+    ``(False, reason)`` on any miss, and the caller falls back to ffmpeg — an
+    ffmpeg-interpolated clip is a quality regression, a missing clip is a lost
+    shot.
+    """
+    url = ""
+    if site_config is not None:
+        try:
+            url = str(site_config.get("rife_server_url", "") or "").strip().rstrip("/")
+        except Exception:  # noqa: BLE001
+            # silent-ok: a settings read must not decide a render's fate; the
+            # ffmpeg path below still runs.
+            url = ""
+    if not url:
+        return False, "no rife_server_url configured"
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s, connect=10.0)) as client:
+            with open(clip_path, "rb") as fh:
+                resp = await client.post(
+                    f"{url}/interpolate",
+                    files={"file": (os.path.basename(clip_path), fh, "video/mp4")},
+                    data={"target_fps": f"{target_fps:g}"},
+                )
+            if resp.status_code != 200:
+                return False, f"rife HTTP {resp.status_code}: {resp.text[:160]}"
+            body = resp.content
+            stats = resp.headers.get("X-Rife-Stats", "")
+        if not body:
+            return False, "rife returned an empty body"
+        # Write beside the clip and swap only once it is fully on disk, so a
+        # truncated response can never destroy the provider's render.
+        tmp_out = f"{clip_path}.rife.mp4"
+        with open(tmp_out, "wb") as fh:
+            fh.write(body)
+        if os.path.getsize(tmp_out) == 0:
+            _remove_quietly(tmp_out)
+            return False, "rife wrote an empty file"
+        os.replace(tmp_out, clip_path)
+        return True, stats or "ok"
+    except Exception as exc:  # noqa: BLE001
+        return False, describe_exception(exc)
+
+
 async def _interpolate_clip_fps(clip_path: str, *, site_config: Any) -> tuple[bool, str]:
     """Raise a generative clip's frame rate to the timeline's with motion
     interpolation (ffmpeg ``minterpolate``), in place.
@@ -1175,6 +1231,9 @@ async def _interpolate_clip_fps(clip_path: str, *, site_config: Any) -> tuple[bo
             site_config.get("video_clip_interpolation_filter", "") or ""
         ).strip() or _DEFAULT_INTERPOLATION_FILTER
         timeout_s = float(site_config.get_float("video_clip_interpolation_timeout_s", 600.0) or 600.0)
+        engine = str(
+            site_config.get("video_clip_interpolation_engine", "auto") or "auto",
+        ).strip().lower()
     except Exception:  # noqa: BLE001
         # silent-ok: a settings read must not decide a render's fate; the
         # clip ships as the provider made it.
@@ -1184,6 +1243,32 @@ async def _interpolate_clip_fps(clip_path: str, *, site_config: Any) -> tuple[bo
         return False, "source fps unreadable"
     if src_fps >= target_fps - 0.5:
         return False, f"already {src_fps:.3g} fps"
+
+    # Learned interpolation first when a sidecar is configured; ffmpeg's
+    # block-matching is the fallback, not the preference.
+    if engine in ("rife", "auto"):
+        ok, detail = await _rife_interpolate(
+            clip_path, site_config=site_config,
+            target_fps=target_fps, timeout_s=timeout_s,
+        )
+        if ok:
+            logger.info(
+                "[SHOT_LIST] interpolated %s %.3g -> %g fps via RIFE (%s)",
+                os.path.basename(clip_path), src_fps, target_fps, detail,
+            )
+            return True, f"rife {src_fps:.3g} -> {target_fps:g} fps"
+        if engine == "rife":
+            logger.warning(
+                "[SHOT_LIST] RIFE interpolation of %s unavailable (%s) and "
+                "video_clip_interpolation_engine=rife — keeping the %.3g fps clip",
+                os.path.basename(clip_path), detail, src_fps,
+            )
+            return False, f"rife unavailable: {detail}"
+        logger.info(
+            "[SHOT_LIST] RIFE unavailable (%s) — falling back to ffmpeg minterpolate",
+            detail,
+        )
+
     vf = filter_tpl.replace("{fps}", f"{target_fps:g}")
     tmp_out = f"{clip_path}.interp.mp4"
     started = time.monotonic()
