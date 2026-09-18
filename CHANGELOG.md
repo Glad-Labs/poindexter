@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## [0.141.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.140.1...v0.141.0) (2026-09-18)
+
+
+### Features
+
+* **sync:** put the gladlabs.ai claims in the nightly DB-stat sync ([#3832](https://github.com/Glad-Labs/glad-labs-stack/issues/3832)) ([5b05b35](https://github.com/Glad-Labs/glad-labs-stack/commit/5b05b35754e7cbbec05e3f398c9bac4eb606146a))
+* **video:** give the presenter its own S2V negative prompt ([#3840](https://github.com/Glad-Labs/glad-labs-stack/issues/3840)) ([21c0d10](https://github.com/Glad-Labs/glad-labs-stack/commit/21c0d1013069ab99b6a514664588757ca5fde3ac))
+* **video:** make the calm presenter register the default (measured) ([#3847](https://github.com/Glad-Labs/glad-labs-stack/issues/3847)) ([1c60857](https://github.com/Glad-Labs/glad-labs-stack/commit/1c60857d6955dd0f53808ec21e15ad8a6581020e))
+* **video:** motion-interpolate generative clips to the timeline's frame rate ([#3841](https://github.com/Glad-Labs/glad-labs-stack/issues/3841)) ([e708210](https://github.com/Glad-Labs/glad-labs-stack/commit/e70821091e541dd08bf92cde6167f353c25e03ea))
+
+
+### Bug Fixes
+
+* **brain:** measure a sidecar's GPU footprint before honoring a reclaim restart ([#3838](https://github.com/Glad-Labs/glad-labs-stack/issues/3838)) ([975fd03](https://github.com/Glad-Labs/glad-labs-stack/commit/975fd0340b252f2c45c9573798ff910c23a88c25))
+* **qa:** a required rail with nothing to judge records a pass, not silence ([#3846](https://github.com/Glad-Labs/glad-labs-stack/issues/3846)) ([b89bcd1](https://github.com/Glad-Labs/glad-labs-stack/commit/b89bcd1a6d735ff2b4429095a65a7cc156c5cb66))
+* **qa:** flag unsourced first-person biography, measured at 0/207 false positives ([#3845](https://github.com/Glad-Labs/glad-labs-stack/issues/3845)) ([0887aef](https://github.com/Glad-Labs/glad-labs-stack/commit/0887aef9bcd4c0af12d0b90273e615278ea2d4e1))
+* **qa:** stop Ragas re-entering the flow's event loop and crashing the run ([#3848](https://github.com/Glad-Labs/glad-labs-stack/issues/3848)) ([2b78952](https://github.com/Glad-Labs/glad-labs-stack/commit/2b78952a7959f3ac8387f03295b9dc68102b345c))
+* **tts:** drop an initialism that follows its own expansion ([#3833](https://github.com/Glad-Labs/glad-labs-stack/issues/3833)) ([0123e58](https://github.com/Glad-Labs/glad-labs-stack/commit/0123e58dc637cd47cc86eff40a59005912c7a635))
+* **video:** a presenter clip shorter than its scene holds its last frame, never loops ([#3842](https://github.com/Glad-Labs/glad-labs-stack/issues/3842)) ([c91a772](https://github.com/Glad-Labs/glad-labs-stack/commit/c91a7727933181135c891812724a0b4f33b86896))
+* **video:** cut presenter speech on the fitted timeline, not the director's plan ([#3839](https://github.com/Glad-Labs/glad-labs-stack/issues/3839)) ([6eb07a0](https://github.com/Glad-Labs/glad-labs-stack/commit/6eb07a03eddf9fa0c58efb526b2cc8b606a20512))
+* **video:** hand every S2V extend chunk the whole video so far, not the previous chunk ([#3843](https://github.com/Glad-Labs/glad-labs-stack/issues/3843)) ([8ffedbc](https://github.com/Glad-Labs/glad-labs-stack/commit/8ffedbc9a58fc9de163f5b49d2838401a25776af))
+* **video:** hero plate gate counts ComfyUI's own pool as headroom ([#3837](https://github.com/Glad-Labs/glad-labs-stack/issues/3837)) ([f15e830](https://github.com/Glad-Labs/glad-labs-stack/commit/f15e830616039dfa175fd76ae69889125f5119a3))
+* **video:** presenter clips render last, after every still and hero ([#3834](https://github.com/Glad-Labs/glad-labs-stack/issues/3834)) ([0c31651](https://github.com/Glad-Labs/glad-labs-stack/commit/0c316519db5114a933258a5a13a36d03d5885328))
+* **warmer:** never evict a pinned sibling on a one-slot endpoint ([#3836](https://github.com/Glad-Labs/glad-labs-stack/issues/3836)) ([3a8a106](https://github.com/Glad-Labs/glad-labs-stack/commit/3a8a106c8fd88aeb4d4f6fa4163f2dc6c6fa764c))
+
 ## [0.140.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.140.0...v0.140.1) (2026-09-17)
 
 
