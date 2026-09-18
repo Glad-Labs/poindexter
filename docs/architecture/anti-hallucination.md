@@ -91,9 +91,12 @@ with 128GB of system RAM" (the host has 64) at QA 95–97; earlier, three
 fabricated/stale self-claims reached `awaiting_approval` at Q94–95 on
 2026-08-09 (invented scores, a stale version). The invented-mechanism class
 still needs the grounded-LLM treatment. A draft with no falsifiable self-claims
-appends no review at all (dev-diary prose must not fire, and a vacuous 100 would
-skew the all-rail average). A fact the record cannot derive is skipped, never
-guessed. **Required since 2026-09-15** (migration `20260915_014128`); the
+appends a scoreless `not_applicable` review — dev-diary prose must not fire and
+a vacuous 100 must not skew the all-rail average, and `not_applicable` gives
+both while still satisfying the required gate honestly instead of by absence
+(see "Nothing to judge" below; silence here vetoed every post that simply does
+not talk about us). A fact the record cannot derive is skipped, never guessed.
+**Required since 2026-09-15** (migration `20260915_014128`); the
 poindexter#454 lever demotes it without a deploy.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the (other) atoms
@@ -304,6 +307,56 @@ between a flake and a terminal reject:
 Pinned by `test_qa_rail_common.py` (rerun dispatch table),
 `test_qa_aggregate_atom.py::TestQaAggregateRailReinvoke`, and the retry tests
 in `test_multi_model_qa.py::TestGatePromptBranches`.
+
+#### "Nothing to judge" is a verdict a required rail must SAY (poindexter#1051, #1060)
+
+The section above is about a rail that **could not run**. This one is the
+opposite and is far easier to get wrong: a rail that ran fine and found the
+draft gives it nothing to check. `missing_required_gates` cannot tell the two
+apart — it only sees whether a review with that reviewer name exists — so a
+required rail that returns `{}` hard-vetoes the post either way.
+
+That makes _"this rail is silent on most drafts"_ an argument **against**
+`required_to_pass`, not for it. Both graduations that got this backwards said
+so in their own migration docstring:
+
+> Required from day one because the rail only speaks when a draft is
+> news-shaped AND past `qa_freshness_max_age_days` — evergreen posts never see
+> it.
+> — `20260915_015618_add_the_qa_freshness_rail_and_reseed_canonical_blog.py`
+
+From 2026-09-15 every `canonical_blog` run was vetoed by
+`missing_required:self_claim, missing_required:freshness` at 95.5–97.6 against
+a threshold of 80, with no rail having objected to anything; `auto_publish_gate`
+last recorded `pass` on 09-07. `qa.unlinked_attribution` was the same shape one
+step rarer — silent whenever the run carries no corpus, which is 42% of runs.
+
+**The contract.** A rail has three possible answers, not two:
+
+| Outcome               | Returns                                                                            | Gate effect                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Verdict               | a scored review                                                                    | approves or vetoes on the merits                                                                    |
+| Ran, nothing to judge | `not_applicable_review(...)` — `approved=True`, `score=0.0`, `not_applicable=True` | satisfies the required gate; **excluded from both means**, so an evergreen post pays nothing for it |
+| Could not run         | `{}` + a finding                                                                   | fail-closed veto — the poindexter#680 guard doing its job                                           |
+
+Use `_qa_rail_common.not_applicable_review` rather than hand-rolling the dict:
+#1051 fixed `citation_verifier` and `topic_delivery` by hand, and the next
+three required rails each re-invented `return {}` instead.
+
+**A master switch is not a gate lever.** `qa_<rail>_enabled` says whether the
+rail RUNS; `qa_gates.<rail>.required_to_pass` says whether it GATES. A disabled
+rail that returns `{}` makes the off switch hard-reject every post, so the two
+levers fight — disabling now yields a `not_applicable` review naming the
+setting.
+
+Pinned by `tests/integration_db/test_required_qa_gates_never_go_silent.py`,
+which reads the **real seeded** `qa_gates` and runs every required deterministic
+rail (`capability_tier is None`) against a draft engineered to give it nothing
+to judge. That join is what was missing: _rail may be silent_ is a fact about
+code and _gate is required_ is a fact about a seeded row, so neither half looks
+wrong on its own and the unit tests that asserted `await run(...) == {}` were
+green and correct in isolation. A newly-required gate missing from that test's
+`_GATE_TO_ATOM` map fails rather than being skipped.
 
 #### Self-heal before paging: flag-and-continue, never silent-discard (2026-06)
 
@@ -661,11 +714,14 @@ mean — see the scoring contract above), to be graduated later via
   `qa_freshness_max_age_days` (default 5) → veto. The veto is deliberately
   **non-rescuable** (`freshness` sits in
   `_qa_rail_common._NON_TEXT_FIXABLE_PROVIDERS`): a rewrite can make the words
-  current but not the piece — publish today or drop it. Evergreen drafts get
-  no review at all, and so does anchored prose with nothing to date it (the
-  rail never guesses an age). A hard gate from day one
-  (`qa_gates.freshness.required_to_pass=true`); `qa_freshness_enabled` is the
-  master switch. Ordered after `qa.self_claim`, before `qa.web_factcheck`.
+  current but not the piece — publish today or drop it. Evergreen drafts get a
+  scoreless `not_applicable` review, and so does anchored prose with nothing to
+  date it (the rail never guesses an age) — **not** silence, which as a hard
+  gate would veto every evergreen post; see "Nothing to judge" above. A hard
+  gate from day one (`qa_gates.freshness.required_to_pass=true`);
+  `qa_freshness_enabled` is the master switch, and turning it off also yields
+  `not_applicable` so the switch cannot reject by itself. Ordered after
+  `qa.self_claim`, before `qa.web_factcheck`.
 - **`qa.web_factcheck`** (`_web_fact_check` → reviewer `web_factcheck`,
   `web_factcheck` provider; Glad-Labs/poindexter#661) — DuckDuckGo product/spec
   verification (the training-cutoff override). Ordered **last** in the qa block,

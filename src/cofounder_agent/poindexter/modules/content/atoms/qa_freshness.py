@@ -22,9 +22,14 @@ A draft is *news-shaped* when it carries relative-time phrasing or its topic
 came from a news source (``pipeline_tasks.metadata->>'discovered_by'`` in
 ``qa_freshness_news_sources``). News-shaped AND older than the cap → veto.
 News-shaped and within the cap → an approving review (it is checkable and it
-passed). Not news-shaped → no review at all, so evergreen posts never pay for
-a rail they do not need. No dates anywhere → no review either; the rail never
-guesses an age.
+passed). Not news-shaped, or news-shaped with no date anywhere to age it
+against → a scoreless ``not_applicable`` review: the rail ran, it has no
+verdict, and it never guesses an age. That review is NOT a formality — the
+rail is ``required_to_pass`` and silent on most drafts, so returning nothing
+reads to ``qa.aggregate`` as an absent required gate and hard-vetoes a clean
+post (poindexter#1060; the mechanism is ``missing_required_gates``, the shape
+is ``not_applicable_review``). Evergreen posts still pay nothing for the rail:
+``not_applicable`` carries no score into either mean.
 
 Gate status is DB-driven (``qa_gates.freshness.required_to_pass``, seeded
 true by migration ``20260915_0202``); the poindexter#454 lever demotes it.
@@ -39,7 +44,11 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from poindexter.modules.content.atoms._pool import resolve_pool
-from poindexter.modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from poindexter.modules.content.atoms._qa_rail_common import (
+    not_applicable_review,
+    resolve_gate_states,
+    reviewer_to_dict,
+)
 from poindexter.plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
@@ -52,8 +61,8 @@ ATOM_META = AtomMeta(
         "News-shaped drafts (relative-time phrasing, or a topic from a news "
         "source) must reach QA within qa_freshness_max_age_days of their newest "
         "dated source; a stale one is vetoed and the veto is not rescuable — "
-        "a rewrite cannot make a late take current. Evergreen drafts get no "
-        "review. Gate status DB-driven via qa_gates.freshness."
+        "a rewrite cannot make a late take current. Evergreen drafts get a "
+        "scoreless not_applicable pass. Gate status DB-driven via qa_gates.freshness."
     ),
     inputs=(
         FieldSpec(name="content", type="str", description="draft to review"),
@@ -105,6 +114,18 @@ _DATE_RES = (
     ),  # 8 September 2026
     re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"),  # 2026-09-08
 )
+
+
+def _na(reason: str) -> dict[str, Any]:
+    """The rail ran and has no verdict — an honest pass, never silence.
+
+    ``freshness`` is ``required_to_pass`` and is silent on most drafts by
+    design, so returning ``{}`` here reads to ``qa.aggregate`` as an ABSENT
+    required gate and hard-vetoes a clean post (poindexter#1060).
+    """
+    return {"qa_rail_reviews": [not_applicable_review(
+        reviewer="freshness", provider="freshness", feedback=reason,
+    )]}
 
 
 def _today() -> date:
@@ -236,7 +257,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not content or site_config is None:
         return {}
     if str(_read(site_config, "qa_freshness_enabled", "true")).lower() not in ("true", "1", "yes"):
-        return {}
+        # A disabled rail must not be able to veto. The two levers are
+        # independent — qa_freshness_enabled says whether the rail RUNS,
+        # qa_gates.freshness.required_to_pass says whether it GATES — so a
+        # bare `return {}` here lets the off switch hard-reject every post.
+        return _na("Freshness rail disabled (qa_freshness_enabled=false).")
     try:
         max_age = int(_read(site_config, "qa_freshness_max_age_days", DEFAULT_MAX_AGE_DAYS))
     except (TypeError, ValueError):
@@ -254,7 +279,20 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         max_age_days=max_age,
     )
     if verdict is None:
-        return {}
+        # Two shapes, both "ran, nothing to judge": an evergreen draft (no
+        # moment-anchoring phrasing, no news-source topic), or a news-shaped
+        # draft with no date anywhere to age it against — the rail never
+        # guesses an age. Named apart so the queue shows which one happened.
+        news_shaped = bool(find_relative_phrases(content)) or (
+            bool(discovered_by) and discovered_by in news_sources
+        )
+        return _na(
+            "News-shaped draft with no datable source and no task created_at — "
+            "nothing to measure staleness against."
+            if news_shaped
+            else "Evergreen draft — no moment-anchoring phrasing and no news-source "
+            "topic, so there is no staleness to judge."
+        )
 
     from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 

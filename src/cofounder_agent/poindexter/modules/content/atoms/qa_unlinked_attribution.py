@@ -35,7 +35,11 @@ import logging
 from typing import Any
 
 from poindexter.modules.content.atoms._pool import resolve_pool
-from poindexter.modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from poindexter.modules.content.atoms._qa_rail_common import (
+    not_applicable_review,
+    resolve_gate_states,
+    reviewer_to_dict,
+)
 from poindexter.plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
@@ -66,6 +70,20 @@ ATOM_META = AtomMeta(
 )
 
 
+def _na(reason: str) -> dict[str, Any]:
+    """The rail ran and has nothing to judge — an honest pass, never silence.
+
+    Required since 2026-09-15 (migration ``20260915_013131``), and silent
+    whenever the draft names no source or the run carries no corpus — which is
+    42% of runs. Returning ``{}`` reads to ``qa.aggregate`` as an ABSENT
+    required gate and hard-vetoes a clean post (poindexter#1060).
+    """
+    return {"qa_rail_reviews": [not_applicable_review(
+        reviewer="unlinked_attribution", provider="unlinked_attribution",
+        feedback=reason,
+    )]}
+
+
 def _score(count: int, *, penalty_per: int, floor: int) -> float:
     """Map the unmatched-attribution count to a 0-100 advisory score.
 
@@ -86,7 +104,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     try:
         if not site_config.get_bool("unlinked_attribution_enabled", True):
-            return {}
+            # A disabled rail must not be able to veto: the master switch says
+            # whether the rail RUNS, required_to_pass says whether it GATES.
+            return _na(
+                "Unlinked-attribution rail disabled "
+                "(unlinked_attribution_enabled=false)."
+            )
     except Exception:  # noqa: BLE001 — config read must never break the pipeline
         # silent-ok: falling through RUNS the rail (the setting defaults to
         # True), so a failed read errs toward more checking, not less. The
@@ -97,7 +120,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not research_context.strip():
         # No corpus → can't distinguish real-but-unlinked from fabricated.
         # Defer to the future grounded-LLM pass rather than flag blindly.
-        return {}
+        # Say so rather than going silent: 42% of runs carry no corpus, and
+        # this rail is required_to_pass.
+        return _na(
+            "No research corpus on this run — a named source cannot be told "
+            "apart from a fabricated one, so nothing is judged either way."
+        )
 
     from poindexter.modules.content.atoms._citation_match import (
         find_unmatched_attributions,
@@ -107,7 +135,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     sources = parse_corpus(research_context)
     if not sources:
-        return {}
+        return _na(
+            "Research corpus names no parseable sources — nothing to match "
+            "the draft's attributions against."
+        )
 
     unmatched = find_unmatched_attributions(content, sources)
 

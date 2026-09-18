@@ -154,25 +154,44 @@ def test_current_package_version_reads_pyproject():
 
 @pytest.mark.asyncio
 class TestRun:
-    async def test_not_self_referential_returns_nothing(self, monkeypatch):
+    async def test_not_self_referential_gets_a_scoreless_na_pass(self, monkeypatch):
+        """The path that vetoed 6 of 6 clean posts at 95.5-97.6.
+
+        self_claim emitted a review on 4 of 171 passes over 45 days. Once its
+        gate went required_to_pass on 2026-09-15, the other 167 became
+        ``missing_required:self_claim`` — a veto naming a rail that had
+        objected to nothing (poindexter#1060). Scoreless, so an evergreen
+        post still pays nothing for a rail it does not need.
+        """
         _patch_gates(monkeypatch)
         out = await atom.run({
             "content": "A deep dive into PostgreSQL vacuum internals.",
             "topic": "PostgreSQL",
             "site_config": _sc(),
         })
-        assert out == {}
+        (review,) = out["qa_rail_reviews"]
+        assert review["reviewer"] == "self_claim"
+        assert review["not_applicable"] is True
+        assert review["approved"] is True and review["score"] == 0.0
+        assert "no claims about this system" in review["feedback"]
 
-    async def test_claim_free_self_prose_appends_no_review(self, monkeypatch):
+    async def test_claim_free_self_prose_does_not_fire(self, monkeypatch):
         """Issue acceptance: dev-diary-shaped prose ABOUT the pipeline with
-        nothing falsifiable must not fire — and must not emit a vacuous 100."""
+        nothing falsifiable must not fire — and must not emit a vacuous 100.
+
+        ``not_applicable`` delivers both (it is dropped from the gating mean
+        AND from ``qa_all_rail_score``) while still satisfying the required
+        gate honestly instead of by absence.
+        """
         _patch_gates(monkeypatch)
         out = await atom.run({
             "content": "This week we tuned our pipeline's pacing and mood.",
             "topic": "dev diary",
             "site_config": _sc(),
         })
-        assert out == {}
+        (review,) = out["qa_rail_reviews"]
+        assert review["not_applicable"] is True and review["score"] == 0.0
+        assert "asserts nothing falsifiable" in review["feedback"]
 
     async def test_stale_version_claim_is_an_offender(self, monkeypatch):
         _patch_gates(monkeypatch)
@@ -238,14 +257,19 @@ class TestRun:
         assert review["advisory"] is True
         assert "retrieval_overlap_check_enabled" in review["feedback"]
 
-    async def test_master_switch_off_is_silent(self, monkeypatch):
+    async def test_master_switch_off_is_na_not_silence(self, monkeypatch):
+        # qa_self_claim_enabled says whether the rail RUNS; required_to_pass
+        # says whether it GATES. Silence here lets the off switch hard-reject
+        # every post, so the two levers would fight.
         _patch_gates(monkeypatch)
         out = await atom.run({
             "content": "Poindexter is currently at release v0.0.1.",
             "topic": "poindexter",
             "site_config": _sc(qa_self_claim_enabled="false"),
         })
-        assert out == {}
+        (review,) = out["qa_rail_reviews"]
+        assert review["not_applicable"] is True and review["approved"] is True
+        assert "qa_self_claim_enabled=false" in review["feedback"]
 
     async def test_db_failure_skips_db_layers_never_fakes(self, monkeypatch):
         """A dead pool drops layers 2–3 (reduced coverage); the version layer
@@ -385,7 +409,14 @@ class TestRunWithOperatingRecord:
         )
         content = "Our Poindexter pipeline runs on Poindexter. We also run Jettison for campaigns."
         out = await atom.run({"content": content, "topic": "t", "site_config": _sc()})
-        assert out == {}  # nothing checkable → no review, never a fake pass
+        # Not a fake PASS and not silence either (poindexter#1060): self_claim
+        # is required_to_pass, so `{}` would hard-veto a clean post over a
+        # blipped record lookup — the #1012 failure mode. N/A is scoreless,
+        # claims nothing, and names the gap.
+        (review,) = out["qa_rail_reviews"]
+        assert review["not_applicable"] is True and review["score"] == 0.0
+        assert "reduced coverage" in review["feedback"]
+        assert "operating record unavailable" in review["feedback"]
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +557,8 @@ async def test_off_mode_skips_the_layer(monkeypatch):
             "site_config": _sc(qa_self_claim_biography_mode="off"),
         }
     )
-    assert result == {}
+    (review,) = result["qa_rail_reviews"]
+    assert review["not_applicable"] is True and review["approved"] is True
 
 
 async def test_declared_founder_facts_silence_the_layer_end_to_end(monkeypatch):
@@ -707,7 +739,8 @@ class TestExperimentLayerThroughRun:
             "research_context": "",
             "site_config": _sc(),
         })
-        assert out == {}
+        (review,) = out["qa_rail_reviews"]
+        assert review["not_applicable"] is True and review["score"] == 0.0
 
     async def test_grounded_figures_do_not_fire(self, monkeypatch):
         _patch_gates(monkeypatch)
@@ -732,4 +765,19 @@ class TestExperimentLayerThroughRun:
             "research_context": _UNRELATED_CORPUS,
             "site_config": _sc(qa_self_claim_experiment_mode="off"),
         })
-        assert out == {}
+        (review,) = out["qa_rail_reviews"]
+        assert review["not_applicable"] is True and review["approved"] is True
+
+
+# ---------------------------------------------------------------------------
+# poindexter#1060 — a required rail may never answer with silence
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_rail_that_could_not_run_still_fails_closed(monkeypatch):
+    # The N/A contract covers "ran, nothing to judge" ONLY. No draft at all is
+    # a broken pipeline, and there the missing_required veto is correct.
+    _patch_gates(monkeypatch)
+    assert await atom.run({"content": "", "site_config": _sc()}) == {}
+    assert await atom.run({"content": "x", "site_config": None}) == {}

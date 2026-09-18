@@ -60,6 +60,42 @@ def reviewer_to_dict(r: Any) -> dict[str, Any]:
     }
 
 
+def not_applicable_review(
+    *, reviewer: str, provider: str, feedback: str
+) -> dict[str, Any]:
+    """A rail's honest "I ran and had nothing to judge" review.
+
+    The counterpart to :func:`missing_required_gates`, and the ONLY correct
+    way for a ``required_to_pass`` rail to say nothing (poindexter#1051, and
+    #1060 after three more rails re-learned it the hard way — #1051 fixed two
+    by hand, so the next three each re-invented ``return {}``). The aggregate
+    cannot tell an absent rail from a silent one, so a required rail that returns
+    ``{}`` hard-vetoes the draft — ``missing_required:<gate>`` in ``vetoed_by``
+    with no rail having objected to anything.
+
+    Scoreless on purpose: ``aggregate_rail_reviews`` drops ``not_applicable``
+    from both the gating mean and ``qa_all_rail_score``, because a vacuous 100
+    would read on the dashboard as coverage the rail never provided.
+
+    This is NOT the fail-open contract. A rail that COULD NOT run (no content,
+    no ``site_config``, a dead dependency) still returns ``{}`` plus a finding
+    — there the fail-closed veto is the guard doing its job. Use this only
+    when the rail ran to completion and the draft gave it nothing to check.
+    """
+    from poindexter.modules.content.multi_model_qa import ReviewerResult
+
+    return reviewer_to_dict(
+        ReviewerResult(
+            reviewer=reviewer,
+            approved=True,
+            score=0.0,
+            feedback=feedback,
+            provider=provider,
+            not_applicable=True,
+        )
+    )
+
+
 def _weight_for(provider: str | None, *, validator_weight: float, critic_weight: float, gate_weight: float) -> float:
     if provider in _VALIDATOR_PROVIDERS:
         return validator_weight
@@ -522,6 +558,7 @@ __all__ = [
     "is_rescuable_reject",
     "known_wrong_fact_rescued",
     "missing_required_gates",
+    "not_applicable_review",
     "rerun_missing_rails",
     "resolve_gate_states",
     "reviewer_to_dict",

@@ -257,3 +257,64 @@ class TestLoadQAGateChainFailureLogging:
         assert await load_qa_gate_chain(pool) == []
         fake_logger.debug.assert_called_once()
         fake_logger.warning.assert_not_called()
+
+
+@pytest.mark.unit
+class TestConfigCoercionIsNeverFatal:
+    """A malformed ``config`` blob on ONE row must not stop the pipeline.
+
+    ``config=dict(cfg)`` raised ``ValueError`` on anything that was not a
+    mapping, and the try/except in ``load_qa_gate_chain`` only covers the
+    QUERY — so the exception escaped, ``_load_gate_states`` failed,
+    ``resolve_gate_states`` raised ``GateStatesUnavailable``, and every
+    ``qa.*`` rail atom halted the run.
+
+    Not hypothetical on a FRESH INSTALL: ``0000_baseline.seeds.sql`` wrote
+    ``'"{}"'::jsonb`` for 15 of the 21 gate rows — a jsonb *string* holding
+    ``{}``, not an object — so the decode yielded the str ``"{}"`` and
+    ``dict()`` raised. Prod predates the baseline and carries proper objects,
+    which is why nothing saw it. Found by
+    ``tests/integration_db/test_required_qa_gates_never_go_silent.py`` on the
+    first run against a baseline-seeded DB (poindexter#1060).
+    """
+
+    @pytest.mark.asyncio
+    async def test_double_encoded_object_does_not_raise(self, monkeypatch):
+        fake_logger = MagicMock()
+        monkeypatch.setattr("poindexter.services.qa_gates_db.logger", fake_logger)
+        # Exactly what the baseline seeded: jsonb holding the STRING "{}".
+        pool, _ = _make_pool_with_rows([_row("freshness", config='"{}"')])
+        chain = await load_qa_gate_chain(pool)
+        assert [g.name for g in chain] == ["freshness"]
+        assert chain[0].config == {}
+        # Loud, not silent — the row's config is being ignored.
+        fake_logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_non_mapping_config_is_coerced_and_named(self, monkeypatch):
+        fake_logger = MagicMock()
+        monkeypatch.setattr("poindexter.services.qa_gates_db.logger", fake_logger)
+        pool, _ = _make_pool_with_rows([_row("self_claim", config=[1, 2, 3])])
+        chain = await load_qa_gate_chain(pool)
+        assert chain[0].config == {}
+        assert "self_claim" in str(fake_logger.warning.call_args)
+
+    @pytest.mark.asyncio
+    async def test_a_real_config_object_still_survives(self, monkeypatch):
+        pool, _ = _make_pool_with_rows(
+            [_row("vision_gate", config={"applies_to_styles": ["tech"]})]
+        )
+        chain = await load_qa_gate_chain(pool)
+        assert chain[0].config == {"applies_to_styles": ["tech"]}
+        assert chain[0].applies_to_style("tech") is True
+        assert chain[0].applies_to_style("lifestyle") is False
+
+    @pytest.mark.asyncio
+    async def test_one_bad_row_does_not_drop_the_others(self, monkeypatch):
+        monkeypatch.setattr("poindexter.services.qa_gates_db.logger", MagicMock())
+        pool, _ = _make_pool_with_rows([
+            _row("programmatic_validator", order=1, config='"{}"'),
+            _row("llm_critic", order=2, config={}),
+        ])
+        chain = await load_qa_gate_chain(pool)
+        assert [g.name for g in chain] == ["programmatic_validator", "llm_critic"]

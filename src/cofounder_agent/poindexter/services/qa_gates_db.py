@@ -72,6 +72,48 @@ class QAGateSpec:
         return str(writing_style_id) in {str(s) for s in styles}
 
 
+def _coerce_config(raw: Any, *, gate: str) -> dict[str, Any]:
+    """``qa_gates.config`` as a dict — never an exception.
+
+    This decoded straight into ``dict(cfg)``, which raises ``ValueError`` on
+    anything that is not a mapping. That exception escapes ``load_qa_gate_chain``
+    — its try/except wraps only the QUERY, not the row loop — so
+    ``_load_gate_states`` fails, ``resolve_gate_states`` raises
+    ``GateStatesUnavailable``, and EVERY ``qa.*`` rail atom halts the run. A
+    malformed config blob on one row must not be able to stop the pipeline.
+
+    That is not hypothetical on a fresh install: ``0000_baseline.seeds.sql``
+    writes ``'"{}"'::jsonb`` for 15 of the 21 gate rows — a jsonb *string*
+    containing ``{}``, not an object — so the decode yields ``"{}"`` and
+    ``dict()`` raises. Prod predates the baseline and carries proper objects,
+    which is why the bug is invisible there. The seeds are corrected alongside
+    this; the coercion stays because it is the layer that keeps one bad row from
+    being fatal, whoever wrote it.
+
+    Loud, not silent (``feedback_no_silent_defaults``): a coerced row logs a
+    WARNING naming the gate, because ``{}`` means per-gate config such as
+    ``applies_to_styles`` is being ignored.
+    """
+    cfg = raw
+    if isinstance(cfg, str):
+        # Some asyncpg versions / typecodecs return jsonb as text.
+        import json as _json
+        try:
+            cfg = _json.loads(cfg)
+        except Exception:
+            cfg = None
+    if cfg in (None, "", {}):
+        return {}
+    if isinstance(cfg, dict):
+        return dict(cfg)
+    logger.warning(
+        "qa_gates.config for %r is %s, not an object (%r) — using {} for this "
+        "gate; any per-gate config on the row is being IGNORED",
+        gate, type(cfg).__name__, cfg,
+    )
+    return {}
+
+
 async def load_qa_gate_chain(
     pool: Any,
     *,
@@ -144,14 +186,7 @@ async def load_qa_gate_chain(
 
     chain: list[QAGateSpec] = []
     for r in rows:
-        cfg = r["config"]
-        if isinstance(cfg, str):
-            # Some asyncpg versions / typecodecs return jsonb as text.
-            import json as _json
-            try:
-                cfg = _json.loads(cfg)
-            except Exception:
-                cfg = {}
+        cfg = _coerce_config(r["config"], gate=r["name"])
         chain.append(QAGateSpec(
             name=r["name"],
             stage_name=r["stage_name"],
@@ -159,7 +194,7 @@ async def load_qa_gate_chain(
             reviewer=r["reviewer"],
             required_to_pass=bool(r["required_to_pass"]),
             enabled=bool(r["enabled"]),
-            config=dict(cfg) if cfg else {},
+            config=cfg,
         ))
     return chain
 

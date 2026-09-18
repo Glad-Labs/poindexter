@@ -244,9 +244,29 @@ class TestRun:
         assert review["approved"] is True and review["score"] == 100.0
 
     @pytest.mark.asyncio
-    async def test_evergreen_draft_appends_nothing(self, monkeypatch) -> None:
+    async def test_evergreen_draft_gets_a_scoreless_na_pass(self, monkeypatch) -> None:
+        # NOT `== {}` (poindexter#1060). freshness is required_to_pass and is
+        # silent on nearly every draft, so returning nothing made
+        # missing_required_gates read it as an ABSENT required gate and
+        # hard-veto 6 of 6 clean posts at scores of 95.5-97.6.
         _wire(monkeypatch, task=(date(2026, 8, 1), "internal_rag"))
-        assert await run(_state("A measured, undated look at the proof.")) == {}
+        out = await run(_state("A measured, undated look at the proof."))
+        (review,) = out["qa_rail_reviews"]
+        assert review["reviewer"] == "freshness"
+        assert review["not_applicable"] is True
+        assert review["approved"] is True and review["score"] == 0.0
+        assert "Evergreen draft" in review["feedback"]
+
+    @pytest.mark.asyncio
+    async def test_news_shaped_but_undatable_says_so(self, monkeypatch) -> None:
+        # The rail never guesses an age — but "I cannot date this" is a
+        # verdict it must SAY, not withhold.
+        _wire(monkeypatch, task=(None, "rss"))
+        state = _state("OpenAI put out a paper this week.", research_context="")
+        out = await run(state)
+        (review,) = out["qa_rail_reviews"]
+        assert review["not_applicable"] is True
+        assert "no datable source" in review["feedback"]
 
     @pytest.mark.asyncio
     async def test_demoted_gate_is_advisory(self, monkeypatch) -> None:
@@ -256,11 +276,24 @@ class TestRun:
         assert review["approved"] is True and review.get("advisory") is True
 
     @pytest.mark.asyncio
-    async def test_master_switch_off_appends_nothing(self, monkeypatch) -> None:
+    async def test_master_switch_off_is_na_not_silence(self, monkeypatch) -> None:
+        # The off switch must not be able to hard-reject every post: it says
+        # whether the rail RUNS, required_to_pass says whether it GATES.
         _wire(monkeypatch, task=(None, "rss"))
         state = _state("OpenAI put out a paper this week.")
         state["site_config"] = _Config(qa_freshness_enabled="false")
-        assert await run(state) == {}
+        out = await run(state)
+        (review,) = out["qa_rail_reviews"]
+        assert review["not_applicable"] is True and review["approved"] is True
+        assert "qa_freshness_enabled=false" in review["feedback"]
+
+    @pytest.mark.asyncio
+    async def test_a_rail_that_could_not_run_still_fails_closed(self, monkeypatch) -> None:
+        # The N/A contract covers "ran, nothing to judge" ONLY. No draft at
+        # all is a broken pipeline, and the missing_required veto is correct.
+        _wire(monkeypatch)
+        assert await run(_state("")) == {}
+        assert await run({"content": "x", "site_config": None}) == {}
 
     @pytest.mark.asyncio
     async def test_task_lookup_failure_reduces_coverage_not_the_run(self, monkeypatch) -> None:

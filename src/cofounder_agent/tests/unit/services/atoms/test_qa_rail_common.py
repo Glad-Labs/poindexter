@@ -8,6 +8,7 @@ import pytest
 from poindexter.modules.content.atoms._qa_rail_common import (
     aggregate_rail_reviews,
     missing_required_gates,
+    not_applicable_review,
     reviewer_to_dict,
 )
 
@@ -695,6 +696,32 @@ class TestNotApplicableRails:
             "feedback": "nothing to judge", "provider": "http_head",
             "advisory": False, "not_applicable": True,
         }
+
+    def test_the_helper_builds_the_shape_the_aggregate_expects(self):
+        """poindexter#1060 — the shared builder.
+
+        #1051 fixed two rails by hand, and the next two required rails
+        (self_claim, freshness) each re-invented `return {}` instead. One
+        constructor means a new rail gets the contract by using it.
+        """
+        review = not_applicable_review(
+            reviewer="freshness", provider="freshness",
+            feedback="Evergreen draft — no staleness to judge.",
+        )
+        assert review["not_applicable"] is True
+        assert review["approved"] is True and review["score"] == 0.0
+        assert review["advisory"] is False
+        assert missing_required_gates([review], {"freshness": (True, True)}) == []
+        # Scoreless in BOTH means, so an evergreen post pays nothing for it.
+        real = {
+            "reviewer": "programmatic_validator", "approved": True, "score": 90.0,
+            "feedback": "", "provider": "programmatic", "advisory": False,
+        }
+        assert (
+            aggregate_rail_reviews([real, review])["qa_final_score"]
+            == aggregate_rail_reviews([real])["qa_final_score"]
+            == 90.0
+        )
 
     def test_not_applicable_rail_satisfies_the_required_gate(self):
         gate_states = {"citation_verifier": (True, True)}

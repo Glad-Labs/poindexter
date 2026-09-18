@@ -265,7 +265,14 @@ async def test_unlinked_attribution_clean_pass():
     assert rev["approved"] is True
 
 
-async def test_unlinked_attribution_noop_without_corpus():
+async def test_unlinked_attribution_without_corpus_is_na_not_silence():
+    """No corpus is "nothing to judge", and it must SAY so (poindexter#1060).
+
+    This rail went required_to_pass on 2026-09-15 (migration 20260915_013131)
+    and 42% of runs carry no research_context, so a bare `{}` here reads to
+    qa.aggregate as an ABSENT required gate and hard-vetoes a clean post.
+    Scoreless, so it still cannot flag blindly or inflate the mean.
+    """
     from poindexter.modules.content.atoms.qa_unlinked_attribution import run
 
     state = {
@@ -274,10 +281,16 @@ async def test_unlinked_attribution_noop_without_corpus():
         "site_config": SiteConfig(initial_config={}),
         "database_service": None,
     }
-    assert await run(state) == {}
+    (rev,) = (await run(state))["qa_rail_reviews"]
+    assert rev["reviewer"] == "unlinked_attribution"
+    assert rev["not_applicable"] is True
+    assert rev["approved"] is True and rev["score"] == 0.0
+    assert "No research corpus" in rev["feedback"]
 
 
-async def test_unlinked_attribution_noop_when_disabled():
+async def test_unlinked_attribution_when_disabled_is_na_not_silence():
+    # The off switch says whether the rail RUNS; required_to_pass says whether
+    # it GATES. Silence lets the off switch hard-reject every post.
     from poindexter.modules.content.atoms.qa_unlinked_attribution import run
 
     state = {
@@ -286,4 +299,15 @@ async def test_unlinked_attribution_noop_when_disabled():
         "site_config": SiteConfig(initial_config={"unlinked_attribution_enabled": "false"}),
         "database_service": None,
     }
-    assert await run(state) == {}
+    (rev,) = (await run(state))["qa_rail_reviews"]
+    assert rev["not_applicable"] is True and rev["approved"] is True
+    assert "unlinked_attribution_enabled=false" in rev["feedback"]
+
+
+async def test_unlinked_attribution_without_a_draft_still_fails_closed():
+    # The N/A contract covers "ran, nothing to judge" ONLY. No draft at all is
+    # a broken pipeline, and there the missing_required veto is correct.
+    from poindexter.modules.content.atoms.qa_unlinked_attribution import run
+
+    assert await run({"content": "", "site_config": SiteConfig(initial_config={})}) == {}
+    assert await run({"content": "x", "site_config": None}) == {}

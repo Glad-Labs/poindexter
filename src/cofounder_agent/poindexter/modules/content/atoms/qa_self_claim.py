@@ -72,11 +72,16 @@ first-person-plural system prose), and the version extractor additionally
 requires our-system context in its local window — a post reviewing
 another product's v2.3.1 must never be judged against OUR version.
 
-A draft with NO falsifiable self-claims appends no review at all (per the
-issue's acceptance: dev-diary prose about the pipeline that asserts
-nothing checkable does not fire). DB-dependent layers (2, 3) skip
-silently without a pool — the file/version layers still run; a skipped
-layer is reduced coverage, never a fake verdict.
+A draft with NO falsifiable self-claims appends a scoreless
+``not_applicable`` review (per the issue's acceptance: dev-diary prose
+about the pipeline that asserts nothing checkable does not fire — and
+``not_applicable`` carries no score into either mean, so it cannot). It
+must not append NOTHING: this rail is ``required_to_pass`` and speaks on
+~2% of drafts, so silence reads to ``qa.aggregate`` as an absent required
+gate and hard-vetoes every post that does not talk about us
+(poindexter#1060). DB-dependent layers (2, 3) skip silently without a
+pool — the file/version layers still run; a skipped layer is reduced
+coverage, never a fake verdict.
 
 Advisory at birth (seeded ``qa_gates.self_claim.required_to_pass=false``),
 **required since 2026-09-15** (migration ``20260915_014128``): with the
@@ -96,7 +101,11 @@ from pathlib import Path
 from typing import Any
 
 from poindexter.modules.content.atoms._pool import resolve_pool
-from poindexter.modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from poindexter.modules.content.atoms._qa_rail_common import (
+    not_applicable_review,
+    resolve_gate_states,
+    reviewer_to_dict,
+)
 from poindexter.plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
@@ -675,7 +684,7 @@ def _founder_facts(site_config: Any) -> str:
 
 def _product_markers(site_config: Any) -> list[str]:
     """Lowercased markers that make a draft 'about our system'."""
-    markers = []
+    markers: list[str] = []
     try:
         raw = site_config.get("qa_self_claim_product_names", "poindexter") or ""
     except Exception:  # noqa: BLE001 — stubbed site_config
@@ -792,11 +801,32 @@ def check_paths(paths: list[str], root: Path | None = None) -> list[str]:
     ]
 
 
+def _na(reason: str) -> dict[str, Any]:
+    """The rail ran and found nothing falsifiable — an honest pass.
+
+    ``self_claim`` is ``required_to_pass`` and speaks on ~2% of drafts (4 of
+    171 passes over 45 days), so a bare ``{}`` reads to ``qa.aggregate`` as an
+    ABSENT required gate and hard-vetoes every post that simply does not talk
+    about us (poindexter#1060).
+    """
+    return {"qa_rail_reviews": [not_applicable_review(
+        reviewer="self_claim", provider="programmatic", feedback=reason,
+    )]}
+
+
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     content = (state.get("content") or "").strip()
     site_config = state.get("site_config")
-    if not content or site_config is None or not _is_enabled(site_config):
+    if not content or site_config is None:
+        # Genuinely COULD NOT run. Fail closed: a required gate with no review
+        # is a veto, and that is the guard working as intended here.
         return {}
+    if not _is_enabled(site_config):
+        # A disabled rail must not be able to veto. qa_self_claim_enabled says
+        # whether the rail RUNS; qa_gates.self_claim.required_to_pass says
+        # whether it GATES. Returning {} makes the off switch hard-reject
+        # every post, so the two levers would fight.
+        return _na("Self-claim rail disabled (qa_self_claim_enabled=false).")
 
     topic = str(state.get("topic") or "")
     markers = _product_markers(site_config)
@@ -838,7 +868,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not is_self_referential(content, topic, markers) and not (
         bio_checked or exp_checked
     ):
-        return {}
+        return _na(
+            "Draft makes no claims about this system — nothing to check "
+            "against the repo, the settings table or the operating record."
+        )
 
     self_referential = is_self_referential(content, topic, markers)
 
@@ -860,6 +893,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     offenders += check_paths(paths)
 
     pool = resolve_pool(state, atom="qa.self_claim")
+    # Layers a failed dependency prevented from running. The rail stays
+    # fail-open (reduced coverage, never a fake verdict), but the N/A review
+    # must SAY so rather than read as "the draft asserted nothing".
+    coverage_gaps: list[str] = []
     checked_db_layers = False
     if pool is not None and (qscore_claims or settings_tokens):
         try:
@@ -884,6 +921,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                     ]
             checked_db_layers = True
         except Exception as e:  # noqa: BLE001
+            coverage_gaps.append("quality-score/settings layers (DB unavailable)")
             logger.warning(
                 "[qa.self_claim] DB layers skipped (reduced coverage, "
                 "never a fake verdict): %s", e,
@@ -901,6 +939,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
             record = await load_operating_record(site_config, pool)
         except Exception as e:  # noqa: BLE001
+            coverage_gaps.append("capability/install-spec layers (operating record unavailable)")
             logger.warning(
                 "[qa.self_claim] operating record unavailable — capability/spec "
                 "layers skipped (reduced coverage, never a fake verdict): %s", e,
@@ -913,9 +952,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             if install_specs:
                 spec_offenders, specs_checked = check_install_specs(install_specs, record)
                 offenders += spec_offenders
-    # Nothing falsifiable EXTRACTED → no review at all. Prose ABOUT the
-    # pipeline that asserts nothing checkable must not fire (issue
-    # acceptance), and a vacuous 100 would skew the all-rail average.
+    # Nothing falsifiable EXTRACTED → a scoreless not_applicable pass, never
+    # silence. Prose ABOUT the pipeline that asserts nothing checkable must
+    # not fire (issue acceptance) and a vacuous 100 must not skew the all-rail
+    # average — not_applicable gives both, while still satisfying the required
+    # gate honestly instead of by absence (poindexter#1060).
     checked_anything = (
         versions_checked
         or bool(paths)
@@ -934,7 +975,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         else:
             advisory_offenders += found
     if not offenders and not advisory_offenders and not checked_anything:
-        return {}
+        if coverage_gaps:
+            return _na(
+                "No verdict — reduced coverage: " + "; ".join(coverage_gaps)
+                + ". Nothing was resolved, so nothing is claimed either way."
+            )
+        return _na(
+            "Draft discusses this system but asserts nothing falsifiable — "
+            "no version, path, settings key, quality score, named capability, "
+            "install spec, biography or conducted-experiment claim to resolve."
+        )
 
     from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
