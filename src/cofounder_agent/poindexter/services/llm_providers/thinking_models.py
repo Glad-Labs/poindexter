@@ -329,6 +329,34 @@ def resolve_judge_num_predict(model: str, site_config: Any) -> int:
     ``finish_reason='length'`` is this budget; with ``'stop'`` after a few
     tokens it is the JSON constraint.
 
+    **There is a THIRD mode, and it is the only one that does not come back
+    empty** (found 2026-09-18 while triaging deepeval_faithfulness). A judge
+    with a large budget can emit a long, well-formed answer and still run out
+    mid-value:
+
+        JSONDecodeError: Unterminated string starting at: line 155 column 17
+                         (char 19937)
+
+    Partial content, valid JSON up to the cut. Neither dial above is the
+    culprit — the budget was doing its job, the ANSWER was simply longer than
+    any budget worth granting. It showed up when the deepeval judge briefly ran
+    on the bare ``qwen3-vl:30b`` thinking tag (2026-08-31 → 09-07) instead of
+    the ``-a3b-instruct`` pin: output reached 15,453 tokens against the
+    instruct build's 4,096 ceiling, and rails whose answer scales with the
+    draft (faithfulness emits one verdict per extracted claim) truncated first.
+    Re-pinning to the instruct build fixed it — 0 bare-tag calls and 92% rail
+    presence in the following week.
+
+    So the triage table is:
+
+    ==========================  ==========================================
+    symptom                     cause
+    ==========================  ==========================================
+    empty + ``length``          this budget (starvation)
+    empty + ``stop`` @ ~30 tok  the JSON constraint (judge_json_mode_supported)
+    PARTIAL + unterminated      the wrong model is answering, not the budget
+    ==========================  ==========================================
+
     Reads the same two dials as the critic path so one setting governs every
     judge in the system.
     """
