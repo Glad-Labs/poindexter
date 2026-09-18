@@ -389,3 +389,147 @@ class TestFetchSpeech:
             assert cat["samples2"][0] in samplers and cat["samples2"][0] != first_sampler
         # the decoded frames still come chunk by chunk through ImageBatch
         assert len(_by_class(g, "ImageBatch")) == 3 and len(_by_class(g, "VAEDecode")) == 4
+
+
+# ---------------------------------------------------------------------------
+# audio pace correction (2026-09-18)
+# ---------------------------------------------------------------------------
+#
+# Each chunk consumes batch_frames = latent_t*4 audio-embed frames at 16 fps
+# (5.000 s for the default 77) but the VAE decodes latent_t latents into
+# (latent_t-1)*4+1 = 77 frames (4.8125 s). The mouth therefore runs 80/77 fast,
+# cumulatively: ~0.4 s by the end of a 10 s clip, ~1.0 s by the end of a 25 s
+# one — the asymmetry the operator reported ("intro pretty good, final a
+# little bit off"). No choice of `length` fixes it; stretching the
+# CONDITIONING audio does.
+
+class TestAudioPaceFactor:
+    def test_default_length_needs_the_eighty_over_seventyseven_stretch(self):
+        from poindexter.services.video_providers.comfyui import s2v_audio_pace_factor
+
+        assert s2v_audio_pace_factor(77) == pytest.approx(80 / 77)
+
+    @pytest.mark.parametrize("length", [77, 81, 49, 97, 121])
+    def test_every_length_leaves_exactly_three_frames_of_slip(self, length):
+        """video frames = 4*latent_t - 3 while the audio window is 4*latent_t,
+        so no `length` makes them agree — the correction is not optional."""
+        from poindexter.services.video_providers.comfyui import s2v_audio_pace_factor
+
+        latent_t = ((length - 1) // 4) + 1
+        assert s2v_audio_pace_factor(length) == pytest.approx(
+            (latent_t * 4) / (latent_t * 4 - 3),
+        )
+
+    def test_factor_is_a_stretch_never_a_squeeze(self):
+        from poindexter.services.video_providers.comfyui import s2v_audio_pace_factor
+
+        for length in (5, 13, 77, 201):
+            assert s2v_audio_pace_factor(length) > 1.0
+
+    def test_drift_over_a_clip_matches_what_was_observed(self):
+        """Sanity-check the arithmetic against the two measured clips."""
+        from poindexter.services.video_providers.comfyui import s2v_audio_pace_factor
+
+        slip = s2v_audio_pace_factor(77) - 1.0  # fraction of clip time
+        assert 10.6 * slip == pytest.approx(0.41, abs=0.02)   # opening: fine
+        assert 24.5 * slip == pytest.approx(0.95, abs=0.02)   # closing: off
+
+
+class TestPaceCorrectedGraph:
+    def test_corrected_conditioning_gets_its_own_audio_node(self):
+        """The clip must still CARRY real-time speech: conditioning on the
+        stretched track while muxing the original needs two LoadAudio nodes."""
+        g = _graph(audio_name="paced.wav", mux_audio_name="speech.wav")
+        loads = _by_class(g, "LoadAudio")
+        assert loads["6"]["inputs"]["audio"] == "paced.wav"
+        assert loads["6b"]["inputs"]["audio"] == "speech.wav"
+        (enc,), = [list(_by_class(g, "AudioEncoderEncode").values())]
+        assert enc["inputs"]["audio"] == ["6", 0], "the lips follow the paced track"
+        (cv,), = [list(_by_class(g, "CreateVideo").values())]
+        assert cv["inputs"]["audio"] == ["6b", 0], "the clip carries real-time speech"
+
+    def test_uncorrected_graph_keeps_a_single_audio_node(self):
+        for kwargs in ({}, {"mux_audio_name": "speech.wav"}):
+            g = _graph(audio_name="speech.wav", **kwargs)
+            assert list(_by_class(g, "LoadAudio")) == ["6"]
+            (cv,), = [list(_by_class(g, "CreateVideo").values())]
+            assert cv["inputs"]["audio"] == ["6", 0]
+
+
+class TestFetchSpeechPaceCorrection:
+    @pytest.mark.asyncio
+    async def test_conditioning_is_the_stretched_upload_and_the_mux_is_not(
+        self, tmp_path, fast_poll, monkeypatch,
+    ):
+        import poindexter.services.video_providers.comfyui as cu
+
+        seen: dict = {}
+
+        async def fake_stretch(src, dest, factor):
+            seen["factor"] = factor
+            seen["src"] = src
+            with open(dest, "wb") as fh:
+                fh.write(b"PACED")
+            return True, ""
+
+        monkeypatch.setattr(cu, "_stretch_audio", fake_stretch)
+        provider = ComfyUIProvider()
+        fake = _FakeClient(_happy_routes())
+        with _patched_client(fake):
+            await provider.fetch("a presenter speaks", _config(tmp_path))
+
+        assert provider.last_error == ""
+        assert seen["factor"] == pytest.approx(80 / 77)
+        names = [n for n, _ in fake.uploads]
+        assert names == ["still.png", "speech.wav", "conditioning.wav"]
+        graph = fake.submitted_graphs[0]
+        loads = _by_class(graph, "LoadAudio")
+        assert loads["6"]["inputs"]["audio"] == "conditioning.wav"
+        assert loads["6b"]["inputs"]["audio"] == "speech.wav"
+
+    @pytest.mark.asyncio
+    async def test_disabled_setting_conditions_on_the_real_time_track(
+        self, tmp_path, fast_poll, monkeypatch,
+    ):
+        import poindexter.services.video_providers.comfyui as cu
+
+        called = {"n": 0}
+
+        async def fake_stretch(*_a, **_k):
+            called["n"] += 1
+            return True, ""
+
+        monkeypatch.setattr(cu, "_stretch_audio", fake_stretch)
+        provider = ComfyUIProvider()
+        fake = _FakeClient(_happy_routes())
+        cfg = _config(tmp_path)
+        cfg["_site_config"] = _FakeSiteConfig(
+            {"video_comfyui_s2v_audio_pace_correction_enabled": "false"},
+        )
+        with _patched_client(fake):
+            await provider.fetch("a presenter speaks", cfg)
+
+        assert called["n"] == 0
+        assert [n for n, _ in fake.uploads] == ["still.png", "speech.wav"]
+        assert list(_by_class(fake.submitted_graphs[0], "LoadAudio")) == ["6"]
+
+    @pytest.mark.asyncio
+    async def test_stretch_failure_still_renders_on_the_original_audio(
+        self, tmp_path, fast_poll, monkeypatch,
+    ):
+        """An uncorrected clip is the old behaviour; a missing clip is a lost
+        shot — the correction must never be able to fail a render."""
+        import poindexter.services.video_providers.comfyui as cu
+
+        async def boom(*_a, **_k):
+            return False, "ffmpeg rc=1"
+
+        monkeypatch.setattr(cu, "_stretch_audio", boom)
+        provider = ComfyUIProvider()
+        fake = _FakeClient(_happy_routes())
+        with _patched_client(fake):
+            results = await provider.fetch("a presenter speaks", _config(tmp_path))
+
+        assert provider.last_error == "" and len(results) == 1
+        assert [n for n, _ in fake.uploads] == ["still.png", "speech.wav"]
+        assert list(_by_class(fake.submitted_graphs[0], "LoadAudio")) == ["6"]

@@ -222,6 +222,47 @@ forbidding motion by roughly 4x** — reach for the positive prompt first when
 tuning register, and A/B on the same portrait + narration + seed
 (`headcmp/s2v_ab.py`) rather than changing several knobs at once.
 
+## Audio pace: a chunk eats 5.000 s of speech but renders 4.8125 s of video
+
+Three numbers, all read from ComfyUI's `comfy_extras/nodes_wan.py` rather than
+inferred:
+
+- `latent_t = ((length - 1) // 4) + 1` — **20** for the default 77 frames.
+- `batch_frames = latent_t * 4` — **80** audio-embed buckets consumed per
+  chunk, and `get_audio_embed_bucket_fps` samples those buckets at
+  `target_fps = fps` (16), so one chunk eats **5.000 s** of speech.
+- the VAE decodes `latent_t` latents into `(latent_t - 1) * 4 + 1` = **77**
+  frames — **4.8125 s** of video (confirmed on render e4ccafa2: 6 chunks
+  produced 461 frames).
+
+So the mouth runs **80/77 = 3.9 % fast**, and the error is *cumulative within a
+clip*: ~0.41 s by the end of a 10.6 s opening, ~0.96 s by the end of a 24.5 s
+closing. That is exactly the asymmetry the operator reported — "the intro
+presenter is pretty good, the final is a little bit off still" — and it is why
+the defect hid for so long: every short clip looked fine.
+
+**No choice of `length` fixes it.** Video frames are always `4·latent_t − 3`
+while the audio window is always `4·latent_t`; the slip is exactly three frames
+per chunk for every length. Since stack#3848 the provider instead **stretches
+the conditioning audio** by that factor (`atempo`, pitch preserved) before
+upload, so chunk *k* covers real speech `[(k−1)·length/fps, k·length/fps]` —
+precisely the video it renders. The clip's own audio track stays real-time: a
+second `LoadAudio` node feeds `CreateVideo` whenever the two differ, so a
+viewer of the standalone clip hears unmodified speech. Setting:
+`video_comfyui_s2v_audio_pace_correction_enabled`. Best-effort — a failed
+stretch conditions on the original audio, because an uncorrected clip is the
+old behaviour while a missing clip is a lost shot.
+
+This also makes `s2v_chunks_for` honest: it counts chunks at the video rate,
+which is only the speech rate once the audio is corrected.
+
+**How it was caught.** Lip-sync cross-correlation was too noisy to see it
+(r ≈ 0.1). The decisive evidence was arithmetic read from the node's source,
+plus a CPU-only three-arm test on the already-rendered clip: resampling the
+video by 80/77 raised its correlation with the audio (+0.056) while the inverse
+lowered it (−0.008) — `headcmp/stretch_test.py`. Reach for a transform test on
+existing output before spending a GPU hour on a re-render.
+
 ## Chunk chaining: the Extend node reads its audio offset off the latent
 
 Wan 2.2 S2V renders 77 frames (4.8 s) per chunk; longer speech is chained with

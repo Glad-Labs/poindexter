@@ -857,6 +857,15 @@ DEFAULTS: dict[str, str] = {
     'video_comfyui_s2v_shift': '8.0',
     'video_comfyui_s2v_sampler': 'uni_pc',
     'video_comfyui_s2v_length_frames': '77',
+    # Each S2V chunk consumes batch_frames = latent_t*4 (80) audio-embed frames
+    # at 16 fps = 5.000 s of speech, but the VAE decodes latent_t latents into
+    # (latent_t-1)*4+1 = 77 frames = 4.8125 s of video — so the mouth runs
+    # 80/77 = 3.9% fast, CUMULATIVELY (~0.4 s by the end of a 10 s clip, ~1.0 s
+    # by the end of a 25 s one; measured on render e4ccafa2, 2026-09-18).
+    # No choice of length fixes it: video frames are always 4*latent_t-3 while
+    # the audio window is always 4*latent_t. Pre-stretching the CONDITIONING
+    # audio does. The clip's own audio track stays real-time either way.
+    'video_comfyui_s2v_audio_pace_correction_enabled': 'true',
     'video_comfyui_s2v_max_chunks': '6',
     # Per-chunk render budget; the call's timeout is this x chunks (a 20-step
     # chunk took ~420 s on an otherwise idle 5090).
@@ -5113,6 +5122,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_comfyui_s2v_shift': {'owner': 'video', 'value_type': 'float'},
     'video_comfyui_s2v_sampler': {'owner': 'video', 'value_type': 'string'},
     'video_comfyui_s2v_length_frames': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_s2v_audio_pace_correction_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_comfyui_s2v_max_chunks': {'owner': 'video', 'value_type': 'integer'},
     'video_comfyui_s2v_timeout_per_chunk_s': {'owner': 'video', 'value_type': 'integer'},
     'video_comfyui_s2v_workflow_override_json': {'owner': 'video', 'value_type': 'string'},

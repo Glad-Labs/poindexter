@@ -93,6 +93,7 @@ import logging
 import math
 import os
 import random
+import tempfile
 import time
 from typing import Any
 
@@ -100,6 +101,7 @@ import httpx
 
 from poindexter.plugins.video_provider import VideoResult
 from poindexter.services.podcast_sting_mixer import probe_duration_s
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +176,7 @@ _OVERRIDE_NUMERIC = {
 _OVERRIDE_TEXTUAL = {
     "__PROMPT__", "__NEGATIVE__", "__INIT_IMAGE__", "__FILENAME_PREFIX__",
     "__AUDIO__",  # speech path only: server-side name of the uploaded audio
+    "__MUX_AUDIO__",  # speech path: real-time speech for the clip's own track
 }
 
 
@@ -333,8 +336,12 @@ def substitute_override(template: Any, values: dict[str, Any]) -> Any:
 def s2v_chunks_for(audio_s: float, length: int, fps: int, max_chunks: int) -> int:
     """How many S2V chunks cover ``audio_s`` seconds of speech.
 
-    One chunk is ``length`` frames at ``fps`` (77 @ 16 = 4.8125 s). Always at
-    least one, never more than ``max_chunks`` — the caller reads the cap back
+    One chunk is ``length`` frames at ``fps`` (77 @ 16 = 4.8125 s). That is the
+    VIDEO rate, and it is also the rate real speech is consumed at *only
+    because* the conditioning audio is pace-corrected — see
+    :func:`s2v_audio_pace_factor`, without which a chunk eats 5.000 s of speech
+    and this count comes up short. Always at least one, never more than
+    ``max_chunks`` — the caller reads the cap back
     as ``audio_truncated`` in the result metadata rather than rendering a
     clip that silently outlives its render budget.
     """
@@ -343,6 +350,76 @@ def s2v_chunks_for(audio_s: float, length: int, fps: int, max_chunks: int) -> in
     per_chunk_s = length / fps
     wanted = math.ceil(audio_s / per_chunk_s - 1e-9)
     return max(1, min(wanted, max(1, int(max_chunks))))
+
+
+def s2v_audio_pace_factor(length: int) -> float:
+    """How much LONGER the conditioning audio must be made so the model's
+    audio window advances in step with the video it renders.
+
+    Read from ComfyUI's ``comfy_extras/nodes_wan.py``:
+
+    * ``latent_t = ((length - 1) // 4) + 1`` — 20 for the default 77 frames.
+    * ``batch_frames = latent_t * 4`` — **80**. That many audio-embed buckets
+      are consumed per chunk, and ``get_audio_embed_bucket_fps`` samples the
+      buckets at ``target_fps=fps`` (16), so one chunk eats **5.000 s** of
+      speech.
+    * the VAE decodes ``latent_t`` latents into ``(latent_t - 1) * 4 + 1`` =
+      **77** frames — **4.8125 s** of video at 16 fps (confirmed on the
+      2026-09-18 render: 6 chunks produced 461 frames).
+
+    So every chunk consumes 3 frames more audio than it renders video, and the
+    mouth runs fast by ``80/77`` = 3.9%. The error is CUMULATIVE within a
+    clip — ~0.41 s by the end of a 10.6 s opening (which reads as fine) and
+    ~0.96 s by the end of a 24.5 s closing (which reads as broken). That is
+    exactly the asymmetry the operator reported on render e4ccafa2: "the intro
+    presenter is pretty good, the final is a little bit off still".
+
+    Choosing a different ``length`` cannot fix it: video frames are always
+    ``4 * latent_t - 3`` while the audio window is always ``4 * latent_t``.
+    Pre-stretching the conditioning audio by this factor does — chunk *k* then
+    covers real speech ``[(k-1) * length/fps, k * length/fps]``, which is
+    exactly the video it renders.
+    """
+    latent_t = ((max(1, int(length)) - 1) // 4) + 1
+    audio_frames = latent_t * 4
+    video_frames = audio_frames - 3
+    if video_frames <= 0:
+        return 1.0
+    return audio_frames / video_frames
+
+
+async def _stretch_audio(src: str, dest: str, factor: float) -> tuple[bool, str]:
+    """Write ``src`` to ``dest`` lengthened by ``factor``, pitch preserved.
+
+    ``atempo`` takes a RATE, so a 1.039x longer file is ``atempo=1/1.039``.
+    Best-effort by contract: any failure returns False and the caller falls
+    back to the original audio — an uncorrected clip is the old behaviour,
+    while a missing clip is a lost shot.
+    """
+    if factor <= 1.0 + 1e-9:
+        return False, "no correction needed"
+    tempo = 1.0 / factor
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-loglevel", "error", "-y", "-i", src,
+            "-filter:a", f"atempo={tempo:.6f}", "-ac", "1", "-ar", "16000", dest,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+        )
+        _, err = await asyncio.wait_for(proc.communicate(), timeout=120)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[ComfyUIProvider] audio pace correction failed to run (%s) — "
+            "conditioning on the unstretched speech", describe_exception(exc),
+        )
+        return False, describe_exception(exc)
+    if proc.returncode != 0 or not os.path.exists(dest) or os.path.getsize(dest) == 0:
+        logger.warning(
+            "[ComfyUIProvider] audio pace correction exited %s (%s) — "
+            "conditioning on the unstretched speech",
+            proc.returncode, (err or b"").decode("utf-8", "replace").strip()[:200],
+        )
+        return False, f"ffmpeg rc={proc.returncode}"
+    return True, ""
 
 
 def _audio_content_type(path: str) -> str:
@@ -386,8 +463,14 @@ def build_s2v_graph(
     text_encoder: str = _DEFAULT_TEXT_ENCODER,
     vae: str = _DEFAULT_VAE,
     filename_prefix: str = _S2V_FILENAME_PREFIX,
+    mux_audio_name: str | None = None,
 ) -> dict[str, Any]:
     """Build the Wan 2.2 S2V talking-head graph in ComfyUI API format.
+
+    ``audio_name`` drives the lips (pace-corrected when the caller corrected
+    it); ``mux_audio_name`` is muxed into the output clip and defaults to
+    ``audio_name`` — pass the ORIGINAL speech so the standalone clip plays at
+    real time even when the conditioning was stretched.
 
     Chunk 1 is ``WanSoundImageToVideo`` (reference still + audio embedding);
     every further chunk is ``WanSoundImageToVideoExtend`` fed the WHOLE video
@@ -468,8 +551,16 @@ def build_s2v_graph(
         graph[cat] = {"class_type": "LatentConcat", "inputs": {
             "samples1": video_so_far, "samples2": [samp, 0], "dim": "t"}}
         images_src, video_so_far = [batch, 0], [cat, 0]
+    # The clip's OWN audio track. A SECOND LoadAudio only when the conditioning
+    # audio was pace-corrected (s2v_audio_pace_factor) and therefore is not the
+    # real-time speech a viewer of the standalone clip must hear; otherwise the
+    # graph keeps its single audio node.
+    mux_src: list[Any] = ["6", 0]
+    if mux_audio_name and mux_audio_name != audio_name:
+        graph["6b"] = {"class_type": "LoadAudio", "inputs": {"audio": mux_audio_name}}
+        mux_src = ["6b", 0]
     graph["90"] = {"class_type": "CreateVideo", "inputs": {
-        "images": images_src, "fps": float(fps), "audio": ["6", 0]}}
+        "images": images_src, "fps": float(fps), "audio": mux_src}}
     graph["91"] = {"class_type": "SaveVideo", "inputs": {
         "video": ["90", 0], "filename_prefix": filename_prefix,
         "format": "mp4", "codec": "h264"}}
@@ -814,6 +905,7 @@ class ComfyUIProvider:
             "__NEGATIVE__": values["negative"],
             "__INIT_IMAGE__": values["ref_image_name"],
             "__AUDIO__": values["audio_name"],
+            "__MUX_AUDIO__": values.get("mux_audio_name") or values["audio_name"],
             "__FILENAME_PREFIX__": _S2V_FILENAME_PREFIX,
             "__WIDTH__": int(values["width"]),
             "__HEIGHT__": int(values["height"]),
@@ -872,6 +964,10 @@ class ComfyUIProvider:
         negative = str(config.get("negative_prompt", "") or "") or str(
             _sc_get(site_config, "video_comfyui_negative_prompt", _DEFAULT_NEGATIVE),
         )
+        pace_factor = s2v_audio_pace_factor(length)
+        pace_correction = _sc_bool(
+            site_config, "video_comfyui_s2v_audio_pace_correction_enabled", True,
+        )
 
         audio_s = _as_float(config.get("audio_duration_s"))
         if audio_s is None:
@@ -908,18 +1004,54 @@ class ComfyUIProvider:
                 if not ref_name:
                     self.last_error = reason
                     return []
-                audio_name, reason = await self._upload_file(
+                # The clip's own audio track: always the REAL-TIME speech.
+                mux_audio_name, reason = await self._upload_file(
                     client, server_url, audio_path,
                     content_type=_audio_content_type(audio_path),
                     label="speech-audio",
                 )
-                if not audio_name:
+                if not mux_audio_name:
                     self.last_error = reason
                     return []
+                # The CONDITIONING track, pace-corrected so the model's audio
+                # window advances in step with the video it renders (see
+                # s2v_audio_pace_factor). Falls back to the real-time track.
+                audio_name = mux_audio_name
+                if pace_correction:
+                    with tempfile.TemporaryDirectory(prefix="s2v_pace_") as tmp:
+                        paced = os.path.join(tmp, "conditioning.wav")
+                        ok, why = await _stretch_audio(audio_path, paced, pace_factor)
+                        if ok:
+                            paced_name, paced_reason = await self._upload_file(
+                                client, server_url, paced,
+                                content_type="audio/wav",
+                                label="speech-audio-paced",
+                            )
+                            if paced_name:
+                                audio_name = paced_name
+                                latent_t = ((length - 1) // 4) + 1
+                                logger.info(
+                                    "[ComfyUIProvider] conditioning audio pace-corrected "
+                                    "x%.4f — each chunk consumes %d audio frames but "
+                                    "renders %d video frames",
+                                    pace_factor, latent_t * 4, latent_t * 4 - 3,
+                                )
+                            else:
+                                logger.warning(
+                                    "[ComfyUIProvider] paced audio upload failed (%s) — "
+                                    "conditioning on the unstretched speech", paced_reason,
+                                )
+                        elif why != "no correction needed":
+                            logger.warning(
+                                "[ComfyUIProvider] pace correction unavailable (%s) — "
+                                "the mouth will run ~%.1f%% fast over this clip",
+                                why, (pace_factor - 1.0) * 100.0,
+                            )
                 graph, reason = self._resolve_s2v_graph(
                     site_config=site_config,
                     prompt=prompt, negative=negative,
                     ref_image_name=ref_name, audio_name=audio_name,
+                    mux_audio_name=mux_audio_name,
                     width=width, height=height, length=length, fps=fps,
                     seed=seed, steps=steps, cfg=cfg, shift=shift,
                     sampler=sampler, chunks=chunks,
