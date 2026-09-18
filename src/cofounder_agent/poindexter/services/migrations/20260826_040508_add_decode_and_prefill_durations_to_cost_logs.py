@@ -1,6 +1,6 @@
 """Migration 20260826_040508_add_decode_and_prefill_durations_to_cost_logs: add decode and prefill durations to cost_logs
 
-ISSUE: Glad-Labs/glad-labs-stack#3340 follow-up (operator ask 2026-08-26)
+ISSUE: Glad-Labs/poindexter#3340 follow-up (operator ask 2026-08-26)
 
 ``cost_logs.duration_ms`` is wall-clock call time, so the Model Throughput
 surfaces (stack#3340) can only show *effective* output tok/s — prompt
