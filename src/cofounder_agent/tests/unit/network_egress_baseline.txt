@@ -41,7 +41,6 @@
 1 tests/unit/modules/content/test_image_atom_contracts.py
 1 tests/unit/modules/content/test_writer_core_silent_failures.py
 3 tests/unit/modules/content/test_writer_markers.py
-1 tests/unit/modules/finance/test_finance_probe.py
 1 tests/unit/services/flows/test_content_generation_flow.py
 1 tests/unit/services/flows/test_content_generation_trace.py
 1 tests/unit/services/jobs/test_backfill_post_performance_gsc_job.py

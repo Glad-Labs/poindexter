@@ -13,7 +13,22 @@ plus its routing (notify_fn + audit_log) and the gates that keep it quiet:
 - the Probe-Protocol adapter maps the summary to a ProbeResult severity
 
 A fake asyncpg pool serves app_settings + finance_poll_runs reads and
-records audit_log inserts. ``notify_fn`` is a spy so no network is touched.
+records audit_log inserts, and ``notify_fn`` is a spy.
+
+That was once described here as "so no network is touched", and it was not
+true: the auth-lost path ALSO looks up the worker's public egress IP through
+``_default_egress_ip_fetch`` (``https://api.ipify.org``), and
+``test_auth_failed_pages_critical`` — the only test that reaches that path —
+left it unstubbed. It really did open a socket to Cloudflare on every run,
+which the poindexter#1011 egress guard caught. The probe already exposed an
+``ip_fetch_fn`` seam whose own docstring says "tests inject a stub"; four
+tests did, twelve did not, and only the one that exercised the auth path was
+punished for it.
+
+So the stub is now AUTOUSE rather than per-call: a test that reaches a new
+code path cannot silently acquire a network dependency by forgetting an
+argument. Tests asserting on a specific address still pass ``ip_fetch_fn``
+explicitly, and that still wins.
 """
 
 from __future__ import annotations
@@ -31,6 +46,32 @@ from poindexter.modules.finance.probes import (
 )
 
 _NOW = 1_780_000_000.0
+
+# Sentinel the assertions never look for — a test that cares about the address
+# injects ip_fetch_fn itself, and an explicit argument beats this default.
+_STUB_EGRESS_IP = "203.0.113.7"  # TEST-NET-3, never routable
+
+
+@pytest.fixture(autouse=True)
+def _no_egress_ip_lookup(monkeypatch, request):
+    """Stub the probe's public-IP reflector for EVERY test in this file.
+
+    The seam is patched on the MODULE, not passed per call, because the bug
+    this prevents is an omission: `run_finance_poll_staleness_probe` falls back
+    to `_default_egress_ip_fetch` when `ip_fetch_fn` is absent, so forgetting
+    the argument silently buys a live HTTPS call instead of failing.
+
+    The tests OF that function mark themselves ``real_egress_fetch`` — they
+    stub httpx at the transport instead, which is the right level when the
+    function itself is the subject.
+    """
+    if request.node.get_closest_marker("real_egress_fetch"):
+        return
+
+    async def _stub(_pool):
+        return _STUB_EGRESS_IP
+
+    monkeypatch.setattr(_probes_mod, "_default_egress_ip_fetch", _stub)
 
 
 class _FakePool:
@@ -450,6 +491,7 @@ async def test_egress_ip_lookup_only_runs_on_auth_lost():
 
 
 @pytest.mark.unit
+@pytest.mark.real_egress_fetch
 async def test_default_egress_ip_fetch_reads_configured_url_and_strips(monkeypatch):
     """The default fetch reads finance_egress_ip_echo_url and returns the
     trimmed body (the public egress IPv4 the reflector echoes back)."""
@@ -489,6 +531,7 @@ async def test_default_egress_ip_fetch_reads_configured_url_and_strips(monkeypat
 
 
 @pytest.mark.unit
+@pytest.mark.real_egress_fetch
 async def test_default_egress_ip_fetch_returns_none_on_error(monkeypatch):
     """A network failure in the reflector call returns None (never raises), so
     the alert falls back cleanly instead of crashing the probe."""
@@ -515,6 +558,7 @@ async def test_default_egress_ip_fetch_returns_none_on_error(monkeypatch):
 
 
 @pytest.mark.unit
+@pytest.mark.real_egress_fetch
 async def test_default_egress_ip_fetch_emits_finding_on_httpx_failure(monkeypatch):
     """The same network failure also fires a ``finance_egress_ip_lookup_failed``
     finding rather than swallowing the error silently (gap-site burn-down

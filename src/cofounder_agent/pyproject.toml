@@ -627,6 +627,11 @@ markers = [
     # `--strict-markers` collection still passes when the plugin isn't
     # installed (e.g. a slim worktree without the dev deps). #994.
     "timeout: per-test wall-clock timeout (pytest-timeout)",
+    # Opt-out for the autouse egress stub in tests/unit/modules/finance: a
+    # test whose SUBJECT is _default_egress_ip_fetch stubs httpx at the
+    # transport instead, which is the right level when the reflector call is
+    # the thing under test (poindexter#1011).
+    "real_egress_fetch: exercises the real _default_egress_ip_fetch (httpx stubbed at transport)",
     # Real-import guard for the opt-in sentence-transformers `rerank` extra.
     # Self-skips where the extra isn't installed (default CI, slim worktree);
     # runs + fails loud where it is (host dev, worker image, the
