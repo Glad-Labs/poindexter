@@ -4084,6 +4084,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # LiteLLM's Ollama transform_response (services/llm_providers/ollama_timings.py).
     # Fail-open is correct for the call path but means the capture can stop
     # SILENTLY on a litellm upgrade — this probe is the watcher for that.
+    # poindexter#1032 — fan-out router-dataset health. Window is a WEEK
+    # because the fan-out produces ~3 judged rows/day; 24h would sit
+    # under any useful sample floor.
+    'image_fanout_probe_enabled': 'true',
+    'image_fanout_probe_window_hours': '168',
+    'image_fanout_probe_min_sample': '20',
+    'image_fanout_probe_max_unscored_pct': '10',
+    'image_fanout_probe_min_url_coverage_pct': '95',
     'llm_decode_split_probe_enabled': 'true',
     # Alert window. Coverage is judged over the last N hours only: a wider window
     # keeps re-reporting the pre-2026-08-26 rows that predate the capture and can
@@ -6183,6 +6191,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'llm_decode_split_learn_days': {'owner': 'probe_decode_split_coverage', 'value_type': 'integer'},
     'llm_decode_split_min_coverage_pct': {'owner': 'probe_decode_split_coverage', 'value_type': 'integer'},
     'llm_decode_split_min_sample': {'owner': 'probe_decode_split_coverage', 'value_type': 'integer'},
+    'image_fanout_probe_enabled': {'owner': 'probe_fanout_dataset_health', 'value_type': 'boolean'},
+    'image_fanout_probe_window_hours': {'owner': 'probe_fanout_dataset_health', 'value_type': 'integer'},
+    'image_fanout_probe_min_sample': {'owner': 'probe_fanout_dataset_health', 'value_type': 'integer'},
+    'image_fanout_probe_max_unscored_pct': {'owner': 'probe_fanout_dataset_health', 'value_type': 'integer'},
+    'image_fanout_probe_min_url_coverage_pct': {'owner': 'probe_fanout_dataset_health', 'value_type': 'integer'},
     'llm_decode_split_probe_enabled': {'owner': 'probe_decode_split_coverage', 'value_type': 'boolean'},
     'llm_decode_split_window_hours': {'owner': 'probe_decode_split_coverage', 'value_type': 'integer'},
     'settings_zero_reader_probe_enabled': {'owner': 'probe_zero_reader_settings', 'value_type': 'boolean'},

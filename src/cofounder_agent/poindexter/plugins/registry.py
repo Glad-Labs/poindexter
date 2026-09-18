@@ -906,6 +906,19 @@ def get_core_samples() -> dict[str, list[Any]]:
             "poindexter.services.jobs.probe_decode_split_coverage",
             "ProbeDecodeSplitCoverageJob",
         ),
+        # ProbeFanoutDatasetHealthJob — the featured fan-out exists to collect
+        # the Phase-2 router's training data, and images shipping correctly to
+        # readers says nothing about whether that data measures what the router
+        # needs. The 2026-08-27 audit (poindexter#1032) found 27% of candidate
+        # scores lost to judge truncation and losing renders discarded to /tmp,
+        # so only 42% of recorded wins were comparative preferences. Both are
+        # fixed; nothing watched either, and a total judge failure still looks
+        # identical to a healthy run in the row.
+        (
+            "jobs",
+            "poindexter.services.jobs.probe_fanout_dataset_health",
+            "ProbeFanoutDatasetHealthJob",
+        ),
         # ProbePipelineIdleJob — hourly watchdog on pipeline OUTPUT. Every
         # other health signal is liveness (containers up, scheduler firing,
         # jobs ok=True) and all of them stayed green through a 46-hour content
