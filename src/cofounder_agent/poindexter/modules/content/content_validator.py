@@ -210,6 +210,63 @@ UNLINKED_CITATION_PATTERNS = [
     r"\bdoi:\s*10\.\d{4,}/[^\s\]\)]+",
 ]
 
+# Anonymous appeal to authority (poindexter#1008). "Independent benchmarks …
+# have generally found X" reached awaiting_approval at Q95 doing all the
+# epistemic work of the paragraph with no link, no named benchmark, no date.
+#
+# Uncovered by construction before this: qa.unlinked_attribution resolves an
+# attribution SUBJECT against the research corpus, and an anonymous appeal has
+# no subject; qa.citations only dead-link-checks URLs that already exist; and
+# a vague aggregate claim about "benchmarks generally" is not groundable by
+# qa.web_factcheck. Deterministic, needs no corpus and no LLM, so it belongs
+# here rather than in a rail.
+#
+# Two exemptions carry the precision, and both were earned on the corpus:
+#   - a link in THIS sentence or the NEXT one (citing Zilliz and linking it
+#     must never fire),
+#   - a proper noun immediately before the phrase — "the Knight Institute
+#     research shows …" names its source, which is unlinked_attribution's job.
+#
+# Calibrated against 207 published posts (2026-09-18): 3 hits, all three
+# genuine anonymous appeals, 0 false positives, 8/8 controls. An earlier
+# draft scored 4/7 — it flagged "run independent tests simultaneously"
+# (parallel test execution, not studies) and "patterns across multiple
+# reports" (reports as an object), which is why the quantified family now
+# requires a finding VERB rather than just the noun.
+_APPEAL_FIND_VERB = (
+    # Past tense included deliberately — "several analyses have CONCLUDED"
+    # is the same claim shape and a first draft missed it.
+    r"(?:show|shows|showed|suggest|suggests|suggested|indicate|indicates|"
+    r"indicated|find|finds|found|conclude|concludes|concluded|report|reports|"
+    r"reported|reveal|reveals|revealed|confirm|confirms|confirmed|"
+    r"demonstrate|demonstrates|demonstrated)"
+)
+ANONYMOUS_AUTHORITY_PATTERN = re.compile(
+    r"\b(?:"
+    # bare plural authority directly followed by a finding verb
+    r"(?:studies|research|benchmarks?|surveys?|experts?|analyses)\s+"
+    rf"(?:(?:have|has|generally|consistently|repeatedly)\s+)*{_APPEAL_FIND_VERB}"
+    # quantified authority, verb further along — the gap must cross commas,
+    # because the real example reads "benchmarks comparing embedding models
+    # from OpenAI, Voyage, and Cohere have generally found".
+    r"|(?:independent|multiple|several|various|numerous)\s+"
+    r"(?:studies|benchmarks?|analyses|reports?|surveys?|tests?)"
+    rf"[^.!?]{{0,90}}?\s(?:(?:have|has|generally|consistently)\s+)*{_APPEAL_FIND_VERB}"
+    r"|it(?:'s|\s+is)\s+(?:widely|generally|well)\s+"
+    r"(?:known|accepted|understood|documented|regarded)"
+    r"|most\s+(?:developers|teams|engineers|practitioners|users|operators)\s+"
+    r"(?:agree|agrees|find|finds|report|reports)"
+    r")\b",
+    re.IGNORECASE,
+)
+_APPEAL_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n{2,}")
+_APPEAL_LINK = re.compile(r"\[[^\]]+\]\([^)]*\)|https?://")
+# Trailing proper noun before the phrase. ``(?<!^)`` so a sentence-initial
+# capital ("Independent benchmarks…") is not mistaken for a named source —
+# that bug silently exempted the very sentence this rule exists for.
+_APPEAL_NAMED_BEFORE = re.compile(r"(?<!^)\b(?:[A-Z][a-z]+\s+){1,3}$")
+
+
 # Brand contradiction — we are Ollama-only, never promote paid cloud APIs
 BRAND_CONTRADICTION_PATTERNS = [
     r"(?:pay(?:ing)?\s+(?:for|per)\s+(?:token|API|inference))\s+(?:to|with|from)\s+(?:OpenAI|Anthropic|Google)",
@@ -1236,6 +1293,38 @@ def has_planning_dump(content: str) -> list[str]:
     return detect_planning_dump_preamble(_strip_code_spans(content or ""))
 
 
+def detect_anonymous_authority(content: str) -> list[ValidationIssue]:
+    """Hedged appeals to an UNNAMED authority with nothing behind them."""
+    issues: list[ValidationIssue] = []
+    sentences = [
+        " ".join(s.split())
+        for s in _APPEAL_SENTENCE_SPLIT.split(_strip_html(content or ""))
+        if s.strip()
+    ]
+    for i, sentence in enumerate(sentences):
+        match = ANONYMOUS_AUTHORITY_PATTERN.search(sentence)
+        if not match:
+            continue
+        # A link in this sentence or the next one is a citation, not an appeal.
+        if _APPEAL_LINK.search(" ".join(sentences[i : i + 2])):
+            continue
+        prefix = sentence[: match.start()]
+        if prefix.strip() and _APPEAL_NAMED_BEFORE.search(prefix):
+            continue
+        matched = match.group(0)
+        issues.append(ValidationIssue(
+            severity="warning",
+            category="anonymous_authority",
+            description=(
+                "Appeal to an unnamed authority with no link: "
+                f"'{matched[:80]}' — name the source and link it, or state "
+                "the point without borrowing authority for it"
+            ),
+            matched_text=matched[:160],
+        ))
+    return issues
+
+
 def _check_patterns(
     text: str,
     patterns: list,
@@ -2147,6 +2236,12 @@ def validate_content(
             _scan_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
             "Unlinked citation -- possible hallucinated reference: '{matched}'"
         ))
+
+    # 5b-ii. Anonymous appeal to authority (poindexter#1008). Warning, per the
+    # gentle posture on #765: a single hedge nudges the score, it does not sink
+    # the post.
+    if _enabled("anonymous_authority"):
+        issues.extend(detect_anonymous_authority(content))
 
     # 5c. Hallucinated library/API reference detection (GH-83 part b).
     # Catches `schedule_callback(event)`-style fake asyncio functions and
