@@ -347,6 +347,31 @@ compositor freezes the final frame for the remainder (`tpad=stop_mode=clone`)
 instead of looping the clip back to its first frame mid-sentence. Looping stays
 the default for every other source — an abstract hero clip loops invisibly.
 
+## Version pin: how to bump ComfyUI safely
+
+`Dockerfile.comfyui` pins a release tag and the comment says to bump
+deliberately, because the pinned version *is* the render behaviour behind the
+provider. The 2026-09-18 bump (v0.9.2 → v0.36.0, driven by LTX-2.5 evaluation)
+established the procedure worth repeating:
+
+1. **Build the candidate as a SEPARATE image and run it on another port**
+   (`comfyui-ltx-spike:v0.36.0` on :8189) with the same read-only model
+   mounts. Production keeps serving from its pin throughout; nothing about the
+   experiment can alter a live hero render.
+2. **Diff `/object_info` between the two servers**, not by eye but against the
+   node classes and input fields our own providers emit. The bump added 406
+   classes and removed 29 — all of the removals paid third-party API nodes we
+   never use. Every one of the 20 classes we emit survived with every field
+   intact.
+3. **Then render both lanes for real on the candidate**, submitting the graphs
+   `build_graph()` / `build_s2v_graph()` actually produce rather than a
+   hand-written approximation, and check the output is real imagery rather
+   than a black frame. Hero came back 81 frames @ 832×480; presenter S2V 154
+   frames, exactly 2 × 77, which also exercises the `LatentConcat` chunk chain.
+
+Step 2 alone is not enough — "the node exists" and "the output is unchanged"
+are different claims, and only step 3 tests the second.
+
 ## Headroom accounting: the animator's own pool counts
 
 ComfyUI keeps its caching-allocator pool between prompts. After the first

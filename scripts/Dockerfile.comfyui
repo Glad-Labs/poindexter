@@ -33,7 +33,20 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu12
 
 # Pinned release. Bump deliberately (it changes the render behaviour behind
 # the provider) — never track master.
-ARG COMFYUI_REF=v0.9.2
+#
+# v0.9.2 -> v0.36.0 (2026-09-18). Verified before the bump, not after:
+#   * every node class our providers emit (20 of them) and every input field
+#     we set on each still exists — checked by diffing /object_info between a
+#     v0.36.0 container and the running v0.9.2 one. The 29 classes the bump
+#     REMOVES are all paid third-party API nodes (ByteDance, Kling, Ideogram,
+#     OpenAI, Stability) that this stack neither uses nor would.
+#   * both production lanes then rendered for real on v0.36.0, submitting the
+#     graphs build_graph()/build_s2v_graph() actually emit: hero i2v 81 frames
+#     @832x480, presenter S2V 154 frames (2 chunks x 77) — both real imagery,
+#     not black.
+# The motivation is LTX-2.5 evaluation: its VAE and duration head need code
+# that v0.9.2 does not carry (comfy/ldm/lightricks/duration_head.py is new).
+ARG COMFYUI_REF=v0.36.0
 RUN git clone --depth 1 --branch ${COMFYUI_REF} \
     https://github.com/comfyanonymous/ComfyUI.git /comfyui
 WORKDIR /comfyui
