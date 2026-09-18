@@ -1056,7 +1056,15 @@ class TestPgAdvisoryLock:
             scheduler = GPUScheduler()
             await scheduler._acquire_pg_advisory_lock()
 
-        mock_asyncpg.connect.assert_awaited_once_with("postgresql://test/db")
+        # The dedicated connection is stamped so a WAITER in another process
+        # can name this holder out of pg_stat_activity instead of reporting
+        # "holder None" (poindexter#1018).
+        mock_asyncpg.connect.assert_awaited_once()
+        args, kwargs = mock_asyncpg.connect.await_args
+        assert args == ("postgresql://test/db",)
+        assert kwargs["server_settings"]["application_name"].startswith(
+            "poindexter-gpu:"
+        )
         mock_conn.execute.assert_awaited_once_with(
             "SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY
         )

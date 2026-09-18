@@ -437,6 +437,109 @@ def device_lock_key(node_id: str, gpu_index: int) -> int:
     return GPU_ADVISORY_LOCK_KEY + 1 + digest
 
 
+# poindexter#1018 — name the holder in the 503.
+#
+# An operator image action that loses the race used to fail with
+# "timed out ... waiting for in-process holder None (None)", because
+# ``_current_owner`` describes THIS process and a cross-process holder is by
+# definition somewhere else. "holder None" reads like a wedge, so the operator
+# pauses the Prefect deployment to clear a lock that was simply in use.
+#
+# Postgres already knows who holds it: the advisory lock sits on a dedicated
+# connection, so stamping that connection's ``application_name`` makes the
+# holder self-describing, and any waiter can read it back out of
+# ``pg_stat_activity``. No new table, and no second lifecycle to keep in sync
+# with the lock's own.
+_HOLDER_TAG_PREFIX = "poindexter-gpu"
+
+
+def _holder_tag(
+    owner: str | None, phase: str | None, task_id: str | None,
+) -> dict[str, str]:
+    """``server_settings`` stamping the advisory-lock connection.
+
+    Postgres truncates ``application_name`` at NAMEDATALEN (63 bytes), so keep
+    it short and put the most useful fields first.
+    """
+    import os
+
+    parts = [_HOLDER_TAG_PREFIX, str(owner or "?"), str(phase or "?")]
+    if task_id:
+        parts.append(str(task_id)[:8])
+    parts.append(f"pid{os.getpid()}")
+    return {"application_name": ":".join(parts)[:63]}
+
+
+def _parse_holder_tag(application_name: str) -> str:
+    """Human phrasing for a tag this module wrote; pass anything else through."""
+    if not application_name.startswith(_HOLDER_TAG_PREFIX + ":"):
+        return application_name or "an untagged session"
+    bits = application_name.split(":")[1:]
+    owner = bits[0] if bits else "?"
+    phase = bits[1] if len(bits) > 1 else "?"
+    tail = " ".join(bits[2:])
+    return f"{owner} (phase={phase}{' ' + tail if tail else ''})"
+
+
+async def _describe_pg_holder(dsn: str, keys: list[int]) -> str:
+    """Who currently holds ``keys``, phrased for the operator's error message.
+
+    Best-effort and fail-soft: this runs on a path that is ALREADY failing, so
+    any error here must degrade the message rather than replace the timeout
+    with a diagnostics crash.
+    """
+    try:
+        import asyncpg
+
+        conn = await asyncio.wait_for(asyncpg.connect(dsn), timeout=5.0)
+    except Exception:  # noqa: BLE001
+        # silent-ok: diagnostics only — the caller still raises the timeout,
+        # it just keeps the generic wording.
+        return "another process holds the GPU lock (holder unidentified)"
+    try:
+        rows = await asyncio.wait_for(
+            conn.fetch(
+                """
+                SELECT a.application_name AS app,
+                       a.pid              AS pid,
+                       EXTRACT(EPOCH FROM (now() - a.backend_start))::int AS held_s
+                  FROM pg_locks l
+                  JOIN pg_stat_activity a ON a.pid = l.pid
+                 WHERE l.locktype = 'advisory'
+                   AND l.granted
+                   AND l.objsubid = 1
+                   AND ((l.classid::bigint << 32) | l.objid::bigint) = ANY($1::bigint[])
+                 ORDER BY a.backend_start
+                """,
+                list(keys),
+            ),
+            timeout=5.0,
+        )
+    except Exception:  # noqa: BLE001
+        # silent-ok: same as above — never let the diagnostic query mask the
+        # timeout it is describing.
+        return "another process holds the GPU lock (holder query failed)"
+    finally:
+        try:
+            await conn.close()
+        except Exception:  # noqa: BLE001
+            # silent-ok: closing a short-lived diagnostic connection.
+            pass
+    if not rows:
+        # The holder released between our timeout and this query — a race we
+        # lost by a hair, not a wedge. Say so; it is the difference between
+        # "retry" and "go restart the worker".
+        return (
+            "the GPU lock was held for the whole wait but is free now — "
+            "a busy pipeline, not a wedge; retry"
+        )
+    described = "; ".join(
+        f"{_parse_holder_tag(r['app'] or '')} held {r['held_s']}s"
+        for r in rows[:3]
+    )
+    return f"held by {described}"
+
+
 def _endpoint_pinned_models() -> frozenset[str]:
     """Models routed to a non-default endpoint by the LiteLLM plugin config.
 
@@ -904,7 +1007,13 @@ class GPUScheduler:
         self._held_keys = []
 
     async def _acquire_pg_advisory_lock(
-        self, timeout_s: float | None = None, keys: list[int] | None = None,
+        self,
+        timeout_s: float | None = None,
+        keys: list[int] | None = None,
+        *,
+        owner: str | None = None,
+        phase: str | None = None,
+        task_id: str | None = None,
     ) -> None:
         """Open a dedicated asyncpg connection and acquire the session-level
         GPU advisory lock.
@@ -997,9 +1106,14 @@ class GPUScheduler:
                 return max(deadline - time.monotonic(), 0.1)
 
             if deadline is not None:
-                conn = await asyncio.wait_for(asyncpg.connect(dsn), timeout=_remaining())
+                conn = await asyncio.wait_for(
+                    asyncpg.connect(dsn, server_settings=_holder_tag(owner, phase, task_id)),
+                    timeout=_remaining(),
+                )
             else:
-                conn = await asyncpg.connect(dsn)
+                conn = await asyncpg.connect(
+                    dsn, server_settings=_holder_tag(owner, phase, task_id)
+                )
             async def _take(sql: str, key: int) -> None:
                 if deadline is not None:
                     await asyncio.wait_for(
@@ -1029,9 +1143,9 @@ class GPUScheduler:
                     logger.warning(
                         "[GPU] terminate() after pg acquire timeout failed", exc_info=True
                     )
+            holder = await _describe_pg_holder(dsn, want)
             raise GpuLockTimeoutError(
-                f"pg_advisory_lock wait exceeded {timeout_s}s — another "
-                "process holds the GPU lock (wedged holder or long render)"
+                f"pg_advisory_lock wait exceeded {timeout_s}s — {holder}"
             ) from None
         except Exception as exc:
             logger.warning(
@@ -1356,7 +1470,8 @@ class GPUScheduler:
             try:
                 if want_keys:
                     await self._acquire_pg_advisory_lock(
-                        timeout_s=pg_timeout, keys=want_keys
+                        timeout_s=pg_timeout, keys=want_keys,
+                        owner=owner, phase=phase, task_id=task_id,
                     )
                 # else: no device, no cross-process barrier to raise. Opening a
                 # connection to take zero locks would be pure cost.

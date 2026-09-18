@@ -294,7 +294,11 @@ async def _record_acquire(gpu, keys):
     conn = _FakeConn()
     import poindexter.services.gpu_scheduler as _gs
 
-    async def _connect(dsn):
+    async def _connect(dsn, **kwargs):
+        # **kwargs so the stub keeps matching asyncpg.connect's real signature —
+        # the holder tag (server_settings, poindexter#1018) is passed there, and
+        # a stub that rejects it sends the acquire down the fallback path with
+        # no lock calls recorded, which reads as "the scoping is broken".
         return conn
 
     orig_connect = None
