@@ -20,7 +20,7 @@ import sys
 
 import _common as c
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 _VER = re.compile(r"from\s+v?(\d+)\.(\d+)\.(\d+)\S*\s+to\s+v?(\d+)\.(\d+)\.(\d+)\S*", re.I)
 
 
