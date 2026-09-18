@@ -4,10 +4,16 @@ No real HTTP, no real DB. Mocks ``httpx.AsyncClient`` to return canned
 Twitch + IGDB responses, and ``plugins.secrets.get_secret`` to return
 test credentials. The token cache is cleared between tests so each
 test starts from a known state.
+
+The log-asserting tests declare ``caplog.set_level`` rather than riding the
+ambient root level: the "not configured" line is INFO, and anything that ran a
+``poindexter pipeline`` subcommand earlier in the same worker drops the root to
+WARNING. See ``tests/unit/test_log_level_isolation.py``.
 """
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -104,12 +110,14 @@ class TestIGDBSource:
 
     @pytest.mark.asyncio
     async def test_skips_when_pool_is_none(self, caplog):
+        caplog.set_level(logging.INFO, logger=igdb_mod.__name__)
         topics = await IGDBSource().extract(pool=None, config={})
         assert topics == []
         assert any("pool unavailable" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
     async def test_skips_when_credentials_missing(self, caplog):
+        caplog.set_level(logging.INFO, logger=igdb_mod.__name__)
         pool = _make_pool()
         with _patch_secrets(client_id="", client_secret=""):
             topics = await IGDBSource().extract(pool=pool, config={})
@@ -193,6 +201,7 @@ class TestIGDBSource:
 
     @pytest.mark.asyncio
     async def test_token_endpoint_failure_returns_empty(self, caplog):
+        caplog.set_level(logging.INFO, logger=igdb_mod.__name__)
         pool = _make_pool()
         ctx, _ = _make_client(
             token_payload={},

@@ -22,6 +22,9 @@ Why the isolation fixtures are necessary:
 - ``plugins/registry.py`` caches entry-point discovery via lru_cache.
 - Several test modules set ``os.environ`` values (``DATABASE_URL``,
   ``PEXELS_API_KEY``, etc.) that leak into every subsequent test.
+- ``logging``'s root level is process-wide, and ``poindexter.cli.pipeline``
+  lowers it to WARNING on every ``pipeline`` subcommand — which is correct for
+  a CLI and silently disarms any later test asserting on an INFO record.
 
 Long-term fix (tracked separately): move each singleton to
 FastAPI-Depends-injected factory so tests pass explicit instances.
@@ -35,6 +38,8 @@ import secrets
 import sys
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
+
+from tests.unit._log_isolation import root_log_level_restored
 
 # ``import litellm`` fetches its model-cost map from raw.githubusercontent.com
 # AT IMPORT TIME unless this is set (litellm reads the env var during module
@@ -429,6 +434,27 @@ def _reset_env_between_tests(monkeypatch):
             os.environ.pop(key, None)
         else:
             os.environ[key] = value
+
+
+# ---------------------------------------------------------------------------
+# Layer 2.5 — root logger level isolation
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_log_level():
+    """Stop a root-logger level written by the code under test from outliving
+    the test that provoked it.
+
+    The rationale — and the 2026-09-18 xdist flake that earned it — lives with
+    the helper in ``tests/unit/_log_isolation.py``. Its companion fix is
+    ``tests/unit/test_log_level_isolation.py``, which gates tests from
+    depending on the ambient level at all; both are needed, because this
+    fixture cannot help a run that starts with ``LOG_LEVEL=WARNING`` in the
+    environment.
+    """
+    with root_log_level_restored():
+        yield
 
 
 # ---------------------------------------------------------------------------
