@@ -1256,12 +1256,36 @@ class GPUScheduler:
         stage: str,
         timeout_s: float,
         holder: str | None,
+        phase: str | None = None,
+        task_id: str | None = None,
+        max_wait_s: float | None = None,
+        priority: str | None = None,
     ) -> None:
         """Emit a warn ``gpu_lock_timeout`` finding. Never raises.
 
         Routed via the seeded ``findings.gpu_lock_timeout.delivery`` policy
         so lock-wait exhaustion is operator-visible (poindexter#807 — the
         stall→crash→requeue loop was previously silent).
+
+        ``extra`` carries WHO lost the work, not just which lock (poindexter#914).
+        The row recorded owner/stage/timeout only, so 408 of 429 timeouts in a
+        30-day window were ``owner=ollama, stage=in_process`` and nothing more —
+        a writer burning its budget and an advisory rail giving up are the same
+        row, which makes the epic's remaining phase (deferred completion for
+        work that would otherwise be lost) impossible to scope.
+
+        ``max_wait_s`` is the load-bearing one. Admission
+        (``services/gpu_admission.py``) only engages when a caller declares a
+        budget; ``None`` means the caller went to the raw lock and waited out
+        the full ceiling. That distinction is the difference between "admission
+        judged this hopeless" and "admission never ran", and the rates diverge
+        sharply: admission rejections fell 819 → 41 across two 30-day windows
+        while lock timeouts held at 445 → 429.
+
+        ``dedup_key`` stays keyed on ``owner`` deliberately — 390 ollama
+        timeouts must not become 390 alerts. Dedup throttles DELIVERY; every
+        row still lands in ``audit_log``, so this detail is queryable without
+        changing alert volume.
         """
         try:
             from poindexter.utils.findings import emit_finding
@@ -1281,7 +1305,18 @@ class GPUScheduler:
                 ),
                 severity="warn",
                 dedup_key=f"gpu-lock-timeout:{owner}",
-                extra={"owner": owner, "stage": stage, "timeout_s": timeout_s},
+                extra={
+                    "owner": owner,
+                    "stage": stage,
+                    "timeout_s": timeout_s,
+                    "phase": phase,
+                    "task_id": task_id,
+                    # None ⇒ the caller declared no budget, so admission never
+                    # ran and this wait went to the full ceiling.
+                    "max_wait_s": max_wait_s,
+                    "admission_engaged": max_wait_s is not None,
+                    "priority": priority,
+                },
             )
         except Exception:
             logger.warning("[GPU] emit gpu_lock_timeout finding failed", exc_info=True)
@@ -1449,6 +1484,10 @@ class GPUScheduler:
                         stage="in_process",
                         timeout_s=acquire_timeout,
                         holder=self._current_owner,
+                        phase=phase,
+                        task_id=task_id,
+                        max_wait_s=max_wait_s,
+                        priority=priority,
                     )
                     raise GpuLockTimeoutError(
                         f"gpu.lock({owner!r}) timed out after {acquire_timeout}s "
@@ -1484,6 +1523,10 @@ class GPUScheduler:
                     stage="pg_advisory",
                     timeout_s=acquire_timeout,
                     holder=None,
+                    phase=phase,
+                    task_id=task_id,
+                    max_wait_s=max_wait_s,
+                    priority=priority,
                 )
                 raise
         finally:
