@@ -42,6 +42,16 @@ no LLM call:
    a PROVENANCE check, not a record lookup — nothing can enumerate a
    childhood — and it deliberately runs outside the self-reference gate.
 
+8. **Conducted-experiment claims** — "we ran the audit; X came out 18%
+   faster than Y" — vs the figures in ``research_context``. Added 2026-09-18
+   (poindexter#1050/#1052) after a draft narrated an internal engine benchmark
+   that never happened, twice, at Q97.8. Neither neighbour owned it:
+   ``qa.numeric_fidelity`` scores only numbers presented as SOURCED fact and
+   defers our-own claims here, while this rail did record-resolution and no
+   record enumerates experiments we ran. Deliberately narrow — see the layer's
+   own comment for the three groundedness widths that were measured and
+   rejected first.
+
 The fuzzier "named mechanism vs repo symbol" layer (instance 1) needs the
 grounded-LLM treatment (propose → verify the symbol resolves, the
 ``content.llm_reconcile_citations`` pattern) and is deliberately NOT here.
@@ -101,13 +111,20 @@ ATOM_META = AtomMeta(
         "pipeline_tasks, backticked settings keys vs app_settings, package "
         "file paths vs the tree, named capabilities (\"we run X\") and install "
         "specs (RAM/VRAM/GPU) vs the operating record, plus unsourced "
-        "first-person biography vs qa_self_claim_founder_facts (advisory). "
+        "first-person biography vs qa_self_claim_founder_facts and "
+        "conducted-experiment figures vs research_context (both advisory). "
         "Gate status DB-driven via qa_gates.self_claim (required since "
         "2026-09-15)."
     ),
     inputs=(
         FieldSpec(name="content", type="str", description="draft to review"),
         FieldSpec(name="topic", type="str", description="assignment topic", required=False),
+        FieldSpec(
+            name="research_context",
+            type="str",
+            description="corpus layer 8 reconciles conducted-experiment figures against",
+            required=False,
+        ),
     ),
     outputs=(
         FieldSpec(
@@ -340,6 +357,171 @@ def _biography_supported(sentence: str, facts: str) -> bool:
     return hits >= max(2, int(0.6 * len(words)))
 
 
+# Layer 8 — CONDUCTED-EXPERIMENT claims. "We ran the audit properly. Ollama
+# came out about 18% faster than vLLM" reached the queue at Q97.8 twice — the
+# reject-with-retry regenerated the same story — narrating an internal
+# benchmark that never happened (poindexter#1050/#1052). It is the highest-trust
+# sentence the site can print and the easiest one to fabricate.
+#
+# NEITHER neighbouring rail owns it, and that is structural rather than an
+# oversight. ``qa.numeric_fidelity`` scores only numbers presented as SOURCED
+# fact, and explicitly treats a claim about our own work as this rail's corpus;
+# this rail did only record-resolution, and no record enumerates "experiments
+# we ran". A claim each rail believes the other owns is how it shipped.
+#
+# **The scope is narrow ON PURPOSE, and three measurements set the boundary.**
+# Checking first-person claims for groundedness in ``research_context`` was
+# tried at three widths against the real corpus and failed every time, because
+# that corpus is outside sources and can never witness our own work:
+#
+#   | detector                                   | fired on |
+#   | ------------------------------------------ | -------- |
+#   | first-person build/measure + proper-noun   | 24% of 207 posts, nearly all TRUE |
+#   | first-person RESULT verb + number          | 38 of 41 sentences, all TRUE |
+#   | ...scoped to canonical_blog only           | 4 of 7, all TRUE |
+#
+# What survives is the intersection that is actually checkable: the draft says
+# WE CONDUCTED a comparison, and reports a FIGURE for its outcome. A figure we
+# obtained from an experiment we ran is either in the corpus that experiment
+# produced, or it was invented. Measured at **0 false positives across 89
+# published posts** with 11/11 controls correct.
+#
+# It deliberately does NOT cover vague experiential prose ("we went through
+# this exact decision"), which is uncheckable by construction — the published
+# corpus contains "We went through this exact realization building our own
+# content pipeline", which is fine, and no instrument separates those two.
+_EXPERIMENT_NOUN_RE = re.compile(
+    r"\b(?:we|our\s+team|i)\s+(?:\w+\s+){0,3}?"
+    r"(?:ran|did|conducted|performed)\s+(?:a|an|the|our)?\s*"
+    r"(?:audit|test|testing|benchmark\w*|experiment|comparison|bake-?off|"
+    r"trial|evaluation|shoot-?out)\b",
+    re.IGNORECASE,
+)
+# The weaker frame — any first-person measuring verb — only counts alongside a
+# comparative outcome. On its own it matches ordinary dev-diary reporting
+# ("we measured 10,240 MiB held ~6.5h"), which is true and must never fire.
+_CONDUCTED_RE = re.compile(
+    r"\b(?:we|our\s+team|i)\s+(?:\w+\s+){0,3}?"
+    r"(?:ran|did|conducted|performed|benchmarked|measured|tested|profiled|"
+    r"compared|timed|clocked|audited|evaluated)\b",
+    re.IGNORECASE,
+)
+_COMPARATIVE_RE = re.compile(
+    r"\b(?:faster|slower|cheaper|better|worse|outperform\w*|beat|ahead\s+of|"
+    r"versus|vs\.?|compared\s+(?:to|with)|edge\s+over)\b",
+    re.IGNORECASE,
+)
+# The comma-grouped alternative REQUIRES a comma group. With `*` it matched
+# "202" out of "2026" and the year filter — which compares the captured text —
+# then let the fragment through as a measurement.
+_FIGURE_RE = re.compile(
+    r"(?<![\w.])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d,])"
+)
+_YEAR_RE = re.compile(r"^(?:19|20)\d\d$")
+
+# The claim and its figure routinely sit in adjacent sentences — the draft that
+# earned this layer said "We ran the audit properly." and put the 18% in the
+# NEXT sentence, which carries no first-person marker at all.
+_CLAIM_WINDOW_SENTENCES = 3
+
+# Below this much corpus there is nothing to reconcile against, and every
+# figure would read as invented. 42% of runs carry no research_context at all.
+_MIN_CORPUS_CHARS = 200
+
+
+def extract_figures(text: str) -> list[str]:
+    """Numbers in ``text``, excluding bare years — a date is not a measurement."""
+    out: list[str] = []
+    for m in _FIGURE_RE.finditer(text):
+        raw = m.group(1).replace(",", "")
+        if _YEAR_RE.match(raw) or raw in out:
+            continue
+        out.append(raw)
+    return out
+
+
+def figure_in_corpus(figure: str, corpus: str) -> bool:
+    """Whether ``corpus`` carries this figure AT THE PRECISION WRITTEN.
+
+    Rounding a source value for prose is normal writing, so "2.3" reconciles
+    against 2.34 — the same rule ``qa.numeric_fidelity`` uses.
+    """
+    if figure in corpus:
+        return True
+    try:
+        claimed = float(figure)
+    except ValueError:
+        return False
+    decimals = len(figure.split(".")[1]) if "." in figure else 0
+    for found in _FIGURE_RE.findall(corpus):
+        try:
+            value = float(found.replace(",", ""))
+        except ValueError:
+            continue
+        if round(value, decimals) == round(claimed, decimals):
+            return True
+    return False
+
+
+def extract_experiment_claims(content: str) -> list[tuple[str, list[str]]]:
+    """``(passage, figures)`` for conducted-experiment claims carrying a figure.
+
+    Fires on either an explicitly NAMED experiment ("we ran a bake-off") or a
+    measuring verb paired with a comparative outcome ("we benchmarked both and
+    X turned out 2.3x faster"). Both were measured at zero false positives; the
+    weaker frame alone was not.
+    """
+    sentences = [
+        " ".join(s.split()) for s in _SENTENCE_END_RE.split(content or "") if s.strip()
+    ]
+    claims: list[tuple[str, list[str]]] = []
+    # Windows OVERLAP, so one fabrication sits inside several of them. Reporting
+    # each is not just noisy — every duplicate costs another penalty, so a
+    # single invented benchmark could zero the score on its own.
+    #
+    # De-duplicate on the FIGURES rather than on position: a window whose
+    # numbers are already covered is the same claim seen again, while a later
+    # passage with genuinely different figures is a genuinely different claim.
+    # Positional skipping was tried first and merged two distinct adjacent
+    # experiments into one.
+    reported: list[set[str]] = []
+    for i in range(len(sentences)):
+        window = " ".join(sentences[i : i + _CLAIM_WINDOW_SENTENCES])
+        named = bool(_EXPERIMENT_NOUN_RE.search(window))
+        compared = bool(_CONDUCTED_RE.search(window)) and bool(
+            _COMPARATIVE_RE.search(window)
+        )
+        if not (named or compared):
+            continue
+        figures = extract_figures(window)
+        if not figures:
+            continue
+        found = set(figures)
+        if any(found <= seen for seen in reported):
+            continue
+        reported.append(found)
+        claims.append((window, figures))
+    return claims
+
+
+def check_experiment_claims(
+    claims: list[tuple[str, list[str]]], corpus: str,
+) -> list[str]:
+    """Claims reporting a figure that appears nowhere in the corpus."""
+    offenders: list[str] = []
+    for passage, figures in claims:
+        missing = [f for f in figures if not figure_in_corpus(f, corpus)]
+        if not missing:
+            continue
+        excerpt = passage if len(passage) <= 140 else passage[:137] + "..."
+        offenders.append(
+            f"reports conducting an experiment whose figure(s) "
+            f"{', '.join(missing[:4])} appear nowhere in the research context: "
+            f'"{excerpt}"'
+        )
+    return offenders
+
+
 def extract_capability_claims(content: str) -> list[str]:
     """Capitalised names the draft says WE run/use/rely on, in order, deduped."""
     names: list[str] = []
@@ -454,6 +636,26 @@ def _biography_mode(site_config: Any) -> str:
     """
     try:
         raw = str(site_config.get("qa_self_claim_biography_mode", "advisory") or "advisory")
+    except Exception:  # noqa: BLE001 — stubbed site_config
+        # silent-ok: an unreadable switch falls back to the seeded default,
+        # which only scores and never vetoes.
+        return "advisory"
+    mode = raw.strip().lower()
+    return mode if mode in ("off", "advisory", "enforcing") else "advisory"
+
+
+def _experiment_mode(site_config: Any) -> str:
+    """``off`` | ``advisory`` (default) | ``enforcing``.
+
+    Advisory at birth despite 0 false positives across 89 published posts: the
+    rail is ``required_to_pass``, and the positive controls are the fabricated
+    sentences as QUOTED IN THE ISSUE rather than the original draft blobs,
+    which were edited before publish and pruned from pipeline_versions. The
+    negative evidence is strong; the positive evidence is reconstructed, and
+    that asymmetry is a reason to score rather than veto.
+    """
+    try:
+        raw = str(site_config.get("qa_self_claim_experiment_mode", "advisory") or "advisory")
     except Exception:  # noqa: BLE001 — stubbed site_config
         # silent-ok: an unreadable switch falls back to the seeded default,
         # which only scores and never vetoes.
@@ -611,7 +813,31 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             bio_checked = True
             bio_offenders = check_biography(bio_claims, _founder_facts(site_config))
 
-    if not is_self_referential(content, topic, markers) and not bio_checked:
+    # Layer 8 also runs outside the self-reference gate: "we ran a benchmark
+    # and X came out 18% faster" is a claim about work we did, whether or not
+    # the post is about our stack.
+    exp_mode = _experiment_mode(site_config)
+    exp_offenders: list[str] = []
+    exp_checked = False
+    if exp_mode != "off":
+        corpus = str(state.get("research_context") or "")
+        exp_claims = extract_experiment_claims(content)
+        if exp_claims and len(corpus) >= _MIN_CORPUS_CHARS:
+            # Without a corpus every figure reads as invented, so a thin
+            # research_context (42% of runs carry none) is "nothing to judge",
+            # never "all fabricated".
+            exp_checked = True
+            exp_offenders = check_experiment_claims(exp_claims, corpus)
+        elif exp_claims:
+            logger.info(
+                "[qa.self_claim] %d conducted-experiment claim(s) not judged — "
+                "research_context is %d chars (floor %d)",
+                len(exp_claims), len(corpus), _MIN_CORPUS_CHARS,
+            )
+
+    if not is_self_referential(content, topic, markers) and not (
+        bio_checked or exp_checked
+    ):
         return {}
 
     self_referential = is_self_referential(content, topic, markers)
@@ -697,14 +923,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         or capabilities_checked
         or specs_checked
         or bio_checked
+        or exp_checked
     )
     # An ENFORCING biography layer vetoes with the rest; an advisory one only
     # scores and names the claim, so graduating it is a settings change.
-    if bio_mode == "enforcing":
-        offenders += bio_offenders
-        advisory_offenders: list[str] = []
-    else:
-        advisory_offenders = bio_offenders
+    advisory_offenders: list[str] = []
+    for mode, found in ((bio_mode, bio_offenders), (exp_mode, exp_offenders)):
+        if mode == "enforcing":
+            offenders += found
+        else:
+            advisory_offenders += found
     if not offenders and not advisory_offenders and not checked_anything:
         return {}
 
@@ -753,8 +981,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if advisory_offenders:
         logger.info(
             "[qa.self_claim] %d unsourced first-person claim(s), advisory "
-            "(qa_self_claim_biography_mode=%s): %s",
-            len(advisory_offenders), bio_mode, "; ".join(advisory_offenders[:3]),
+            "(biography_mode=%s experiment_mode=%s): %s",
+            len(advisory_offenders), bio_mode, exp_mode,
+            "; ".join(advisory_offenders[:3]),
         )
     return {"qa_rail_reviews": [reviewer_to_dict(review)]}
 

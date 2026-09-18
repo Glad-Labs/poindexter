@@ -548,3 +548,188 @@ async def test_declared_founder_facts_silence_the_layer_end_to_end(monkeypatch):
     assert review["approved"] is True
     assert review["score"] == 100
     assert "first-person" not in review["feedback"]
+
+
+# ---------------------------------------------------------------------------
+# Layer 8 — conducted-experiment claims (poindexter#1050 / #1052)
+#
+# "We ran the audit properly. Ollama came out about 18% faster on
+# single-request latency than vLLM" reached the queue at Q97.8 — twice, because
+# the reject-with-retry regenerated the same story. No such audit happened.
+#
+# Neither neighbour owned it: qa.numeric_fidelity scores only numbers presented
+# as SOURCED fact and defers our-own claims to this rail, while this rail did
+# record-resolution and no record enumerates "experiments we ran".
+#
+# The GOOD cases below are real sentences from published posts. They are the
+# reason the scope is narrow: three wider groundedness detectors were measured
+# against the corpus and every one of them flagged these as fabrications.
+# ---------------------------------------------------------------------------
+
+_AUDIT_FABRICATION = (
+    "We went through this exact decision internally. We ran the audit properly. "
+    "Ollama came out about 18% faster on single-request latency than vLLM, "
+    "against roughly 50 calls a day total."
+)
+
+# A corpus with none of the claimed figures in it.
+_UNRELATED_CORPUS = (
+    "Local inference tooling has matured through 2026. Practitioners weigh "
+    "throughput against operational complexity, and the guides disagree about "
+    "which layer belongs in a small deployment. Community discussion continues "
+    "across forums and vendor documentation alike, with no consensus yet."
+)
+
+
+class TestExperimentClaimExtraction:
+    def test_claim_and_figure_may_sit_in_adjacent_sentences(self):
+        """The draft said "We ran the audit properly." and put the 18% in the
+        NEXT sentence, which carries no first-person marker at all — a
+        sentence-scoped detector misses it entirely."""
+        claims = atom.extract_experiment_claims(_AUDIT_FABRICATION)
+        assert claims
+        figures = {f for _, figs in claims for f in figs}
+        assert "18" in figures
+
+    def test_named_experiment_fires_without_a_comparison_word(self):
+        claims = atom.extract_experiment_claims(
+            "We ran a bake-off across three providers. The winner finished in "
+            "4.2 seconds."
+        )
+        assert claims
+
+    def test_measuring_verb_alone_is_not_enough(self):
+        """The weaker frame on its own matches ordinary dev-diary reporting.
+        Measured: it fired on 38 of 41 first-person result sentences in the
+        corpus, every one of them true."""
+        assert atom.extract_experiment_claims(
+            "Even after a successful render evening, we measured 10,240 MiB "
+            "held ~6.5h after the last render."
+        ) == []
+
+    def test_one_fabrication_is_reported_once_despite_overlapping_windows(self):
+        """Windows overlap, so a single invented benchmark sits inside several.
+        Reporting each is not just noisy — every duplicate costs another
+        penalty, so one claim could zero the score by itself."""
+        text = (
+            "My own dad ran almost the identical experiment on me around the same year. "
+            "I was ten, maybe eleven. We ran the audit properly. Ollama came out about "
+            "18% faster on single-request latency than vLLM, against roughly 50 calls a day."
+        )
+        assert len(atom.extract_experiment_claims(text)) == 1
+
+    def test_distinct_experiments_with_different_figures_both_report(self):
+        """De-dup is on the FIGURES, not on position — positional skipping was
+        tried first and merged two genuinely separate experiments into one."""
+        text = (
+            "We ran a bake-off across three providers. The winner finished in 4.2 seconds. "
+            + "Filler sentence about something unrelated entirely. " * 4
+            + "Later we benchmarked the encoder and it came out 9.7x faster than the old one."
+        )
+        claims = atom.extract_experiment_claims(text)
+        assert len(claims) == 2
+        assert {f for _, figs in claims for f in figs} == {"4.2", "9.7"}
+
+    def test_years_are_not_measurements(self):
+        assert atom.extract_figures("we benchmarked it in 2026 and it was 2x faster") == ["2"]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Every one of these is a real sentence from a published post.
+            "We found that every CORS preflight OPTIONS request was returning a 500 (PR #3006).",
+            "We run LiteLLM as the provider layer now, and we're working it toward the default path.",
+            "Our stored post embeddings turned out to be built from the title plus roughly the first 500 characters.",
+            "When we ran title-based similarity checks against a new draft, it scored a comfortable 0.55 against an existing post.",
+            "We shipped 30 PRs and 28 notable commits today.",
+            "GlitchTip issue 736 paged us 13 times over five days before we found the real fault line.",
+            "On the ops side, we triaged a GlitchTip backlog of 4,252 events and found only about 9 needed human eyes.",
+            # Uncheckable by construction, and deliberately out of scope: the
+            # published corpus carries "We went through this exact realization
+            # building our own content pipeline", which is fine.
+            "We went through this exact realization building our own content pipeline.",
+        ],
+    )
+    def test_true_first_person_prose_does_not_fire(self, text):
+        assert atom.extract_experiment_claims(text) == []
+
+
+class TestFigureReconciliation:
+    def test_figure_present_in_corpus_is_grounded(self):
+        assert atom.figure_in_corpus("18", "the vendor reports an 18% gap")
+
+    def test_rounding_for_prose_is_not_fabrication(self):
+        """Same rule as qa.numeric_fidelity: round(source, decimals_written)."""
+        assert atom.figure_in_corpus("2.3", "measured at 2.34x throughput")
+
+    def test_absent_figure_is_not_grounded(self):
+        assert not atom.figure_in_corpus("18", "no such number appears here")
+
+    def test_offender_names_the_missing_figures(self):
+        claims = atom.extract_experiment_claims(_AUDIT_FABRICATION)
+        offenders = atom.check_experiment_claims(claims, _UNRELATED_CORPUS)
+        assert offenders and "18" in offenders[0]
+
+
+class TestExperimentLayerThroughRun:
+    async def test_fabricated_benchmark_is_reported(self, monkeypatch):
+        _patch_gates_required(monkeypatch)
+        out = await atom.run({
+            "content": _AUDIT_FABRICATION,
+            "topic": "local inference engines",
+            "research_context": _UNRELATED_CORPUS,
+            "site_config": _sc(),
+        })
+        (review,) = out["qa_rail_reviews"]
+        assert review["approved"] is True, "advisory by default"
+        assert "conducting an experiment" in review["feedback"]
+
+    async def test_enforcing_mode_vetoes(self, monkeypatch):
+        _patch_gates_required(monkeypatch)
+        out = await atom.run({
+            "content": _AUDIT_FABRICATION,
+            "topic": "local inference engines",
+            "research_context": _UNRELATED_CORPUS,
+            "site_config": _sc(qa_self_claim_experiment_mode="enforcing"),
+        })
+        assert out["qa_rail_reviews"][0]["approved"] is False
+
+    async def test_a_thin_corpus_is_nothing_to_judge_not_all_fabricated(
+        self, monkeypatch,
+    ):
+        """42% of runs carry no research_context. Without one every figure
+        reads as invented, which would turn the rail into a generator of false
+        vetoes on exactly the posts it has least evidence about."""
+        _patch_gates(monkeypatch)
+        out = await atom.run({
+            "content": _AUDIT_FABRICATION,
+            "topic": "local inference engines",
+            "research_context": "",
+            "site_config": _sc(),
+        })
+        assert out == {}
+
+    async def test_grounded_figures_do_not_fire(self, monkeypatch):
+        _patch_gates(monkeypatch)
+        out = await atom.run({
+            "content": _AUDIT_FABRICATION,
+            "topic": "local inference engines",
+            "research_context": (
+                "The published comparison puts the single-request latency gap at "
+                "18% in favour of the lighter runtime, across a workload of "
+                "roughly 50 calls a day in the deployments surveyed."
+            ),
+            "site_config": _sc(),
+        })
+        reviews = out.get("qa_rail_reviews") or []
+        assert not reviews or "conducting an experiment" not in reviews[0]["feedback"]
+
+    async def test_off_mode_skips_the_layer(self, monkeypatch):
+        _patch_gates(monkeypatch)
+        out = await atom.run({
+            "content": _AUDIT_FABRICATION,
+            "topic": "local inference engines",
+            "research_context": _UNRELATED_CORPUS,
+            "site_config": _sc(qa_self_claim_experiment_mode="off"),
+        })
+        assert out == {}

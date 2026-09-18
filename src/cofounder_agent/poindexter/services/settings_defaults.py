@@ -1974,6 +1974,12 @@ DEFAULTS: dict[str, str] = {
     # the rail is required_to_pass and an offender would otherwise veto.
     # 'off' | 'advisory' | 'enforcing'.
     'qa_self_claim_biography_mode': 'advisory',
+    # poindexter#1050/#1052 — conducted-experiment claims whose figure is
+    # absent from research_context. Advisory at birth: 0 false positives
+    # across 89 published posts, but the positive controls are the
+    # fabricated sentences as quoted in the issue rather than the original
+    # drafts, which were edited before publish. 'off'|'advisory'|'enforcing'.
+    'qa_self_claim_experiment_mode': 'advisory',
     # The ONLY source that can license a first-person claim about the author.
     # Empty = every such claim is unsourced, which is the intended default:
     # research_context cannot ground a claim about us (it routinely carries
@@ -5056,6 +5062,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_self_claim_product_names': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_self_claim_offender_penalty': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_self_claim_biography_mode': {'owner': 'multi_model_qa', 'value_type': 'string'},
+    'qa_self_claim_experiment_mode': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_self_claim_founder_facts': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_self_claim_known_components': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'operating_record_gpus': {'owner': 'multi_model_qa', 'value_type': 'string'},
