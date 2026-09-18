@@ -1586,10 +1586,30 @@ class GPUScheduler:
             self._current_model = None
             self._current_phase = None
             # Release pg advisory lock BEFORE releasing the in-process lock
-            # so that the cross-process barrier stays up until we are done.
-            await self._release_pg_advisory_lock()
-            self._release_gates()
-            _gpu_session_active.reset(token)
+            # so that the cross-process barrier stays up until we are done —
+            # but NEVER at the cost of holding the in-process gate.
+            #
+            # poindexter#967: on 2026-08-01 a long video render released
+            # cleanly and the next acquirer then starved the full 900s on
+            # "in-process holder None (None)". Holder metadata is cleared
+            # above, so "held but holder None" means the release got partway:
+            # the pg step ran and the gate release did not.
+            #
+            # _release_pg_advisory_lock catches TimeoutError and Exception, so
+            # an ordinary failure cannot do that. asyncio.CancelledError can —
+            # it is a BaseException, and this release path runs inside the
+            # media stages' asyncio.wait_for, so a stage timeout cancels the
+            # task mid-release. One such cancellation wedged every later
+            # same-owner acquire in the process until a worker restart.
+            #
+            # The gate release is therefore unconditional. Ordering intent is
+            # preserved on the happy path; correctness no longer depends on
+            # the cheap-to-lose half succeeding.
+            try:
+                await self._release_pg_advisory_lock()
+            finally:
+                self._release_gates()
+                _gpu_session_active.reset(token)
             # GPU-scheduler P0 (poindexter#914): fold this hold's duration
             # into the per-(owner, phase) rolling stats that feed the P1
             # admission ETA. Fires on EVERY release — including task-less
