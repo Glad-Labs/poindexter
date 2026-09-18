@@ -40,7 +40,7 @@ The qa.* rail block and seo.* atom chain are unchanged from #355 except:
 
 - ``cross_model_qa`` → qa.programmatic → qa.critic → qa.deepeval →
   qa.ragas → qa.vision → qa.topic_delivery →
-  qa.citations → qa.unlinked_attribution → qa.consistency →
+  qa.citations → qa.unlinked_attribution → qa.person_mention → qa.consistency →
   qa.self_consistency → qa.content_originality → qa.title_coherence →
   qa.self_claim → qa.web_factcheck → qa.aggregate
 
@@ -132,6 +132,7 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # Advisory rail (#765): flags named-source attributions left unlinked +
         # unmatched against the corpus AFTER reconcile_citations did its repair.
         {"id": "qa_unlinked_attribution", "atom": "qa.unlinked_attribution"},
+        {"id": "qa_person_mention", "atom": "qa.person_mention"},
         {"id": "qa_consistency", "atom": "qa.consistency"},
         {"id": "qa_self_consistency", "atom": "qa.self_consistency"},
         # RAG self-echo net: flags a draft whose OPENING near-duplicates an
@@ -226,7 +227,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_topic_delivery", "to": "qa_citations"},
         {"from": "qa_citations", "to": "qa_numeric_fidelity"},
         {"from": "qa_numeric_fidelity", "to": "qa_unlinked_attribution"},
-        {"from": "qa_unlinked_attribution", "to": "qa_consistency"},
+        {"from": "qa_unlinked_attribution", "to": "qa_person_mention"},
+        {"from": "qa_person_mention", "to": "qa_consistency"},
         {"from": "qa_consistency", "to": "qa_self_consistency"},
         {"from": "qa_self_consistency", "to": "qa_content_originality"},
         {"from": "qa_content_originality", "to": "qa_title_coherence"},

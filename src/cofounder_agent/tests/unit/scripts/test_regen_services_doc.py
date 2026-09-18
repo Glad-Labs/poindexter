@@ -121,18 +121,24 @@ def test_render_pipeline_section_matches_real_spec(mod: ModuleType) -> None:
     gd = mod._load_graph_def()
     lines = mod.render_pipeline_section(gd)
     body = "\n".join(lines)
-    assert lines[0] == "## Content pipeline (`canonical_blog` graph_def) — 48 nodes"
+    # Derived, not hardcoded: the heading's job is to report the spec's node
+    # count, so pinning a literal here only re-breaks on every node added.
+    assert lines[0] == (
+        "## Content pipeline (`canonical_blog` graph_def) — "
+        f"{len(gd['nodes'])} nodes"
+    )
     # stage.* 11→10 and content.* 14→16 (2026-08-28): the single
     # stage.writer_self_review node became content.detect_contradictions +
     # content.revise_contradictions, so the two calls it made are visible on
     # the graph now that they can use different models.
     assert "10 `stage.*`" in body
     assert "16 `content.*`" in body
-    # 18 = the 16 rail atoms + qa.aggregate + qa.rewrite (the renderer counts
+    # 19 = the 17 rail atoms + qa.aggregate + qa.rewrite (the renderer counts
     # every "qa."-prefixed node; qa.title_coherence joined 2026-07-24,
     # qa.self_claim 2026-08-16 — poindexter#1007, qa.numeric_fidelity
-    # 2026-09-01, qa.freshness 2026-09-15).
-    assert "18 `qa.*`" in body
+    # 2026-09-01, qa.freshness 2026-09-15, qa.person_mention 2026-09-18 —
+    # poindexter#1009).
+    assert "19 `qa.*`" in body
     assert "1 `seo.*`" in body
     assert "1 `social.*`" in body  # social.generate_drafts (PR #1938)
     # draft_gate + preview_gate (component-scoped regen gate, 2026-06-22)
@@ -175,7 +181,10 @@ def test_build_document_has_all_sections(mod: ModuleType) -> None:
     doc = mod.build_document(entries, gd)
     assert doc.startswith("# Poindexter Services Reference")
     assert "## Table of contents" in doc
-    assert "## Content pipeline (`canonical_blog` graph_def) — 48 nodes" in doc
+    assert (
+        "## Content pipeline (`canonical_blog` graph_def) — "
+        f"{len(gd['nodes'])} nodes"
+    ) in doc
     assert "## What's NOT in this catalog" in doc
     assert "## Conventions" in doc
     assert doc.endswith("\n")

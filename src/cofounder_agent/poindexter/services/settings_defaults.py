@@ -1929,6 +1929,17 @@ DEFAULTS: dict[str, str] = {
     # represents the article (wrong-domain titles, directive leaks, generic
     # mush — the task-1149dfc8/1afabaf9 class). Scores on every run; veto is
     # DB-gated via qa_gates.title_coherence.
+    # poindexter#1009 — should this named human be in the post at all?
+    # Advisory-first; qa_gates.person_mention.required_to_pass graduates it.
+    'qa_person_mention_enabled': 'true',
+    'qa_person_mention_model': '',
+    'qa_person_mention_digest_chars': '4000',
+    # 400 truncated 3 of 10 judgments during the 2026-09-01 calibration.
+    'qa_person_mention_max_tokens': '900',
+    # Runaway guard, not a working limit — named individuals are rare in
+    # this corpus, and a draft naming twenty people is itself the finding.
+    'qa_person_mention_max_people': '8',
+    'qa_person_mention_offender_penalty': '25',
     'qa_title_coherence_enabled': 'true',
     # Judge model. EMPTY = pipeline_seo_model → pipeline_local_writer_model.
     # Deliberately never pipeline_writer_model — a cloud writer canary must
@@ -5017,6 +5028,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'content_originality_chunk_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'content_originality_excluded_series': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_judge_json_mode_thinking_enabled': {'owner': 'thinking_models', 'value_type': 'boolean'},
+    'qa_person_mention_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'qa_person_mention_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
+    'qa_person_mention_digest_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_person_mention_max_tokens': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_person_mention_max_people': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_person_mention_offender_penalty': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_title_coherence_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'qa_self_claim_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'qa_self_claim_product_names': {'owner': 'multi_model_qa', 'value_type': 'string'},

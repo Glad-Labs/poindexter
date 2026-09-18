@@ -26,6 +26,12 @@ metadata:
     - key: qa.title_coherence
       output_format: json
       description: 'QA gate — does the TITLE honestly represent the article body (wrong-domain titles, directive/assignment-label leaks, unrecognizably generic titles). Complements qa.topic_delivery (body↔topic); this is title↔body.'
+    - key: qa.person_mention.extract
+      output_format: json
+      description: 'Stage 1 of qa.person_mention — list the real people a passage names (few-shot; poindexter#1009)'
+    - key: qa.person_mention.classify
+      output_format: json
+      description: 'Stage 2 of qa.person_mention — is ONE named person public-in-public-capacity, or a private individual?'
     - key: qa.review
       output_format: json
       description: 'QA gate — overall publication-readiness review (the third LLM critic; aggregates style/logic/coherence)'
@@ -182,6 +188,66 @@ TITLE: {title}
 
 ARTICLE:
 {content}
+```
+
+## qa.person_mention.extract
+
+```text
+List the real people this passage names.
+
+Include every human being referred to by name: an author, a researcher, an
+executive, a journalist, a reviewer, a business owner, someone mentioned only
+in passing. Include a person named by surname alone when the passage clearly
+refers to a specific human.
+
+Do not include companies, products, tools, model names, places, teams, or
+generic stand-ins in an example ("Alice sends Bob a message"). A capitalised
+phrase is not a person just because it is capitalised.
+
+Example 1
+PASSAGE: Ray Dalio's Principles argues for radical transparency, and the
+culture it describes has been debated ever since. We reached a similar
+conclusion running our own pipeline on an RTX 5090, where Grafana made the
+tradeoff visible.
+ANSWER: {{"people": ["Ray Dalio"]}}
+
+Example 2
+PASSAGE: The retention job prunes checkpoint rows older than thirty days.
+Grafana renders the backlog per handler, and the probe pages when a policy
+stops deleting rows entirely.
+ANSWER: {{"people": []}}
+
+Now the real passage.
+
+PASSAGE:
+{content}
+
+ANSWER:
+```
+
+## qa.person_mention.classify
+
+```text
+A commercial blog post names the person below. Decide what kind of person
+they are, using only how the article itself uses them.
+
+PERSON: {person}
+
+HOW THE ARTICLE USES THEM:
+{context}
+
+Answer "public" when they are a public figure appearing in their public
+capacity — an author and their book, a researcher and their paper, an
+executive and their public statement, a historical figure, a journalist and
+their reporting.
+
+Answer "private" when they are a private individual — someone who merely
+shares a name or a location with the topic, a named customer or reviewer, a
+local business owner, a non-spokesperson employee, or anyone whose presence
+here is incidental rather than the subject of their public work.
+
+Return ONLY a JSON object, no other text:
+{{"status": "public" or "private", "confidence": <integer 0-100>, "reason": "<one sentence>"}}
 ```
 
 ## qa.review

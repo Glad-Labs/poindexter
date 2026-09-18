@@ -117,7 +117,12 @@ class TestCanonicalBlogSpec:
         assert ("qa_citations", "qa_numeric_fidelity") in edges
         assert ("qa_numeric_fidelity", "qa_unlinked_attribution") in edges
         assert ("qa_citations", "qa_unlinked_attribution") not in edges
-        assert ("qa_unlinked_attribution", "qa_consistency") in edges
+        # qa_person_mention (poindexter#1009) then splits the
+        # unlinked_attribution → consistency hop: "should this named human be
+        # here at all?" belongs beside the other should-we-publish-this checks.
+        assert ("qa_unlinked_attribution", "qa_person_mention") in edges
+        assert ("qa_person_mention", "qa_consistency") in edges
+        assert ("qa_unlinked_attribution", "qa_consistency") not in edges
         assert ("qa_citations", "qa_consistency") not in edges
         # qa_self_consistency is inserted between consistency and web_factcheck
         assert ("qa_consistency", "qa_self_consistency") in edges
@@ -230,7 +235,7 @@ class TestCanonicalBlogSpec:
         )
         assert txt.get("branch") is True and txt.get("loop") is True
 
-    def test_node_count_is_47(self):
+    def test_node_count_matches_the_documented_build_up(self):
         # 38 + preview_gate (component-scoped regen gate, seeded disabled)
         # + social.generate_drafts + qa.content_originality (RAG self-echo net)
         # + content.llm_reconcile_citations (grounded-LLM citation tail, #765)
@@ -240,4 +245,5 @@ class TestCanonicalBlogSpec:
         # +1 net: stage.writer_self_review (1 node) -> content.detect_contradictions
         #   + content.revise_contradictions (2 nodes), 2026-08-28
         # + qa.numeric_fidelity (arithmetic source-grounding rail, 2026-09-01)
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 48
+        # + qa.person_mention (should this named human be here? poindexter#1009)
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 49
