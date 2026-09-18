@@ -474,7 +474,18 @@ def _emit_degraded_metrics_finding(failed_metrics: list[str], task_id: str | Non
                 "this does not block publish. See poindexter#847."
             ),
             dedup_key=f"qa_rail_degraded:ragas:{key}",
-            extra={"failed_metrics": failed_metrics, "task_id": task_id},
+            # ``rail`` is the grouping key every per-rail view uses, and this
+            # emitter was the one qa_rail_degraded producer omitting it
+            # (poindexter#1035). 80 findings in a 30-day window therefore
+            # grouped under a blank rail — the single largest bucket — while
+            # the sibling GPU-busy path five lines below and every other rail
+            # already set it. The dedup_key was rail-scoped the whole time,
+            # so only the analysis surface was blind, not the throttling.
+            extra={
+                "rail": "ragas_eval",
+                "failed_metrics": failed_metrics,
+                "task_id": task_id,
+            },
         )
     except Exception:  # noqa: BLE001  # silent-ok: emit_finding is fire-and-forget
         # by contract (utils.findings docstring says it never raises); this only

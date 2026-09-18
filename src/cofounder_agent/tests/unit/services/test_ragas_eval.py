@@ -796,3 +796,59 @@ class TestRunConfigFromSettings:
         assert _int_setting(SiteConfig(initial_config={}), "ragas_job_timeout_seconds", 600) == 600
         assert _int_setting(SiteConfig(initial_config={"ragas_job_timeout_seconds": "abc"}), "ragas_job_timeout_seconds", 600) == 600
         assert _int_setting(SiteConfig(initial_config={"ragas_job_timeout_seconds": "42"}), "ragas_job_timeout_seconds", 600) == 42
+
+
+# ---------------------------------------------------------------------------
+# Degraded-metric findings must name their rail (poindexter#1035)
+# ---------------------------------------------------------------------------
+
+
+class TestDegradedFindingAttribution:
+    """#1035 triaged three `qa_rail_degraded` alerts as separate per-rail bugs
+    and found they moved as one. Reproducing that analysis today, the LARGEST
+    bucket — 80 findings in 30 days — grouped under a blank rail, because this
+    emitter was the only `qa_rail_degraded` producer not setting `extra.rail`.
+
+    The dedup key was rail-scoped (`qa_rail_degraded:ragas:<metric>`) the whole
+    time, so throttling worked and only the analysis surface was blind. That is
+    the worst shape: the data looks present and is silently unattributable.
+    """
+
+    def _emit(self, monkeypatch, metrics):
+        from poindexter.services import ragas_eval
+
+        captured = {}
+        monkeypatch.setattr(
+            "poindexter.utils.findings.emit_finding",
+            lambda **kw: captured.update(kw),
+        )
+        ragas_eval._emit_degraded_metrics_finding(metrics, "task-123")
+        return captured
+
+    def test_finding_names_the_rail(self, monkeypatch):
+        kw = self._emit(monkeypatch, ["faithfulness"])
+        assert kw["extra"]["rail"] == "ragas_eval"
+
+    def test_existing_fields_are_preserved(self, monkeypatch):
+        kw = self._emit(monkeypatch, ["faithfulness", "context_precision"])
+        assert kw["extra"]["failed_metrics"] == ["faithfulness", "context_precision"]
+        assert kw["extra"]["task_id"] == "task-123"
+        assert kw["kind"] == "qa_rail_degraded"
+        assert kw["severity"] == "warn"
+
+    def test_dedup_key_stays_metric_scoped(self, monkeypatch):
+        """Unchanged: a chronic per-metric failure pages once, not once per
+        post. The rail label is for grouping, not throttling."""
+        a = self._emit(monkeypatch, ["faithfulness"])
+        b = self._emit(monkeypatch, ["context_precision"])
+        assert a["dedup_key"] != b["dedup_key"]
+        assert a["dedup_key"].startswith("qa_rail_degraded:ragas:")
+
+    def test_emitter_never_raises(self, monkeypatch):
+        from poindexter.services import ragas_eval
+
+        monkeypatch.setattr(
+            "poindexter.utils.findings.emit_finding",
+            lambda **kw: (_ for _ in ()).throw(RuntimeError("sink down")),
+        )
+        ragas_eval._emit_degraded_metrics_finding(["faithfulness"], None)
