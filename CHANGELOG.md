@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## [0.142.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.141.0...v0.142.0) (2026-09-19)
+
+
+### Features
+
+* **gpu:** attribute lock timeouts to the work that lost, not just the lock ([#3863](https://github.com/Glad-Labs/glad-labs-stack/issues/3863)) ([f642fb8](https://github.com/Glad-Labs/glad-labs-stack/commit/f642fb86aa08c993ac8dffd4234cdc3061d11f9f))
+* **observability:** watch the featured fan-out's router training data ([#3856](https://github.com/Glad-Labs/glad-labs-stack/issues/3856)) ([55eb255](https://github.com/Glad-Labs/glad-labs-stack/commit/55eb2559ca065b3a34749334e0eae9d619b93e80))
+* **qa:** add qa.person_mention — should this named human be in the post? ([#3853](https://github.com/Glad-Labs/glad-labs-stack/issues/3853)) ([5f3876e](https://github.com/Glad-Labs/glad-labs-stack/commit/5f3876e3f0b25740e2c754bedc179ce135fdecde))
+* **video:** RIFE frame-interpolation sidecar; ffmpeg becomes the fallback ([#3861](https://github.com/Glad-Labs/glad-labs-stack/issues/3861)) ([36e2106](https://github.com/Glad-Labs/glad-labs-stack/commit/36e2106027a353147bc20d8d24f05e61f873eabc))
+
+
+### Bug Fixes
+
+* **gpu:** a cancelled release must not leave the in-process gate held ([#3865](https://github.com/Glad-Labs/glad-labs-stack/issues/3865)) ([58f1e99](https://github.com/Glad-Labs/glad-labs-stack/commit/58f1e99e9e0824bee75c294c340bfae084edb0e3))
+* **gpu:** a Ragas contention skip must report as contention, not breakage ([#3872](https://github.com/Glad-Labs/glad-labs-stack/issues/3872)) ([75126b1](https://github.com/Glad-Labs/glad-labs-stack/commit/75126b1382d880b609c7c4a072b0c98387670e44))
+* **gpu:** name the cross-process lock holder in the timeout, not "holder None" ([#3855](https://github.com/Glad-Labs/glad-labs-stack/issues/3855)) ([db0a0a6](https://github.com/Glad-Labs/glad-labs-stack/commit/db0a0a6eb37d14c6617a028a2adae9f1f798379e))
+* **media-qa:** a podcast the system never graded must not read as a pass ([#3873](https://github.com/Glad-Labs/glad-labs-stack/issues/3873)) ([7342bdd](https://github.com/Glad-Labs/glad-labs-stack/commit/7342bdd5b042f872ef6022e4a8ba0f553e0fa7c3))
+* **qa:** a required rail must never answer with silence ([#3869](https://github.com/Glad-Labs/glad-labs-stack/issues/3869)) ([1c267de](https://github.com/Glad-Labs/glad-labs-stack/commit/1c267de72924292f9026fa8ca4ab1f8f88bd6bb6))
+* **qa:** catch conducted-experiment claims whose figures aren't in the corpus ([#3859](https://github.com/Glad-Labs/glad-labs-stack/issues/3859)) ([152c15d](https://github.com/Glad-Labs/glad-labs-stack/commit/152c15d097770bfb4a5e50523a9d7a3c99d077eb))
+* **qa:** flag anonymous appeals to authority, calibrated at 0 false positives ([#3868](https://github.com/Glad-Labs/glad-labs-stack/issues/3868)) ([048e9eb](https://github.com/Glad-Labs/glad-labs-stack/commit/048e9eb84f1db68dcddb085c146291d2824be967))
+* **qa:** the Ragas degraded finding must name its rail ([#3867](https://github.com/Glad-Labs/glad-labs-stack/issues/3867)) ([ba1f1ea](https://github.com/Glad-Labs/glad-labs-stack/commit/ba1f1ea809afb504d997515286c238eecaae5f18))
+* **video:** pace-correct the S2V conditioning audio so the mouth stops running fast ([#3857](https://github.com/Glad-Labs/glad-labs-stack/issues/3857)) ([abff0c3](https://github.com/Glad-Labs/glad-labs-stack/commit/abff0c381a01017b457dce5422467246f62f1854))
+
 ## [0.141.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.140.1...v0.141.0) (2026-09-18)
 
 
