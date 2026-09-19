@@ -852,3 +852,138 @@ class TestDegradedFindingAttribution:
             lambda **kw: (_ for _ in ()).throw(RuntimeError("sink down")),
         )
         ragas_eval._emit_degraded_metrics_finding(["faithfulness"], None)
+
+
+# ---------------------------------------------------------------------------
+# GPU-busy skips must survive Ragas's executor (poindexter#914 P2)
+# ---------------------------------------------------------------------------
+
+
+class TestGpuBusySurvivesRagasExecutor:
+    """`ragas.evaluate(raise_exceptions=False)` catches ANY exception raised
+    inside a metric and collapses it to a sentinel — GpuBusyError included. So
+    `evaluate_sample`'s `except GpuBusyError` sat outside `evaluate()` and could
+    never fire on this path.
+
+    Measured 2026-09-18: the scheduler recorded **706** `qa_ragas_judge`
+    admission rejections and `qa_rail_gpu_busy_skip` fired **zero** times, ever
+    — the skips were reported as `qa_rail_degraded` "metric(s) failing", which
+    is exactly the confusion the distinct kind was introduced to prevent ("a
+    contention skip and a broken rail produce the same sentinel scores").
+
+    The wrapper now records the rejection on the way past. The exception still
+    propagates into Ragas and still sentinels the metric, so scoring behaviour
+    is unchanged; only the reported cause is right.
+    """
+
+    def test_recorder_captures_when_armed(self):
+        from poindexter.services import ragas_eval
+
+        seen: list = []
+        token = ragas_eval._GPU_BUSY_SEEN.set(seen)
+        try:
+            ragas_eval._record_gpu_busy("busy-1")
+            ragas_eval._record_gpu_busy("busy-2")
+        finally:
+            ragas_eval._GPU_BUSY_SEEN.reset(token)
+        assert seen == ["busy-1", "busy-2"]
+
+    def test_recorder_is_a_no_op_when_unarmed(self):
+        """The CLI path calls the wrappers without arming the holder; a bare
+        record must not raise there."""
+        from poindexter.services import ragas_eval
+
+        token = ragas_eval._GPU_BUSY_SEEN.set(None)
+        try:
+            ragas_eval._record_gpu_busy("busy")  # must not raise
+        finally:
+            ragas_eval._GPU_BUSY_SEEN.reset(token)
+
+    def test_holder_crosses_the_worker_thread(self):
+        """`evaluate()` runs under `asyncio.to_thread`, which copies the
+        context — the whole mechanism depends on the list being shared across
+        that hop, the same way `_OWNING_LOOP` is."""
+        import asyncio
+
+        from poindexter.services import ragas_eval
+
+        async def _main():
+            seen: list = []
+            ragas_eval._GPU_BUSY_SEEN.set(seen)
+
+            def _in_worker():
+                ragas_eval._record_gpu_busy("from-worker")
+
+            await asyncio.to_thread(_in_worker)
+            return seen
+
+        assert asyncio.run(_main()) == ["from-worker"]
+
+
+class TestGpuBusyIsReportedAsContentionNotBreakage:
+    """End to end: a judge call refused by admission must surface as
+    `qa_rail_gpu_busy_skip`, not as `qa_rail_degraded` metric failure."""
+
+    async def test_busy_inside_evaluate_reports_a_contention_skip(self):
+        """Simulates what Ragas actually does: the metric raises internally and
+        `raise_exceptions=False` swallows it, so `evaluate()` returns sentinels
+        and nothing propagates. Before the fix the caller had no way to tell
+        this apart from a broken judge."""
+        from poindexter.services import ragas_eval
+        from poindexter.services.gpu_admission import GpuBusyError
+
+        busy = GpuBusyError("no_fit", 240.0)
+
+        def _fake_evaluate(*a, **k):
+            # what a judge call does on the way past, before Ragas eats it
+            ragas_eval._record_gpu_busy(busy)
+            out = MagicMock()
+            out.scores = [{}]           # metrics collapsed to sentinels
+            return out
+
+        with patch(
+            "poindexter.services.ragas_eval._build_ragas_models",
+            return_value=(MagicMock(), MagicMock()),
+        ), patch("ragas.evaluate", _fake_evaluate), patch(
+            "datasets.Dataset.from_dict", return_value=MagicMock(),
+        ), patch(
+            "poindexter.services.ragas_eval._surface_gpu_busy_skip"
+        ) as skip, patch(
+            "poindexter.services.ragas_eval._emit_degraded_metrics_finding"
+        ) as degraded:
+            result = await ragas_eval.evaluate_sample(
+                topic="t", generated_content="c", retrieved_contexts=["ctx"],
+            )
+
+        assert skip.call_count == 1, "contention must report as a gpu-busy skip"
+        assert degraded.call_count == 0, (
+            "a contention skip must NOT be reported as metric degradation — "
+            "that conflation is what poindexter#914 P2's distinct kind exists "
+            "to prevent"
+        )
+        # Same fail-soft result the caller already handles.
+        assert result == {
+            "faithfulness": -1.0,
+            "answer_relevancy": -1.0,
+            "context_precision": -1.0,
+        }
+
+    async def test_a_clean_run_still_reports_nothing(self):
+        from poindexter.services import ragas_eval
+
+        ok = MagicMock()
+        ok.scores = [{"faithfulness": 0.9, "answer_relevancy": 0.8,
+                      "context_precision": 0.7}]
+        with patch(
+            "poindexter.services.ragas_eval._build_ragas_models",
+            return_value=(MagicMock(), MagicMock()),
+        ), patch("ragas.evaluate", return_value=ok), patch(
+            "datasets.Dataset.from_dict", return_value=MagicMock(),
+        ), patch(
+            "poindexter.services.ragas_eval._surface_gpu_busy_skip"
+        ) as skip:
+            result = await ragas_eval.evaluate_sample(
+                topic="t", generated_content="c", retrieved_contexts=["ctx"],
+            )
+        assert skip.call_count == 0
+        assert result["faithfulness"] == 0.9

@@ -50,6 +50,33 @@ logger = get_logger(__name__)
 # Carries ``(loop, thread_ident)`` — the ident is recorded explicitly rather
 # than read off the loop, so the deadlock guard never depends on a private
 # asyncio attribute.
+# Ragas runs every metric under ``raise_exceptions=False``, so an exception
+# raised inside a judge call — GpuBusyError included — is caught by Ragas's own
+# executor and collapsed to a sentinel score. It never reaches
+# ``evaluate_sample``'s ``except GpuBusyError``.
+#
+# That made the poindexter#914 P2 contention signal unreachable on this path:
+# 706 ``qa_ragas_judge`` admission rejections were recorded by the scheduler
+# and ``qa_rail_gpu_busy_skip`` fired ZERO times, ever. The skips were reported
+# as ``qa_rail_degraded`` "metric(s) failing" instead — precisely the confusion
+# the distinct kind was introduced to prevent ("a contention skip and a broken
+# rail produce the same sentinel scores").
+#
+# So the wrapper records the rejection on the way past. The exception still
+# propagates into Ragas and still sentinels the metric — behaviour is
+# unchanged — but the cause survives for the caller to report.
+_GPU_BUSY_SEEN: contextvars.ContextVar[list[Any] | None] = contextvars.ContextVar(
+    "ragas_gpu_busy_seen", default=None,
+)
+
+
+def _record_gpu_busy(exc: Any) -> None:
+    """Note a GpuBusyError before Ragas swallows it. Never raises."""
+    seen = _GPU_BUSY_SEEN.get()
+    if seen is not None:
+        seen.append(exc)
+
+
 _OWNING_LOOP: contextvars.ContextVar[tuple[Any, int] | None] = (
     contextvars.ContextVar("ragas_owning_loop", default=None)
 )
@@ -252,7 +279,8 @@ def _build_dispatcher_ragas_wrappers(
             # bound to the flow's loop — and since poindexter#1053 this
             # coroutine runs on Ragas's worker loop, not the flow's. Hand it
             # back rather than driving the pool from a foreign loop.
-            completion = await _bridge_to_owning_loop(dispatch_complete(
+            try:
+                completion = await _bridge_to_owning_loop(dispatch_complete(
                 pool=self.dispatch_pool,
                 messages=payload,
                 model=self.judge_model_name,
@@ -267,7 +295,12 @@ def _build_dispatcher_ragas_wrappers(
                    if json_mode_ok else {}),
                 max_wait_s=qa_rail_wait_budget_s(),
                 priority="background",
-            ))
+                ))
+            except GpuBusyError as busy:
+                # Record, then re-raise: Ragas still sentinels the metric, but
+                # evaluate_sample can now name contention as the cause.
+                _record_gpu_busy(busy)
+                raise
             text = getattr(completion, "text", "") or ""
             generation = ChatGeneration(
                 message=AIMessage(content=text),
@@ -673,9 +706,28 @@ async def evaluate_sample(
                 run_config=run_config,
             )
 
-        # to_thread copies the context, so the bridges see _OWNING_LOOP.
+        # to_thread copies the context, so the bridges see _OWNING_LOOP and
+        # share this list.
         _OWNING_LOOP.set((asyncio.get_running_loop(), threading.get_ident()))
+        gpu_busy_seen: list[Any] = []
+        _GPU_BUSY_SEEN.set(gpu_busy_seen)
         result = await asyncio.to_thread(_evaluate_in_worker_thread)
+        if gpu_busy_seen:
+            # Contention, not breakage. Report it as such and return the same
+            # sentinels the caller already handles — a burst of GPU pressure
+            # must not read as the QA stack degrading.
+            busy = gpu_busy_seen[0]
+            logger.info(
+                "[ragas] skipped — GPU admission rejected inside the metric "
+                "run (%s); %d judge call(s) refused",
+                getattr(busy, "reason", "?"), len(gpu_busy_seen),
+            )
+            _surface_gpu_busy_skip("ragas", busy, task_id=task_id)
+            return {
+                "faithfulness": -1.0,
+                "answer_relevancy": -1.0,
+                "context_precision": -1.0,
+            }
         scores_raw = result.scores[0] if result.scores else {}  # type: ignore[union-attr]
         scores = {
             "faithfulness": _coerce_metric(scores_raw.get("faithfulness")),
