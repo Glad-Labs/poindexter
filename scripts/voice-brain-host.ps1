@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Install / control the always-on voice host-brain daemon as a hidden,
-    self-restarting Windows scheduled task (Glad-Labs/glad-labs-stack#1006).
+    self-restarting Windows scheduled task (Glad-Labs/poindexter#1006).
 
 .DESCRIPTION
     The claude-code voice room runs its `claude -p` dev brain on the HOST (full
