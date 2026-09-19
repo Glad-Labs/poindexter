@@ -456,3 +456,95 @@ Contract tests: `test_media_asset_recorder` (podcast `ON CONFLICT` shape),
 `tests/integration_db/test_dedup_podcast_media_asset` (unique guard blocks a 2nd
 row; recorder upsert is idempotent against the real index; migration de-dups +
 backs up losers). Closes [Glad-Labs/poindexter#884](https://github.com/Glad-Labs/poindexter/issues/884).
+
+## 13. How a podcast is graded (2026-09-18)
+
+Three mechanisms grade an episode, and **none of them is the `qa.*` rail system
+that grades the article**. The post is graded by `qa.aggregate` in block 4 of
+`canonical_blog`; `generate_media_scripts` runs later in block 6, so the podcast
+script is never graded as text, and no `qa_gates` row matches audio or podcast —
+the whole advisory / `required_to_pass` machinery is out of the picture here.
+
+| Where                                  | What it measures                                                                                            | Can it block?                                             |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `qa.audio` (in-graph, Stage 3)         | silence segments ≥ `media.qa.audio.max_silence_s`; clipping / inaudible dBFS; duration vs script word-count | **No** — fail-soft by design, emits findings              |
+| Gate-2 Layer 1 (`evaluate_podcast`)    | file size, duration, silence ratio                                                                          | **Yes** — `status='rejected'`, `decided_by='auto:layer1'` |
+| Gate-2 Layer 2 (`_run_podcast_layer2`) | full-episode Whisper transcript judged against `posts.content`                                              | No — advisory, emits `podcast_faithfulness_low`           |
+
+### The five holes this section exists to record
+
+Each was measured on prod before it was fixed; the numbers are the point, not
+the code.
+
+1. **The judge was the writer.** `podcast_script_model` and
+   `media.podcast.faithfulness_model` were both
+   `ollama/gemma-4-31B-it-qat:latest`. Across 21 scored episodes the self-grade
+   never went below 92 and hit exactly 100 fifteen times — while the operator
+   was independently rejecting episodes that scored 100.
+   `_resolve_faithfulness_model` now refuses a judge whose normalized id
+   matches the writer's, falls back to `ragas_judge_model`, and emits
+   `media_judge_is_writer` so the override is visible. Comparison is
+   prefix-normalized: `gemma-4-31b` and `ollama/gemma-4-31b` are one model
+   (see [cost-logs-model-identity.md](cost-logs-model-identity.md)).
+
+2. **An unmeasured episode was stamped 100.** `score = l2_score if … else 100.0`
+   meant a transcription failure, an unparseable judge reply and a genuinely
+   perfect episode were identical on the row — 12 of 39 evaluated podcasts sat
+   at 100 with nothing having read them. `quality_score` is now NULL in that
+   case, `quality_signals.layer2_unavailable_reason` names the failing step
+   (`no_judge_model` / `judge_is_writer` / `no_source_body` /
+   `transcribe_error` / `transcribe_failed` / `empty_transcript` /
+   `judge_dispatch_error` / `judge_unparsed`), and a `media_layer2_unavailable`
+   finding routes. A deliberately `disabled` Layer 2 emits nothing — that is a
+   choice, not a failure. The video lane had the identical bug and got the
+   identical fix.
+
+3. **`qa.audio` had no reader.** The atom produced `audio_qa_result`, the
+   channel was declared on `PipelineState`, the checks ran on every episode —
+   and the only trace that survived the graph was a findings row. `podcast.persist`
+   now stamps the podcast lane onto `media_assets.metadata->'audio_qa'` and
+   `media_quality_service._fetch_render_audio_qa` folds it into
+   `quality_signals.render_audio_qa`, so the render-time measurements (silence
+   positions, mean/max dBFS — none of which Gate-2 re-derives) reach the
+   surface the operator reviews. **Surfacing only, deliberately:** 23 shipped
+   episodes carry a long-silence finding and the operator approved them, so
+   promoting the measurement straight to a gate would start rejecting work that
+   is currently acceptable. Graduating it is a separate, evidence-led decision.
+
+4. **Every finding routed to nowhere.** No `findings.audio_*` /
+   `findings.podcast_*` policy existed, so all of them inherited
+   `findings.default.delivery = log_only`, which is deliberately inert: 74
+   long-silence findings (23 on shipped episodes) and every faithfulness result
+   reached `audit_log` and told nobody for three months. All eight kinds now
+   carry an explicit Discord policy (routine ops, never Telegram, per
+   `feedback_telegram_vs_discord`). The cooldown matters more here than
+   elsewhere — the `dedup_key` carries the task/post id, so every episode is a
+   fresh fingerprint and dispatcher dedup structurally cannot collapse a batch
+   (see [findings-routing.md](findings-routing.md)).
+
+5. **Auto-approve silently disabled grading.** `_evaluate_and_notify` was
+   called only from `record_pending`'s Tier-3 branch, so flipping on a niche
+   `auto_approve` or earned autonomy turned OFF Layer 1 and Layer 2 for that
+   niche rather than only skipping the human step — the file shipped with
+   `quality_score` NULL and nothing had looked at it. Every tier now runs the
+   eval; only the Discord ping stays gated on `pending`. Auto-approve is a
+   statement about trusting content judgment, not a licence to ship a 0-byte
+   render, so `_LAYER1_REJECT_SQL` can overturn an `auto:*` decision — and its
+   `CASE WHEN status = 'pending' OR decided_by LIKE 'auto:%'` guard means it can
+   never overturn an operator's, while the quality columns are written either
+   way so a human-decided row still records what was measured.
+
+### What is still open
+
+- **The grade and the operator disagree.** Three episodes in the 60 days to
+  2026-09-18 were rejected by operator carrying scores of 100, 92 and 100.
+  Whatever made those unshippable, nothing in this stack measures. Fix 1 should
+  move the numbers; if a real judge still reports ~100 on an episode the
+  operator rejects, the missing signal is a new rail, not a threshold.
+- **Layer 1 has never fired.** Zero `auto:layer1` rows on any podcast. Its
+  thresholds (30s, 50% silence, 10KB) are loose enough to only catch a
+  catastrophically broken render, which is the intent — but it means Layer 1 is
+  unproven in production, not proven safe.
+- **The script is ungraded as text.** The only content check is the
+  post-hoc transcript comparison at Gate-2. A rail on `podcast_script` before
+  the TTS spend would be cheaper and earlier.

@@ -43,6 +43,14 @@ ATOM_META = AtomMeta(
             description="temp path of the rendered narration MP3", required=False,
         ),
         FieldSpec(
+            name="audio_qa_result", type="dict",
+            description=(
+                "qa.audio output for this run. The podcast lane is stamped "
+                "onto the asset row so the Gate-2 eval can surface it."
+            ),
+            required=False,
+        ),
+        FieldSpec(
             name="database_service", type="object",
             description="DB service (pool seam)", required=False,
         ),
@@ -62,6 +70,28 @@ ATOM_META = AtomMeta(
     retry=RetryPolicy(),
     parallelizable=False,
 )
+
+
+def _podcast_audio_qa(state: dict[str, Any]) -> dict[str, Any]:
+    """The podcast lane's ``qa.audio`` result, ready to stamp on the asset row.
+
+    ``qa.audio`` runs immediately before this node and measures the narration
+    (long-silence segments, mean/max dBFS, duration-vs-script). It produced
+    ``audio_qa_result`` and **nothing read it** — the channel was declared on
+    PipelineState, the checks ran on every episode, and the only trace that
+    survived the graph was a findings row. Carrying it onto ``media_assets``
+    gives it a consumer: ``media_quality_service._fetch_render_audio_qa``
+    folds it into ``quality_signals`` so the operator sees it on the approval
+    row alongside the Gate-2 numbers.
+
+    Returns ``{}`` when the lane is absent or unusable, so a missing QA result
+    never adds an empty key to the asset metadata.
+    """
+    result = state.get("audio_qa_result")
+    if not isinstance(result, dict):
+        return {}
+    lane = result.get("podcast")
+    return lane if isinstance(lane, dict) and lane else {}
 
 
 def _duration_ms(path: str) -> int | None:
@@ -168,6 +198,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # poindexter#990 family). Stamp it now when the run already knows.
     state_post_id = str(state.get("post_id") or "").strip() or None
 
+    audio_qa = _podcast_audio_qa(state)
+
     asset_id = await record_media_asset(
         pool=pool,
         post_id=state_post_id,  # else resolved later (podcast_distribute)
@@ -180,6 +212,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         mime_type="audio/mpeg",
         duration_ms=_duration_ms(str(durable)),
         file_size_bytes=size,
+        metadata={"audio_qa": audio_qa} if audio_qa else None,
     )
 
     recorded: list[str] = []

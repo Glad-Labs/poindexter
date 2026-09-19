@@ -3707,6 +3707,69 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.social_post_delivery_failed.fallback': 'log_only',
     'findings.social_post_delivery_failed.cooldown_minutes': '360',
     'findings.social_post_delivery_failed.min_severity': 'warn',
+    # ----- Media QA findings (podcast + video) -----
+    # Every one of these inherited findings.default.delivery='log_only', so the
+    # whole media-QA surface emitted into audit_log and told nobody: 74
+    # long-silence findings (23 of them on shipped podcast episodes) and every
+    # faithfulness result routed nowhere for three months. All routine-ops →
+    # Discord per feedback_telegram_vs_discord; none of these is a page.
+    #
+    # Cooldowns matter more here than elsewhere: the dedup_key carries the
+    # task/post id, so every episode is a fresh fingerprint and dispatcher
+    # dedup cannot collapse a batch. The per-kind cooldown is the only throttle
+    # (docs/architecture/findings-routing.md).
+    #
+    # TTS dropout / truncation — the audio has a hole a listener will hear.
+    'findings.audio_long_silence.delivery': 'discord',
+    'findings.audio_long_silence.fallback': 'log_only',
+    'findings.audio_long_silence.cooldown_minutes': '360',
+    'findings.audio_long_silence.min_severity': 'warn',
+    # Distortion — clipping is unrecoverable once the episode ships.
+    'findings.audio_clipping.delivery': 'discord',
+    'findings.audio_clipping.fallback': 'log_only',
+    'findings.audio_clipping.cooldown_minutes': '360',
+    'findings.audio_clipping.min_severity': 'warn',
+    # Inaudible narration — same class of defect from the other end.
+    'findings.audio_too_quiet.delivery': 'discord',
+    'findings.audio_too_quiet.fallback': 'log_only',
+    'findings.audio_too_quiet.cooldown_minutes': '360',
+    'findings.audio_too_quiet.min_severity': 'warn',
+    # Rendered audio far shorter than its script = truncated narration. (The
+    # "longer than expected" half emits at info, which is never routable.)
+    'findings.audio_duration_mismatch.delivery': 'discord',
+    'findings.audio_duration_mismatch.fallback': 'log_only',
+    'findings.audio_duration_mismatch.cooldown_minutes': '360',
+    'findings.audio_duration_mismatch.min_severity': 'warn',
+    # The episode drifted from the article it claims to narrate. This is the
+    # single content-fidelity signal the podcast lane has, so it gets the
+    # shortest cooldown of the group — a fabricating TTS/script path is worth
+    # hearing about per-episode.
+    'findings.podcast_faithfulness_low.delivery': 'discord',
+    'findings.podcast_faithfulness_low.fallback': 'log_only',
+    'findings.podcast_faithfulness_low.cooldown_minutes': '60',
+    'findings.podcast_faithfulness_low.min_severity': 'warn',
+    # Layer 1 passed but Layer 2 could not score — the file is ungraded on
+    # content. Routed because the whole point of writing NULL instead of a
+    # fabricated 100 is that the hole becomes visible.
+    'findings.media_layer2_unavailable.delivery': 'discord',
+    'findings.media_layer2_unavailable.fallback': 'log_only',
+    'findings.media_layer2_unavailable.cooldown_minutes': '720',
+    'findings.media_layer2_unavailable.min_severity': 'warn',
+    # The configured faithfulness judge is the model that wrote the script.
+    # A misconfiguration, so it fires on every eval until corrected — daily
+    # cooldown, and the dedup_key is the writer model, not the episode.
+    'findings.media_judge_is_writer.delivery': 'discord',
+    'findings.media_judge_is_writer.fallback': 'log_only',
+    'findings.media_judge_is_writer.cooldown_minutes': '1440',
+    'findings.media_judge_is_writer.min_severity': 'warn',
+    # The TTS render succeeded but the move to durable storage failed, so
+    # media_reconciliation will re-dispatch and re-pay the render until the
+    # disk/permission fault is fixed (poindexter#877).
+    'findings.podcast_persist_failed.delivery': 'discord',
+    'findings.podcast_persist_failed.fallback': 'log_only',
+    'findings.podcast_persist_failed.cooldown_minutes': '120',
+    'findings.podcast_persist_failed.min_severity': 'warn',
+
     # A YouTube upload we recorded as published is no longer on the channel
     # (youtube_metadata_sync demoted the row to status='deleted'). Routine
     # Discord traffic per feedback_telegram_vs_discord — the row is already
@@ -5573,6 +5636,22 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'environment': {'value_type': 'string'},
     'experiment_weighted_selection_enabled': {'owner': 'experiment_runner', 'value_type': 'boolean'},
     'findings.anomaly.cooldown_minutes': {'value_type': 'integer'},
+    'findings.audio_clipping.cooldown_minutes': {'value_type': 'integer'},
+    'findings.audio_clipping.delivery': {'value_type': 'string'},
+    'findings.audio_clipping.fallback': {'value_type': 'string'},
+    'findings.audio_clipping.min_severity': {'value_type': 'string'},
+    'findings.audio_duration_mismatch.cooldown_minutes': {'value_type': 'integer'},
+    'findings.audio_duration_mismatch.delivery': {'value_type': 'string'},
+    'findings.audio_duration_mismatch.fallback': {'value_type': 'string'},
+    'findings.audio_duration_mismatch.min_severity': {'value_type': 'string'},
+    'findings.audio_long_silence.cooldown_minutes': {'value_type': 'integer'},
+    'findings.audio_long_silence.delivery': {'value_type': 'string'},
+    'findings.audio_long_silence.fallback': {'value_type': 'string'},
+    'findings.audio_long_silence.min_severity': {'value_type': 'string'},
+    'findings.audio_too_quiet.cooldown_minutes': {'value_type': 'integer'},
+    'findings.audio_too_quiet.delivery': {'value_type': 'string'},
+    'findings.audio_too_quiet.fallback': {'value_type': 'string'},
+    'findings.audio_too_quiet.min_severity': {'value_type': 'string'},
     'findings.anomaly.delivery': {'value_type': 'string'},
     'findings.anomaly.fallback': {'value_type': 'string'},
     'findings.anomaly.min_severity': {'value_type': 'string'},
@@ -5595,6 +5674,22 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.wan_ip_changed.fallback': {'value_type': 'string'},
     'findings.wan_ip_changed.min_severity': {'value_type': 'string'},
     'findings.broken_link.cooldown_minutes': {'value_type': 'integer'},
+    'findings.media_judge_is_writer.cooldown_minutes': {'value_type': 'integer'},
+    'findings.media_judge_is_writer.delivery': {'value_type': 'string'},
+    'findings.media_judge_is_writer.fallback': {'value_type': 'string'},
+    'findings.media_judge_is_writer.min_severity': {'value_type': 'string'},
+    'findings.media_layer2_unavailable.cooldown_minutes': {'value_type': 'integer'},
+    'findings.media_layer2_unavailable.delivery': {'value_type': 'string'},
+    'findings.media_layer2_unavailable.fallback': {'value_type': 'string'},
+    'findings.media_layer2_unavailable.min_severity': {'value_type': 'string'},
+    'findings.podcast_faithfulness_low.cooldown_minutes': {'value_type': 'integer'},
+    'findings.podcast_faithfulness_low.delivery': {'value_type': 'string'},
+    'findings.podcast_faithfulness_low.fallback': {'value_type': 'string'},
+    'findings.podcast_faithfulness_low.min_severity': {'value_type': 'string'},
+    'findings.podcast_persist_failed.cooldown_minutes': {'value_type': 'integer'},
+    'findings.podcast_persist_failed.delivery': {'value_type': 'string'},
+    'findings.podcast_persist_failed.fallback': {'value_type': 'string'},
+    'findings.podcast_persist_failed.min_severity': {'value_type': 'string'},
     'findings.broken_link.delivery': {'value_type': 'string'},
     'findings.broken_link.fallback': {'value_type': 'string'},
     'findings.broken_link.min_severity': {'value_type': 'string'},

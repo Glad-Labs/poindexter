@@ -172,3 +172,82 @@ async def test_blank_post_id_stays_none(tmp_path: Path) -> None:
     ) as rec:
         await podcast_persist.run(state)
     assert rec.await_args.kwargs["post_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# qa.audio carry-forward — the atom's output finally gets a consumer
+#
+# qa.audio runs immediately upstream and measures the narration (silence
+# segments, mean/max dBFS, duration-vs-script). It produced ``audio_qa_result``
+# and NOTHING read it: the channel was declared on PipelineState, the checks
+# ran on every episode, and the only trace that survived the graph was a
+# findings row. Stamping it on the asset row is what lets the Gate-2 eval fold
+# it into ``quality_signals``, on the surface the operator actually reviews.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stamps_podcast_lane_audio_qa_onto_the_asset(tmp_path: Path) -> None:
+    src = tmp_path / "tmp_render.mp3"
+    src.write_bytes(b"ID3fake")
+
+    lane = {
+        "silence_check": "warn",
+        "silence_long_segments": [{"start_s": 66.6, "end_s": 71.6, "duration_s": 5.0}],
+        "volume_check": "ok",
+        "mean_volume_db": -19.4,
+        "duration_check": "ok",
+    }
+    state = {
+        "task_id": "task-abc",
+        "podcast_audio_path": str(src),
+        "pool": _FakePool(),
+        # qa.audio nests per lane; only the podcast lane belongs on this asset.
+        "audio_qa_result": {"long": {}, "short": {}, "podcast": lane},
+    }
+
+    with patch.object(podcast_persist, "PODCAST_DIR", tmp_path / "podcast"), patch.object(
+        podcast_persist, "record_media_asset", new=AsyncMock(return_value="asset-1")
+    ) as rec:
+        await podcast_persist.run(state)
+
+    assert rec.await_args.kwargs["metadata"] == {"audio_qa": lane}
+
+
+@pytest.mark.asyncio
+async def test_no_audio_qa_writes_no_empty_metadata_key(tmp_path: Path) -> None:
+    """A missing/empty lane must not add an ``audio_qa: {}`` key.
+
+    An empty dict on the asset reads downstream as "QA ran and found nothing",
+    which is the same not-measured-vs-measured-clean confusion this whole
+    change exists to remove.
+    """
+    src = tmp_path / "tmp_render.mp3"
+    src.write_bytes(b"ID3fake")
+
+    for result in ({}, {"long": {}, "short": {}}, {"podcast": {}}, None, "junk"):
+        src.write_bytes(b"ID3fake")
+        state = {
+            "task_id": "task-abc",
+            "podcast_audio_path": str(src),
+            "pool": _FakePool(),
+            "audio_qa_result": result,
+        }
+        with patch.object(
+            podcast_persist, "PODCAST_DIR", tmp_path / "podcast"
+        ), patch.object(
+            podcast_persist, "record_media_asset",
+            new=AsyncMock(return_value="asset-1"),
+        ) as rec:
+            await podcast_persist.run(state)
+        assert rec.await_args.kwargs["metadata"] is None, result
+
+
+def test_audio_qa_result_is_a_declared_atom_input() -> None:
+    """The channel must be declared, or the graph can't route it here.
+
+    An atom reading an undeclared key is the #674 trap: LangGraph drops it at
+    ainvoke and the read silently returns None forever.
+    """
+    names = {f.name for f in podcast_persist.ATOM_META.inputs}
+    assert "audio_qa_result" in names

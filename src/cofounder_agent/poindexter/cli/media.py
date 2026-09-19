@@ -182,6 +182,29 @@ def cmd_pending(medium: str | None, limit: int, as_json: bool):
                 f"    quality_score={score_str}  {summary}",
                 fg="bright_black",
             )
+            # A missing score means Layer 2 could not read the file, not that
+            # the file scored badly. Name the reason so "—" is actionable.
+            if score is None:
+                why = (
+                    signals.get("layer2_unavailable_reason")
+                    or signals.get("layer2_status")
+                    or "not evaluated"
+                )
+                click.secho(
+                    f"    ungraded on content: {why} — review by hand",
+                    fg="yellow",
+                )
+            # Render-time qa.audio (silence segments, dBFS) travels on the
+            # asset row; it measures things the Gate-2 probe never re-derives.
+            render_qa = signals.get("render_audio_qa")
+            if isinstance(render_qa, dict) and render_qa:
+                checks = " ".join(
+                    f"{k.replace('_check', '')}={v}"
+                    for k, v in sorted(render_qa.items())
+                    if k.endswith("_check")
+                )
+                if checks:
+                    click.secho(f"    render audio qa: {checks}", fg="bright_black")
 
 
 @media_group.command(name="approve")

@@ -4391,7 +4391,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Avg media quality_score (0-100) by medium, bucketed by when it was scored. Layer 1 floors a hard-fail to 0; a pass is the Layer-2 composite (video shot-fidelity today) or 100 when nothing measurable is wrong.",
+      "description": "Avg media quality_score (0-100) by medium, bucketed by when it was scored. Layer 1 floors a hard-fail to 0; a pass is the Layer-2 composite. A file Layer 2 could NOT score is NULL, not 100 — it is excluded from this average rather than lifting it, and quality_signals.layer2_unavailable_reason says why. Watch the media_layer2_unavailable finding for how often that happens: this average is only as meaningful as its coverage.",
       "fieldConfig": {
         "defaults": {
           "color": {

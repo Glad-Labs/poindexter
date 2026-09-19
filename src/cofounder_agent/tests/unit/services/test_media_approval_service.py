@@ -671,6 +671,12 @@ async def test_earned_autonomy_per_niche_threshold_override(
         {"value": "true"},   # earned_autonomy_enabled
         {"value": "3"},      # per-niche override: min_dispatches = 3
         # global default should NOT be queried (override took precedence)
+        # Tier 2 now also runs the quality eval, which re-reads the row.
+        {"status": "approved", "decided_by": "auto:earned_autonomy:gaming",
+         "quality_evaluated_at": None},
+        None,   # notify: discord-enabled flag (absent → on)
+        {"status": "approved", "quality_score": None, "quality_signals": "{}",
+         "title": "T", "slug": "t"},
     ]
     mock_db.fetch.return_value = [
         {"dispatch_success": True},
@@ -687,8 +693,14 @@ async def test_earned_autonomy_per_niche_threshold_override(
         )
 
     assert result == "approved"
-    # Global default query (5th fetchrow) must NOT have been called.
-    assert mock_db.fetchrow.call_count == 4
+    # The global default must NOT have been consulted once the per-niche
+    # override matched. Asserted on the QUERY ARGS rather than a call count:
+    # the count was 4 only because the eval used to be skipped on this tier,
+    # so it silently encoded the Tier-2 grading hole as an invariant.
+    queried_keys = [
+        c.args[1] for c in mock_db.fetchrow.await_args_list if len(c.args) > 1
+    ]
+    assert "media.gate2.earned_autonomy_min_dispatches" not in queried_keys
 
 
 async def test_earned_autonomy_emit_finding_called_on_grant(
@@ -848,24 +860,31 @@ async def test_record_pending_then_quality_eval_path_does_not_notify_when_auto_a
     Validates the failure-mode the task spec called out: the Discord
     notify should NOT fire on the niche auto-approve path.
     """
-    # record_pending step:
-    #   fetchrow #1: niche_slug lookup → 'glad-labs'
-    #   fetchrow #2: niche auto_approve setting → true
-    # notify_pending_for_review step:
-    #   fetchrow #3: app_settings enable flag → missing (defaults on)
-    #   fetchrow #4: media_approvals row → status='approved'
-    mock_db.fetchrow.side_effect = [
-        {"niche_slug": "glad-labs"},
-        {"value": "true"},
-        None,
-        {
-            "status": "approved",
-            "quality_score": 1.0,
-            "quality_signals": "{}",
-            "title": "X",
-            "slug": "x",
-        },
-    ]
+    # Dispatch on the query rather than on call ORDER: Tier 1 now also runs
+    # the quality eval (auto-approve skips the operator, not the checks), so a
+    # fixed side_effect list encodes the call count as an invariant and breaks
+    # the moment the tier does more work.
+    approved_row = {
+        "status": "approved",
+        "decided_by": "auto:niche.glad-labs",
+        "quality_evaluated_at": None,
+        "quality_score": None,
+        "quality_signals": "{}",
+        "title": "X",
+        "slug": "x",
+    }
+
+    async def _fetchrow(sql, *args, **_kw):
+        text = " ".join(str(sql).split())
+        if "pipeline_tasks pt" in text:
+            return {"niche_slug": "glad-labs"}
+        if "FROM app_settings" in text:
+            return {"value": "true"} if args and "auto_approve" in str(args[0]) else None
+        if "media_approvals" in text:
+            return approved_row
+        return None
+
+    mock_db.fetchrow.side_effect = _fetchrow
 
     status = await media_approval_service.record_pending(
         mock_db, "12345678-1234-1234-1234-123456789012", "podcast",
@@ -1048,3 +1067,162 @@ async def test_record_pending_eval_failure_never_fails_the_seed(
         )
 
     assert status == "pending"
+
+
+# ---------------------------------------------------------------------------
+# The quality eval is tier-independent
+#
+# _evaluate_and_notify used to be called only from the Tier-3 branch, so
+# flipping on a niche auto_approve or earned autonomy silently turned OFF
+# grading for that niche rather than only skipping the human step: the medium
+# shipped with no Layer-1 checks, no semantic score, and quality_score NULL.
+# Auto-approve is a statement about trusting content judgment, not a licence
+# to ship a 0-byte render.
+# ---------------------------------------------------------------------------
+
+
+def _tier1_db(mock_db: MagicMock, *, evaluated_at=None) -> MagicMock:
+    """Query-dispatched stub for the niche auto-approve (Tier-1) path."""
+    async def _fetchrow(sql, *args, **_kw):
+        text = " ".join(str(sql).split())
+        if "pipeline_tasks pt" in text:
+            return {"niche_slug": "glad-labs"}
+        if "FROM app_settings" in text:
+            return {"value": "true"} if args and "auto_approve" in str(args[0]) else None
+        if "media_approvals" in text:
+            return {
+                "status": "approved",
+                "decided_by": "auto:niche.glad-labs",
+                "quality_evaluated_at": evaluated_at,
+            }
+        return None
+
+    mock_db.fetchrow.side_effect = _fetchrow
+    return mock_db
+
+
+async def test_tier1_auto_approve_still_runs_the_quality_eval(
+    mock_db: MagicMock,
+) -> None:
+    """Niche auto-approve skips the operator, NOT the checks."""
+    _tier1_db(mock_db)
+
+    eval_podcast = AsyncMock()
+    with patch(
+        "poindexter.services.media_quality_service.evaluate_podcast", eval_podcast,
+    ):
+        status = await media_approval_service.record_pending(
+            mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
+        )
+
+    assert status == "approved"
+    eval_podcast.assert_awaited_once_with(
+        mock_db, _POST, "/data/media/pod.mp3", site_config=None,
+    )
+
+
+async def test_tier2_earned_autonomy_still_runs_the_quality_eval(
+    mock_db: MagicMock,
+) -> None:
+    """Earned autonomy skips the operator, NOT the checks."""
+    async def _fetchrow(sql, *args, **_kw):
+        text = " ".join(str(sql).split())
+        if "pipeline_tasks pt" in text:
+            return {"niche_slug": "gaming"}
+        if "FROM app_settings" in text:
+            # The master switch and the global threshold inline their key in
+            # the SQL; the per-niche keys arrive as a bind arg.
+            key = str(args[0]) if args else text
+            if "auto_approve" in key:
+                return {"value": "false"}          # Tier 1 off
+            if "earned_autonomy_enabled" in key:
+                return {"value": "true"}
+            if "min_dispatches" in key:
+                return {"value": "3"}
+            return None
+        if "media_approvals" in text:
+            return {
+                "status": "approved",
+                "decided_by": "auto:earned_autonomy:gaming",
+                "quality_evaluated_at": None,
+            }
+        return None
+
+    mock_db.fetchrow.side_effect = _fetchrow
+    mock_db.fetch.return_value = [{"dispatch_success": True}] * 3
+
+    eval_video = AsyncMock()
+    with patch(
+        "poindexter.services.media_approval_service.emit_finding", return_value=None,
+    ), patch(
+        "poindexter.services.media_quality_service.evaluate_video", eval_video,
+    ):
+        status = await media_approval_service.record_pending(
+            mock_db, _POST, "video", file_path="/data/media/clip.mp4",
+        )
+
+    assert status == "approved"
+    eval_video.assert_awaited_once_with(
+        mock_db, _POST, "/data/media/clip.mp4", medium="video", site_config=None,
+    )
+
+
+async def test_auto_approved_row_is_never_pinged_even_though_it_is_graded(
+    mock_db: MagicMock,
+) -> None:
+    """Grading and pinging are separate: only a PENDING row pings Discord."""
+    _tier1_db(mock_db)
+
+    notify = AsyncMock(return_value=True)
+    with patch(
+        "poindexter.services.media_quality_service.evaluate_podcast", AsyncMock(),
+    ), patch.object(media_approval_service, "notify_pending_for_review", notify):
+        await media_approval_service.record_pending(
+            mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
+        )
+
+    notify.assert_not_awaited()
+
+
+async def test_eval_skips_a_row_a_human_already_decided(
+    mock_db: MagicMock,
+) -> None:
+    """An operator's call is final — never re-judged, never clobbered."""
+    mock_db.fetchrow.side_effect = [
+        None,  # no niche → Tier 3
+        {"status": "rejected", "decided_by": "operator",
+         "quality_evaluated_at": None},
+    ]
+
+    eval_podcast = AsyncMock()
+    with patch(
+        "poindexter.services.media_quality_service.evaluate_podcast", eval_podcast,
+    ):
+        await media_approval_service.record_pending(
+            mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
+        )
+
+    eval_podcast.assert_not_awaited()
+
+
+async def test_eval_still_runs_on_a_row_an_AUTO_tier_decided(
+    mock_db: MagicMock,
+) -> None:
+    """An auto decision is exactly what the eval underwrites, so it stays
+    eligible — otherwise a re-seed of an auto-approved row could never pick
+    up the grading it was skipped for."""
+    mock_db.fetchrow.side_effect = [
+        None,  # no niche → Tier 3 insert (ON CONFLICT DO NOTHING keeps the row)
+        {"status": "approved", "decided_by": "auto:niche.glad-labs",
+         "quality_evaluated_at": None},
+    ]
+
+    eval_podcast = AsyncMock()
+    with patch(
+        "poindexter.services.media_quality_service.evaluate_podcast", eval_podcast,
+    ):
+        await media_approval_service.record_pending(
+            mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
+        )
+
+    eval_podcast.assert_awaited_once()

@@ -1121,3 +1121,39 @@ def test_metadata_value_types_are_accepted_by_the_db_check():
     assert {"string", "integer", "float", "boolean"} <= allowed
     bad = {k: v.get("value_type") for k, v in METADATA.items() if v.get("value_type") not in allowed | {None}}
     assert not bad, f"METADATA value_type outside the DB CHECK set: {bad}"
+
+
+def test_media_qa_findings_are_routed_not_log_only():
+    """Every media-QA finding kind must carry its own delivery policy.
+
+    Without one they inherit ``findings.default.delivery='log_only'``, which
+    is deliberately inert — so the whole podcast/video QA surface emitted into
+    audit_log and told nobody. On prod that was 74 long-silence findings (23 of
+    them on shipped episodes) and every faithfulness result, routed nowhere for
+    three months while four config surfaces read "on".
+
+    Routine-ops → Discord per ``feedback_telegram_vs_discord``; none of these
+    is a page.
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    kinds = (
+        "audio_long_silence",
+        "audio_clipping",
+        "audio_too_quiet",
+        "audio_duration_mismatch",
+        "podcast_faithfulness_low",
+        "podcast_persist_failed",
+        "media_layer2_unavailable",
+        "media_judge_is_writer",
+    )
+    for kind in kinds:
+        delivery = DEFAULTS.get(f"findings.{kind}.delivery")
+        assert delivery == "discord", f"{kind} delivery={delivery!r}"
+        # min_severity must admit the severity these are actually emitted at.
+        assert DEFAULTS[f"findings.{kind}.min_severity"] == "warn", kind
+        # A cooldown is required: the dedup_key carries the task/post id, so
+        # every episode is a fresh fingerprint and dispatcher dedup cannot
+        # collapse a batch — the per-kind cooldown is the only throttle.
+        assert int(DEFAULTS[f"findings.{kind}.cooldown_minutes"]) > 0, kind
+        assert DEFAULTS[f"findings.{kind}.fallback"], kind

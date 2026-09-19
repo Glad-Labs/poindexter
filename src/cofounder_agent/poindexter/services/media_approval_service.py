@@ -40,6 +40,16 @@ Row is inserted with ``status='pending'``; operator reviews via
 All tiers default to the conservative path (Tier 3) on any missing
 setting or query error — explicit opt-in, no silent default per
 ``feedback_no_silent_defaults``.
+
+**The quality eval is tier-independent.** Every tier runs
+``_evaluate_and_notify``; only the Discord ping is tier-gated. It used to be
+called from the Tier-3 branch alone, so flipping on a niche ``auto_approve``
+or earned autonomy silently turned OFF podcast/video grading rather than just
+the human review step — the file shipped with ``quality_score`` NULL and
+Layer 1 never got to see it. Auto-approve is a statement about trusting
+content judgment, not a licence to ship a 0-byte render: an auto-approved row
+that fails Layer 1 is still overturned (``_LAYER1_REJECT_SQL``), while an
+operator's decision is never overturned.
 """
 
 from __future__ import annotations
@@ -245,6 +255,8 @@ async def record_pending(
             "[media_approval] tier-1 auto-approved %s for post %s (niche=%s)",
             medium, post_id, niche_slug,
         )
+        # Grade it anyway — auto-approve skips the operator, not the checks.
+        await _evaluate_and_notify(db, post_id, medium, file_path, site_config)
         return "approved"
 
     # Tier 2: earned autonomy (#531) — only when niche is known.
@@ -286,6 +298,8 @@ async def record_pending(
                 "medium": medium,
             },
         )
+        # Grade it anyway — earned autonomy skips the operator, not the checks.
+        await _evaluate_and_notify(db, post_id, medium, file_path, site_config)
         return "approved"
 
     # Tier 3: manual review.
@@ -309,16 +323,23 @@ async def _evaluate_and_notify(
     db: Any, post_id: str, medium: str, file_path: str | None,
     site_config: Any = None,
 ) -> None:
-    """Layer-1 eval + operator ping for a freshly seeded pending row (#816).
+    """Quality eval + operator ping for a freshly seeded row (#816).
 
-    Additive observability on the Tier-3 path — a failure here MUST NOT
-    fail the seed (the gate row is already inserted), so everything is
-    wrapped and swallowed.
+    Additive — a failure here MUST NOT fail the seed (the gate row is already
+    inserted), so everything is wrapped and swallowed.
 
-    Skips when the row is missing (insert raced/failed), isn't
-    ``pending`` (a prior operator/auto decision holds — never re-judge
-    or clobber it), or was already evaluated (``quality_evaluated_at``
-    set — re-seed events don't re-run ffprobe or re-ping Discord).
+    Runs on EVERY approval tier, not just Tier 3. Gating it on
+    ``status == 'pending'`` meant a niche ``auto_approve`` or an earned-autonomy
+    grant silently disabled grading for that niche instead of only skipping the
+    human step, so the medium shipped with no Layer-1 checks and no semantic
+    score at all.
+
+    Skips when the row is missing (insert raced/failed), when a HUMAN already
+    decided it (never re-judge or clobber an operator's call — an ``auto:*``
+    decision is still fair game, since the eval is what auto-approval was
+    trusting in the first place), or when it was already evaluated
+    (``quality_evaluated_at`` set — re-seed events don't re-run ffprobe or
+    re-ping Discord).
 
     With a ``file_path`` the eval owns the ping (it fires
     ``notify_pending_for_review`` on pass and stays silent on
@@ -331,12 +352,24 @@ async def _evaluate_and_notify(
     try:
         row = await db.fetchrow(
             """
-            SELECT status, quality_evaluated_at FROM media_approvals
+            SELECT status, decided_by, quality_evaluated_at FROM media_approvals
             WHERE post_id = $1::uuid AND medium = $2
             """,
             post_id, medium,
         )
-        if row is None or row["status"] != "pending":
+        if row is None:
+            return
+        # A human decision is final; an auto decision is exactly what this
+        # eval underwrites, so it stays eligible.
+        # .get() (asyncpg Record supports it) — decided_by is NULL on a
+        # pending row, and a KeyError here would be swallowed by the outer
+        # except and silently disable grading, which is the exact failure
+        # class this change exists to remove.
+        decided_by = str(row.get("decided_by") or "")
+        human_decided = (
+            row["status"] != "pending" and not decided_by.startswith("auto:")
+        )
+        if human_decided:
             return
         if row["quality_evaluated_at"] is not None:
             return
@@ -458,7 +491,15 @@ async def notify_pending_for_review(
     post_id_short = post_id[:8]
 
     # quality_score is 0-100 (spec 2026-07-09) — render as a whole number.
+    # A NULL score is "nothing graded this on content", NOT "scored zero", and
+    # the operator has to be able to tell those apart at a glance — so the
+    # Layer-2 status rides along whenever the number is missing.
     score_str = f"{float(score):.0f}" if score is not None else "—"
+    if score is None:
+        why = signals.get("layer2_unavailable_reason") or signals.get(
+            "layer2_status",
+        ) or "not evaluated"
+        score_str = f"— (ungraded: {why})"
     dur_str = f"{dur:.0f}s" if dur is not None else "—"
     sil_str = f"{sil:.0%}" if sil is not None else "—"
     size_str = f"{int(size) // 1024}KB" if size is not None else "—"

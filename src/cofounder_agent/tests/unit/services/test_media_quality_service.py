@@ -6,8 +6,9 @@ need real audio files. We focus on the decision logic:
 - Threshold lookups fall back to defaults when app_settings is silent
 - Failing thresholds flip the row to ``status='rejected'`` with
   ``decided_by='auto:layer1'`` and the offending signal in ``notes``
-- Passing thresholds leave the row alone (still ``pending``) but write
-  ``quality_score=1.0`` + ``quality_signals`` JSON
+- Passing thresholds leave the row alone (still ``pending``) and write
+  ``quality_signals`` JSON. ``quality_score`` is the Layer-2 composite, or
+  NULL when Layer 2 could not measure — never a fabricated 100
 - ``evaluate_video`` rejects unknown media values (no silent default)
 """
 
@@ -121,7 +122,11 @@ async def test_podcast_auto_rejects_when_too_short(
     assert "duration_seconds" in result["layer1_failures"][0]
     # The UPDATE that fires must be the rejecting branch.
     update_sql = mock_db.execute.call_args.args[0]
-    assert "status = 'rejected'" in update_sql
+    # The flip is CONDITIONAL now: it overturns a pending or an auto
+    # decision and never an operator's, because the eval also runs on
+    # auto-approved rows.
+    assert "THEN 'rejected'" in update_sql
+    assert "decided_by LIKE 'auto:%'" in update_sql
     assert "auto:layer1" in update_sql
 
 
@@ -159,25 +164,26 @@ async def test_podcast_passes_layer1_when_signals_clean(
             mock_db, "00000000-0000-0000-0000-000000000001", str(f),
         )
 
-    # 0-100 rescale: a clean pass with no Layer-2 signal writes 100, not 1.0.
-    # No site_config passed → Layer 2 off → status "disabled".
-    assert result["score"] == 100.0
+    # No site_config passed → Layer 2 off → status "disabled" and NO score.
+    # Layer 1 only answers "is the file broken?"; writing 100 for a clean
+    # Layer-1 pass claimed a content grade nothing had performed.
+    assert result["score"] is None
     assert result["layer1_failures"] == []
     assert result["layer2_status"] == "disabled"
     # The UPDATE that fires must be the passing branch (no status change).
     update_sql = mock_db.execute.call_args.args[0]
-    assert "status = 'rejected'" not in update_sql
+    assert "THEN 'rejected'" not in update_sql
     assert "quality_score = $3" in update_sql
 
 
 async def test_podcast_pass_enabled_stamps_unavailable(
     mock_db: MagicMock, tmp_path,
 ) -> None:
-    """Layer 2 enabled but no zero-cost podcast signal yet → status
-    'unavailable', score still the 0-100 clean-pass value (100).
+    """Layer 2 enabled but unable to score → status 'unavailable', score NULL.
 
-    This pins the cheap-half seam: the podcast faithfulness signal
-    (follow-up PR) replaces the bare 100 with a real composite here.
+    The score used to be stamped 100 here. That made a failed transcription
+    and a genuinely perfect episode identical on the row — 12 of 39 evaluated
+    podcasts were scored 100 with nothing having read them.
     """
     f = tmp_path / "test.mp3"
     f.write_bytes(b"x" * 1_000_000)
@@ -192,8 +198,10 @@ async def test_podcast_pass_enabled_stamps_unavailable(
             site_config=_SC({"media.layer2.enabled": "true"}),
         )
 
-    assert result["score"] == 100.0
+    assert result["score"] is None
     assert result["layer2_status"] == "unavailable"
+    # "unavailable" must be diagnosable from the row alone.
+    assert result["layer2_unavailable_reason"]
 
 
 async def test_podcast_persists_signals_as_json(
@@ -264,9 +272,8 @@ async def test_video_passes_layer1_when_signals_clean(
             medium="video",
         )
 
-    # No site_config passed → Layer 2 disabled → a clean Layer-1 pass now
-    # writes the 0-100 "nothing wrong" score (100.0), not the old binary 1.0.
-    assert result["score"] == 100.0
+    # Same rule as the podcast lane: Layer 2 off → no content grade → NULL.
+    assert result["score"] is None
     assert result["layer1_failures"] == []
     assert result["layer2_status"] == "disabled"
 
@@ -498,15 +505,16 @@ async def test_podcast_faithfulness_scores(monkeypatch) -> None:
             return {"content": "Undervolting keeps GPUs cool."}
 
     sc = _SC({"media.podcast.faithfulness_model": "ollama/qwen3.6:latest"})
-    score, reason = await media_quality_service._score_podcast_faithfulness(
+    score, reason, why = await media_quality_service._score_podcast_faithfulness(
         _DB(), "p", "/ep.mp3", sc,
     )
     assert score == 88.0
     assert "faithful" in reason
+    assert why == ""
 
 
 async def test_podcast_faithfulness_unavailable_no_transcript(monkeypatch) -> None:
-    """Transcription failure → (None, '') fail-soft."""
+    """Transcription failure → no score, and the reason names the step."""
     result = SimpleNamespace(success=False, segments=[], error="whisper down")
     provider = SimpleNamespace(transcribe=AsyncMock(return_value=result))
     monkeypatch.setattr(
@@ -519,19 +527,21 @@ async def test_podcast_faithfulness_unavailable_no_transcript(monkeypatch) -> No
             return {"content": "body"}
 
     sc = _SC({"media.podcast.faithfulness_model": "ollama/qwen3.6:latest"})
-    score, _ = await media_quality_service._score_podcast_faithfulness(
+    score, _, why = await media_quality_service._score_podcast_faithfulness(
         _DB(), "p", "/ep.mp3", sc,
     )
     assert score is None
+    assert why == "transcribe_failed"
 
 
 async def test_podcast_faithfulness_unavailable_no_model() -> None:
     """No faithfulness_model and no ragas_judge_model fallback → None (skip)."""
     sc = _SC({"media.podcast.faithfulness_model": "", "ragas_judge_model": ""})
-    score, _ = await media_quality_service._score_podcast_faithfulness(
+    score, _, why = await media_quality_service._score_podcast_faithfulness(
         _DBStub(), "p", "/ep.mp3", sc,
     )
     assert score is None
+    assert why == "no_judge_model"
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +553,7 @@ async def test_podcast_layer2_score_is_faithfulness(monkeypatch) -> None:
     """Faithfulness is the podcast Layer-2 signal → it IS the composite."""
     monkeypatch.setattr(
         media_quality_service, "_score_podcast_faithfulness",
-        AsyncMock(return_value=(88.0, "ok")),
+        AsyncMock(return_value=(88.0, "ok", "")),
     )
     out = await media_quality_service._run_podcast_layer2(
         _DBStub(), "p", "/ep.mp3", _SC({"media.layer2.enabled": "true"}),
@@ -557,20 +567,21 @@ async def test_podcast_layer2_unavailable(monkeypatch) -> None:
     """No faithfulness score → status 'unavailable', score None."""
     monkeypatch.setattr(
         media_quality_service, "_score_podcast_faithfulness",
-        AsyncMock(return_value=(None, "")),
+        AsyncMock(return_value=(None, "", "judge_unparsed")),
     )
     out = await media_quality_service._run_podcast_layer2(
         _DBStub(), "p", "/ep.mp3", _SC({"media.layer2.enabled": "true"}),
     )
     assert out["layer2_score"] is None
     assert out["layer2_status"] == "unavailable"
+    assert out["layer2_unavailable_reason"] == "judge_unparsed"
 
 
 async def test_podcast_layer2_low_faithfulness_emits_finding(monkeypatch) -> None:
     """Faithfulness below its min raises an advisory finding."""
     monkeypatch.setattr(
         media_quality_service, "_score_podcast_faithfulness",
-        AsyncMock(return_value=(30.0, "drifted")),
+        AsyncMock(return_value=(30.0, "drifted", "")),
     )
     captured: list[dict] = []
     monkeypatch.setattr(
@@ -638,3 +649,273 @@ async def test_threshold_invalid_value_falls_back(mock_db: MagicMock) -> None:
         mock_db, "media.podcast.min_duration_seconds",
     )
     assert val == 30.0
+
+
+# ---------------------------------------------------------------------------
+# judge != writer (project_qa_model_placement_doctrine)
+#
+# Prod pinned podcast_script_model AND media.podcast.faithfulness_model to the
+# same model (ollama/gemma-4-31B-it-qat:latest). Across 21 scored episodes the
+# self-grade never dropped below 92 and hit exactly 100 fifteen times, while
+# the operator was independently rejecting episodes that scored 100.
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_model_id_strips_provider_prefixes() -> None:
+    """One engine, three spellings — compare identity, not the string.
+
+    cost-logs-model-identity.md: LiteLLM adds/strips the provider prefix per
+    consumer, so a judge/writer collision can hide behind "ollama/".
+    """
+    n = media_quality_service._normalize_model_id
+    assert n("ollama/Gemma-4-31B:latest") == "gemma-4-31b:latest"
+    assert n("ollama_chat/gemma-4-31b:latest") == "gemma-4-31b:latest"
+    assert n("  gemma-4-31b:latest ") == "gemma-4-31b:latest"
+    assert n(None) == ""
+
+
+def test_faithfulness_judge_falls_back_when_pin_is_the_writer(monkeypatch) -> None:
+    """The pinned judge wrote the script → refuse it, use ragas_judge_model."""
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        media_quality_service, "emit_finding", lambda **kw: captured.append(kw),
+    )
+    sc = _SC({
+        "podcast_script_model": "ollama/gemma-4-31B-it-qat:latest",
+        "media.podcast.faithfulness_model": "ollama/gemma-4-31B-it-qat:latest",
+        "ragas_judge_model": "ollama/qwen3-vl:30b-a3b-instruct",
+    })
+    model, why = media_quality_service._resolve_faithfulness_model(sc)
+    assert model == "ollama/qwen3-vl:30b-a3b-instruct"
+    assert why == ""
+    # The override has to be visible, not silent.
+    assert [f["kind"] for f in captured] == ["media_judge_is_writer"]
+
+
+def test_faithfulness_judge_collision_survives_a_prefix_difference(
+    monkeypatch,
+) -> None:
+    """`gemma-4-31b` and `ollama/gemma-4-31b` are the SAME model."""
+    monkeypatch.setattr(media_quality_service, "emit_finding", lambda **kw: None)
+    sc = _SC({
+        "podcast_script_model": "gemma-4-31B-it-qat:latest",
+        "media.podcast.faithfulness_model": "ollama/gemma-4-31b-it-qat:latest",
+        "ragas_judge_model": "ollama/qwen3-vl:30b-a3b-instruct",
+    })
+    model, _ = media_quality_service._resolve_faithfulness_model(sc)
+    assert model == "ollama/qwen3-vl:30b-a3b-instruct"
+
+
+def test_faithfulness_judge_refuses_when_every_candidate_is_the_writer(
+    monkeypatch,
+) -> None:
+    """No judge outside the writer's family → no score, named reason.
+
+    Refusing beats self-grading: an honest hole routes a finding and leaves
+    quality_score NULL, where a self-graded 100 reads as a clean episode.
+    """
+    monkeypatch.setattr(media_quality_service, "emit_finding", lambda **kw: None)
+    sc = _SC({
+        "podcast_script_model": "ollama/gemma-4-31b:latest",
+        "media.podcast.faithfulness_model": "gemma-4-31b:latest",
+        "ragas_judge_model": "ollama_chat/gemma-4-31b:latest",
+    })
+    model, why = media_quality_service._resolve_faithfulness_model(sc)
+    assert model == ""
+    assert why == "judge_is_writer"
+
+
+def test_faithfulness_judge_unaffected_when_families_differ(monkeypatch) -> None:
+    """The normal case stays exactly as it was — the pin wins, no finding."""
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        media_quality_service, "emit_finding", lambda **kw: captured.append(kw),
+    )
+    sc = _SC({
+        "podcast_script_model": "ollama/gemma-4-31b:latest",
+        "media.podcast.faithfulness_model": "ollama/qwen3-vl:30b-a3b-instruct",
+        "ragas_judge_model": "ollama/something-else",
+    })
+    model, why = media_quality_service._resolve_faithfulness_model(sc)
+    assert model == "ollama/qwen3-vl:30b-a3b-instruct"
+    assert why == ""
+    assert captured == []
+
+
+async def test_faithfulness_reports_judge_collision_as_the_reason(
+    monkeypatch,
+) -> None:
+    """The refusal reaches the row as the unavailable reason, not as silence."""
+    monkeypatch.setattr(media_quality_service, "emit_finding", lambda **kw: None)
+    sc = _SC({
+        "podcast_script_model": "ollama/gemma-4-31b:latest",
+        "media.podcast.faithfulness_model": "ollama/gemma-4-31b:latest",
+        "ragas_judge_model": "gemma-4-31b:latest",
+    })
+    score, _, why = await media_quality_service._score_podcast_faithfulness(
+        _DBStub(), "p", "/ep.mp3", sc,
+    )
+    assert score is None
+    assert why == "judge_is_writer"
+
+
+# ---------------------------------------------------------------------------
+# A Layer-2 hole is visible, not a silent pass
+# ---------------------------------------------------------------------------
+
+
+async def test_evaluate_podcast_emits_finding_when_layer2_unavailable(
+    monkeypatch,
+) -> None:
+    """Layer 1 passed, Layer 2 could not score → NULL score + a routed finding.
+
+    Both halves matter: the NULL stops the fabricated pass, the finding is what
+    makes the hole visible to someone. 12 of 39 evaluated podcasts sat in this
+    state stamped 100.
+    """
+    monkeypatch.setattr(
+        media_quality_service, "_probe_duration", AsyncMock(return_value=600.0),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_probe_silence_ratio", AsyncMock(return_value=0.1),
+    )
+    monkeypatch.setattr(media_quality_service, "_file_size", lambda p: 8_000_000)
+    monkeypatch.setattr(
+        media_quality_service, "_run_podcast_layer2",
+        AsyncMock(return_value={
+            "layer2_status": "unavailable", "layer2_score": None,
+            "layer2_unavailable_reason": "transcribe_failed",
+        }),
+    )
+    monkeypatch.setattr(media_quality_service, "_notify_if_pending", AsyncMock())
+    monkeypatch.setattr(
+        media_quality_service, "_fetch_render_audio_qa", AsyncMock(return_value=None),
+    )
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        media_quality_service, "emit_finding", lambda **kw: captured.append(kw),
+    )
+
+    db = AsyncMock()
+    db.fetchrow = AsyncMock(return_value=None)
+    out = await media_quality_service.evaluate_podcast(
+        db, "p", "/ep.mp3", site_config=_SC({"media.layer2.enabled": "true"}),
+    )
+
+    assert out["score"] is None
+    finding = next(f for f in captured if f["kind"] == "media_layer2_unavailable")
+    assert "transcribe_failed" in finding["title"]
+    assert finding["severity"] == "warn"
+    # The NULL must reach the column too, not just the returned dict.
+    # Passing-branch UPDATE args are (sql, post_id, medium, score, signals).
+    assert [c.args[3] for c in db.execute.await_args_list] == [None]
+
+
+async def test_evaluate_podcast_silent_when_layer2_is_merely_disabled(
+    monkeypatch,
+) -> None:
+    """A master switch OFF is an operator choice, not a failure — no finding."""
+    monkeypatch.setattr(
+        media_quality_service, "_probe_duration", AsyncMock(return_value=600.0),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_probe_silence_ratio", AsyncMock(return_value=0.1),
+    )
+    monkeypatch.setattr(media_quality_service, "_file_size", lambda p: 8_000_000)
+    monkeypatch.setattr(media_quality_service, "_notify_if_pending", AsyncMock())
+    monkeypatch.setattr(
+        media_quality_service, "_fetch_render_audio_qa", AsyncMock(return_value=None),
+    )
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        media_quality_service, "emit_finding", lambda **kw: captured.append(kw),
+    )
+
+    db = AsyncMock()
+    db.fetchrow = AsyncMock(return_value=None)
+    out = await media_quality_service.evaluate_podcast(
+        db, "p", "/ep.mp3", site_config=_SC({"media.layer2.enabled": "false"}),
+    )
+
+    assert out["layer2_status"] == "disabled"
+    assert out["score"] is None
+    assert not [f for f in captured if f["kind"] == "media_layer2_unavailable"]
+
+
+# ---------------------------------------------------------------------------
+# render-time qa.audio reaches the approval row
+# ---------------------------------------------------------------------------
+
+
+async def test_evaluate_podcast_folds_in_render_audio_qa(monkeypatch) -> None:
+    """The in-pipeline qa.audio measurements land in quality_signals."""
+    lane = {"silence_check": "warn", "mean_volume_db": -19.4, "volume_check": "ok"}
+
+    class _DB:
+        def __init__(self):
+            self.execute = AsyncMock()
+
+        async def fetchrow(self, sql, *_a, **_k):
+            if "media_assets" in sql:
+                return {"metadata": json.dumps({"audio_qa": lane})}
+            return None
+
+    monkeypatch.setattr(
+        media_quality_service, "_probe_duration", AsyncMock(return_value=600.0),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_probe_silence_ratio", AsyncMock(return_value=0.1),
+    )
+    monkeypatch.setattr(media_quality_service, "_file_size", lambda p: 8_000_000)
+    monkeypatch.setattr(media_quality_service, "_notify_if_pending", AsyncMock())
+    monkeypatch.setattr(media_quality_service, "emit_finding", lambda **kw: None)
+
+    out = await media_quality_service.evaluate_podcast(_DB(), "p", "/ep.mp3")
+    assert out["render_audio_qa"] == lane
+
+
+async def test_render_audio_qa_absent_adds_no_key(monkeypatch) -> None:
+    """No asset / no metadata / bad JSON → no key at all, never an empty dict."""
+    class _DB:
+        def __init__(self, row):
+            self._row = row
+
+        async def fetchrow(self, *_a, **_k):
+            return self._row
+
+    for row in (None, {"metadata": None}, {"metadata": "not json"},
+                {"metadata": {}}, {"metadata": {"audio_qa": {}}}):
+        got = await media_quality_service._fetch_render_audio_qa(_DB(row), "p")
+        assert got is None, row
+
+
+async def test_render_audio_qa_never_fails_the_eval() -> None:
+    """A raising lookup is swallowed — surfacing must not break grading."""
+    class _DB:
+        async def fetchrow(self, *_a, **_k):
+            raise RuntimeError("column does not exist")
+    assert await media_quality_service._fetch_render_audio_qa(_DB(), "p") is None
+
+
+# ---------------------------------------------------------------------------
+# Layer-1 auto-reject may overturn an AUTO decision, never a human's
+# ---------------------------------------------------------------------------
+
+
+def test_layer1_reject_sql_guards_a_human_decision() -> None:
+    """The eval now runs on auto-approved rows, so the flip must be scoped.
+
+    It has to be able to reject an auto-approved 0-byte render while leaving
+    an operator's approve/reject untouched — and it must still record the
+    quality columns either way, so a human-decided row keeps its measurements.
+    """
+    sql = " ".join(media_quality_service._LAYER1_REJECT_SQL.split())
+    guard = "WHEN status = 'pending' OR decided_by LIKE 'auto:%'"
+    # Every decision column is conditional...
+    for col in ("status =", "decided_at =", "decided_by =", "notes ="):
+        head = sql.split(col, 1)[1].lstrip()
+        assert head.startswith("CASE " + guard), col
+    # ...and every quality column is not.
+    assert "quality_score = $4," in sql
+    assert "quality_signals = $5::jsonb," in sql
+    assert "quality_evaluated_at = now()" in sql

@@ -26,6 +26,18 @@ Layer 2 (semantic scoring, spec 2026-07-09):
   call judging the transcript against the source post body.
 - Advisory-first: Layer 2 never auto-rejects; sub-scores below their
   configured minima emit advisory findings only.
+- **Unmeasured is not a pass.** When Layer 2 cannot score (no judge model,
+  transcription failure, unparseable judge reply), ``quality_score`` is
+  written NULL and ``layer2_status='unavailable'`` carries the reason. It
+  used to be stamped ``100.0`` — "nothing measurable is wrong" — which made
+  a broken transcription and a genuinely perfect episode identical on the
+  row. 12 of 39 evaluated podcasts were scored 100 that way. Only a judge
+  writes 100 now; a hole in the grade reads as a hole.
+- **The judge may not be the writer.** ``_resolve_faithfulness_model``
+  refuses a judge whose model id matches ``podcast_script_model`` and falls
+  back to ``ragas_judge_model`` (``project_qa_model_placement_doctrine``).
+  Prod ran script and judge both on ``gemma-4-31B-it-qat`` and 15 of 21
+  scored episodes came back at exactly 100.
 
 Thresholds
 ==========
@@ -60,6 +72,7 @@ from typing import Any
 
 from poindexter.services.caption_providers import get_caption_provider
 from poindexter.services.llm_providers.dispatcher import dispatch_complete
+from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -450,6 +463,8 @@ async def _run_video_layer2(
         composite = (sum(available) / len(available)) if available else None
         signals["layer2_score"] = composite
         signals["layer2_status"] = "scored" if composite is not None else "unavailable"
+        if composite is None:
+            signals["layer2_unavailable_reason"] = "no_signals"
 
         # Advisory findings (post-compose, so a missing signal never fires one).
         fid_min = _cfg_float(site_config, "media.video.shot_fidelity_min", 60.0)
@@ -497,48 +512,128 @@ async def _run_video_layer2(
         )
         signals.setdefault("layer2_status", "unavailable")
         signals.setdefault("layer2_score", None)
+        signals.setdefault("layer2_unavailable_reason", "layer2_exception")
     return signals
 
 
-def _resolve_faithfulness_model(site_config: Any) -> str:
-    """media.podcast.faithfulness_model, falling back to ragas_judge_model. '' → skip."""
-    raw = (site_config.get("media.podcast.faithfulness_model", "") or "").strip()
-    if raw:
-        return raw
-    return (site_config.get("ragas_judge_model", "") or "").strip()
+# LiteLLM adds/strips a provider prefix per consumer, so one local engine is
+# spelled "glm-4.7", "ollama/glm-4.7" and "ollama_chat/glm-4.7" depending on
+# who is looking (docs/architecture/cost-logs-model-identity.md). Comparing a
+# judge pin against a writer pin on the raw string would miss a collision that
+# differs only by prefix.
+_PROVIDER_PREFIX_RE = re.compile(r"^(?:ollama_chat|ollama)/")
+
+
+def _normalize_model_id(raw: Any) -> str:
+    """Canonical model identity for comparison — prefix-stripped, lowercased."""
+    return _PROVIDER_PREFIX_RE.sub("", str(raw or "").strip().lower())
+
+
+def _resolve_faithfulness_model(site_config: Any) -> tuple[str, str]:
+    """Pick the faithfulness judge, refusing one that wrote the script.
+
+    Returns ``(model, unavailable_reason)``. ``("", reason)`` means no usable
+    judge exists, so the caller records WHY Layer 2 could not score rather
+    than reporting a silent pass.
+
+    Order: ``media.podcast.faithfulness_model`` → ``ragas_judge_model``. A
+    candidate whose normalized id equals ``podcast_script_model`` is REFUSED
+    at each step — the model that wrote the episode cannot be the one
+    certifying the episode is faithful to its source
+    (``project_qa_model_placement_doctrine``: judge != writer family).
+
+    This is not hypothetical. Prod pinned both
+    ``podcast_script_model`` and ``media.podcast.faithfulness_model`` to
+    ``ollama/gemma-4-31B-it-qat:latest``; across 21 scored episodes the
+    self-grade never went below 92 and landed on exactly 100 fifteen times,
+    while the operator was independently rejecting episodes that scored 100.
+    Refusing here re-points prod at ``ragas_judge_model`` (the pinned GPU-1
+    judge) automatically, and emits a finding so the override is visible
+    rather than silent.
+    """
+    writer = _normalize_model_id(site_config.get("podcast_script_model", ""))
+    pinned = (site_config.get("media.podcast.faithfulness_model", "") or "").strip()
+    fallback = (site_config.get("ragas_judge_model", "") or "").strip()
+
+    candidates = [c for c in (pinned, fallback) if c]
+    refused = [c for c in candidates if writer and _normalize_model_id(c) == writer]
+    usable = [c for c in candidates if c not in refused]
+
+    if refused:
+        emit_finding(
+            source="media_quality",
+            kind="media_judge_is_writer",
+            title=(
+                f"podcast faithfulness judge refused — {refused[0]} also "
+                f"writes the script"
+            ),
+            body=(
+                f"The configured faithfulness judge ({', '.join(refused)}) "
+                f"resolves to the same model as podcast_script_model "
+                f"({writer}). A model grading its own output is not a "
+                f"reviewer, so the judge was refused and Layer 2 "
+                + (
+                    f"fell back to {usable[0]}."
+                    if usable
+                    else "has no usable judge — the episode is ungraded on "
+                         "content. Set media.podcast.faithfulness_model (or "
+                         "ragas_judge_model) to a model outside the writer's "
+                         "family."
+                )
+            ),
+            severity="warn",
+            dedup_key=f"media_judge_is_writer:podcast:{writer}",
+            extra={
+                "refused": refused,
+                "writer_model": writer,
+                "fell_back_to": usable[0] if usable else None,
+            },
+        )
+
+    if usable:
+        return usable[0], ""
+    return "", ("judge_is_writer" if refused else "no_judge_model")
 
 
 async def _score_podcast_faithfulness(
     db: Any, post_id: str, file_path: str, site_config: Any,
-) -> tuple[float | None, str]:
+) -> tuple[float | None, str, str]:
     """Transcribe the full episode + judge faithfulness vs the source post.
 
-    Returns ``(score_0_100, reason)``. Fail-soft → ``(None, "")`` on: no model,
-    no source body, transcription failure, dispatch error, or unparseable judge
-    response. Never raises — Layer 2 must never fail the eval.
+    Returns ``(score_0_100, judge_reason, unavailable_reason)``. Fail-soft: on
+    any miss the score is ``None`` and ``unavailable_reason`` names WHICH step
+    gave out — ``no_judge_model`` / ``judge_is_writer`` / ``no_source_body`` /
+    ``transcribe_error`` / ``transcribe_failed`` / ``empty_transcript`` /
+    ``judge_dispatch_error`` / ``judge_unparsed``. Never raises — Layer 2 must
+    never fail the eval.
+
+    The reason is the point: the caller no longer converts a miss into a
+    passing 100, so "unavailable" has to be diagnosable from the row alone.
+    An unparsed judge reply is explicitly NOT a pass
+    (``reference_llm_judge_two_stage_and_fail_closed``).
     """
-    model = _resolve_faithfulness_model(site_config)
+    model, why = _resolve_faithfulness_model(site_config)
     if not model:
-        return None, ""
+        return None, "", why or "no_judge_model"
 
     row = await db.fetchrow("SELECT content FROM posts WHERE id = $1::uuid", post_id)
     source = (row["content"] if row and row["content"] else "") if row is not None else ""
     if not source.strip():
-        return None, ""
+        return None, "", "no_source_body"
 
     try:
         provider = get_caption_provider(site_config)
         result = await provider.transcribe(audio_path=file_path, task_id=post_id)
     except Exception as exc:  # noqa: BLE001 — fail-soft
         logger.warning("[media_quality] podcast transcribe failed: %s", exc)
-        return None, ""
+        return None, "", "transcribe_error"
     if not getattr(result, "success", False):
-        return None, ""
+        return None, "", "transcribe_failed"
     transcript = " ".join(
         s.text for s in (result.segments or []) if getattr(s, "text", "")
     ).strip()
     if not transcript:
-        return None, ""
+        return None, "", "empty_transcript"
 
     prompt = _FAITHFULNESS_PROMPT.format(source=source, transcript=transcript)
     pool = getattr(db, "pool", db)
@@ -551,17 +646,17 @@ async def _score_podcast_faithfulness(
         text = (getattr(completion, "text", "") or "").strip()
     except Exception as exc:  # noqa: BLE001 — fail-soft
         logger.warning("[media_quality] faithfulness dispatch failed: %s", exc)
-        return None, ""
+        return None, "", "judge_dispatch_error"
 
     match = re.search(r'"score"\s*:\s*([\d.]+)', text)
     if not match:
-        return None, ""
+        return None, "", "judge_unparsed"
     try:
         score = max(0.0, min(100.0, float(match.group(1))))
     except (TypeError, ValueError):
-        return None, ""
+        return None, "", "judge_unparsed"
     reason_match = re.search(r'"reason"\s*:\s*"([^"]{0,200})"', text)
-    return score, (reason_match.group(1) if reason_match else "")
+    return score, (reason_match.group(1) if reason_match else ""), ""
 
 
 async def _run_podcast_layer2(
@@ -579,13 +674,15 @@ async def _run_podcast_layer2(
 
     signals: dict[str, Any] = {}
     try:
-        score, reason = await _score_podcast_faithfulness(
+        score, reason, why = await _score_podcast_faithfulness(
             db, post_id, file_path, site_config,
         )
         signals["faithfulness"] = score
         signals["faithfulness_reason"] = reason
         signals["layer2_score"] = score
         signals["layer2_status"] = "scored" if score is not None else "unavailable"
+        if score is None:
+            signals["layer2_unavailable_reason"] = why or "unknown"
 
         f_min = _cfg_float(site_config, "media.podcast.faithfulness_min", 60.0)
         if score is not None and score < f_min:
@@ -612,7 +709,124 @@ async def _run_podcast_layer2(
         )
         signals.setdefault("layer2_status", "unavailable")
         signals.setdefault("layer2_score", None)
+        signals.setdefault("layer2_unavailable_reason", "layer2_exception")
     return signals
+
+
+# A Layer-1 hard fail flips the row to rejected — but ONLY when no human has
+# decided it. The eval now runs on auto-approved rows too (it used to be
+# skipped for them entirely), so this UPDATE must be able to overturn an
+# AUTO-approval while never overturning an operator's. The quality columns are
+# written unconditionally, so a human-decided row still records what was
+# measured. In UPDATE ... SET, column references on the right read the
+# PRE-update row, so every CASE here tests the same original status/decided_by.
+_LAYER1_REJECT_SQL = """
+    UPDATE media_approvals
+    SET status = CASE WHEN status = 'pending' OR decided_by LIKE 'auto:%'
+                      THEN 'rejected' ELSE status END,
+        decided_at = CASE WHEN status = 'pending' OR decided_by LIKE 'auto:%'
+                      THEN now() ELSE decided_at END,
+        decided_by = CASE WHEN status = 'pending' OR decided_by LIKE 'auto:%'
+                      THEN 'auto:layer1' ELSE decided_by END,
+        notes = CASE WHEN status = 'pending' OR decided_by LIKE 'auto:%'
+                      THEN $3 ELSE notes END,
+        quality_score = $4,
+        quality_signals = $5::jsonb,
+        quality_evaluated_at = now()
+    WHERE post_id = $1::uuid AND medium = $2
+"""
+
+
+def _emit_layer2_unavailable(
+    post_id: str, medium: str, signals: dict[str, Any],
+) -> None:
+    """Advisory finding when Layer 1 passed but Layer 2 could not score.
+
+    A medium with no semantic score is a HOLE in the grade, not a pass. The
+    hole was invisible while the caller stamped 100 for it; now the score is
+    NULL and this names the reason on the Findings board.
+
+    ``disabled`` is an operator choice rather than a failure, so it emits
+    nothing — only ``unavailable`` does.
+    """
+    if signals.get("layer2_status") != "unavailable":
+        return
+    reason = str(signals.get("layer2_unavailable_reason") or "unknown")
+    emit_finding(
+        source="media_quality",
+        kind="media_layer2_unavailable",
+        title=f"{medium} Layer-2 score unavailable ({reason})",
+        body=(
+            f"post {post_id[:8]}: the {medium} passed the deterministic "
+            f"Layer-1 checks but Layer 2 produced no score ({reason}), so "
+            f"quality_score is NULL instead of a fabricated pass. Nothing has "
+            f"graded this file on content — review it by hand before "
+            f"approving."
+        ),
+        severity="warn",
+        dedup_key=f"media_layer2_unavailable:{post_id}:{medium}",
+        extra={"post_id": post_id, "medium": medium, "reason": reason},
+    )
+
+
+async def _fetch_render_audio_qa(db: Any, post_id: str) -> dict[str, Any] | None:
+    """The podcast lane's in-pipeline ``qa.audio`` result, off the asset row.
+
+    ``qa.audio`` runs inside ``podcast_pipeline`` and measures things Gate-2
+    never re-derives: where each long silence sits, and the mean/max dBFS
+    levels. ``podcast.persist`` stamps that under
+    ``media_assets.metadata->'audio_qa'``; this read is what finally gives the
+    atom's output a consumer. Before it, ``audio_qa_result`` was produced,
+    declared as a PipelineState channel, and read by nothing — the checks ran
+    on every episode and reached no surface an operator looks at.
+
+    Surfacing only, deliberately: these signals do NOT feed the score or the
+    auto-reject. 23 shipped episodes carry a long-silence finding and the
+    operator approved them, so promoting the measurement straight to a gate
+    would start rejecting work that is currently acceptable. Graduating it is
+    a separate, evidence-led decision.
+
+    Best-effort — any failure returns ``None``.
+    """
+    try:
+        row = await db.fetchrow(
+            """
+            SELECT metadata FROM media_assets
+            WHERE post_id = $1::uuid AND type = 'podcast'
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            post_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — surfacing must never fail the eval
+        logger.debug("[media_quality] render audio QA lookup failed: %s", exc)
+        emit_finding(
+            source="media_quality",
+            kind="render_audio_qa_lookup_failed",
+            title="render-time audio QA could not be read off the asset row",
+            body=(
+                f"post {post_id[:8]}: reading media_assets.metadata->'audio_qa' "
+                f"raised {describe_exception(exc)}. The Gate-2 eval continues without the "
+                f"render-time measurements — quality_signals loses "
+                f"render_audio_qa, nothing else changes."
+            ),
+            severity="info",
+            dedup_key="render_audio_qa_lookup_failed",
+        )
+        return None
+    if row is None:
+        return None
+
+    raw = row["metadata"] if "metadata" in row else None
+    meta: dict[str, Any] = {}
+    if isinstance(raw, str):
+        try:
+            meta = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    elif isinstance(raw, dict):
+        meta = raw
+    audio_qa = meta.get("audio_qa")
+    return audio_qa if isinstance(audio_qa, dict) and audio_qa else None
 
 
 async def evaluate_podcast(
@@ -659,8 +873,13 @@ async def evaluate_podcast(
             f"silence_ratio={silence_ratio:.2f} > {max_silence}",
         )
 
-    # Layer 1 hard-fail floors the score at 0; otherwise Layer 2 computes the
-    # 0-100 faithfulness composite (None → 100 when nothing measurable is wrong).
+    # Layer 1 hard-fail floors the score at 0; otherwise the score IS the
+    # Layer-2 composite — or NULL when Layer 2 could not measure. This used to
+    # be 100.0 ("nothing measurable is wrong"), which made a failed
+    # transcription, an unparseable judge reply and a genuinely perfect episode
+    # indistinguishable on the row: 12 of 39 evaluated podcasts were stamped
+    # 100 without anything having read them. Only a judge writes 100 now.
+    score: float | None
     if failures:
         score = 0.0
     else:
@@ -668,23 +887,21 @@ async def evaluate_podcast(
         signals.update({k: v for k, v in layer2.items() if k != "layer2_score"})
         signals["layer2_status"] = layer2.get("layer2_status", "unavailable")
         l2_score = layer2.get("layer2_score")
-        score = float(l2_score) if l2_score is not None else 100.0
+        score = float(l2_score) if l2_score is not None else None
+        _emit_layer2_unavailable(post_id, "podcast", signals)
+
+    # Fold in the render-time qa.audio measurements so they finally reach the
+    # surface the operator reviews (see _fetch_render_audio_qa).
+    render_qa = await _fetch_render_audio_qa(db, post_id)
+    if render_qa:
+        signals["render_audio_qa"] = render_qa
+
     signals["layer1_failures"] = failures
     signals["score"] = score
 
     if failures:
         await db.execute(
-            """
-            UPDATE media_approvals
-            SET status = 'rejected',
-                decided_at = now(),
-                decided_by = 'auto:layer1',
-                notes = $3,
-                quality_score = $4,
-                quality_signals = $5::jsonb,
-                quality_evaluated_at = now()
-            WHERE post_id = $1::uuid AND medium = $2
-            """,
+            _LAYER1_REJECT_SQL,
             post_id, "podcast", "; ".join(failures), score,
             json.dumps(signals),
         )
@@ -755,8 +972,9 @@ async def evaluate_video(
             f"duration_seconds={signals['duration_seconds']:.1f} < {min_dur}",
         )
 
-    # Layer 1 hard-fail floors the score at 0; otherwise Layer 2 computes the
-    # 0-100 composite (None → 100 when nothing measurable is wrong).
+    # Same rule as the podcast lane: a Layer-2 hole is NULL, never a
+    # fabricated 100. See evaluate_podcast for the measurement behind it.
+    score: float | None
     if failures:
         score = 0.0
     else:
@@ -764,23 +982,14 @@ async def evaluate_video(
         signals.update({k: v for k, v in layer2.items() if k != "layer2_score"})
         signals["layer2_status"] = layer2.get("layer2_status", "unavailable")
         l2_score = layer2.get("layer2_score")
-        score = float(l2_score) if l2_score is not None else 100.0
+        score = float(l2_score) if l2_score is not None else None
+        _emit_layer2_unavailable(post_id, medium, signals)
     signals["layer1_failures"] = failures
     signals["score"] = score
 
     if failures:
         await db.execute(
-            """
-            UPDATE media_approvals
-            SET status = 'rejected',
-                decided_at = now(),
-                decided_by = 'auto:layer1',
-                notes = $3,
-                quality_score = $4,
-                quality_signals = $5::jsonb,
-                quality_evaluated_at = now()
-            WHERE post_id = $1::uuid AND medium = $2
-            """,
+            _LAYER1_REJECT_SQL,
             post_id, medium, "; ".join(failures), score,
             json.dumps(signals),
         )
