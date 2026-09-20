@@ -242,7 +242,7 @@ async def checkpoint_prune(
 # ``_DEFAULT_TERMINAL_STATUSES`` — and that inversion is the whole point of the
 # backlog expression (poindexter#933).
 #
-# Glad-Labs/glad-labs-stack#2871 was a bug IN this handler's ``terminal_statuses``
+# Glad-Labs/poindexter#2871 was a bug IN this handler's ``terminal_statuses``
 # config: it omitted ``rejected`` and ``rejected_final``, the two largest
 # terminal buckets, so ~20k checkpoint rows accumulated unreachable while the
 # policy reported success every run. A backlog computed from the policy's own
