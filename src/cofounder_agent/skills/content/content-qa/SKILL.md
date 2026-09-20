@@ -497,28 +497,38 @@ SHOT INTENT (why this shot exists): {intent}
 SHOT SUBJECT (what it should show): {visual}
 SHOT SOURCE: {source}
 
-Judge:
-- MATCH - does the image depict the shot's subject / intent?
-- PEOPLE - is there a person, face, hand or body the subject did NOT ask for?
-  Answer this even when the subject says nothing about people: an unasked-for
-  human is a defect. If the subject does describe people, their presence is
-  correct and not a defect.
-- TEXT - if the image contains text, is it real readable words? Read it letter
-  by letter before answering. If it is too small or blurred to read, answer
-  "unverifiable" - never assume it is correct, and never invent what it says.
-- BRAND - dark-techno palette (deep navy, cyan, teal, gold), stylized not
-  photoreal for AI sources; clean real footage for pexels. No warped artifacts,
-  no melted faces, no six-fingered hands.
+Two questions, in this order:
 
-Name a defect only when you can point at it in this image. A shot with nothing
+1. ON TOPIC - does this shot serve its intent? Would a viewer understand why it
+   is on screen at this moment? A shot that is well made but about something
+   else is the worst outcome here.
+
+2. LOOKS GOOD - is this an attractive, well-made frame? Judge composition,
+   lighting, clarity and finish, the way you would judge a stock clip you were
+   deciding whether to licence.
+   People, faces, hands and text are all WELCOME and are never defects in
+   themselves. Judge whether they are rendered WELL:
+   - a person who looks real and natural is a good shot; melted features,
+     extra fingers or warped anatomy are not
+   - text that reads as real words is a good shot; text smeared into
+     letter-like shapes is not. Judge only text the shot MEANS for a viewer to
+     read - a screen of logs, a caption, a label. Incidental lettering that
+     would be unreadable in real life too (a number plate at speed, a distant
+     sign, a blurred logo) is scenery, not a fault. Read text that matters
+     letter by letter; if it is too small or blurred to read, answer
+     "unverifiable" - never assume it is correct, never invent what it says
+   - the house look is dark-techno (deep navy, cyan, teal, gold) and stylized
+     rather than photoreal for AI-rendered shots; real stock footage is exempt
+
+Name a fault only when you can point at it in this image. A shot with nothing
 wrong scores high - do not hunt for faults to justify a lower number.
 
 Score bands:
-- 85-100 no defect worth naming
-- 60-84  usable, one cosmetic nit
-- 30-59  a defect a viewer would notice (unasked-for person, garbled text,
-         visible warping, clearly off-brand)
-- 0-29   wrong subject, or so mangled it reads as slop
+- 85-100 on topic and good-looking; nothing worth naming
+- 60-84  on topic and usable, one cosmetic nit
+- 30-59  a fault a viewer would notice - visible warping, garbled text, muddy
+         or ugly rendering, or only loosely related to the intent
+- 0-29   off topic, or so mangled it reads as slop
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"defects": ["<short phrase>", ...], "score": <integer 0-100>, "reason": "<one short sentence>"}}

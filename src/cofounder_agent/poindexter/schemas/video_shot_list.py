@@ -64,11 +64,17 @@ _DEPRECATED_SOURCES: dict[str, str] = {
 }
 
 
-# Human-indicator nouns scanned in AI-source prompts. Faces, hands, and
-# bodies are the worst AI-tell zones — Pexels stays human-friendly
-# (real footage), AI sources should route around humans or use faceless
-# silhouettes. See ``feedback_no_humans_in_ai_media``. Soft-warning
-# only (not a rejection) until we see the false-positive rate.
+# Human-indicator nouns scanned in AI-source prompts. These exist ONLY to
+# serve the ``human_subjects='none'`` branch of the per-niche media policy
+# (services/media_subject_policy.py) — they are not a house rule.
+#
+# The blanket "no AI humans" rule was retired 2026-09-14: it was written for
+# SDXL's melted faces, and the current stack renders people cleanly. Measured
+# again 2026-09-20 across Wan 2.2 / LTX-2.5 / HunyuanVideo 1.5 — AI humans in
+# hero shots came back clean on all three, while routing human shots to stock
+# footage is what put an unrelated muralist into two published videos (#3884).
+# The default policy is ``allow``; ``glad-labs`` additionally allows photoreal.
+# Soft-warning only, and only when a caller passes a ``none`` policy context.
 _HUMAN_TOKENS: tuple[str, ...] = (
     "person", "people", "man", "woman", "men", "women", "boy", "girl",
     "child", "children", "human", "humans", "guy", "lady", "kid",
