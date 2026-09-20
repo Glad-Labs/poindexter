@@ -2182,6 +2182,86 @@ class TestCrossFamilySubstitute:
         )
         assert _pexels_query_from_shot(shot) == "city skyline at night"
 
+    def test_query_survives_every_style_modifier_plus_noun(self):
+        """EVERY modifier followed by a style noun must still yield the subject.
+
+        Iterating ``_STYLE_MODIFIERS`` itself is the point: the original test
+        only covered "flat vector illustration", one of the two entries that
+        already carry the noun, so the broken eight went unnoticed until two
+        published videos opened on the same stock muralist. A modifier added
+        later cannot silently reintroduce the bug.
+        """
+        from poindexter.schemas.video_shot_list import Shot
+        from poindexter.services.video_renderers.shot_list_renderer import (
+            _STYLE_MODIFIERS,
+            _pexels_query_from_shot,
+        )
+
+        for mod in _STYLE_MODIFIERS:
+            for noun in ("illustration", "style", "render", "art"):
+                prompt = f"{mod} {noun}, empty server hall, cyan palette"
+                shot = Shot(
+                    idx=0, duration_s=6.0, intent="INTENT-NOT-USED",
+                    source="image_gen", prompt=prompt, narration_offset_s=0.0,
+                )
+                assert _pexels_query_from_shot(shot) == "empty server hall", (
+                    f"{prompt!r} lost its subject"
+                )
+
+    def test_query_never_returns_a_bare_style_word(self):
+        """A style word as the whole query is what fetched the muralist.
+
+        ``Shot.intent`` is ``min_length=1``, so a subject-less prompt always
+        lands on the intent rather than on the empty string — the empty return
+        inside the helper is a belt-and-braces guard for non-schema callers,
+        deliberately not asserted here as if it were reachable.
+        """
+        from poindexter.schemas.video_shot_list import Shot
+        from poindexter.services.video_renderers.shot_list_renderer import (
+            _STYLE_NOUNS,
+            _pexels_query_from_shot,
+        )
+
+        for prompt in ("isometric 3d illustration", "low poly illustration",
+                       "glassmorphism style", "watercolor render"):
+            shot = Shot(
+                idx=0, duration_s=6.0,
+                intent="wind turbines beside a data center",
+                source="image_gen", prompt=prompt, narration_offset_s=0.0,
+            )
+            got = _pexels_query_from_shot(shot)
+            assert got == "wind turbines beside a data center", prompt
+            assert got.lower() not in _STYLE_NOUNS
+
+    def test_query_handles_production_prompts_that_shipped_the_muralist(self):
+        """The exact shapes from the two affected published shot lists."""
+        from poindexter.schemas.video_shot_list import Shot
+        from poindexter.services.video_renderers.shot_list_renderer import (
+            _pexels_query_from_shot,
+        )
+
+        cases = {
+            "cyberpunk neon illustration, a contrast between old grey servers":
+                "a contrast between old grey servers",
+            "isometric 3D illustration, a massive foundation of concrete":
+                "a massive foundation of concrete",
+            "glassmorphism style, a series of translucent cubes":
+                "a series of translucent cubes",
+            "low poly illustration, a futuristic data center":
+                "a futuristic data center",
+            # the two that always worked must keep working
+            "flat vector illustration, a cross-section of a cooling loop":
+                "a cross-section of a cooling loop",
+            "line art, a schematic of a GPU die":
+                "a schematic of a GPU die",
+        }
+        for prompt, expected in cases.items():
+            shot = Shot(
+                idx=0, duration_s=6.0, intent="INTENT-NOT-USED",
+                source="image_gen", prompt=prompt, narration_offset_s=0.0,
+            )
+            assert _pexels_query_from_shot(shot) == expected, prompt
+
     @pytest.mark.asyncio
     async def test_image_gen_failure_substitutes_pexels_video(
         self, tmp_path, monkeypatch

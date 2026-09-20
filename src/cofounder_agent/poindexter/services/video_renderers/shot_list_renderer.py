@@ -1758,6 +1758,20 @@ _STYLE_MODIFIERS = (
     "pixel art", "paper cutout",
 )
 
+# Style NOUNS the director writes AFTER a modifier ("cyberpunk neon
+# illustration, <subject>"). Only two entries above already carry the noun, so
+# stripping the modifier alone leaves the noun as the first comma clause and
+# ``split(",")[0]`` hands Pexels the literal word "illustration" — which
+# returns a street artist painting a mural, the same top hit every time. The
+# noun is stripped HERE rather than folded into ``_STYLE_MODIFIERS`` because
+# that tuple is also the escalation-style vocabulary (``_select_ai_style``),
+# where the modifier must stay bare.
+_STYLE_NOUNS = frozenset({
+    "illustration", "illustrations", "style", "art", "artwork", "render",
+    "rendering", "image", "images", "graphic", "graphics", "scene", "design",
+    "shot", "photo", "picture", "view", "look",
+})
+
 # Sources whose failures may substitute to Pexels. Pexels itself is excluded —
 # a missed pexels shot goes straight to the card (never image-gen a human).
 _IMAGE_GEN_FAMILY = frozenset({"image_gen", "image_kenburns", "generative", "wan21"})
@@ -1968,17 +1982,44 @@ def _ai_prompt_from_stock_shot(shot: Shot, *, style: str) -> str:
 
 def _pexels_query_from_shot(shot: Shot) -> str:
     """Best-effort stock-search query for an image-gen-family shot falling back
-    to Pexels. Prefers the concrete prompt subject (leading style-modifier and
-    trailing palette clause stripped) over the abstract intent. The image-gen
-    prompt policy forbids human nouns, so the derived subject is non-human by
-    contract."""
+    to Pexels. Prefers the concrete prompt subject (leading style-modifier,
+    any style noun it left behind, and the trailing palette clause stripped)
+    over the abstract intent. The image-gen prompt policy forbids human nouns,
+    so the derived subject is non-human by contract.
+
+    Stripping the style NOUN is load-bearing, not tidying. Measured on
+    production shot lists 2026-09-20: five of eight real director prompts
+    reduced to the query ``"illustration"`` or ``"style"``, because
+    ``_STYLE_MODIFIERS`` holds ``"cyberpunk neon"`` while the director writes
+    ``"cyberpunk neon illustration, <subject>"``. Pexels answers
+    ``"illustration"`` with the same clip of a muralist every time, so two
+    unrelated published videos opened the same shot with the same painter.
+    """
     prompt = (shot.prompt or "").strip()
     low = prompt.lower()
     for mod in _STYLE_MODIFIERS:
         if low.startswith(mod):
             prompt = prompt[len(mod):].lstrip(" ,").strip()
             break
+    # Peel style nouns the modifier left at the front, whether they stand as
+    # their own clause ("illustration, a server hall") or lead the subject
+    # clause ("illustration of a server hall").
+    while prompt:
+        head, sep, rest = prompt.partition(",")
+        head = head.strip()
+        if head.lower() in _STYLE_NOUNS:
+            prompt = rest.strip()
+            continue
+        tokens = head.split()
+        if tokens and tokens[0].lower() in _STYLE_NOUNS:
+            prompt = (" ".join(tokens[1:]) + sep + rest).lstrip(" ,").strip()
+            continue
+        break
     subject = prompt.split(",")[0].strip() if prompt else ""
+    # A bare style word is worse than no query at all: the caller falls through
+    # to the brand card, which beats an irrelevant stock clip nobody reviewed.
+    if subject.lower() in _STYLE_NOUNS:
+        subject = ""
     return subject or (shot.intent or "").strip()
 
 
