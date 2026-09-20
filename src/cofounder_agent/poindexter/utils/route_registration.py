@@ -92,6 +92,7 @@ _WORKER_ROUTES = [
     ("poindexter.routes.voice_routes", "router", "voice_router", "voice agent web client (LiveKit web join page, poindexter#389)"),
     ("poindexter.routes.module_probes_routes", "router", "module_probes_router", "Module v1 brain-probe inventory (/api/modules/probes, #239)"),
     ("poindexter.routes.service_restart_routes", "router", "service_restart_router", "operator-triggered container restart intent queue (/api/services/*/restart, #909)"),
+    ("poindexter.routes.game_mode_routes", "router", "game_mode_router", "game-mode status so operator surfaces can tell parked-on-purpose from down (/api/game-mode/status)"),
     ("poindexter.routes.host_health_routes", "router", "host_health_router", "liveness for host processes cAdvisor cannot see, from brain probes (/api/services/host-health)"),
     ("poindexter.routes.gpu_queue_routes", "router", "gpu_queue_router", "GPU scheduler holder/waiters/stats snapshot (/api/gpu/queue, #914 P0)"),
     ("poindexter.routes.chat_routes", "router", "chat_router", "Cofounder chat conversations + streamed agent turns (/api/chat/*, poindexter#947)"),

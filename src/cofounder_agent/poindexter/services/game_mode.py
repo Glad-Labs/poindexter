@@ -61,9 +61,7 @@ CONTAINER_PREFIX_KEY = "game_mode_container_prefix"
 
 # Compose *service* names (the vocabulary compose_drift_probe speaks). Docker
 # container names are derived by prefixing CONTAINER_PREFIX_KEY.
-PARKED_SERVICES_DEFAULT = (
-    "speaches,chatterbox,stable-audio,image-gen-server,wan-server"
-)
+PARKED_SERVICES_DEFAULT = "speaches,chatterbox,stable-audio,image-gen-server,wan-server"
 DEFAULT_HOURS_DEFAULT = "4"
 CONTAINER_PREFIX_DEFAULT = "poindexter-"
 
@@ -79,6 +77,11 @@ class GameModeStatus:
     active: bool
     until: datetime | None
     parked_services: tuple[str, ...] = ()
+    # Docker container names for `parked_services`, i.e. the compose names with
+    # CONTAINER_PREFIX_KEY applied. Carried alongside rather than re-derived by
+    # each consumer because the prefix is configurable — the operator console
+    # matches cAdvisor rows on container name and must not hardcode it.
+    parked_containers: tuple[str, ...] = ()
     seconds_remaining: int = 0
     # Populated by adapters that can reach docker; empty elsewhere.
     stopped: tuple[str, ...] = field(default_factory=tuple)
@@ -89,6 +92,7 @@ class GameModeStatus:
             "active": self.active,
             "until": self.until.isoformat() if self.until else None,
             "parked_services": list(self.parked_services),
+            "parked_containers": list(self.parked_containers),
             "seconds_remaining": self.seconds_remaining,
             "stopped": list(self.stopped),
             "failed": list(self.failed),
@@ -132,9 +136,7 @@ def _split_csv(raw: str | None) -> tuple[str, ...]:
 
 def parked_services(site_config: SiteConfig) -> tuple[str, ...]:
     """Compose service names game mode parks."""
-    return _split_csv(
-        site_config.get(PARKED_SERVICES_KEY, PARKED_SERVICES_DEFAULT)
-    )
+    return _split_csv(site_config.get(PARKED_SERVICES_KEY, PARKED_SERVICES_DEFAULT))
 
 
 def container_names(site_config: SiteConfig) -> tuple[str, ...]:
@@ -158,20 +160,22 @@ def is_active(site_config: SiteConfig, *, now: datetime | None = None) -> bool:
     return (now or datetime.now(UTC)) < until
 
 
-def status_from_config(
-    site_config: SiteConfig, *, now: datetime | None = None
-) -> GameModeStatus:
+def status_from_config(site_config: SiteConfig, *, now: datetime | None = None) -> GameModeStatus:
     """Resolve status without touching the DB (cache read only)."""
     moment = now or datetime.now(UTC)
     until = _parse_until(site_config.get(UNTIL_KEY, ""))
     active = until is not None and moment < until
+    # Both lists are EMPTY when inactive, deliberately: a consumer that uses
+    # them to soften a service's status (the console renders a parked-and-absent
+    # container as neutral rather than down) then cannot suppress anything once
+    # game mode expires. The safety property is structural, not a caller's
+    # discipline to remember.
     return GameModeStatus(
         active=active,
         until=until if active else None,
         parked_services=parked_services(site_config) if active else (),
-        seconds_remaining=(
-            int((until - moment).total_seconds()) if active and until else 0
-        ),
+        parked_containers=container_names(site_config) if active else (),
+        seconds_remaining=(int((until - moment).total_seconds()) if active and until else 0),
     )
 
 
@@ -258,9 +262,7 @@ async def disable(pool: Any, site_config: SiteConfig) -> GameModeStatus:
     return GameModeStatus(active=False, until=None)
 
 
-async def status(
-    pool: Any, site_config: SiteConfig | None = None
-) -> GameModeStatus:
+async def status(pool: Any, site_config: SiteConfig | None = None) -> GameModeStatus:
     """Authoritative status — reads the DB rather than the settings cache.
 
     The cache lags by up to the reload interval, which matters both for "did
@@ -282,7 +284,5 @@ async def status(
         parked_services=(
             parked_services(site_config) if active and site_config is not None else ()
         ),
-        seconds_remaining=(
-            int((until - moment).total_seconds()) if active and until else 0
-        ),
+        seconds_remaining=(int((until - moment).total_seconds()) if active and until else 0),
     )

@@ -1563,6 +1563,26 @@
           } catch (e) {
             hostHealth = {};
           }
+          // Game mode parks the GPU sidecars on purpose. Without this the
+          // console rendered five deliberately-stopped containers as five
+          // faults — a red "5 SERVICE DOWN" banner for a mode the operator
+          // switched on themselves, which is exactly the kind of false alarm
+          // that trains an operator to stop reading red.
+          //
+          // Fail SAFE, not quiet: any failure here leaves the set empty, so an
+          // unreachable endpoint makes a stopped sidecar read `down` (today's
+          // behaviour) rather than silently excusing a real outage. The server
+          // also returns an empty list whenever game mode is inactive, so the
+          // suppression cannot outlive the mode.
+          let parkedContainers = new Set();
+          try {
+            const gm = await http('GET', '/api/game-mode/status');
+            if (gm && gm.active && Array.isArray(gm.parked_containers)) {
+              parkedContainers = new Set(gm.parked_containers);
+            }
+          } catch (e) {
+            parkedContainers = new Set();
+          }
           // Probe-age wording, distinct from fmtUptime: a 41s-old reading
           // should read "41s ago", not "0m".
           const fmtAgo = (secs) => {
@@ -1652,8 +1672,20 @@
             const a = age[s.container];
             let status, metric;
             if (!a || a.value == null) {
-              status = 'err';
-              metric = 'down';
+              // Absent from cAdvisor. Parked-by-game-mode is the one case where
+              // that is expected, so it reads NEUTRAL rather than red — never
+              // `ok`: the container really is stopped, we simply know why.
+              // Only reachable while game mode is active (the server empties
+              // the list otherwise) and only for containers on its park list;
+              // a parked service that is actually RUNNING has a series and
+              // never enters this branch.
+              if (parkedContainers.has(s.container)) {
+                status = 'off';
+                metric = 'parked · game mode';
+              } else {
+                status = 'err';
+                metric = 'down';
+              }
             } else if (a.value < 60) {
               status = 'ok';
               // Show how long it's been UP (container_start_time), not the
@@ -1685,7 +1717,9 @@
                   ? 'cAdvisor ✓'
                   : status === 'warn'
                     ? 'cAdvisor ⚠'
-                    : 'absent ✕',
+                    : status === 'off'
+                      ? 'parked ⏸'
+                      : 'absent ✕',
             };
           });
         },

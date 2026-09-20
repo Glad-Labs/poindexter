@@ -281,6 +281,40 @@ service to `js/data.js` upgrades it from discovered to curated.
 
 Contract: `js/__tests__/api.servicehealth.union.test.js`.
 
+### Game mode parks sidecars; parked is not down (2026-09-20)
+
+`poindexter game on` stops the GPU sidecars so the operator can use the machine
+(`services/game_mode.py`). Nothing outside the CLI and the brain could see that
+state, so the console rendered five deliberately-stopped containers as five
+faults: a red **"5 SERVICE DOWN"** banner, a rail badge, and five Restart
+suggestions — for a mode the operator switched on themselves. That is the same
+defect class as the Map's old hardcoded red edge, and it is the one that does
+real damage: a surface that cries wolf during every gaming session teaches the
+operator to stop reading red.
+
+`serviceHealth()` now reads `GET /api/game-mode/status`. A container that is
+**absent from cAdvisor AND on the active park list** renders neutral
+(`parked · game mode`, probe `parked ⏸`) instead of `err`, which drops it out of
+the banner, the badge, and the restart list.
+
+Three properties keep this from hiding a real outage:
+
+- **Parked is never `ok`.** The container genuinely is stopped; we only know
+  _why_. It reads neutral, like `stale` and `unknown` — not healthy.
+- **The suppression cannot outlive the mode.** `status_from_config` returns an
+  EMPTY `parked_containers` whenever game mode is inactive or its timestamp is
+  unparseable, so the console cannot soften anything once the mode expires. The
+  safety is structural, not a caller remembering to check `active`.
+- **It fails safe, not quiet.** An unreachable endpoint leaves the set empty, so
+  a stopped sidecar reads `down` as before. Excusing a real outage because we
+  could not ask would be worse than a red row.
+
+A parked service that is actually _running_ has a cAdvisor series and never
+enters this branch — the list means "may be parked", not "is parked".
+
+Contracts: `js/__tests__/api.gamemode.parked.test.js`,
+`tests/unit/services/test_game_mode_parked_containers.py`.
+
 ### System Map — what it may and may not assert
 
 The Map (`js/modes.jsx`, topology + GPU helpers in `js/map-helpers.js`,

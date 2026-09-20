@@ -148,8 +148,11 @@ class TestRouteManifestStructure:
         Updated 2026-09-20: added host_health_router (liveness for host
         processes cAdvisor cannot see, read from the brain's own probes,
         at /api/services/host-health).
+        Updated 2026-09-20: added game_mode_router (game-mode status, so the
+        console can tell a parked-on-purpose sidecar from a dead one, at
+        /api/game-mode/status).
         """
-        assert len(_WORKER_ROUTES) == 39
+        assert len(_WORKER_ROUTES) == 40
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first
