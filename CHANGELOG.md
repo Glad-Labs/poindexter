@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [0.143.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.142.0...v0.143.0) (2026-09-20)
+
+
+### Features
+
+* **console:** give Ollama a real liveness signal instead of a dark node ([#3880](https://github.com/Glad-Labs/glad-labs-stack/issues/3880)) ([5a1d0dc](https://github.com/Glad-Labs/glad-labs-stack/commit/5a1d0dcf2722a3e95f759e3cc33c358bc55e0e8f))
+
+
+### Bug Fixes
+
+* **console:** the Map described a stack that no longer exists ([#3879](https://github.com/Glad-Labs/glad-labs-stack/issues/3879)) ([9175ba0](https://github.com/Glad-Labs/glad-labs-stack/commit/9175ba0b1dc71a23d67e701a4179d7ad1d82148d))
+
 ## [0.142.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.141.0...v0.142.0) (2026-09-19)
 
 
