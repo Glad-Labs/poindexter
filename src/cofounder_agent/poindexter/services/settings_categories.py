@@ -296,6 +296,11 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("analytics", "observability"),
     ("performance", "observability"),
     ("probe_webhook", "observability"),
+    # How stale a brain health-probe reading may be before the console reports
+    # the host service it covers as unknown rather than its last status
+    # (services/host_service_health.py). It tunes what an operator is shown
+    # about probe freshness, so it belongs with the other probe knobs.
+    ("host_probe", "observability"),
     # Capability-visibility probes: one watches capabilities that ship OFF,
     # its complement watches ones that are ON and have never produced. Both
     # are observability, and both families were falling to "general".

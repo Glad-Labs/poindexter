@@ -228,6 +228,40 @@ REAL outcome — done, failed (with the reason), or still-in-progress — never
 an optimistic guess. `host:true` rows (ollama) have no container to restart
 and say so instead of pretending to act.
 
+### Host processes have liveness too (2026-09-20)
+
+cAdvisor sees containers. A **host** process — Ollama at `:11434` — has none, so
+`serviceHealth()` returned a flat `off` / `host · not scraped` for those rows.
+That fabricated nothing, which was right, but it meant the runtime every LLM
+call in the pipeline goes through rendered permanently dark on the Services page
+and the System Map, identically whether it was serving or stopped.
+
+Nothing new probes it. The brain daemon has run `probe_ollama_models`
+(`GET /api/tags`) on every 5-minute cycle all along and mirrors the result into
+`brain_knowledge` as `probe.ollama_models` / `health_status`. The signal was
+being produced, persisted and alerted on; nothing read it back.
+`GET /api/services/host-health` (→ `services/host_service_health.py`) is that
+read side, and it is deliberately a _reader_: a second probe firing its own
+`/api/tags` on every console poll would duplicate a working mechanism, add load
+to the thing it measures, and give the operator two answers that can disagree.
+
+**The reading is aged, and that is the point.** The probe row is written
+`ON CONFLICT DO UPDATE`, so it keeps its last value forever once the writer
+stops. Serving that as current would make a dead brain daemon render Ollama
+permanently green — worse than the dark node it replaces, and the same trap that
+let a retention policy prune nothing for months behind a green panel. A row older
+than `app_settings.host_probe_staleness_seconds` (default 900 = three brain
+cycles) reports **stale**, never its last status; a service never probed reports
+**unknown**. Both render neutral, with the age shown, so "I don't know" stays
+visibly different from "it's up".
+
+`ollama_models` is the liveness probe rather than the deeper `ollama_embedding`
+one on purpose — the latter legitimately reports `skipped_gpu_busy` while the
+pipeline holds the GPU lock, and busy is not down.
+
+Contracts: `js/__tests__/api.hosthealth.test.js`,
+`tests/unit/services/test_host_service_health.py`.
+
 ### The service list is a union, not the roster (2026-09-19)
 
 `serviceHealth()` returns **the roster in `js/data.js` ∪ whatever cAdvisor

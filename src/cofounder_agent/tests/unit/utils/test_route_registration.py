@@ -145,8 +145,11 @@ class TestRouteManifestStructure:
         (GPU scheduler holder/waiters/stats snapshot at /api/gpu/queue).
         Updated 2026-07-31 (poindexter#947): added chat_router
         (Cofounder chat conversations + streamed agent turns at /api/chat/*).
+        Updated 2026-09-20: added host_health_router (liveness for host
+        processes cAdvisor cannot see, read from the brain's own probes,
+        at /api/services/host-health).
         """
-        assert len(_WORKER_ROUTES) == 38
+        assert len(_WORKER_ROUTES) == 39
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

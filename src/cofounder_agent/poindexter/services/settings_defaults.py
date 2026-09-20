@@ -3497,6 +3497,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # starve the switch while the loop is alive and recovering. Comfortably under
     # the switch's 900s stale threshold. Read once at daemon startup. (2026-06-29)
     'brain_heartbeat_interval_seconds': '60',
+    # How old a brain health-probe row may be before the operator console
+    # reports the host service it covers as `stale` instead of its last known
+    # status. Three brain cycles (CYCLE_SECONDS = 300): tolerates a missed or
+    # slow cycle without flapping, still catches a stopped daemon in ~15 min.
+    # This exists because the probe row is ON CONFLICT DO UPDATE and therefore
+    # OUTLIVES its writer — without an age gate, a dead brain daemon would
+    # render Ollama permanently green on the Services page and System Map.
+    # See services/host_service_health.py. (2026-09-20)
+    'host_probe_staleness_seconds': '900',
     # Seconds the brain's event loop may stall before faulthandler dumps every
     # thread's traceback to stderr (0 disables). Deepest hang backstop: a sync
     # C-level freeze parks the single thread so the asyncio cycle-watchdog can't
@@ -5455,6 +5464,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- Brain / cycle watchdog (2026-06-29 hang hardening) -----
     'brain_cycle_timeout_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'brain_heartbeat_interval_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
+    'host_probe_staleness_seconds': {'owner': 'operator_console', 'value_type': 'integer'},
     'brain_hang_dump_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
 
     # ----- Brain / service-monitor restart discipline (2026-08-15) -----

@@ -1507,8 +1507,11 @@
     //   cpu     ← rate(container_cpu_usage_seconds_total[1m]) * 100
     //   mem     ← container_memory_usage_bytes / 1e6 (MB)
     // plus a worker /api/health overlay — the container can be up while FastAPI
-    // is wedged. host:true rows (ollama at :11434) have no cAdvisor series, so
-    // they're shown neutral, never faked.
+    // is wedged. host:true rows (ollama at :11434) have no cAdvisor series;
+    // their liveness comes from GET /api/services/host-health, which reads the
+    // brain daemon's own probe of them and AGES it — a reading past
+    // `host_probe_staleness_seconds` reads neutral, never green, because the
+    // probe row outlives its writer.
     //
     // The returned list is the UNION of the data.js roster and whatever
     // cAdvisor actually reports, so a container that exists but was never added
@@ -1548,6 +1551,26 @@
           } catch (e) {
             workerOk = false;
           }
+          // Host processes have no cAdvisor series. The brain daemon probes
+          // them every cycle and mirrors the result into brain_knowledge;
+          // /api/services/host-health is the read side. Failure here is
+          // honest-empty — the host rows fall back to 'not scraped' rather
+          // than inventing a status.
+          let hostHealth = {};
+          try {
+            const hh = await http('GET', '/api/services/host-health');
+            hostHealth = (hh && hh.services) || {};
+          } catch (e) {
+            hostHealth = {};
+          }
+          // Probe-age wording, distinct from fmtUptime: a 41s-old reading
+          // should read "41s ago", not "0m".
+          const fmtAgo = (secs) => {
+            if (secs == null) return '';
+            if (secs < 90) return Math.round(secs) + 's ago';
+            if (secs < 5400) return Math.round(secs / 60) + 'm ago';
+            return Math.round(secs / 3600) + 'h ago';
+          };
           const fmtUptime = (secs) => {
             if (secs == null) return '—';
             const d = Math.floor(secs / 86400);
@@ -1589,8 +1612,42 @@
             }));
           return [...mock().services, ...discovered].map((s) => {
             if (s.host) {
-              // cAdvisor can't see host processes — don't fabricate liveness.
-              return { ...s, status: 'off', metric: 'host · not scraped' };
+              // cAdvisor can't see host processes, so this row used to be a
+              // flat 'off' forever — which meant Ollama, the runtime every LLM
+              // call goes through, rendered permanently dark on the Services
+              // page and the System Map whether it was serving or stopped.
+              // The brain has always probed it; this is the read side.
+              //
+              // `stale` and `unknown` deliberately stay NEUTRAL, not green:
+              // the probe row outlives its writer (ON CONFLICT DO UPDATE), so
+              // a stopped brain daemon must read as "I no longer know", never
+              // as the last thing it happened to see.
+              const hh = hostHealth[s.name];
+              if (!hh) {
+                return { ...s, status: 'off', metric: 'host · not scraped' };
+              }
+              const age =
+                hh.age_seconds == null ? null : Math.round(hh.age_seconds);
+              if (hh.status === 'ok' || hh.status === 'err') {
+                const parts = [hh.detail, age == null ? null : fmtAgo(age)]
+                  .filter(Boolean)
+                  .join(' · ');
+                return {
+                  ...s,
+                  status: hh.status,
+                  metric: parts || (hh.status === 'ok' ? 'up' : 'down'),
+                  probe: 'brain probe ' + (hh.status === 'ok' ? '✓' : '✕'),
+                };
+              }
+              return {
+                ...s,
+                status: 'off',
+                metric:
+                  hh.status === 'stale'
+                    ? 'probe stale' + (age == null ? '' : ' · ' + fmtAgo(age))
+                    : 'host · never probed',
+                probe: 'brain probe —',
+              };
             }
             const a = age[s.container];
             let status, metric;
