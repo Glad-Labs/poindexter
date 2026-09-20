@@ -45,8 +45,13 @@
     { key: 'stable-audio', x: 62, y: 61 },
     { key: 'chatterbox', x: 62, y: 72 },
     { key: 'speaches', x: 62, y: 83 },
-    // ── LLM runtime ──
-    { key: 'ollama', x: 87, y: 14 },
+    // ── LLM runtimes ──
+    // `ollama-vision` is the second, vision/judge-pinned endpoint. It renders
+    // only on installs that configured one: SystemMap skips a node whose
+    // service is absent, and /api/services/host-health omits an unconfigured
+    // host service entirely, so this costs a single-instance install nothing.
+    { key: 'ollama', x: 87, y: 10 },
+    { key: 'ollama-vision', x: 87, y: 24 },
   ];
 
   // Structural edges. The third field is FLOW EMPHASIS, not a health claim:
@@ -94,6 +99,7 @@
   // true — `services/gpu_scheduler.py` is what serializes them.
   const GPU_CONSUMERS = [
     'ollama',
+    'ollama-vision',
     'image-gen-server',
     'comfyui',
     'wan-server',

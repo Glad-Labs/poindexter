@@ -1613,6 +1613,32 @@
               .services.map((s) => s.container)
               .filter(Boolean)
           );
+          // Host services the roster doesn't declare (a second, vision-pinned
+          // Ollama on an install that configured one). Same union idea as the
+          // containers below: the endpoint only reports host services that
+          // actually exist here, so an install without one gets no row at all
+          // rather than a permanently grey placeholder.
+          const rosterHostNames = new Set(
+            mock()
+              .services.filter((s) => s.host)
+              .map((s) => s.name)
+          );
+          const discoveredHosts = Object.keys(hostHealth)
+            .filter((n) => !rosterHostNames.has(n))
+            .sort()
+            .map((name) => ({
+              name,
+              container: null,
+              host: true,
+              port: null,
+              sub: hostHealth[name].label || 'host process',
+              probe: '',
+              img: '',
+              cpu: 0,
+              mem: 0,
+              uptime: '—',
+              discovered: true,
+            }));
           const discovered = Object.keys(age)
             .filter((c) => !known.has(c))
             .sort()
@@ -1630,98 +1656,100 @@
               uptime: '—',
               discovered: true,
             }));
-          return [...mock().services, ...discovered].map((s) => {
-            if (s.host) {
-              // cAdvisor can't see host processes, so this row used to be a
-              // flat 'off' forever — which meant Ollama, the runtime every LLM
-              // call goes through, rendered permanently dark on the Services
-              // page and the System Map whether it was serving or stopped.
-              // The brain has always probed it; this is the read side.
-              //
-              // `stale` and `unknown` deliberately stay NEUTRAL, not green:
-              // the probe row outlives its writer (ON CONFLICT DO UPDATE), so
-              // a stopped brain daemon must read as "I no longer know", never
-              // as the last thing it happened to see.
-              const hh = hostHealth[s.name];
-              if (!hh) {
-                return { ...s, status: 'off', metric: 'host · not scraped' };
-              }
-              const age =
-                hh.age_seconds == null ? null : Math.round(hh.age_seconds);
-              if (hh.status === 'ok' || hh.status === 'err') {
-                const parts = [hh.detail, age == null ? null : fmtAgo(age)]
-                  .filter(Boolean)
-                  .join(' · ');
+          return [...mock().services, ...discoveredHosts, ...discovered].map(
+            (s) => {
+              if (s.host) {
+                // cAdvisor can't see host processes, so this row used to be a
+                // flat 'off' forever — which meant Ollama, the runtime every LLM
+                // call goes through, rendered permanently dark on the Services
+                // page and the System Map whether it was serving or stopped.
+                // The brain has always probed it; this is the read side.
+                //
+                // `stale` and `unknown` deliberately stay NEUTRAL, not green:
+                // the probe row outlives its writer (ON CONFLICT DO UPDATE), so
+                // a stopped brain daemon must read as "I no longer know", never
+                // as the last thing it happened to see.
+                const hh = hostHealth[s.name];
+                if (!hh) {
+                  return { ...s, status: 'off', metric: 'host · not scraped' };
+                }
+                const age =
+                  hh.age_seconds == null ? null : Math.round(hh.age_seconds);
+                if (hh.status === 'ok' || hh.status === 'err') {
+                  const parts = [hh.detail, age == null ? null : fmtAgo(age)]
+                    .filter(Boolean)
+                    .join(' · ');
+                  return {
+                    ...s,
+                    status: hh.status,
+                    metric: parts || (hh.status === 'ok' ? 'up' : 'down'),
+                    probe: 'brain probe ' + (hh.status === 'ok' ? '✓' : '✕'),
+                  };
+                }
                 return {
                   ...s,
-                  status: hh.status,
-                  metric: parts || (hh.status === 'ok' ? 'up' : 'down'),
-                  probe: 'brain probe ' + (hh.status === 'ok' ? '✓' : '✕'),
+                  status: 'off',
+                  metric:
+                    hh.status === 'stale'
+                      ? 'probe stale' + (age == null ? '' : ' · ' + fmtAgo(age))
+                      : 'host · never probed',
+                  probe: 'brain probe —',
                 };
               }
+              const a = age[s.container];
+              let status, metric;
+              if (!a || a.value == null) {
+                // Absent from cAdvisor. Parked-by-game-mode is the one case where
+                // that is expected, so it reads NEUTRAL rather than red — never
+                // `ok`: the container really is stopped, we simply know why.
+                // Only reachable while game mode is active (the server empties
+                // the list otherwise) and only for containers on its park list;
+                // a parked service that is actually RUNNING has a series and
+                // never enters this branch.
+                if (parkedContainers.has(s.container)) {
+                  status = 'off';
+                  metric = 'parked · game mode';
+                } else {
+                  status = 'err';
+                  metric = 'down';
+                }
+              } else if (a.value < 60) {
+                status = 'ok';
+                // Show how long it's been UP (container_start_time), not the
+                // scrape-freshness age — the latter is always ~2-15s and tells
+                // the operator nothing when the service is healthy. Freshness
+                // still drives ok/stale below and the LED, so nothing is lost.
+                metric = 'up ' + fmtUptime(up[s.container]?.value);
+              } else {
+                status = 'warn';
+                // Stale: here the scrape-age IS the point — surface how stale.
+                metric = 'stale · ' + Math.round(a.value) + 's';
+              }
+              if (workerOk === false && s.container === 'poindexter-worker') {
+                status = 'warn';
+                metric = 'api unreachable';
+              }
+              const cpuV = cpu[s.container]?.value;
+              const memV = mem[s.container]?.value;
               return {
                 ...s,
-                status: 'off',
-                metric:
-                  hh.status === 'stale'
-                    ? 'probe stale' + (age == null ? '' : ' · ' + fmtAgo(age))
-                    : 'host · never probed',
-                probe: 'brain probe —',
+                status,
+                metric,
+                img: (a && a.labels.image) || s.img,
+                uptime: fmtUptime(up[s.container]?.value),
+                cpu: cpuV != null ? Math.round(cpuV) : 0,
+                mem: memV != null ? Math.round(memV / 1e6) : 0,
+                probe:
+                  status === 'ok'
+                    ? 'cAdvisor ✓'
+                    : status === 'warn'
+                      ? 'cAdvisor ⚠'
+                      : status === 'off'
+                        ? 'parked ⏸'
+                        : 'absent ✕',
               };
             }
-            const a = age[s.container];
-            let status, metric;
-            if (!a || a.value == null) {
-              // Absent from cAdvisor. Parked-by-game-mode is the one case where
-              // that is expected, so it reads NEUTRAL rather than red — never
-              // `ok`: the container really is stopped, we simply know why.
-              // Only reachable while game mode is active (the server empties
-              // the list otherwise) and only for containers on its park list;
-              // a parked service that is actually RUNNING has a series and
-              // never enters this branch.
-              if (parkedContainers.has(s.container)) {
-                status = 'off';
-                metric = 'parked · game mode';
-              } else {
-                status = 'err';
-                metric = 'down';
-              }
-            } else if (a.value < 60) {
-              status = 'ok';
-              // Show how long it's been UP (container_start_time), not the
-              // scrape-freshness age — the latter is always ~2-15s and tells
-              // the operator nothing when the service is healthy. Freshness
-              // still drives ok/stale below and the LED, so nothing is lost.
-              metric = 'up ' + fmtUptime(up[s.container]?.value);
-            } else {
-              status = 'warn';
-              // Stale: here the scrape-age IS the point — surface how stale.
-              metric = 'stale · ' + Math.round(a.value) + 's';
-            }
-            if (workerOk === false && s.container === 'poindexter-worker') {
-              status = 'warn';
-              metric = 'api unreachable';
-            }
-            const cpuV = cpu[s.container]?.value;
-            const memV = mem[s.container]?.value;
-            return {
-              ...s,
-              status,
-              metric,
-              img: (a && a.labels.image) || s.img,
-              uptime: fmtUptime(up[s.container]?.value),
-              cpu: cpuV != null ? Math.round(cpuV) : 0,
-              mem: memV != null ? Math.round(memV / 1e6) : 0,
-              probe:
-                status === 'ok'
-                  ? 'cAdvisor ✓'
-                  : status === 'warn'
-                    ? 'cAdvisor ⚠'
-                    : status === 'off'
-                      ? 'parked ⏸'
-                      : 'absent ✕',
-            };
-          });
+          );
         },
         () => mock().services
       );

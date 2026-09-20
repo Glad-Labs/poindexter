@@ -138,3 +138,86 @@ test('container rows are untouched by the host-health overlay', async () => {
   assert.equal(worker.status, 'err');
   assert.equal(worker.metric, 'down');
 });
+
+// ── a host service the roster does not declare (2026-09-20) ───────────────
+//
+// An install that pins its judge to a second Ollama (":11434 all-GPU + :11435
+// vision-pinned") was running the model that grades every article behind no
+// probe at all. The endpoint only reports host services that exist on THIS
+// install, so the console can surface one it has no roster entry for — and an
+// install without a second endpoint gets no row rather than a grey placeholder.
+
+test('a host service absent from the roster still surfaces', async () => {
+  const { api } = loadApiWithRecorder(
+    responder({
+      ollama: {
+        status: 'ok',
+        detail: '13 models',
+        age_seconds: 5,
+        label: 'LLM runtime · host',
+      },
+      'ollama-vision': {
+        status: 'ok',
+        detail: '1 model',
+        age_seconds: 7,
+        label: 'vision/judge runtime · host',
+      },
+    }),
+    {},
+    OPTS
+  );
+  const rows = await api.serviceHealth();
+  const vision = rows.find((r) => r.name === 'ollama-vision');
+  assert.ok(vision, 'a configured second Ollama must appear');
+  assert.equal(vision.status, 'ok');
+  assert.match(vision.metric, /1 model/);
+  assert.equal(vision.host, true, 'it is a host process, not a container');
+  assert.equal(
+    vision.sub,
+    'vision/judge runtime · host',
+    'uses the served label'
+  );
+  assert.equal(vision.discovered, true);
+});
+
+test('an install with no second endpoint gets no row for it', async () => {
+  const rows = await (async () => {
+    const { api } = loadApiWithRecorder(
+      responder({
+        ollama: { status: 'ok', detail: '13 models', age_seconds: 5 },
+      }),
+      {},
+      OPTS
+    );
+    return api.serviceHealth();
+  })();
+  assert.equal(
+    rows.find((r) => r.name === 'ollama-vision'),
+    undefined,
+    'omitted, not rendered grey'
+  );
+});
+
+test('a discovered host service is never given a container status', async () => {
+  // It has no container, so the cAdvisor path must not claim it is down.
+  const { api } = loadApiWithRecorder(
+    responder({
+      'ollama-vision': {
+        status: 'err',
+        detail: 'connection refused',
+        age_seconds: 9,
+      },
+    }),
+    {},
+    OPTS
+  );
+  const rows = await api.serviceHealth();
+  const vision = rows.find((r) => r.name === 'ollama-vision');
+  assert.equal(vision.status, 'err');
+  assert.match(
+    vision.metric,
+    /refused/,
+    'the probe reason survives, not "down"'
+  );
+  assert.equal(vision.container, null);
+});

@@ -293,3 +293,25 @@ test('GPU consumers route through the scheduler, not around it', () => {
     'scheduler sits before the cards'
   );
 });
+
+test('the vision Ollama is a node and a GPU consumer', () => {
+  // An install that pins its judge to a second endpoint had it on no surface
+  // at all. SystemMap skips a node whose service is absent, so a
+  // single-instance install renders nothing extra.
+  const keys = M.MAP_NODES.map((n) => n.key);
+  assert.ok(keys.includes('ollama-vision'));
+  assert.ok(
+    M.GPU_CONSUMERS.includes('ollama-vision'),
+    'it contends for the pool'
+  );
+});
+
+test('the two Ollama nodes do not share a position', () => {
+  const a = M.MAP_NODES.find((n) => n.key === 'ollama');
+  const b = M.MAP_NODES.find((n) => n.key === 'ollama-vision');
+  assert.ok(a && b);
+  assert.ok(
+    a.x !== b.x || a.y !== b.y,
+    'stacked nodes would render on top of each other'
+  );
+});

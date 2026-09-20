@@ -54,7 +54,25 @@ logger = get_logger(__name__)
 # down (see its docstring in brain/health_probes.py).
 HOST_SERVICE_PROBES: dict[str, str] = {
     "ollama": "ollama_models",
+    # The second, vision/judge-pinned instance (":11434 all-GPU + :11435
+    # vision-pinned"). Its probe reports `not_configured` on installs that have
+    # no second endpoint, and such a service is OMITTED below rather than
+    # reported — a permanently grey row on every single-instance install would
+    # be clutter, not information.
+    "ollama-vision": "ollama_vision_models",
 }
+
+# Operator-facing descriptions, so a caller that has no curated roster entry for
+# a host service (the console synthesizes a row for anything it does not know)
+# still shows something meaningful instead of inventing a label.
+HOST_SERVICE_LABELS: dict[str, str] = {
+    "ollama": "LLM runtime · host",
+    "ollama-vision": "vision/judge runtime · host",
+}
+
+# A probe that reports this status is telling us the service does not exist on
+# this install. Distinct from a failure, and distinct from "never probed".
+NOT_CONFIGURED = "not_configured"
 
 # Three brain cycles (CYCLE_SECONDS = 300). Tolerates a missed cycle or a slow
 # one without flapping, while still catching a genuinely stopped daemon within
@@ -64,7 +82,7 @@ DEFAULT_STALENESS_SECONDS = 900
 
 def _detail_for(probe_name: str, payload: dict[str, Any]) -> str:
     """One short operator-facing line. Never invents a value it wasn't given."""
-    if probe_name == "ollama_models":
+    if probe_name in ("ollama_models", "ollama_vision_models"):
         count = payload.get("model_count")
         if isinstance(count, int):
             return f"{count} model{'' if count == 1 else 's'}"
@@ -94,10 +112,13 @@ def classify(
 async def get_host_service_health(pool, staleness_seconds: int | None = None) -> dict:
     """Current liveness for every host service in ``HOST_SERVICE_PROBES``.
 
-    Returns ``{"services": {<name>: {...}}, "staleness_seconds": N}``. A service
-    is always present in the map — a missing probe row is reported as
-    ``unknown``, never omitted, so the caller can tell "not wired" apart from
-    "not asked about".
+    Returns ``{"services": {<name>: {...}}, "staleness_seconds": N}``.
+
+    A service whose probe ran is always present — a missing probe row reports
+    ``unknown`` rather than being omitted, so the caller can tell "not wired"
+    apart from "not asked about". The ONE omission is a probe that reported
+    ``not_configured``: that service does not exist on this install, and
+    rendering it forever-grey would be clutter rather than information.
     """
     if staleness_seconds is None:
         staleness_seconds = DEFAULT_STALENESS_SECONDS
@@ -138,7 +159,12 @@ async def get_host_service_health(pool, staleness_seconds: int | None = None) ->
                 age_seconds = max(0.0, (now - updated).total_seconds())
                 checked_at = updated.isoformat()
 
+        # Explicitly not-configured: this install has no such service.
+        if payload is not None and payload.get("status") == NOT_CONFIGURED:
+            continue
+
         services[name] = {
+            "label": HOST_SERVICE_LABELS.get(name, ""),
             "status": classify(payload, age_seconds, staleness_seconds),
             "detail": _detail_for(probe_name, payload) if payload else "",
             "probe": probe_name,

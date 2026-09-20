@@ -113,6 +113,12 @@ PODCAST_STALE_DAYS_DEFAULT = 14.0
 # inside a container, so the same DB value works in both environments.
 API_URL = localize_url(os.getenv("API_URL") or "http://localhost:8002")
 LOCAL_OLLAMA = localize_url(os.getenv("OLLAMA_URL") or "http://localhost:11434")
+# Second, vision/judge-pinned Ollama (the documented ":11434 all-GPU + :11435
+# vision-pinned" layout). EMPTY BY DEFAULT and deliberately so — most installs
+# run one instance, and a probe that alerts about an endpoint the operator
+# never configured is noise. `probe_ollama_vision_models` reports
+# `not_configured` while this is blank, which is a clean skip, not a failure.
+VISION_OLLAMA = localize_url(os.getenv("OLLAMA_VISION_URL") or "")
 
 # Cross-process GPU arbitration key. MUST stay in sync, BY VALUE, with
 # ``services.gpu_scheduler.GPU_ADVISORY_LOCK_KEY`` (same int64). The brain runs
@@ -144,7 +150,7 @@ async def _sync_config_from_db(pool):
     network), DB values are fallback for local dev where env vars may
     not be set.
     """
-    global API_URL, LOCAL_OLLAMA, ALERTMANAGER_URL, _config_synced
+    global API_URL, LOCAL_OLLAMA, VISION_OLLAMA, ALERTMANAGER_URL, _config_synced
     if _config_synced:
         return
     try:
@@ -156,6 +162,10 @@ async def _sync_config_from_db(pool):
         LOCAL_OLLAMA = await resolve_url(
             pool, "ollama_base_url",
             default=LOCAL_OLLAMA, env_var="OLLAMA_URL",
+        )
+        VISION_OLLAMA = await resolve_url(
+            pool, "ollama_vision_base_url",
+            default=VISION_OLLAMA, env_var="OLLAMA_VISION_URL",
         )
         ALERTMANAGER_URL = await resolve_url(
             pool, "alertmanager_url",
@@ -297,6 +307,64 @@ async def probe_ollama_models(_pool) -> dict:
         "model_count": len(models),
         "models": models[:10],  # Cap for storage
         "detail": "models loaded" if has_models else "no models found",
+    }
+
+
+async def probe_ollama_vision_models(_pool) -> dict:
+    """Probe: the SECOND, vision/judge-pinned Ollama (``ollama_vision_base_url``).
+
+    ``probe_ollama_models`` only ever sees ``LOCAL_OLLAMA`` (:11434). An install
+    that pins its judge to a second instance — the documented ":11434 all-GPU +
+    :11435 vision-pinned" layout — was running the model that grades every
+    article and every frame behind NO health probe at all: the endpoint could be
+    down for days and nothing would say so.
+
+    **Unconfigured is a skip, not a failure.** Most installs run one Ollama, and
+    a probe that pages about an endpoint the operator never set up is noise that
+    trains people to ignore probes. A blank setting returns ``ok: True`` with
+    ``status='not_configured'`` — the same non-alerting shape
+    ``probe_ollama_embedding`` uses for ``skipped_gpu_busy`` — and
+    ``services/host_service_health`` omits the service entirely rather than
+    rendering a permanently grey row on every single-instance install.
+
+    **The model count is host-wide, not instance-specific.** ``/api/tags`` lists
+    the on-disk model LIBRARY, which both instances share, so this reports the
+    same count as ``probe_ollama_models`` — measured 13/13 on 2026-09-20 while
+    ``/api/ps`` showed ``nomic-embed-text`` resident on :11434 and
+    ``qwen3-vl:30b-a3b-instruct`` on :11435. That is fine for the question this
+    probe asks ("is the endpoint serving?"), and it is why ``/api/ps`` is NOT
+    used instead: an idle instance has unloaded its model and would report
+    empty, which is healthy, not down.
+    """
+    if not VISION_OLLAMA:
+        return {
+            "ok": True,
+            "status": "not_configured",
+            "models": [],
+            "detail": (
+                "skipped — app_settings.ollama_vision_base_url is unset, so "
+                "this install has no second Ollama to probe (not a fault)"
+            ),
+        }
+
+    ok, result = await asyncio.to_thread(
+        _http_json, f"{VISION_OLLAMA}/api/tags", timeout=5
+    )
+    if not ok:
+        return {
+            "ok": False,
+            "status": "unreachable",
+            "detail": f"Vision Ollama unreachable: {result.get('error', 'unknown')}",
+            "models": [],
+        }
+
+    models = [m.get("name", "") for m in result.get("models", [])]
+    return {
+        "ok": len(models) > 0,
+        "status": "ok" if models else "no_models",
+        "model_count": len(models),
+        "models": models[:10],
+        "detail": "models loaded" if models else "no models found",
     }
 
 
@@ -1692,6 +1760,7 @@ PROBES = {
     # Infrastructure
     "db_ping": probe_db_ping,
     "ollama_models": probe_ollama_models,
+    "ollama_vision_models": probe_ollama_vision_models,
     "ollama_embedding": probe_ollama_embedding,
     "content_gen": probe_content_gen,
     "grafana_datasources": probe_grafana_datasources,

@@ -161,7 +161,8 @@ async def test_only_health_probe_rows_are_queried() -> None:
     assert "source = 'health_probe'" in sql
     assert "attribute = 'health_status'" in sql
     # Bound, not interpolated, and scoped to the probes we actually map.
-    assert args[0] == ["probe.ollama_models"]
+    assert sorted(args[0]) == sorted(f"probe.{p}" for p in HOST_SERVICE_PROBES.values())
+    assert "probe.ollama_models" in args[0]
 
 
 def test_liveness_probe_is_tags_not_embedding() -> None:
@@ -169,3 +170,85 @@ def test_liveness_probe_is_tags_not_embedding() -> None:
     pipeline holds the GPU lock — busy is not down, so it must not drive the
     console's status badge."""
     assert HOST_SERVICE_PROBES["ollama"] == "ollama_models"
+
+
+# ── the second, vision-pinned Ollama (2026-09-20) ─────────────────────────
+#
+# An install that pins its judge to a second endpoint was running the model
+# that grades every article and every frame behind NO probe at all. Adding one
+# has to stay silent on the majority of installs that have only one Ollama —
+# a probe that pages about an endpoint nobody configured is noise that teaches
+# people to ignore probes.
+
+
+def test_the_vision_instance_is_mapped() -> None:
+    assert HOST_SERVICE_PROBES["ollama-vision"] == "ollama_vision_models"
+
+
+@pytest.mark.asyncio
+async def test_not_configured_is_omitted_not_rendered_grey() -> None:
+    """A single-Ollama install must not carry a permanently grey second row."""
+    pool = _FakePool(
+        [
+            _row("probe.ollama_models", {"ok": True, "model_count": 13}, 30.0),
+            _row(
+                "probe.ollama_vision_models",
+                {"ok": True, "status": "not_configured"},
+                30.0,
+            ),
+        ]
+    )
+    out = await get_host_service_health(pool)
+    assert "ollama-vision" not in out["services"]
+    assert out["services"]["ollama"]["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_a_configured_vision_instance_surfaces() -> None:
+    pool = _FakePool(
+        [
+            _row("probe.ollama_models", {"ok": True, "model_count": 13}, 30.0),
+            _row(
+                "probe.ollama_vision_models",
+                {"ok": True, "status": "ok", "model_count": 1},
+                30.0,
+            ),
+        ]
+    )
+    out = await get_host_service_health(pool)
+    vision = out["services"]["ollama-vision"]
+    assert vision["status"] == "ok"
+    assert vision["detail"] == "1 model"
+    assert vision["label"], "a synthesized console row needs a description"
+
+
+@pytest.mark.asyncio
+async def test_a_configured_but_unreachable_vision_instance_is_an_error() -> None:
+    """Configured-and-down is exactly what this probe exists to catch."""
+    pool = _FakePool(
+        [
+            _row(
+                "probe.ollama_vision_models",
+                {"ok": False, "status": "unreachable", "detail": "connection refused"},
+                30.0,
+            )
+        ]
+    )
+    out = await get_host_service_health(pool)
+    assert out["services"]["ollama-vision"]["status"] == "err"
+
+
+@pytest.mark.asyncio
+async def test_a_stale_vision_row_is_stale_not_omitted() -> None:
+    """Omission is only for not-configured. A stale reading still reports."""
+    pool = _FakePool(
+        [
+            _row(
+                "probe.ollama_vision_models",
+                {"ok": True, "status": "ok", "model_count": 1},
+                DEFAULT_STALENESS_SECONDS + 60,
+            )
+        ]
+    )
+    out = await get_host_service_health(pool)
+    assert out["services"]["ollama-vision"]["status"] == "stale"

@@ -259,6 +259,22 @@ visibly different from "it's up".
 one on purpose — the latter legitimately reports `skipped_gpu_busy` while the
 pipeline holds the GPU lock, and busy is not down.
 
+**A second, vision-pinned Ollama** (`ollama_vision_base_url`, the documented
+":11434 all-GPU + :11435 vision-pinned" layout) is covered by
+`probe_ollama_vision_models`. An install that pins its judge to a second
+endpoint was running the model that grades every article and every frame behind
+no probe at all. It stays silent where it does not apply: a blank setting makes
+the probe report `not_configured`, the endpoint **omits** that service, and the
+console shows no row and the Map no node — rather than a permanently grey
+placeholder on every single-instance install. Configure the URL and a row and a
+node appear on their own, because the console unions host services it has no
+roster entry for, exactly as it unions containers cAdvisor reports.
+
+Note the probe's own caveat: `/api/tags` lists the host-wide model _library_,
+which both instances share, so the model count is not instance-specific.
+`/api/ps` is deliberately not used instead — an idle instance has unloaded its
+model and would report empty, which is healthy, not down.
+
 Contracts: `js/__tests__/api.hosthealth.test.js`,
 `tests/unit/services/test_host_service_health.py`.
 

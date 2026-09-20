@@ -3506,6 +3506,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # render Ollama permanently green on the Services page and System Map.
     # See services/host_service_health.py. (2026-09-20)
     'host_probe_staleness_seconds': '900',
+    # Second, vision/judge-pinned Ollama endpoint (the documented ':11434
+    # all-GPU + :11435 vision-pinned' layout). EMPTY by default: most installs
+    # run one instance, and `probe_ollama_vision_models` treats a blank value as
+    # a clean skip rather than a failure, so an operator who never set this up
+    # is never paged about it. Set it and the judge endpoint gains a health
+    # probe and a row on the console's Services page. (2026-09-20)
+    'ollama_vision_base_url': '',
     # Seconds the brain's event loop may stall before faulthandler dumps every
     # thread's traceback to stderr (0 disables). Deepest hang backstop: a sync
     # C-level freeze parks the single thread so the asyncio cycle-watchdog can't
@@ -5465,6 +5472,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'brain_cycle_timeout_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'brain_heartbeat_interval_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'host_probe_staleness_seconds': {'owner': 'operator_console', 'value_type': 'integer'},
+    'ollama_vision_base_url': {'owner': 'brain_daemon', 'value_type': 'string'},
     'brain_hang_dump_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
 
     # ----- Brain / service-monitor restart discipline (2026-08-15) -----
