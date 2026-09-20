@@ -35,13 +35,16 @@
     { key: 'prefect-server', x: 47, y: 12 },
     { key: 'prefect-worker', x: 47, y: 40, core: true },
     // ── media / render tier ──
-    { key: 'image-gen-server', x: 65, y: 17 },
-    { key: 'comfyui', x: 65, y: 28 },
-    { key: 'wan-server', x: 65, y: 39 },
-    { key: 'rife', x: 65, y: 50 },
-    { key: 'stable-audio', x: 65, y: 61 },
-    { key: 'chatterbox', x: 65, y: 72 },
-    { key: 'speaches', x: 65, y: 83 },
+    // x=62 rather than 65: the GPU scheduler node sits in the corridor between
+    // this column and the cards, and at 65 its 132px box overlapped `rife` on a
+    // ~1190px canvas (measured, not estimated).
+    { key: 'image-gen-server', x: 62, y: 17 },
+    { key: 'comfyui', x: 62, y: 28 },
+    { key: 'wan-server', x: 62, y: 39 },
+    { key: 'rife', x: 62, y: 50 },
+    { key: 'stable-audio', x: 62, y: 61 },
+    { key: 'chatterbox', x: 62, y: 72 },
+    { key: 'speaches', x: 62, y: 83 },
     // ── LLM runtime ──
     { key: 'ollama', x: 87, y: 14 },
   ];
@@ -84,10 +87,11 @@
     ['prometheus', 'worker', ''],
   ];
 
-  // Everything that contends for the GPU pool. These draw to the CLUSTER anchor,
+  // Everything that contends for the GPU pool. These draw to the SCHEDULER,
   // never to an individual card: which card a consumer lands on is a scheduling
   // fact this surface doesn't have, so a consumer→card edge would assert a
-  // pinning we'd be inventing.
+  // pinning we'd be inventing. Routing them through the scheduler is also just
+  // true — `services/gpu_scheduler.py` is what serializes them.
   const GPU_CONSUMERS = [
     'ollama',
     'image-gen-server',
@@ -106,8 +110,12 @@
   // returns name:'' rather than fabricate one. This map carried a hardcoded
   // 'RTX 5090' string and read only the lowest-indexed card's scalars, so the
   // second card was invisible for the whole two-card era.
-  const GPU_COL_X = 87;
-  const GPU_ANCHOR = { x: 77, y: 52 };
+  const GPU_COL_X = 90;
+  // The GPU scheduler sits where every consumer edge converges, because that is
+  // literally what it does. It was an INVISIBLE anchor point until 2026-09-20 —
+  // eight edges fanned into a spot with nothing drawn on it, which read as an
+  // unlabelled node rather than as the lock arbitrating them.
+  const GPU_SCHEDULER_POS = { x: 76, y: 52 };
   const GPU_ROW_GAP = 16;
   // Same threshold the Prometheus rule builder alerts on
   // (`threshold.gpu_temperature_celsius` → GpuTemperatureHigh), so the map and
@@ -122,11 +130,77 @@
     return cards.map((c, i) => ({
       key: 'gpu-' + (c && c.index != null ? c.index : i),
       x: GPU_COL_X,
-      y: GPU_ANCHOR.y + (i - (n - 1) / 2) * GPU_ROW_GAP,
+      y: GPU_SCHEDULER_POS.y + (i - (n - 1) / 2) * GPU_ROW_GAP,
       gpu: true,
       card: c || {},
       index: c && c.index != null ? c.index : i,
     }));
+  }
+
+  // The GPU scheduler node (`services/gpu_scheduler.py`, GET /api/gpu/queue).
+  //
+  // READ THE SEMANTICS BEFORE CHANGING THIS. `holder` is the API process's OWN
+  // in-process view of the lock (`gpu_scheduler._current_owner`). The pipeline
+  // runs in a DIFFERENT process (poindexter-prefect-worker), so a lock held by
+  // a live generation shows up here as `holder: null` — the route says so in its
+  // docstring. `waiters` is the cross-process truth: DB-mirrored `gpu_queue`
+  // rows, visible no matter which process holds the lock.
+  //
+  // Therefore: an empty queue is reported as "no contention" and NEVER as
+  // "idle" or "free". Nothing is queued — that much is true and useful — but
+  // this surface cannot see whether another process is mid-render, and saying
+  // the GPU is free when it may be saturated is the same class of confident
+  // lie as a stale probe reading green.
+  //
+  // `available` is the caller's answer to "did the queue poll actually succeed?"
+  // Without it an unreachable endpoint is indistinguishable from a quiet one,
+  // because both arrive as an empty object.
+  function gpuSchedulerService(queue, available) {
+    if (!available) {
+      return {
+        name: 'gpu-scheduler',
+        status: 'off',
+        metric: 'queue unavailable',
+        sub: 'GPU lock',
+      };
+    }
+    const q = queue || {};
+    const waiters = Array.isArray(q.waiters) ? q.waiters : [];
+    const holder = q.holder || null;
+    let metric;
+    if (waiters.length) {
+      // Cross-process and authoritative — lead with it.
+      const longest = waiters.reduce(
+        (m, w) => Math.max(m, (w && w.waiting_s) || 0),
+        0
+      );
+      metric =
+        waiters.length + ' waiting · ' + fmtHoldSeconds(longest) + ' longest';
+    } else if (holder) {
+      metric =
+        'held by ' +
+        holder.owner +
+        ' · ' +
+        fmtHoldSeconds(holder.held_for_s || 0);
+    } else {
+      metric = 'no contention';
+    }
+    return {
+      name: 'gpu-scheduler',
+      // Contention is the scheduler WORKING, not failing — same reasoning as a
+      // card at 100% util. Nothing here is ever 'err'.
+      status: 'ok',
+      metric,
+      sub: 'GPU lock',
+    };
+  }
+
+  // Compact seconds for hold/wait durations.
+  function fmtHoldSeconds(secs) {
+    const n = Number(secs) || 0;
+    if (n < 90) return Math.round(n) + 's';
+    if (n < 5400) return Math.round(n / 60) + 'm';
+    return Math.round(n / 3600) + 'h';
   }
 
   // A card's node shape. A card with no reading is 'off' — absent telemetry must
@@ -175,11 +249,13 @@
     MAP_EDGES,
     GPU_CONSUMERS,
     GPU_COL_X,
-    GPU_ANCHOR,
+    GPU_SCHEDULER_POS,
     GPU_ROW_GAP,
     GPU_TEMP_WARN_C,
     gpuCardNodes,
     gpuCardService,
+    gpuSchedulerService,
+    fmtHoldSeconds,
     flowKind,
     poolFlowKind,
   };

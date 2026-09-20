@@ -2148,6 +2148,10 @@ function App() {
             <SystemMap
               services={services}
               gpu={gpu}
+              gpuQueue={gpuQueue}
+              // Without this an unreachable /api/gpu/queue is indistinguishable
+              // from a quiet one — both arrive as the empty sentinel.
+              gpuQueueAvailable={!!gpuQueueR.data && !gpuQueueR.error}
               onOpen={(s) => open('service', s)}
               onOpenGpu={() => open('gpu', gpu)}
               onRestart={A.restart}

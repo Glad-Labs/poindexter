@@ -83,7 +83,7 @@ test('gpuCardNodes returns one node per card, labelled by index not model', () =
   assert.notEqual(nodes[0].y, nodes[1].y);
   // Centred on the cluster anchor, so the fan-in edges stay short.
   const mid = (nodes[0].y + nodes[1].y) / 2;
-  assert.equal(mid, M.GPU_ANCHOR.y);
+  assert.equal(mid, M.GPU_SCHEDULER_POS.y);
 });
 
 test('gpuCardNodes falls back to a single card when gpus is absent', () => {
@@ -91,7 +91,11 @@ test('gpuCardNodes falls back to a single card when gpus is absent', () => {
   // a one-card install must still render.
   const nodes = M.gpuCardNodes({ util: 40, temp: 50 });
   assert.equal(nodes.length, 1);
-  assert.equal(nodes[0].y, M.GPU_ANCHOR.y, 'the lone card sits on the anchor');
+  assert.equal(
+    nodes[0].y,
+    M.GPU_SCHEDULER_POS.y,
+    'the lone card sits level with the scheduler'
+  );
 });
 
 test('a card is named by its index and never by a model string', () => {
@@ -189,4 +193,103 @@ test('GPU consumers are all real nodes and none is wired to a specific card', ()
       'no per-card edges in the table'
     );
   }
+});
+
+// ── GPU scheduler node ────────────────────────────────────────────────────
+//
+// The convergence point where every GPU consumer's edge lands was an INVISIBLE
+// anchor: eight edges fanned into a blank spot, which reads as an unlabelled
+// node rather than as the lock that arbitrates them. It is now a real node
+// backed by GET /api/gpu/queue.
+//
+// The semantics it must not misreport: `holder` is the API process's OWN view
+// of the lock, but the pipeline runs in a different process, so a live
+// generation shows up here as holder:null. `waiters` is the cross-process
+// truth. An empty queue therefore means "nothing is queued" — NOT "the GPU is
+// free" — and the node must never claim the latter.
+
+test('an empty queue reports no contention, never idle or free', () => {
+  const svc = M.gpuSchedulerService({ holder: null, waiters: [] }, true);
+  assert.equal(svc.metric, 'no contention');
+  assert.ok(
+    !/idle|free|available/i.test(svc.metric),
+    'holder:null is this process only — the GPU may be saturated elsewhere'
+  );
+});
+
+test('waiters lead, because they are the cross-process truth', () => {
+  const svc = M.gpuSchedulerService(
+    { holder: null, waiters: [{ waiting_s: 12 }, { waiting_s: 130 }] },
+    true
+  );
+  assert.match(svc.metric, /2 waiting/);
+  assert.match(
+    svc.metric,
+    /2m longest/,
+    'surfaces the worst wait, not the first'
+  );
+});
+
+test('a holder this process can see is named', () => {
+  const svc = M.gpuSchedulerService(
+    { holder: { owner: 'image_gen', held_for_s: 42 }, waiters: [] },
+    true
+  );
+  assert.match(svc.metric, /held by image_gen/);
+  assert.match(svc.metric, /42s/);
+});
+
+test('an unavailable queue is neutral, not quiet', () => {
+  // Both an unreachable endpoint and a quiet scheduler arrive as an empty
+  // object; without the availability flag they would render identically.
+  const svc = M.gpuSchedulerService({}, false);
+  assert.equal(svc.status, 'off');
+  assert.equal(svc.metric, 'queue unavailable');
+});
+
+test('contention is never an error state', () => {
+  // The scheduler serializing work is it doing its job — same reasoning as a
+  // card at 100% util not being a fault.
+  const busy = M.gpuSchedulerService(
+    {
+      holder: { owner: 'comfyui', held_for_s: 900 },
+      waiters: [{ waiting_s: 600 }],
+    },
+    true
+  );
+  assert.equal(busy.status, 'ok');
+});
+
+test('malformed queue payloads degrade instead of throwing', () => {
+  for (const q of [
+    null,
+    undefined,
+    {},
+    { waiters: null },
+    { waiters: 'nope' },
+  ]) {
+    const svc = M.gpuSchedulerService(q, true);
+    assert.equal(svc.status, 'ok');
+    assert.ok(svc.metric);
+  }
+});
+
+test('hold durations stay compact across magnitudes', () => {
+  assert.equal(M.fmtHoldSeconds(0), '0s');
+  assert.equal(M.fmtHoldSeconds(45), '45s');
+  assert.equal(M.fmtHoldSeconds(600), '10m');
+  assert.equal(M.fmtHoldSeconds(7200), '2h');
+});
+
+test('GPU consumers route through the scheduler, not around it', () => {
+  // The scheduler is what serializes them; an edge that skipped it would draw
+  // a path that does not exist.
+  const keys = new Set(M.MAP_NODES.map((n) => n.key));
+  for (const c of M.GPU_CONSUMERS) {
+    assert.ok(keys.has(c), c + ' must be a real node');
+  }
+  assert.ok(
+    M.GPU_SCHEDULER_POS.x < M.GPU_COL_X,
+    'scheduler sits before the cards'
+  );
 });

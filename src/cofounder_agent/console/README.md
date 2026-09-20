@@ -297,6 +297,20 @@ The Map (`js/modes.jsx`, topology + GPU helpers in `js/map-helpers.js`,
   node with `'RTX 5090'` hardcoded, reading only the lowest-indexed card — so
   the second card was invisible, and the label was invented (`nvidia_gpu_*`
   exports no model name; `api.gpu()` deliberately returns `name: ''`).
+- **The convergence point is a labelled node.** Every GPU consumer's edge lands
+  on `gpu-scheduler` (`services/gpu_scheduler.py`, `GET /api/gpu/queue`), which
+  is what actually serializes them. It was an _invisible anchor_ until
+  2026-09-20 — eight edges fanning into a blank spot, which reads as an
+  unlabelled node rather than as the lock arbitrating them.
+  **Read the semantics before changing its label:** `holder` is the API
+  process's own in-process view, but the pipeline runs in
+  `poindexter-prefect-worker`, so a live generation appears here as
+  `holder: null`. `waiters` is the cross-process truth (DB-mirrored `gpu_queue`
+  rows). An empty queue therefore reports **"no contention"** and never "idle"
+  or "free" — nothing is _queued_, but this surface cannot see whether another
+  process is mid-render. Contention is never an error state, for the same
+  reason a card at 100% util isn't. A failed poll reads "queue unavailable",
+  distinct from a quiet one, because both otherwise arrive as an empty object.
 - **GPU consumers draw to the pool, never to a card.** Which card a consumer
   lands on is a scheduling fact this surface doesn't have, so a consumer→card
   edge would assert a pinning we'd be making up. A card reporting nothing is

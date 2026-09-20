@@ -302,14 +302,23 @@ const {
   MAP_NODES,
   MAP_EDGES,
   GPU_CONSUMERS,
-  GPU_ANCHOR,
+  GPU_SCHEDULER_POS,
   gpuCardNodes,
   gpuCardService,
+  gpuSchedulerService,
   flowKind,
   poolFlowKind,
 } = window.PXMap;
 
-function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {
+function SystemMap({
+  services,
+  gpu,
+  gpuQueue,
+  gpuQueueAvailable,
+  onOpen,
+  onOpenGpu,
+  onRestart,
+}) {
   const wrapRef = React.useRef(null);
   const [box, setBox] = React.useState({ w: 1200, h: 640 });
   React.useEffect(() => {
@@ -335,17 +344,29 @@ function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {
       ),
     [cardNodes]
   );
-  const nodes = React.useMemo(() => [...MAP_NODES, ...cardNodes], [cardNodes]);
+  // The scheduler is a real, labelled node at the convergence point — it used
+  // to be an invisible anchor, which drew eight edges into a blank spot.
+  // Declared before `nodes`, which includes it.
+  const schedNode = React.useMemo(
+    () => ({ key: 'gpu-scheduler', ...GPU_SCHEDULER_POS, sched: true }),
+    []
+  );
+  const schedSvc = React.useMemo(
+    () => gpuSchedulerService(gpuQueue, gpuQueueAvailable),
+    [gpuQueue, gpuQueueAvailable]
+  );
+  const nodes = React.useMemo(
+    () => [...MAP_NODES, schedNode, ...cardNodes],
+    [cardNodes, schedNode]
+  );
   const nodeByKey = Object.fromEntries(nodes.map((n) => [n.key, n]));
   const pos = (n) => ({ x: (n.x / 100) * box.w, y: (n.y / 100) * box.h });
-  const anchorPos = {
-    x: (GPU_ANCHOR.x / 100) * box.w,
-    y: (GPU_ANCHOR.y / 100) * box.h,
-  };
+  const anchorPos = pos(schedNode);
 
   // A node's live status, whichever kind it is. Unknown → null, so an edge to
   // something the roster hasn't got stays neutral instead of guessing.
   const statusOf = (key) => {
+    if (key === 'gpu-scheduler') return schedSvc.status;
     const svc = svcByName[key] || cardSvcByKey[key];
     return svc ? svc.status : null;
   };
@@ -405,7 +426,11 @@ function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {
 
       {nodes.map((n) => {
         const p = pos(n);
-        const svc = n.gpu ? cardSvcByKey[n.key] : svcByName[n.key];
+        const svc = n.sched
+          ? schedSvc
+          : n.gpu
+            ? cardSvcByKey[n.key]
+            : svcByName[n.key];
         if (!svc) return null;
         const st = svc.status;
         return (
@@ -413,18 +438,20 @@ function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {
             key={n.key}
             className={`map-node ${st} ${n.core ? 'core' : ''}`}
             style={{ left: p.x, top: p.y }}
-            onClick={() => (n.gpu ? onOpenGpu() : onOpen(svc))}
+            onClick={() => (n.gpu || n.sched ? onOpenGpu() : onOpen(svc))}
           >
             <div className="map-node__top">
               <span
                 className={`map-node__led ${{ ok: 'led-ok', warn: 'led-warn', err: 'led-err' }[st] || 'led-off'}`}
               />
               <span className="map-node__name">
-                {n.gpu ? svc.name : svc.name.replace('poindexter-', '')}
+                {n.gpu || n.sched
+                  ? svc.name
+                  : svc.name.replace('poindexter-', '')}
               </span>
             </div>
             <div className="map-node__metric">{svc.metric}</div>
-            {st === 'err' && !n.gpu && (
+            {st === 'err' && !n.gpu && !n.sched && (
               <button
                 className="mbtn mbtn--ghost"
                 style={{ marginTop: 7, padding: '4px 8px', fontSize: 9 }}
