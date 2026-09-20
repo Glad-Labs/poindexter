@@ -159,3 +159,135 @@ async def test_video_frame_is_extracted_before_scoring(tmp_path):
         )
     ex.assert_awaited_once()
     assert res.score == 50.0
+
+
+class TestArtifactCropPass:
+    """The second, cropped look — the half that can see fine detail.
+
+    Measured 2026-09-20: at native 832x480 a garbled-text frame scored 85.0
+    sd 0.0, identical to its clean twin, and the model confabulated rather
+    than abstaining. On a 2x centre crop it correctly reported the garbling.
+    Upscaling the full frame changed nothing, so the lever is the defect's
+    share of the frame, not absolute pixels.
+    """
+
+    def _shot(self):
+        from poindexter.schemas.video_shot_list import Shot
+
+        return Shot(
+            idx=3, duration_s=5.0, intent="establish the data center",
+            source="generative", prompt="a dark server room with blue lights",
+            narration_offset_s=0.0,
+        )
+
+    @pytest.mark.asyncio
+    async def test_worst_view_wins(self, monkeypatch, tmp_path):
+        """The crop's lower score must win — that is the whole point."""
+        from poindexter.services.video_renderers import shot_vision_qa as sq
+
+        frame = tmp_path / "f.png"
+        frame.write_bytes(b"png")
+        crop = tmp_path / "c.png"
+        crop.write_bytes(b"png")
+
+        scored: list[str] = []
+
+        async def _fake_score(image_path, *, prompt, model, pool, shot_idx):
+            scored.append(image_path)
+            return (sq.ShotQAResult(score=95.0, reason="looks clean")
+                    if image_path == str(frame)
+                    else sq.ShotQAResult(score=33.0, reason="garbled text"))
+
+        async def _fake_crop(image_path, *, fraction, zoom):
+            return str(crop)
+
+        monkeypatch.setattr(sq, "_score_image", _fake_score)
+        monkeypatch.setattr(sq, "_crop_frame", _fake_crop)
+        monkeypatch.setattr(sq, "_remove_quietly", lambda p: None)
+
+        cfg = SiteConfig(initial_config={
+            "qa_vision_model": "qwen3-vl:30b-a3b-instruct"})
+        r = await sq.score_shot_frame(
+            frame_path=str(frame), shot=self._shot(), site_config=cfg, pool=object())
+
+        assert r.score == 33.0, "the full frame's 95 must not mask the crop's 33"
+        assert "garbled" in r.reason
+        assert len(scored) == 2, "both views must be scored"
+
+    @pytest.mark.asyncio
+    async def test_crop_failure_keeps_the_full_frame_verdict(self, monkeypatch, tmp_path):
+        """Fail-soft: a broken crop must never drop the score we already have."""
+        from poindexter.services.video_renderers import shot_vision_qa as sq
+
+        frame = tmp_path / "f.png"
+        frame.write_bytes(b"png")
+
+        async def _fake_score(image_path, *, prompt, model, pool, shot_idx):
+            return sq.ShotQAResult(score=91.0, reason="clean")
+
+        async def _no_crop(image_path, *, fraction, zoom):
+            return None
+
+        monkeypatch.setattr(sq, "_score_image", _fake_score)
+        monkeypatch.setattr(sq, "_crop_frame", _no_crop)
+        cfg = SiteConfig(initial_config={
+            "qa_vision_model": "qwen3-vl:30b-a3b-instruct"})
+
+        r = await sq.score_shot_frame(
+            frame_path=str(frame), shot=self._shot(), site_config=cfg, pool=object())
+        assert r.score == 91.0
+
+    @pytest.mark.asyncio
+    async def test_crop_pass_is_settings_gated(self, monkeypatch, tmp_path):
+        """`video_shot_qa_crop_enabled=false` ⇒ exactly one call, as before."""
+        from poindexter.services.video_renderers import shot_vision_qa as sq
+
+        frame = tmp_path / "f.png"
+        frame.write_bytes(b"png")
+        calls: list[str] = []
+
+        async def _fake_score(image_path, *, prompt, model, pool, shot_idx):
+            calls.append(image_path)
+            return sq.ShotQAResult(score=88.0, reason="ok")
+
+        async def _boom(image_path, *, fraction, zoom):  # must not be reached
+            raise AssertionError("crop attempted while disabled")
+
+        monkeypatch.setattr(sq, "_score_image", _fake_score)
+        monkeypatch.setattr(sq, "_crop_frame", _boom)
+        cfg = SiteConfig(initial_config={
+            "qa_vision_model": "qwen3-vl:30b-a3b-instruct",
+            "video_shot_qa_crop_enabled": "false"})
+
+        r = await sq.score_shot_frame(
+            frame_path=str(frame), shot=self._shot(), site_config=cfg, pool=object())
+        assert r.score == 88.0
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_second_call_when_the_first_could_not_score(
+        self, monkeypatch, tmp_path
+    ):
+        """An infra miss is not a quality verdict — do not pay a second call."""
+        from poindexter.services.video_renderers import shot_vision_qa as sq
+
+        frame = tmp_path / "f.png"
+        frame.write_bytes(b"png")
+        calls: list[str] = []
+
+        async def _fake_score(image_path, *, prompt, model, pool, shot_idx):
+            calls.append(image_path)
+            return sq.ShotQAResult(score=None, reason="vision call failed")
+
+        async def _boom(image_path, *, fraction, zoom):
+            raise AssertionError("crop attempted after an unscoreable frame")
+
+        monkeypatch.setattr(sq, "_score_image", _fake_score)
+        monkeypatch.setattr(sq, "_crop_frame", _boom)
+        cfg = SiteConfig(initial_config={
+            "qa_vision_model": "qwen3-vl:30b-a3b-instruct"})
+
+        r = await sq.score_shot_frame(
+            frame_path=str(frame), shot=self._shot(), site_config=cfg, pool=object())
+        assert r.score is None
+        assert len(calls) == 1

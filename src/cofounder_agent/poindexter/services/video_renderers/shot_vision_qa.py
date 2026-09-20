@@ -74,6 +74,52 @@ async def _extract_video_frame(video_path: str) -> str | None:
     return None
 
 
+async def _crop_frame(
+    image_path: str, *, fraction: float, zoom: float,
+) -> str | None:
+    """Centre crop of ``fraction`` of each edge, upscaled ``zoom``x.
+
+    This exists because the judge is blind to fine detail at full frame.
+    Measured 2026-09-20 on a matched pair differing ONLY in text integrity
+    (identical subject, identical prompt): at native 832x480 the garbled frame
+    scored 85.0 sd 0.0 — indistinguishable from clean, and the model did not
+    abstain but CONFABULATED, reporting "every line contains readable English
+    words" and quoting a log line that is not in the image. On a 2x centre crop
+    the same model correctly answered "some of the text is garbled".
+    Signal/noise over the pair went 0.71 -> 7.02.
+
+    Upscaling the WHOLE frame does not help (85.0 either way), so the lever is
+    the defect's share of the frame — qwen3-vl's fixed attention budget — not
+    absolute pixels. Nothing in our code downsamples; the loss is inside the
+    model's own preprocessing.
+    """
+    out = os.path.join(
+        tempfile.gettempdir(),
+        f"shotqa_crop_{os.path.basename(image_path)}",
+    )
+    if not out.lower().endswith(".png"):
+        out += ".png"
+    # iw*f centred, then scale by zoom. -2 keeps the height even for any codec.
+    vf = (
+        f"crop=iw*{fraction:.3f}:ih*{fraction:.3f},"
+        f"scale=iw*{zoom:.2f}:-2:flags=lanczos"
+    )
+    cmd = ["ffmpeg", "-y", "-i", image_path, "-vf", vf, "-frames:v", "1", out]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[SHOT_QA] crop raised for %s: %s", image_path, exc)
+        return None
+    if os.path.exists(out) and os.path.getsize(out) > 0:
+        return out
+    return None
+
+
 async def _ensure_image_frame(frame_path: str) -> str | None:
     """Return an image path to score: passthrough for stills, extract for video."""
     if frame_path.lower().endswith(_VIDEO_EXTS):
@@ -143,13 +189,6 @@ async def score_shot_frame(
     if not image_path:
         return ShotQAResult(score=None, reason="no scoreable frame")
 
-    try:
-        with open(image_path, "rb") as fh:
-            b64 = base64.b64encode(fh.read()).decode("ascii")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[SHOT_QA] frame read failed for %s: %s", image_path, exc)
-        return ShotQAResult(score=None, reason="frame read failed")
-
     from poindexter.services.prompt_manager import get_prompt_manager
 
     prompt = get_prompt_manager().get_prompt(
@@ -158,6 +197,45 @@ async def score_shot_frame(
         visual=(shot.prompt or shot.query or ""),
         source=shot.source,
     )
+
+    full = await _score_image(
+        image_path, prompt=prompt, model=model, pool=pool, shot_idx=shot.idx,
+    )
+    if not _sc_bool(site_config, "video_shot_qa_crop_enabled", True):
+        return full
+    if full.score is None:
+        return full  # infra miss — a second call would just fail the same way
+
+    fraction = _sc_float(site_config, "video_shot_qa_crop_fraction", 0.62)
+    zoom = _sc_float(site_config, "video_shot_qa_crop_zoom", 2.0)
+    crop_path = await _crop_frame(image_path, fraction=fraction, zoom=zoom)
+    if not crop_path:
+        return full  # fail-soft: the full-frame verdict still stands
+
+    close = await _score_image(
+        crop_path, prompt=prompt, model=model, pool=pool, shot_idx=shot.idx,
+    )
+    _remove_quietly(crop_path)
+    if close.score is None:
+        return full
+    # Worst view wins. A defect is a defect wherever it is visible, and the
+    # two views are complementary: the crop sees fine detail the full frame
+    # cannot resolve, the full frame sees composition the crop cuts away.
+    # Measured false-positive rate of the crop pass on 7 known-clean frames:
+    # zero — every one scored 95.0 sd 0.0 cropped, same as uncropped.
+    return close if close.score < full.score else full
+
+
+async def _score_image(
+    image_path: str, *, prompt: str, model: str, pool: Any, shot_idx: int,
+) -> ShotQAResult:
+    """One vision call over one image. Fail-soft to ``score=None``."""
+    try:
+        with open(image_path, "rb") as fh:
+            b64 = base64.b64encode(fh.read()).decode("ascii")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[SHOT_QA] frame read failed for %s: %s", image_path, exc)
+        return ShotQAResult(score=None, reason="frame read failed")
 
     from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
@@ -182,7 +260,7 @@ async def score_shot_frame(
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[SHOT_QA] vision call failed for shot %d (non-critical): %s",
-            shot.idx, exc,
+            shot_idx, exc,
         )
         return ShotQAResult(score=None, reason="vision call failed")
 
@@ -191,4 +269,30 @@ async def score_shot_frame(
     return _parse_score(text)
 
 
-__all__ = ["ShotQAResult", "score_shot_frame", "_extract_video_frame"]
+def _sc_bool(site_config: Any, key: str, default: bool) -> bool:
+    try:
+        raw = site_config.get(key, default)
+    except Exception:  # noqa: BLE001  # silent-ok: a settings read must never
+        return default              # decide a render's fate.
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _sc_float(site_config: Any, key: str, default: float) -> float:
+    try:
+        return float(site_config.get(key, default))
+    except (TypeError, ValueError, AttributeError):
+        return default
+
+
+def _remove_quietly(path: str) -> None:
+    """Drop the temp crop. Best-effort by design: the score is already in
+    hand, and a leftover file in tempdir must never fail a render."""
+    try:
+        os.remove(path)
+    except OSError:  # silent-ok: best-effort tempfile cleanup after scoring
+        pass
+
+
+__all__ = ["ShotQAResult", "score_shot_frame", "_extract_video_frame", "_crop_frame"]

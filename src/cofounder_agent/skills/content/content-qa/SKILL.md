@@ -499,13 +499,29 @@ SHOT SOURCE: {source}
 
 Judge:
 - MATCH - does the image depict the shot's subject / intent?
-- BRAND - dark-techno palette (deep navy, cyan, teal, gold), stylized not photoreal
-  for AI sources; clean real footage for pexels. No garbled text, no warped
-  artifacts, no melted faces / six-fingered hands.
-- USABLE - would this hold the screen for a few seconds, or is it AI slop?
+- PEOPLE - is there a person, face, hand or body the subject did NOT ask for?
+  Answer this even when the subject says nothing about people: an unasked-for
+  human is a defect. If the subject does describe people, their presence is
+  correct and not a defect.
+- TEXT - if the image contains text, is it real readable words? Read it letter
+  by letter before answering. If it is too small or blurred to read, answer
+  "unverifiable" - never assume it is correct, and never invent what it says.
+- BRAND - dark-techno palette (deep navy, cyan, teal, gold), stylized not
+  photoreal for AI sources; clean real footage for pexels. No warped artifacts,
+  no melted faces, no six-fingered hands.
+
+Name a defect only when you can point at it in this image. A shot with nothing
+wrong scores high - do not hunt for faults to justify a lower number.
+
+Score bands:
+- 85-100 no defect worth naming
+- 60-84  usable, one cosmetic nit
+- 30-59  a defect a viewer would notice (unasked-for person, garbled text,
+         visible warping, clearly off-brand)
+- 0-29   wrong subject, or so mangled it reads as slop
 
 Output EXACTLY one JSON object, no prose, no code fences:
-{{"score": <integer 0-100>, "reason": "<one short sentence>"}}
+{{"defects": ["<short phrase>", ...], "score": <integer 0-100>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.deepeval_g_eval_criterion
