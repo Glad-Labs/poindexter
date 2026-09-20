@@ -172,8 +172,19 @@ async def _sync_config_from_db(pool):
             default=ALERTMANAGER_URL, env_var="ALERTMANAGER_URL",
         )
         _config_synced = True
-        logger.info("[PROBES] Config synced: API=%s, Ollama=%s (env wins over DB; URLs localized)",
-                     API_URL, LOCAL_OLLAMA)
+        # Name every URL this sync resolves, including the ones that resolve to
+        # EMPTY. A probe that silently reads a blank endpoint is indistinguishable
+        # in the log from one that is working, which is the exact failure this
+        # file exists to catch elsewhere.
+        logger.info(
+            "[PROBES] Config synced: API=%s, Ollama=%s, VisionOllama=%s, "
+            "Alertmanager=%s (env wins over DB; URLs localized; "
+            "'(unset)' = probe inactive by configuration, not a fault)",
+            API_URL,
+            LOCAL_OLLAMA,
+            VISION_OLLAMA or "(unset)",
+            ALERTMANAGER_URL,
+        )
     except Exception as e:
         logger.warning("[PROBES] Failed to sync config from DB, using env defaults: %s", e)
 
