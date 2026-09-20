@@ -1728,11 +1728,29 @@ def _resolve_endcard_tagline(site_config: Any) -> str:
     return str(site_config.get("site_domain", "") or "").strip()
 
 
-def _emit_shot_fallback_finding(*, shot: Shot, post_id: str, rung: str) -> None:
+# Cap on a failure reason copied into a finding body — long enough to keep the
+# provider's own message, short enough that a finding stays readable on a phone.
+_MAX_FALLBACK_REASON_CHARS = 240
+
+
+def _emit_shot_fallback_finding(
+    *, shot: Shot, post_id: str, rung: str, reason: str = "",
+) -> None:
     """Advisory (info) finding when a shot was filled by the fallback ladder
     rather than its primary source. Info severity ⇒ lands in audit_log (the
     Findings/Pipeline dashboards read it) but is below the router floor, so it
-    does NOT page — the 'mostly cards = outage' escalation is the gate's job."""
+    does NOT page — the 'mostly cards = outage' escalation is the gate's job.
+
+    ``reason`` is the failed primary's ``ShotRenderResult.error``. It is not
+    decoration: 306 of these findings accumulated over 60 days recording THAT a
+    shot fell back but never WHY, while the cause sat unused on the same result
+    object — so the audit trail could say "image_kenburns filled via substitute"
+    306 times and still not answer which rung of image-gen was broken. Same
+    doctrine as ``hero_render_fallback``: name the cause here, because the
+    sidecar that produced it may be gone by the time anyone looks.
+    """
+    reason = (reason or "").strip()
+    tail = f" reason: {reason[:_MAX_FALLBACK_REASON_CHARS]}" if reason else ""
     emit_finding(
         source="shot_list_renderer",
         kind="shot_fallback",
@@ -1741,11 +1759,14 @@ def _emit_shot_fallback_finding(*, shot: Shot, post_id: str, rung: str) -> None:
             f"shot {shot.idx} ({shot.source}) produced no clip from its primary "
             f"source; the fallback ladder filled the slot via '{rung}' so the "
             f"timeline stays whole. Many cards in one render signal an "
-            f"image-gen/Pexels outage. Advisory only."
+            f"image-gen/Pexels outage. Advisory only.{tail}"
         ),
         severity="info",
         dedup_key=f"shot_fallback:{post_id}:{shot.idx}",
-        extra={"shot_idx": shot.idx, "source": shot.source, "rung": rung},
+        extra={
+            "shot_idx": shot.idx, "source": shot.source, "rung": rung,
+            "reason": reason[:_MAX_FALLBACK_REASON_CHARS],
+        },
     )
 
 
@@ -2075,6 +2096,10 @@ async def _backfill_pass(
     for st in states:
         if st.result.success and st.result.clip_path:
             continue  # primary / holdover / substitute already filled the slot
+        # Read the primary's error NOW: every rung below replaces ``st.result``
+        # with its own success row, which carries no error, so reading it after
+        # the swap would always report an empty reason.
+        primary_error = st.result.error or ""
         if st.shot.source in _IMAGE_GEN_FAMILY:
             sub_path = await _substitute_failed_shot(
                 st.shot,
@@ -2091,6 +2116,7 @@ async def _backfill_pass(
                 st.rung = "substitute"
                 _emit_shot_fallback_finding(
                     shot=st.shot, post_id=post_id, rung="substitute",
+                    reason=primary_error,
                 )
                 continue
         if card_ok:
@@ -2103,7 +2129,10 @@ async def _backfill_pass(
                     clip_path=card_path, duration_s=st.shot.duration_s,
                 )
                 st.rung = "card"
-                _emit_shot_fallback_finding(shot=st.shot, post_id=post_id, rung="card")
+                _emit_shot_fallback_finding(
+                    shot=st.shot, post_id=post_id, rung="card",
+                    reason=primary_error,
+                )
                 continue
         st.rung = "dropped"
 

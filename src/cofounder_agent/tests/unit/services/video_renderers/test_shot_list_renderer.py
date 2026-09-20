@@ -2092,6 +2092,62 @@ class TestBackfillPass:
         assert st.result.duration_s == 6.0  # timeline slot preserved
 
     @pytest.mark.asyncio
+    async def test_fallback_finding_carries_the_primary_failure_reason(
+        self, tmp_path, monkeypatch
+    ):
+        """The finding must name WHY the primary failed, on both rungs.
+
+        The reason has to be read before the ladder overwrites ``st.result``
+        with its own success row — that row carries no error, so a read taken
+        afterwards reports an empty reason on every single fallback. 306 of
+        these findings accumulated saying only THAT a shot fell back.
+        """
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+
+        seen = []
+        monkeypatch.setattr(
+            slr, "emit_finding",
+            lambda **kw: seen.append(kw) if kw.get("kind") == "shot_fallback" else None,
+        )
+
+        # rung 2 — cross-family substitute
+        async def _fake_video(*, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"mp4")
+            return True
+
+        monkeypatch.setattr(slr, "_render_pexels_video", _fake_video)
+        st = self._failed_state(source="image_gen")
+        await slr._backfill_pass(
+            [st], render_kwargs=dict(
+                work_dir=tmp_path, image_gen_url="", site_config=None,
+                http_client_factory=None, pexels_key="KEY",
+                orientation="landscape", post_id="p1",
+            ),
+            site_config=None, post_id="p1", width=1920, height=1080,
+            wordmark="Glad Labs",
+        )
+        assert st.rung == "substitute"
+        assert seen, "no shot_fallback finding emitted"
+        assert "image-gen render returned no image" in seen[-1]["body"]
+        assert seen[-1]["extra"]["reason"] == "image-gen render returned no image"
+
+        # rung 3 — brand card (no pexels key ⇒ substitute skipped)
+        seen.clear()
+        st2 = self._failed_state(source="image_gen")
+        await slr._backfill_pass(
+            [st2], render_kwargs=dict(
+                work_dir=tmp_path, image_gen_url="", site_config=None,
+                http_client_factory=None, pexels_key="",
+                orientation="landscape", post_id="p2",
+            ),
+            site_config=None, post_id="p2", width=1920, height=1080,
+            wordmark="Glad Labs",
+        )
+        assert st2.rung == "card"
+        assert seen[-1]["extra"]["reason"] == "image-gen render returned no image"
+
+    @pytest.mark.asyncio
     async def test_card_disabled_leaves_shot_dropped(self, tmp_path):
         from unittest.mock import MagicMock
 
