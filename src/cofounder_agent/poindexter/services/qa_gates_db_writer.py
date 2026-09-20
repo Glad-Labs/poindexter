@@ -112,6 +112,15 @@ _REVIEWER_TO_GATE: dict[str, str] = {
     # Identity alias; gate row seeded advisory-first alongside the rail.
     "self_claim": "self_claim",
     "freshness": "freshness",
+    # numeric_fidelity + person_mention — the SEVENTH and EIGHTH alias-drops,
+    # found 2026-09-20 by comparing atom_runs against qa_gates on prod:
+    # qa_numeric_fidelity had 37 runs in 30 days and qa_person_mention 3, while
+    # both gate rows sat at total_runs=0 / last_run_at=NEVER. Both reviewers
+    # name themselves exactly as their gate row, so the mapping is identity.
+    # The guard below is now DERIVED from the seeded gate rows rather than a
+    # hand-kept list, which is why there should not be a ninth.
+    "numeric_fidelity": "numeric_fidelity",
+    "person_mention": "person_mention",
     # Aliases — the inline reviewer name and the gate-row name diverged
     # historically; preserve both rather than rename either side.
     "image_relevance": "vision_gate",

@@ -9,11 +9,27 @@ silently reappear.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from poindexter.services.qa_gates_db_writer import _REVIEWER_TO_GATE, record_chain_run
+
+
+# Anchor on a sentinel, not a parents[N] depth: the poindexter#1046 namespace
+# move pushed every file a level deeper and a baked-in depth would have quietly
+# pointed this guard at the wrong tree.
+def _find_migrations_dir() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "poindexter" / "services" / "migrations"
+        if candidate.is_dir():
+            return candidate
+    raise RuntimeError("could not locate poindexter/services/migrations")
+
+
+_MIGRATIONS_DIR = _find_migrations_dir()
 
 
 class _Review:
@@ -76,10 +92,13 @@ async def test_unknown_reviewer_skipped():
     citation_verifier / topic_delivery likewise moved out when they were
     given gate rows on 2026-06-03 (#659/#658)."""
     pool = _FakePool()
-    await record_chain_run(pool, [
-        _Review("some_reviewer_with_no_gate_row"),
-        _Review("another_unmapped_reviewer"),
-    ])
+    await record_chain_run(
+        pool,
+        [
+            _Review("some_reviewer_with_no_gate_row"),
+            _Review("another_unmapped_reviewer"),
+        ],
+    )
     assert pool.executes == []
 
 
@@ -97,9 +116,12 @@ async def test_known_reviewer_bumps_counter():
 @pytest.mark.asyncio
 async def test_rejected_review_increments_rejections():
     pool = _FakePool()
-    await record_chain_run(pool, [
-        _Review("programmatic_validator", approved=False),
-    ])
+    await record_chain_run(
+        pool,
+        [
+            _Review("programmatic_validator", approved=False),
+        ],
+    )
     _, args = pool.executes[0]
     assert args == ("programmatic_validator", "rejected", 1)
 
@@ -148,10 +170,13 @@ async def test_duplicate_reviewer_collapses_to_one_update():
     the bonus path. The writer must collapse those into a single
     UPDATE so total_runs doesn't double-count one execution."""
     pool = _FakePool()
-    await record_chain_run(pool, [
-        _Review("url_verifier", approved=True),
-        _Review("url_verifier", approved=True),
-    ])
+    await record_chain_run(
+        pool,
+        [
+            _Review("url_verifier", approved=True),
+            _Review("url_verifier", approved=True),
+        ],
+    )
     assert len(pool.executes) == 1
 
 
@@ -160,20 +185,23 @@ async def test_full_chain_writes_one_update_per_gate():
     """End-to-end: a typical chain emits 4-7 reviews; each maps to one
     gate row UPDATE."""
     pool = _FakePool()
-    await record_chain_run(pool, [
-        _Review("programmatic_validator", approved=True),
-        _Review("ollama_critic", approved=True),
-        _Review("internal_consistency", approved=True),
-        _Review("web_factcheck", approved=True),
-        _Review("url_verifier", approved=True),
-        # citation_verifier + topic_delivery now HAVE gate rows (seeded
-        # #659/#658 on 2026-06-03) so they bump too:
-        _Review("citation_verifier", approved=True),
-        _Review("topic_delivery", approved=True),
-        # rendered_preview now aliases to vision_gate (#563) — it bumps the
-        # vision_gate counter alongside image_relevance:
-        _Review("rendered_preview", approved=True),
-    ])
+    await record_chain_run(
+        pool,
+        [
+            _Review("programmatic_validator", approved=True),
+            _Review("ollama_critic", approved=True),
+            _Review("internal_consistency", approved=True),
+            _Review("web_factcheck", approved=True),
+            _Review("url_verifier", approved=True),
+            # citation_verifier + topic_delivery now HAVE gate rows (seeded
+            # #659/#658 on 2026-06-03) so they bump too:
+            _Review("citation_verifier", approved=True),
+            _Review("topic_delivery", approved=True),
+            # rendered_preview now aliases to vision_gate (#563) — it bumps the
+            # vision_gate counter alongside image_relevance:
+            _Review("rendered_preview", approved=True),
+        ],
+    )
     bumped_gates = {args[0] for _, args in pool.executes}
     assert bumped_gates == {
         "programmatic_validator",
@@ -187,92 +215,103 @@ async def test_full_chain_writes_one_update_per_gate():
     }
 
 
-def test_alias_table_covers_every_known_inline_reviewer():
-    """Documentation-as-test: when a new inline reviewer ships, this
-    test forces the implementer to either add it to the alias table
-    (if it has a qa_gates row) or to the explicit allow-list of
-    reviewers that intentionally lack a row.
+def _seeded_gate_names() -> set[str]:
+    """Every ``qa_gates.name`` any in-repo migration or seed file inserts.
 
-    2026-05-27: the assertion list was bare ("programmatic_validator",
-    "ollama_critic") which let the deepeval/guardrails/ragas reviewers
-    fall through without forcing a writer update. Every known inline
-    reviewer that ships a qa_gates row is now pinned here so a future
-    reviewer can't silently regress to `total_runs=0`.
+    Parsed from the migration tree rather than hand-listed, because a
+    hand-listed expectation is exactly what failed eight times (see the test
+    below). Handles both insert shapes in use:
+
+        VALUES ('<uuid>', 'programmatic_validator', ...)   -- baseline seeds
+        VALUES ($1, 'person_mention', ...)                 -- migration files
+
+    The gate name is the first single-quoted literal after ``VALUES`` that
+    looks like an identifier; a UUID contains dashes and so is skipped.
     """
-    inline_reviewers_with_row = set(_REVIEWER_TO_GATE)
-    # (Empty.) Reviewers that USED to live here all eventually got gate rows
-    # and moved to must_be_documented below:
-    #   - citation_verifier / topic_delivery (2026-06-03, #659/#658)
-    #   - rendered_preview (#563): aliased to the vision_gate row it shares
-    #     with image_relevance, the fourth alias-drop this guard catches.
-    inline_reviewers_without_row: set[str] = set()
-    documented = inline_reviewers_with_row | inline_reviewers_without_row
-    # If you trip this assertion, either:
-    #   (a) add the reviewer name + gate name to _REVIEWER_TO_GATE, OR
-    #   (b) add the name to inline_reviewers_without_row above.
-    must_be_documented = {
-        # Hardcoded gates seeded in 0000_baseline + the qa_gates seed
-        # migrations. Every one of these emits a ReviewerResult; if
-        # the gate row is to track total_runs accurately the writer
-        # MUST know about the alias.
-        "programmatic_validator",
-        "ollama_critic",
-        "internal_consistency",
-        "image_relevance",
-        # rendered_preview shares the vision_gate row with image_relevance
-        # (#563) — both vision legs must be aliased so the counter tracks
-        # every vision pass and a required vision_gate sees the rail present.
-        "rendered_preview",
-        "web_factcheck",
-        "url_verifier",
-        # Lane D #329 OSS rails — migrations 20260510_022034,
-        # 20260510_030530, 20260510_032959. The reviewers ship in
-        # multi_model_qa.py; missing entries here = the gates ran but
-        # the operator dashboard showed last_run_at=NEVER. Discovered
-        # 2026-05-27.
-        "deepeval_brand_fabrication",
-        "deepeval_g_eval",
-        "deepeval_faithfulness",
-        "guardrails_brand",
-        "guardrails_competitor",
-        "ragas_eval",
-        # Restoration rails — qa_gates rows seeded #659/#658 (2026-06-03)
-        # and #621 (2026-06-07). They emit ReviewerResults on the live
-        # graph_def path; missing entries here = the gates ran but the
-        # dashboard showed last_run_at=NEVER (third recurrence, 2026-06-11).
-        "citation_verifier",
-        "topic_delivery",
-        "self_consistency",
-        # poindexter#765 — advisory unlinked-attribution rail, gate row seeded
-        # in 20260611_190000_seed_citation_reconciliation_765.
-        "unlinked_attribution",
-        # poindexter#765 follow-up — the grounded-LLM citation rail
-        # (content.llm_reconcile_citations) emits an advisory
-        # "citation_grounding" review when it detects ungrounded named sources;
-        # its gate row is seeded in 20260708_034620_add_citation_grounding_qa_gate.
-        "citation_grounding",
-        # content_originality (renamed from opening_originality, 2026-07-12) —
-        # advisory RAG self-echo rail, gate row seeded in 0000_baseline. It emits
-        # a ReviewerResult on every canonical_blog QA pass; without the alias its
-        # counter froze at total_runs=0 (the FIFTH alias-drop — this one slipped
-        # past this guard too, because the name was never listed here).
-        "content_originality",
-        # title_coherence — the SIXTH recurrence, and the second to slip past
-        # this guard by never being listed: rail live since 2026-07-24, prod
-        # verified total_runs=0 / last_run_at=NEVER on 2026-08-16 against
-        # weeks of real runs. Gate row seeded in 20260724_161837 + baseline.
-        "title_coherence",
-        # self_claim (poindexter#1007) — deterministic our-own-system claim
-        # verification. Gate row seeded advisory-first with the rail.
-        "self_claim",
-    }
-    missing = must_be_documented - documented
+    names: set[str] = set()
+    for path in sorted(_MIGRATIONS_DIR.iterdir()):
+        if path.suffix not in (".py", ".sql"):
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for hit in re.finditer(r"INSERT\s+INTO\s+qa_gates\b", text, re.IGNORECASE):
+            segment = text[hit.end() : hit.end() + 1200]
+            values = re.search(r"\bVALUES\b", segment, re.IGNORECASE)
+            if values is None:
+                continue
+            for literal in re.findall(r"'([^']*)'", segment[values.end() : values.end() + 300]):
+                if re.fullmatch(r"[a-z][a-z0-9_]*", literal):
+                    names.add(literal)
+                    break
+    return names
+
+
+# Gate rows that deliberately have no reviewer feeding them. Keep this EMPTY
+# unless a gate genuinely cannot produce a ReviewerResult, and say why.
+_GATES_WITHOUT_A_REVIEWER: set[str] = set()
+
+
+def test_seed_parser_actually_finds_gates():
+    """Scan floor. A parser that finds nothing would make the guard below
+    vacuously green — which is the failure mode this whole file exists for."""
+    seeded = _seeded_gate_names()
+    assert len(seeded) >= 20, (
+        f"only parsed {len(seeded)} qa_gates names from {_MIGRATIONS_DIR} — the "
+        "insert shape changed and this guard is now reading nothing. Fix the "
+        "parser; do not relax the assertion."
+    )
+    # Anchors: one from the baseline seeds, one from a later migration.
+    assert "programmatic_validator" in seeded
+    assert "person_mention" in seeded
+
+
+def test_every_seeded_gate_has_a_reviewer_alias():
+    """Every gate row seeded in-repo must be the TARGET of an alias.
+
+    This replaces a hand-maintained expectation that could not catch the bug it
+    was written for. Its own comments admitted as much twice — "this one
+    slipped past this guard too, because the name was never listed here" (the
+    fifth recurrence) and "the second to slip past this guard by never being
+    listed" (the sixth). A guard whose expected set is typed by the same person
+    who forgot the alias will agree with them every time.
+
+    Eight recurrences, all identical: ship a rail, seed its gate row, forget
+    ``_REVIEWER_TO_GATE``. The rail then runs normally and scores normally
+    while its gate row reads ``total_runs=0 / last_run_at=NEVER`` — which on
+    the operator dashboard is indistinguishable from "this rail never ran".
+    Found the seventh and eighth on 2026-09-20 by comparing ``atom_runs``
+    against ``qa_gates`` on prod: ``qa_numeric_fidelity`` 37 runs / gate 0,
+    ``qa_person_mention`` 3 runs / gate 0.
+
+    Deriving the expectation from the seeds means a new gate row fails this
+    test the moment it is added, with no list for anyone to forget.
+    """
+    seeded = _seeded_gate_names()
+    aliased_targets = set(_REVIEWER_TO_GATE.values())
+    missing = sorted(seeded - aliased_targets - _GATES_WITHOUT_A_REVIEWER)
+
     assert not missing, (
-        f"qa_gates_db_writer._REVIEWER_TO_GATE is missing aliases for "
-        f"{sorted(missing)!r}. Either add them to _REVIEWER_TO_GATE so "
-        f"record_chain_run() bumps the gate counters, or add them to "
-        f"inline_reviewers_without_row above if they intentionally "
-        f"have no qa_gates row."
+        "qa_gates rows are seeded but no reviewer alias targets them: "
+        f"{missing}\n\n"
+        "Their rails will run and score normally while the gate row stays at "
+        "total_runs=0 / last_run_at=NEVER, which the operator dashboard shows "
+        "as 'never ran'.\n"
+        'Fix: add `"<reviewer name>": "<gate name>"` to _REVIEWER_TO_GATE in '
+        "services/qa_gates_db_writer.py (the reviewer name is the `reviewer=` "
+        "value the rail passes to ReviewerResult). If the gate genuinely has no "
+        "reviewer, add it to _GATES_WITHOUT_A_REVIEWER above with a reason."
+    )
+
+
+def test_alias_targets_are_all_real_gate_rows():
+    """The reverse direction: an alias pointing at a gate row that no migration
+    seeds would silently write to nothing."""
+    seeded = _seeded_gate_names()
+    # url_verifier / guardrails_* were retired 2026-09-10 but their rows remain
+    # seeded in-repo, so they still parse; nothing here should be unseeded.
+    phantom = sorted(set(_REVIEWER_TO_GATE.values()) - seeded)
+    assert not phantom, (
+        f"_REVIEWER_TO_GATE targets gate rows nothing seeds: {phantom} — "
+        "these UPDATEs match no row and are silently discarded."
     )
 
 
@@ -284,14 +323,17 @@ async def test_new_oss_rails_bump_their_gate_counters():
     because their names weren't in _REVIEWER_TO_GATE. Pin the wiring
     so the bug can't reappear."""
     pool = _FakePool()
-    await record_chain_run(pool, [
-        _Review("deepeval_g_eval", approved=True, advisory=True),
-        _Review("deepeval_faithfulness", approved=True, advisory=True),
-        _Review("deepeval_brand_fabrication", approved=True, advisory=True),
-        _Review("guardrails_brand", approved=True, advisory=True),
-        _Review("guardrails_competitor", approved=True, advisory=True),
-        _Review("ragas_eval", approved=True, advisory=True),
-    ])
+    await record_chain_run(
+        pool,
+        [
+            _Review("deepeval_g_eval", approved=True, advisory=True),
+            _Review("deepeval_faithfulness", approved=True, advisory=True),
+            _Review("deepeval_brand_fabrication", approved=True, advisory=True),
+            _Review("guardrails_brand", approved=True, advisory=True),
+            _Review("guardrails_competitor", approved=True, advisory=True),
+            _Review("ragas_eval", approved=True, advisory=True),
+        ],
+    )
     bumped_gates = {args[0] for _, args in pool.executes}
     assert bumped_gates == {
         "deepeval_g_eval",
@@ -314,18 +356,21 @@ async def test_restored_rail_gates_bump_their_counters():
     and `poindexter qa-gates list` showed total_runs=0 while audit_log
     proved 97 / 49 / 24 real runs. Pin the wiring so it can't regress."""
     pool = _FakePool()
-    await record_chain_run(pool, [
-        _Review("citation_verifier", approved=True, advisory=True),
-        _Review("topic_delivery", approved=True, advisory=True),
-        _Review("self_consistency", approved=True, advisory=False),
-        # poindexter#765 — the new advisory unlinked-attribution rail seeds its
-        # own gate row and must bump its counter too.
-        _Review("unlinked_attribution", approved=True, advisory=True),
-        # poindexter#765 follow-up — the grounded-LLM citation_grounding rail
-        # is advisory-by-construction (approved=False when it fires) and must
-        # bump its own counter, not silently drop to total_runs=0.
-        _Review("citation_grounding", approved=False, advisory=True),
-    ])
+    await record_chain_run(
+        pool,
+        [
+            _Review("citation_verifier", approved=True, advisory=True),
+            _Review("topic_delivery", approved=True, advisory=True),
+            _Review("self_consistency", approved=True, advisory=False),
+            # poindexter#765 — the new advisory unlinked-attribution rail seeds its
+            # own gate row and must bump its counter too.
+            _Review("unlinked_attribution", approved=True, advisory=True),
+            # poindexter#765 follow-up — the grounded-LLM citation_grounding rail
+            # is advisory-by-construction (approved=False when it fires) and must
+            # bump its own counter, not silently drop to total_runs=0.
+            _Review("citation_grounding", approved=False, advisory=True),
+        ],
+    )
     bumped_gates = {args[0] for _, args in pool.executes}
     assert bumped_gates == {
         "citation_verifier",
@@ -346,12 +391,25 @@ async def test_accepts_dict_shaped_reviews():
     frozen at 0 on the prod path (poindexter#553). Pin both shapes so a
     future serializer change can't silently re-break the counter."""
     pool = _FakePool()
-    await record_chain_run(pool, [
-        {"reviewer": "ollama_critic", "approved": True, "advisory": False,
-         "score": 90.0, "provider": "ollama"},
-        {"reviewer": "ragas_eval", "approved": False, "advisory": True,
-         "score": 40.0, "provider": "ollama"},
-    ])
+    await record_chain_run(
+        pool,
+        [
+            {
+                "reviewer": "ollama_critic",
+                "approved": True,
+                "advisory": False,
+                "score": 90.0,
+                "provider": "ollama",
+            },
+            {
+                "reviewer": "ragas_eval",
+                "approved": False,
+                "advisory": True,
+                "score": 40.0,
+                "provider": "ollama",
+            },
+        ],
+    )
     bumped = {args[0]: tuple(args[1:]) for _, args in pool.executes}
     # ollama_critic aliases to the llm_critic gate row.
     assert bumped["llm_critic"] == ("passed", 0)
