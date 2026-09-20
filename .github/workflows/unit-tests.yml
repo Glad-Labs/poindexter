@@ -366,6 +366,18 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/atom_independence_lint.py
 
+      # A producer must have a consumer. The recurring defect here is not a
+      # crash — it is a mechanism that runs correctly, reports healthy, and is
+      # read by nobody: a rail whose gate counter no alias updates, a table
+      # taking a heartbeat every 30s that nothing queries, a finding kind that
+      # routes to a log no one reads. The producer cannot see it from its own
+      # side, so it stays invisible until someone compares two independent
+      # recorders of the same event. This makes the statically-checkable half
+      # mechanical. Ratchet: existing violations are baselined, net-new fails.
+      - name: Consumer-contract lint (producer must have a consumer)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/consumer_contract_lint.py
+
       # GPU advisory-lock key is a five-party contract, and the two brain
       # consumers duplicate the int64 BY HAND (the brain runs stdlib+asyncpg
       # and cannot import the worker). A diverged copy never raises — the
