@@ -1,0 +1,258 @@
+{
+  "_comment": "Dead file references inside code comments, grandfathered. The ratchet only shrinks \u2014 fix one, re-run with --update-baseline to lock the win in.",
+  "files": {
+    "src/cofounder_agent/poindexter/brain/deploy_sync_probe.py": {
+      "bootstrap.toml": 1
+    },
+    "src/cofounder_agent/poindexter/brain/glitchtip_triage_probe.py": {
+      "feedback_alert_auto_triage.md": 1
+    },
+    "src/cofounder_agent/poindexter/brain/operator_url_probe.py": {
+      "20260510_152609_url_probe_per_target_overrides.py": 1
+    },
+    "src/cofounder_agent/poindexter/cli/_token_cache.py": {
+      "bootstrap.toml": 1
+    },
+    "src/cofounder_agent/poindexter/cli/migrate.py": {
+      "0103_xxx.py": 1
+    },
+    "src/cofounder_agent/poindexter/modules/content/atoms/_image_helpers.py": {
+      "image_helpers.py": 1,
+      "modules/content/image_helpers.py": 1
+    },
+    "src/cofounder_agent/poindexter/modules/content/atoms/two_pass_writer.py": {
+      "services/writer_rag_modes/two_pass.py": 1
+    },
+    "src/cofounder_agent/poindexter/modules/content/auto_publish.py": {
+      "services/task_executor.py": 1
+    },
+    "src/cofounder_agent/poindexter/modules/content/content_validator.py": {
+      "Component.tsx": 2
+    },
+    "src/cofounder_agent/poindexter/modules/content/stages/__init__.py": {
+      "plugins/stage_runner.py": 1
+    },
+    "src/cofounder_agent/poindexter/modules/content/stages/resolve_internal_link_placeholders.py": {
+      "20260512_213806_seed_unresolved_placeholder_validator_rule.py": 1,
+      "replace_inline_images.py": 1
+    },
+    "src/cofounder_agent/poindexter/plugins/job.py": {
+      "services/idle_worker.py": 1
+    },
+    "src/cofounder_agent/poindexter/plugins/samples/__init__.py": {
+      "idle_worker.py": 1
+    },
+    "src/cofounder_agent/poindexter/plugins/scheduler.py": {
+      "services/idle_worker.py": 1
+    },
+    "src/cofounder_agent/poindexter/plugins/secrets.py": {
+      "bootstrap.toml": 1
+    },
+    "src/cofounder_agent/poindexter/plugins/stage.py": {
+      "services/phases/base_phase.py": 2
+    },
+    "src/cofounder_agent/poindexter/plugins/topic_source.py": {
+      "services/topic_discovery.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/energy_bench.py": {
+      "scripts/bench/eval_cost_tiers.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/flows/__init__.py": {
+      "services/task_executor.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/flows/content_generation.py": {
+      "services/task_executor.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/integrations/handlers/retention_checkpoint_prune.py": {
+      "docs/references/langgraph_checkpoint_poisoning.md": 1
+    },
+    "src/cofounder_agent/poindexter/services/integrations/handlers/retention_summarize_to_table.py": {
+      "feedback_no_silent_defaults.md": 2
+    },
+    "src/cofounder_agent/poindexter/services/integrations/handlers/tap_singer_subprocess.py": {
+      "state.json": 1
+    },
+    "src/cofounder_agent/poindexter/services/integrations/operator_notify.py": {
+      "task_executor.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/jobs/ingest_benchmark_results.py": {
+      "benchmark_results.json": 1
+    },
+    "src/cofounder_agent/poindexter/services/migrations/0000_baseline.py": {
+      "20260622_200222_drop_pipeline_tasks_category.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/migrations/20260712_203614_drop_dead_model_app_settings.py": {
+      "baseline.seeds.sql": 1
+    },
+    "src/cofounder_agent/poindexter/services/migrations/20260712_211523_drop_dead_cosyvoice2_tts_app_settings.py": {
+      "bootstrap.toml": 1
+    },
+    "src/cofounder_agent/poindexter/services/migrations/20260809_020020_drop_settings_orphaned_by_the_retired_gate_and_scheduled_tasks_probes.py": {
+      "brain/gate_auto_expire_probe.py": 1,
+      "brain/gate_pending_summary_probe.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/migrations/20260825_021743_retire_premium_license_settings_orphaned_by_the_pro_delivery_cutover.py": {
+      "premium.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/migrations/__init__.py": {
+      "_module_runner.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/ollama_client.py": {
+      "script_for_video.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/pipeline_experiment_hook.py": {
+      "services/experiment_service.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/post_pipeline_actions.py": {
+      "task_executor.py": 2
+    },
+    "src/cofounder_agent/poindexter/services/posts_approval_service.py": {
+      "task_executor.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/pro_delivery.py": {
+      "seed-settings.json": 1
+    },
+    "src/cofounder_agent/poindexter/services/ragas_eval.py": {
+      "feedback_no_silent_defaults.md": 1
+    },
+    "src/cofounder_agent/poindexter/services/retention_janitor.py": {
+      "20260617_200000_seed_retention_policies_unified.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/settings_defaults.py": {
+      "scripts/generate_settings_defaults_module.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/social_poster.py": {
+      "feedback_no_silent_defaults.md": 1
+    },
+    "src/cofounder_agent/poindexter/services/static_export_service.py": {
+      "index.json": 1
+    },
+    "src/cofounder_agent/poindexter/services/taps/memory.py": {
+      "MEMORY.md": 1
+    },
+    "src/cofounder_agent/poindexter/services/topic_dedup.py": {
+      "services/topic_discovery.py": 1
+    },
+    "src/cofounder_agent/poindexter/services/topic_sources/__init__.py": {
+      "services/topic_discovery.py": 2
+    },
+    "src/cofounder_agent/poindexter/services/topic_sources/igdb.py": {
+      "feedback_brand_niches.md": 1
+    },
+    "src/cofounder_agent/poindexter/services/video_service.py": {
+      "scripts/video-server.py": 1
+    },
+    "src/cofounder_agent/poindexter/utils/findings.py": {
+      "utils/gitea_issues.py": 1
+    },
+    "src/cofounder_agent/poindexter/utils/startup_manager.py": {
+      "services/task_executor.py": 1
+    },
+    "src/cofounder_agent/tests/integration/conftest.py": {
+      "test_blog_workflow.py": 1
+    },
+    "src/cofounder_agent/tests/integration/jobs/test_sync_cloudflare_analytics.py": {
+      "test_jobs_sync_page_views.py": 1
+    },
+    "src/cofounder_agent/tests/integration/test_writer_langfuse_routing.py": {
+      "tests/unit/services/stages/test_script_for_video.py": 1
+    },
+    "src/cofounder_agent/tests/integration_db/conftest.py": {
+      "infrastructure/local-db/init.sql": 1
+    },
+    "src/cofounder_agent/tests/integration_db/test_module_migrations.py": {
+      "0000_init.py": 1
+    },
+    "src/cofounder_agent/tests/integration_db/test_phase1_experiments_foundation.py": {
+      "20260529_000342_phase1_experiments_harness_foundation.py": 1
+    },
+    "src/cofounder_agent/tests/unit/cli/test_app.py": {
+      "bootstrap.toml": 1
+    },
+    "src/cofounder_agent/tests/unit/conftest.py": {
+      "infrastructure/local-db/init.sql": 1
+    },
+    "src/cofounder_agent/tests/unit/modules/content/atoms/test_contradiction_atoms.py": {
+      "test_writer_self_review.py": 1
+    },
+    "src/cofounder_agent/tests/unit/scripts/test_adapter_purity_lint.py": {
+      "connect_utils.py": 1
+    },
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_sentry_dsn.py": {
+      "baseline.seeds.sql": 1
+    },
+    "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc_guard.py": {
+      "bootstrap.toml": 1
+    },
+    "src/cofounder_agent/tests/unit/services/migrations/test_baseline_seeds_no_orphaned_webhook_handlers.py": {
+      "services/integrations/webhook_dispatcher.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/migrations/test_drive_media_gates_seed_removed.py": {
+      "services/jobs/drive_media_gates.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/migrations/test_drop_retired_probe_settings.py": {
+      "brain/gate_auto_expire_probe.py": 1,
+      "brain/gate_pending_summary_probe.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/migrations/test_faithfulness_advisory_in_baseline_seed.py": {
+      "20260704_180500_demote_deepeval_brand_fabrication_advisory.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/migrations/test_migration_file_filter.py": {
+      "_module_runner.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/migrations/test_retire_premium_license_settings.py": {
+      "premium.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/stages/test_pipeline_versions_persistence_473.py": {
+      "cross_model_qa.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_content_validator.py": {
+      "Component.tsx": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_deterministic_compositor_prompt.py": {
+      "services/writer_rag_modes/deterministic_compositor.py": 2
+    },
+    "src/cofounder_agent/tests/unit/services/test_dev_diary_niche.py": {
+      "0134_seed_dev_diary_niche.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_lane_b_misc_migration.py": {
+      "feedback_no_silent_defaults.md": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_lane_b_qa_critic_migration.py": {
+      "feedback_no_silent_defaults.md": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_lane_b_retention_migration.py": {
+      "feedback_no_silent_defaults.md": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_langfuse_experiments.py": {
+      "test_experiment_service.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_pipeline_experiment_hook.py": {
+      "20260510_065631_drop_experiments_tables.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_post_pipeline_actions.py": {
+      "services/task_executor.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_static_export_affiliate.py": {
+      "affiliate-links.json": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_static_export_retire_helpers.py": {
+      "index.json": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_task_failure_alerts.py": {
+      "services/task_executor.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_topic_batch_service.py": {
+      "test_topic_discovery.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_topic_dedup.py": {
+      "test_topic_discovery.py": 1
+    },
+    "src/cofounder_agent/tests/unit/services/test_video_service.py": {
+      "video-server.py": 1
+    },
+    "src/cofounder_agent/tests/unit/utils/test_startup_manager.py": {
+      "services/task_executor.py": 1
+    }
+  }
+}

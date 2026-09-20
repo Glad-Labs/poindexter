@@ -344,6 +344,14 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/lint_silent_excepts.py
 
+      # A comment naming a file that no longer exists reads as current and
+      # sends the next reader where the codebase no longer goes. Existing dead
+      # refs are baselined (comment_reference_baseline.json,
+      # ratchet-only-shrinks); the lint fails on net-new. Stdlib only.
+      - name: Comment-reference lint (stale comments)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/comment_reference_lint.py
+
       # Transport-adapter contract (#1340 / #1344): no NEW inline SQL in an
       # adapter. Routes / CLI / MCP tools must delegate to a service, not run
       # SQL. Existing sites are baselined (adapter_purity_baseline.json,
@@ -766,6 +774,8 @@ jobs:
         run: python scripts/ci/kernel_purity_lint.py
       - name: Silent-except lint (audit H2)
         run: python scripts/ci/lint_silent_excepts.py
+      - name: Comment-reference lint (stale comments)
+        run: python scripts/ci/comment_reference_lint.py
       - name: Adapter-purity lint (transport contract #1344)
         run: python scripts/ci/adapter_purity_lint.py
       - name: Atom-independence lint (tech-debt audit)
