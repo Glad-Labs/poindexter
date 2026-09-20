@@ -294,37 +294,20 @@ function FeedMode({ inbox, feed, filter, setFilter, onOpen, A }) {
 }
 
 /* ═══ SYSTEM MAP — live node graph ══════════════════════════ */
-// Keys MUST match the `name` field of the entries in data.js `services` —
-// SystemMap looks each node up via svcByName[name] for its live status. (The
-// 2026-06 service rename dropped the `poindexter-` display prefix; the real
-// cAdvisor container name lives on `s.container`, used by the health query.)
-const MAP_NODES = [
-  { key: 'worker', x: 50, y: 48, core: true },
-  { key: 'postgres-local', x: 22, y: 26 },
-  { key: 'ollama', x: 76, y: 24 },
-  { key: 'image-gen-server', x: 84, y: 52 },
-  { key: 'brain-daemon', x: 50, y: 16 },
-  { key: 'prometheus', x: 20, y: 70 },
-  { key: 'loki', x: 38, y: 84 },
-  { key: 'tempo', x: 62, y: 84 },
-  { key: 'prefect-server', x: 80, y: 78 },
-  { key: 'glitchtip-web', x: 16, y: 48 },
-  { key: 'gpu', x: 88, y: 36, gpu: true },
-];
-const MAP_EDGES = [
-  ['worker', 'postgres-local', 'hot'],
-  ['worker', 'ollama', 'hot'],
-  ['worker', 'loki', 'hot'],
-  ['worker', 'tempo', 'hot'],
-  ['brain-daemon', 'worker', 'hot'],
-  ['brain-daemon', 'prometheus', ''],
-  ['ollama', 'gpu', 'hot'],
-  ['image-gen-server', 'gpu', 'amber'],
-  ['prometheus', 'worker', ''],
-  ['prefect-server', 'worker', 'err'],
-  ['worker', 'glitchtip-web', ''],
-  ['worker', 'image-gen-server', 'hot'],
-];
+// Topology tables + the pure per-card GPU helpers live in js/map-helpers.js
+// (window.PXMap) so they're unit-testable without a JSX compile — the same
+// split as qa-helpers/image-helpers/trace-helpers. This file keeps only the
+// rendering.
+const {
+  MAP_NODES,
+  MAP_EDGES,
+  GPU_CONSUMERS,
+  GPU_ANCHOR,
+  gpuCardNodes,
+  gpuCardService,
+  flowKind,
+  poolFlowKind,
+} = window.PXMap;
 
 function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {
   const wrapRef = React.useRef(null);
@@ -344,15 +327,61 @@ function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {
     () => Object.fromEntries(services.map((s) => [s.name, s])),
     [services]
   );
-  const nodeByKey = Object.fromEntries(MAP_NODES.map((n) => [n.key, n]));
+  const cardNodes = React.useMemo(() => gpuCardNodes(gpu), [gpu]);
+  const cardSvcByKey = React.useMemo(
+    () =>
+      Object.fromEntries(
+        cardNodes.map((n) => [n.key, gpuCardService(n.card, n.index)])
+      ),
+    [cardNodes]
+  );
+  const nodes = React.useMemo(() => [...MAP_NODES, ...cardNodes], [cardNodes]);
+  const nodeByKey = Object.fromEntries(nodes.map((n) => [n.key, n]));
   const pos = (n) => ({ x: (n.x / 100) * box.w, y: (n.y / 100) * box.h });
-
-  const gpuNode = {
-    name: 'RTX 5090',
-    status: gpu.util > 90 ? 'warn' : 'ok',
-    metric: `${gpu.util}% · ${gpu.temp}°C · ${gpu.power}W`,
-    sub: 'GPU',
+  const anchorPos = {
+    x: (GPU_ANCHOR.x / 100) * box.w,
+    y: (GPU_ANCHOR.y / 100) * box.h,
   };
+
+  // A node's live status, whichever kind it is. Unknown → null, so an edge to
+  // something the roster hasn't got stays neutral instead of guessing.
+  const statusOf = (key) => {
+    const svc = svcByName[key] || cardSvcByKey[key];
+    return svc ? svc.status : null;
+  };
+  const poolFlow = poolFlowKind(
+    cardNodes.map((n) => cardSvcByKey[n.key].status)
+  );
+
+  // Structural edges + the GPU fan-in. Consumers draw to the cluster anchor;
+  // the anchor ties to each card with a short link, so the picture says
+  // "these contend for the pool" without claiming a per-card assignment.
+  const edges = [
+    ...MAP_EDGES.filter(([a, b]) => nodeByKey[a] && nodeByKey[b]).map(
+      ([a, b, kind]) => ({
+        key: 'e:' + a + '>' + b,
+        from: pos(nodeByKey[a]),
+        to: pos(nodeByKey[b]),
+        hot: kind === 'hot',
+        flow: flowKind(statusOf(a), statusOf(b)),
+      })
+    ),
+    ...GPU_CONSUMERS.filter((c) => nodeByKey[c]).map((c) => ({
+      key: 'g:' + c,
+      from: pos(nodeByKey[c]),
+      to: anchorPos,
+      hot: false,
+      // The POOL's health, not one card's.
+      flow: flowKind(statusOf(c), null) || poolFlow,
+    })),
+    ...cardNodes.map((n) => ({
+      key: 'c:' + n.key,
+      from: anchorPos,
+      to: pos(n),
+      hot: true,
+      flow: flowKind(statusOf(n.key), null),
+    })),
+  ];
 
   return (
     <div className="mapwrap" ref={wrapRef}>
@@ -361,36 +390,22 @@ function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {
         viewBox={`0 0 ${box.w} ${box.h}`}
         preserveAspectRatio="none"
       >
-        {MAP_EDGES.map(([a, b, kind], i) => {
-          const pa = pos(nodeByKey[a]),
-            pb = pos(nodeByKey[b]);
-          const mx = (pa.x + pb.x) / 2,
-            my = (pa.y + pb.y) / 2 - 18;
-          const d = `M${pa.x},${pa.y} Q${mx},${my} ${pb.x},${pb.y}`;
-          const svcA = svcByName[a],
-            svcB = svcByName[b];
-          const isErr =
-            kind === 'err' ||
-            (svcB && svcB.status === 'err') ||
-            (svcA && svcA.status === 'err');
+        {edges.map((e) => {
+          const mx = (e.from.x + e.to.x) / 2,
+            my = (e.from.y + e.to.y) / 2 - 18;
+          const d = `M${e.from.x},${e.from.y} Q${mx},${my} ${e.to.x},${e.to.y}`;
           return (
-            <g key={i}>
-              <path
-                className={`map-edge ${kind === 'hot' ? 'hot' : ''}`}
-                d={d}
-              />
-              <path
-                className={`map-flow ${isErr ? 'err' : kind === 'amber' ? 'amber' : ''}`}
-                d={d}
-              />
+            <g key={e.key}>
+              <path className={`map-edge ${e.hot ? 'hot' : ''}`} d={d} />
+              <path className={`map-flow ${e.flow}`} d={d} />
             </g>
           );
         })}
       </svg>
 
-      {MAP_NODES.map((n) => {
+      {nodes.map((n) => {
         const p = pos(n);
-        const svc = n.gpu ? gpuNode : svcByName[n.key];
+        const svc = n.gpu ? cardSvcByKey[n.key] : svcByName[n.key];
         if (!svc) return null;
         const st = svc.status;
         return (
@@ -405,11 +420,11 @@ function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {
                 className={`map-node__led ${{ ok: 'led-ok', warn: 'led-warn', err: 'led-err' }[st] || 'led-off'}`}
               />
               <span className="map-node__name">
-                {n.gpu ? 'RTX 5090' : svc.name.replace('poindexter-', '')}
+                {n.gpu ? svc.name : svc.name.replace('poindexter-', '')}
               </span>
             </div>
             <div className="map-node__metric">{svc.metric}</div>
-            {st === 'err' && (
+            {st === 'err' && !n.gpu && (
               <button
                 className="mbtn mbtn--ghost"
                 style={{ marginTop: 7, padding: '4px 8px', fontSize: 9 }}

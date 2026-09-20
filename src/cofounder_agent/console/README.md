@@ -214,9 +214,9 @@ console edit).
 
 ### Service restarts (#909)
 
-The Service Health panel's **Restart** button is live for every container in
-the roster (the full ~44-container roster, not just the top-level services —
-db/redis/minio sidecars and backups included). It goes through the **brain
+The Service Health panel's **Restart** button is live for every container the
+page lists (the full roster, not just the top-level services — db/redis/minio
+sidecars and backups included). It goes through the **brain
 via the DB spinal cord**, not a direct container kill from the worker (the
 worker has no docker.sock — only `poindexter-brain-daemon` does): a click
 POSTs `/api/services/{container}/restart`, which queues a
@@ -227,6 +227,50 @@ firefighter uses. The console polls the request's status and reports the
 REAL outcome — done, failed (with the reason), or still-in-progress — never
 an optimistic guess. `host:true` rows (ollama) have no container to restart
 and say so instead of pretending to act.
+
+### The service list is a union, not the roster (2026-09-19)
+
+`serviceHealth()` returns **the roster in `js/data.js` ∪ whatever cAdvisor
+actually reports**, not the roster alone. It used to end in
+`mock().services.map(...)`: the full `{name=~"poindexter.+"}` vector was
+queried and every container the roster didn't declare was read and discarded.
+Five real containers were up and unseeable that way — `comfyui`, `rife`,
+`stable-audio`, `nut-exporter`, `grafana-renderer` — and unrestartable with
+them, since Restart is driven off these same rows. Nothing surfaced the gap:
+the page looked complete because it listed everything it had been told about.
+
+A container found this way is appended after the roster and flagged
+`discovered: true`, with `sub: 'discovered · not in roster'` — honest that the
+row was _found_, not declared. Curated rows keep their metadata; discovery
+never overwrites a declared `sub`/`port` or reorders the list. Adding the
+service to `js/data.js` upgrades it from discovered to curated.
+
+Contract: `js/__tests__/api.servicehealth.union.test.js`.
+
+### System Map — what it may and may not assert
+
+The Map (`js/modes.jsx`, topology + GPU helpers in `js/map-helpers.js`,
+`window.PXMap`) renders live health only. Three rules, each earned:
+
+- **Edge colour is derived, never authored.** `MAP_EDGES` carries flow
+  _emphasis_ (`'hot'`) only. A literal `'err'`/`'amber'` in that table painted a
+  permanent red link out of `prefect-server` and a permanent amber one out of
+  `image-gen-server`, on infrastructure that was healthy the whole time.
+  `flowKind(statusA, statusB)` decides at render.
+- **One node per GPU, labelled by index.** `gpuCardNodes()` reads the per-card
+  `gpu.gpus` array `api.gpu()` has returned since poindexter#921 (the
+  `[gpu]` fallback mirrors `panels.jsx`). The map previously showed a single
+  node with `'RTX 5090'` hardcoded, reading only the lowest-indexed card — so
+  the second card was invisible, and the label was invented (`nvidia_gpu_*`
+  exports no model name; `api.gpu()` deliberately returns `name: ''`).
+- **GPU consumers draw to the pool, never to a card.** Which card a consumer
+  lands on is a scheduling fact this surface doesn't have, so a consumer→card
+  edge would assert a pinning we'd be making up. A card reporting nothing is
+  `off`, never healthy; a card _warns_ on temperature at the same threshold
+  the Prometheus rules alert on (`GpuTemperatureHigh`), not on utilisation —
+  a card at 100% is doing the work it exists for.
+
+Contract: `js/__tests__/map-helpers.test.js`.
 
 ### Note on Prometheus
 
@@ -333,3 +377,11 @@ contract-tested in `__tests__/chat-helpers.test.js` + `__tests__/api.chat.test.j
 - **Brand.** E3 tokens (cyan/amber, JetBrains Mono + Space Grotesk, square
   corners, colorblind-safe glyphs).
 - **Modes.** Console / Feed / Map / Wall + ⌘K command palette + App Settings.
+- **Pipeline stage strip.** The seven blocks in `PX.pipeline.stages`
+  (`js/data.js`) must cover every node of the live `canonical_blog` graph_def:
+  `withLiveCounts()` counts a task only when its `stage` resolves to a block, so
+  an unmapped node is counted in _no_ block and vanishes from the strip rather
+  than landing in a fallback. Gated by
+  `tests/unit/console/test_console_stage_map_covers_graph_def.py`, which fails
+  in both directions — a spec node this table lacks, and a fossil node the spec
+  has dropped.

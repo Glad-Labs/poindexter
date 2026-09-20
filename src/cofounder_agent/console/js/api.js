@@ -1509,6 +1509,11 @@
     // plus a worker /api/health overlay — the container can be up while FastAPI
     // is wedged. host:true rows (ollama at :11434) have no cAdvisor series, so
     // they're shown neutral, never faked.
+    //
+    // The returned list is the UNION of the data.js roster and whatever
+    // cAdvisor actually reports, so a container that exists but was never added
+    // to the roster still appears (flagged `discovered:true`) rather than being
+    // silently dropped. See the union note inside.
     serviceHealth() {
       return pick(
         async () => {
@@ -1550,7 +1555,39 @@
             const m = Math.floor((secs % 3600) / 60);
             return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
           };
-          return mock().services.map((s) => {
+          // The data.js roster is curated — display order, ports, subs — but it
+          // is NOT the authority on what is RUNNING. This used to `.map()` over
+          // it and drop the rest of the cAdvisor vector, so every container
+          // added to compose after the roster was last hand-edited was
+          // invisible here, LIVE MODE INCLUDED: comfyui, rife, stable-audio,
+          // nut-exporter and grafana-renderer were all up and all unseeable.
+          // Union instead — roster first (keeping its order and metadata), then
+          // anything cAdvisor reports that the roster doesn't know, synthesized
+          // from the container name. A new sidecar now surfaces on its own
+          // instead of waiting for someone to notice it's missing.
+          const known = new Set(
+            mock()
+              .services.map((s) => s.container)
+              .filter(Boolean)
+          );
+          const discovered = Object.keys(age)
+            .filter((c) => !known.has(c))
+            .sort()
+            .map((container) => ({
+              name: container.replace(/^poindexter-/, ''),
+              container,
+              port: null,
+              // Honest about provenance: this row was FOUND, not declared. A
+              // curated `sub` is exactly what it's missing.
+              sub: 'discovered · not in roster',
+              probe: '',
+              img: '',
+              cpu: 0,
+              mem: 0,
+              uptime: '—',
+              discovered: true,
+            }));
+          return [...mock().services, ...discovered].map((s) => {
             if (s.host) {
               // cAdvisor can't see host processes — don't fabricate liveness.
               return { ...s, status: 'off', metric: 'host · not scraped' };

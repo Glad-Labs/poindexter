@@ -55,6 +55,9 @@
     <script src="js/qa-helpers.js"></script>
     <!-- Pure draft-image parsing (window.PXImages) — dependency of drawer.jsx. -->
     <script src="js/image-helpers.js"></script>
+    <!-- System-map topology + per-card GPU helpers (window.PXMap) — must load
+         before modes.jsx, which destructures it at module scope. -->
+    <script src="js/map-helpers.js"></script>
 
     <!-- JSX components (Babel-compiled). app.jsx is LAST: it calls ReactDOM.createRoot. -->
     <script

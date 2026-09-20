@@ -418,6 +418,19 @@
       img: 'grafana/grafana:11.3.0',
     },
     {
+      name: 'grafana-renderer',
+      container: 'poindexter-grafana-renderer',
+      port: null,
+      status: 'ok',
+      metric: 'idle',
+      sub: 'server-side panel PNG/PDF',
+      uptime: '21d 9h',
+      cpu: 1,
+      mem: 180,
+      probe: 'ready ✓',
+      img: 'grafana/grafana-image-renderer:v5.12.2',
+    },
+    {
       name: 'loki',
       container: 'poindexter-loki',
       port: 3100,
@@ -579,6 +592,45 @@
       mem: 900,
       probe: 'ready ✓',
       img: 'glad-labs-website-chatterbox',
+    },
+    {
+      name: 'comfyui',
+      container: 'poindexter-comfyui',
+      port: 8188,
+      status: 'ok',
+      metric: 'queue idle',
+      sub: 'render graphs (ComfyUI)',
+      uptime: '9h 12m',
+      cpu: 2,
+      mem: 3100,
+      probe: 'ready ✓',
+      img: 'glad-labs-website-comfyui',
+    },
+    {
+      name: 'rife',
+      container: 'poindexter-rife',
+      port: 9842,
+      status: 'ok',
+      metric: 'interp idle',
+      sub: 'frame interpolation',
+      uptime: '1d 7h',
+      cpu: 1,
+      mem: 800,
+      probe: 'ready ✓',
+      img: 'glad-labs-website-rife-server',
+    },
+    {
+      name: 'stable-audio',
+      container: 'poindexter-stable-audio',
+      port: 9839,
+      status: 'ok',
+      metric: 'audio idle',
+      sub: 'music/SFX generation',
+      uptime: '2d 3h',
+      cpu: 1,
+      mem: 1500,
+      probe: 'ready ✓',
+      img: 'glad-labs-website-stable-audio-server',
     },
     {
       name: 'gpu-exporter',
@@ -850,6 +902,23 @@
       img: 'prometheuscommunity/postgres-exporter:v0.19.1',
     },
     {
+      // Profile-gated (`ups`), like pgadmin/postiz/ci-runner/gpu-exporter
+      // already on this roster: on an install that doesn't run the profile it
+      // reads `down`, which is the same (deliberate) semantics those carry —
+      // a rostered service that isn't running IS the thing to show.
+      name: 'nut-exporter',
+      container: 'poindexter-nut-exporter',
+      port: 9199,
+      status: 'ok',
+      metric: 'scrape ✓',
+      sub: 'UPS metrics exporter (NUT)',
+      uptime: '21d 9h',
+      cpu: 1,
+      mem: 30,
+      probe: 'ready ✓',
+      img: 'ghcr.io/druggeri/nut_exporter:3.3.0',
+    },
+    {
       name: 'promtail',
       container: 'poindexter-promtail',
       port: null,
@@ -908,12 +977,27 @@
 
   // ── Pipeline ────────────────────────────────────────────────
   const pipeline = {
-    // Real canonical_blog graph_def blocks (36 nodes — see
-    // services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF). Replaces the
-    // deleted research→draft→edit→illustrate→review→publish flow (gone 2026-05-16).
-    // `nodes` lets the live loader map a task's current `stage` → its block.
+    // Every node of the live canonical_blog graph_def, grouped into the seven
+    // blocks CLAUDE.md documents (see
+    // services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF). `nodes` lets
+    // the live loader map a task's current `stage` -> its block.
+    //
+    // COMPLETENESS IS LOAD-BEARING, not cosmetic: withLiveCounts() in app.jsx
+    // does `if (block) counts[block]++`, so a running task parked at a node
+    // missing from this table is counted in NO block and silently vanishes from
+    // the strip. This list had drifted to 35 of 49 nodes — 22% of the last 30
+    // days' atom runs landed in that blind spot — and still carried
+    // `writer_self_review`, split into detect/revise_contradictions 2026-08-28.
+    // tests/unit/console/test_console_stage_map_covers_graph_def.py fails the
+    // build when the spec grows a node this table doesn't have, so the drift
+    // can't come back quietly.
     stages: [
-      { name: 'verify', nodes: ['verify_task'], count: 0, state: '' },
+      {
+        name: 'verify',
+        nodes: ['verify_task'],
+        count: 0,
+        state: '',
+      },
       {
         name: 'writer',
         nodes: [
@@ -922,14 +1006,17 @@
           'check_title_originality',
           'normalize_draft',
           'draft_gate',
-          'writer_self_review',
+          'detect_contradictions',
+          'revise_contradictions',
           'resolve_internal_link_placeholders',
           'reconcile_citations',
+          'llm_reconcile_citations',
+          'inject_affiliate_links',
           'quality_evaluation',
           'url_validation',
         ],
-        count: 2,
-        state: 'hot',
+        count: 0,
+        state: '',
       },
       {
         name: 'image',
@@ -940,8 +1027,8 @@
           'source_featured_image',
           'caption_images',
         ],
-        count: 1,
-        state: 'warn',
+        count: 0,
+        state: '',
       },
       {
         name: 'qa',
@@ -953,21 +1040,34 @@
           'qa_vision',
           'qa_topic_delivery',
           'qa_citations',
+          'qa_numeric_fidelity',
           'qa_unlinked_attribution',
+          'qa_person_mention',
           'qa_consistency',
           'qa_self_consistency',
+          'qa_content_originality',
+          'qa_title_coherence',
+          'qa_self_claim',
+          'qa_freshness',
           'qa_web_factcheck',
           'qa_aggregate',
+          'qa_rewrite',
         ],
-        count: 1,
-        state: 'hot',
+        count: 0,
+        state: '',
       },
       {
         name: 'seo',
+        nodes: ['seo_all_metadata'],
+        count: 0,
+        state: '',
+      },
+      {
+        name: 'media',
         nodes: [
-          'seo_all_metadata',
           'generate_media_scripts',
           'generate_video_shot_list',
+          'review_video_shot_list',
           'capture_training_data',
         ],
         count: 0,
@@ -978,7 +1078,9 @@
         nodes: [
           'compile_meta',
           'persist_task',
+          'social_generate_drafts',
           'record_pipeline_version',
+          'preview_gate',
           'evaluate_auto_publish',
         ],
         count: 0,
