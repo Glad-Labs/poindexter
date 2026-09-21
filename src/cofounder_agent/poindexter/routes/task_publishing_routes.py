@@ -205,7 +205,7 @@ async def approve_task(
 
     **Approve != Publish.** ``approve`` stages the task; ``/publish`` is a
     separate explicit step. This matches the operator memory rule
-    ``feedback_approve_does_not_mean_publish`` — picking the best N from
+    ``feedback_human_approval`` — picking the best N from
     ``awaiting_approval`` is staging, NOT publishing. Pass
     ``auto_publish=true`` explicitly only when you intend a single-step
     approve-and-ship; default is ``false`` (stage only).
@@ -521,7 +521,7 @@ async def approve_task(
         # pipeline_tasks). Without this the approve handler left a
         # pipeline_tasks.status='approved' row with no corresponding
         # posts row, and schedule batch reported "No eligible posts"
-        # — Matt's 2026-05-26 paper cut. See feedback_approve_does_not_mean_publish.
+        # — Matt's 2026-05-26 paper cut. See feedback_human_approval.
         #
         # A ``publish_at`` slot rides the SAME staging call and then promotes
         # the row to status='scheduled' below. It used to take a separate

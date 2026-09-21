@@ -60,21 +60,70 @@ def resolve_ref(ref: str, repo_root: Path) -> tuple[str, str | None]:
     return "flag", None
 
 
-_MEM_RE = re.compile(r"``?((?:feedback|reference|project|decision)_[a-z0-9_]{4,})``?")
+# Citations are written in backticks by convention. Requiring them (and a left
+# boundary) is not cosmetic: the first version matched bare text and flagged
+# `project_directory` inside COMPOSE_PROJECT_DIRECTORY_SETTING_KEY.
+_MEM_RE = re.compile(
+    r"(?<![A-Za-z0-9_])``?((?:feedback|reference|project|decision)_[a-z0-9_]{3,})"
+    r"(?:\.md)?``?"
+)
+
+
+def _is_citation(name: str, have: set[str]) -> bool:
+    """Is this token a memory citation, or just a backticked identifier?
+
+    The prefixes are ordinary English words, so ``project_directory`` — a
+    function PARAMETER in compose_drift_probe — parses as a citation and then
+    reports stale forever, because no such memory file will ever exist.
+
+    Memory slugs are long: 397 of the 402 on disk carry two or more words
+    after the prefix. The five that do not (``decision_log``,
+    ``feedback_honesty``, ``project_monetization``, ``reference_gladlabs``,
+    ``reference_glitchtip``) are recognised only when they RESOLVE. The cost
+    is a false negative if one of those five is ever deleted while still
+    cited; the benefit is that no single-word identifier can produce a
+    permanent false positive. False positives are the expensive failure here
+    — a report nobody trusts gets muted.
+    """
+    if name in have:
+        return True
+    return name.count("_") >= 2
 _SKIP_DIRS = {"__pycache__", ".git", "node_modules", ".venv", "venv"}
 
 
-def _memory_dir() -> Path | None:
-    """The operator's memory directory, or None when not on that machine."""
+def _memory_dir(repo_root: Path | None = None) -> Path | None:
+    """The memory directory for THIS repo, or None when not on that machine.
+
+    Derived from the repo path, never guessed. Claude Code keys a project's
+    memory directory by the checkout path with ``/`` replaced by ``-``, so
+    ``/home/x/glad-labs-website`` -> ``-home-x-glad-labs-website``.
+
+    The first version of this globbed ``*/memory`` and took ``sorted(...)[0]``.
+    That machine has FIVE such directories and the alphabetically-first one
+    holds ZERO files — so every citation in the codebase came back "stale",
+    a false-positive flood that read exactly like a real finding. An empty
+    directory means the scan found nothing to compare against; it never means
+    every reference is dead. Same floor as ``scripts/ci/lib_scan_floor.py``:
+    a check that looked at nothing has not passed.
+    """
     env = os.environ.get("POINDEXTER_MEMORY_DIR")
     if env:
         p = Path(env)
-        return p if p.is_dir() else None
-    home = Path.home() / ".claude" / "projects"
-    if not home.is_dir():
+        return p if p.is_dir() and any(p.glob("*.md")) else None
+    projects = Path.home() / ".claude" / "projects"
+    if not projects.is_dir():
         return None
-    cands = sorted(home.glob("*/memory"))
-    return cands[0] if cands else None
+    if repo_root is not None:
+        keyed = projects / (str(repo_root.resolve()).replace("/", "-")) / "memory"
+        if keyed.is_dir() and any(keyed.glob("*.md")):
+            return keyed
+    # Fall back to the richest candidate rather than the first alphabetically,
+    # and require it to be non-empty.
+    cands = [(len(list(p.glob("*.md"))), p) for p in projects.glob("*/memory")]
+    cands = [(n, p) for n, p in cands if n > 0]
+    if not cands:
+        return None
+    return max(cands)[1]
 
 
 def _comment_text(path: Path):
@@ -112,7 +161,7 @@ def stale_memory_citations(root: Path, mem: Path) -> dict[str, list[str]]:
             rel = p.relative_to(root).as_posix()
             for blob in _comment_text(p):
                 for name in set(_MEM_RE.findall(blob)):
-                    if name in have:
+                    if name in have or not _is_citation(name, have):
                         continue
                     dead.setdefault(name, [])
                     if rel not in dead[name]:
@@ -141,7 +190,7 @@ def main() -> int:
             flags.append(ref)
     # Memory citations: report only. A missing memory dir is reported as
     # SKIPPED, never as clean — a check that looked at nothing has not passed.
-    mem = _memory_dir()
+    mem = _memory_dir(root)
     if mem is None:
         mem_note = ("memory citations: SKIPPED — no memory directory on this "
                     "machine (set POINDEXTER_MEMORY_DIR to enable)")

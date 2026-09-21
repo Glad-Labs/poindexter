@@ -254,7 +254,7 @@ class PluginScheduler:
         # operator edits are never clobbered and re-boots are no-ops. After
         # this, an operator tunes any job's cadence by editing
         # ``config.schedule`` in the ``plugin.job.<name>`` row — no code
-        # change, no redeploy (feedback_db_first_config / feedback_no_env_vars).
+        # change, no redeploy (feedback_db_first_config / feedback_db_first_config).
         await self._seed_job_config_if_absent(job)
 
         cfg = await PluginConfig.load(self._pool, "job", job.name)
@@ -365,7 +365,7 @@ class PluginScheduler:
             # happens when the seeded catch-up fire above is already due.
             # ``None`` removes the grace deadline entirely so the catch-up
             # executes on the next tick instead of being dropped.
-            # See ``feedback_apscheduler_misfire_grace_gotcha``.
+            # See ``reference_apscheduler_misfire_grace_gotcha``.
             misfire_grace_time=None,
             **add_kwargs,
         )

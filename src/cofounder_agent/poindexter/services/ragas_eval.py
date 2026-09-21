@@ -362,7 +362,7 @@ async def _build_ragas_models(
     # local_llm_api_url is the canonical Ollama base-URL setting (same
     # key topic_ranking.py / llm_text.py use). Reading OLLAMA_BASE_URL
     # directly was the legacy env-var bypass we're retiring — see
-    # `feedback_no_silent_defaults` and `feedback_no_env_vars`.
+    # `feedback_no_silent_defaults` and `feedback_db_first_config`.
     base_url = "http://localhost:11434"
     if site_config is not None:
         try:

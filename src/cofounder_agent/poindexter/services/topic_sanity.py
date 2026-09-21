@@ -10,9 +10,8 @@ canonical_blog run burned GPU time writing an "article" seeded from garbage
 (which pulled internal alert vocabulary into draft content) before the QA
 rails finally rejected it at the last gate.
 
-This module is the deterministic pre-task guard for that class. Per
-``feedback_calculated_vs_generated``: an LLM scores whatever text it is
-handed, so contentless-ness must be *calculated*. The rules are
+This module is the deterministic pre-task guard for that class. An LLM scores whatever text it is
+handed, so contentless-ness must be *calculated*, never asked for. The rules are
 intentionally minimal — sanity, not quality (thin-but-real topics stay the
 QA rails' job):
 

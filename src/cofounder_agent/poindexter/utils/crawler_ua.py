@@ -14,7 +14,8 @@ where ``{contact}`` is the operator's contact URL from
 ``app_settings.crawler_contact_url``. When that setting is unset/empty the
 ``; +{contact}`` portion is **omitted entirely** so OSS forks never ship the
 source operator's contact URL as a baked-in default (the leak this guard
-closes — see ``feedback_no_operator_info_to_public_repo``).
+closes — operator-specific values must never be baked defaults in code
+that ships to the public mirror).
 
 This is the single source of truth for that UA shape. Callers pass their own
 ``product`` token (``PoindexterCitationVerifier`` / ``PoindexterLinkCheck`` /

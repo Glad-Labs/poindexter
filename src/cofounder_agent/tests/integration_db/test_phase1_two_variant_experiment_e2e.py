@@ -73,8 +73,8 @@ _TOTAL_PICKS = 200
 # Seed picked so the 200 picks land in a fair-ish split — verified
 # locally to come out within the ±5% tolerance band. Hard-coding this
 # is the difference between a "natural randomness, hope it's fair" test
-# (flake risk) and an actual contract pin per
-# ``feedback_no_flaky_tests``.
+# (flake risk) and an actual contract pin: a test that
+# depends on unseeded randomness is a flake, not a check.
 _SAMPLING_SEED = 20260529
 # Sampling tolerance — ±5% of 50% per the task spec. With n=200 and a
 # deterministic seed the split is exact; the tolerance just guards

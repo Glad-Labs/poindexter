@@ -405,7 +405,7 @@ async def run_mcp_http_probe(
         logger.info("[MCP_HTTP_PROBE] %s ok (HTTP %s)", probe_url, status_code)
         _consecutive_failures = 0
         _mark_recovered()
-        # Success-path audit_log row — per feedback_total_visibility a
+        # Success-path audit_log row — per feedback_grafana_everything a
         # healthy probe must leave a footprint operators can confirm.
         # Failure paths write alert_events via _handle_failure; this row
         # is the "I ran clean" signal. Best-effort: never fail the probe

@@ -64,8 +64,8 @@ async def video_feed(
        seam (``feedback_filter_on_seams_not_slugs``). dev_diary's policy is
        ``{}``, excluding those posts even if a stray asset exists.
     2. ``media_approvals.status='approved'`` (medium='video') — the
-       operator-approval gate (``feedback_human_approval`` /
-       ``feedback_approval_gate_all_media``). Pending/rejected video never
+       operator-approval gate (``feedback_human_approval`` — every medium,
+       not just blog posts). Pending/rejected video never
        reaches the feed; the fix for a missing episode is to approve the row
        (``poindexter media approve <id> video``), not to strip the gate.
 

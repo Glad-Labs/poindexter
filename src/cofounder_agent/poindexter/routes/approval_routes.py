@@ -364,7 +364,7 @@ async def unapprove_task_route(
     """Undo an operator approval that hasn't been published yet.
 
     Only tasks with status 'approved' can be unapproved — approve only
-    stages a task (see ``feedback_approve_does_not_mean_publish``), so this
+    stages a task (see ``feedback_human_approval``), so this
     is always safe. Reverts to 'awaiting_approval' by default (back in the
     review queue, content unchanged), or straight to 'rejected_retry' /
     'rejected_final' via ``to``. Also un-stages the linked ``posts`` row,

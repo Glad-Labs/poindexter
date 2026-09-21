@@ -368,7 +368,7 @@ class TestFindHallucinatedReferences:
 # common tech proper-nouns ('Steam', 'Vulkan', 'git', 'npm',
 # 'JavaScript', 'JWT', 'LoRA', 'OWASP', etc.) as hallucinated library
 # references. The base whitelist was rebuilt around Matt's brand niches
-# (ai/ml, gaming, hardware per ``feedback_brand_niches``) plus the
+# (ai/ml, gaming, hardware per Matt's brand niches) plus the
 # common-tech long tail. These tests pin the categories so a future
 # refactor can't silently re-introduce the noise.
 

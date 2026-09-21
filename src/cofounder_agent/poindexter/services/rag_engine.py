@@ -126,7 +126,7 @@ def _get_embed_model(
     ``app_settings.local_llm_api_url`` via the retriever — see
     ``get_rag_retriever``. Callers should never read ``OLLAMA_BASE_URL``
     directly; that env var bypasses DB-first config (per
-    `feedback_no_silent_defaults` + `feedback_no_env_vars`).
+    `feedback_no_silent_defaults` + `feedback_db_first_config`).
     """
     opts_key = json.dumps(embed_options or {}, sort_keys=True)
     cache_key = f"{model_name}@{base_url}@{opts_key}"
@@ -401,7 +401,7 @@ async def get_rag_retriever(
         # (the same key topic_ranking.py / llm_text.py use). Reading
         # OLLAMA_BASE_URL directly was the legacy env-var bypass we're
         # retiring with this sweep — see `feedback_no_silent_defaults`
-        # and `feedback_no_env_vars`.
+        # and `feedback_db_first_config`.
         base_url = embed_base_url or (
             site_config.get("local_llm_api_url", "") or "http://localhost:11434"
         )

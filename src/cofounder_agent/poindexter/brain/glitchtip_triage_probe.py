@@ -1,6 +1,6 @@
 """GlitchTip triage probe — auto-resolve known noise, alert on novel issues.
 
-Operationalizes Matt's `feedback_alert_auto_triage.md`: every alert must
+Operationalizes Matt's the standing alert-triage rule: every alert must
 have a resolution path, and the system tries to fix before bothering
 humans. GlitchTip is the worker's error-tracking sink. Without triage
 it accumulates hundreds of "issues" that are really one of three things:

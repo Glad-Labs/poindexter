@@ -4,7 +4,7 @@ Extracted from FinalizeTaskStage. Calls auto_publish_gate.evaluate and
 surfaces the decision dict on the pipeline state for observability.
 
 Idempotent — observe-only by default (dry_run=true until edit-distance
-track record exists per feedback_auto_publish_requires_edit_distance_track_record).
+track record exists per project_autopublish_ramp).
 
 Produces: auto_publish_gate (dict).
 

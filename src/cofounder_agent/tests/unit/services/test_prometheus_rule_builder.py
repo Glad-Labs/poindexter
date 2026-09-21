@@ -946,7 +946,7 @@ class TestQaRailFullySkippedRule:
         assert rule["category"] == "content"
         assert rule["severity"] == "warning"  # → Discord, not Telegram spam
         assert "poindexter_qa_rail_skip_ratio" in rule["expr"]
-        # Remediation (feedback_alert_auto_triage — every alert needs a path).
+        # Remediation (every alert needs a path).
         desc = rule["description"].lower()
         assert "research_context" in desc
         assert "master" in desc and "flag" in desc

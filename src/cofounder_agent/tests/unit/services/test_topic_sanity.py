@@ -7,7 +7,7 @@ sailed through tap discovery, embedding pre-rank, LLM final-score (which
 ranked it TOP of its batch at 65), auto-resolve, and a full canonical_blog
 GPU run before ``rejected_final`` at the last gate. The evaluator under
 test is the deterministic pre-task gate that blocks that class outright —
-per ``feedback_calculated_vs_generated``, garbage detection is calculated,
+per the calculated-not-generated rule, garbage detection is calculated,
 never delegated to an LLM.
 """
 

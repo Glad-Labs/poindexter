@@ -752,7 +752,7 @@ class TestCheckPostMediaDbRowPresence:
 @pytest.mark.asyncio
 class TestRecordMediaAssetSeedsApprovalGate:
     """Pins the self-healing fix for the 2026-05-27→06-13 podcast-feed
-    freeze (``feedback_approval_gate_all_media``).
+    freeze (the approval gate covering every medium).
 
     Root cause: reconciliation stamped ``media_assets`` rows but the only
     seeder of ``media_approvals`` rows (``podcast_distribute``) is dormant

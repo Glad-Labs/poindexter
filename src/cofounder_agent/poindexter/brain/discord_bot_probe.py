@@ -246,7 +246,7 @@ async def run_discord_bot_probe(
 
     if status_code == 200:
         logger.info("[DISCORD_BOT_PROBE] Discord bot reachable (HTTP 200)")
-        # Success-path audit_log row — per feedback_total_visibility a
+        # Success-path audit_log row — per feedback_grafana_everything a
         # healthy probe must be distinguishable from a dead one. Failure
         # paths above write alert_events; this row is the "I ran clean"
         # signal Grafana operators can confirm. Best-effort write —

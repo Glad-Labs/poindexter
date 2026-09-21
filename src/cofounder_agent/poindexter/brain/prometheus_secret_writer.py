@@ -8,7 +8,7 @@ time. We have two bad options and one good one:
 * **Inline in prometheus.yml**: places the secret in git. Did this
   once (PR #102), got it leaked.
 * **Env var into Prometheus container**: violates Matt's "no env vars"
-  rule (see feedback_no_env_vars.md). Also still requires render-at-boot.
+  rule (see feedback_db_first_config.md). Also still requires render-at-boot.
 * **Use Prometheus's `password_file:` directive**: Prometheus reads the
   file at every scrape, so rotation is just "rewrite the file." No
   Prometheus restart, no template substitution, no env vars.

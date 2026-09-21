@@ -419,7 +419,7 @@ class SourceFeaturedImageStage:
             # Capture the chosen style on the version-row update AND emit
             # an audit_log row so operators can verify rotation from
             # Grafana (see Mission Control "Image style mix" panel —
-            # 2026-05-28). Per ``feedback_total_visibility``.
+            # 2026-05-28). Per ``feedback_grafana_everything``.
             async def _on_style(style: str) -> None:
                 updates["image_style"] = style
                 db = context.get("database_service")

@@ -14,7 +14,7 @@ a soft, presence-based one: the console is served where it exists and simply
 absent where it doesn't — the same convention the private business modules use
 (they aren't shipped to OSS, and the substrate copes with their absence). See
 ``docs/architecture/2026-06-04-module-visibility-sync-design.md`` and
-``feedback_no_operator_info_to_public_repo``.
+the no-operator-info-in-the-public-mirror rule.
 
 This is the single call site for that mount; ``main.py`` invokes
 :func:`mount_operator_console` after the API routers are registered so the

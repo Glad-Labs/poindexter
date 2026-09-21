@@ -83,7 +83,7 @@ un-reviewed. This is the durable fix for the 2026-05-27→06-13 podcast-feed
 freeze: reconciliation stamped ``media_assets`` rows but the only seeder
 (``podcast_distribute``) is dormant behind ``podcast_pipeline_trigger_enabled``,
 so reconciliation-made podcasts never entered the approval queue and the
-gated feed silently excluded them (``feedback_approval_gate_all_media``).
+gated feed silently excluded them (the approval gate covering every medium).
 
 ## Config (``plugin.job.media_reconciliation``)
 

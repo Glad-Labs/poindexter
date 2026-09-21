@@ -2,7 +2,7 @@
 
 Per ``feedback_cli_first``: the CLI is the default operator interface;
 MCP + REST are secondary surfaces. Per
-``feedback_auto_publish_requires_edit_distance_track_record``: the
+``project_autopublish_ramp``: the
 operator flips auto-publish from observe-only to live ONLY after the
 edit-distance data shows trust is earned. This command surfaces that
 data.

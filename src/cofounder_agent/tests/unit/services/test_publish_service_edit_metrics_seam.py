@@ -7,7 +7,7 @@ approve→stage→promote around 2026-06-24. Both of that flow's seams return
 before the tail — the ``stage_only`` short-circuit at post creation, and the
 ``_promote_or_skip_existing`` promote-in-place short-circuit at go-live — so
 the auto-publish gate's edit-distance training signal
-(``feedback_auto_publish_requires_edit_distance_track_record``) starved with
+(``project_autopublish_ramp``) starved with
 no log line at all. Nothing raised; the code was simply unreachable. Verified
 via Loki: last success line 2026-06-23T18:16:15Z (the last immediate
 publish), zero ``record_post_approve_metrics failed`` warnings since, daily

@@ -531,7 +531,7 @@ def _escalate_unknown(checks: list[CheckResult]) -> None:
 
     v1 ships the deterministic core only and keeps this typed seam so the LLM
     path lands cleanly later. It intentionally does NOTHING today — the
-    recover/deliver path stays deterministic (``feedback_calculated_vs_generated``).
+    recover/deliver path stays deterministic (the calculated-not-generated rule).
     """
     return None
 

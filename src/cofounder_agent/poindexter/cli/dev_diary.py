@@ -19,7 +19,7 @@ Subcommands:
 
 Per ``feedback_design_for_llm_consumers``: every subcommand has a
 ``--json`` mode so an LLM operator can parse output reliably.
-Per ``feedback_always_keep_ml_in_mind``: every operator_note row
+Every operator_note row
 becomes training data — the corpus of (note, edited_post) pairs is
 the dataset for future voice fine-tuning.
 """

@@ -242,7 +242,7 @@ class TestVideoFeed:
         """The video feed MUST gate on an approved media_approvals row
         (medium='video') joined to a video media_assets row — mirroring the
         podcast feed and the operator requirement that ALL media is gated
-        before any public surface (``feedback_approval_gate_all_media``).
+        before any public surface (the approval gate covering every medium).
 
         A mock can't exercise a real JOIN, so we pin the gate in the query
         text — the same SQL-shape contract the podcast/reconciliation tests

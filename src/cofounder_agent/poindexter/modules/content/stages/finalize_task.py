@@ -441,7 +441,7 @@ class FinalizeTaskStage:
         )
 
         # Auto-publish gate evaluation — observe-only by default per
-        # feedback_auto_publish_requires_edit_distance_track_record. Logs
+        # project_autopublish_ramp. Logs
         # "would have auto-published Y/N" via audit_log so the operator
         # can see the gate's verdicts BEFORE flipping it live. Never
         # actually approves while dry_run=true (default).

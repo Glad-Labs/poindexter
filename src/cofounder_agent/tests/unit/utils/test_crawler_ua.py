@@ -4,7 +4,7 @@ The shared crawler User-Agent builder. The critical contract is the OSS
 contact-URL leak guard: when ``app_settings.crawler_contact_url`` is unset
 the ``; +<url>`` portion MUST be omitted so forks don't ship the source
 operator's contact URL as a baked-in default
-(``feedback_no_operator_info_to_public_repo``).
+(the no-operator-info-in-the-public-mirror rule).
 """
 
 from __future__ import annotations

@@ -5,7 +5,7 @@ games — same authentication model as the Twitch API (since both are
 owned by Amazon/Twitch). Free for non-commercial use up to 4 requests/sec.
 
 Indie-development articles are core to the Glad Labs niche set
-(see ``feedback_brand_niches.md``). This source surfaces:
+(see Matt's brand niches). This source surfaces:
 
 * games tagged ``themes = 32`` (Indie) on IGDB
 * released in the last ``config.lookback_days`` window

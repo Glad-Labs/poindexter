@@ -899,7 +899,7 @@ async def run_operator_url_probe(
         summary["tailscale_drift_count"], summary["notifications_sent"],
     )
 
-    # Success-path audit_log row — per ``feedback_total_visibility`` a
+    # Success-path audit_log row — per ``feedback_grafana_everything`` a
     # probe that runs cleanly must be distinguishable from one that
     # never fired. Failures already get notify_operator above; this row
     # is the "I ran" signal operators can confirm in Grafana even when

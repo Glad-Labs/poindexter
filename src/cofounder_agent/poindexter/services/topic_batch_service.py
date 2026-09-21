@@ -862,7 +862,7 @@ class TopicBatchService:
         didn't sink it and the LLM final-scorer ranked it TOP of its batch
         (65 vs 40-48 for real headlines), so it auto-resolved into a full
         GPU run. Sanity must be calculated, not LLM-judged
-        (``feedback_calculated_vs_generated``); this filter runs after
+        (the calculated-not-generated rule); this filter runs after
         dedup and before embedding so garbage is never embedded, ranked,
         or carried forward.
 

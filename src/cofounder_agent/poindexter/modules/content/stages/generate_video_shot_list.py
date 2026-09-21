@@ -243,7 +243,7 @@ def _repair_json_syntax(text: str) -> str:
     output goes straight back to ``json.loads`` — anything still malformed
     fails there exactly like an unrepaired parse does today. Deterministic
     repair beats an LLM retry burning writer-grade GPU time
-    (``feedback_calculated_vs_generated``).
+    (the calculated-not-generated rule).
     """
     out: list[str] = []
     i = 0
@@ -360,7 +360,7 @@ def _reconcile_shot_list(parsed: Any) -> Any:
     dominant remaining reject classes). These constraints are *calculated*,
     not creative, so we compute them here rather than throw away the
     director's otherwise-usable shot choices
-    (``feedback_calculated_vs_generated``). Creative fields (sources,
+    (the calculated-not-generated rule). Creative fields (sources,
     prompts, queries, intents) are never touched.
 
     Repairs, in order:

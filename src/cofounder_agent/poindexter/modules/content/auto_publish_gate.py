@@ -1,6 +1,6 @@
 """``auto_publish_gate`` — observe-only auto-publish decision logger.
 
-Per ``feedback_auto_publish_requires_edit_distance_track_record``:
+Per ``project_autopublish_ramp``:
 auto-publish gates on edit-distance trending to zero across N
 consecutive runs, NOT on quality_score alone. Per
 ``feedback_human_approval``: until the operator explicitly opts in,

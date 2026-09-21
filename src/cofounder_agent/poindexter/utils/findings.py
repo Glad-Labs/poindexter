@@ -20,7 +20,7 @@ Why this shape (and not a direct Gitea→GitHub rewire):
 
 - Detection and delivery are separate concerns. Jobs become
   detection-only; routing logic lives in one place (the future
-  dispatcher in the brain daemon, per ``feedback_alert_auto_triage``).
+  dispatcher in the brain daemon).
 - Findings persist regardless of whether any delivery channel works.
   The 8-day silent-failure regression is not repeatable.
 - Per-kind delivery policy can land later, configurable via

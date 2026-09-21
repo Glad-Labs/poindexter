@@ -1340,7 +1340,7 @@ async def _record_edit_distance_metrics(
 
     Pre-approve content is what finalize_task snapshotted; post-approve is what
     shipped. The diff is the gate's primary trust signal per
-    ``feedback_auto_publish_requires_edit_distance_track_record``. Best-effort —
+    ``project_autopublish_ramp``. Best-effort —
     a failure here must never fail a successful publish, but it must be LOUD
     (warning + finding, not the pre-2026-07-11 debug swallow): the gate's
     training signal starving is invisible in the product itself.
@@ -1397,7 +1397,7 @@ async def _record_edit_distance_metrics(
                 "succeeded, but no row was written to "
                 "published_post_edit_metrics — the auto-publish gate's "
                 "edit-distance training signal is starving. See "
-                "feedback_auto_publish_requires_edit_distance_track_record."
+                "project_autopublish_ramp."
             ),
             dedup_key=f"edit_metrics_record_failed_{type(exc).__name__}",
         )
@@ -1621,7 +1621,7 @@ async def publish_post_from_task(
             ``services.scheduling_service`` queries via ``schedule batch``.
             No revalidation, no social-queue, no distribution recording —
             those fire on the eventual publish via ``scheduled_publisher``.
-            Per the ``feedback_approve_does_not_mean_publish`` rule,
+            Per the ``feedback_human_approval`` rule,
             approving a task without ``auto_publish`` should land here.
         background_tasks: Optional FastAPI BackgroundTasks for non-blocking work
 
@@ -1870,7 +1870,7 @@ async def publish_post_from_task(
     # for later traceability, then return. Skipping the post-publish
     # webhook/cloud-sync/distribution side-effects entirely — those
     # fire when scheduled_publisher promotes the staged row to
-    # 'published'. See `feedback_approve_does_not_mean_publish`.
+    # 'published'. See `feedback_human_approval`.
     if stage_only:
         try:
             await db_service.update_task_status(
