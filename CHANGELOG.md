@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## [0.144.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.143.0...v0.144.0) (2026-09-21)
+
+
+### Features
+
+* **brain:** probe the second, vision-pinned Ollama ([#3888](https://github.com/Glad-Labs/glad-labs-stack/issues/3888)) ([a01307a](https://github.com/Glad-Labs/glad-labs-stack/commit/a01307a818f9e51981764b65b9008c254fbb9ed8))
+* **ci:** a producer must have a consumer — ratchet it ([#3893](https://github.com/Glad-Labs/glad-labs-stack/issues/3893)) ([551975f](https://github.com/Glad-Labs/glad-labs-stack/commit/551975fec631491b2e723b53bb70410e7ffe08c0))
+* **ci:** stop stale comments — ratchet dead file refs, report dead memory refs ([#3894](https://github.com/Glad-Labs/glad-labs-stack/issues/3894)) ([41cf360](https://github.com/Glad-Labs/glad-labs-stack/commit/41cf360100350cd65e09bfda0679de9e93db1318))
+* **deploy:** verify containers run the code we deployed, not just that they're healthy ([#3895](https://github.com/Glad-Labs/glad-labs-stack/issues/3895)) ([f8f8218](https://github.com/Glad-Labs/glad-labs-stack/commit/f8f8218cc4a47cadcf3271ea54788c9d9d8dce9f))
+
+
+### Bug Fixes
+
+* **brain:** name every URL the probe config sync resolves ([#3889](https://github.com/Glad-Labs/glad-labs-stack/issues/3889)) ([c31bb63](https://github.com/Glad-Labs/glad-labs-stack/commit/c31bb63fe5099466409cd1b47bfafed38f37ef92))
+* **console:** a sidecar parked by game mode is not a fault ([#3887](https://github.com/Glad-Labs/glad-labs-stack/issues/3887)) ([f8c7056](https://github.com/Glad-Labs/glad-labs-stack/commit/f8c70561f325e37481a90319961351f47d25df9f))
+* **console:** the GPU convergence point was an unlabelled node ([#3885](https://github.com/Glad-Labs/glad-labs-stack/issues/3885)) ([6af65ef](https://github.com/Glad-Labs/glad-labs-stack/commit/6af65ef116849c4f32409db994357c7bc1f8eafa))
+* **qa:** the alias guard could not catch the bug it was written for ([#3891](https://github.com/Glad-Labs/glad-labs-stack/issues/3891)) ([6dada9d](https://github.com/Glad-Labs/glad-labs-stack/commit/6dada9d771cc82391b6d34bd146800719b919fca))
+* **video:** grade shots on looks and topic, not on containing people ([#3892](https://github.com/Glad-Labs/glad-labs-stack/issues/3892)) ([47ee8f4](https://github.com/Glad-Labs/glad-labs-stack/commit/47ee8f444b07a99dbc7f2bdbcb07c511143d32fb))
+* **video:** make the shot vision-QA rail able to see defects ([#3890](https://github.com/Glad-Labs/glad-labs-stack/issues/3890)) ([8fc6ad6](https://github.com/Glad-Labs/glad-labs-stack/commit/8fc6ad6476de737f0c7cdee9832830056f8acd9f))
+* **video:** record WHY a shot fell back, not just that it did ([#3886](https://github.com/Glad-Labs/glad-labs-stack/issues/3886)) ([dcf51d0](https://github.com/Glad-Labs/glad-labs-stack/commit/dcf51d00073d719e033bb400ba316a067447a24e))
+* **video:** stop the Pexels fallback searching for the word "illustration" ([#3884](https://github.com/Glad-Labs/glad-labs-stack/issues/3884)) ([786dcb3](https://github.com/Glad-Labs/glad-labs-stack/commit/786dcb3ec53f02a4e757c41bca9a07c9c71e0f93))
+
 ## [0.143.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.142.0...v0.143.0) (2026-09-20)
 
 
