@@ -559,6 +559,25 @@ if [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ] && { [ -n "$rebuild_services" ]
   fi
 fi
 
+# ---- identity check (step 6d, 2026-09-20) ---------------------------------
+# The health gate above answers "is it healthy". This answers "is it running
+# the code we just deployed" — a different question with a different failure.
+# A container running month-old code is perfectly healthy: it passes the gate,
+# passes the restart-loop probe, and `docker ps` shows it green. That is how a
+# brain change was merged, pulled, and never reached the running daemon on
+# 2026-09-20 (the brain image is BAKED; a pull moves no code into it).
+# Advisory: it reports, it does not roll back — a stale image is a missed
+# rebuild, not a broken deploy, and auto-rebuilding here would race step 6b.
+IDENTITY_CHECK="$DEPLOY_DIR/scripts/linux/verify_deploy_identity.py"
+if [ "$NO_GATE" = "0" ] && [ -f "$IDENTITY_CHECK" ]; then
+  identity_out="$(python3 "$IDENTITY_CHECK" --repo "$DEPLOY_DIR" 2>>"$LOG_FILE")"; identity_rc=$?
+  case "$identity_rc" in
+    0) log "identity check: every running container matches the checkout" ;;
+    1) log "identity check: STALE container(s) — running code that is not the checkout. $(printf '%s' "$identity_out" | tr '\n' ' ')" WARN ;;
+    *) log "identity check: could not run (rc=$identity_rc)" WARN ;;
+  esac
+fi
+
 # ---- game-mode re-park (step 6c) ------------------------------------------
 # Same keys as services/game_mode.py + brain/compose_drift_probe.py; the
 # timestamp compare happens in Postgres (ISO-8601 in bash is not worth getting
