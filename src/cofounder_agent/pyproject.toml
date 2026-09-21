@@ -140,7 +140,7 @@ markdown = "^3.10"
 # Utilities
 slowapi = "^0.1.9"
 starlette = ">=1.3.1"  # CVE-2026-48710 (BadHost) — Host-header URL re-parse can shift request.url.path
-cryptography = ">=48.0.1"  # GHSA-537c-gmf6-5ccf (bundled OpenSSL, Trivy HIGH) + GHSA-r6ph-v2qm-q3c2, GHSA-m959-cc7f-wv43, GHSA-p423-j2cm-9vmq
+cryptography = ">=50.0.1"  # GHSA-537c-gmf6-5ccf (bundled OpenSSL, Trivy HIGH) + GHSA-r6ph-v2qm-q3c2, GHSA-m959-cc7f-wv43, GHSA-p423-j2cm-9vmq
 # sqladmin removed — admin panel broken (404), pgAdmin used instead
 email-validator = "^2.3.0"
 resend = "^2.35.0"
