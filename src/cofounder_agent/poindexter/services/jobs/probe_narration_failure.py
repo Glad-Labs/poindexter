@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -84,6 +85,42 @@ _OWN_HISTORY_QUERY = """
 """
 
 
+def _parked_by_game_mode(site_config: Any, engine: str, url: str) -> str | None:
+    """Skip-reason when the TTS sidecar is down because game mode parked it.
+
+    ``poindexter game on`` stops the services on ``game_mode_parked_services``
+    for a bounded window, so an unreachable engine during that window is the
+    operator's own doing, not an outage. Incident 2026-09-21: chatterbox was
+    parked at 21:53 and this probe paged critical at 00:41 and 01:41 on the
+    resulting connect errors. Returning a skip (``healthy=None``) rather than
+    ``False`` also breaks the consecutive-unhealthy streak, so the window can
+    never count toward the page that fires once the game is over.
+
+    A service is "the engine's" when the health URL's hostname (the compose
+    service name on the stack network) or the engine name itself is on the
+    parked list. Anything unparsable degrades to "not parked" — this must
+    never hide a real outage.
+    """
+    from poindexter.services import game_mode
+
+    try:
+        if not game_mode.is_active(site_config):
+            return None
+        parked = set(game_mode.parked_services(site_config))
+    except Exception as exc:  # noqa: BLE001 — a broken read must fail toward probing
+        logger.warning("[probe_narration] game-mode read failed, probing TTS anyway: %s", exc)
+        return None
+    host = (urlsplit(url).hostname or "").strip().lower()
+    candidates = {c for c in (host, engine.strip().lower()) if c}
+    hit = sorted(candidates & {p.lower() for p in parked})
+    if not hit:
+        return None
+    return (
+        f"{engine} parked by game mode ({hit[0]} is on "
+        f"{game_mode.PARKED_SERVICES_KEY}) — probe skipped"
+    )
+
+
 def _cfg_bool(site_config: Any, key: str, default: bool) -> bool:
     return site_config.get_bool(key, default) if site_config is not None else default
 
@@ -107,6 +144,10 @@ async def _probe_tts(site_config: Any, *, http_client_factory: Any = None) -> tu
     engine, url = resolve_tts_health_url(site_config)
     if not url:
         return None, f"no health URL resolvable for engine {engine!r} — probe skipped"
+
+    parked_reason = _parked_by_game_mode(site_config, engine, url)
+    if parked_reason:
+        return None, parked_reason
 
     if http_client_factory is None:
         http_client_factory = httpx.AsyncClient

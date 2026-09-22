@@ -123,10 +123,35 @@ This does not affect gaming: the display GPU is card 0, and that is the one
 game mode clears. If you genuinely need the second card too, stop
 `ollama-vision.service` by hand; game mode will not override a deliberate pin.
 
+## Probes that know about game mode
+
+A parked service is unreachable on purpose, so any probe that live-checks one
+has to read `game_mode_until` or it will page on the operator's own action.
+
+- `compose_drift_probe` folds the parked list into its on-demand set while
+  the window is open, **actively stops** a parked service that is still
+  running (the MCP path has no docker socket, so the brain does the stop on
+  its next cycle), and `docker start`s each parked container once the window
+  lapses — **including services behind a compose profile that is not in
+  `compose_drift_active_profiles`**. Being on `game_mode_parked_services` is
+  the operator's statement that the service normally runs; a profile that was
+  never brought up has no container to start, so nothing is created. (Before
+  2026-09-21 the profile check won: chatterbox — `profiles: [tts-hq]` — stayed
+  `exited` after the game while the narration probe paged critical hourly.)
+- `probe_narration_failure` skips its live TTS health check while the engine's
+  service is parked, recording `tts_healthy=skipped` so the window can never
+  count toward its consecutive-unhealthy streak.
+
+If you add a probe that reaches a GPU sidecar, check `services.game_mode`
+first (`is_active` + `parked_services`) and return "skipped", not "down".
+
 ## Known gap
 
-When triggered from MCP (no docker socket), the parked containers keep running
-until the next brain cycle picks them up — GPU _admission_ pauses immediately,
-but resident VRAM is not freed until then. The CLI path has no such delay.
-Closing this means teaching `compose_drift_probe` to actively stop a running
-parked service rather than only declining to start it.
+`game_mode_parked_services` holds compose _service_ names, and a name that
+does not match a service in the compose file parks nothing — silently. The
+seeded default lists `stable-audio`, but the compose service is
+`stable-audio-server` (container `poindexter-stable-audio`), so game mode has
+never parked it and the drift probe restores it mid-game as ordinary drift.
+`poindexter game status` reports only the names it was given, so the mismatch
+is invisible from there; fix the setting value, or teach `enable()` to reject
+a name absent from the compose spec.

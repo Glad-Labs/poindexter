@@ -1355,15 +1355,21 @@ async def run_compose_drift_probe(
         # Game mode OFF: a service on the parked list that is sitting stopped
         # is the brain's own doing — put it back regardless of the general
         # auto-recover flag (`game off` promises "restart on the next cycle").
-        # Not for on-demand / inactive-profile services (allowed to be down,
-        # and we do not know whether they ran before the game). Only
+        # Not for on-demand services (allowed to be down, and we do not know
+        # whether they ran before the game). An inactive compose profile does
+        # NOT exempt a parked service: the operator listing it on
+        # `game_mode_parked_services` is the statement that it normally runs,
+        # and `_inspect_stopped` already requires an existing container, so a
+        # profile that was never brought up has nothing to restore. Incident
+        # 2026-09-21: chatterbox (`profiles: [tts-hq]`, profile not in
+        # compose_drift_active_profiles) stayed `exited` after the window
+        # while the narration probe paged critical every hour. Only
         # exited/created/dead, never restarting; a failed start falls through
         # to the ordinary drift handling below.
         if (
             not game_mode_active
             and svc_name in game_mode_parked_list
             and svc_name not in on_demand_services
-            and not profile_inactive
             and _inspect_stopped(inspect)
         ):
             ok, msg = await asyncio.to_thread(start_fn, container_name)

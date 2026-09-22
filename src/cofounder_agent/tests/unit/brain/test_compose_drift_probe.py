@@ -957,6 +957,61 @@ async def test_game_mode_over_restores_a_parked_service_even_with_auto_recover_o
 
 
 @pytest.mark.asyncio
+async def test_game_mode_over_restores_a_parked_service_behind_an_inactive_profile():
+    """Incident 2026-09-21: chatterbox is `profiles: [tts-hq]` and that profile
+    is not in compose_drift_active_profiles, so the restore path skipped it and
+    it sat `exited` after the game while the narration probe paged critical
+    hourly. Being on the parked list is the operator saying "this runs";
+    an existing stopped container is proof it ran before the window."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={
+        "game_mode_until": "",  # off
+        "game_mode_parked_services": "chatterbox",
+        cd.ACTIVE_PROFILES_SETTING_KEY: "operator,ci-runner",  # tts-hq NOT active
+    })
+    spec = _spec({
+        "chatterbox": {"container_name": "poindexter-chatterbox", "profiles": ["tts-hq"]},
+    })
+    start = MagicMock(return_value=(True, ""))
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify,
+        inspect_fn=lambda _name: _EXITED, start_fn=start,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    start.assert_called_once_with("poindexter-chatterbox")
+    assert summary["status"] == "no_drift"
+    assert "probe.game_mode_parked_restored" in _audit_event_types(pool)
+    notify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_game_mode_over_never_creates_a_profiled_service_that_never_ran():
+    """The profile exemption was there to avoid starting something the
+    operator never brought up. That guarantee now rests on `_inspect_stopped`
+    requiring an EXISTING container: no container → nothing to `docker start`,
+    and the inactive-profile suppression keeps it off the drift page."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={
+        "game_mode_until": "",
+        "game_mode_parked_services": "chatterbox",
+    })
+    spec = _spec({
+        "chatterbox": {"container_name": "poindexter-chatterbox", "profiles": ["tts-hq"]},
+    })
+    start = MagicMock(return_value=(True, ""))
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify,
+        inspect_fn=lambda _name: None, start_fn=start,
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    start.assert_not_called()
+    assert summary["status"] == "no_drift"
+    notify.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_game_mode_over_failed_start_falls_through_to_drift():
     cd._last_notified_drifted = frozenset()
     pool = _make_pool(setting_values={"game_mode_parked_services": "chatterbox"})

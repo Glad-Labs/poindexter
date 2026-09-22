@@ -280,3 +280,112 @@ class TestProbeTtsHelper:
         )
         assert healthy is None
         assert "skipped" in detail
+
+
+@pytest.mark.unit
+class TestGameModeAwareness:
+    """Incident 2026-09-21: game mode parked chatterbox at 21:53 and the probe
+    paged critical at 00:41 and 01:41 on the connect errors. A parked engine
+    is the operator's doing, so the probe must SKIP (None) — which also
+    breaks the consecutive-unhealthy streak — rather than count it down."""
+
+    @staticmethod
+    def _never_build(**_kw):
+        pytest.fail("must not build a client while the engine is parked")
+
+    async def test_parked_engine_under_active_game_mode_skips(self):
+        sc = SiteConfig(
+            initial_config={
+                "podcast_tts_enabled": "true",
+                "podcast_tts_engine": "chatterbox",
+                "game_mode_until": "2999-01-01T00:00:00+00:00",
+                "game_mode_parked_services": "speaches,chatterbox,wan-server",
+            },
+        )
+        healthy, detail = await pnf._probe_tts(sc, http_client_factory=self._never_build)
+        assert healthy is None
+        assert "game mode" in detail
+        assert "skipped" in detail
+
+    async def test_parked_match_is_by_health_url_host(self):
+        """Speaches is the default engine (empty podcast_tts_engine); its
+        health URL host is `speaches`, which is what the parked list names."""
+        sc = SiteConfig(
+            initial_config={
+                "podcast_tts_enabled": "true",
+                "game_mode_until": "2999-01-01T00:00:00+00:00",
+                "game_mode_parked_services": "speaches",
+            },
+        )
+        healthy, detail = await pnf._probe_tts(sc, http_client_factory=self._never_build)
+        assert healthy is None
+        assert "speaches" in detail
+
+    async def test_unparked_engine_is_still_probed_during_game_mode(self):
+        """Game mode on but the engine is not on the parked list → a miss is
+        a real miss."""
+        sc = SiteConfig(
+            initial_config={
+                "podcast_tts_enabled": "true",
+                "podcast_tts_engine": "chatterbox",
+                "game_mode_until": "2999-01-01T00:00:00+00:00",
+                "game_mode_parked_services": "wan-server",
+            },
+        )
+
+        class _DeadClient:
+            def __init__(self, **_kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_a):
+                return False
+
+            async def get(self, url):
+                raise ConnectionError(f"refused: {url}")
+
+        healthy, detail = await pnf._probe_tts(sc, http_client_factory=_DeadClient)
+        assert healthy is False
+        assert "unreachable" in detail
+
+    async def test_expired_game_mode_does_not_suppress(self):
+        """The window is a TTL: once it lapses a parked-and-still-down engine
+        is an outage again (the drift probe should have restored it)."""
+        sc = SiteConfig(
+            initial_config={
+                "podcast_tts_enabled": "true",
+                "podcast_tts_engine": "chatterbox",
+                "game_mode_until": "2000-01-01T00:00:00+00:00",
+                "game_mode_parked_services": "chatterbox",
+            },
+        )
+
+        class _DeadClient:
+            def __init__(self, **_kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_a):
+                return False
+
+            async def get(self, url):
+                raise ConnectionError(f"refused: {url}")
+
+        healthy, _detail = await pnf._probe_tts(sc, http_client_factory=_DeadClient)
+        assert healthy is False
+
+    async def test_skip_records_as_skipped_history_not_unhealthy(self, monkeypatch):
+        """End to end through run(): a parked engine writes tts_healthy='skipped'
+        so the NEXT run's streak walk stops at it."""
+        _stub_probe(monkeypatch, None, "chatterbox parked by game mode — probe skipped")
+        pool = _FakePool(failures=0, tasks=0, top_reason=None, history=["false", "false"])
+        emitted: list[dict] = []
+        monkeypatch.setattr(pnf, "emit_finding", lambda **kw: emitted.append(kw))
+        result = await ProbeNarrationFailureJob().run(pool, _cfg())
+        assert emitted == []
+        assert result.metrics["tts_healthy"] == "skipped"
+        assert result.metrics["consecutive_unhealthy"] == 0
