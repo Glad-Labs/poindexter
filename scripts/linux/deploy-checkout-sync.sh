@@ -35,8 +35,13 @@
 #        scripts/Dockerfile.backup|scripts/backup/**-> backup-daily backup-hourly backup-offsite
 #      (diff-uncomputable -> defensive brain-daemon rebuild, same as the ps1)
 #   6. compose-apply: clone's `start-stack.sh up -d --no-build` — recreates
-#      services whose compose stanza OR freshly-built image changed; no-op
-#      for code-only merges. Attempted TWICE: recreating a service that others
+#      services whose compose STANZA changed; no-op for code-only merges.
+#      NOT for a freshly-built image: compose keys recreate on the service
+#      config hash, not the resolved image ID, so an image rebuilt under the
+#      same tag leaves the container alone (verified by --dry-run 2026-09-22 —
+#      five just-rebuilt services all reported `Running`). Step 6a-bis below
+#      force-recreates what this pass rebuilt; without it every baked-image
+#      deploy was silently a no-op. Attempted TWICE: recreating a service that others
 #      `depends_on: service_healthy` can lose a race against its own recreate
 #      ("No such container: <id>"), which strands the dependents CREATED and
 #      never started. That failure also never stamps the new config-hash, so
@@ -464,6 +469,33 @@ for attempt in 1 2; do
 done
 [ "$apply_failed" = "1" ] && \
   log "compose-apply failed twice; continuing to container restarts — marker withheld, retries next cycle." ERROR
+
+# ---- recreate what we rebuilt (step 6a-bis, 2026-09-22) --------------------
+# `up -d` does NOT recreate a container whose image was rebuilt under the SAME
+# tag when the service definition is unchanged: compose keys the decision on the
+# service config hash, not the resolved image ID. Verified with `--dry-run` on
+# this stack — five services whose images had just been rebuilt all reported
+# `Running` (up-to-date), and the same services under `--force-recreate`
+# reported `Recreate`.
+#
+# So every baked-image deploy was a no-op unless the compose definition happened
+# to change too. On 2026-09-22 this pass rebuilt eight images, recreated three,
+# and logged "Pipeline now running <sha>" while five services kept serving the
+# previous image — healthy, green in `docker ps`, and wrong. It is the root
+# cause of the brain daemon running stale code after a merge.
+#
+# Scoped to the services THIS pass rebuilt. A blanket --force-recreate would
+# bounce the whole stack every deploy.
+if [ -n "$rebuild_services" ] && [ "$apply_failed" = "0" ]; then
+  log "Recreating rebuilt services (compose leaves same-tag image changes alone): $rebuild_services"
+  # shellcheck disable=SC2086
+  if bash "$DEPLOY_DIR/scripts/start-stack.sh" up -d --no-build --no-deps \
+       --force-recreate $rebuild_services >>"$LOG_FILE" 2>&1; then
+    log "  recreated: $rebuild_services"
+  else
+    log "force-recreate of rebuilt services failed; they are still on the previous image" ERROR
+  fi
+fi
 
 # ---- bounce-on-change with redundancy guard --------------------------------
 # Once per tree. A pass that did NOT reset (HEAD unchanged since the last pass)

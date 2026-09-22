@@ -22,6 +22,7 @@ Rig follows ``test_deploy_checkout_sync_mcp.py``: throwaway git origin +
 deploy clone, recorders on PATH writing to one shared events file, and
 ``POINDEXTER_DEPLOY_ROOT`` pointed at the clone.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,7 +42,8 @@ _GIT_ID = ("-c", "user.name=t", "-c", "user.email=t@example.com")
 
 def _repo_root() -> Path:
     return next(
-        p for p in Path(__file__).resolve().parents
+        p
+        for p in Path(__file__).resolve().parents
         if (p / "scripts" / "linux" / "deploy-checkout-sync.sh").exists()
     )
 
@@ -49,7 +51,10 @@ def _repo_root() -> Path:
 def _git(cwd: Path, *args: str) -> str:
     proc = subprocess.run(
         ["git", *_GIT_ID, *args],
-        cwd=cwd, capture_output=True, text=True, timeout=60,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert proc.returncode == 0, f"git {' '.join(args)}: {proc.stderr}"
     return proc.stdout.strip()
@@ -105,13 +110,14 @@ def _build_rig(tmp_path: Path) -> dict:
         f.chmod(0o755)
 
     fake("docker", _FAKE_DOCKER)
-    fake("systemctl", '#!/usr/bin/env bash\nexit 1\n')  # unit absent -> step skipped
+    fake("systemctl", "#!/usr/bin/env bash\nexit 1\n")  # unit absent -> step skipped
     fake("sudo", '#!/usr/bin/env bash\nwhile [[ "${1:-}" == -* ]]; do shift; done\nexec "$@"\n')
 
     origin = tmp_path / "origin.git"
     subprocess.run(
         ["git", "init", "-q", "--bare", "-b", "main", str(origin)],
-        check=True, timeout=60,
+        check=True,
+        timeout=60,
     )
     seed = tmp_path / "seed"
     seed.mkdir()
@@ -132,14 +138,21 @@ def _build_rig(tmp_path: Path) -> dict:
 
     clone = tmp_path / "deploy-clone"
     subprocess.run(
-        ["git", "clone", "-q", str(origin), str(clone)], check=True, timeout=60,
+        ["git", "clone", "-q", str(origin), str(clone)],
+        check=True,
+        timeout=60,
     )
     (home / ".poindexter" / "deploy-last-restarted-sha").write_text(
-        base_sha, encoding="utf-8",
+        base_sha,
+        encoding="utf-8",
     )
     return {
-        "home": home, "bin": bin_dir, "events": tmp_path / "events",
-        "seed": seed, "clone": clone, "counter": tmp_path / "upcount",
+        "home": home,
+        "bin": bin_dir,
+        "events": tmp_path / "events",
+        "seed": seed,
+        "clone": clone,
+        "counter": tmp_path / "upcount",
     }
 
 
@@ -168,7 +181,9 @@ def _run_sync(rig: dict, **env_extra: str) -> subprocess.CompletedProcess:
             "SYNC_APPLY_RETRY_SETTLE_SEC": "0",  # keep the retry pause out of the test
             **env_extra,
         },
-        capture_output=True, text=True, timeout=180,
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
 
 
@@ -179,13 +194,72 @@ def _events(rig: dict) -> list[str]:
 
 def _status(rig: dict) -> dict:
     return json.loads(
-        (rig["home"] / ".poindexter" / "deploy-checkout-sync.status.json")
-        .read_text(encoding="utf-8")
+        (rig["home"] / ".poindexter" / "deploy-checkout-sync.status.json").read_text(
+            encoding="utf-8"
+        )
     )
 
 
 def _ups(rig: dict) -> list[str]:
-    return [e for e in _events(rig) if e.startswith("start-stack up")]
+    """Compose-APPLY invocations only.
+
+    Deliberately excludes the step-6a-bis force-recreate, which is a second,
+    differently-shaped `start-stack up` in the same pass. Counting every `up`
+    would make this guard read "a healthy apply ran twice" for a pass that
+    applied once and then recreated what it rebuilt — losing the double-apply
+    bug it exists to catch.
+    """
+    return [
+        e for e in _events(rig) if e.startswith("start-stack up") and "--force-recreate" not in e
+    ]
+
+
+def _force_recreates(rig: dict) -> list[str]:
+    """Step 6a-bis: recreate the services this pass rebuilt.
+
+    `docker compose up -d` does not recreate a container whose image was
+    rebuilt under the same tag (it keys on the service config hash, not the
+    image ID), so without this every baked-image deploy was a no-op.
+    """
+    return [e for e in _events(rig) if e.startswith("start-stack up") and "--force-recreate" in e]
+
+
+class TestRecreateRebuilt:
+    """Step 6a-bis — the pass must put the images it built into service.
+
+    `docker compose up -d` does NOT recreate a container whose image was
+    rebuilt under the SAME tag when the service definition is unchanged:
+    compose keys recreate on the service config hash, not the resolved image
+    ID. Verified by --dry-run on the live stack 2026-09-22 — five just-rebuilt
+    services all reported `Running`, and the same five under --force-recreate
+    reported `Recreate`.
+
+    Without this step the 09:10 pass that day rebuilt eight images, recreated
+    three, and logged "Pipeline now running <sha> ... health gate: healthy"
+    while five kept serving the previous image. The gate passed because it
+    checked the OLD containers, which were healthy. It is the root cause of the
+    brain daemon running stale code after a merge.
+    """
+
+    def test_rebuilt_services_are_force_recreated(self, tmp_path):
+        rig = _build_rig(tmp_path)
+        _advance_origin(rig)
+        _run_sync(rig)
+        recreates = _force_recreates(rig)
+        assert recreates, (
+            "a pass that rebuilt images must force-recreate them — plain "
+            "`up -d` leaves a same-tag image change alone"
+        )
+        assert "--no-deps" in recreates[0], (
+            "scope it: a blanket --force-recreate bounces the whole stack"
+        )
+
+    def test_the_apply_itself_still_runs_exactly_once(self, tmp_path):
+        """The recreate is an ADDITIONAL invocation, not a second apply."""
+        rig = _build_rig(tmp_path)
+        _advance_origin(rig)
+        _run_sync(rig)
+        assert len(_ups(rig)) == 1
 
 
 class TestApplyRetry:
@@ -207,7 +281,7 @@ class TestApplyRetry:
         st = _status(rig)
         assert st["result"] == "deployed"
         assert st["head"] == head
-        marker = (rig["home"] / ".poindexter" / "deploy-last-restarted-sha")
+        marker = rig["home"] / ".poindexter" / "deploy-last-restarted-sha"
         assert marker.read_text(encoding="utf-8").strip() == head
 
     def test_persistent_failure_reports_and_withholds_marker(self, tmp_path):
@@ -219,7 +293,7 @@ class TestApplyRetry:
         st = _status(rig)
         assert st["result"] == "error"
         assert "compose-apply" in st["detail"]
-        marker = (rig["home"] / ".poindexter" / "deploy-last-restarted-sha")
+        marker = rig["home"] / ".poindexter" / "deploy-last-restarted-sha"
         assert marker.read_text(encoding="utf-8").strip() != head, (
             "a failed pass must retry next cycle, not record the marker"
         )
@@ -276,7 +350,9 @@ class TestStrandedSweep:
         rig = _build_rig(tmp_path)
         _advance_origin(rig)
         proc = _run_sync(
-            rig, STRANDED_NAMES="poindexter-worker", FAKE_DOCKER_START_EXIT="1",
+            rig,
+            STRANDED_NAMES="poindexter-worker",
+            FAKE_DOCKER_START_EXIT="1",
         )
         assert proc.returncode == 1
         assert "stranded-start" in _status(rig)["detail"]
