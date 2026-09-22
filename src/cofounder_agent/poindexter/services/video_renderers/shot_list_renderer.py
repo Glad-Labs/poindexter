@@ -876,6 +876,13 @@ async def _comfyui_reserved_gb(site_config: Any) -> float:
     adds wan's own pool back for the hero path. Read from ComfyUI's
     ``/system_stats`` (``torch_vram_total`` = torch reserved on its device).
     Fail-soft to 0.0: under-counting only makes the floor stricter.
+
+    Known blind spot (2026-09-22): under ComfyUI's ``cudaMallocAsync``
+    allocator this reads ~0 GB while the process holds 13+ GB (measured:
+    ``torch_vram_total`` 0.06 GB against 13.7 GB in nvidia-smi), so the pool
+    term rarely helps on that build. The gates therefore ask ComfyUI to
+    ``/free`` first (``reclaim_render_vram(soft=("comfyui",))``) and let the
+    live device-free reading decide.
     """
     try:
         import httpx
@@ -946,8 +953,15 @@ async def _reclaim_card_for_presenter() -> None:
         from poindexter.services.gpu_scheduler import gpu
 
         # ComfyUI is the S2V engine this very clip is about to call — never
-        # let the ladder restart it out from under the prompt (17:02Z today).
-        await gpu.reclaim_render_vram(include_ollama=True, exclude=("comfyui",))
+        # let the ladder RESTART it out from under the prompt (17:02Z,
+        # 2026-09-16). But do ask it to drop what it holds (2026-09-22): the
+        # i2v/S2V weights it keeps between prompts (13-17 GB) are invisible
+        # to the pool accounting under cudaMallocAsync, so excluding it
+        # outright left the floor reading "13.8 GB usable" for its whole
+        # wait and both presenter shots of a render became brand cards. The
+        # soft rung declines while a prompt is in flight and never queues a
+        # restart; ComfyUI reloads the next model from its RAM cache.
+        await gpu.reclaim_render_vram(include_ollama=True, soft=("comfyui",))
     except Exception as exc:  # noqa: BLE001 — a failed reclaim must not become a certain skip
         from poindexter.utils.exception_format import describe_exception
 
@@ -1000,6 +1014,13 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
             if site_config is not None else True
         ):
             await gpu._unload_ollama_models()
+        if _hero_animator_is_comfyui(site_config):
+            # The previous hero's weights (2026-09-22): after hero clip 1
+            # ComfyUI kept ~13 GB, the fit read "13.9 GB usable" and hero
+            # clip 2 became a Ken Burns still. A soft /free (never a restart:
+            # the next prompt is about to go to this very server) returns it,
+            # and ComfyUI reloads from its RAM cache.
+            await gpu._unload_comfyui(hard=False)
         settle = (
             site_config.get_float("video_hero_unload_settle_seconds", 3.0)
             if site_config is not None else 3.0

@@ -228,25 +228,28 @@ class TestPresenterReclaimsTheWholeCard:
     shot could not start — the memory was reclaimable the whole time."""
 
     @pytest.mark.asyncio
-    async def test_it_runs_the_shared_ladder_including_ollama_but_spares_comfyui(self, monkeypatch):
-        """ComfyUI is the S2V engine this clip is about to call; restarting it
-        out from under the prompt lost the hero clip at 17:02Z (2026-09-16)."""
+    async def test_it_runs_the_shared_ladder_including_ollama_and_soft_frees_comfyui(self, monkeypatch):
+        """ComfyUI is the S2V engine this clip is about to call: never RESTART
+        it out from under the prompt (17:02Z, 2026-09-16) — but do ask it to
+        drop its stale weights (2026-09-22: excluded outright, it kept 13-17 GB
+        and both presenter shots of a render became brand cards)."""
         calls = {}
 
         class _Gpu:
-            async def reclaim_render_vram(self, *, include_ollama=True, exclude=()):
+            async def reclaim_render_vram(self, *, include_ollama=True, exclude=(), soft=()):
                 calls["include_ollama"] = include_ollama
                 calls["exclude"] = tuple(exclude)
+                calls["soft"] = tuple(soft)
 
         import poindexter.services.gpu_scheduler as gs
         monkeypatch.setattr(gs, "gpu", _Gpu())
         await slr._reclaim_card_for_presenter()
-        assert calls == {"include_ollama": True, "exclude": ("comfyui",)}
+        assert calls == {"include_ollama": True, "exclude": (), "soft": ("comfyui",)}
 
     @pytest.mark.asyncio
     async def test_a_failed_reclaim_is_not_a_certain_skip(self, monkeypatch):
         class _Gpu:
-            async def reclaim_render_vram(self, *, include_ollama=True, exclude=()):
+            async def reclaim_render_vram(self, *, include_ollama=True, exclude=(), soft=()):
                 raise RuntimeError("docker socket gone")
 
         import poindexter.services.gpu_scheduler as gs

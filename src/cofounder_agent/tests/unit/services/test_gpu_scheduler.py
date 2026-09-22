@@ -1386,3 +1386,24 @@ class TestReclaimLadderSparesTheCallee:
         s = self._scheduler_with_mocked_rungs()
         await s.reclaim_render_vram(include_ollama=True)
         s._unload_comfyui.assert_awaited_once_with(hard=True)
+
+    async def test_soft_rung_runs_without_its_restart_path(self):
+        """The presenter's callee protection (2026-09-22): ComfyUI must drop
+        its 13-17 GB of stale weights (soft /free) but never be queued for a
+        restart with the S2V prompt about to go to it."""
+        s = self._scheduler_with_mocked_rungs()
+        await s.reclaim_render_vram(include_ollama=True, soft=("comfyui",))
+        s._unload_comfyui.assert_awaited_once_with(hard=False)
+        s._unload_image_gen.assert_awaited_once_with(hard=True)  # others stay hard
+        s._unload_ollama_models.assert_awaited_once()
+
+    async def test_soft_is_case_and_whitespace_tolerant(self):
+        s = self._scheduler_with_mocked_rungs()
+        await s.reclaim_render_vram(soft=(" ComfyUI ", "WAN"))
+        s._unload_comfyui.assert_awaited_once_with(hard=False)
+        s._unload_wan.assert_awaited_once_with(hard=False)
+
+    async def test_excluded_wins_over_soft(self):
+        s = self._scheduler_with_mocked_rungs()
+        await s.reclaim_render_vram(exclude=("comfyui",), soft=("comfyui",))
+        s._unload_comfyui.assert_not_awaited()

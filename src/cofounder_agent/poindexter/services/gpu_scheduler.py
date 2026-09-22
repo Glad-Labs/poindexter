@@ -2187,6 +2187,7 @@ class GPUScheduler:
 
     async def reclaim_render_vram(
         self, *, include_ollama: bool = True, exclude: Collection[str] = (),
+        soft: Collection[str] = (),
     ) -> None:
         """Run the render-GPU VRAM reclaim ladder — every idle media sidecar.
 
@@ -2208,6 +2209,18 @@ class GPUScheduler:
         A reclaimed-then-restarted callee loses the prompt the caller just
         submitted, so this is correctness, not an optimisation.
 
+        ``soft`` names levers to run WITHOUT their hard rung — the sidecar is
+        asked to drop what it holds (ComfyUI ``/free``) but is never queued
+        for a restart. This is what the callee-protection above should have
+        been for the presenter (2026-09-22): ``exclude=("comfyui",)`` skipped
+        ComfyUI entirely, so the 13-17 GB of i2v/S2V weights it keeps
+        between prompts stayed on the card, the presenter floor read
+        "13.8 GB usable" for its whole wait, and both presenter shots of a
+        render became brand cards. A soft ``/free`` measured on the same
+        card released 13.7 GB -> 0.8 GB in six seconds, with nothing in
+        flight, and ComfyUI reloads the next model from its RAM cache. A
+        name in both ``exclude`` and ``soft`` is excluded.
+
         ``include_ollama=False`` is the LLM-side variant: it clears the
         media sidecars to make room FOR an Ollama load, where evicting
         Ollama's own models is pointless (its scheduler already evicts per
@@ -2218,15 +2231,20 @@ class GPUScheduler:
         current implementations rather than a guarantee of this ladder. An
         exception escaping an early lever must not skip the later ones.
         """
+        gentle = {str(x).strip().lower() for x in (soft or ())}
+
+        def _hardness(name: str) -> bool:
+            return name not in gentle
+
         levers: list[tuple[str, Callable[[], Any]]] = []
         if include_ollama:
             levers.append(("ollama", self._unload_ollama_models))
         levers.extend((
-            ("image-gen", lambda: self._unload_image_gen(hard=True)),
+            ("image-gen", lambda: self._unload_image_gen(hard=_hardness("image-gen"))),
             ("chatterbox", self._unload_chatterbox),
-            ("wan", lambda: self._unload_wan(hard=True)),
-            ("stable-audio", lambda: self._unload_stable_audio(hard=True)),
-            ("comfyui", lambda: self._unload_comfyui(hard=True)),
+            ("wan", lambda: self._unload_wan(hard=_hardness("wan"))),
+            ("stable-audio", lambda: self._unload_stable_audio(hard=_hardness("stable-audio"))),
+            ("comfyui", lambda: self._unload_comfyui(hard=_hardness("comfyui"))),
         ))
         skip = {str(x).strip().lower() for x in (exclude or ())}
         for name, call in levers:

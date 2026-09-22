@@ -846,3 +846,34 @@ async def test_hero_wait_probe_going_unreadable_keeps_the_requested_plate(monkey
     monkeypatch.setattr(slr.asyncio, "sleep", AsyncMock())
 
     assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc(video_hero_reclaim_wait_s="60")) == (832, 480)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_comfyui_animator_soft_frees_the_previous_heros_weights():
+    """After hero clip 1, ComfyUI keeps ~13 GB (invisible to the pool term under
+    cudaMallocAsync); hero clip 2 read 13.9 GB usable and became a still
+    (2026-09-22). The clear asks ComfyUI to /free — soft, never a restart."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    gpu = MagicMock()
+    gpu._unload_image_gen = AsyncMock()
+    gpu._unload_ollama_models = AsyncMock()
+    gpu._unload_comfyui = AsyncMock()
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu):
+        await slr._clear_image_gen_for_hero(_sc(video_generative_provider="comfyui"))
+    gpu._unload_comfyui.assert_awaited_once_with(hard=False)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wan_animator_does_not_touch_comfyui():
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    gpu = MagicMock()
+    gpu._unload_image_gen = AsyncMock()
+    gpu._unload_ollama_models = AsyncMock()
+    gpu._unload_comfyui = AsyncMock()
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu):
+        await slr._clear_image_gen_for_hero(_sc(video_generative_provider="wan21"))
+    gpu._unload_comfyui.assert_not_awaited()
