@@ -322,3 +322,25 @@ class TestEvictReportsUnreachableHonestly:
             msg = await game_cli._evict_ollama(sc)
 
         assert msg == "nothing resident"
+
+
+def test_container_names_match_compose_for_every_service():
+    """container_names() must produce the real compose container_name — the
+    console greys out parked containers by name and the CLI stops them by name.
+    A service renamed in compose without updating CONTAINER_SUFFIX_OVERRIDES
+    fails here instead of silently parking nothing."""
+    from pathlib import Path
+
+    import yaml
+
+    compose = Path(__file__).resolve().parents[5] / "docker-compose.local.yml"
+    services = yaml.safe_load(compose.read_text())["services"]
+    expected = {
+        svc: block.get("container_name", f"{game_mode.CONTAINER_PREFIX_DEFAULT}{svc}")
+        for svc, block in services.items()
+    }
+    cfg = SiteConfig(initial_config={game_mode.PARKED_SERVICES_KEY: ",".join(expected)})
+    assert dict(zip(expected, game_mode.container_names(cfg), strict=True)) == expected
+    assert set(game_mode.CONTAINER_SUFFIX_OVERRIDES) <= set(expected), (
+        "override for a service compose no longer defines"
+    )

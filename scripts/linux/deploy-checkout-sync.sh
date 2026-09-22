@@ -599,8 +599,11 @@ game_mode_setting() { # game_mode_setting <key> <default>
 reparked=""; repark_failed=0
 if game_mode_active; then
   prefix="$(game_mode_setting game_mode_container_prefix poindexter-)"
-  for svc in $(game_mode_setting game_mode_parked_services "speaches,chatterbox,stable-audio,image-gen-server,wan-server" | tr ',' ' '); do
-    c="${prefix}${svc}"
+  for svc in $(game_mode_setting game_mode_parked_services "speaches,chatterbox,stable-audio-server,image-gen-server,wan-server,comfyui" | tr ',' ' '); do
+    # Resolve by compose service label: container_name isn't always prefix+service
+    # (stable-audio-server runs as poindexter-stable-audio).
+    c="$(docker ps -a --filter "label=com.docker.compose.service=${svc}" --format '{{.Names}}' 2>/dev/null | head -n1)"
+    c="${c:-${prefix}${svc}}"
     [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ] || continue
     if docker stop -t 20 "$c" >>"$LOG_FILE" 2>&1; then
       reparked="${reparked:+$reparked,}$c"

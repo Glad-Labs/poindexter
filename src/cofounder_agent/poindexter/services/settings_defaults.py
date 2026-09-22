@@ -1233,7 +1233,7 @@ DEFAULTS: dict[str, str] = {
     'game_mode_until': '',
     # Compose SERVICE names (the vocabulary compose_drift_probe speaks), not
     # container names — the docker prefix is applied separately below.
-    'game_mode_parked_services': 'speaches,chatterbox,stable-audio,image-gen-server,wan-server',
+    'game_mode_parked_services': 'speaches,chatterbox,stable-audio-server,image-gen-server,wan-server,comfyui',
     'game_mode_default_hours': '4',
     # Evict resident Ollama models on enable so the parked VRAM is actually
     # freed rather than merely idle.

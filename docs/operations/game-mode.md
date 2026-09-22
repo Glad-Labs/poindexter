@@ -83,7 +83,7 @@ unpaged. Both are worse than a game session seeing its containers restart.
 | Key                          | Default                                                        | Meaning                                                     |
 | ---------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
 | `game_mode_until`            | `''`                                                           | Expiry (ISO-8601 UTC). `''` = off. Written by the adapters. |
-| `game_mode_parked_services`  | `speaches,chatterbox,stable-audio,image-gen-server,wan-server` | Compose **service** names                                   |
+| `game_mode_parked_services`  | `speaches,chatterbox,stable-audio-server,image-gen-server,wan-server,comfyui` | Compose **service** names                                   |
 | `game_mode_default_hours`    | `4`                                                            | Window when `--hours` is omitted                            |
 | `game_mode_evict_ollama`     | `true`                                                         | Evict resident models on enable                             |
 | `game_mode_container_prefix` | `poindexter-`                                                  | Prefix applied to derive container names                    |
@@ -98,7 +98,7 @@ prefixing `game_mode_container_prefix`.
 
 ```
 game mode ON until 2026-08-10T08:17:00+00:00 (238m left)
-  parked   speaches, chatterbox, stable-audio, image-gen-server, wan-server
+  parked   speaches, chatterbox, stable-audio-server, image-gen-server, wan-server, comfyui
   STILL UP poindexter-speaches — GPU is not fully free
 ```
 

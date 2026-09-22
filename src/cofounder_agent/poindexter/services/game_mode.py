@@ -61,9 +61,23 @@ CONTAINER_PREFIX_KEY = "game_mode_container_prefix"
 
 # Compose *service* names (the vocabulary compose_drift_probe speaks). Docker
 # container names are derived by prefixing CONTAINER_PREFIX_KEY.
-PARKED_SERVICES_DEFAULT = "speaches,chatterbox,stable-audio,image-gen-server,wan-server"
+PARKED_SERVICES_DEFAULT = (
+    "speaches,chatterbox,stable-audio-server,image-gen-server,wan-server,comfyui"
+)
 DEFAULT_HOURS_DEFAULT = "4"
 CONTAINER_PREFIX_DEFAULT = "poindexter-"
+
+# Services whose compose ``container_name`` is not prefix + service name. The
+# worker has no docker socket or compose file to ask, so the exceptions are
+# listed here; a unit test checks this map against docker-compose.local.yml so
+# a rename there fails CI instead of silently parking nothing.
+CONTAINER_SUFFIX_OVERRIDES: dict[str, str] = {
+    "stable-audio-server": "stable-audio",
+    "rife-server": "rife",
+    "grafana-image-renderer": "grafana-renderer",
+    "github-runner-1": "ci-runner-1",
+    "github-runner-2": "ci-runner-2",
+}
 
 # Ceiling on a single enable() so a fat-fingered "--hours 400" cannot park the
 # business for a fortnight. Deliberately generous: a long weekend is plausible.
@@ -142,7 +156,10 @@ def parked_services(site_config: SiteConfig) -> tuple[str, ...]:
 def container_names(site_config: SiteConfig) -> tuple[str, ...]:
     """Docker container names for the parked compose services."""
     prefix = site_config.get(CONTAINER_PREFIX_KEY, CONTAINER_PREFIX_DEFAULT)
-    return tuple(f"{prefix}{svc}" for svc in parked_services(site_config))
+    return tuple(
+        f"{prefix}{CONTAINER_SUFFIX_OVERRIDES.get(svc, svc)}"
+        for svc in parked_services(site_config)
+    )
 
 
 def is_active(site_config: SiteConfig, *, now: datetime | None = None) -> bool:

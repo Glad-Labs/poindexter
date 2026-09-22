@@ -821,7 +821,7 @@ async def _read_game_mode_state(pool) -> tuple[bool, set[str]]:
     val = await _read_setting(
         pool,
         "game_mode_parked_services",
-        default="speaches,chatterbox,stable-audio,image-gen-server,wan-server",
+        default="speaches,chatterbox,stable-audio-server,image-gen-server,wan-server,comfyui",
     )
     parked = {s.strip() for s in val.split(",") if s.strip()}
     raw = await _read_setting(pool, "game_mode_until", default="")
@@ -886,7 +886,7 @@ async def _read_game_mode_parked(pool) -> set[str]:
     val = await _read_setting(
         pool,
         "game_mode_parked_services",
-        default="speaches,chatterbox,stable-audio,image-gen-server,wan-server",
+        default="speaches,chatterbox,stable-audio-server,image-gen-server,wan-server,comfyui",
     )
     parked = {s.strip() for s in val.split(",") if s.strip()}
     if parked:
