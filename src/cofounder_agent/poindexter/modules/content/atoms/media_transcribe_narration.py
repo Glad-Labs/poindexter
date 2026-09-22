@@ -30,6 +30,16 @@ audio missing, provider exception) must NEVER halt the graph — the video still
 renders, just without burned-in captions. So every failure mode returns an empty
 path (and, where useful, emits a per-lane finding) rather than raising.
 
+One exception to "give up on the first miss" (2026-09-22): a **transient**
+provider failure — HTTP 5xx, connection refused, timeout — runs the shared
+render-GPU VRAM reclaim ladder and retries ONCE
+(``media.caption.reclaim_retry_enabled``). The speaches whisper load is a GPU
+allocation on the render card, and Stage 2 starts seconds after the Stage-1
+director's LLMs finished, so it OOM'd at model load and both lanes shipped
+without captions behind an info finding. A recovered retry emits
+``caption_retry_recovered``; a retry that still fails escalates
+``caption_unavailable`` to warn with ``retried=True``.
+
 NOTE (#674 trap): ``long_caption_srt_path`` / ``short_caption_srt_path`` MUST be
 declared ``PipelineState`` channels or LangGraph silently drops them, and the
 render atoms would never see the captions.
@@ -54,6 +64,52 @@ logger = logging.getLogger(__name__)
 # transcript diverged enough from the source script to flag (TTS dropout /
 # truncation). Tunable via app_settings ``media.caption.fidelity_min_ratio``.
 _DEFAULT_FIDELITY_MIN_RATIO = 0.80
+
+# Reclaim-then-retry for a transient ASR failure (2026-09-22). The speaches
+# whisper load is a GPU allocation on the render card, and Stage 2 starts
+# seconds after the Stage-1 director finished — its LLMs (an 18.5 GB gemma
+# cold-load) are still resident, so ``WhisperModel`` died with ``CUDA failed
+# with error out of memory`` and BOTH lanes rendered without captions behind
+# an info-level ``caption_unavailable``. That is the class the shared media
+# VRAM reclaim ladder exists for: evict Ollama + the idle sidecars, then ask
+# once more. One retry, gated by ``media.caption.reclaim_retry_enabled``; a
+# failure that is not transient (no segments, bad audio) never triggers it.
+_TRANSIENT_ERROR_MARKERS = (
+    "http 5",  # speaches 500/502/503 — OOM at model load surfaces as a 500
+    "connecterror", "connectionerror", "connection refused",
+    "readtimeout", "timeout", "remoteprotocolerror",
+)
+
+
+def _is_transient_caption_failure(result: Any) -> bool:
+    """Is this provider failure the kind a VRAM reclaim + retry can fix?"""
+    if result is None or getattr(result, "success", False):
+        return False
+    err = str(getattr(result, "error", "") or "").lower()
+    return any(marker in err for marker in _TRANSIENT_ERROR_MARKERS)
+
+
+def _reclaim_retry_enabled(site_config: Any) -> bool:
+    if site_config is None:
+        return True
+    try:
+        raw = site_config.get("media.caption.reclaim_retry_enabled", "true")
+    except Exception:  # noqa: BLE001  # silent-ok: a settings read must not decide a render
+        return True
+    return str(raw).strip().lower() not in ("false", "0", "no", "off")
+
+
+async def _reclaim_for_captions() -> None:
+    """Run the shared render-GPU VRAM ladder so whisper can load (best-effort).
+
+    speaches is not a ladder rung, so nothing here can restart the sidecar we
+    are about to call (the #3817 trap); ``include_ollama=True`` is the lever
+    that matters — the director's LLMs are what crowd the card at this point
+    in the media graph.
+    """
+    from poindexter.services.gpu_scheduler import gpu  # noqa: PLC0415 — singleton, lazy for tests
+
+    await gpu.reclaim_render_vram(include_ollama=True, exclude=())
 
 # Display-cue word budgets per lane (2026-08-24): whisper segments are
 # sentence-sized (10-15 words is routine), and burned whole they wrap into a
@@ -228,6 +284,59 @@ async def _transcribe_one(
         )
         return ""
 
+    retried = False
+    if _is_transient_caption_failure(result) and _reclaim_retry_enabled(site_config):
+        first_error = str(result.error or "")
+        logger.warning(
+            "[media.transcribe_narration] task=%s lane=%s transient ASR failure "
+            "(%s) — running the render-GPU VRAM reclaim ladder and retrying once",
+            task_id, label, first_error[:160],
+        )
+        try:
+            await _reclaim_for_captions()
+        except Exception as exc:  # noqa: BLE001 — a failed reclaim must not cost the retry
+            logger.warning(
+                "[media.transcribe_narration] task=%s lane=%s VRAM reclaim failed "
+                "(%s) — retrying anyway", task_id, label, describe_exception(exc),
+            )
+        retried = True
+        try:
+            result = await provider.transcribe(
+                audio_path=audio_path, task_id=task_id, granularity="word",
+            )
+        except Exception as exc:  # noqa: BLE001 — same contract as the first attempt
+            logger.exception(
+                "[media.transcribe_narration] task=%s lane=%s retry raised: %s",
+                task_id, label, exc,
+            )
+            emit_finding(
+                source="media.transcribe_narration",
+                kind="caption_failed",
+                title=f"ASR transcription raised on retry ({label})",
+                body=(
+                    f"first attempt: {first_error[:200]}; retry after VRAM reclaim raised "
+                    f"for task {task_id} lane {label}: {describe_exception(exc)}"
+                ),
+                severity="warn",
+                dedup_key=f"caption_failed:{task_id}:{label}",
+                extra={"task_id": str(task_id or ""), "lane": label, "error": str(exc), "retried": True},
+            )
+            return ""
+        if result.success and result.srt_text:
+            emit_finding(
+                source="media.transcribe_narration",
+                kind="caption_retry_recovered",
+                title=f"ASR recovered after a VRAM reclaim ({label})",
+                body=(
+                    f"task {task_id} lane {label}: first attempt failed ({first_error[:200]}); "
+                    "the reclaim ladder + one retry produced the caption track. If this "
+                    "fires every render, the card is routinely full when Stage 2 starts."
+                ),
+                severity="info",
+                dedup_key=f"caption_retry_recovered:{task_id}:{label}",
+                extra={"task_id": str(task_id or ""), "lane": label, "first_error": first_error[:300]},
+            )
+
     asr_transcript = " ".join(
         seg.text for seg in (result.segments or []) if seg.text
     ).strip()
@@ -247,9 +356,12 @@ async def _transcribe_one(
                 f"{result.success}, srt_text empty={not result.srt_text}: "
                 f"{result.error or 'no error detail'}"
             ),
-            severity="info",
+            severity="warn" if retried else "info",
             dedup_key=f"caption_unavailable:{task_id}:{label}",
-            extra={"task_id": str(task_id or ""), "lane": label, "error": result.error},
+            extra={
+                "task_id": str(task_id or ""), "lane": label, "error": result.error,
+                "retried": retried,
+            },
         )
         return ""
 

@@ -527,3 +527,144 @@ async def test_word_timestamps_retime_display_cues(tmp_path, monkeypatch):
     assert "00:00:04,400 --> " in content
     # The interpolated 0.0 start is gone.
     assert "00:00:00,000 --> " not in content
+
+
+# ---------------------------------------------------------------------------
+# Reclaim-then-retry on a transient ASR failure (2026-09-22)
+# ---------------------------------------------------------------------------
+#
+# The speaches whisper load is a render-GPU allocation; Stage 2 starts seconds
+# after the director's LLMs finished, so it OOM'd (HTTP 500) and both lanes
+# rendered without captions behind an info finding. One VRAM reclaim + one
+# retry is the fix; a non-transient failure never triggers it.
+
+
+def _patch_provider_sequence(results):
+    """Provider whose transcribe() returns ``results`` in order."""
+    provider = MagicMock()
+    provider.transcribe = AsyncMock(side_effect=list(results))
+    factory = MagicMock(return_value=provider)
+    return patch.object(media_transcribe_narration, "get_caption_provider", factory), provider
+
+
+def _oom_result():
+    return CaptionResult(
+        success=False, segments=[], srt_text="",
+        error="speaches transcription HTTP 500: Internal Server Error",
+    )
+
+
+@pytest.mark.asyncio
+async def test_transient_failure_reclaims_once_and_retries(monkeypatch):
+    reclaims: list[int] = []
+
+    async def fake_reclaim():
+        reclaims.append(1)
+
+    monkeypatch.setattr(media_transcribe_narration, "_reclaim_for_captions", fake_reclaim)
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        media_transcribe_narration, "emit_finding", lambda **kw: findings.append(kw),
+    )
+    ctx, provider = _patch_provider_sequence([_oom_result(), _caption_result(srt_text="SRT-DOC")])
+    with ctx:
+        srt = await _transcribe_one(
+            audio_path="/tmp/narration.wav", script="", task_id="t-retry",
+            label="short", site_config=None,
+        )
+
+    assert srt and os.path.exists(srt)
+    assert reclaims == [1], "exactly one reclaim between the two attempts"
+    assert provider.transcribe.await_count == 2
+    kinds = [f["kind"] for f in findings]
+    assert "caption_retry_recovered" in kinds and "caption_unavailable" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_retry_still_failing_reports_unavailable_as_retried(monkeypatch):
+    monkeypatch.setattr(media_transcribe_narration, "_reclaim_for_captions", AsyncMock())
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        media_transcribe_narration, "emit_finding", lambda **kw: findings.append(kw),
+    )
+    ctx, provider = _patch_provider_sequence([_oom_result(), _oom_result()])
+    with ctx:
+        srt = await _transcribe_one(
+            audio_path="/tmp/narration.wav", script="", task_id="t-retry-fail",
+            label="long", site_config=None,
+        )
+
+    assert srt == ""
+    assert provider.transcribe.await_count == 2
+    (unavailable,) = [f for f in findings if f["kind"] == "caption_unavailable"]
+    assert unavailable["extra"]["retried"] is True
+    assert unavailable["severity"] == "warn"  # a reclaim did not help: louder than the first miss
+
+
+@pytest.mark.asyncio
+async def test_non_transient_failure_does_not_reclaim_or_retry(monkeypatch):
+    reclaim = AsyncMock()
+    monkeypatch.setattr(media_transcribe_narration, "_reclaim_for_captions", reclaim)
+    monkeypatch.setattr(media_transcribe_narration, "emit_finding", lambda **kw: None)
+    no_segments = CaptionResult(
+        success=False, segments=[], srt_text="", error="speaches returned no usable segments",
+    )
+    ctx, provider = _patch_provider_sequence([no_segments])
+    with ctx:
+        srt = await _transcribe_one(
+            audio_path="/tmp/narration.wav", script="", task_id="t-nontransient",
+            label="short", site_config=None,
+        )
+
+    assert srt == ""
+    reclaim.assert_not_awaited()
+    assert provider.transcribe.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_disabled_by_setting(monkeypatch):
+    reclaim = AsyncMock()
+    monkeypatch.setattr(media_transcribe_narration, "_reclaim_for_captions", reclaim)
+    monkeypatch.setattr(media_transcribe_narration, "emit_finding", lambda **kw: None)
+    site_config = SimpleNamespace(get=lambda key, default=None: "false"
+                                  if key == "media.caption.reclaim_retry_enabled" else default)
+    ctx, provider = _patch_provider_sequence([_oom_result()])
+    with ctx:
+        srt = await _transcribe_one(
+            audio_path="/tmp/narration.wav", script="", task_id="t-disabled",
+            label="short", site_config=site_config,
+        )
+
+    assert srt == ""
+    reclaim.assert_not_awaited()
+    assert provider.transcribe.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reclaim_raising_still_retries(monkeypatch):
+    async def boom():
+        raise RuntimeError("scheduler unavailable")
+
+    monkeypatch.setattr(media_transcribe_narration, "_reclaim_for_captions", boom)
+    monkeypatch.setattr(media_transcribe_narration, "emit_finding", lambda **kw: None)
+    ctx, provider = _patch_provider_sequence([_oom_result(), _caption_result(srt_text="SRT-DOC")])
+    with ctx:
+        srt = await _transcribe_one(
+            audio_path="/tmp/narration.wav", script="", task_id="t-reclaim-boom",
+            label="short", site_config=None,
+        )
+
+    assert srt and os.path.exists(srt)
+    assert provider.transcribe.await_count == 2
+
+
+def test_transient_classifier():
+    ok = _oom_result()
+    assert media_transcribe_narration._is_transient_caption_failure(ok)
+    assert media_transcribe_narration._is_transient_caption_failure(
+        CaptionResult(success=False, segments=[], srt_text="", error="ConnectError: [Errno 111] Connection refused"),
+    )
+    assert not media_transcribe_narration._is_transient_caption_failure(
+        CaptionResult(success=False, segments=[], srt_text="", error="audio_path does not exist"),
+    )
+    assert not media_transcribe_narration._is_transient_caption_failure(_caption_result())

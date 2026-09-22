@@ -3387,6 +3387,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # lagged the voice). Conventional subtitling leads by ~100-200ms; text
     # appearing exactly at word onset still reads late. 0 disables the lead.
     'media.caption.cue_lead_ms': '120',
+    # Reclaim-then-retry for a transient ASR failure (2026-09-22): the
+    # speaches whisper load is a render-GPU allocation and Stage 2 starts
+    # seconds after the director's LLMs finished, so it OOM'd and both lanes
+    # rendered without captions behind an info finding. On an HTTP 5xx /
+    # connection failure the atom runs the shared VRAM reclaim ladder (evict
+    # Ollama + idle sidecars) and asks once more. false = legacy single try.
+    'media.caption.reclaim_retry_enabled': 'true',
     # Caption burn styling (FFmpegLocalCompositor). Glyph height as a PERCENT
     # of frame height — resolution-independent: 4.5 ⇒ ≈86px lines on a
     # 1080×1920 short, ≈49px on 16:9 1080p. (ffmpeg's subtitles filter
@@ -3949,6 +3956,20 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.vram_reclaim_ineffective.fallback': 'log_only',
     'findings.vram_reclaim_ineffective.cooldown_minutes': '180',
     'findings.vram_reclaim_ineffective.min_severity': 'warn',
+    # Stage-2 caption outcomes (media.transcribe_narration, 2026-09-22). The
+    # first miss is info and stays in the log; a miss that SURVIVED a VRAM
+    # reclaim + retry is warn and reaches the routine channel — that is the
+    # render shipping without captions when the fix already ran. The
+    # recovery finding is routine too: if it fires on every render, the
+    # card is routinely full when Stage 2 starts (director LLMs resident).
+    'findings.caption_unavailable.delivery': 'discord',
+    'findings.caption_unavailable.fallback': 'log_only',
+    'findings.caption_unavailable.cooldown_minutes': '180',
+    'findings.caption_unavailable.min_severity': 'warn',
+    'findings.caption_retry_recovered.delivery': 'discord',
+    'findings.caption_retry_recovered.fallback': 'log_only',
+    'findings.caption_retry_recovered.cooldown_minutes': '180',
+    'findings.caption_retry_recovered.min_severity': 'info',
     # Topic-sanity gate (2026-06-30 dots-topic incident) — a tap/RAG source
     # emitting contentless titles is a source bug worth seeing on the routine
     # ops channel, not a page; 6h cooldown keeps a persistently garbage
@@ -5889,6 +5910,14 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.vram_reclaim_ineffective.delivery': {'value_type': 'string'},
     'findings.vram_reclaim_ineffective.fallback': {'value_type': 'string'},
     'findings.vram_reclaim_ineffective.min_severity': {'value_type': 'string'},
+    'findings.caption_unavailable.cooldown_minutes': {'value_type': 'integer'},
+    'findings.caption_unavailable.delivery': {'value_type': 'string'},
+    'findings.caption_unavailable.fallback': {'value_type': 'string'},
+    'findings.caption_unavailable.min_severity': {'value_type': 'string'},
+    'findings.caption_retry_recovered.cooldown_minutes': {'value_type': 'integer'},
+    'findings.caption_retry_recovered.delivery': {'value_type': 'string'},
+    'findings.caption_retry_recovered.fallback': {'value_type': 'string'},
+    'findings.caption_retry_recovered.min_severity': {'value_type': 'string'},
     'findings_daily_digest_enabled': {'owner': 'findings_daily_digest', 'value_type': 'boolean'},
     'findings_daily_digest_lookback_hours': {'owner': 'findings_daily_digest', 'value_type': 'integer'},
     'findings_daily_digest_top_n': {'owner': 'findings_daily_digest', 'value_type': 'integer'},
@@ -6040,6 +6069,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media.caption.long_max_cue_words': {'owner': 'media_transcribe_narration', 'value_type': 'integer'},
     'media.caption.min_cue_seconds': {'owner': 'media_transcribe_narration', 'value_type': 'float'},
     'media.caption.cue_lead_ms': {'owner': 'media_transcribe_narration', 'value_type': 'integer'},
+    'media.caption.reclaim_retry_enabled': {'owner': 'media_transcribe_narration', 'value_type': 'boolean'},
     'plugin.media_compositor.ffmpeg_local.caption_font_height_pct': {
         'owner': 'media_compositors', 'value_type': 'float',
     },
