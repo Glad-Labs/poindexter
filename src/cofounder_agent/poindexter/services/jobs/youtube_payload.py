@@ -160,6 +160,10 @@ def shorten_at_word(text: str, limit: int) -> str:
     return head.rstrip(" ,;:-—").rstrip()
 
 
+# NOTE: both regexes accept a CURLY apostrophe as well as a straight one. The
+# writer emits U+2019 ("In today’s digital age, ..."), so a class of only ' let
+# the exact shape these exist to catch walk straight through — 1 of 10 in the
+# 2026-09-22 sweep.
 # Scene-setting run-ups a narration script sometimes opens with. Stripped from
 # the TITLE and the description hook only — the narration audio is already
 # rendered, and the words the presenter speaks are not ours to rewrite here.
@@ -171,13 +175,31 @@ def shorten_at_word(text: str, limit: int) -> str:
 # pipeline_versions, which is every Short on the channel today.
 _PREAMBLE_RE = re.compile(
     r"^(?:"
-    r"in today's [\w' -]{2,30}"
-    r"|in (?:the|this|an?) (?:world|age|era|day and age|modern era) of [\w' -]{2,40}"
+    r"in today['’]s [\w'’ -]{2,30}"
+    r"|in (?:the|this|an?) (?:world|age|era|day and age|modern era) of [\w'’ -]{2,40}"
     r"|in (?:the|this) (?:world|age|era|day and age|modern era)"
     r"|in this (?:article|video|post|short)"
-    r"|these days|nowadays|as we all know|it's no secret"
+    r"|these days|nowadays|as we all know|it['’]s no secret"
     r"|as (?:you|we) (?:probably )?(?:know|might know)"
     r")\s*,\s*",
+    re.I,
+)
+
+
+# Openers that DESCRIBE the article instead of making its point. Unlike the
+# run-ups above these need no comma — they are a prefix, not a clause — and
+# cutting them leaves the claim the sentence was already making:
+# "Discover how a GPU lock bug was wrecking our RAG sweep" -> "A GPU lock bug
+# was wrecking our RAG sweep". Measured 2026-09-22 across 10 published posts:
+# the prompt bans this shape explicitly and phi4:14b still produced it 4 times
+# in 10, which is why the strip exists rather than trusting the instruction.
+_DESCRIBES_RE = re.compile(
+    r"^(?:"
+    r"(?:discover|learn|find out|see|explore|uncover)\s+(?:how|why|what|that)"
+    r"|this (?:article|post|video|short)\s+(?:reveals|explains|shows|covers|looks at|explores)"
+    r"\s*(?:how|why|what|that)?"
+    r"|here['’]s (?:how|why|what)"
+    r")\s+",
     re.I,
 )
 
@@ -185,14 +207,23 @@ _PREAMBLE_RE = re.compile(
 def strip_preamble(sentence: str) -> str:
     """Drop a leading scene-setting clause and re-capitalise what is left.
 
-    ``"In today's digital age, zero-click content is the new standard."`` ->
-    ``"Zero-click content is the new standard."`` Returns the input unchanged
-    when nothing matches, or when the remainder would be too short to be a
-    claim on its own (a strip that leaves two words has cut the sentence, not
-    its run-up).
+    Two shapes, both measured on real output rather than imagined:
+
+    * a scene-setting run-up, which is a CLAUSE and must end at a comma —
+      ``"In today's digital age, zero-click content is the new standard."``
+      -> ``"Zero-click content is the new standard."``
+    * an opener that DESCRIBES the article, which is a bare prefix —
+      ``"Discover how a GPU lock bug was wrecking our RAG sweep"`` -> ``"A GPU
+      lock bug was wrecking our RAG sweep"``.
+
+    Returns the input unchanged when nothing matches, or when the remainder
+    would be too short to be a claim on its own (a strip that leaves two words
+    has cut the sentence, not its run-up).
     """
     clean = (sentence or "").strip()
     stripped = _PREAMBLE_RE.sub("", clean, count=1).strip()
+    if stripped == clean:
+        stripped = _DESCRIBES_RE.sub("", clean, count=1).strip()
     if stripped == clean or len(stripped.split()) < 3:
         return clean
     return stripped[:1].upper() + stripped[1:]

@@ -462,3 +462,63 @@ def test_short_description_hook_drops_it_too():
     hook = short_hook_line(script)
     assert hook.startswith("Zero-click content is the new standard.")
     assert "In today's digital age" not in hook
+
+
+# ---------------------------------------------------------------------------
+# Measured 2026-09-22, phi4:14b over 10 published posts.
+#
+# The hook rule shipped in #3951 carried a verbatim example sentence
+# ("Zero-click content is the new standard.") and the model COPIED it onto
+# unrelated articles — 4 of 10, including a JPMorgan trends report and a GPU
+# lock post-mortem. A/B/C on the same article settled it: example present ->
+# parroted; example removed or swapped -> correct, on-topic opener. The
+# example is gone.
+#
+# With it gone the model writes on-topic openers but ignores the ban on
+# describing the article: 4 of 10 came back "Discover how ...". Instructions
+# alone do not hold that line, so the strip does.
+# ---------------------------------------------------------------------------
+
+
+def test_strip_cuts_an_opener_that_describes_the_article():
+    """Real openers from the 10-post sweep."""
+    assert strip_preamble(
+        "Discover how a GPU lock bug was quietly wrecking our RAG sweep"
+    ) == "A GPU lock bug was quietly wrecking our RAG sweep"
+    assert strip_preamble(
+        "Discover how JPMorgan Chase highlights six pivotal shifts"
+    ) == "JPMorgan Chase highlights six pivotal shifts"
+    assert strip_preamble(
+        "This article reveals how a tiny transformer model trained fast"
+    ) == "A tiny transformer model trained fast"
+    assert strip_preamble("Here's why the lock was held for nine hours") == "The lock was held for nine hours"
+
+
+def test_describe_strip_needs_no_comma_but_still_needs_a_claim_left():
+    """Unlike a run-up clause it is a bare prefix, so no comma is required —
+    but the three-word floor still applies."""
+    assert strip_preamble("Discover it.") == "Discover it."
+    assert strip_preamble("Learn how we did") == "Learn how we did"  # 2 words survive
+
+
+def test_a_real_claim_is_never_touched_by_either_strip():
+    for sentence in (
+        "Zero-click content is the new standard.",
+        "A 4-bit model just beat its full-precision original.",
+        "The page-view cursor outran the data.",
+    ):
+        assert strip_preamble(sentence) == sentence
+
+
+def test_both_strips_accept_a_curly_apostrophe():
+    """The writer emits U+2019. A class of only ' let the exact shape these
+    exist to catch walk through — 1 of 10 in the 2026-09-22 sweep."""
+    assert strip_preamble(
+        "In today’s digital age, ensuring the accuracy of AI matters"
+    ) == "Ensuring the accuracy of AI matters"
+    assert strip_preamble(
+        "Here’s why the lock was held for nine hours"
+    ) == "The lock was held for nine hours"
+    assert strip_preamble(
+        "It’s no secret, the funnel is dead now"
+    ) == "The funnel is dead now"
