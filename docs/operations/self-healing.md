@@ -800,15 +800,19 @@ when they **are** up):
 - **On-demand** services listed in `compose_drift_on_demand_services` (CSV,
   default `wan-server,image-gen-server`) — GPU-heavy backends the worker starts per
   job and lets exit.
-- **Profile-gated** services whose compose `profiles:` are not in
-  `compose_drift_active_profiles` (CSV, default empty). A `profiles:`-gated
-  service only starts when the operator brings up its profile, so if that
-  profile isn't active the container is _supposed_ to be absent. Empty default =
-  every profiled service is treated as inactive (no false pages out of the box);
-  list the profiles you actually run to restore crash-detection for their
-  services. Incident 2026-06-21: `gpu-exporter` (`profiles: [linux-gpu]`)
-  false-paged CRITICAL every cycle on the Windows host, where the host
-  nvidia-smi exporter — not the profile-gated container — serves GPU metrics.
+- **Profile-gated** services whose compose `profiles:` were not active when
+  the stack was launched. The probe reads that list from `COMPOSE_PROFILES`
+  in the brain's environment: `start-stack.sh` exports bootstrap.toml's
+  `compose_profiles` under that name and `docker-compose.local.yml` passes it
+  to brain-daemon, so the watch list is always the list compose actually
+  started. To watch (and heal) another profile, add it to `compose_profiles`
+  and re-run `start-stack.sh`. That also recreates the brain with the new list.
+  `compose_drift_active_profiles` (CSV, default empty) is only a fallback for
+  a brain started without the env var; empty means every profiled service is
+  treated as inactive (no false pages out of the box). Incident 2026-09-21:
+  before the env var, that setting said `ci-runner,operator` while the stack
+  ran six profiles, so crashes in postiz, gpu-exporter, nut-exporter and
+  chatterbox were never detected or healed.
 
 This is separate from `compose_drift_auto_recover_enabled` — the brain's _own_
 `docker compose up` — which **stays off** on a Windows host because it mangles
@@ -920,7 +924,7 @@ full incident write-up.
 | `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                                                                                   |
 | `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                                                                                              |
 | `compose_drift_on_demand_services`                            | `wan-server,image-gen-server`              | CSV of services started on demand — exempt from the missing-container check.                                                                                                                 |
-| `compose_drift_active_profiles`                               | (empty)                                    | CSV of active compose `profiles:`. Services gated behind an unlisted profile are exempt from the missing-container check.                                                                    |
+| `compose_drift_active_profiles`                               | (empty)                                    | Fallback when the brain has no `COMPOSE_PROFILES` env var. CSV of active compose `profiles:`; services behind an unlisted profile are exempt from the missing-container check. |
 | `compose_drift_auto_recover_enabled`                          | `false`                                    | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                                                                                                  |
 | `mcp_http_probe_recovery_url`                                 | (empty)                                    | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.                                                                                 |
 | `mcp_http_probe_recovery_token`                               | secret                                     | Bearer token matching the agent's `poindexter_recovery_token`.                                                                                                                               |

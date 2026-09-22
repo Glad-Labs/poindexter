@@ -21,6 +21,7 @@ The pool is a MagicMock with AsyncMock methods, seeded via the
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -267,6 +268,31 @@ def test_service_profiles_extracts_profiles_list():
     assert cd._service_profiles({"profiles": []}) == set()
     # Non-list / malformed profiles degrade to empty rather than raising.
     assert cd._service_profiles({"profiles": "linux-gpu"}) == {"linux-gpu"}
+
+
+@pytest.fixture(autouse=True)
+def _no_launch_profiles(monkeypatch):
+    """Tests drive active profiles through the setting unless they opt in to
+    the env var — a COMPOSE_PROFILES in the runner's env must not leak in."""
+    monkeypatch.delenv(cd.ACTIVE_PROFILES_ENV_VAR, raising=False)
+
+
+@pytest.mark.asyncio
+async def test_read_active_profiles_prefers_launch_env_over_setting(monkeypatch):
+    """COMPOSE_PROFILES is what compose actually started, so it wins over the
+    setting — the stale-setting drift of 2026-09-21 can't recur."""
+    monkeypatch.setenv(cd.ACTIVE_PROFILES_ENV_VAR, "ci-runner,postiz, tts-hq ")
+    pool = _make_pool(setting_values={cd.ACTIVE_PROFILES_SETTING_KEY: "ci-runner,operator"})
+    assert await cd._read_active_profiles(pool) == {"ci-runner", "postiz", "tts-hq"}
+
+
+@pytest.mark.asyncio
+async def test_read_active_profiles_blank_env_falls_back_to_setting(monkeypatch):
+    """`${COMPOSE_PROFILES:-}` renders an empty string when bootstrap has no
+    profiles — that must mean "not provided", not "no profiles"."""
+    monkeypatch.setenv(cd.ACTIVE_PROFILES_ENV_VAR, "  ")
+    pool = _make_pool(setting_values={cd.ACTIVE_PROFILES_SETTING_KEY: "operator"})
+    assert await cd._read_active_profiles(pool) == {"operator"}
 
 
 @pytest.mark.asyncio
@@ -1044,3 +1070,13 @@ async def test_game_mode_over_does_not_touch_a_running_or_unlisted_service():
     )
     start.assert_not_called()  # chatterbox is running; worker is not on the parked list
     assert summary["drifted_services"] == ["worker"]
+
+
+def test_brain_daemon_receives_launch_profiles():
+    """The env-var path only works if compose hands COMPOSE_PROFILES to the
+    brain — pin the wiring so a compose refactor can't silently drop it."""
+    import yaml
+
+    compose = Path(__file__).resolve().parents[5] / "docker-compose.local.yml"
+    env = yaml.safe_load(compose.read_text())["services"]["brain-daemon"]["environment"]
+    assert env[cd.ACTIVE_PROFILES_ENV_VAR] == "${COMPOSE_PROFILES:-}"

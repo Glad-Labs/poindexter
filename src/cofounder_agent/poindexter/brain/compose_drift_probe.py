@@ -215,16 +215,28 @@ COMPOSE_WORKING_DIR_LABEL = "com.docker.compose.project.working_dir"
 ON_DEMAND_SERVICES_SETTING_KEY = "compose_drift_on_demand_services"
 ON_DEMAND_SERVICES_DEFAULT = "wan-server,image-gen-server"
 
-# Compose `profiles:` the operator has activated at `docker compose up` (CSV,
-# e.g. "operator,ci-runner"). A service gated behind a profile NOT in this set
-# is opt-in and legitimately not running, so its `container_missing` is
-# suppressed exactly like an on-demand service — the probe can't otherwise tell
-# "profile off (fine)" from "profile on but crashed (page)". Empty default =
-# treat every profiled service as inactive (no false pages out of the box);
-# list your active profiles to restore crash-detection for their services.
-# Incident 2026-06-21: gpu-exporter `profiles:[linux-gpu]` false-paged CRITICAL
-# every cycle on this Windows host, where the host nvidia-smi exporter (not the
-# profile-gated container) serves GPU metrics.
+# Compose `profiles:` the stack was actually launched with. A service gated
+# behind a profile NOT in this set is opt-in and legitimately not running, so
+# its `container_missing` is suppressed exactly like an on-demand service — the
+# probe can't otherwise tell "profile off (fine)" from "profile on but crashed
+# (page + recover)".
+#
+# Source of truth is ``COMPOSE_PROFILES`` in the brain's own environment:
+# ``start-stack.sh`` exports bootstrap.toml's ``compose_profiles`` under that
+# name, and docker-compose.local.yml passes it into brain-daemon. It is the
+# same value compose used to start the stack, so the watch list can't drift
+# from what is running (incident 2026-09-21: the setting said
+# `ci-runner,operator` while the stack ran six profiles, so crashes in postiz,
+# gpu-exporter, nut-exporter and chatterbox were never detected or healed).
+# Changing ``compose_profiles`` and re-running start-stack recreates the brain
+# with the new list.
+#
+# ``compose_drift_active_profiles`` (CSV) is only the fallback for a brain
+# started without that env var (a bare `docker compose up`, tests). Its empty
+# default treats every profiled service as inactive — no false pages out of
+# the box. Incident 2026-06-21: gpu-exporter `profiles:[linux-gpu]` false-paged
+# CRITICAL every cycle on a Windows host that never ran that profile.
+ACTIVE_PROFILES_ENV_VAR = "COMPOSE_PROFILES"
 ACTIVE_PROFILES_SETTING_KEY = "compose_drift_active_profiles"
 
 # How long to wait after ``docker compose up -d`` before re-probing.
@@ -899,7 +911,11 @@ async def _read_game_mode_parked(pool) -> set[str]:
 
 
 async def _read_active_profiles(pool) -> set[str]:
-    val = await _read_setting(pool, ACTIVE_PROFILES_SETTING_KEY, default="")
+    """Profiles the stack was launched with — ``COMPOSE_PROFILES`` if the brain
+    has it, else the ``compose_drift_active_profiles`` setting."""
+    val = os.environ.get(ACTIVE_PROFILES_ENV_VAR, "").strip()
+    if not val:
+        val = await _read_setting(pool, ACTIVE_PROFILES_SETTING_KEY, default="")
     return {s.strip() for s in val.split(",") if s.strip()}
 
 

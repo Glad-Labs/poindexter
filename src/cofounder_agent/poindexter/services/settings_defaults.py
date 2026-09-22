@@ -4753,15 +4753,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # Max start-stack reapplies per rolling window before escalating to a page.
     'compose_drift_host_recover_cap_per_window': '3',
     'compose_drift_host_recover_window_minutes': '60',
-    # Compose `profiles:` the operator activates at `docker compose up` (CSV,
-    # e.g. "operator,ci-runner"). A service gated behind a profile NOT listed
-    # here is opt-in and legitimately not running, so the drift probe suppresses
-    # its container_missing (it still diffs the service if it IS running). Empty
-    # default = treat every profiled service as inactive — no false pages out of
-    # the box. Incident 2026-06-21: gpu-exporter profiles:[linux-gpu] false-paged
-    # CRITICAL every cycle on this Windows host, where the host nvidia-smi
-    # exporter (not the profile-gated container) serves GPU metrics. List your
-    # active profiles to restore crash-detection for their services.
+    # Fallback only. The drift probe reads the compose profiles the stack was
+    # launched with from COMPOSE_PROFILES (bootstrap.toml `compose_profiles`,
+    # passed into brain-daemon by docker-compose.local.yml); this CSV is used
+    # only when that env var is absent (e.g. a bare `docker compose up`). Empty
+    # = treat every profiled service as inactive, so no false pages out of the
+    # box (incident 2026-06-21: gpu-exporter false-paged on a Windows host that
+    # never ran linux-gpu).
     'compose_drift_active_profiles': '',
 
     # ----- Docker port-forward adaptive recovery (poindexter/brain/docker_port_forward_probe.py) -----
