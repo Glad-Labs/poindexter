@@ -487,6 +487,10 @@ async def _render_pexels_video(
 # so one sample right after a reclaim reports the pre-reclaim figure. Sample
 # across a scrape interval and keep the max.
 _FREE_VRAM_SAMPLES = 4
+# Hero headroom wait (2026-09-22): poll cadence while the reclaim ladder's
+# evictions land. Budget is ``video_hero_reclaim_wait_s`` (default 120).
+_HERO_HEADROOM_POLL_S = 5.0
+_HERO_RECLAIM_WAIT_DEFAULT_S = 120.0
 _FREE_VRAM_SAMPLE_GAP_S = 4.0
 
 # (width, height, free_GB_required). Landscape-first; the caller swaps for
@@ -605,6 +609,72 @@ async def _hero_headroom_gb(site_config: Any) -> float | None:
     return free + await _comfyui_reserved_gb(site_config)
 
 
+def _hero_target_gb(width: int, height: int) -> float:
+    """VRAM the REQUESTED plate needs: the smallest ladder rung whose area
+    covers it, or the top rung when the request exceeds the ladder."""
+    area = width * height
+    fits = [needs for lw, lh, needs in _HERO_PLATE_LADDER if lw * lh >= area]
+    return min(fits) if fits else _HERO_PLATE_LADDER[0][2]
+
+
+def _hero_reclaim_wait_s(site_config: Any) -> float:
+    if site_config is None:
+        return _HERO_RECLAIM_WAIT_DEFAULT_S
+    try:
+        return max(0.0, float(site_config.get_float(
+            "video_hero_reclaim_wait_s", _HERO_RECLAIM_WAIT_DEFAULT_S,
+        )))
+    except Exception:  # noqa: BLE001  # silent-ok: a settings read must not decide a render
+        return _HERO_RECLAIM_WAIT_DEFAULT_S
+
+
+async def _wait_for_hero_headroom(
+    site_config: Any, target_gb: float, *, first: float,
+) -> float | None:
+    """Poll the hero headroom until it clears ``target_gb`` or the wait budget
+    ends; returns the last reading (``None`` = probe went unreadable).
+
+    The reclaim ladder is fire-and-forget on the evictions that matter: an
+    Ollama ``keep_alive=0`` returns before the runner exits, sidecar restarts
+    are executed by the brain seconds later, and the measured gap between
+    the ladder call and the VRAM actually coming back was 65-120 s on
+    2026-09-22 (18.6 GB used at 03:06:01, 4.3 GB at 03:07:01). The live path
+    used to read headroom ONCE, three seconds after the ladder, so hero
+    shot 5 became a Ken Burns still on a card that was free a minute later
+    (poindexter#992 has the timeline). Same shape as
+    :func:`_wait_for_presenter_headroom`; ``video_hero_reclaim_wait_s`` = 0
+    restores the single read. Bounded by attempts as well as wall-clock so
+    it stays deterministic under a patched ``asyncio.sleep``.
+    """
+    wait_s = _hero_reclaim_wait_s(site_config)
+    if wait_s <= 0 or first >= target_gb:
+        return first
+    attempts = max(1, math.ceil(wait_s / _HERO_HEADROOM_POLL_S))
+    deadline = time.monotonic() + wait_s
+    headroom: float | None = first
+    polls = 0
+    while (
+        headroom is not None and headroom < target_gb
+        and polls < attempts and time.monotonic() < deadline
+    ):
+        await asyncio.sleep(_HERO_HEADROOM_POLL_S)
+        headroom = await _hero_headroom_gb(site_config)
+        polls += 1
+    if headroom is not None and headroom >= target_gb:
+        logger.info(
+            "[SHOT_LIST] hero headroom %.1fGB -> %.1fGB after %d poll(s) — the "
+            "ladder's evictions landed; animating at the requested plate",
+            first, headroom, polls,
+        )
+    elif headroom is not None:
+        logger.info(
+            "[SHOT_LIST] hero headroom %.1fGB -> %.1fGB after %d poll(s) / %.0fs "
+            "budget (needs %.0fGB) — choosing a plate from what the card has",
+            first, headroom, polls, wait_s, target_gb,
+        )
+    return headroom
+
+
 async def _fit_hero_dims_to_free_vram(
     width: int, height: int, site_config: Any,
 ) -> tuple[int, int] | None:
@@ -659,6 +729,18 @@ async def _fit_hero_dims_to_free_vram(
     # animator IS ComfyUI, its own cached pool is headroom too (see
     # ``_hero_headroom_gb``) — the same accounting the presenter floor uses.
     live = await _hero_headroom_gb(site_config)
+    if live is not None:
+        # The ladder's evictions land 65-120 s after the call (measured
+        # 2026-09-22); a single read taken 3 s later downgrades a hero the
+        # card could have animated a minute later. Wait, bounded, for the
+        # headroom the REQUESTED plate needs before choosing a rung.
+        live = await _wait_for_hero_headroom(
+            site_config, _hero_target_gb(width, height), first=live,
+        )
+        if live is None:
+            # The probe went unreadable mid-wait — same fail-open rule as an
+            # unreadable first read: never shrink a render on no evidence.
+            return width, height
     if live is not None:
         free_gb = live
         landscape = width >= height

@@ -529,6 +529,9 @@ async def test_confirm_warns_and_proceeds_when_model_never_evicts(caplog):
     assert client.get.await_count == 3
     warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
     assert any("still resident" in m for m in warnings), warnings
+    # The warning names WHICH model outlived the window (2026-09-22): a bare
+    # count gave the render post-mortem nothing to act on.
+    assert any("gemma-4-31B-it-qat:latest" in m for m in warnings), warnings
 
 
 @pytest.mark.asyncio

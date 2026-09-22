@@ -717,6 +717,13 @@ DEFAULTS: dict[str, str] = {
     # them seconds later; the presenter floor polls free VRAM (+ ComfyUI's
     # own reusable pool) for up to this long before refusing the shot.
     'video_presenter_reclaim_wait_s': '60',
+    # Same wait for the HERO plate gate (2026-09-22). The live path read
+    # headroom ONCE, 3 s after the ladder call, while the evictions it
+    # triggered (Ollama keep_alive=0, sidecar restarts) landed 65-120 s later
+    # — hero shot 5 of 0bce0e39 became a Ken Burns still on a card that read
+    # 4.3 GB used a minute after the refusal. Polls every 5 s until the
+    # requested plate's rung fits or this budget ends; 0 = single read.
+    'video_hero_reclaim_wait_s': '120',
     # S2V render prompt; {display_name} is the persona's display name. The
     # persona's render_prompt_suffix and the shot's delivery note are appended.
     # Wan reads motion language LITERALLY, and the positive prompt dominates:
@@ -5246,6 +5253,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'youtube_contains_synthetic_media': {'owner': 'video', 'value_type': 'string'},
     'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
     'video_presenter_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
+    'video_hero_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},

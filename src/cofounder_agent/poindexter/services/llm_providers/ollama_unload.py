@@ -87,10 +87,13 @@ async def _confirm_models_released(
     *,
     timeout_seconds: float,
     poll_interval_seconds: float,
-) -> bool:
+) -> tuple[bool, list[str]]:
     """Poll ``/api/ps`` until no models are loaded, or the window expires.
 
-    Returns ``True`` as soon as ``/api/ps`` reports an empty model list.
+    Returns ``(released, resident)``: ``released`` is ``True`` as soon as
+    ``/api/ps`` reports an empty model list; ``resident`` names what the last
+    successful read still listed (``name (size_vram GB)``), so the caller's
+    warning can say WHICH model outlived the window (2026-09-22).
     Ollama drops a model from ``/api/ps`` once its runner subprocess has
     exited, at which point the driver has reclaimed the VRAM — so an empty
     list is the real "it's actually unloaded" signal that replaces the old
@@ -106,21 +109,37 @@ async def _confirm_models_released(
     """
     interval = max(float(poll_interval_seconds), 0.05)
     attempts = max(1, math.ceil(float(timeout_seconds) / interval))
+    resident: list[str] = []
     for i in range(attempts):
         try:
             resp = await client.get(f"{base_url}/api/ps")
-            if resp.status_code == 200 and not (resp.json().get("models") or []):
-                return True
+            if resp.status_code == 200:
+                models = resp.json().get("models") or []
+                if not models:
+                    return True, []
+                resident = [_describe_resident(m) for m in models]
         except (httpx.HTTPError, ValueError) as exc:
             logger.debug(
                 "[OLLAMA_UNLOAD] confirm poll could not read /api/ps "
                 "(%s: %s) — stopping confirm; caller proceeds",
                 type(exc).__name__, exc,
             )
-            return False
+            return False, resident
         if i < attempts - 1:
             await asyncio.sleep(interval)
-    return False
+    return False, resident
+
+
+def _describe_resident(entry: Any) -> str:
+    """``name (size_vram GB)`` for one ``/api/ps`` entry — diagnostic only."""
+    if not isinstance(entry, dict):
+        return "?"
+    name = str(entry.get("name") or entry.get("model") or "?")
+    try:
+        gb = float(entry.get("size_vram") or 0) / 2**30
+    except (TypeError, ValueError):
+        gb = 0.0
+    return f"{name} ({gb:.1f} GB)"
 
 
 def ollama_base_urls(site_config: Any) -> list[str]:
@@ -328,18 +347,22 @@ async def unload_loaded_ollama_models(
                 # desktop, overlapping the 18 GB writer exhausts VRAM and
                 # freezes WDDM. keep_alive=0 is fire-and-forget, so we poll
                 # /api/ps (same open client) until the model is gone.
-                released = await _confirm_models_released(
+                released, resident = await _confirm_models_released(
                     client,
                     base_url,
                     timeout_seconds=confirm_timeout_seconds,
                     poll_interval_seconds=poll_interval_seconds,
                 )
                 if not released:
+                    # Name the residents: "1 model(s) still resident" gave the
+                    # 2026-09-22 render post-mortem nothing to act on — which
+                    # model, pinned or not, on which card.
                     logger.warning(
                         "[OLLAMA_UNLOAD] %d model(s) still resident after "
-                        "%.1fs confirm window — proceeding anyway; the next "
-                        "model load may spike VRAM / freeze the desktop",
-                        len(unloaded), confirm_timeout_seconds,
+                        "%.1fs confirm window at %s — %s — proceeding anyway; "
+                        "the next model load may spike VRAM / freeze the desktop",
+                        len(unloaded), confirm_timeout_seconds, base_url,
+                        ", ".join(resident) if resident else "residents unreadable",
                     )
     except Exception as exc:  # noqa: BLE001 — defensive umbrella
         logger.warning(

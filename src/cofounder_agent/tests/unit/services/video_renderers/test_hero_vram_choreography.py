@@ -28,7 +28,9 @@ from poindexter.services.site_config import SiteConfig
 
 
 def _sc(**over):
-    base = {"video_hero_unload_settle_seconds": "0"}
+    # video_hero_reclaim_wait_s=0: the live-path headroom wait polls for up to
+    # 120 s in production; the tests that exercise the wait set it explicitly.
+    base = {"video_hero_unload_settle_seconds": "0", "video_hero_reclaim_wait_s": "0"}
     base.update(over)
     return SiteConfig(initial_config=base)
 
@@ -737,3 +739,110 @@ async def test_unknown_live_reading_still_defers_to_prometheus(monkeypatch):
     monkeypatch.setattr(slr, "_comfyui_reserved_gb", pool)
     assert await slr._hero_headroom_gb(_sc(video_generative_provider="comfyui")) is None
     pool.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Hero headroom wait (2026-09-22) — the live path read ONCE, 3 s after the
+# ladder call, while the evictions it triggered landed 65-120 s later
+# (poindexter#992 timeline). Same bounded poll the presenter floor has.
+# ---------------------------------------------------------------------------
+
+
+def test_hero_target_is_the_smallest_rung_covering_the_request():
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    top_w, top_h, top_gb = slr._HERO_PLATE_LADDER[0]
+    floor_w, floor_h, floor_gb = slr._HERO_PLATE_LADDER[-1]
+    assert slr._hero_target_gb(top_w, top_h) == top_gb
+    assert slr._hero_target_gb(floor_w, floor_h) == floor_gb
+    assert slr._hero_target_gb(top_w * 2, top_h * 2) == top_gb  # beyond the ladder: top rung
+    assert slr._hero_target_gb(floor_h, floor_w) == floor_gb  # portrait request, same rung
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_hero_wait_recovers_a_late_eviction(monkeypatch):
+    """13.2 GB, 13.2 GB, then the card comes back: animate at the requested plate."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    headroom = AsyncMock(side_effect=[13.2, 13.2, 28.0])
+    monkeypatch.setattr(slr, "_hero_headroom_gb", headroom)
+    sleep = AsyncMock()
+    monkeypatch.setattr(slr.asyncio, "sleep", sleep)
+
+    out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc(video_hero_reclaim_wait_s="60"))
+
+    assert out == (832, 480)
+    assert headroom.await_count == 3
+    assert sleep.await_count == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_hero_wait_gives_up_at_the_budget_and_chooses_from_what_is_there(monkeypatch):
+    """Never clears the top rung inside the budget: bounded by attempts, then
+    the ladder picks the rung the final reading affords (here the floor)."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    headroom = AsyncMock(return_value=22.5)
+    monkeypatch.setattr(slr, "_hero_headroom_gb", headroom)
+    monkeypatch.setattr(slr.asyncio, "sleep", AsyncMock())
+
+    out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc(video_hero_reclaim_wait_s="20"))
+
+    assert out == (704, 400)  # the quality floor, not a refusal
+    # 1 first read + ceil(20 / 5) polls, no more — deterministic under a patched sleep
+    assert headroom.await_count == 1 + 4
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_hero_wait_still_declines_a_genuinely_full_card(monkeypatch):
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_hero_headroom_gb", AsyncMock(return_value=13.2))
+    monkeypatch.setattr(slr.asyncio, "sleep", AsyncMock())
+
+    assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc(video_hero_reclaim_wait_s="10")) is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_hero_wait_disabled_is_a_single_read(monkeypatch):
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    headroom = AsyncMock(return_value=13.2)
+    monkeypatch.setattr(slr, "_hero_headroom_gb", headroom)
+    sleep = AsyncMock()
+    monkeypatch.setattr(slr.asyncio, "sleep", sleep)
+
+    assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc(video_hero_reclaim_wait_s="0")) is None
+    assert headroom.await_count == 1
+    sleep.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_hero_wait_does_not_poll_when_the_first_read_is_ample(monkeypatch):
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    headroom = AsyncMock(return_value=30.0)
+    monkeypatch.setattr(slr, "_hero_headroom_gb", headroom)
+    sleep = AsyncMock()
+    monkeypatch.setattr(slr.asyncio, "sleep", sleep)
+
+    assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc(video_hero_reclaim_wait_s="120")) == (832, 480)
+    assert headroom.await_count == 1
+    sleep.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_hero_wait_probe_going_unreadable_keeps_the_requested_plate(monkeypatch):
+    """Fail-open, same rule as an unreadable first read: no evidence, no shrink."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_hero_headroom_gb", AsyncMock(side_effect=[13.2, None]))
+    monkeypatch.setattr(slr.asyncio, "sleep", AsyncMock())
+
+    assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc(video_hero_reclaim_wait_s="60")) == (832, 480)
