@@ -224,15 +224,41 @@ async def _run_media_pipeline(pool: Any, site_config: Any, task_id: str) -> None
     Awaiting the run inline serialises media renders (the job is
     ``idempotent=False`` so the scheduler won't overlap instances).
     """
+    # Both lazy: a jobs module must not drag the whole pipeline in at import
+    # time, and content_router_service is the whole pipeline.
+    from poindexter.services.content_router_service import _load_niche_slug
     from poindexter.services.template_runner import TemplateRunner
+
+    # niche_slug (2026-09-21): seed it, or every Stage-2 atom sees None.
+    #
+    # ``PipelineState`` has declared ``niche_slug`` since the 2026-07-11 RCA,
+    # and ``content_router_service`` seeds it for Stage 1 — but this context
+    # never did, so ``media.render_narration``, both render atoms and
+    # ``media.qa`` all read ``state.get("niche_slug")`` as None. Two
+    # consequences: ``resolve_persona_for_niche`` skipped the per-niche
+    # ``niche.<slug>.media.persona`` key and fell straight to
+    # ``media_default_persona`` (identical on a one-niche install, which is
+    # why nothing noticed — a second niche's persona could never win in
+    # Stage 2); and ``resolve_media_policy`` in media QA judged every render
+    # against the global policy rather than the niche's. Same loader the
+    # content flow uses (imported lazily above, beside ``TemplateRunner``). ``""`` when the row has no niche — the declared
+    # channel is ``str`` and every consumer already treats empty as unknown.
+    database_service = _PoolDS(pool)
+    niche_slug = await _load_niche_slug(database_service, str(task_id)) or ""
+    if not niche_slug:
+        logger.debug(
+            "[DISPATCH_MEDIA] task %s has no niche_slug — per-niche persona "
+            "and media policy fall back to the install defaults", task_id,
+        )
 
     runner = TemplateRunner(pool, site_config=site_config)
     await runner.run(
         "media_pipeline",
         {
             "task_id": task_id,
+            "niche_slug": niche_slug,
             "site_config": site_config,
-            "database_service": _PoolDS(pool),
+            "database_service": database_service,
             "pool": pool,
         },
         thread_id=f"media-{task_id}",

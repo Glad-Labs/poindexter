@@ -98,6 +98,7 @@ ATOM_META = AtomMeta(
         FieldSpec(name="short_caption_srt_path", type="str", description="short lane's SRT path — Check B reads per-lane since #689", required=False),
         FieldSpec(name="caption_srt_path", type="str", description="legacy shared SRT path (pre-#689 fallback)", required=False),
         FieldSpec(name="site_config", type="object", description="DI seam (QA thresholds / vision model)", required=False),
+        FieldSpec(name="niche_slug", type="str", description="niche slug ('' when the task has none) — resolves the per-niche persona / media policy", required=False),
         FieldSpec(name="platform", type="object", description="capability handle — platform.dispatch for the vision LLM call (Seam 1, #667)", required=False),
         FieldSpec(name="database_service", type="object", description="DB service (pool source)", required=False),
         FieldSpec(name="task_id", type="str", description="pipeline task id"),

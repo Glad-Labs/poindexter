@@ -37,6 +37,7 @@ ATOM_META = AtomMeta(
         FieldSpec(name="podcast_script", type="str", description="fallback long narration script", required=False),
         FieldSpec(name="short_summary_script", type="str", description="short-form narration script", required=False),
         FieldSpec(name="site_config", type="object", description="DI seam (TTS + CTA config)", required=False),
+        FieldSpec(name="niche_slug", type="str", description="niche slug ('' when the task has none) — resolves the per-niche persona / media policy", required=False),
     ),
     outputs=(
         FieldSpec(name="long_narration_audio_path", type="str", description="long narration MP3 ('' on no-op/failure)"),
