@@ -2062,6 +2062,26 @@ class PodcastService:
         engine = str(self._site_config.get("podcast_tts_engine", "") or "").strip()
         audio_prompt_path: str | None = None
         persona_provider = str(getattr(persona, "voice_provider", "") or "").strip()
+        # A resolved persona's provider OVERRIDES podcast_tts_engine, and that
+        # override used to be silent. It must not be: the persona seam resolves
+        # only when `niche_slug` reaches this call, so an install can run for
+        # months on `podcast_tts_engine` while a contradicting persona sits
+        # unread — every persona voice field on prod read last_read_at=NEVER on
+        # 2026-09-21 while `portrait_url` read READ, i.e. the face came from
+        # the persona and the voice did not. The first render that DOES pass a
+        # niche_slug then changes the narration voice with nothing in the log
+        # to say why. Warn loudly at the moment of the swap.
+        persona_engine = {"chatterbox": "chatterbox", "kokoro": "speaches"}.get(
+            persona_provider)
+        if persona_engine is not None and engine and persona_engine != engine:
+            logger.warning(
+                "[PODCAST] persona %r voice_provider=%r overrides "
+                "podcast_tts_engine=%r -> %r; the narration voice for this "
+                "render is NOT the configured house engine. Align "
+                "persona.<slug>.voice_provider with podcast_tts_engine.",
+                getattr(persona, "slug", "?"), persona_provider,
+                engine, persona_engine,
+            )
         if persona_provider == "chatterbox":
             engine = "chatterbox"
             audio_prompt_path = str(getattr(persona, "voice_ref_audio_url", "") or "").strip() or None

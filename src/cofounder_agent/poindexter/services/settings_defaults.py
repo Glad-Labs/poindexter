@@ -2557,6 +2557,16 @@ DEFAULTS: dict[str, str] = {
         'a friendly technology presenter in their thirties, head and shoulders, '
         'looking straight into the camera'
     ),
+    # A resolved persona's provider OVERRIDES `podcast_tts_engine`
+    # (podcast_service._generate_narration: 'kokoro' forces engine='speaches',
+    # 'chatterbox' forces chatterbox). Keep this consistent with the engine
+    # THIS install uses — 'kokoro' matches the empty `podcast_tts_engine`
+    # default, which routes to speaches. An install that sets
+    # `podcast_tts_engine='chatterbox'` must set this to 'chatterbox' too, or
+    # the day the persona seam starts resolving the narration voice changes
+    # underneath it. The override now warns rather than acting silently.
+    # Empty `voice_ref_audio_url` inherits the chatterbox plugin's own
+    # `audio_prompt_path`, so no voice file needs to exist for this default.
     'persona.presenter.voice_provider': 'kokoro',
     'persona.presenter.voice_id': '',
     'persona.presenter.voice_ref_audio_url': '',
