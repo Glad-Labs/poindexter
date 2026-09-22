@@ -9,7 +9,12 @@ the load-time drift gate (``pipeline_architect.assert_graph_def_current``) halte
 the entire Stage-2 video lane in prod. A reseed migration fixed prod, but nothing
 in CI caught the *next* atom-contract change that forgets to reseed.
 
-This module is that pre-merge gate. CI can't see prod's ``pipeline_templates``
+This module is the per-ATOM half of that pre-merge gate. It names which atom
+drifted and where it is referenced, but it can be satisfied by refreshing the
+snapshot alone — which is how stack#3928 (2026-09-22) shipped the same outage
+again. ``test_graph_def_reseed_gate.py`` is the half with teeth: it requires
+the newest reseed MIGRATION for each active graph to declare the live graph
+signature, so a contract change cannot merge without the artefact prod needs. CI can't see prod's ``pipeline_templates``
 rows, so a committed snapshot of per-atom contract fingerprints
 (``graph_def_contract_fingerprints.json``) stands in for the stored stamps: when
 a developer edits an atom's contract, its live ``contract_fingerprint()`` drifts
@@ -212,13 +217,19 @@ class TestActiveSpecsAgainstLiveRegistry:
             pytest.fail(
                 f"{exc}\n\n"
                 "An atom's contract changed without a graph_def reseed. To fix:\n"
-                "  1. Re-seed the affected graph_def(s) via a new migration (or "
-                "rely on the boot-time stamp self-heal, ensure_active_graph_defs_"
-                "stamped).\n"
-                "  2. Refresh the committed snapshot:\n"
+                "  1. Write a NEW reseed migration for the affected graph_def(s) "
+                "declaring the new graph signature — see "
+                "docs/operations/migrations.md#reseed-a-graph_def and "
+                "test_graph_def_reseed_gate.py. The boot-time self-heal "
+                "(ensure_active_graph_defs_stamped) does NOT restamp a row that "
+                "is already stamped, so a migration is the only fix for prod.\n"
+                "  2. Then refresh the committed snapshot:\n"
                 "     REGEN_GRAPH_DEF_FP=1 poetry run pytest "
                 "tests/unit/services/test_graph_def_contract_freshness.py"
-                "::test__regenerate_snapshot"
+                "::test__regenerate_snapshot\n"
+                "Step 2 alone turns THIS test green without fixing prod — that is "
+                "exactly how #1876 and stack#3928 shipped; the reseed gate "
+                "(test_graph_def_reseed_gate.py) stays red until step 1 lands."
             )
 
     def test_committed_snapshot_has_no_stale_entries(self):

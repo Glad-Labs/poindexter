@@ -315,6 +315,51 @@ async def up(pool) -> None:
 `IF NOT EXISTS` and an explicit `DEFAULT` keep this safe to re-run
 and avoid the row-rewrite cost on existing data.
 
+### Reseed a `graph_def`
+
+Every active `pipeline_templates` row is stamped per node with its atom's
+`contract_fingerprint()`. Change an atom's `AtomMeta` contract (a new
+`FieldSpec` input, a changed `requires`/`produces`) or a graph's nodes/edges,
+and the stored stamps go stale: `assert_graph_def_current` refuses the row at
+load and that whole lane halts (poindexter#1876; glad-labs-stack#3928 halted
+every Stage-2 video render on 2026-09-22). **The boot self-heal does not fix
+this** — `ensure_active_graph_defs_stamped` restamps only rows carrying no
+fingerprint at all — so the change needs a reseed migration:
+
+```python
+from poindexter.services.graph_def_reseed import apply_reseeds
+
+# (slug, new_version, spec module, spec attr, graph signature the reseed brings the row to)
+_RESEEDS = (
+    ("media_pipeline", 7, "poindexter.services.media_pipeline_spec",
+     "MEDIA_PIPELINE_GRAPH_DEF", "0d1f3d11b475"),
+)
+
+
+async def up(pool) -> None:
+    await apply_reseeds(pool, _RESEEDS, log_prefix="reseed_media_pipeline_v7")
+```
+
+`apply_reseeds` writes the RAW in-tree spec (importable in the smoke env,
+which has no atom registry) and restamps it through the self-heal where the
+registry imports, else on the worker's next boot. Get the fifth field — and
+each slug's next version — from
+
+```bash
+REGEN_GRAPH_DEF_FP=1 poetry run pytest tests/unit/services/test_graph_def_reseed_gate.py::test__print_graph_signatures -s
+```
+
+CI (`test_graph_def_reseed_gate.py`) requires the **newest** `_RESEEDS` entry
+for every active graph to declare the signature the live registry produces,
+so a contract change cannot merge without the migration prod needs; a
+migration that writes `graph_def` without a signature-declaring `_RESEEDS`
+fails the same gate. `_RESEEDS` must be a literal (the gate reads it with
+`ast.literal_eval`, never by importing the migration). Refresh the per-atom
+snapshot too (`graph_def_contract_fingerprints.json`, see
+`test_graph_def_contract_freshness.py`) — it names *which* atom drifted, but
+on its own it can be made green without touching prod, which is exactly how
+#1876 and #3928 shipped.
+
 ### Drop a deprecated table
 
 ```python
@@ -340,6 +385,10 @@ it being dropped, what replaces it.
   body shouldn't touch the tracker table.
 - **Don't** use Python literals for tunable behaviour. Read from
   `app_settings` via `SiteConfig.get()` at runtime.
+- **Don't** change an atom's contract or a graph_def's nodes/edges and
+  "fix" CI by regenerating `graph_def_contract_fingerprints.json` alone —
+  prod's stored row still fails at load. Ship the reseed migration
+  (pattern above); the reseed gate stays red until you do.
 - **Don't** assume a PRIOR migration applied successfully. The runner
   continues on failure; defensive `IF NOT EXISTS` / `IF EXISTS` is
   cheap insurance.

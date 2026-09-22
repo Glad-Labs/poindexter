@@ -58,7 +58,7 @@ def test_version_moves_past_every_earlier_media_pipeline_reseed():
     earlier: dict[str, int] = {}
     pattern = re.compile(r'\(\s*"media_pipeline"\s*,\s*(\d+)\s*,')
     for path in sorted(MIGRATIONS_DIR.glob("2026*.py")):
-        if path.name == _TARGET:
+        if path.name >= _TARGET:  # only EARLIER migrations; later reseeds may move past v5
             continue
         for match in pattern.finditer(path.read_text(encoding="utf-8")):
             earlier[path.name] = max(earlier.get(path.name, 0), int(match.group(1)))

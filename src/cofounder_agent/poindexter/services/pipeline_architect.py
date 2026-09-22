@@ -1718,9 +1718,12 @@ def assert_specs_match_contract_fingerprints(
             "stored graph_defs would go stale and halt the pipeline at load "
             "(assert_graph_def_current):\n  - "
             + "\n  - ".join(drift)
-            + "\nRe-seed the affected graph_def(s) via a migration (or rely on "
-            "the boot-time stamp self-heal), then refresh the committed "
-            "fingerprint snapshot."
+            + "\nRe-seed the affected graph_def(s) with a NEW migration that "
+            "declares the new graph signature (services/graph_def_reseed.py; the "
+            "boot-time self-heal does NOT restamp an already-stamped row), then "
+            "refresh the committed fingerprint snapshot. The snapshot alone turns "
+            "this gate green without fixing prod — that is how #1876 and "
+            "stack#3928 shipped."
         )
 
 
