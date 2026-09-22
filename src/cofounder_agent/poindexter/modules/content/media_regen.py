@@ -32,6 +32,15 @@ video keys:
 are published artifacts; regenerating their scripts would desync the frozen
 text from the shipped audio.
 
+The stage context carries the task's ``niche_slug`` (read from
+``pipeline_tasks`` through the same ``_load_niche_slug`` seam the Stage-2
+dispatcher uses, #3928). The director + review stages resolve the per-niche
+media policy — ``niche.<slug>.media.house_style`` and the subject policy —
+from that key, so a regen that omits it silently rebuilds the shot list under
+the GLOBAL policy: the first regen after #3930 came back in four unrelated art
+styles while glad-labs had a house style set. A task with no niche gets ``""``
+plus a warning naming that consequence.
+
 With ``apply=True`` it also heals the render loop: deletes the task's
 video/video_short ``media_assets`` rows (they were rendered from the bad
 scripts), resets its video ``media_approvals`` to pending, and clears
@@ -146,11 +155,31 @@ async def regen_video_scripts(
     if not ver:
         return RegenOutcome(ok=False, detail="no pipeline_versions row")
 
+    # niche_slug (2026-09-22): the director + review stages resolve the
+    # per-niche media policy (house style, subject policy) from
+    # ``context["niche_slug"]``; without it they fall back to the GLOBAL
+    # policy and the regenerated shot list ignores every ``niche.<slug>.media.*``
+    # setting. Observed on the first regen after #3930: glad-labs has
+    # ``media.house_style`` set, yet the fresh short came back with four
+    # unrelated art styles because this context never named the niche. Same
+    # seam the Stage-2 dispatcher uses (#3928); "" (not None) keeps the
+    # downstream ``str`` contract, and the warning names the consequence.
+    from poindexter.services.content_router_service import _load_niche_slug
+
+    niche_slug = await _load_niche_slug(database_service, task_id) or ""
+    if not niche_slug:
+        logger.warning(
+            "[MEDIA_REGEN] task %s has no niche_slug — the regenerated shot "
+            "list will use the global media policy, not a niche house style",
+            task_id,
+        )
+
     # Minimal stage context — mirrors what content_router_service seeds for
     # these stages: content/title (+ seo_title for _resolve_media_title's
-    # clean-title preference), the DI seams, and the task id.
+    # clean-title preference), the DI seams, the task id and its niche.
     context: dict[str, Any] = {
         "task_id": task_id,
+        "niche_slug": niche_slug,
         "title": row["title"] or "",
         "seo_title": row["seo_title"] or "",
         "content": row["content"] or "",

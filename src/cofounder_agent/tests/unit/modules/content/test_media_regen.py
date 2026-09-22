@@ -201,3 +201,54 @@ class TestRegenVideoScripts:
         outcome = await _run(pool, apply=True)
 
         assert outcome.ok is False and pool.executes == []
+
+
+@pytest.mark.unit
+class TestNicheSlugSeeding:
+    """The director + review stages resolve the per-niche media policy from
+    ``context["niche_slug"]``. The regen core used to omit it, so every
+    regenerated shot list silently used the GLOBAL policy — glad-labs's
+    ``media.house_style`` never reached the prompts (first regen after
+    #3930 came back with four unrelated art styles)."""
+
+    async def test_seeds_niche_slug_from_the_task_row(self, monkeypatch):
+        scripts_stage = _patch_stages(
+            monkeypatch,
+            scripts_updates=_GOOD_SCRIPTS,
+            director_updates={"video_shot_list": _SHOT_LIST},
+        )
+        lookup = AsyncMock(return_value="glad-labs")
+        monkeypatch.setattr(
+            "poindexter.services.content_router_service._load_niche_slug", lookup,
+        )
+        db = MagicMock()
+
+        await regen_video_scripts(
+            _TASK, pool=_FakePool(), site_config=MagicMock(), platform=MagicMock(),
+            database_service=db, apply=False,
+        )
+
+        lookup.assert_awaited_once_with(db, _TASK)
+        ctx = scripts_stage.execute.call_args[0][0]
+        assert ctx["niche_slug"] == "glad-labs"
+
+    async def test_missing_niche_is_empty_string_and_warns(self, monkeypatch, caplog):
+        """"" not None — the stages' ``str`` contract — and the warning names
+        the consequence (global policy, no house style), so a niche-blind
+        regen is visible in the log rather than only in the rendered video."""
+        scripts_stage = _patch_stages(
+            monkeypatch,
+            scripts_updates=_GOOD_SCRIPTS,
+            director_updates={"video_shot_list": _SHOT_LIST},
+        )
+        monkeypatch.setattr(
+            "poindexter.services.content_router_service._load_niche_slug",
+            AsyncMock(return_value=None),
+        )
+
+        with caplog.at_level("WARNING", logger="poindexter.modules.content.media_regen"):
+            await _run(_FakePool(), apply=False)
+
+        ctx = scripts_stage.execute.call_args[0][0]
+        assert ctx["niche_slug"] == ""
+        assert any("no niche_slug" in r.getMessage() for r in caplog.records)
