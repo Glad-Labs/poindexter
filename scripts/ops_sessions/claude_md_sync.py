@@ -16,7 +16,7 @@ from pathlib import Path
 
 import _common as c
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 
 # Convergence budget for landing the PR. Env knobs rather than app_settings to
 # match _common.py's OPS_OLLAMA_* idiom: these sessions are standalone by
