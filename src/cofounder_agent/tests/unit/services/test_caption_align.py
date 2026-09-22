@@ -246,3 +246,59 @@ class TestRetimeCuesToWords:
         words = self._words([(1.0, 1.05, "quick")])
         out = retime_cues_to_words(cues, words, lead_s=0.0)
         assert out[0].end_s - out[0].start_s >= 0.3
+
+
+class TestClauseAwareCuts:
+    """Cues end on the writer's punctuation, not on a word count.
+
+    The balanced split produced every caption in the newest short as a
+    mid-clause fragment (2026-09-21 review). Aligned segments carry the clean
+    script, so its commas and full stops are the right cut points.
+    """
+
+    def test_cuts_on_the_comma_not_mid_clause(self):
+        text = ("Nobody clicks anymore, so keep them engaged without leaving, "
+                "and put the information in the post itself.")
+        out = split_segments_for_display([_seg(0.0, 9.0, text)], max_words=6)
+        cues = [c.text for c in out]
+        assert " ".join(cues) == text
+        # Exact decisions, pinned: the first two cuts land on commas; the last
+        # clause has no punctuation inside a 6-word window, so it is balanced
+        # 4/4 rather than greedy 6/2. Every cue is a whole thought or half of
+        # one — never "...themselves, not".
+        assert cues == [
+            "Nobody clicks anymore,",
+            "so keep them engaged without leaving,",
+            "and put the information",
+            "in the post itself.",
+        ]
+        assert all(2 <= len(c.split()) <= 6 for c in cues)
+
+    def test_unpunctuated_text_still_splits_balanced(self):
+        """The pinned 5/4/4 behaviour is untouched when there is nothing to cut on."""
+        text = "one two three four five six seven eight nine ten eleven twelve thirteen"
+        out = split_segments_for_display([_seg(0.0, 6.5, text)], max_words=5)
+        assert [len(c.text.split()) for c in out] == [5, 4, 4]
+
+    def test_no_orphan_tail_after_a_late_comma(self):
+        # a boundary right before the end would leave a 1-word tail — fold it
+        text = "alpha beta gamma delta epsilon, zeta"
+        out = split_segments_for_display([_seg(0.0, 4.0, text)], max_words=5)
+        assert all(len(c.text.split()) >= 2 for c in out), [c.text for c in out]
+        assert " ".join(c.text for c in out) == text
+
+    def test_timings_stay_contiguous_with_exact_tail(self):
+        text = "First clause here, second clause follows, and the third one ends."
+        out = split_segments_for_display([_seg(2.0, 8.0, text)], max_words=4)
+        assert out[0].start_s == 2.0 and out[-1].end_s == 8.0
+        for a, b in zip(out, out[1:], strict=False):
+            assert a.end_s == b.start_s
+
+    def test_min_cue_seconds_cap_falls_back_to_balanced(self):
+        # 4 clauses but only room for 2 cues — honouring commas would exceed the cap
+        text = "a b, c d, e f, g h"
+        out = split_segments_for_display(
+            [_seg(0.0, 1.2, text)], max_words=2, min_cue_seconds=0.6,
+        )
+        assert len(out) == 2
+        assert " ".join(c.text for c in out) == text

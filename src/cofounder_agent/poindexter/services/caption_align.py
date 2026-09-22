@@ -116,6 +116,89 @@ def align_script_to_segments(
     return out, fraction
 
 
+# Punctuation that ends a clause — a caption may cut AFTER a word carrying one.
+_CLAUSE_END = (",", ";", ":", ".", "!", "?", "\u2014", "\u2013", "\u2026")
+_CLOSERS = "\"')\u201d\u2019"
+# A cue must hold at least this many words; a 1-word cue is a flash, not a line.
+_MIN_CUE_WORDS = 2
+
+
+def _ends_clause(word: str) -> bool:
+    return word.rstrip(_CLOSERS).endswith(_CLAUSE_END)
+
+
+def _cut_on_clauses(
+    words: list[str], *, max_words: int, max_chunks: int,
+) -> list[list[str]] | None:
+    """Cut ``words`` into cues of at most ``max_words``, ending cues on clause
+    punctuation where a boundary falls inside the window.
+
+    Balanced word-count chunks read as machine-chopped: every cue in the
+    2026-09-21 review of the newest short was a mid-clause fragment —
+    "keeping users engaged without leaving" / "information within posts
+    themselves, not" / "If your content doesn't". The text handed here is the
+    CLEAN SCRIPT when alignment ran (``media_transcribe_narration``), so the
+    writer's punctuation is available and is the right place to cut.
+
+    For each cue the cut lands on the LAST clause boundary within the window
+    ``[_MIN_CUE_WORDS, max_words]`` words from the cue start; with no boundary
+    in the window the cue takes the full ``max_words``. A tail shorter than
+    ``_MIN_CUE_WORDS`` is folded into the previous cue when that stays within
+    ``max_words + 1`` (one word over beats an orphan), otherwise the last two
+    cues are rebalanced.
+
+    Returns ``None`` — meaning "use the balanced split" — when the text
+    carries no clause punctuation at all, or when honouring the punctuation
+    would exceed ``max_chunks`` (the ``min_cue_seconds`` cap). So unpunctuated
+    input is chunked exactly as before.
+    """
+    if not any(_ends_clause(w) for w in words):
+        return None
+    chunks: list[list[str]] = []
+    i, n = 0, len(words)
+    while i < n:
+        remaining = n - i
+        if remaining <= max_words:
+            chunks.append(words[i:])
+            break
+        cut = None
+        lo = i + max(_MIN_CUE_WORDS, 1)
+        hi = i + max_words
+        for j in range(hi, lo - 1, -1):
+            if _ends_clause(words[j - 1]):
+                cut = j
+                break
+        if cut is None:
+            # No boundary within reach: this clause is longer than a cue.
+            # Balance the cut across the clause rather than taking a greedy
+            # max_words and leaving "...in the" / "post itself." — split the
+            # words up to the clause's end (or the text's) into near-equal
+            # cues, and take the first of them now.
+            clause_end = n
+            for j in range(i, n):
+                if _ends_clause(words[j]):
+                    clause_end = j + 1
+                    break
+            clause_len = clause_end - i
+            pieces = math.ceil(clause_len / max_words)
+            cut = i + math.ceil(clause_len / pieces)
+        chunks.append(words[i:cut])
+        i = cut
+    # Never strand a one-word tail.
+    if len(chunks) >= 2 and len(chunks[-1]) < _MIN_CUE_WORDS:
+        tail = chunks.pop()
+        if len(chunks[-1]) + len(tail) <= max_words + 1:
+            chunks[-1] = chunks[-1] + tail
+        else:
+            merged = chunks[-1] + tail
+            half = len(merged) // 2
+            chunks[-1] = merged[:half]
+            chunks.append(merged[half:])
+    if len(chunks) > max_chunks:
+        return None
+    return chunks
+
+
 def split_segments_for_display(
     segments: list[CaptionSegment],
     *,
@@ -152,20 +235,28 @@ def split_segments_for_display(
         words = (seg.text or "").split()
         duration = max(0.0, float(seg.end_s) - float(seg.start_s))
         n_chunks = math.ceil(len(words) / max_words) if words else 1
-        if min_cue_seconds > 0 and duration > 0:
-            n_chunks = min(n_chunks, max(1, int(duration / min_cue_seconds)))
+        # The only legitimate ceiling on cue COUNT is the seconds floor. The
+        # balanced count is a target for the fallback, not a cap — clause cuts
+        # make shorter cues, so they routinely need more of them.
+        cue_cap = (
+            max(1, int(duration / min_cue_seconds))
+            if (min_cue_seconds > 0 and duration > 0) else len(words)
+        )
+        n_chunks = min(n_chunks, cue_cap)
         if n_chunks <= 1:
             out.append(seg)
             continue
 
-        # Balanced sizes: base words per chunk, the first ``rem`` get one more.
-        base, rem = divmod(len(words), n_chunks)
-        chunks: list[list[str]] = []
-        idx = 0
-        for i in range(n_chunks):
-            size = base + (1 if i < rem else 0)
-            chunks.append(words[idx : idx + size])
-            idx += size
+        chunks = _cut_on_clauses(words, max_words=max_words, max_chunks=cue_cap)
+        if chunks is None:
+            # Balanced sizes: base words per chunk, the first ``rem`` get one more.
+            base, rem = divmod(len(words), n_chunks)
+            chunks = []
+            idx = 0
+            for i in range(n_chunks):
+                size = base + (1 if i < rem else 0)
+                chunks.append(words[idx : idx + size])
+                idx += size
 
         # Char-weighted timing: longer text ≈ longer speech, better than a
         # flat per-word share ("a big" vs "extraordinarily").
