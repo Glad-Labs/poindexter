@@ -19,7 +19,7 @@
 # (20 went EOL 2026-04).
 FROM node:22-slim AS node-donor
 
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
 
 # System deps:
 #   ffmpeg / libsndfile1 / portaudio  — Pipecat audio decode + Kokoro

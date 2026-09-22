@@ -15,7 +15,7 @@
 # chatterbox-tts requires_dist entry except torch/torchaudio, which the base
 # image already satisfies) sidesteps the stale pin without disabling
 # dependency resolution for anything that still needs it.
-FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg wget && rm -rf /var/lib/apt/lists/*

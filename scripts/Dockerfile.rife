@@ -18,7 +18,7 @@
 # commit. 12 MB. The architecture file is a clean-up of ECCV2022-RIFE's
 # model/IFNet.py (MIT, (c) Megvii Inc.) — vendored INTO THE IMAGE at build
 # time, never into the repo tree, same posture as the pinned ComfyUI clone.
-FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
 
 WORKDIR /app
 
