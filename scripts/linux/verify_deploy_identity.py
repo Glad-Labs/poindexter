@@ -221,10 +221,18 @@ def parse_services(repo: Path) -> list[Service]:
 
 
 def closure_for(repo: Path, dockerfile: Path) -> list[Path]:
+    """Files baked into this image — INCLUDING the Dockerfile itself.
+
+    The Dockerfile is the most load-bearing input an image has (base image, pip
+    args, user creation) and it is not among its own COPY targets. Omitting it
+    meant a Dockerfile-only change could never flag a non-bind-mounted service:
+    `Dockerfile.image-gen` was rewritten on 2026-09-22 and the check still said
+    `48/48 current`.
+    """
     for img in collect_images(repo):
         if img.dockerfile == dockerfile:
-            return sorted(img.files)
-    return []
+            return sorted(set(img.files) | {dockerfile})
+    return [dockerfile]
 
 
 def last_change(repo: Path, paths: list[Path]) -> str:
@@ -290,6 +298,26 @@ def check(repo: Path, svc: Service) -> dict:
             )
             return result
 
+        # Identity in the literal sense, and strictly better than any timestamp:
+        # is the container running the image its tag currently names? A rebuild
+        # that is never recreated leaves the container on a SUPERSEDED image —
+        # often one that no longer exists locally. Timestamps cannot see this
+        # (the container can be newer than the image it runs), and it is exactly
+        # what happened on 2026-09-22: a deploy pass rebuilt brain-daemon and
+        # image-gen-server, failed before recreating them, and this check
+        # reported "every running container matches the checkout".
+        running_image = sh("docker", "inspect", svc.container, "--format", "{{.Image}}")
+        tag = sh("docker", "inspect", svc.container, "--format", "{{.Config.Image}}")
+        tagged_image = sh("docker", "image", "inspect", tag, "--format", "{{.Id}}") if tag else ""
+        if running_image and tagged_image and running_image != tagged_image:
+            result["status"] = "needs-recreate"
+            result["notes"].append(
+                f"running image {running_image[7:19]} but {tag} now names "
+                f"{tagged_image[7:19]} — the image was rebuilt and this container "
+                f"never recreated; `up -d --no-deps {svc.name}`"
+            )
+            return result
+
         created = _instant(sh("docker", "inspect", svc.container, "--format", "{{.Created}}"))
         files = closure_for(repo, svc.dockerfile)
         narrowed = bool(mounted_code) or len(files) > CLOSURE_FILE_CAP
@@ -343,7 +371,11 @@ def main() -> int:
     if args.json:
         print(json.dumps(results, indent=2))
     else:
-        bad = [r for r in results if r["status"] in ("stale-image", "needs-restart", "unchecked")]
+        bad = [
+            r
+            for r in results
+            if r["status"] in ("stale-image", "needs-restart", "needs-recreate", "unchecked")
+        ]
         for r in sorted(results, key=lambda r: r["service"]):
             if r["status"] == "current":
                 continue
@@ -364,7 +396,10 @@ def main() -> int:
             )
     return (
         1
-        if any(r["status"] in ("stale-image", "needs-restart", "unchecked") for r in results)
+        if any(
+            r["status"] in ("stale-image", "needs-restart", "needs-recreate", "unchecked")
+            for r in results
+        )
         else 0
     )
 

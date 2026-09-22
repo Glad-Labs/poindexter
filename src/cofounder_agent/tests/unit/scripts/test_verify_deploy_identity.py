@@ -201,3 +201,83 @@ def test_dependency_manifests_are_scoped_to_what_the_image_installs(mod, tmp_pat
     assert ctx / "poetry.lock" in kept, "the image's own lock counts"
     assert brain / "poetry.lock" not in kept, "another image's lock must not"
     assert ctx / "app.py" not in kept, "only dependency manifests here"
+
+
+# ── third round of first-use bugs (2026-09-22) ────────────────────────────
+#
+# Reported `48/48 current` while three containers ran images that had been
+# rebuilt out from under them and five more had their Dockerfile bumped hours
+# earlier. Same failure mode as the first two rounds: stale read as current.
+
+
+def test_the_dockerfile_is_an_input_to_its_own_image(mod, tmp_path, monkeypatch):
+    """A Dockerfile is not among its own COPY targets, so omitting it meant a
+    Dockerfile-only change could never flag a non-bind-mounted service — and a
+    base-image bump is exactly a Dockerfile-only change."""
+    df = tmp_path / "Dockerfile.thing"
+    df.write_text("FROM python\n")
+    monkeypatch.setattr(mod, "collect_images", lambda repo: [])
+    assert df in mod.closure_for(tmp_path, df), (
+        "a Dockerfile must be part of its own image's input set"
+    )
+
+
+def test_a_container_on_a_superseded_image_needs_recreate(mod, tmp_path, monkeypatch):
+    """Rebuild-without-recreate leaves the container on an image the tag no
+    longer names — often one that no longer exists locally.
+
+    Timestamps cannot see this: the container can be NEWER than the image it is
+    running. On 2026-09-22 a deploy pass rebuilt brain-daemon and never
+    recreated it, and this check reported the stack fully current.
+    """
+    responses = {
+        "{{.State.Running}}": "true",
+        "{{.Image}}": "sha256:aaaaaaaaaaaaold",
+        "{{.Config.Image}}": "glad-labs-website-thing",
+        "{{.Id}}": "sha256:bbbbbbbbbbbbnew",
+        "{{.State.StartedAt}}": "2026-09-22T12:00:00Z",
+        "{{json .Mounts}}": "[]",
+    }
+
+    def fake_sh(*args):
+        for key, value in responses.items():
+            if key in args:
+                return value
+        return ""
+
+    monkeypatch.setattr(mod, "sh", fake_sh)
+    df = tmp_path / "Dockerfile"
+    df.write_text("FROM python\n")
+    svc = mod.Service("thing", "poindexter-thing", df, [])
+    out = mod.check(tmp_path, svc)
+
+    assert out["status"] == "needs-recreate"
+    assert "never recreated" in " ".join(out["notes"])
+
+
+def test_matching_image_ids_are_not_flagged(mod, tmp_path, monkeypatch):
+    """The complement: a container on the image its tag names is not disturbed."""
+    same = "sha256:ccccccccccccsame"
+    responses = {
+        "{{.State.Running}}": "true",
+        "{{.Image}}": same,
+        "{{.Config.Image}}": "glad-labs-website-thing",
+        "{{.Id}}": same,
+        "{{.State.StartedAt}}": "2026-09-22T12:00:00Z",
+        "{{.Created}}": "2026-09-22T12:00:00Z",
+        "{{json .Mounts}}": "[]",
+    }
+
+    def fake_sh(*args):
+        for key, value in responses.items():
+            if key in args:
+                return value
+        return ""
+
+    monkeypatch.setattr(mod, "sh", fake_sh)
+    monkeypatch.setattr(mod, "collect_images", lambda repo: [])
+    monkeypatch.setattr(mod, "last_change", lambda repo, files: "")
+    df = tmp_path / "Dockerfile"
+    df.write_text("FROM python\n")
+    out = mod.check(tmp_path, mod.Service("thing", "poindexter-thing", df, []))
+    assert out["status"] == "current"
