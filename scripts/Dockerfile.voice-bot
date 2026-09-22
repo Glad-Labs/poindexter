@@ -1,4 +1,12 @@
-FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+# BEFORE BUMPING THIS BASE: pytorch/pytorch 2.10+ is Ubuntu-based with a
+# PEP 668 externally-managed Python, so the bare `pip install` below fails with
+# "error: externally-managed-environment" and every sidecar image stops
+# building — the deploy then retries a doomed build every ten minutes and never
+# records its marker (#3756 reverted by #3794; #3915 reverted by #3946).
+# Moving up needs `pip install --break-system-packages` (torch lives in the
+# same /usr/local dist-packages pip targets, so a venv would re-download it)
+# AND a local `docker compose build` first: CI does not build these images.
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg libffi-dev libsodium-dev libopus0 libopus-dev \

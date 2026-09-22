@@ -7,7 +7,15 @@
 # for execution on the device" on the UMT5 text-encoder pass.
 # image-gen-server stays on the older 2.5.1/12.4 image because the image-gen model doesn't
 # hit the offending kernels; Wan's text encoder does.
-FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
+# BEFORE BUMPING THIS BASE: pytorch/pytorch 2.10+ is Ubuntu-based with a
+# PEP 668 externally-managed Python, so the bare `pip install` below fails with
+# "error: externally-managed-environment" and every sidecar image stops
+# building — the deploy then retries a doomed build every ten minutes and never
+# records its marker (#3756 reverted by #3794; #3915 reverted by #3946).
+# Moving up needs `pip install --break-system-packages` (torch lives in the
+# same /usr/local dist-packages pip targets, so a venv would re-download it)
+# AND a local `docker compose build` first: CI does not build these images.
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 
 WORKDIR /app
 

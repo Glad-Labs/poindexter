@@ -9,7 +9,11 @@ Policy (2026-09-13, widened from patch-only):
   *group* PR whose group is a development / ``*-minor-patch`` group. These only
   move build and test tooling; CI is the whole risk surface, and it ran.
 * **Production minors and every major** still wait for a human, as do the
-  docker base-image bumps (``ci:`` prefix, runtime changes).
+  docker base-image bumps (runtime changes CI does not build).
+
+The docker hold is checked FIRST and is structural — see
+:func:`is_docker_base_bump`. It used to be an assumption in this docstring
+rather than a rule in the code, and the assumption was wrong twice.
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ import datetime as dt
 import json
 import re
 import sys
+from collections.abc import Iterable
 
 import _common as c
 
@@ -85,14 +90,60 @@ def is_held_package(pkg: str) -> bool:
     return pkg in _HELD_MINOR_PACKAGES or pkg.startswith(_HELD_MINOR_PREFIXES)
 
 
+# A container base image is a runtime change, and the CUDA sidecar images are
+# not built in CI by choice (a ~12 GB build each), so a base bump is
+# unverifiable before merge. dependabot.yml labels the docker ecosystem
+# 'docker'; the name/tag shapes below keep the hold when a listing carries no
+# labels. ``:tag`` shapes, not versions — the tag is exactly what fooled the
+# version rules.
+_DOCKER_LABEL = "docker"
+_IMAGE_TAG_MARKERS = (
+    "-slim", "-alpine", "-bookworm", "-bullseye", "-noble", "-jammy",
+    "-runtime", "-devel", "-cuda", "-cudnn", "-base",
+)
+
+
+def is_docker_base_bump(title: str, labels: Iterable[str] = ()) -> bool:
+    """True for a dependabot bump of a container base image.
+
+    The policy has always said these wait for a human. Until 2026-09-22 that
+    was only a sentence in the module docstring: the code assumed a docker tag
+    "carries no x.y.z pair and never matches" the version rules. The pytorch
+    sidecar base does — ``2.5.1-cuda12.4-cudnn9-runtime`` — so
+    :func:`is_production_minor_bump` read it as an ordinary same-major minor
+    and auto-merged it. Twice: #3756 (reverted by #3794 on 2026-09-15) and
+    #3915 (2026-09-22). Each time the new base shipped a PEP 668
+    externally-managed Python, every sidecar ``pip install`` failed with
+    ``error: externally-managed-environment``, and the deploy retried a
+    doomed multi-image build every ten minutes for hours while the marker was
+    never recorded. Runtime survived both times only because the running
+    containers keep their old images.
+
+    ``pytorch/pytorch`` is also absent from :data:`_HELD_MINOR_PACKAGES` — the
+    ``torch`` prefix there does not match it — but naming it would only patch
+    this one image. The hold is on the ecosystem instead.
+
+    The label is the discriminator, not the ``owner/name`` shape: a
+    github-actions bump is ``actions/checkout`` and must keep auto-merging
+    (CI runs the action it bumps, which is the whole risk surface). The tag
+    markers are the fallback for a listing without labels, and no GH Actions
+    version carries one.
+    """
+    if any(str(label).strip().lower() == _DOCKER_LABEL for label in labels or ()):
+        return True
+    return any(marker in title.lower() for marker in _IMAGE_TAG_MARKERS)
+
+
 def is_production_minor_bump(title: str) -> bool:
     """True for a production-scoped bump that moves at most a minor and is not held.
 
     A ``(deps-dev)`` title never matches (that is ``is_dev_tooling_bump``'s
     job). A single bump must keep its major and name a package outside the
     held list; a group PR must be one dependabot.yml bounds to minor+patch.
-    Docker base-image tags (``3.13-slim`` -> ``3.14-slim``) carry no x.y.z
-    pair and never match.
+
+    Docker base images are NOT this function's problem to exclude — a tag can
+    carry a perfectly ordinary version triple. :func:`auto_mergeable` holds
+    them before any version rule runs.
     """
     if _DEV_SCOPE.search(title):
         return False
@@ -108,7 +159,15 @@ def is_production_minor_bump(title: str) -> bool:
     return False
 
 
-def auto_mergeable(title: str) -> bool:
+def auto_mergeable(title: str, labels: Iterable[str] = ()) -> bool:
+    """Whether this dependabot PR may merge without a human.
+
+    The docker hold comes FIRST: a base-image bump is held whatever its
+    version shape says, including a patch (``is_patch_bump`` would otherwise
+    merge ``2.9.0`` -> ``2.9.1`` on an image nothing in CI builds).
+    """
+    if is_docker_base_bump(title, labels):
+        return False
     return is_patch_bump(title) or is_dev_tooling_bump(title) or is_production_minor_bump(title)
 
 
@@ -133,7 +192,9 @@ def main() -> int:
     proc = c.gh(
         "pr", "list", "--repo", REPO,
         "--search", "is:pr is:open author:app/dependabot",
-        "--json", "number,title,createdAt,statusCheckRollup", "--limit", "30",
+        # labels: dependabot.yml tags the docker ecosystem 'docker', which is
+        # how the base-image hold recognises one (see is_docker_base_bump).
+        "--json", "number,title,createdAt,statusCheckRollup,labels", "--limit", "30",
     )
     if proc.returncode != 0:
         c.notify_fail("dependency-review failed", proc.stderr[:500], "dependency_review")
@@ -142,7 +203,9 @@ def main() -> int:
     merged, skipped = [], []
     for pr in prs:
         num = pr["number"]
-        if not (auto_mergeable(pr["title"]) and all_checks_green(pr.get("statusCheckRollup", []))
+        labels = [lb.get("name", "") for lb in (pr.get("labels") or []) if isinstance(lb, dict)]
+        if not (auto_mergeable(pr["title"], labels)
+                and all_checks_green(pr.get("statusCheckRollup", []))
                 and older_than_hours(pr["createdAt"], 6)):
             skipped.append(num)
             continue

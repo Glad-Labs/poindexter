@@ -92,3 +92,66 @@ def test_held_list_is_by_name_or_family_prefix():
     assert dr.bumped_package("deps:(deps): bump the production group across 1 directory with 3 updates") is None
     assert dr.is_held_package("litellm") and dr.is_held_package("torchvision") and dr.is_held_package("llama-index-embeddings-ollama")
     assert not dr.is_held_package("fastapi") and not dr.is_held_package("starlette")
+
+
+# ---------------------------------------------------------------------------
+# Docker base images wait for a human (2026-09-22)
+#
+# The policy always said so; the code did not enforce it. A pytorch sidecar
+# tag carries a semver triple (2.5.1-cuda12.4-cudnn9-runtime), so
+# is_production_minor_bump read it as an ordinary same-major minor and merged
+# it — #3756 (reverted by #3794) and again #3915. Both times the new base
+# shipped a PEP 668 externally-managed Python, every sidecar `pip install`
+# failed, and the deploy retried a doomed build every ten minutes for hours.
+# CI does not build the CUDA images (~12 GB each), so nothing catches it first.
+# ---------------------------------------------------------------------------
+
+_PYTORCH_BUMP = (
+    "ci: bump pytorch/pytorch from 2.5.1-cuda12.4-cudnn9-runtime "
+    "to 2.6.0-cuda12.4-cudnn9-runtime"
+)
+
+
+def test_docker_base_bump_is_held_by_its_label():
+    assert dr.is_docker_base_bump(_PYTORCH_BUMP, ["dependencies", "docker"]) is True
+    assert dr.auto_mergeable(_PYTORCH_BUMP, ["dependencies", "docker"]) is False
+
+
+def test_docker_base_bump_is_held_without_labels_by_its_tag_shape():
+    """A listing that carries no labels must still hold: the image tag says it."""
+    assert dr.auto_mergeable(_PYTORCH_BUMP) is False
+    assert dr.auto_mergeable("ci: bump python from 3.13-slim to 3.14-slim") is False
+    assert dr.auto_mergeable("ci: bump nvidia/cuda from 12.8.0-base to 12.9.0-base") is False
+
+
+def test_docker_patch_bumps_are_held_too():
+    """The hold runs before every version rule — is_patch_bump would otherwise
+    merge a base image nothing in CI builds."""
+    title = (
+        "ci: bump pytorch/pytorch from 2.9.0-cuda12.8-cudnn9-runtime "
+        "to 2.9.1-cuda12.8-cudnn9-runtime"
+    )
+    assert dr.is_patch_bump(title) is True  # the version rule still says patch
+    assert dr.auto_mergeable(title) is False  # and it does not decide
+
+
+def test_github_actions_bumps_still_auto_merge():
+    """actions/checkout is owner/name too — the label, not the slash, is the
+    discriminator. CI runs the action it bumps, which is the whole risk."""
+    assert dr.is_docker_base_bump("ci: bump actions/checkout from 4.2.0 to 4.3.0") is False
+    assert dr.auto_mergeable("ci: bump actions/checkout from 4.2.0 to 4.3.0") is True
+    assert dr.auto_mergeable(
+        "ci: bump actions/setup-python from 5.3.0 to 5.4.0", ["dependencies"],
+    ) is True
+
+
+def test_ordinary_python_bumps_are_unaffected_by_the_docker_hold():
+    assert dr.auto_mergeable("deps:(deps): bump asyncpg from 0.30.0 to 0.30.1") is True
+    assert dr.auto_mergeable("deps:(deps-dev): bump ruff from 0.16.4 to 0.17.0") is True
+
+
+def test_labels_are_read_defensively():
+    """A None/odd label list must not raise — the session would stop merging
+    everything for the rest of its run."""
+    assert dr.auto_mergeable("deps:(deps): bump asyncpg from 0.30.0 to 0.30.1", None) is True
+    assert dr.is_docker_base_bump("deps:(deps): bump asyncpg from 0.30.0 to 0.30.1", [None]) is False
