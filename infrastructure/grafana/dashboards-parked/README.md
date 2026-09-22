@@ -11,9 +11,13 @@ is whether it's still wanted, and these are — just not yet).
 
 ## Currently parked
 
-| Dashboard      | Parked                           | Why                                                                                                                                         | Unpark when                                                                                                                                                    |
-| -------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `revenue.json` | 2026-07-01 (observability audit) | `revenue_events` holds exactly 1 row (2026-04-25). Twelve permanently-"No data" panels train the operator to distrust dashboards generally. | Monetization goes live and `revenue_events` receives real writes (Lemon Squeezy webhook → revenue engine). `git mv` it back — the provider reloads within 30s. |
+_Nothing is parked right now._
+
+## Previously parked
+
+| Dashboard      | Parked                           | Unparked   | Why it came back                                                                                                                                             |
+| -------------- | -------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `revenue.json` | 2026-07-01 (observability audit) | 2026-09-22 | `revenue_events` now has a live producer: the invoice poll in `services/pro_delivery.py` writes every Lemon Squeezy charge, renewal and refund (stack#3216). |
 
 ## How to unpark
 

@@ -121,11 +121,25 @@ class FakeConn:
             self.db.subs[args[0]]["github_revoked_at"] = "now"
             return "UPDATE 1"
         if "INSERT INTO revenue_events" in query:
-            external_id = args[4]
+            # (event_type, amount_usd, currency, recurring, email,
+            #  customer_id, affiliate_id, external_id, external_data)
+            external_id = args[7]
+            # Stands in for ux_revenue_events_external_id + ON CONFLICT DO
+            # NOTHING: a re-poll of a known invoice must report 0 rows written.
             if any(r["external_id"] == external_id for r in self.db.revenue):
                 return "INSERT 0 0"
             self.db.revenue.append(
-                {"external_id": external_id, "amount_usd": args[0]}
+                {
+                    "event_type": args[0],
+                    "amount_usd": args[1],
+                    "currency": args[2],
+                    "recurring": args[3],
+                    "customer_email": args[4],
+                    "customer_id": args[5],
+                    "affiliate_id": args[6],
+                    "external_id": external_id,
+                    "external_data": json.loads(args[8]),
+                }
             )
             return "INSERT 0 1"
         if "SET github_username = $2" in query:
@@ -173,16 +187,30 @@ class FakeDb:
 class GithubRecorder:
     """MockTransport handler for both LS and GitHub, recording GitHub calls."""
 
-    def __init__(self, ls_page: dict[str, Any]):
+    def __init__(
+        self,
+        ls_page: dict[str, Any],
+        invoices: list[dict[str, Any]] | None = None,
+    ):
         self.ls_page = ls_page
+        self.invoice_page = {"data": list(invoices or []), "links": {}}
         self.invites: list[str] = []
         self.removals: list[str] = []
         self.invitation_cancels: list[str] = []
         self.pending_invitations: list[dict[str, Any]] = []
         self.fail_invite_for: set[str] = set()
+        self.invoice_status = 200
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
+        # Checked BEFORE /v1/subscriptions: distinct endpoints whose paths
+        # share a prefix up to the hyphen.
+        if url.startswith(
+            "https://api.lemonsqueezy.com/v1/subscription-invoices"
+        ):
+            if self.invoice_status != 200:
+                return httpx.Response(self.invoice_status, text="boom")
+            return httpx.Response(200, json=self.invoice_page)
         if url.startswith("https://api.lemonsqueezy.com/v1/subscriptions"):
             return httpx.Response(200, json=self.ls_page)
         if "/repos/" in url and "/invitations" in url and request.method == "GET":
@@ -246,6 +274,40 @@ def make_page(*subs: dict[str, Any], orders: list[dict[str, Any]] | None = None)
     return {"data": list(subs), "included": orders or [], "links": {}}
 
 
+def ls_invoice(
+    invoice_id: str = "5001",
+    *,
+    billing_reason: str = "initial",
+    status: str = "paid",
+    total_usd: int = 1900,
+    subscription_id: int = 101,
+    refunded: bool = False,
+    refunded_amount_usd: int = 0,
+    test_mode: bool = False,
+    affiliate_id: Any = None,
+) -> dict[str, Any]:
+    return {
+        "type": "subscription-invoices",
+        "id": invoice_id,
+        "attributes": {
+            "billing_reason": billing_reason,
+            "status": status,
+            "total": total_usd,
+            "total_usd": total_usd,
+            "currency": "USD",
+            "subscription_id": subscription_id,
+            "customer_id": 555,
+            "user_email": "buyer@example.com",
+            "refunded": refunded,
+            "refunded_amount_usd": refunded_amount_usd,
+            "refunded_at": "2026-09-10T00:00:00.000000Z" if refunded else None,
+            "test_mode": test_mode,
+            "affiliate_id": affiliate_id,
+            "created_at": "2026-09-01T00:00:00.000000Z",
+        },
+    }
+
+
 @pytest.fixture()
 def site_config(monkeypatch: pytest.MonkeyPatch) -> SiteConfig:
     monkeypatch.setenv("LEMON_SQUEEZY_API_KEY", "ls-test-key")
@@ -267,9 +329,9 @@ def findings(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     return captured
 
 
-async def _sync(page, site_config, db=None):
+async def _sync(page, site_config, db=None, invoices=None, recorder=None):
     db = db or FakeDb()
-    recorder = GithubRecorder(page)
+    recorder = recorder or GithubRecorder(page, invoices)
     outcome = await run_sync(
         db, site_config, transport=httpx.MockTransport(recorder)
     )
@@ -313,14 +375,17 @@ async def test_active_sub_with_username_is_invited_and_revenue_recorded(
         ls_sub(custom={"github_username": "@octocat"}),
         orders=[ls_order()],
     )
-    outcome, recorder, db = await _sync(page, site_config)
+    outcome, recorder, db = await _sync(
+        page, site_config, invoices=[ls_invoice()]
+    )
 
     assert outcome.invited == ["octocat"]
     assert recorder.invites == ["octocat"]
     assert db.subs["101"]["github_invited_at"] is not None
     assert outcome.revenue_rows == 1
-    assert db.revenue[0]["external_id"] == "ls_order_900"
+    assert db.revenue[0]["external_id"] == "ls_invoice_5001"
     assert db.revenue[0]["amount_usd"] == pytest.approx(19.0)
+    assert db.revenue[0]["recurring"] is False
     assert findings == []
 
 
@@ -339,12 +404,15 @@ async def test_second_pass_is_idempotent(site_config, findings):
         ls_sub(custom={"github_username": "octocat"}), orders=[ls_order()]
     )
     db = FakeDb()
-    await _sync(page, site_config, db=db)
-    outcome2, recorder2, _ = await _sync(page, site_config, db=db)
+    invoices = [ls_invoice()]
+    await _sync(page, site_config, db=db, invoices=invoices)
+    outcome2, recorder2, _ = await _sync(
+        page, site_config, db=db, invoices=invoices
+    )
 
     assert outcome2.invited == []           # no re-invite while delivered
     assert recorder2.invites == []
-    assert outcome2.revenue_rows == 0       # ls_order_900 already recorded
+    assert outcome2.revenue_rows == 0       # ls_invoice_5001 already recorded
     assert len(db.revenue) == 1
 
 
@@ -1052,3 +1120,177 @@ async def test_relay_status_without_ls_key_degrades(monkeypatch):
         FakeDb(), SiteConfig(initial_config={})
     )
     assert "lemon_squeezy_api_key" in payload["ls_webhooks"]
+
+
+# ---------------------------------------------------------------------------
+# invoice-driven revenue (glad-labs-stack#3216)
+#
+# Revenue comes from /v1/subscription-invoices, not from webhooks and not
+# from order objects: an invoice is one charge, so renewals and refunds are
+# visible without any public ingress.
+# ---------------------------------------------------------------------------
+
+
+async def test_renewal_invoice_is_recorded_as_recurring(site_config, findings):
+    """The gap this closes: the order-derived write only ever saw the FIRST
+    charge, so a subscription's monthly income was invisible."""
+    page = make_page(ls_sub(custom={"github_username": "octocat"}))
+    outcome, _recorder, db = await _sync(
+        page,
+        site_config,
+        invoices=[
+            ls_invoice("5001", billing_reason="initial"),
+            ls_invoice("5002", billing_reason="renewal"),
+            ls_invoice("5003", billing_reason="renewal"),
+        ],
+    )
+
+    assert outcome.invoices_seen == 3
+    assert outcome.revenue_rows == 3
+    by_id = {r["external_id"]: r for r in db.revenue}
+    assert by_id["ls_invoice_5001"]["recurring"] is False
+    assert by_id["ls_invoice_5001"]["event_type"] == "order_created"
+    assert by_id["ls_invoice_5002"]["recurring"] is True
+    assert by_id["ls_invoice_5002"]["event_type"] == "subscription_payment_success"
+    assert by_id["ls_invoice_5003"]["recurring"] is True
+
+
+async def test_refund_appends_negative_counter_row(site_config, findings):
+    """Refunds append rather than mutate, and use refunded_amount_usd —
+    a partial refund is not the negated total."""
+    page = make_page(ls_sub(custom={"github_username": "octocat"}))
+    outcome, _recorder, db = await _sync(
+        page,
+        site_config,
+        invoices=[
+            ls_invoice(
+                "5010", total_usd=1900, refunded=True, refunded_amount_usd=500
+            )
+        ],
+    )
+
+    assert outcome.revenue_rows == 1
+    assert outcome.refund_rows == 1
+    by_id = {r["external_id"]: r for r in db.revenue}
+    assert by_id["ls_invoice_5010"]["amount_usd"] == pytest.approx(19.0)
+    refund = by_id["ls_invoice_5010_refund"]
+    assert refund["event_type"] == "order_refunded"
+    assert refund["amount_usd"] == pytest.approx(-5.0)   # partial, not -19.0
+    assert refund["external_data"]["refunds"] == "ls_invoice_5010"
+
+
+async def test_refund_discovered_on_a_later_poll(site_config, findings):
+    """A refund issued after the charge landed must still be picked up —
+    the payment row is already keyed, so only the counter-row is new."""
+    page = make_page(ls_sub(custom={"github_username": "octocat"}))
+    db = FakeDb()
+    await _sync(page, site_config, db=db, invoices=[ls_invoice("5020")])
+    assert len(db.revenue) == 1
+
+    outcome, _recorder, _ = await _sync(
+        page,
+        site_config,
+        db=db,
+        invoices=[
+            ls_invoice("5020", refunded=True, refunded_amount_usd=1900)
+        ],
+    )
+    assert outcome.revenue_rows == 0    # payment already in the ledger
+    assert outcome.refund_rows == 1
+    assert len(db.revenue) == 2
+
+
+async def test_test_mode_and_unpaid_invoices_never_enter_the_ledger(
+    site_config, findings
+):
+    """test_mode is LS sandbox traffic on the real endpoint; a pending or
+    void invoice may still change. Neither is money."""
+    page = make_page(ls_sub(custom={"github_username": "octocat"}))
+    outcome, _recorder, db = await _sync(
+        page,
+        site_config,
+        invoices=[
+            ls_invoice("5030", test_mode=True),
+            ls_invoice("5031", status="pending"),
+            ls_invoice("5032", status="void"),
+            ls_invoice("5033"),  # the only real one
+        ],
+    )
+
+    assert outcome.invoices_seen == 4
+    assert outcome.revenue_rows == 1
+    assert [r["external_id"] for r in db.revenue] == ["ls_invoice_5033"]
+
+
+async def test_zero_dollar_invoice_is_a_real_row(site_config, findings):
+    """A 100%-off or $0-trial charge is $0.00 and still belongs in the
+    ledger — zero means "no charge", never "unknown"."""
+    page = make_page(ls_sub(custom={"github_username": "octocat"}))
+    outcome, _recorder, db = await _sync(
+        page, site_config, invoices=[ls_invoice("5040", total_usd=0)]
+    )
+    assert outcome.revenue_rows == 1
+    assert db.revenue[0]["amount_usd"] == pytest.approx(0.0)
+
+
+async def test_affiliate_id_is_carried_through(site_config, findings):
+    page = make_page(ls_sub(custom={"github_username": "octocat"}))
+    _outcome, _recorder, db = await _sync(
+        page, site_config, invoices=[ls_invoice("5050", affiliate_id=8812)]
+    )
+    assert db.revenue[0]["affiliate_id"] == "8812"
+
+
+async def test_invoice_pagination_follows_links_next(site_config, findings):
+    """JSON:API paging, same contract as the subscriptions fetch."""
+    page = make_page(ls_sub(custom={"github_username": "octocat"}))
+    recorder = GithubRecorder(page)
+    pages = [
+        {
+            "data": [ls_invoice("6001")],
+            "links": {
+                "next": (
+                    "https://api.lemonsqueezy.com/v1/subscription-invoices"
+                    "?page%5Bnumber%5D=2"
+                )
+            },
+        },
+        {"data": [ls_invoice("6002")], "links": {}},
+    ]
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "subscription-invoices" in url:
+            seen.append(url)
+            return httpx.Response(200, json=pages[len(seen) - 1])
+        return recorder(request)
+
+    db = FakeDb()
+    outcome = await run_sync(
+        db, site_config, transport=httpx.MockTransport(handler)
+    )
+    assert len(seen) == 2
+    assert outcome.invoices_seen == 2
+    assert {r["external_id"] for r in db.revenue} == {
+        "ls_invoice_6001",
+        "ls_invoice_6002",
+    }
+
+
+async def test_invoice_failure_does_not_strand_github_delivery(
+    site_config, findings
+):
+    """The revenue pass is isolated from delivery in BOTH directions: a
+    500 on the invoice endpoint must not cost a subscriber their invite."""
+    page = make_page(ls_sub(custom={"github_username": "octocat"}))
+    recorder = GithubRecorder(page)
+    recorder.invoice_status = 500
+
+    outcome, _recorder, db = await _sync(page, site_config, recorder=recorder)
+
+    assert outcome.invited == ["octocat"]       # delivery still happened
+    assert recorder.invites == ["octocat"]
+    assert db.revenue == []
+    assert any("invoices" in e for e in outcome.errors)
+    assert any(f["kind"] == "pro_delivery_error" for f in findings)

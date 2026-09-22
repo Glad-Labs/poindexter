@@ -144,9 +144,20 @@ poindexter pro unlink 101        # revoke + detach
 - **`pro_delivery_error` finding:** config missing (severity error) or
   LS/GitHub API failures (severity warn, per-subscription isolation — one
   bad row never strands the rest).
-- Revenue: the sync writes the initial order into `revenue_events`
-  (idempotent, `ls_order_<id>`), giving the parked Revenue board a live
-  data path. Renewal invoices are a tracked follow-up on #3216.
+- Revenue: the sync writes every Lemon Squeezy charge into `revenue_events`
+  from `GET /v1/subscription-invoices` (idempotent, `ls_invoice_<id>`),
+  which is what unparked the Revenue board. That endpoint is the payment
+  ledger — one invoice per charge — so **renewals** arrive as ordinary rows
+  (`recurring=true`, `event_type='subscription_payment_success'`) with no
+  ingress and no webhook. Refunds append a negative counter-row keyed
+  `ls_invoice_<id>_refund`, using `refunded_amount_usd` rather than the
+  negated total, because LS supports partial refunds.
+
+  Three classes never enter the ledger: `test_mode` invoices (LS sandbox
+  traffic on the real endpoint), and `pending` / `void` invoices (not yet
+  settled — a later poll picks them up once they are). A `$0.00` invoice
+  IS recorded: a 100%-off coupon or free trial is a real charge of zero,
+  and dropping it would make the ledger disagree with Lemon Squeezy.
 
 ## Freshness (the other half of the promise)
 
@@ -199,4 +210,9 @@ freshness session, counts included) teaches the same flow to buyers.
 - **Turning a relay into a revenue pipe**: don't, without reading the
   dedup note in `services/pro_delivery.py` — the shipped relay stores
   custom_data mappings only, which is why the poll can stay the single
-  `revenue_events` writer.
+  `revenue_events` writer. There is also no longer a reason to: money was
+  never the field the LS REST API withholds (only `custom_data` is), so
+  the invoice poll already sees every charge, renewal and refund. A relay
+  forwarding whole webhooks would write `webhook_id`-keyed rows that
+  collide with nothing and therefore double-count — the unique index on
+  `external_id` guards the shape, not the semantics.

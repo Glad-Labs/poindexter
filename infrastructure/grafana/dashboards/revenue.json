@@ -314,7 +314,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of subscription_created events in the window (new recurring customers).",
+      "description": "Count of subscription_payment_success events in the window — recurring charges after the initial order, sourced from LS /v1/subscription-invoices (billing_reason != 'initial'). Replaced a subscription_created filter that no writer emits, which would have read zero forever.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -362,11 +362,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*)::int AS \"New subs\" FROM revenue_events WHERE event_type = 'subscription_created' AND $__timeFilter(created_at);",
+          "rawSql": "SELECT COUNT(*)::int AS \"Renewals\" FROM revenue_events WHERE event_type = 'subscription_payment_success' AND $__timeFilter(created_at);",
           "refId": "A"
         }
       ],
-      "title": "New subscriptions (window)",
+      "title": "Renewals (window)",
       "type": "stat"
     },
     {

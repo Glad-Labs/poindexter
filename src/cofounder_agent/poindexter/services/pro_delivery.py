@@ -12,10 +12,20 @@ poll from inside the network needs no ingress and reconciles after downtime,
 where a missed webhook is simply lost. The public webhook relay that DOES
 exist (``infrastructure/cloudflare/ls-webhook-relay``, see below) stores
 checkout custom_data mappings ONLY and never writes ``revenue_events``, so
-the order-id-keyed dedup here stays the single revenue path; if anyone ever
+the invoice-keyed ledger here stays the single revenue path; if anyone ever
 makes a relay forward whole webhooks into that route instead, the
 ``webhook_id``-keyed rows it writes must be reconciled with the poll's
-order-id keys first.
+``ls_invoice_<id>`` keys first.
+
+Revenue comes from ``GET /v1/subscription-invoices``, not from webhooks and
+not from order objects. That endpoint is the payment ledger: one invoice per
+charge, carrying ``billing_reason`` (``initial`` vs ``renewal``), ``total_usd``,
+``refunded`` / ``refunded_amount_usd``, and ``test_mode``. Only ``custom_data``
+is structurally absent from the LS REST API — money never was, so recurring
+revenue needs no ingress either. The older order-derived write this replaces
+could only ever record the FIRST charge, and only on the pass that first
+inserted the ``pro_subscriptions`` row, so a failed write was never retried
+and renewals were invisible entirely.
 
 Access policy (also documented in docs/operations/pro-delivery.md):
 
@@ -97,6 +107,31 @@ RELAY_WEBHOOK_EVENTS = (
 ACCESS_STATUSES = frozenset({"on_trial", "active", "past_due", "cancelled"})
 REVOKE_STATUSES = frozenset({"expired", "unpaid", "paused"})
 
+
+def _usd(cents: Any) -> float:
+    """LS money fields are integer cents; render them as dollars.
+
+    Returns 0.0 for a missing or unparseable value. A genuinely free order
+    (100%-off coupon, $0 trial invoice) is $0.00 and is a real ledger row —
+    zero here means "no charge", never "unknown".
+    """
+    try:
+        return float(cents or 0) / 100.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _inserted(command_tag: Any) -> int:
+    """1 if an asyncpg INSERT actually wrote a row, else 0.
+
+    ``ON CONFLICT DO NOTHING`` still returns a tag, but as ``INSERT 0 0`` —
+    which is how a re-poll of an invoice already in the ledger is told apart
+    from a genuinely new charge, so the job's metrics count writes and not
+    attempts.
+    """
+    return 1 if str(command_tag).strip().endswith(" 1") else 0
+
+
 # GitHub username: 1-39 alphanumerics/hyphens, no leading/trailing/double
 # hyphen (GitHub's own rule).
 _GITHUB_USERNAME_RE = re.compile(r"^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}$")
@@ -121,7 +156,9 @@ class SyncOutcome:
     invited: list[str] = field(default_factory=list)
     revoked: list[str] = field(default_factory=list)
     missing_username: list[str] = field(default_factory=list)
+    invoices_seen: int = 0
     revenue_rows: int = 0
+    refund_rows: int = 0
     errors: list[str] = field(default_factory=list)
 
     def as_metrics(self) -> dict[str, Any]:
@@ -130,7 +167,9 @@ class SyncOutcome:
             "invited": len(self.invited),
             "revoked": len(self.revoked),
             "missing_username": len(self.missing_username),
+            "invoices_seen": self.invoices_seen,
             "revenue_rows": self.revenue_rows,
+            "refund_rows": self.refund_rows,
             "errors": len(self.errors),
         }
 
@@ -511,53 +550,141 @@ class ProDeliveryService:
         )
         return is_new
 
-    @staticmethod
-    async def _record_initial_revenue(
-        conn: Any,
-        sub: dict[str, Any],
-        order_attrs: dict[str, Any] | None,
-    ) -> int:
-        """Record the initial order as a revenue_events row, idempotently.
+    async def _fetch_subscription_invoices(
+        self, client: httpx.AsyncClient, cfg: _Config
+    ) -> list[dict[str, Any]]:
+        """Fetch all LS subscription invoices across pages.
 
-        Keyed ``ls_order_<id>`` so re-syncs never double-count. Renewal
-        invoices are a follow-up (#3216) — this covers the initial charge
-        that the unreachable webhook was supposed to capture.
+        ``/v1/subscription-invoices`` is the payment ledger — one object per
+        charge, including renewals, which the subscription object itself does
+        not expose (it carries current STATE, not a payment history). Same
+        JSON:API pagination contract as ``_fetch_subscriptions``.
         """
-        attrs = sub.get("attributes") or {}
-        order_id = attrs.get("order_id")
-        if order_id is None or not order_attrs:
-            return 0
-        cents = order_attrs.get("total") or 0
-        try:
-            amount_usd = float(cents) / 100.0
-        except (TypeError, ValueError):
-            amount_usd = 0.0
-        result = await conn.execute(
-            """
+        invoices: list[dict[str, Any]] = []
+        url: str | None = f"{LS_API_BASE}/subscription-invoices"
+        first_params = {"page[size]": "100"}
+        if cfg.store_id:
+            first_params["filter[store_id]"] = cfg.store_id
+        params: dict[str, str] | None = first_params
+        while url:
+            resp = await client.get(url, params=params, headers=self._ls_headers(cfg))
+            resp.raise_for_status()
+            body = resp.json()
+            invoices.extend(body.get("data") or [])
+            url = (body.get("links") or {}).get("next")
+            params = None
+        return invoices
+
+    @staticmethod
+    async def _record_invoice_revenue(
+        conn: Any, invoice: dict[str, Any]
+    ) -> tuple[int, int]:
+        """Record one LS invoice as revenue_events row(s), idempotently.
+
+        Returns ``(payment_rows, refund_rows)``.
+
+        Keyed ``ls_invoice_<id>`` against the ``ux_revenue_events_external_id``
+        unique index, so ``ON CONFLICT DO NOTHING`` makes re-polling free —
+        unlike the ``WHERE NOT EXISTS`` guard this replaces, which raced with
+        an overlapping run of the same 5-minute job.
+
+        A refund is an APPENDED counter-row (``ls_invoice_<id>_refund``), never
+        a mutation of the payment row: the ledger stays append-only, and a
+        refund issued long after the charge is picked up by a later poll
+        rather than being lost. It uses ``refunded_amount_usd`` rather than
+        negating the total, because LS supports PARTIAL refunds and the two
+        are not the same number.
+        """
+        attrs = invoice.get("attributes") or {}
+        invoice_id = invoice.get("id")
+        if invoice_id is None:
+            return (0, 0)
+
+        # test_mode invoices are LS's sandbox traffic — real objects on the
+        # real endpoint, but not money. They must never enter the ledger.
+        if attrs.get("test_mode"):
+            return (0, 0)
+        # Only a settled charge is revenue; pending/void invoices may still
+        # change, and a later poll will pick them up once they land.
+        if str(attrs.get("status") or "").lower() != "paid":
+            return (0, 0)
+
+        billing_reason = str(attrs.get("billing_reason") or "").lower()
+        recurring = billing_reason != "initial"
+        event_type = "subscription_payment_success" if recurring else "order_created"
+        customer_id = attrs.get("customer_id")
+        affiliate_id = attrs.get("affiliate_id")
+
+        currency = str(attrs.get("currency") or "USD")
+        customer_email = attrs.get("user_email")
+        customer_id_str = str(customer_id) if customer_id is not None else None
+        affiliate_id_str = str(affiliate_id) if affiliate_id else None
+        subscription_id = attrs.get("subscription_id")
+
+        insert_sql = """
             INSERT INTO revenue_events (
                 event_type, source, amount_usd, currency, recurring,
-                customer_email, customer_id, external_id, external_data
+                customer_email, customer_id, affiliate_id,
+                external_id, external_data
             )
-            SELECT 'order_created', 'lemon_squeezy', $1, $2, false, $3, $4, $5, $6
-            WHERE NOT EXISTS (
-                SELECT 1 FROM revenue_events WHERE external_id = $5
+            VALUES ($1, 'lemon_squeezy', $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (external_id) WHERE external_id IS NOT NULL
+            DO NOTHING
+        """
+
+        payment_rows = _inserted(
+            await conn.execute(
+                insert_sql,
+                event_type,
+                _usd(attrs.get("total_usd")),
+                currency,
+                recurring,
+                customer_email,
+                customer_id_str,
+                affiliate_id_str,
+                f"ls_invoice_{invoice_id}",
+                json.dumps(
+                    {
+                        "via": "pro_delivery_invoice_poll",
+                        "subscription_id": subscription_id,
+                        "billing_reason": billing_reason,
+                        "created_at": attrs.get("created_at"),
+                    }
+                ),
             )
-            """,
-            amount_usd,
-            str(order_attrs.get("currency") or "USD"),
-            attrs.get("user_email"),
-            str(attrs.get("customer_id")) if attrs.get("customer_id") is not None else None,
-            f"ls_order_{order_id}",
-            json.dumps({"via": "pro_delivery_poll", "subscription_id": sub.get("id")}),
         )
-        # asyncpg returns a command tag like "INSERT 0 1".
-        return 1 if str(result).endswith("1") else 0
+
+        refund_rows = 0
+        if attrs.get("refunded"):
+            refund_rows = _inserted(
+                await conn.execute(
+                    insert_sql,
+                    "order_refunded",
+                    -abs(_usd(attrs.get("refunded_amount_usd"))),
+                    currency,
+                    False,
+                    customer_email,
+                    customer_id_str,
+                    affiliate_id_str,
+                    f"ls_invoice_{invoice_id}_refund",
+                    json.dumps(
+                        {
+                            "via": "pro_delivery_invoice_poll",
+                            "subscription_id": subscription_id,
+                            "refunds": f"ls_invoice_{invoice_id}",
+                            "refunded_at": attrs.get("refunded_at"),
+                        }
+                    ),
+                )
+            )
+
+        return (payment_rows, refund_rows)
 
     # -- the sync ----------------------------------------------------------
 
     async def sync(self) -> SyncOutcome:
         """One full reconcile pass: fetch LS state, upsert rows, converge
-        GitHub access to the policy, record initial revenue."""
+        GitHub access to the policy, record invoice revenue."""
         cfg = await self._resolve_config()
         outcome = SyncOutcome()
 
@@ -597,11 +724,7 @@ class ProDeliveryService:
                                     client, cfg, sub_id, attrs.get("order_id")
                                 )
 
-                        is_new = await self._upsert_row(conn, sub, username_from_ls)
-                        if is_new:
-                            outcome.revenue_rows += await self._record_initial_revenue(
-                                conn, sub, order_attrs
-                            )
+                        await self._upsert_row(conn, sub, username_from_ls)
 
                         row = await conn.fetchrow(
                             """
@@ -691,6 +814,30 @@ class ProDeliveryService:
                             "[ProDelivery] sync failed for subscription %s: %s",
                             sub_id, exc, exc_info=True,
                         )
+
+                # Revenue pass. Deliberately driven by the invoice feed rather
+                # than by the subscription loop above: a charge is a fact about
+                # a PAYMENT, not about the current state of a subscription, so
+                # tying it to subscription-row newness (as the order-derived
+                # write this replaces did) silently skipped renewals and never
+                # retried a failed write. Runs outside the per-subscription
+                # try so a GitHub failure on one subscriber cannot cost the
+                # ledger a row, and vice versa.
+                try:
+                    invoices = await self._fetch_subscription_invoices(client, cfg)
+                    outcome.invoices_seen = len(invoices)
+                    for invoice in invoices:
+                        paid, refunded = await self._record_invoice_revenue(
+                            conn, invoice
+                        )
+                        outcome.revenue_rows += paid
+                        outcome.refund_rows += refunded
+                except Exception as exc:
+                    outcome.errors.append(f"invoices: {exc}")
+                    logger.error(
+                        "[ProDelivery] invoice revenue pass failed: %s",
+                        describe_exception(exc), exc_info=True,
+                    )
 
         if outcome.errors:
             emit_finding(
