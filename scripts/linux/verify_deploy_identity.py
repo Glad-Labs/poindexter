@@ -53,6 +53,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ci"))
@@ -75,12 +76,95 @@ DEP_MANIFESTS = ("poetry.lock", "requirements.txt", "Dockerfile")
 CLOSURE_FILE_CAP = 400
 
 
+def _image_code_dests(repo: Path, dockerfile: Path | None) -> list[str]:
+    """Container paths this image COPYs code to (e.g. ``/app``)."""
+    if dockerfile is None or not dockerfile.is_file():
+        return []
+    dests: set[str] = set()
+    for img in collect_images(repo):
+        if img.dockerfile != dockerfile:
+            continue
+        for host_file, image_path in img.files.items():
+            if host_file.suffix == ".py":
+                dests.add(str(Path(image_path).parent))
+    return sorted(dests)
+
+
+def _container_code_mounts(container: str, copy_dests: list[str]) -> list[Path]:
+    """Bind mounts whose DESTINATION covers a path the image copies code to.
+
+    Read from the running container rather than compose, because compose spells
+    mounts several ways (``./x:``, ``${VAR}:``, absolute) and missing one makes
+    a bind-mounted service look baked.
+    """
+    if not copy_dests:
+        return []
+    raw = sh("docker", "inspect", container, "--format", "{{json .Mounts}}")
+    try:
+        mounts = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return []
+    out: list[Path] = []
+    for m in mounts:
+        if m.get("Type") != "bind":
+            continue
+        dest = str(m.get("Destination") or "")
+        if any(dest == d or d.startswith(dest.rstrip("/") + "/") for d in copy_dests):
+            out.append(Path(str(m.get("Source") or "")))
+    return out
+
+
+def _install_manifests(files: list[Path], dockerfile: Path, repo: Path) -> list[Path]:
+    """Dependency manifests this image actually installs from.
+
+    Scoped to the Dockerfile's own directory or the build-context root. A
+    `COPY . .` image bakes EVERY lock file in the tree, so an unscoped match
+    let the brain's `poetry.lock` bump flag the worker — which installs from a
+    different lock entirely.
+    """
+    anchors = {dockerfile.parent}
+    for img in collect_images(repo):
+        if img.dockerfile == dockerfile:
+            anchors.add(img.context)
+    return [f for f in files if f.name in DEP_MANIFESTS and f.parent in anchors]
+
+
 @dataclass
 class Service:
     name: str
     container: str
     dockerfile: Path | None
     bind_sources: list[Path]
+
+
+def _instant(stamp: str) -> datetime | None:
+    """Parse a docker/git ISO-8601 timestamp into an aware datetime.
+
+    The two sources disagree about zone, and a string compare cannot see it:
+    `docker inspect` emits UTC (`...Z`) while `git %cI` emits the committer's
+    offset (`-04:00`). The first cut truncated both to 19 characters — which
+    DROPS the offset — and compared the remainders, so a commit made at 08:36
+    EDT (12:36 UTC) read as "08:36" against a UTC image time. A four-hour
+    error, in the direction that makes an image look newer than it is and so
+    hides real staleness.
+
+    Returns None when the stamp is missing or carries no zone; the caller then
+    declines to judge rather than guessing.
+    """
+    if not stamp:
+        return None
+    text = stamp.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    # docker emits nanoseconds; fromisoformat takes at most microseconds.
+    match = re.match(r"^(.*\.\d{1,6})\d*([+-]\d{2}:\d{2})?$", text)
+    if match:
+        text = match.group(1) + (match.group(2) or "")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def sh(*args: str) -> str:
@@ -111,12 +195,16 @@ def parse_services(repo: Path) -> list[Service]:
             short = re.search(r"^\s*build:\s*(\S+)\s*$", body, re.M)
             dockerfile: Path | None = None
             if ctx:
+                # `dockerfile:` is relative to the BUILD CONTEXT, always —
+                # including when it contains a slash. Resolving a slashed path
+                # against the repo root instead pointed at a file that does not
+                # exist, so `is_file()` was False and the image check was
+                # skipped in SILENCE. That hid brain-daemon — the one service
+                # this tool was written for — on its first real use: it reported
+                # 45/48 current while the brain image predated the very commit
+                # it was supposed to contain.
                 base = (repo / ctx.group(1)).resolve()
-                dockerfile = (
-                    (repo / dfm.group(1)).resolve()
-                    if dfm and "/" in dfm.group(1)
-                    else (base / (dfm.group(1) if dfm else "Dockerfile")).resolve()
-                )
+                dockerfile = (base / (dfm.group(1) if dfm else "Dockerfile")).resolve()
             elif short:
                 dockerfile = (repo / short.group(1) / "Dockerfile").resolve()
             binds = [(repo / v).resolve() for v in re.findall(r"^\s*-\s*\./([^:\s]+):", body, re.M)]
@@ -151,7 +239,7 @@ def last_change(repo: Path, paths: list[Path]) -> str:
             continue
     if not rel:
         return ""
-    return sh("git", "-C", str(repo), "log", "-1", "--format=%cI", "--", *rel)[:19]
+    return sh("git", "-C", str(repo), "log", "-1", "--format=%cI", "--", *rel)
 
 
 def check(repo: Path, svc: Service) -> dict:
@@ -163,7 +251,14 @@ def check(repo: Path, svc: Service) -> dict:
 
     # --- bind-mounted code: did the PROCESS start after the code changed? ---
     started = sh("docker", "inspect", svc.container, "--format", "{{.State.StartedAt}}")[:19]
-    mounted_code = [b for b in svc.bind_sources if b.is_dir()]
+    # A mount only counts as CODE when its container destination covers where
+    # this image copies code to. Treating any bind mount as code was wrong in
+    # both directions: brain mounts `infrastructure/prometheus/secrets`, which
+    # made the tool check it for dependency staleness only — so a change to
+    # `poindexter/brain/health_probes.py`, the exact case this tool exists for,
+    # would not have flagged it. It only flagged on an unrelated protobuf bump.
+    copy_dests = _image_code_dests(repo, svc.dockerfile)
+    mounted_code = [b for b in _container_code_mounts(svc.container, copy_dests) if b.is_dir()]
     if mounted_code and started:
         newer = sh(
             "find",
@@ -183,21 +278,32 @@ def check(repo: Path, svc: Service) -> dict:
             )
 
     # --- baked image: was it built after the files it BAKES changed? ---
-    if svc.dockerfile and svc.dockerfile.is_file():
-        created = sh("docker", "inspect", svc.container, "--format", "{{.Created}}")[:19]
+    if svc.dockerfile is not None:
+        if not svc.dockerfile.is_file():
+            # Loud, never silent. A service that declares a build but whose
+            # Dockerfile we cannot find is UNCHECKED, and an unchecked service
+            # reported as current is the failure this tool exists to prevent.
+            result["status"] = "unchecked"
+            result["notes"].append(
+                f"declares build but Dockerfile not found at {svc.dockerfile} — "
+                "image staleness was NOT checked for this service"
+            )
+            return result
+
+        created = _instant(sh("docker", "inspect", svc.container, "--format", "{{.Created}}"))
         files = closure_for(repo, svc.dockerfile)
         narrowed = bool(mounted_code) or len(files) > CLOSURE_FILE_CAP
         if narrowed:
             # Code arrives via the mount (or the closure is the whole tree), so
             # only a dependency/Dockerfile change can make the IMAGE stale.
-            files = [f for f in files if f.name in DEP_MANIFESTS] + [svc.dockerfile]
+            files = _install_manifests(files, svc.dockerfile, repo) + [svc.dockerfile]
             result["notes"].append("image checked for dependency staleness only")
-        changed = last_change(repo, files)
+        changed = _instant(last_change(repo, files))
         if created and changed and changed > created:
             result["status"] = "stale-image"
             result["notes"].append(
-                f"image built {created} but baked files changed {changed} — rebuild "
-                f"and recreate {svc.name}"
+                f"image built {created:%Y-%m-%dT%H:%M:%S%z} but baked files changed "
+                f"{changed:%Y-%m-%dT%H:%M:%S%z} — rebuild and recreate {svc.name}"
             )
     return result
 
@@ -237,7 +343,7 @@ def main() -> int:
     if args.json:
         print(json.dumps(results, indent=2))
     else:
-        bad = [r for r in results if r["status"] in ("stale-image", "needs-restart")]
+        bad = [r for r in results if r["status"] in ("stale-image", "needs-restart", "unchecked")]
         for r in sorted(results, key=lambda r: r["service"]):
             if r["status"] == "current":
                 continue
@@ -247,7 +353,7 @@ def main() -> int:
         ok = len(examined) - len(bad)
         print(
             f"\n{TOOL}: {ok}/{len(examined)} running container(s) match the checkout"
-            + (f" — {len(bad)} STALE" if bad else "")
+            + (f" — {len(bad)} NEEDING ATTENTION" if bad else "")
         )
         if bad:
             print(
@@ -256,7 +362,11 @@ def main() -> int:
                 "  not deploy. Rebuild baked images through scripts/start-stack.sh\n"
                 "  (plain `docker compose build` cannot interpolate the config)."
             )
-    return 1 if any(r["status"] in ("stale-image", "needs-restart") for r in results) else 0
+    return (
+        1
+        if any(r["status"] in ("stale-image", "needs-restart", "unchecked") for r in results)
+        else 0
+    )
 
 
 if __name__ == "__main__":

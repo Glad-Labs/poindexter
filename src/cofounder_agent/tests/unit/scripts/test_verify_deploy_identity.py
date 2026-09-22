@@ -129,3 +129,75 @@ def test_scan_floor_refuses_to_pass_on_an_empty_tree(mod, tmp_path, capsys):
         sys.argv = argv
     assert code == 2, "no compose file under --repo must be 'could not check', not 'clean'"
     assert "no compose file" in capsys.readouterr().err
+
+
+# ── first-real-use bugs (2026-09-22) ──────────────────────────────────────
+#
+# The tool shipped, was pointed at the live stack, and got the answer wrong
+# three ways at once. All three made it report a stale container as current,
+# which is the single failure mode it exists to prevent.
+
+
+def test_timestamps_are_compared_as_instants_not_strings(mod):
+    """docker emits UTC (`...Z`); git emits the committer's offset (`-04:00`).
+
+    The first cut truncated both to 19 chars — dropping the offset — and
+    compared the remainders, so a commit at 08:36 EDT (12:36 UTC) read as
+    "08:36" against a UTC image time. Four hours in the direction that hides
+    staleness.
+    """
+    image = mod._instant("2026-09-22T04:00:35.495908049Z")
+    commit = mod._instant("2026-09-22T08:36:03-04:00")
+    assert image is not None and commit is not None
+    assert commit > image, "12:36Z is after 04:00Z — a string compare said otherwise"
+    # Nanosecond precision from docker must not break parsing.
+    assert mod._instant("2026-09-22T04:00:35.495908049Z").year == 2026
+
+
+def test_a_stamp_without_a_zone_is_refused(mod):
+    """Declining to judge beats guessing a zone."""
+    assert mod._instant("2026-09-22T04:00:35") is None
+    assert mod._instant("") is None
+    assert mod._instant("not a timestamp") is None
+
+
+def test_dockerfile_path_resolves_against_the_build_context(mod, tmp_path):
+    """`dockerfile: poindexter/brain/Dockerfile` is relative to the CONTEXT.
+
+    Resolving a slashed path against the repo root pointed at a file that does
+    not exist, so `is_file()` was False and the image check was skipped in
+    silence — hiding brain-daemon, the service the tool was written for.
+    """
+    (tmp_path / "docker-compose.local.yml").write_text(
+        "services:\n"
+        "  brain-daemon:\n"
+        "    build:\n"
+        "      context: ./src/cofounder_agent\n"
+        "      dockerfile: poindexter/brain/Dockerfile\n"
+        "    container_name: poindexter-brain-daemon\n"
+    )
+    (tmp_path / "src" / "cofounder_agent" / "poindexter" / "brain").mkdir(parents=True)
+    svc = next(s for s in mod.parse_services(tmp_path) if s.container == "poindexter-brain-daemon")
+    assert svc.dockerfile == (
+        tmp_path / "src" / "cofounder_agent" / "poindexter" / "brain" / "Dockerfile"
+    ), "a slashed dockerfile: must resolve under the build context, not the repo root"
+
+
+def test_dependency_manifests_are_scoped_to_what_the_image_installs(mod, tmp_path):
+    """A `COPY . .` image bakes every lock file in the tree.
+
+    Matching them all let the BRAIN's poetry.lock bump flag the worker, which
+    installs from a different lock entirely. Only manifests beside the
+    Dockerfile (or at the context root) are the ones an image installs from.
+    """
+    ctx = tmp_path / "src" / "cofounder_agent"
+    brain = ctx / "poindexter" / "brain"
+    brain.mkdir(parents=True)
+    worker_df = ctx / "Dockerfile"
+    worker_df.write_text("FROM python\n")
+    files = [ctx / "poetry.lock", brain / "poetry.lock", ctx / "app.py"]
+
+    kept = mod._install_manifests(files, worker_df, tmp_path)
+    assert ctx / "poetry.lock" in kept, "the image's own lock counts"
+    assert brain / "poetry.lock" not in kept, "another image's lock must not"
+    assert ctx / "app.py" not in kept, "only dependency manifests here"
