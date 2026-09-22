@@ -19,6 +19,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # easyocr: powers the OCR text-leakage gate in /generate (2026-07-13) — CPU-only
 # (reuses the torchvision already required above), so it doesn't compete with
 # the diffusion pipeline for VRAM.
+#
+# PIP_BREAK_SYSTEM_PACKAGES: the pytorch base images now ship a PEP 668
+# `EXTERNALLY-MANAGED` marker, so a bare `pip install` dies with
+# `error: externally-managed-environment`. In a container the system
+# interpreter IS the application environment — there is no distro Python to
+# protect and no second consumer to break — so opting out is correct here,
+# where on a host it would not be.
+#
+# This is why the 2026-09-15 base bump (#3756) was reverted (#3794) and why the
+# identical bump re-landed on 2026-09-22 (#3915) and broke the deploy again: a
+# revert does not stop dependabot re-proposing, it only delays it. Fixing the
+# incompatibility lets the bump stand.
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     fastapi \
     uvicorn[standard] \
@@ -38,8 +51,13 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
 COPY image-gen-server.py /app/server.py
 
 # Non-root user (GPU access via group, not root)
-RUN addgroup --system --gid 1001 appgroup && \
-    adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
+# groupadd/useradd (shadow), not addgroup/adduser (Debian `adduser` package).
+# The same base bump that added the PEP 668 marker also dropped the adduser
+# wrappers, so the previous form died with exit 127 "command not found" — after
+# the pip layer, which is why fixing only the pip error was not enough. shadow's
+# tools are present in the base and are the portable choice.
+RUN groupadd --system --gid 1001 appgroup && \
+    useradd --system --uid 1001 --gid appgroup --create-home --home-dir /home/appuser appuser && \
     mkdir -p /home/appuser/.poindexter/generated-images && \
     chown -R appuser:appgroup /app /home/appuser
 USER appuser
