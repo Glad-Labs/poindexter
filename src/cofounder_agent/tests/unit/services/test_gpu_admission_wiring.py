@@ -273,6 +273,15 @@ _MIGRATED_CALLERS = {
         "fail-soft director — no shot list + audit + finding",
     "modules/content/stages/review_video_shot_list.py":
         "fail-soft review — unreviewed shot list ships + finding",
+    # Budget: gpu_sched_media_max_wait_s, the same media budget the scripts
+    # stage that calls it already uses. It can afford to skip because the
+    # repair is a refinement, not the artifact: skipping leaves the script's
+    # own opening line in place, the Short still renders and still publishes,
+    # and the YouTube payload's strip still improves that line at upload
+    # time. Nothing is lost that the piece needed — the skip costs one
+    # weaker title on one Short, which is why it is never terminal.
+    "modules/content/short_hook_repair.py":
+        "fail-soft refinement — original opener kept + finding",
     # P2 group 3 (poindexter#1005) — operator single-image renders behind
     # `poindexter tasks regen-image` / `add-image` and POST
     # /api/tasks/{id}/generate-image. NOT fail-soft in itself: a human is

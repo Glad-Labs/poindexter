@@ -2498,7 +2498,12 @@ DEFAULTS: dict[str, str] = {
     # pre-2026-09-22 behaviour; the Shorts feed showed ~40 chars of it, so
     # the pair read as two identical stubs on the channel page).
     'youtube_short_title_source': 'script_hook',
-    'youtube_short_title_max_chars': '60',
+    # 42, not 60: a Shorts feed shows roughly the first forty characters of a
+    # title. Measured 2026-09-22 over ten published posts — every hook the
+    # script model wrote exceeded 40 (median 57), so the feed was truncating
+    # all of them. The 100-char YouTube API cap is a separate, looser limit
+    # the suffix arithmetic still respects.
+    'youtube_short_title_max_chars': '42',
     # Hashtags appended to a Short's description after '#Shorts' — CamelCase
     # forms of the post's first N seo_keywords. 0 = '#Shorts' alone.
     'youtube_short_hashtags_max': '3',
@@ -3418,6 +3423,26 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # connection failure the atom runs the shared VRAM reclaim ladder (evict
     # Ollama + idle sidecars) and asks once more. false = legacy single try.
     'media.caption.reclaim_retry_enabled': 'true',
+    # The Short's opening line is its YouTube title (#3944), and the script
+    # prompt does not reliably land it: measured 2026-09-22 over ten posts,
+    # 4 of 10 opened "Discover how ..." and 10 of 10 overran the feed's ~40
+    # visible characters, both of which that prompt bans outright. So the
+    # hook gets a deterministic gate plus ONE corrective call
+    # (modules/content/short_hook_repair.py). A hook that already passes the
+    # gate costs no call at all; a replacement is spliced in only when it is
+    # strictly better. false = gate and repair both off (the payload's strip
+    # still applies at upload time).
+    'media.short_hook.repair_enabled': 'true',
+    # Empty = the director's model (video_director_model), which is the
+    # writer-grade model already loaded around this point in the media lane.
+    # The scene model (phi4:14b on prod) is the one measured producing the
+    # defects above, so it is deliberately NOT the default here.
+    'media.short_hook.model': '',
+    # The hook budget the gate enforces. Chars match the Shorts feed's
+    # visible window; words stop a title that fits the window only because
+    # its words are short.
+    'media.short_hook.max_chars': '42',
+    'media.short_hook.max_words': '9',
     # Caption burn styling (FFmpegLocalCompositor). Glyph height as a PERCENT
     # of frame height — resolution-independent: 4.5 ⇒ ≈86px lines on a
     # 1080×1920 short, ≈49px on 16:9 1080p. (ffmpeg's subtitles filter
@@ -3994,6 +4019,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.caption_retry_recovered.fallback': 'log_only',
     'findings.caption_retry_recovered.cooldown_minutes': '180',
     'findings.caption_retry_recovered.min_severity': 'info',
+    # Short-hook outcomes (2026-09-22). 'unrepaired' is the one worth seeing:
+    # the title a Shorts viewer reads first is still weak after the gate AND
+    # the corrective call, which points at the hook model or the script prompt.
+    'findings.short_hook_repaired.delivery': 'log_only',
+    'findings.short_hook_repaired.cooldown_minutes': '360',
+    'findings.short_hook_repaired.min_severity': 'info',
+    'findings.short_hook_unrepaired.delivery': 'discord',
+    'findings.short_hook_unrepaired.fallback': 'log_only',
+    'findings.short_hook_unrepaired.cooldown_minutes': '360',
+    'findings.short_hook_unrepaired.min_severity': 'warn',
     # Topic-sanity gate (2026-06-30 dots-topic incident) — a tap/RAG source
     # emitting contentless titles is a source bug worth seeing on the routine
     # ops channel, not a page; 6h cooldown keeps a persistently garbage
@@ -5941,6 +5976,13 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.caption_retry_recovered.delivery': {'value_type': 'string'},
     'findings.caption_retry_recovered.fallback': {'value_type': 'string'},
     'findings.caption_retry_recovered.min_severity': {'value_type': 'string'},
+    'findings.short_hook_repaired.delivery': {'value_type': 'string'},
+    'findings.short_hook_repaired.cooldown_minutes': {'value_type': 'integer'},
+    'findings.short_hook_repaired.min_severity': {'value_type': 'string'},
+    'findings.short_hook_unrepaired.delivery': {'value_type': 'string'},
+    'findings.short_hook_unrepaired.fallback': {'value_type': 'string'},
+    'findings.short_hook_unrepaired.cooldown_minutes': {'value_type': 'integer'},
+    'findings.short_hook_unrepaired.min_severity': {'value_type': 'string'},
     'findings_daily_digest_enabled': {'owner': 'findings_daily_digest', 'value_type': 'boolean'},
     'findings_daily_digest_lookback_hours': {'owner': 'findings_daily_digest', 'value_type': 'integer'},
     'findings_daily_digest_top_n': {'owner': 'findings_daily_digest', 'value_type': 'integer'},
@@ -6093,6 +6135,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media.caption.min_cue_seconds': {'owner': 'media_transcribe_narration', 'value_type': 'float'},
     'media.caption.cue_lead_ms': {'owner': 'media_transcribe_narration', 'value_type': 'integer'},
     'media.caption.reclaim_retry_enabled': {'owner': 'media_transcribe_narration', 'value_type': 'boolean'},
+    'media.short_hook.repair_enabled': {'owner': 'media_scripts', 'value_type': 'boolean'},
+    'media.short_hook.model': {'owner': 'media_scripts', 'value_type': 'string'},
+    'media.short_hook.max_chars': {'owner': 'media_scripts', 'value_type': 'integer'},
+    'media.short_hook.max_words': {'owner': 'media_scripts', 'value_type': 'integer'},
     'plugin.media_compositor.ffmpeg_local.caption_font_height_pct': {
         'owner': 'media_compositors', 'value_type': 'float',
     },

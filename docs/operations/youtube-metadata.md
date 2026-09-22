@@ -188,7 +188,11 @@ Now (`services/jobs/youtube_payload.py`, both the upload and the sync go
 through the same builders):
 
 - **Short title** = the first sentence of its narration, shortened on a word
-  boundary to `youtube_short_title_max_chars` (default 60), then the suffix.
+  boundary to `youtube_short_title_max_chars` (default **42** — the Shorts
+  feed shows roughly that much), then the suffix. That first sentence is
+  gated and, when it has a CONTENT defect, repaired at script time by
+  `modules/content/short_hook_repair.py`, so the fixed line is what the
+  presenter says as well as what the title shows.
   `youtube_short_title_source=post_title` restores the article title; an empty
   script falls back to it too.
 - **Suffix** (`youtube_short_title_suffix`, default `" #Shorts"`) still applies
@@ -202,6 +206,41 @@ through the same builders):
   CamelCase hashtags from `seo_keywords`. No body snippet on a Short.
 - **Long-form description** gains `Watch the Short:
   https://www.youtube.com/shorts/<short id>` after the article link.
+
+### The hook the title comes from
+
+Measured 2026-09-22 over the ten most recent published posts, with the
+production scene model (`video_scene_model`, phi4:14b):
+
+| | result |
+| --- | --- |
+| a verbatim example in the script prompt | copied onto 4 of 10 unrelated articles (#3951, reverted #3952) |
+| example removed | 0/10 parrot, but 4/10 opened "Discover how …" and 10/10 overran the feed's ~40 chars |
+| `services/short_hook.py` strip + gate | every title on-topic and inside the budget |
+
+Two lessons are baked into the design:
+
+* **Never put a quotable example sentence in a prompt whose output is
+  published.** The model copied it verbatim. `build_hook_prompt` names the
+  shapes to avoid instead of demonstrating one.
+* **Length is a shortening problem; content is a regeneration problem.** Only
+  a CONTENT defect (`services/short_hook.CONTENT_DEFECTS` — run-up, describes
+  the article, question, not a claim, restates the title, fragment) buys the
+  one corrective LLM call. Over-long is shortened at a word boundary by the
+  title builder, because the sentences phi4 wrote at 59-92 characters were
+  good claims.
+
+The hook model defaults to the **scene model**, not a bigger one, and that is
+measured rather than assumed: given the focused prompt, `gemma-4-31B` restated
+the brief on 10 of 10 (`Goal: Write the opening line for a 45-second …`) while
+phi4 wrote clean claims, and alternating an 8 GB scene model with a 17 GB hook
+model made GPU admission refuse 7 of 10 script calls. Override per install
+with `media.short_hook.model`.
+
+Known and not fixed: a title shortened to 42 characters from a sentence the
+model wrote at 65+ can end mid-phrase ("JPMorgan's 2026 report confirms
+tech"). Getting the model to write short in the first place is the next lever;
+asking it for "at most 42 characters" did not work.
 
 **Cross-links follow what is live, never what is planned.** The two renders
 are approved, rejected and uploaded independently (7 of 13 posts on the

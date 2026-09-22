@@ -27,6 +27,7 @@ import re
 import uuid
 from typing import Any
 
+from poindexter.modules.content.short_hook_repair import repair_short_hook
 from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 from poindexter.plugins.stage import StageResult
 from poindexter.services.audio_gen_service import generate_audio, is_audio_gen_enabled
@@ -591,6 +592,21 @@ class GenerateMediaScriptsStage:
                                 "max_words": max_short_words,
                             },
                         )
+
+                # The opening line is also the Short's YouTube title (#3944).
+                # Deterministic gate first, so a hook that is already a clean
+                # claim costs nothing; only a defective one buys an LLM call,
+                # and only a strictly better replacement is spliced in.
+                short_summary, _hook_outcome = await repair_short_hook(
+                    short_summary,
+                    title=title,
+                    article=clean_content,
+                    site_config=sc,
+                    platform=platform,
+                    pool=pool,
+                    task_id=context.get("task_id"),
+                    target_seconds=short_target_s,
+                )
 
             # Audio gen — ambient video bed via StableAudioOpen. Gated off in
             # video-only mode: unlike the podcast blocks (dead once Call 1 is
