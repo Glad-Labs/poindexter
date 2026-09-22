@@ -59,10 +59,21 @@ _PREAMBLE_RE = re.compile(
     r"^(?:"
     r"in today['’]s [\w'’ -]{2,30}"
     r"|in (?:the|this|an?) (?:world|age|era|day and age|modern era) of [\w'’ -]{2,40}"
+    r"|in (?:the|this|an?) (?:world|age|era|day and age|modern era) where [\w'’ -]{2,40}"
     r"|in (?:the|this) (?:world|age|era|day and age|modern era)"
     r"|in this (?:article|video|post|short)"
+    # "In a surprising twist, …" — a framing device announcing that a fact is
+    # coming, in place of the fact. Measured 2026-09-22 on 6 of 489 stored
+    # short scripts. The adjective is optional so "In a twist," also goes.
+    r"|in an? (?:[\w'’-]{3,14} )?"
+    r"(?:twist|turn|move|study|report|development|discovery|breakthrough"
+    r"|finding|revelation|shift)"
     r"|these days|nowadays|as we all know|it['’]s no secret"
     r"|as (?:you|we) (?:probably )?(?:know|might know)"
+    # Bare stance adverbs. These editorialise the claim instead of making it,
+    # and the sentence after the comma is always the actual hook.
+    r"|surprisingly|interestingly|remarkably|notably|unsurprisingly"
+    r"|finally|ultimately|importantly"
     r")\s*,\s*",
     re.I,
 )
@@ -107,6 +118,48 @@ def first_sentence(text: str) -> str:
     return parts[0] if parts else ""
 
 
+# Scaffolding the model wrapped around the line instead of writing the line.
+# Measured 2026-09-22 over 489 stored short scripts: 144 first sentences open
+# with a quote character, 7 with a code fence and 6 with a stage direction or
+# a label. Every one of those became a YouTube title verbatim, so this is
+# removed before anything else looks at the sentence.
+_SCAFFOLD_RE = re.compile(
+    r"^\s*(?:"
+    r"```[\w+-]*\s*"                     # an opened code fence
+    r"|\[[^\]]{1,40}\]\s*"                    # [ Hook ] / [0:00] / [Intro music plays]
+    r"|\**(?:hook|narration|short|scene|voice ?over|vo|title|opening line)"
+    r"\s*:?\s*\**\s*:?\s*"                    # HOOK: / **Narration:** / **VO**:
+    r")+",
+    re.I,
+)
+# Straight and curly, plus the guillemets a few models reach for.
+_QUOTE_CHARS = "\"'" + "\u201c\u201d\u2018\u2019\u00ab\u00bb"
+
+
+def strip_scaffold(sentence: str) -> str:
+    """Remove wrapper the model added around the hook, not the hook.
+
+    A leading fence, stage direction or ``HOOK:`` label, and a quote pair the
+    model wrapped the whole line in. An INTERNAL quote is left alone — it is
+    part of the claim. A sentence that is ONLY scaffolding comes back empty,
+    which the gate reads as the ``empty`` defect and regenerates.
+    """
+    clean = (sentence or "").strip()
+    while True:
+        stepped = _SCAFFOLD_RE.sub("", clean, count=1).strip()
+        if stepped == clean:
+            break
+        clean = stepped
+    # Unwrap only a matched pair, so `He said "no" to the merge` keeps its quotes.
+    while len(clean) >= 2 and clean[0] in _QUOTE_CHARS and clean[-1] in _QUOTE_CHARS:
+        clean = clean[1:-1].strip()
+    # A single opening quote with no partner is still scaffolding.
+    # `""[:1] in s` is True for every s, so test the character, not the slice.
+    if clean and clean[0] in _QUOTE_CHARS and clean.count(clean[0]) == 1:
+        clean = clean[1:].strip()
+    return clean
+
+
 def strip_preamble(sentence: str) -> str:
     """Drop a leading run-up or describes-the-article prefix, re-capitalising.
 
@@ -117,11 +170,16 @@ def strip_preamble(sentence: str) -> str:
       ``"Discover how a GPU lock bug was wrecking our RAG sweep"`` -> ``"A GPU
       lock bug was wrecking our RAG sweep"``.
 
+    :func:`strip_scaffold` runs first, so a quoted or ``[ Hook ]``-labelled
+    line is unwrapped before either pattern is tried.
+
     Unchanged when nothing matches, or when fewer than
     :data:`HOOK_MIN_WORDS` would survive (a strip that leaves two words has
     cut the sentence, not its run-up).
     """
-    clean = (sentence or "").strip()
+    clean = strip_scaffold(sentence)
+    if not clean:
+        return ""
     stripped = _PREAMBLE_RE.sub("", clean, count=1).strip()
     if stripped == clean:
         stripped = _DESCRIBES_RE.sub("", clean, count=1).strip()
@@ -246,4 +304,5 @@ __all__ = [
     "runaway_factor",
     "sentences",
     "strip_preamble",
+    "strip_scaffold",
 ]

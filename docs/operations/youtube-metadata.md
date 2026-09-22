@@ -231,6 +231,47 @@ Two lessons are baked into the design:
   by the title builder, because the sentences phi4 wrote at 59-92 characters
   were good claims.
 
+### What comes off the hook before it becomes a title
+
+Two passes run before either the gate or the title builder sees the sentence.
+
+**Scaffolding** (`strip_scaffold`) is wrapper the model added around the line
+instead of writing the line. Over the same 489 stored scripts, **157 first
+sentences carried some** and every one became a YouTube title verbatim:
+
+| wrapper | count | example |
+| --- | --- | --- |
+| a quote character | 144 | `"Imagine having an AI assistant that never goes down` |
+| a code fence | 7 | an opened fence the model never closed |
+| a stage direction or label | 6 | `[ Hook ]` · `[0:00]` · `HOOK:` · `**Narration:**` |
+
+Only a wrapper comes off. An INTERNAL quote is part of the claim, so
+`He said "no" to the merge` keeps its quotes, and a bracketed token the
+sentence is about (`Shipping [skip-public-sync] keeps a commit private`) is
+not a stage direction. A line that is ONLY scaffolding comes back empty,
+which the gate reads as the `empty` defect and regenerates — better than a
+title reading `[Intro music plays]`.
+
+### Which opening clauses the strip eats, and which it must not
+
+A census of all 489 stored `short_summary_script` rows: the strip fires on 24
+first sentences, and 34 more open with a leading clause. Nine of those 34 are
+genuine run-ups, in three families — `In a surprising twist,` /
+`In a groundbreaking study,` (6), `In a world where …,` (1), and the bare
+stance adverbs `Surprisingly,` / `Finally,` (2), which editorialise the claim
+instead of making it.
+
+The other 25 must survive, and are pinned by test as must-survive:
+
+| clause | why it stays |
+| --- | --- |
+| `In 2026,` · `On June 19th,` · `In December 2025,` | a date is usually the most concrete thing in the hook |
+| `In production environments,` · `In our development stack,` | a real qualifier scopes the claim rather than delaying it |
+| `In a single afternoon,` | `In a <noun>,` only goes when the noun is a framing device |
+
+`Imagine you're building …` needs no strip: it is already a `question`
+defect, so it buys the corrective call instead.
+
 The hook model defaults to the **scene model**, not a bigger one, and that is
 measured rather than assumed: given the focused prompt, `gemma-4-31B` restated
 the brief on 10 of 10 (`Goal: Write the opening line for a 45-second …`) while
@@ -259,6 +300,13 @@ Asking the model for "at most 42 characters" did not work either. 60 was still
 cutting two finished claims at 67 and 70 characters, so the budget is the
 median, 70: punchy, not clipped. With the 8-character `" #Shorts"` suffix that
 is 78, well inside YouTube's 100-character cap.
+
+**The budget is not a hard cut.** `short_hook_title` keeps a sentence whole
+when it is within the budget *plus a quarter* (70 → 87) and only shortens
+past that, because chopping a claim that is barely over buys nothing. So the
+ten measured hooks land as **8 kept whole, 0 shortened, 2 regenerated** — the
+shortening band between 87 and the runaway threshold at 105 is deliberately
+narrow. The suffix still fits: 87 + `" #Shorts"` = 95, under the 100 cap.
 
 The two worst hooks in that set were 114 and 149 characters — run-ons the
 model never finished, where shortening leaves a stump no matter the budget.

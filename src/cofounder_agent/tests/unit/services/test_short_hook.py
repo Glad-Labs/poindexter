@@ -22,6 +22,7 @@ from poindexter.services.short_hook import (
     is_acceptable_hook,
     sentences,
     strip_preamble,
+    strip_scaffold,
 )
 from poindexter.services.site_config import SiteConfig
 
@@ -40,6 +41,51 @@ class TestStrip:
         assert strip_preamble(
             "Discover how a GPU lock bug was quietly wrecking our RAG sweep"
         ) == "A GPU lock bug was quietly wrecking our RAG sweep"
+
+    @pytest.mark.parametrize(
+        "sentence,expected",
+        [
+            # "In a <adj> <noun>," — a framing device announcing that a fact
+            # is coming, in place of the fact. 6 of 489 stored short scripts.
+            ("In a surprising twist, Llama.cpp isn't just competing with vLLM",
+             "Llama.cpp isn't just competing with vLLM"),
+            ("In a groundbreaking study, small models matched a 70B on reasoning",
+             "Small models matched a 70B on reasoning"),
+            # the adjective is optional
+            ("In a twist, the cheapest model won the benchmark outright",
+             "The cheapest model won the benchmark outright"),
+            # "where", not only the "of" the pattern already had
+            ("In a world where AI writes code, the bottleneck moved to review",
+             "The bottleneck moved to review"),
+            # bare stance adverbs editorialise instead of claiming
+            ("Surprisingly, a 1.5-hour model beats a 70B on this task",
+             "A 1.5-hour model beats a 70B on this task"),
+            ("Finally, someone measured what a GPU lock actually costs",
+             "Someone measured what a GPU lock actually costs"),
+        ],
+    )
+    def test_run_up_families_measured_on_stored_scripts(self, sentence, expected):
+        assert strip_preamble(sentence) == expected
+
+    @pytest.mark.parametrize(
+        "sentence",
+        [
+            # A DATE is usually the most concrete thing in the hook. Eating it
+            # would be a regression, so these are pinned as must-survive.
+            "In 2026, JPMorgan's report confirmed what small models proved",
+            "On June 19th, our autocomplete tap produced its first topic",
+            "In December 2025, the first Wan 2.2 clip rendered on the 5090",
+            # A real qualifier scopes the claim; it is not a run-up.
+            "In production environments, the GPU lock is the real bottleneck",
+            "In our development stack, Redis quietly became the bottleneck",
+            "For indie developers, a judge model is the whole budget",
+            # "In a <noun>," only goes when the noun is a framing device —
+            # a concrete noun keeps its clause.
+            "In a single afternoon, the RAG sweep dropped 87% of every chunk",
+        ],
+    )
+    def test_a_real_opening_clause_survives(self, sentence):
+        assert strip_preamble(sentence) == sentence
 
     def test_curly_apostrophe(self):
         assert strip_preamble(
@@ -183,3 +229,72 @@ class TestRunaway:
         assert runaway_factor(SiteConfig(initial_config={"media.short_hook.runaway_factor": "junk"})) == HOOK_RUNAWAY_FACTOR_DEFAULT
         # never below 1.0 — that would make every over-budget hook a runaway
         assert runaway_factor(SiteConfig(initial_config={"media.short_hook.runaway_factor": "0.2"})) == 1.0
+
+
+class TestStripScaffold:
+    """Wrapper the model added around the hook, not the hook.
+
+    Measured 2026-09-22 over 489 stored short scripts: 144 first sentences
+    open with a quote character, 7 with a code fence and 6 with a stage
+    direction or a label. Every one became a YouTube title verbatim.
+    """
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ('"Imagine an AI assistant that never goes down',
+             "Imagine an AI assistant that never goes down"),
+            ('"Zero-click content is the new standard"',
+             "Zero-click content is the new standard"),
+            ("\u201cOur RAG sweep dropped 87% of every chunk\u201d",
+             "Our RAG sweep dropped 87% of every chunk"),
+            ("[ Hook ] Imagine a world where AI is not just a tool",
+             "Imagine a world where AI is not just a tool"),
+            ("[0:00] Small models matched a 70B on reasoning",
+             "Small models matched a 70B on reasoning"),
+            ("HOOK: The cheapest model won every benchmark",
+             "The cheapest model won every benchmark"),
+            # the colon sits INSIDE the emphasis in one spelling and outside
+            # in the other, so both are accepted
+            ("**Narration:** The GPU lock was the real bottleneck",
+             "The GPU lock was the real bottleneck"),
+            ("**VO**: The GPU lock was the real bottleneck",
+             "The GPU lock was the real bottleneck"),
+            ('```' + "text The RAG sweep dropped 87% of every chunk",
+             "The RAG sweep dropped 87% of every chunk"),
+        ],
+    )
+    def test_wrapper_comes_off(self, raw, expected):
+        assert strip_scaffold(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            # An INTERNAL quote is part of the claim, not a wrapper.
+            'He said "no" to the merge and shipped it anyway',
+            'The model calls it a "twist" and means it',
+            # A bracketed token the sentence is ABOUT is not a stage direction.
+            "Shipping [skip-public-sync] keeps a commit private",
+        ],
+    )
+    def test_the_claim_survives(self, raw):
+        assert strip_scaffold(raw) == raw
+
+    @pytest.mark.parametrize("raw", ["", "   ", '"', "[Intro music plays]"])
+    def test_scaffolding_only_comes_back_empty(self, raw):
+        """Empty is the `empty` defect, which regenerates — better than a
+        title reading "[Intro music plays]"."""
+        assert strip_scaffold(raw) == ""
+        assert "empty" in hook_defects(strip_preamble(raw))
+
+    def test_an_empty_slice_is_in_every_string(self):
+        """Regression: `""[:1] in _QUOTE_CHARS` is True, so the empty case
+        used to reach `clean[0]` and raise IndexError."""
+        assert strip_scaffold("") == ""
+
+    def test_strip_preamble_unwraps_first(self):
+        """The run-up patterns anchor at ^, so a quote in front of them hides
+        the run-up entirely unless the wrapper comes off first."""
+        assert strip_preamble(
+            '"In a surprising twist, the cheapest model won the benchmark"'
+        ) == "The cheapest model won the benchmark"
