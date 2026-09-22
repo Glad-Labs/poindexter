@@ -696,7 +696,23 @@ DEFAULTS: dict[str, str] = {
     'youtube_contains_synthetic_media': 'auto',
     # Free VRAM the render insists on before starting a chunk; below it the
     # shot falls back rather than OOM-ing the card mid-video.
-    'video_presenter_min_free_vram_gb': '26',
+    # Minimum usable VRAM (free + ComfyUI's reusable pool) before a presenter
+    # chunk is attempted. MEASURED, not guessed.
+    #
+    # Sampled on the 5090 during real S2V renders of the production graph
+    # (2026-09-21): a 1-chunk presenter clip peaks at 20.2 GB attributable,
+    # a 3-chunk clip at 20.5 GB — roughly +0.17 GB per extra chunk, because
+    # the chunks chain latents rather than re-allocating. At the
+    # `video_comfyui_s2v_max_chunks` ceiling of 7 that is ~21.2 GB, so 23
+    # leaves ~1.8 GB of headroom.
+    #
+    # This was 26, and the presenter therefore almost never ran: the recorded
+    # refusals are "only 25.6 GB free", "only 25.9 GB free" — missing the gate
+    # by 100-400 MB on a card that had comfortably enough for a 20.2 GB
+    # render. The reclaim ladder above it was already correct; only the
+    # threshold was wrong, which is why fixing the reclaim (2026-09-15) did
+    # not make presenter shots appear.
+    'video_presenter_min_free_vram_gb': '23',
     # After the reclaim ladder queues sidecar restarts, the brain executes
     # them seconds later; the presenter floor polls free VRAM (+ ComfyUI's
     # own reusable pool) for up to this long before refusing the shot.

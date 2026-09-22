@@ -1793,6 +1793,14 @@ _STYLE_NOUNS = frozenset({
     "shot", "photo", "picture", "view", "look",
 })
 
+# Usable-VRAM floor for a presenter chunk, mirroring the seeded
+# `video_presenter_min_free_vram_gb`. Measured on the 5090 2026-09-21: 20.2 GB
+# for one chunk, 20.5 GB for three (~+0.17 GB/chunk), so ~21.2 GB at the
+# 7-chunk ceiling; 23 leaves ~1.8 GB. The previous 26 refused renders on a
+# card holding 25.9 GB free.
+_PRESENTER_MIN_FREE_VRAM_GB = 23.0
+
+
 # Sources whose failures may substitute to Pexels. Pexels itself is excluded —
 # a missed pexels shot goes straight to the card (never image-gen a human).
 _IMAGE_GEN_FAMILY = frozenset({"image_gen", "image_kenburns", "generative", "wan21"})
@@ -2666,13 +2674,15 @@ async def _render_presenter_clip(
     # must not turn a possible render into a certain skip — the floor check
     # below still refuses rather than OOM'ing mid-video.
     await _reclaim_card_for_presenter()
-    min_free = 26.0
+    min_free = _PRESENTER_MIN_FREE_VRAM_GB
     if site_config is not None:
         try:
-            min_free = float(site_config.get_float("video_presenter_min_free_vram_gb", 26.0))
+            min_free = float(site_config.get_float(
+                "video_presenter_min_free_vram_gb",
+                _PRESENTER_MIN_FREE_VRAM_GB))
         except Exception:  # noqa: BLE001  # silent-ok: settings read must not
             # decide a render's fate; the code floor stands.
-            min_free = 26.0
+            min_free = _PRESENTER_MIN_FREE_VRAM_GB
     # Headroom = free VRAM + what ComfyUI already holds (it is the engine that
     # renders this clip, so its pool is reusable), polled while the ladder's
     # queued restarts land. 2026-09-16: shot 12 was refused at "0.7 GB free"
