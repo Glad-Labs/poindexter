@@ -176,6 +176,7 @@ HARD RULES
    of holding one shot past 30 seconds.
 8. AI-source prompts (image_gen / image_kenburns / generative) MUST follow the
    HUMAN-SUBJECT POLICY and STYLE POLICY above. {human_subject_rule}
+   Never ask an AI image for WORDS: no logos, brand names, titles, labels, signs or UI text as the subject or the point of the shot — the image OCR gate rejects renders carrying more than a few characters and the shot ships as a plain brand card instead. Illustrate the idea (a screen, a terminal, a device) and let the captions and the brand card carry the words.
 9. Set director_model to "{model}" and director_prompt_version to "v1.4".
 10. Set director_decided_at to the current UTC ISO timestamp: "{now_iso}"
 
@@ -377,6 +378,7 @@ HARD RULES (short-form)
 8. Never more than 2 consecutive shots from the same source. First and last
    shots MUST NOT be "generative".
 9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above.
+   Never ask an AI image for WORDS: no logos, brand names, titles, labels, signs or UI text as the subject or the point of the shot — the image OCR gate rejects renders carrying more than a few characters and the shot ships as a plain brand card instead. Illustrate the idea (a screen, a terminal, a device) and let the captions and the brand card carry the words.
    {human_subject_rule}
 10. Set director_model to "{model}", director_prompt_version to "short_v1.3",
     director_decided_at to "{now_iso}".
@@ -457,7 +459,9 @@ CONSTRAINTS (keep the draft valid):
     * pexels                       -> "query": a stock-footage search string
     * image_gen / image_kenburns / generative -> "prompt": a non-empty, on-brand image
       description (dark-techno palette, per the STYLE POLICY and HUMAN-SUBJECT
-      POLICY below) and NO "query"
+      POLICY below) and NO "query". Never words: no logos, brand names, titles or
+      UI text as the subject — the image OCR gate rejects them and the shot ships
+      as a plain brand card.
     * generative ADDITIONALLY carries "motion": one sentence of motion
       direction (the camera move + what physically moves, e.g. "slow push-in;
       particles drift upward with gentle parallax"). PRESERVE the existing
@@ -523,7 +527,9 @@ REVISE for retention, then output the REVISED list:
    carries no "query"/"demo_id" and an optional one-line "prompt".
 
 CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; image_gen /
-image_kenburns / generative use a non-empty on-brand "prompt" (per the human-subject policy) and NO
+image_kenburns / generative use a non-empty on-brand "prompt" (per the human-subject policy; never
+words, logos or brand names as the subject - the image OCR gate rejects them and the shot ships as a
+plain brand card) and NO
 "query"; generative ALSO carries "motion" (one sentence: camera move + what
 physically moves - preserve it when keeping a generative shot, write one when
 upgrading to generative); holdover uses neither. When you change a shot's

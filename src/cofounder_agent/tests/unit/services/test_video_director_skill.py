@@ -313,3 +313,23 @@ def test_review_prompts_carry_the_style_policy_not_a_hardcoded_rotation(key: str
         now_iso="2026-09-22T00:00:00Z", site_name="Glad Labs",
     )
     assert "probe-style illustration" in rendered
+
+
+@pytest.mark.parametrize(
+    "key", ["video.director_v1", "video.director_short_v1", "video.review_v1", "video.review_short_v1"],
+)
+def test_every_director_template_forbids_words_inside_ai_images(key: str) -> None:
+    """The short of 2026-09-22 closed on image_gen "a terminal screen displaying
+    the 'Glad Labs' logo": image-gen's OCR gate rejected all three attempts
+    (8 chars of text, limit 6) and the shot shipped as a plain brand card. The
+    director illustrated the CTA literally; no template had told it not to.
+    Every template that writes or revises AI prompts now says so."""
+    text = Path(__file__).resolve().parents[3].joinpath(
+        "skills", "content", "video-director", "SKILL.md"
+    ).read_text(encoding="utf-8")
+    start = text.index(f"## {key}")
+    nxt = re.search(r"\n## ", text[start + 3:])
+    template = text[start: start + 3 + nxt.start()] if nxt else text[start:]
+    lowered = template.lower()
+    assert "logos" in lowered and "brand names" in lowered
+    assert "ocr gate" in lowered
