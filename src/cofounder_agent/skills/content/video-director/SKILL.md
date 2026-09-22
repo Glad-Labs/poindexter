@@ -442,17 +442,22 @@ REVISE it against these criteria, then output the REVISED shot list:
    reveal, the close) and upgrade them to source "generative" for real motion. Keep
    generative OFF the very first and very last shot. Never exceed 3 generative shots.
    Every generative shot carries a "motion" sentence (see FIELD RULES).
-4. ON-BRAND - image_gen / image_kenburns / generative prompts use the dark-techno palette
-   (deep navy, cyan, teal, gold accents) and a stylized modifier (flat vector /
-   cinematic illustration / isometric 3D / cyberpunk neon / glassmorphism).
-   Never photoreal.
+4. ON-BRAND - image_gen / image_kenburns / generative prompts keep the dark-techno
+   palette (deep navy, cyan, teal, gold accents) and follow the STYLE POLICY
+   below EXACTLY. The draft's AI prompts already obey it: when you rewrite a
+   prompt, keep its style modifier; never introduce a style the policy does
+   not name, and never make a video wear more than one look.
+
+STYLE POLICY (binding for every image_gen / image_kenburns / generative prompt):
+{style_policy}
 
 CONSTRAINTS (keep the draft valid):
 - FIELD RULES (the #1 thing to get right) - each shot carries ONLY the field its
   source needs, and when you CHANGE a shot's source you MUST swap its field:
     * pexels                       -> "query": a stock-footage search string
     * image_gen / image_kenburns / generative -> "prompt": a non-empty, on-brand image
-      description (dark-techno palette, stylized, no humans) and NO "query"
+      description (dark-techno palette, per the STYLE POLICY and HUMAN-SUBJECT
+      POLICY below) and NO "query"
     * generative ADDITIONALLY carries "motion": one sentence of motion
       direction (the camera move + what physically moves, e.g. "slow push-in;
       particles drift upward with gentle parallax"). PRESERVE the existing
@@ -508,7 +513,12 @@ REVISE for retention, then output the REVISED list:
 3. VARIETY + HERO - vary source; upgrade at most 1-2 mid-clip beats to "generative"
    for motion (never the first or last shot; never more than 2 generative in a short).
 4. ON-BRAND + HUMAN/STYLE POLICY - identical to the long director (dark-techno
-   palette, per the style policy). {human_subject_rule}
+   palette). {human_subject_rule} The STYLE POLICY below is binding for every
+   image_gen / image_kenburns / generative prompt: keep the draft's style
+   modifier when you rewrite a prompt, never introduce a style it does not
+   name, never let the short wear more than one look.
+   STYLE POLICY:
+   {style_policy}
 5. PRESENTER - {presenter_policy} At most 1 presenter shot in a short; it
    carries no "query"/"demo_id" and an optional one-line "prompt".
 

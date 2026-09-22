@@ -343,3 +343,38 @@ async def test_review_retries_on_empty_extract_and_recovers() -> None:
     assert platform.dispatch.complete.call_count == 2  # retried once
     assert result.metrics["reviewed"] is True
     assert result.context_updates["video_shot_list"]["shots"][1]["source"] == "wan21"
+
+
+@pytest.mark.asyncio
+async def test_both_reviews_receive_the_resolved_style_policy() -> None:
+    """The reviewer must see the same style policy the director saw (2026-09-22):
+    without it the long review rewrote a one-look draft into three looks."""
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.services.site_config import SiteConfig
+
+    site_config = SiteConfig(initial_config={
+        "media_house_style": "retro-tech cyberpunk illustration",
+        "media_style_policy": "any", "media_human_subjects": "allow",
+    })
+    ctx = {
+        "title": "T", "content": "C body " * 20,
+        "podcast_script": "podcast " * 20,
+        "short_summary_script": "short " * 10,
+        "video_shot_list": _valid_list(),
+        "short_shot_list": _valid_list(),
+        "platform": _platform(dispatch_text=json.dumps(_valid_list())),
+        "database_service": _make_db(),
+        "site_config": site_config,
+        "task_id": "t-style",
+    }
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+        mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
+        result = await ReviewVideoShotListStage().execute(ctx, {})
+
+    assert result.ok
+    calls = mock_pm.return_value.get_prompt.call_args_list
+    assert len(calls) >= 2, "long and short reviews both render a prompt"
+    for call in calls:
+        assert "retro-tech cyberpunk illustration" in call.kwargs["style_policy"]
+        assert "ONE LOOK PER VIDEO" in call.kwargs["style_policy"]

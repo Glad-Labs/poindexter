@@ -114,6 +114,14 @@ class ReviewVideoShotListStage:
                 now_iso=now_iso,
                 site_name=site_name,
                 human_subject_rule=(policy_vars or {}).get("human_subject_rule", ""),
+                # style_policy (2026-09-22): the reviewer used to receive only the
+                # human/presenter lines while its ON-BRAND criterion hardcoded a
+                # ROTATION of stylized modifiers — so a draft the director had
+                # built on one house style (#3930) came back in three looks
+                # (glassmorphism / cinematic / cyberpunk neon on the first
+                # niche-aware regen). The resolved policy text now travels with
+                # the draft, exactly as the director receives it.
+                style_policy=(policy_vars or {}).get("style_policy", ""),
                 presenter_policy=(policy_vars or {}).get("presenter_policy", ""),
                 **{script_var: script},
             )

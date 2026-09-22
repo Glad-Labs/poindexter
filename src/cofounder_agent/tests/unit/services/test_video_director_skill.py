@@ -15,6 +15,11 @@ from poindexter.schemas.video_shot_list import scan_for_human_tokens
 from poindexter.services.media_subject_policy import prompt_variables, resolve_media_policy
 
 _POLICY_VARS = prompt_variables(resolve_media_policy(None, None))
+import re
+from pathlib import Path
+
+import pytest
+
 from poindexter.services.prompt_manager import UnifiedPromptManager
 
 _KEY = "video.director_v1"
@@ -267,7 +272,7 @@ def test_review_prompt_restates_the_cli_demo_field_contract() -> None:
     rendered = pm.get_prompt(
         "video.review_v1",
         human_subject_rule=_POLICY_VARS["human_subject_rule"],
-
+        style_policy=_POLICY_VARS["style_policy"],
         presenter_policy=_POLICY_VARS["presenter_policy"],
         current_shot_list="{}", podcast_script="S",
         title="T", content="C",
@@ -277,3 +282,34 @@ def test_review_prompt_restates_the_cli_demo_field_contract() -> None:
     assert "cli_demo" in rendered
     assert "demo_id" in rendered
     assert "Never invent a demo_id" in rendered
+
+
+@pytest.mark.parametrize("key", ["video.review_v1", "video.review_short_v1"])
+def test_review_prompts_carry_the_style_policy_not_a_hardcoded_rotation(key: str) -> None:
+    """The reviewer receives the SAME resolved style policy as the director.
+
+    Before 2026-09-22 the long review template hardcoded "a stylized modifier
+    (flat vector / cinematic illustration / isometric 3D / cyberpunk neon /
+    glassmorphism)" and never received {style_policy}, so it rewrote a
+    one-look draft (media_house_style, #3930) into three looks. The template
+    must name the placeholder and must not carry its own modifier list.
+    """
+    pm = UnifiedPromptManager()
+    text = Path(__file__).resolve().parents[3].joinpath(
+        "skills", "content", "video-director", "SKILL.md"
+    ).read_text(encoding="utf-8")
+    start = text.index(f"## {key}")
+    nxt = re.search(r"\n## ", text[start + 3:])
+    template = text[start: start + 3 + nxt.start()] if nxt else text[start:]
+    assert "{style_policy}" in template
+    assert "flat vector / cinematic illustration / isometric 3D" not in template
+    rendered = pm.get_prompt(
+        key,
+        human_subject_rule=_POLICY_VARS["human_subject_rule"],
+        style_policy="HOUSE STYLE — begin every AI prompt with: probe-style illustration.",
+        presenter_policy=_POLICY_VARS["presenter_policy"],
+        current_shot_list="{}", podcast_script="S", short_script="S",
+        title="T", content="C", model="m",
+        now_iso="2026-09-22T00:00:00Z", site_name="Glad Labs",
+    )
+    assert "probe-style illustration" in rendered

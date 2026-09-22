@@ -22,6 +22,7 @@ def test_review_prompt_renders_and_substitutes(key: str, script_kwarg: str) -> N
         content="Body content.",
         current_shot_list='{"shots": []}',
         human_subject_rule="Human subjects are allowed in AI prompts.",
+        style_policy="HOUSE STYLE — begin every AI prompt with: test-style illustration.",
         presenter_policy="No on-camera presenter is configured for this niche.",
         model="ollama/gemma-4-31B-it-qat:latest",
         now_iso="2026-06-19T00:00:00Z",
@@ -38,6 +39,11 @@ def test_review_prompt_renders_and_substitutes(key: str, script_kwarg: str) -> N
     # the revised list fails VideoShotList validation (silently falling back to
     # the unreviewed draft). Locks in the per-source field guidance.
     assert "FIELD RULES" in text
+    # The resolved style policy travels with the draft (2026-09-22): the
+    # reviewer used to hardcode a rotation of stylized modifiers and undid the
+    # director's one-look house style on the long lane.
+    assert "test-style illustration" in text
+    assert "STYLE POLICY" in text
     assert '"prompt"' in text
     # The hero i2v source is named so the reviewer knows it can upgrade a beat
     # to motion (renamed wan21 -> generative in Piece 4).
