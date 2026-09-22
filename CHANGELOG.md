@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## [0.145.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.144.0...v0.145.0) (2026-09-22)
+
+
+### Features
+
+* **media:** one look per video — media_house_style, honoured by escalations, stripped by the Pexels fallback ([#3930](https://github.com/Glad-Labs/glad-labs-stack/issues/3930)) ([cb64e92](https://github.com/Glad-Labs/glad-labs-stack/commit/cb64e92412de14dcaf7d996b6f8a336465366e5f))
+* **youtube:** a Short gets its own title, description and utm medium, and the pair cross-links ([#3944](https://github.com/Glad-Labs/glad-labs-stack/issues/3944)) ([b2496c7](https://github.com/Glad-Labs/glad-labs-stack/commit/b2496c7718f2791c0026a427df907ede3357839b))
+
+
+### Bug Fixes
+
+* **brain:** probe URLs froze at process start — re-resolve every cycle ([#3942](https://github.com/Glad-Labs/glad-labs-stack/issues/3942)) ([b59db3a](https://github.com/Glad-Labs/glad-labs-stack/commit/b59db3a5ed4f6acddb775cf37c825d5c0df7e276))
+* **captions:** cut display cues on the writer's punctuation, not a word count ([#3929](https://github.com/Glad-Labs/glad-labs-stack/issues/3929)) ([a042367](https://github.com/Glad-Labs/glad-labs-stack/commit/a0423679f14a3bd7341e04f4d35fe6f1a0a13f30))
+* clear the 14 stale memory citations, and the two bugs that hid them ([#3896](https://github.com/Glad-Labs/glad-labs-stack/issues/3896)) ([c57344f](https://github.com/Glad-Labs/glad-labs-stack/commit/c57344f3e08e0697a141cc43c958a3f42ef78d16))
+* **deploy:** the identity check reported a stale container as current, three ways ([#3943](https://github.com/Glad-Labs/glad-labs-stack/issues/3943)) ([29a1ca7](https://github.com/Glad-Labs/glad-labs-stack/commit/29a1ca799bde4ecc32ac6a70293b2212ea8be7bb))
+* **deps:** revert the pytorch base bump again, and hold docker base images so it cannot re-land ([#3947](https://github.com/Glad-Labs/glad-labs-stack/issues/3947)) ([f3c4d32](https://github.com/Glad-Labs/glad-labs-stack/commit/f3c4d32f024bde4fd18ba34bd21fdfc0445563fd))
+* **drift-probe:** watch the compose profiles the stack was launched with ([#3924](https://github.com/Glad-Labs/glad-labs-stack/issues/3924)) ([21c9185](https://github.com/Glad-Labs/glad-labs-stack/commit/21c91854555355134a295fd025d9fecc9c744c76))
+* **game-mode:** correct parked service names, resolve real container names, park comfyui ([#3923](https://github.com/Glad-Labs/glad-labs-stack/issues/3923)) ([d3682be](https://github.com/Glad-Labs/glad-labs-stack/commit/d3682befa87daea08400897d41cb2a2542adf967))
+* **image-gen:** unbreak the build against the new pytorch base — deploys have been failing since 06:31 ([#3946](https://github.com/Glad-Labs/glad-labs-stack/issues/3946)) ([7570c00](https://github.com/Glad-Labs/glad-labs-stack/commit/7570c00b857bdfd638232226f13953761fb6546e))
+* **media:** captions retry once after a VRAM reclaim when the ASR sidecar fails transiently ([#3934](https://github.com/Glad-Labs/glad-labs-stack/issues/3934)) ([cecaa5c](https://github.com/Glad-Labs/glad-labs-stack/commit/cecaa5c37f77a91ecd9de06928b0acb8a3ee65ca))
+* **media:** directors never ask an AI image for words, logos or brand names ([#3938](https://github.com/Glad-Labs/glad-labs-stack/issues/3938)) ([5acf67d](https://github.com/Glad-Labs/glad-labs-stack/commit/5acf67d6435e1e83ad45245599f060545bb4c206))
+* **media:** hero plate gate waits for the reclaim ladder's evictions to land ([#3936](https://github.com/Glad-Labs/glad-labs-stack/issues/3936)) ([f0d2363](https://github.com/Glad-Labs/glad-labs-stack/commit/f0d2363e10f1e8338aa97329d61f99915c9f4384))
+* **media:** measure the narration rate instead of assuming 2.5 words/second ([#3925](https://github.com/Glad-Labs/glad-labs-stack/issues/3925)) ([e29dcc1](https://github.com/Glad-Labs/glad-labs-stack/commit/e29dcc1ebe3990e3f7e15bf4b6de00e6d809718f))
+* **media:** regen seeds niche_slug so regenerated shot lists honour the niche house style ([#3932](https://github.com/Glad-Labs/glad-labs-stack/issues/3932)) ([f58e9e6](https://github.com/Glad-Labs/glad-labs-stack/commit/f58e9e6b407fe0fe4aa48e82f4e7a68d08778ac7))
+* **media:** reseed media_pipeline v5 so the niche_slug contract change loads in prod ([#3931](https://github.com/Glad-Labs/glad-labs-stack/issues/3931)) ([d3196a7](https://github.com/Glad-Labs/glad-labs-stack/commit/d3196a7c4ede41a151a679e9daecf7e69e1152f6))
+* **media:** seed niche_slug into the media pipeline so Stage 2 stops being niche-blind ([#3928](https://github.com/Glad-Labs/glad-labs-stack/issues/3928)) ([c797578](https://github.com/Glad-Labs/glad-labs-stack/commit/c7975789691c46adb70bf09521c0826602259865))
+* **media:** soft-free ComfyUI's stale weights before the presenter and hero gates ([#3937](https://github.com/Glad-Labs/glad-labs-stack/issues/3937)) ([0ab474f](https://github.com/Glad-Labs/glad-labs-stack/commit/0ab474fb16fa171c057f95b7d08c7622de3c909a))
+* **media:** stop a persona silently overriding the narration engine ([#3927](https://github.com/Glad-Labs/glad-labs-stack/issues/3927)) ([6050e03](https://github.com/Glad-Labs/glad-labs-stack/commit/6050e03317b71ddb5493ac32f249ca013164b735))
+* **media:** the shot-list reviewer keeps the house style instead of re-rotating modifiers ([#3935](https://github.com/Glad-Labs/glad-labs-stack/issues/3935)) ([cd6bea1](https://github.com/Glad-Labs/glad-labs-stack/commit/cd6bea1ac257a49fd5a83c33d3d4d2ba001514f1))
+* **probes:** make narration + compose-drift probes game-mode aware ([#3919](https://github.com/Glad-Labs/glad-labs-stack/issues/3919)) ([89878a1](https://github.com/Glad-Labs/glad-labs-stack/commit/89878a19a9a358d5ced425dde1f3905e1dd4d17a))
+* **video:** set the presenter VRAM gate from a measurement, not a guess ([#3926](https://github.com/Glad-Labs/glad-labs-stack/issues/3926)) ([b7bdddb](https://github.com/Glad-Labs/glad-labs-stack/commit/b7bdddbea21b2c22c5c0c4e4945dba01a929c961))
+
 ## [0.144.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.143.0...v0.144.0) (2026-09-21)
 
 
