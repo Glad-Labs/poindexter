@@ -73,10 +73,29 @@ def _ambient_mood_cues(scenes: list[Any]) -> str:
 
 logger = logging.getLogger(__name__)
 
-# Narration pace estimate — mirrors generate_video_shot_list._WORDS_PER_SECOND
-# (~150 WPM). Kept local (not cross-stage imported) so the short prompt's word
-# target derives from the same second-target the shot-list clamp uses (#867).
-_WORDS_PER_SECOND = 2.5
+# Narration pace — mirrors generate_video_shot_list._WORDS_PER_SECOND, and
+# both are overridden by `media_narration_words_per_second` at the call
+# sites. Kept local (not cross-stage imported) so the short prompt's word
+# target derives from the same second-target the shot-list clamp uses
+# (#867). See that module for the measurement behind 2.1.
+_WORDS_PER_SECOND = 2.1
+
+def _words_per_second(site_config: Any) -> float:
+    """Narration pace, from settings, falling back to the measured default.
+
+    A value <= 0 is meaningless here (it would divide by zero or emit a
+    zero-word script), so it is rejected rather than honoured — the
+    no-silent-defaults rule cuts both ways.
+    """
+    if site_config is None:
+        return _WORDS_PER_SECOND
+    try:
+        raw = float(site_config.get(
+            "media_narration_words_per_second", _WORDS_PER_SECOND))
+    except (TypeError, ValueError):
+        return _WORDS_PER_SECOND
+    return raw if raw > 0 else _WORDS_PER_SECOND
+
 
 
 # Node-timeout floor for this stage, derived from its own budgets (the same
@@ -365,7 +384,7 @@ class GenerateMediaScriptsStage:
                             messages=[{"role": "user", "content": _build_video_narration_prompt(
                                 title, clean_content,
                                 target_seconds=long_target_s,
-                                target_words=round(long_target_s * _WORDS_PER_SECOND),
+                                target_words=round(long_target_s * _words_per_second(sc)),
                             )}],
                             model=model,
                             tier="standard",
@@ -400,7 +419,7 @@ class GenerateMediaScriptsStage:
             # no LLM call, sentence-safe (mirrors the #867 short trim).
             if video_long_script:
                 long_max_s = sc.get_int("video_long_max_seconds", 300) if sc is not None else 300
-                max_long_words = round(long_max_s * _WORDS_PER_SECOND)
+                max_long_words = round(long_max_s * _words_per_second(sc))
                 video_long_script, long_orig_w, long_kept_w = _trim_to_word_budget(
                     video_long_script, max_long_words,
                 )
@@ -415,7 +434,7 @@ class GenerateMediaScriptsStage:
                         title=f"long narration script trimmed {long_orig_w}->{long_kept_w} words",
                         body=(
                             f"The long video narration for task {context.get('task_id')} ran "
-                            f"{long_orig_w} words (~{long_orig_w / _WORDS_PER_SECOND:.0f}s), over the "
+                            f"{long_orig_w} words (~{long_orig_w / _words_per_second(sc):.0f}s), over the "
                             f"video_long_max_seconds budget of {long_max_s}s "
                             f"({max_long_words} words). Trimmed to the last full sentence "
                             "within budget so the video stays inside the renderer's "
@@ -438,7 +457,7 @@ class GenerateMediaScriptsStage:
                 title, clean_content,
                 sc.get("site_name", "our site") if sc is not None else "our site",
                 target_seconds=short_target_s,
-                target_words=round(short_target_s * _WORDS_PER_SECOND),
+                target_words=round(short_target_s * _words_per_second(sc)),
             )
 
             scene_output = ""
@@ -542,7 +561,7 @@ class GenerateMediaScriptsStage:
                 # remaining gap). Deterministic, no LLM call, sentence-safe.
                 if True:
                     short_max_s = sc.get_int("video_short_max_seconds", 60) if sc is not None else 60
-                    max_short_words = round(short_max_s * _WORDS_PER_SECOND)
+                    max_short_words = round(short_max_s * _words_per_second(sc))
                     short_summary, orig_w, kept_w = _trim_to_word_budget(
                         short_summary, max_short_words,
                     )
@@ -557,7 +576,7 @@ class GenerateMediaScriptsStage:
                             title=f"short script trimmed {orig_w}->{kept_w} words",
                             body=(
                                 f"The short summary for task {context.get('task_id')} ran "
-                                f"{orig_w} words (~{orig_w / _WORDS_PER_SECOND:.0f}s), over the "
+                                f"{orig_w} words (~{orig_w / _words_per_second(sc):.0f}s), over the "
                                 f"video_short_max_seconds budget of {short_max_s}s "
                                 f"({max_short_words} words). Trimmed to the last full sentence "
                                 f"within budget ({kept_w} words) so the short stays short. "

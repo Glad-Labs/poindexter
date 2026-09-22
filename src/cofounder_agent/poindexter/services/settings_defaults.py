@@ -894,6 +894,13 @@ DEFAULTS: dict[str, str] = {
     # prompt vs a 45s clamp guaranteed a ~15s frozen tail on every compliant
     # short). The word target is derived: round(target * 2.5 WPS).
     'video_short_target_seconds': '45',
+    # Narration pace in words/second, used to convert every second-target
+    # into a word budget (short + long script asks, the runaway caps, and
+    # the shot-list duration estimate). MEASURED, not assumed: chatterbox
+    # runs 2.11 wps (whisper over 9 rendered shorts, 1085 words / 515 s,
+    # 2026-09-21). The old hardcoded 2.5 let a 60 s cap pass a script that
+    # speaks for 71 s. Retune when the TTS voice or engine changes.
+    'media_narration_words_per_second': '2.1',
     # Hard cap on the short narration length in seconds (issue #867). A runaway
     # short script (the model ignoring the target) is trimmed to the last full
     # sentence within this budget so a "short" can't balloon to 2-3 minutes. Set
@@ -5231,6 +5238,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_comfyui_s2v_timeout_per_chunk_s': {'owner': 'video', 'value_type': 'integer'},
     'video_comfyui_s2v_workflow_override_json': {'owner': 'video', 'value_type': 'string'},
     'video_short_target_seconds': {'owner': 'video', 'value_type': 'integer'},
+    'media_narration_words_per_second': {'owner': 'video', 'value_type': 'float'},
     'video_short_max_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_render_min_shot_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_fallback_card_enabled': {'owner': 'media_render', 'value_type': 'boolean'},

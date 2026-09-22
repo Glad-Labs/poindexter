@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from poindexter.modules.content.stages.generate_video_shot_list import (
+    _WORDS_PER_SECOND,
     GenerateVideoShotListStage,
     _estimate_short_duration,
     _estimate_target_duration,
@@ -35,9 +36,18 @@ def test_estimate_target_duration_empty_script_returns_default() -> None:
 
 
 def test_estimate_target_duration_from_word_count() -> None:
-    """~150 words → ~60 seconds at 2.5 wps."""
-    script = " ".join(["word"] * 150)
-    assert 55.0 <= _estimate_target_duration(script) <= 65.0
+    """Word count / the narration rate — DERIVED, never a restated constant.
+
+    This used to read "~150 words -> ~60 seconds at 2.5 wps" with 55/65
+    hardcoded. When the rate was corrected to the measured 2.1 the assertion
+    failed on correct behaviour, because it pinned the assumption rather than
+    the contract. Deriving means a future re-measure moves the default and
+    this test together.
+    """
+    words = 150
+    script = " ".join(["word"] * words)
+    expected = words / _WORDS_PER_SECOND
+    assert _estimate_target_duration(script) == pytest.approx(expected, rel=0.01)
 
 
 def test_estimate_target_duration_clamps_below_20() -> None:
@@ -254,7 +264,7 @@ async def test_long_director_plans_over_video_long_script() -> None:
     pinned every plan at the ~300s clamp while the voice ran ~175s, so every
     long video shipped minutes of silent footage."""
     db_service = _make_db_service()
-    long_script = "spoken word here " * 100   # 300 words ≈ 120s at 2.5 WPS
+    long_script = "spoken word here " * 100   # 300 words / the narration rate
     podcast = "podcast filler line " * 400    # 1200 words → would clamp at 300s
     context = {
         "title": "Test Post",
@@ -286,7 +296,8 @@ async def test_long_director_plans_over_video_long_script() -> None:
     assert kw["podcast_script"] == long_script.strip()
     # …and the target derives from ITS word count (300 words / 2.5 ≈ 120s),
     # not the podcast's clamped 300s.
-    assert float(kw["target_duration_s"]) == pytest.approx(120.0, abs=2.0)
+    assert float(kw["target_duration_s"]) == pytest.approx(
+            300 / _WORDS_PER_SECOND, rel=0.02)  # 300 words at the narration rate
 
 
 @pytest.mark.asyncio
@@ -294,7 +305,7 @@ async def test_long_director_falls_back_to_podcast_script() -> None:
     """Without a video_long_script the podcast script remains the source —
     the same fallback order media.render_narration uses at Stage 2."""
     db_service = _make_db_service()
-    podcast = "podcast words spoken " * 50  # 150 words ≈ 60s
+    podcast = "podcast words spoken " * 50  # 150 words / the narration rate
     context = {
         "title": "Test Post",
         "content": "Some content " * 50,
@@ -320,7 +331,8 @@ async def test_long_director_falls_back_to_podcast_script() -> None:
     assert result.ok
     kw = mock_pm.return_value.get_prompt.call_args_list[0].kwargs
     assert kw["podcast_script"] == podcast
-    assert float(kw["target_duration_s"]) == pytest.approx(60.0, abs=2.0)
+    assert float(kw["target_duration_s"]) == pytest.approx(
+            150 / _WORDS_PER_SECOND, rel=0.02)  # 150 words at the narration rate
 
 
 @pytest.mark.asyncio

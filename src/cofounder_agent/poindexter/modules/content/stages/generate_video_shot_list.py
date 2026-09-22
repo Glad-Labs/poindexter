@@ -51,7 +51,40 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_TARGET_DURATION_S = 60.0  # Fallback when podcast script length unknown
-_WORDS_PER_SECOND = 2.5  # Rough TTS narration pace; ~150 WPM
+# Narration pace, words per second. MEASURED, not assumed.
+#
+# This was 2.5 ("~150 WPM") on both stages. Chatterbox — the engine that
+# actually speaks (`podcast_tts_engine`) — runs at **2.11**: whisper over nine
+# rendered shorts, 1085 words across 515 s, median 2.146, range 1.85-2.38
+# (2026-09-21).
+#
+# An 18% speed overestimate is an 18% duration UNDERestimate, and the cap is
+# enforced in WORDS: `video_short_max_seconds` 60 x 2.5 = 150 words, which at
+# the real rate speaks for 71 s. Eight of 38 rendered shorts breached the
+# 60 s cap, the worst at 72.5 s, while every one of them passed the word check.
+# Nothing downstream measures the rendered audio, so the cap could never bite.
+#
+# Same failure shape as the S2V audio-pace bug (stack#3857): an assumed rate
+# standing in for a measured one. Retune via `media_narration_words_per_second`
+# when the voice or engine changes — that is the whole reason it is a setting.
+_WORDS_PER_SECOND = 2.1
+
+def _words_per_second(site_config: Any) -> float:
+    """Narration pace, from settings, falling back to the measured default.
+
+    A value <= 0 is meaningless here (it would divide by zero or emit a
+    zero-word script), so it is rejected rather than honoured — the
+    no-silent-defaults rule cuts both ways.
+    """
+    if site_config is None:
+        return _WORDS_PER_SECOND
+    try:
+        raw = float(site_config.get(
+            "media_narration_words_per_second", _WORDS_PER_SECOND))
+    except (TypeError, ValueError):
+        return _WORDS_PER_SECOND
+    return raw if raw > 0 else _WORDS_PER_SECOND
+
 
 
 # Per-call ceiling for the director LLM dispatch. Writer-grade director models
@@ -147,7 +180,10 @@ def _build_demo_catalog_block(site_config: Any) -> str:
     return "\n".join(lines)
 
 
-def _estimate_target_duration(narration_script: str, *, max_s: float = 300.0) -> float:
+def _estimate_target_duration(
+    narration_script: str, *, max_s: float = 300.0,
+    words_per_second: float = _WORDS_PER_SECOND,
+) -> float:
     """Estimate the long video narration's spoken duration from word count.
 
     The director needs a target duration. The narration audio doesn't exist
@@ -166,14 +202,17 @@ def _estimate_target_duration(narration_script: str, *, max_s: float = 300.0) ->
     if not narration_script:
         return _DEFAULT_TARGET_DURATION_S
     word_count = len(narration_script.split())
-    estimated = word_count / _WORDS_PER_SECOND
+    estimated = word_count / words_per_second
     return max(20.0, min(estimated, max_s))
 
 
 _DEFAULT_SHORT_DURATION_S = 20.0  # Fallback when short script length unknown
 
 
-def _estimate_short_duration(short_script: str, target_seconds: float = 45.0) -> float:
+def _estimate_short_duration(
+    short_script: str, target_seconds: float = 45.0,
+    words_per_second: float = _WORDS_PER_SECOND,
+) -> float:
     """Estimate the short-form clip duration from word count.
 
     Same ~2.5 words/second estimate as the long-form director, but clamped to
@@ -186,7 +225,7 @@ def _estimate_short_duration(short_script: str, target_seconds: float = 45.0) ->
     if not short_script:
         return _DEFAULT_SHORT_DURATION_S
     word_count = len(short_script.split())
-    estimated = word_count / _WORDS_PER_SECOND
+    estimated = word_count / words_per_second
     return max(15.0, min(estimated, target_seconds))
 
 
@@ -875,6 +914,7 @@ class GenerateVideoShotListStage:
             target_duration_s=_estimate_target_duration(
                 narration_script,
                 max_s=float(cfg.get_int("video_long_max_seconds", 300)),
+                words_per_second=_words_per_second(cfg),
             ),
             prompt_key="video.director_v1",
             task_id=task_id,
@@ -930,6 +970,7 @@ class GenerateVideoShotListStage:
                 target_duration_s=_estimate_short_duration(
                     short_summary_script,
                     cfg.get_int("video_short_target_seconds", 45),
+                    words_per_second=_words_per_second(cfg),
                 ),
                 prompt_key="video.director_short_v1",
                 task_id=task_id,
