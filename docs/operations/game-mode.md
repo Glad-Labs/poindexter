@@ -80,17 +80,22 @@ unpaged. Both are worse than a game session seeing its containers restart.
 
 ## Settings
 
-| Key                          | Default                                                        | Meaning                                                     |
-| ---------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
-| `game_mode_until`            | `''`                                                           | Expiry (ISO-8601 UTC). `''` = off. Written by the adapters. |
+| Key                          | Default                                                                       | Meaning                                                     |
+| ---------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `game_mode_until`            | `''`                                                                          | Expiry (ISO-8601 UTC). `''` = off. Written by the adapters. |
 | `game_mode_parked_services`  | `speaches,chatterbox,stable-audio-server,image-gen-server,wan-server,comfyui` | Compose **service** names                                   |
-| `game_mode_default_hours`    | `4`                                                            | Window when `--hours` is omitted                            |
-| `game_mode_evict_ollama`     | `true`                                                         | Evict resident models on enable                             |
-| `game_mode_container_prefix` | `poindexter-`                                                  | Prefix applied to derive container names                    |
+| `game_mode_default_hours`    | `4`                                                                           | Window when `--hours` is omitted                            |
+| `game_mode_evict_ollama`     | `true`                                                                        | Evict resident models on enable                             |
+| `game_mode_container_prefix` | `poindexter-`                                                                 | Prefix applied to derive container names                    |
 
 `game_mode_parked_services` holds compose _service_ names because that is the
 vocabulary `compose_drift_probe` speaks; docker container names are derived by
-prefixing `game_mode_container_prefix`.
+prefixing `game_mode_container_prefix` — except for five services whose
+compose `container_name` isn't prefix + service name (`stable-audio-server`
+→ `poindexter-stable-audio` is the one that bit us; see `CONTAINER_SUFFIX_OVERRIDES`
+in `services/game_mode.py`), where that map's suffix is used instead. A unit
+test checks the map against `docker-compose.local.yml`, so a compose rename
+fails CI rather than silently parking nothing.
 
 ## Verifying
 
@@ -145,13 +150,25 @@ has to read `game_mode_until` or it will page on the operator's own action.
 If you add a probe that reaches a GPU sidecar, check `services.game_mode`
 first (`is_active` + `parked_services`) and return "skipped", not "down".
 
-## Known gap
+## Fixed gaps (2026-09-21/22)
 
-`game_mode_parked_services` holds compose _service_ names, and a name that
-does not match a service in the compose file parks nothing — silently. The
-seeded default lists `stable-audio`, but the compose service is
-`stable-audio-server` (container `poindexter-stable-audio`), so game mode has
-never parked it and the drift probe restores it mid-game as ordinary drift.
-`poindexter game status` reports only the names it was given, so the mismatch
-is invisible from there; fix the setting value, or teach `enable()` to reject
-a name absent from the compose spec.
+Two bugs shipped together, both closed by stack#3923:
+
+- `game_mode_parked_services` listed `stable-audio`, not the real compose
+  service `stable-audio-server`. A name that matches no service parks
+  nothing, silently — `poindexter game status` reports only the names it was
+  given, so the mismatch was invisible from there. Game mode never parked
+  stable-audio until this was fixed.
+- Fixing that name exposed a second bug: `container_names()` built
+  `poindexter-<service>`, but `stable-audio-server`'s container is
+  `poindexter-stable-audio`, not `poindexter-stable-audio-server`. Five
+  services break the prefix rule; see `CONTAINER_SUFFIX_OVERRIDES` above.
+  Without it, `poindexter game on` would have stopped nothing for those
+  services even with the name corrected.
+
+`comfyui` was also added to the default parked list in the same PR — it holds
+VRAM like the other GPU servers and had been the one left running during
+games. (A related fix landed alongside in stack#3924: `compose_drift_probe`'s
+active-profiles list now comes from the stack's own `COMPOSE_PROFILES` launch
+env instead of a hand-kept setting, so a profile drifting out of sync no
+longer leaves a crashed service undetected.)
