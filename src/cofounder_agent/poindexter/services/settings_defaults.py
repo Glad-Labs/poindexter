@@ -2545,6 +2545,12 @@ DEFAULTS: dict[str, str] = {
     # niche can opt back out.
     'media_human_subjects': 'allow',
     'media_style_policy': 'stylized',
+    # One look per video for AI-rendered shots — free text prepended to every
+    # image_gen / image_kenburns / generative prompt by the director, used
+    # verbatim for escalations, and stripped by the Pexels fallback. Empty =
+    # the director may vary the modifier per shot. Per-niche override:
+    # niche.<slug>.media.house_style.
+    'media_house_style': '',
     'media_negative_prompt_human_terms': 'face, person, human, hands, fingers',
     # Presenter personas — a face bound to a voice, one key family per slug
     # (docs/architecture/media-personas.md). Selection: niche.<slug>.media.persona
@@ -5927,6 +5933,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_negative_prompt': {'value_type': 'string'},
     'media_human_subjects': {'owner': 'media_policy', 'value_type': 'string'},
     'media_style_policy': {'owner': 'media_policy', 'value_type': 'string'},
+    'media_house_style': {'owner': 'media_policy', 'value_type': 'string'},
     'media_negative_prompt_human_terms': {'owner': 'media_policy', 'value_type': 'string'},
     'media_default_persona': {'owner': 'media_policy', 'value_type': 'string'},
     'persona.presenter.display_name': {'owner': 'media_policy', 'value_type': 'string'},

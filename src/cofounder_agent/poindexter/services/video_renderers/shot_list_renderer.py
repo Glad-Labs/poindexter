@@ -1976,10 +1976,20 @@ async def _llm_restock_query(
     return cleaned
 
 
-def _select_ai_style(site_config: Any, shot_idx: int) -> str:
-    """Style modifier for an escalated shot, rotated by index so several
-    escalations in one video don't all land in the same look. Operators can
-    narrow the pool via ``video_shot_escalation_styles`` (CSV)."""
+def _select_ai_style(site_config: Any, shot_idx: int, *, niche_slug: str | None = None) -> str:
+    """Style modifier for an escalated shot.
+
+    With a house style set (``media_house_style`` / the niche override) every
+    escalation uses it — an escalated shot must not be the one shot in the
+    video wearing a different look. Otherwise rotate by index so several
+    escalations in one video don't all land in the same modifier; operators
+    can narrow that pool via ``video_shot_escalation_styles`` (CSV)."""
+    if site_config is not None:
+        from poindexter.services.media_subject_policy import resolve_media_policy
+
+        house = resolve_media_policy(site_config, niche_slug).house_style
+        if house:
+            return house
     styles: tuple[str, ...] = _STYLE_MODIFIERS
     if site_config is not None:
         raw = str(site_config.get("video_shot_escalation_styles", "") or "").strip()
@@ -2009,7 +2019,7 @@ def _ai_prompt_from_stock_shot(shot: Shot, *, style: str) -> str:
     )
 
 
-def _pexels_query_from_shot(shot: Shot) -> str:
+def _pexels_query_from_shot(shot: Shot, *, house_style: str = "") -> str:
     """Best-effort stock-search query for an image-gen-family shot falling back
     to Pexels. Prefers the concrete prompt subject (leading style-modifier,
     any style noun it left behind, and the trailing palette clause stripped)
@@ -2026,6 +2036,13 @@ def _pexels_query_from_shot(shot: Shot) -> str:
     """
     prompt = (shot.prompt or "").strip()
     low = prompt.lower()
+    # The house style is a modifier too, and it is NOT in ``_STYLE_MODIFIERS``
+    # (it is operator text). Left unstripped it would become the Pexels query
+    # verbatim — the #3884 muralist bug back through a new door.
+    hs = (house_style or "").strip().lower()
+    if hs and low.startswith(hs):
+        prompt = prompt[len(hs):].lstrip(" ,").strip()
+        low = prompt.lower()
     for mod in _STYLE_MODIFIERS:
         if low.startswith(mod):
             prompt = prompt[len(mod):].lstrip(" ,").strip()
@@ -2059,6 +2076,7 @@ async def _substitute_failed_shot(
     pexels_key: str,
     orientation: str,
     http_client_factory: Any,
+    house_style: str = "",
 ) -> str | None:
     """Rung-2 cross-family substitute: an image-gen-family shot whose render
     hard-failed retries as REAL Pexels footage (video first, then photo) from a
@@ -2066,7 +2084,7 @@ async def _substitute_failed_shot(
     direction (pexels → image-gen) is intentionally never attempted."""
     if not pexels_key:
         return None
-    query = _pexels_query_from_shot(shot)
+    query = _pexels_query_from_shot(shot, house_style=house_style)
     if not query:
         return None
     video_path = str(work_dir / f"shot_{shot.idx:02d}_sub.mp4")
@@ -2101,6 +2119,12 @@ async def _backfill_pass(
     """
     card_ok = _card_enabled(site_config)
     work_dir: Path = render_kwargs["work_dir"]
+    house_style = ""
+    if site_config is not None:
+        from poindexter.services.media_subject_policy import resolve_media_policy
+
+        house_style = resolve_media_policy(
+            site_config, render_kwargs.get("niche_slug")).house_style
     for st in states:
         if st.result.success and st.result.clip_path:
             continue  # primary / holdover / substitute already filled the slot
@@ -2115,6 +2139,7 @@ async def _backfill_pass(
                 pexels_key=render_kwargs["pexels_key"],
                 orientation=render_kwargs["orientation"],
                 http_client_factory=render_kwargs["http_client_factory"],
+                house_style=house_style,
             )
             if sub_path:
                 st.result = ShotRenderResult(
@@ -3419,7 +3444,8 @@ async def _escalate_offtopic_stock(
             )
             continue
 
-        style = _select_ai_style(site_config, st.shot.idx)
+        style = _select_ai_style(
+            site_config, st.shot.idx, niche_slug=render_kwargs.get("niche_slug"))
         try:
             ai_shot = st.shot.model_copy(update={
                 "source": "image_kenburns",

@@ -175,3 +175,29 @@ def test_synthetic_media_accepts_model_objects_too():
 
     photo = mp.resolve_media_policy(_presenter_sc(), None)
     assert mp.video_contains_synthetic_media(photo, _List()) is True
+
+
+# ---------------------------------------------------------------------------
+# House style — one look per video (2026-09-22)
+# ---------------------------------------------------------------------------
+
+def test_house_style_resolves_niche_then_global_then_empty():
+    assert mp.resolve_media_policy(_sc(), "glad-labs").house_style == ""
+    assert mp.resolve_media_policy(_sc(media_house_style="line art"), "glad-labs").house_style == "line art"
+    sc = _sc(**{"media_house_style": "line art", "niche.glad-labs.media.house_style": "retro-tech cyberpunk"})
+    assert mp.resolve_media_policy(sc, "glad-labs").house_style == "retro-tech cyberpunk"
+    assert mp.resolve_media_policy(sc, "other").house_style == "line art"
+    assert mp.resolve_media_policy(sc, None).house_style == "line art"
+
+
+def test_house_style_is_folded_into_the_style_policy_text():
+    """No new template key — the director prompts already render {style_policy}."""
+    off = mp.resolve_media_policy(_sc(), None)
+    on = mp.resolve_media_policy(_sc(media_house_style="retro-tech cyberpunk illustration"), None)
+    assert "HOUSE STYLE" not in mp.video_style_policy(off)
+    text = mp.video_style_policy(on)
+    assert "HOUSE STYLE" in text and "retro-tech cyberpunk illustration" in text
+    # the existing policy text survives underneath it
+    assert "must be STYLIZED" in text
+    # and the variable set the packs are rendered from is unchanged
+    assert set(mp.prompt_variables(on)) == set(mp.prompt_variables(off))

@@ -3869,3 +3869,52 @@ class TestPresenterWindowHandoff:
         with patch.object(slr, "_render_one_shot", fake_one_shot):
             await slr._render_pass(shots, render_kwargs=render_kwargs, presenter_window_fn=boom)
         assert seen == {0: None}
+
+
+class TestHouseStyle:
+    """One look per video must reach escalations, and must not leak into Pexels."""
+
+    def _sc(self, **kv):
+        from poindexter.services.site_config import SiteConfig
+        return SiteConfig(initial_config={k: str(v) for k, v in kv.items()})
+
+    def test_escalation_uses_the_house_style_regardless_of_index(self):
+        from poindexter.services.video_renderers.shot_list_renderer import _select_ai_style
+        sc = self._sc(media_house_style="retro-tech cyberpunk illustration")
+        assert _select_ai_style(sc, 0) == "retro-tech cyberpunk illustration"
+        assert _select_ai_style(sc, 1) == "retro-tech cyberpunk illustration"
+        assert _select_ai_style(sc, 7) == "retro-tech cyberpunk illustration"
+
+    def test_niche_override_wins_for_escalation(self):
+        from poindexter.services.video_renderers.shot_list_renderer import _select_ai_style
+        sc = self._sc(**{"media_house_style": "line art",
+                         "niche.glad-labs.media.house_style": "retro-tech cyberpunk"})
+        assert _select_ai_style(sc, 3, niche_slug="glad-labs") == "retro-tech cyberpunk"
+        assert _select_ai_style(sc, 3, niche_slug="other") == "line art"
+
+    def test_no_house_style_keeps_rotation(self):
+        from poindexter.services.video_renderers.shot_list_renderer import (
+            _STYLE_MODIFIERS,
+            _select_ai_style,
+        )
+        sc = self._sc()
+        assert _select_ai_style(sc, 0) == _STYLE_MODIFIERS[0]
+        assert _select_ai_style(sc, 1) == _STYLE_MODIFIERS[1]
+
+    def test_pexels_fallback_strips_the_house_style(self):
+        """The #3884 invariant, extended: the subject must survive a house-style prefix."""
+        from poindexter.schemas.video_shot_list import Shot
+        from poindexter.services.video_renderers.shot_list_renderer import _pexels_query_from_shot
+        hs = "retro-tech cyberpunk illustration"
+        shot = Shot(idx=0, duration_s=6.0, intent="INTENT-NOT-USED", source="image_gen",
+                    prompt=f"{hs}, empty server hall, cyan palette", narration_offset_s=0.0)
+        assert _pexels_query_from_shot(shot, house_style=hs) == "empty server hall"
+        # without the hint the modifier is NOT in _STYLE_MODIFIERS and would leak
+        assert _pexels_query_from_shot(shot).startswith("retro-tech")
+
+    def test_house_style_then_a_known_modifier_both_strip(self):
+        from poindexter.schemas.video_shot_list import Shot
+        from poindexter.services.video_renderers.shot_list_renderer import _pexels_query_from_shot
+        shot = Shot(idx=0, duration_s=6.0, intent="x", source="image_gen",
+                    prompt="retro-tech, cyberpunk neon illustration, glowing racks", narration_offset_s=0.0)
+        assert _pexels_query_from_shot(shot, house_style="retro-tech") == "glowing racks"

@@ -49,6 +49,11 @@ StylePolicy = Literal["stylized", "any"]
 
 HUMAN_SUBJECTS_KEY = "media_human_subjects"
 STYLE_POLICY_KEY = "media_style_policy"
+# One look per video. Free text, prepended to every AI-source prompt by the
+# director and used verbatim for escalations. Empty = the director may vary
+# the modifier per shot (the pre-2026-09-22 behaviour). Niche override:
+# ``niche.<slug>.media.house_style``.
+HOUSE_STYLE_KEY = "media_house_style"
 HUMAN_TERMS_KEY = "media_negative_prompt_human_terms"
 
 DEFAULT_HUMAN_SUBJECTS: HumanSubjects = "allow"
@@ -68,6 +73,7 @@ def niche_key(niche_slug: str, leaf: str) -> str:
 class MediaPolicy:
     human_subjects: HumanSubjects = DEFAULT_HUMAN_SUBJECTS
     style_policy: StylePolicy = DEFAULT_STYLE_POLICY
+    house_style: str = ""
     niche_slug: str | None = None
     human_terms: str = DEFAULT_HUMAN_TERMS
     sources: tuple[str, str] = ("default", "default")  # where each value came from
@@ -181,14 +187,24 @@ def _resolve_presenter(site_config: Any, niche_slug: str | None, *, human: str, 
     return persona.slug, display, persona.style_policy, True
 
 
+def _resolve_text(site_config: Any, leaf: str, key: str, niche_slug: str | None) -> str:
+    """Free-text setting: niche override, then global, then ``""``."""
+    if niche_slug:
+        val = _get(site_config, niche_key(niche_slug, leaf))
+        if val:
+            return val
+    return _get(site_config, key)
+
+
 def resolve_media_policy(site_config: Any, niche_slug: str | None = None) -> MediaPolicy:
     human, h_src = _resolve(site_config, "human_subjects", HUMAN_SUBJECTS_KEY, _HUMAN_VALUES, DEFAULT_HUMAN_SUBJECTS, niche_slug)
     style, s_src = _resolve(site_config, "style_policy", STYLE_POLICY_KEY, _STYLE_VALUES, DEFAULT_STYLE_POLICY, niche_slug)
+    house = _resolve_text(site_config, "house_style", HOUSE_STYLE_KEY, niche_slug)
     terms = _get(site_config, HUMAN_TERMS_KEY) or DEFAULT_HUMAN_TERMS
     slug, display, pstyle, available = _resolve_presenter(site_config, niche_slug, human=human, style=style)
     max_shots = _get_int(site_config, PRESENTER_MAX_SHOTS_KEY, DEFAULT_PRESENTER_MAX_SHOTS)
     return MediaPolicy(
-        human_subjects=human, style_policy=style, niche_slug=niche_slug, human_terms=terms, sources=(h_src, s_src),
+        human_subjects=human, style_policy=style, house_style=house, niche_slug=niche_slug, human_terms=terms, sources=(h_src, s_src),
         presenter_slug=slug, presenter_display_name=display, presenter_style=pstyle,
         presenter_available=available, presenter_max_shots=max_shots,
     )  # type: ignore[arg-type]
@@ -281,8 +297,32 @@ def video_human_subject_rule(policy: MediaPolicy) -> str:
     )
 
 
+def house_style_block(policy: MediaPolicy) -> str:
+    """The one-look instruction, or ``""`` when no house style is set.
+
+    Measured 2026-09-21 over the last ten shot lists: 4-6 distinct style
+    modifiers across 5-8 AI shots in EVERY short — a purple 3D render, a gold
+    key on white, a flat-vector businessman and a watercolour flower in one
+    63-second clip. Each shot was on-style by itself; the video had no look.
+    """
+    if not policy.house_style:
+        return ""
+    return (
+        "HOUSE STYLE — ONE LOOK PER VIDEO\n"
+        f"Begin EVERY image_gen / image_kenburns / generative prompt with exactly: "
+        f"\"{policy.house_style}\". Do not vary the modifier between shots; the "
+        "subject changes, the look does not. Pexels is exempt (real footage).\n\n"
+    )
+
+
 def video_style_policy(policy: MediaPolicy) -> str:
     """The STYLE POLICY FOR AI SOURCES block body."""
+    if policy.house_style:
+        return house_style_block(policy) + _video_style_policy_base(policy)
+    return _video_style_policy_base(policy)
+
+
+def _video_style_policy_base(policy: MediaPolicy) -> str:
     if policy.photoreal_allowed:
         return (
             "image_gen / image_kenburns / generative prompts may be stylized OR photoreal. "
