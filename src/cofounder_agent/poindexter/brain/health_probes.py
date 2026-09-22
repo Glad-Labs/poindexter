@@ -138,53 +138,77 @@ ALERTMANAGER_URL = localize_url(
     os.getenv("ALERTMANAGER_URL") or "http://alertmanager:9093"
 )
 
-_config_synced = False
+# Pristine env/import-time baselines. Re-resolution ALWAYS starts from these,
+# never from the current globals: `resolve_url` falls back to `default` when
+# neither the env var nor the DB has a value, so passing the live global would
+# make a CLEARED setting sticky — the operator empties the row, the probe keeps
+# the value it resolved an hour ago, and nothing says so.
+_CONFIG_BASELINE = {
+    "API_URL": API_URL,
+    "LOCAL_OLLAMA": LOCAL_OLLAMA,
+    "VISION_OLLAMA": VISION_OLLAMA,
+    "ALERTMANAGER_URL": ALERTMANAGER_URL,
+}
 
 
 async def _sync_config_from_db(pool):
-    """Pull URL/connection config from app_settings so probes use the
-    canonical values instead of potentially stale env var defaults.
-    Runs once on first probe cycle.
+    """Re-resolve URL/connection config from app_settings each probe cycle.
 
     Env vars take priority (Docker sets them correctly for the container
-    network), DB values are fallback for local dev where env vars may
-    not be set.
+    network), DB values are the fallback for local dev where env vars may not
+    be set.
+
+    **This used to run exactly once per process** (`if _config_synced: return`),
+    which made every URL here immune to an app_settings change until the daemon
+    was restarted. On 2026-09-20 `ollama_vision_base_url` was set on prod and
+    the vision probe kept reading an empty endpoint; the running process was
+    already on the new code, so nothing about the deploy looked wrong. The
+    re-read machinery was already there — it was called at the top of every
+    cycle and returned immediately.
+
+    Re-resolving costs four `resolve_url` calls per CYCLE_SECONDS (300s), which
+    is nothing, and it makes these settings behave like every other one in the
+    system (`reload_site_config` refreshes SiteConfig every 60s).
+
+    Logging is on CHANGE only. Logging every cycle would add ~288 lines/day of
+    "nothing happened"; logging never is what hid the original bug. A line here
+    means a value actually moved, which is the only time anyone wants one.
     """
-    global API_URL, LOCAL_OLLAMA, VISION_OLLAMA, ALERTMANAGER_URL, _config_synced
-    if _config_synced:
-        return
+    global API_URL, LOCAL_OLLAMA, VISION_OLLAMA, ALERTMANAGER_URL
+    before = (API_URL, LOCAL_OLLAMA, VISION_OLLAMA, ALERTMANAGER_URL)
     try:
         # URLs: shared resolver handles env-wins-over-DB + localize_url in one call.
         API_URL = await resolve_url(
             pool, "internal_api_base_url", "api_url",
-            default=API_URL, env_var="API_URL",
+            default=_CONFIG_BASELINE["API_URL"], env_var="API_URL",
         )
         LOCAL_OLLAMA = await resolve_url(
             pool, "ollama_base_url",
-            default=LOCAL_OLLAMA, env_var="OLLAMA_URL",
+            default=_CONFIG_BASELINE["LOCAL_OLLAMA"], env_var="OLLAMA_URL",
         )
         VISION_OLLAMA = await resolve_url(
             pool, "ollama_vision_base_url",
-            default=VISION_OLLAMA, env_var="OLLAMA_VISION_URL",
+            default=_CONFIG_BASELINE["VISION_OLLAMA"], env_var="OLLAMA_VISION_URL",
         )
         ALERTMANAGER_URL = await resolve_url(
             pool, "alertmanager_url",
-            default=ALERTMANAGER_URL, env_var="ALERTMANAGER_URL",
+            default=_CONFIG_BASELINE["ALERTMANAGER_URL"], env_var="ALERTMANAGER_URL",
         )
-        _config_synced = True
-        # Name every URL this sync resolves, including the ones that resolve to
-        # EMPTY. A probe that silently reads a blank endpoint is indistinguishable
-        # in the log from one that is working, which is the exact failure this
-        # file exists to catch elsewhere.
-        logger.info(
-            "[PROBES] Config synced: API=%s, Ollama=%s, VisionOllama=%s, "
-            "Alertmanager=%s (env wins over DB; URLs localized; "
-            "'(unset)' = probe inactive by configuration, not a fault)",
-            API_URL,
-            LOCAL_OLLAMA,
-            VISION_OLLAMA or "(unset)",
-            ALERTMANAGER_URL,
-        )
+        after = (API_URL, LOCAL_OLLAMA, VISION_OLLAMA, ALERTMANAGER_URL)
+        if after != before:
+            # Name every URL, including the ones that resolve to EMPTY: a probe
+            # silently reading a blank endpoint is indistinguishable in the log
+            # from one that is working, which is the failure this file exists to
+            # catch elsewhere. `(unset)` is a configuration state, not a fault.
+            logger.info(
+                "[PROBES] Config resolved: API=%s, Ollama=%s, VisionOllama=%s, "
+                "Alertmanager=%s (env wins over DB; URLs localized; "
+                "'(unset)' = probe inactive by configuration, not a fault)",
+                API_URL,
+                LOCAL_OLLAMA,
+                VISION_OLLAMA or "(unset)",
+                ALERTMANAGER_URL,
+            )
     except Exception as e:
         logger.warning("[PROBES] Failed to sync config from DB, using env defaults: %s", e)
 

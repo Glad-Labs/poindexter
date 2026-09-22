@@ -62,12 +62,10 @@ def _reset_module_state():
     hp._last_run.clear()
     hp._failure_counts.clear()
     hp._last_remediation.clear()
-    hp._config_synced = False
     yield
     hp._last_run.clear()
     hp._failure_counts.clear()
     hp._last_remediation.clear()
-    hp._config_synced = False
 
 
 @pytest.mark.unit
@@ -212,7 +210,6 @@ class TestRunHealthProbes:
         now = time.time()
         for name in hp.PROBES.keys():
             hp._last_run[name] = now
-        hp._config_synced = True
 
         p = _make_pool()
         results = await hp.run_health_probes(p)
@@ -275,7 +272,6 @@ class TestPerProbeSpans:
             clear=True,
         ), \
             patch.object(hp, "_is_due", return_value=True):
-            hp._config_synced = True
             p = _make_pool()
             await hp.run_health_probes(p, notify_fn=None)
 
@@ -307,7 +303,6 @@ class TestPerProbeSpans:
             hp.PROBES, {"crashy": crashy_probe}, clear=True,
         ), \
             patch.object(hp, "_is_due", return_value=True):
-            hp._config_synced = True
             p = _make_pool()
             await hp.run_health_probes(p, notify_fn=None)
 
@@ -335,7 +330,6 @@ class TestConditionalSuppressionAndCrash:
                     hp, "_alertmanager_healthy",
                     new=AsyncMock(return_value=am_healthy),
                 ):
-            hp._config_synced = True
             await hp.run_health_probes(
                 _make_pool(), notify_fn=lambda m: notifies.append(m)
             )
@@ -395,7 +389,6 @@ class TestAsyncNotifyFnAwaited:
                 patch.object(
                     hp, "_alertmanager_healthy", new=AsyncMock(return_value=True),
                 ):
-            hp._config_synced = True
             await hp.run_health_probes(_make_pool(), notify_fn=notify_fn)
 
         # The page must have been *awaited*, not left as a dangling coroutine.
