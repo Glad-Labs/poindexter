@@ -47,6 +47,17 @@ ARTICLE CONTENT:
 NARRATION:
 ```
 
+> **NOT WIRED — do not edit this expecting an effect.** No caller resolves
+> `video.short_form_narration`; the short lane's live prompt is built in
+> `modules/content/stages/generate_media_scripts.py::_build_scene_prompt`,
+> which asks for PART 1 (scenes) and PART 2 (the short narration) in one call
+> and substitutes the real `video_short_target_seconds` / words-per-second
+> budget. The "60-second … about 150 words" above is the pre-#867 ask and
+> contradicts the live one (45 s, ~95 words at 2.1 wps). Wiring this key up —
+> so the short hook is DB-configurable like every other prompt — is the fix;
+> until then the text above is a fossil. Found 2026-09-22 while sharpening
+> the hook.
+
 The long-form prompt's `{target_seconds}` / `{target_words}` placeholders are
 substituted from `video_long_target_seconds` (words = seconds × 2.5 WPS) — the
 same one-canonical-target pattern as the short lane, so the narration ask, the

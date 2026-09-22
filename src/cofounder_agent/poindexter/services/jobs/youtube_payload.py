@@ -160,6 +160,44 @@ def shorten_at_word(text: str, limit: int) -> str:
     return head.rstrip(" ,;:-—").rstrip()
 
 
+# Scene-setting run-ups a narration script sometimes opens with. Stripped from
+# the TITLE and the description hook only — the narration audio is already
+# rendered, and the words the presenter speaks are not ours to rewrite here.
+# Each alternative must be followed by a COMMA: that is what makes it a
+# throat-clearing clause rather than the sentence's own subject ("Let's talk
+# about zero-click content" has no comma, and cutting it would leave a noun
+# phrase, not a claim). The script prompt now asks for a flat claim outright
+# (_build_scene_prompt); this catches the scripts already frozen into
+# pipeline_versions, which is every Short on the channel today.
+_PREAMBLE_RE = re.compile(
+    r"^(?:"
+    r"in today's [\w' -]{2,30}"
+    r"|in (?:the|this|an?) (?:world|age|era|day and age|modern era) of [\w' -]{2,40}"
+    r"|in (?:the|this) (?:world|age|era|day and age|modern era)"
+    r"|in this (?:article|video|post|short)"
+    r"|these days|nowadays|as we all know|it's no secret"
+    r"|as (?:you|we) (?:probably )?(?:know|might know)"
+    r")\s*,\s*",
+    re.I,
+)
+
+
+def strip_preamble(sentence: str) -> str:
+    """Drop a leading scene-setting clause and re-capitalise what is left.
+
+    ``"In today's digital age, zero-click content is the new standard."`` ->
+    ``"Zero-click content is the new standard."`` Returns the input unchanged
+    when nothing matches, or when the remainder would be too short to be a
+    claim on its own (a strip that leaves two words has cut the sentence, not
+    its run-up).
+    """
+    clean = (sentence or "").strip()
+    stripped = _PREAMBLE_RE.sub("", clean, count=1).strip()
+    if stripped == clean or len(stripped.split()) < 3:
+        return clean
+    return stripped[:1].upper() + stripped[1:]
+
+
 def _sentences(text: str) -> list[str]:
     clean = _strip_markup(_markdown_to_plain(text or ""))
     return [p.strip() for p in _SENTENCE_END_RE.split(clean) if p.strip()] if clean else []
@@ -199,14 +237,19 @@ def short_hook_title(script: str, *, site_config: Any) -> str:
     parts = _sentences(script)
     if not parts:
         return ""
-    first = parts[0]
+    first = strip_preamble(parts[0])
     hook = first if len(first) <= limit + limit // 4 else shorten_at_word(first, limit)
     return hook.rstrip(".").strip()
 
 
 def short_hook_line(script: str) -> str:
-    """The Short's description opener: its first one or two whole sentences."""
-    return first_sentences(script, max_sentences=2, limit=_SHORT_HOOK_DESCRIPTION_MAX)
+    """The Short's description opener: its first one or two whole sentences,
+    with the same scene-setting run-up stripped off the first."""
+    parts = _sentences(script)
+    if not parts:
+        return ""
+    parts[0] = strip_preamble(parts[0])
+    return first_sentences(" ".join(parts[:2]), max_sentences=2, limit=_SHORT_HOOK_DESCRIPTION_MAX)
 
 
 def hashtags_for_short(keywords: list[str], *, site_config: Any) -> list[str]:
@@ -465,6 +508,7 @@ __all__ = [
     "hashtags_for_short",
     "short_hook_line",
     "short_hook_title",
+    "strip_preamble",
     "shorten_at_word",
     "twin_watch_url",
 ]

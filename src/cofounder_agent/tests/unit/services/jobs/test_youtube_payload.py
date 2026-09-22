@@ -22,6 +22,7 @@ from poindexter.services.jobs.youtube_payload import (
     short_hook_line,
     short_hook_title,
     shorten_at_word,
+    strip_preamble,
     twin_watch_url,
 )
 from poindexter.services.site_config import SiteConfig
@@ -285,19 +286,29 @@ def test_short_title_hook_respects_the_feed_budget():
 
 def test_short_title_keeps_a_whole_sentence_just_over_the_budget():
     """62 chars against a 60 budget: the whole sentence beats a mid-phrase cut
-    ("…is the new"); the 100-char API cap stays the hard limit."""
-    script = "In today's digital age, zero-click content is the new standard. More."
+    ("…answers the"); the 100-char API cap stays the hard limit."""
+    script = "Zero-click content is how the open web pays its own bills now. More."
     hook = short_hook_title(script, site_config=_sc(youtube_short_title_max_chars="60"))
-    assert hook == "In today's digital age, zero-click content is the new standard"
-    assert short_hook_title(script, site_config=_sc(youtube_short_title_max_chars="40")) == "In today's digital age, zero-click"
+    assert hook == "Zero-click content is how the open web pays its own bills now"
+    assert short_hook_title(
+        script, site_config=_sc(youtube_short_title_max_chars="40"),
+    ) == "Zero-click content is how the open web"
 
 
 def test_description_hook_takes_whole_sentences_only():
-    script = ("In today's digital age, zero-click content is the new standard. "
+    script = ("Zero-click content is the new standard. "
               "As platforms like Google, LinkedIn, TikTok, and Facebook evolve to keep users within their "
               "ecosystems, they surface answers directly, reducing click-through rates intentionally. Third.")
     hook = short_hook_line(script)
-    assert hook == "In today's digital age, zero-click content is the new standard."  # sentence 2 would overflow 220
+    # Two whole sentences fit the 220-char budget, so both are taken — and the
+    # hook never ends mid-sentence.
+    assert hook.startswith("Zero-click content is the new standard.")
+    assert hook.endswith("intentionally.")
+    assert len(hook) <= 220
+    # A sentence that does NOT fit is dropped whole rather than cut: budget 60
+    # takes sentence 1 only.
+    assert short_hook_line.__doc__  # (the helper documents the rule it enforces)
+    assert first_sentences(script, max_sentences=2, limit=60) == "Zero-click content is the new standard."
     assert first_sentences("A very " + "long " * 60 + "sentence.", max_sentences=2, limit=40).startswith("A very long")
 
 
@@ -398,3 +409,56 @@ def test_body_snippet_still_follows_the_long_forms_cross_link():
     parts = desc.split("\n\n")
     assert parts[2] == "Watch the Short: https://www.youtube.com/shorts/SHORT1"
     assert "Amplification is the other half." in desc
+
+
+# ---------------------------------------------------------------------------
+# Sharper hook (2026-09-22, operator): the Short's own narration opened
+# "In today's digital age, zero-click content is the new standard." — the
+# title inherited six words of throat-clearing, and a Shorts feed shows only
+# the first ~40 characters. The script prompt now asks for a flat claim; this
+# strip fixes the scripts already frozen into pipeline_versions.
+# ---------------------------------------------------------------------------
+
+
+def test_strip_preamble_cuts_the_run_up_and_recapitalises():
+    assert strip_preamble(
+        "In today's digital age, zero-click content is the new standard."
+    ) == "Zero-click content is the new standard."
+    assert strip_preamble("These days, nobody clicks through.") == "Nobody clicks through."
+    assert strip_preamble("As we all know, the funnel is dead.") == "The funnel is dead."
+    assert strip_preamble(
+        "In the world of B2B search, nobody clicks through anymore."
+    ) == "Nobody clicks through anymore."
+
+
+def test_strip_preamble_leaves_a_real_claim_alone():
+    for sentence in (
+        "Zero-click content is the new standard.",
+        "Nobody clicks anymore, and that changes what you write.",
+        # No comma: the phrase is the sentence's own subject, not a run-up.
+        "Let's talk about zero-click content and what it costs you.",
+        # Stripping would leave two words — it cut the sentence, not its run-up.
+        "In today's digital age, clicks died.",
+    ):
+        assert strip_preamble(sentence) == sentence
+
+
+def test_short_title_drops_the_preamble_the_feed_would_have_shown():
+    script = "In today's digital age, zero-click content is the new standard. More."
+    assert short_hook_title(script, site_config=_sc()) == "Zero-click content is the new standard"
+    title = _build_youtube_title(
+        "Nobody Clicks Anymore: Building Content for Zero-Click Extraction",
+        shorts=True, site_config=_sc(),
+        hook=short_hook_title(script, site_config=_sc()),
+    )
+    assert title == "Zero-click content is the new standard #Shorts"
+
+
+def test_short_description_hook_drops_it_too():
+    script = (
+        "In today's digital age, zero-click content is the new standard. "
+        "Platforms surface answers directly."
+    )
+    hook = short_hook_line(script)
+    assert hook.startswith("Zero-click content is the new standard.")
+    assert "In today's digital age" not in hook
