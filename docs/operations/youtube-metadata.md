@@ -272,6 +272,22 @@ The other 25 must survive, and are pinned by test as must-survive:
 `Imagine you're building …` needs no strip: it is already a `question`
 defect, so it buys the corrective call instead.
 
+### When the corrective call's answer is accepted
+
+A candidate replaces the original only when it is **strictly better**, ranked
+on `(content defects, characters over budget)` — not on defect count alone.
+
+Defect count cannot tell a 201-character run-on from the 119-character
+finished claim offered to replace it: both carry exactly `runaway`, so
+`len(new) < len(old)` is `1 < 1` and the better sentence is thrown away along
+with the call that bought it. Measured on prod 2026-09-22, that was 2 of 2
+repair attempts on the published corpus, which holds 16 runaway hooks.
+
+The overage is only a tie-break, so it can never let a candidate in on length
+alone: more content defects always ranks worse, whatever the length. Two
+sentences both inside the budget tie at 0 overage, so a same-defect swap is
+correctly no improvement.
+
 The hook model defaults to the **scene model**, not a bigger one, and that is
 measured rather than assumed: given the focused prompt, `gemma-4-31B` restated
 the brief on 10 of 10 (`Goal: Write the opening line for a 45-second …`) while

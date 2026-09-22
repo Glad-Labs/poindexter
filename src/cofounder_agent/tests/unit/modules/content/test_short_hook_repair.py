@@ -103,8 +103,67 @@ class TestGate:
         platform.dispatch.complete.assert_not_awaited()
 
 
+class TestDistanceFromUsable:
+    """Defect COUNT cannot separate a 201-character run-on from the
+    119-character finished claim offered to replace it — both carry exactly
+    `runaway`. Measured on prod 2026-09-22: 2 of 2 repair attempts produced a
+    strictly better hook and a count comparison discarded both, throwing away
+    the call that bought them.
+    """
+
+    RUN_ON = ("These scenes and narration aim to visually and verbally summarize the "
+              "transformative impact of AI upscaling in modern gaming technology, as "
+              "described in the episode.")
+    CLAIM = ("AI-driven upscaling now delivers 4K performance at higher frame rates "
+             "than native rendering.")
+
+    def test_a_shorter_run_on_beats_a_longer_one(self):
+        rank = shr._distance_from_usable
+        assert rank(self.CLAIM, ("runaway",), max_chars=70) < rank(
+            self.RUN_ON, ("runaway",), max_chars=70)
+
+    def test_more_defects_always_ranks_worse_however_short(self):
+        """The overage tie-break must never let a candidate in on length
+        alone."""
+        rank = shr._distance_from_usable
+        assert not rank("Is it?", ("question", "fragment"), max_chars=70) < rank(
+            self.RUN_ON, ("runaway",), max_chars=70)
+
+    def test_a_longer_candidate_with_the_same_defects_is_worse(self):
+        rank = shr._distance_from_usable
+        longer = self.RUN_ON + " And it keeps going past where it should have stopped."
+        assert not rank(longer, ("runaway",), max_chars=70) < rank(
+            self.RUN_ON, ("runaway",), max_chars=70)
+
+    def test_two_in_budget_sentences_tie(self):
+        """Inside the budget the overage is 0 for both, so a same-defect swap
+        is not an improvement and buys nothing."""
+        rank = shr._distance_from_usable
+        assert not rank("A cheaper model won it", ("not_a_claim",), max_chars=70) < rank(
+            "The cheapest model won the benchmark", ("not_a_claim",), max_chars=70)
+
+    def test_a_trailing_period_is_not_overage(self):
+        rank = shr._distance_from_usable
+        s = "x" * 70
+        assert rank(s + ".", ("runaway",), max_chars=70)[1] == 0
+
+
 @pytest.mark.asyncio
 class TestNeverWorse:
+    async def test_a_shorter_run_on_candidate_is_accepted(self):
+        """The case the ranking exists for: same single defect, far shorter,
+        and a finished sentence instead of an unfinished one."""
+        run_on = TestDistanceFromUsable.RUN_ON + " The rest of the narration follows."
+        platform = _platform(TestDistanceFromUsable.CLAIM)
+        out, outcome = await shr.repair_short_hook(
+            run_on, title="The Shift from Native to Upscaled", article="body",
+            site_config=_sc(), platform=platform, pool=MagicMock(),
+        )
+        assert outcome["defects"] == ["runaway"]
+        assert outcome["repaired"] is True, outcome
+        assert out.startswith(TestDistanceFromUsable.CLAIM)
+        assert "The rest of the narration follows." in out
+
     async def test_a_candidate_that_is_not_better_is_rejected(self):
         """Trading one defect for another is not an improvement, and the
         original at least matches the narration built around it."""

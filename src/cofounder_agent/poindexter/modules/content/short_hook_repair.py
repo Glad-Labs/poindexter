@@ -27,6 +27,7 @@ audio never says, which on Shorts costs more than a clumsy hook.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from poindexter.services.short_hook import (
@@ -157,6 +158,24 @@ def splice_hook(script: str, hook: str) -> str:
     return " ".join([hook, *parts[1:]]).strip()
 
 
+def _distance_from_usable(sentence: str, defects: Sequence[str], *, max_chars: int) -> tuple[int, int]:
+    """How far a sentence is from a usable hook: content defects first, then
+    characters over budget.
+
+    Defect COUNT alone cannot separate a 201-character run-on from the
+    119-character finished claim offered to replace it — both carry exactly
+    ``runaway``, so a count comparison rejects the better sentence and throws
+    away the call that bought it. Measured on prod 2026-09-22: 2 of 2 repair
+    attempts produced a strictly better hook and both were discarded.
+
+    The overage tie-break never lets a candidate in on length alone: a
+    candidate with MORE content defects always ranks worse, whatever its
+    length.
+    """
+    over = max(0, len((sentence or "").rstrip(".").strip()) - max_chars)
+    return (len(defects), over)
+
+
 async def repair_short_hook(
     script: str,
     *,
@@ -261,8 +280,14 @@ async def repair_short_hook(
 
     # Strictly better only. A replacement that trades "too_long" for
     # "not_a_claim" is not an improvement, and the original at least matches
-    # the narration the writer built around it.
-    if candidate and len(new_defects) < len(defects):
+    # the narration the writer built around it. "Better" is ranked on
+    # (content defects, characters over budget) rather than on defect count,
+    # so a shorter finished claim beats a longer run-on carrying the same
+    # single `runaway` flag.
+    better = candidate and _distance_from_usable(
+        candidate, new_defects, max_chars=max_chars,
+    ) < _distance_from_usable(original, defects, max_chars=max_chars)
+    if better:
         script = splice_hook(script, candidate)
         outcome.update(repaired=True, hook=first_sentence(script))
         logger.info(
