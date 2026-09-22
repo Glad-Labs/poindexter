@@ -33,6 +33,7 @@ from poindexter.services.short_hook import (
     content_defects,
     first_sentence,
     hook_limits,
+    runaway_factor,
     sentences,
     strip_preamble,
 )
@@ -180,11 +181,13 @@ async def repair_short_hook(
     """
     original = first_sentence(script)
     max_chars, max_words = hook_limits(site_config)
+    runaway = runaway_factor(site_config)
     # Only a CONTENT defect is worth a call: length is shortened
     # deterministically by the title builder, and phi4's over-long sentences
     # were measured to be good claims.
     defects = content_defects(
         original, max_chars=max_chars, max_words=max_words, article_title=title,
+        runaway_factor=runaway,
     )
     outcome: dict[str, Any] = {
         "original": original, "defects": list(defects), "repaired": False, "hook": original,
@@ -250,6 +253,7 @@ async def repair_short_hook(
 
     new_defects = content_defects(
         candidate, max_chars=max_chars, max_words=max_words, article_title=title,
+        runaway_factor=runaway,
     ) if candidate else ("empty",)
     outcome["candidate"] = candidate
     outcome["candidate_defects"] = list(new_defects)

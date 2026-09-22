@@ -2498,12 +2498,13 @@ DEFAULTS: dict[str, str] = {
     # pre-2026-09-22 behaviour; the Shorts feed showed ~40 chars of it, so
     # the pair read as two identical stubs on the channel page).
     'youtube_short_title_source': 'script_hook',
-    # 42, not 60: a Shorts feed shows roughly the first forty characters of a
-    # title. Measured 2026-09-22 over ten published posts — every hook the
-    # script model wrote exceeded 40 (median 57), so the feed was truncating
-    # all of them. The 100-char YouTube API cap is a separate, looser limit
-    # the suffix arithmetic still respects.
-    'youtube_short_title_max_chars': '42',
+    # Punchy, not clipped. 42 (the feed's visible window) was tried and
+    # measured too tight: once stripped, the hooks the model writes land at
+    # 33-82 characters (median 70), so 42 cut 9 of 10 mid-phrase to win a
+    # truncation the feed performs anyway. 70 is that median and keeps 6 of
+    # 10 whole. The 100-char YouTube API cap is a separate, looser limit the
+    # suffix arithmetic still respects (70 + " #Shorts" = 78).
+    'youtube_short_title_max_chars': '70',
     # Hashtags appended to a Short's description after '#Shorts' — CamelCase
     # forms of the post's first N seo_keywords. 0 = '#Shorts' alone.
     'youtube_short_hashtags_max': '3',
@@ -3438,11 +3439,18 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # The scene model (phi4:14b on prod) is the one measured producing the
     # defects above, so it is deliberately NOT the default here.
     'media.short_hook.model': '',
-    # The hook budget the gate enforces. Chars match the Shorts feed's
-    # visible window; words stop a title that fits the window only because
-    # its words are short.
-    'media.short_hook.max_chars': '42',
-    'media.short_hook.max_words': '9',
+    # The hook budget the gate enforces, matching the title budget above.
+    # Words stop a title that fits the char budget only because its words are
+    # short.
+    'media.short_hook.max_chars': '70',
+    'media.short_hook.max_words': '14',
+    # Past this MULTIPLE of the budget a first sentence is not a long hook,
+    # it is not a hook: the two worst measured on 2026-09-22 were 114 and 149
+    # characters, both run-ons the model never finished, and shortening one
+    # leaves a stump. Those buy the corrective call; a merely-long good claim
+    # is still just shortened at a word boundary. 1.5 x 70 = 105, between the
+    # longest real claim (82) and those two.
+    'media.short_hook.runaway_factor': '1.5',
     # Caption burn styling (FFmpegLocalCompositor). Glyph height as a PERCENT
     # of frame height — resolution-independent: 4.5 ⇒ ≈86px lines on a
     # 1080×1920 short, ≈49px on 16:9 1080p. (ffmpeg's subtitles filter
@@ -6139,6 +6147,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media.short_hook.model': {'owner': 'media_scripts', 'value_type': 'string'},
     'media.short_hook.max_chars': {'owner': 'media_scripts', 'value_type': 'integer'},
     'media.short_hook.max_words': {'owner': 'media_scripts', 'value_type': 'integer'},
+    'media.short_hook.runaway_factor': {'owner': 'media_scripts', 'value_type': 'float'},
     'plugin.media_compositor.ffmpeg_local.caption_font_height_pct': {
         'owner': 'media_compositors', 'value_type': 'float',
     },

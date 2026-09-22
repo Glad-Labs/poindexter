@@ -28,11 +28,20 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# The feed shows roughly this much of a Shorts title before truncating. It is
-# the budget that matters — the 100-char YouTube API cap is a different, far
-# looser limit that the payload's suffix arithmetic already respects.
-HOOK_MAX_CHARS_DEFAULT = 42
-HOOK_MAX_WORDS_DEFAULT = 9
+# Punchy, not clipped. 42 (the feed's visible window) was measured too tight:
+# stripped, the hooks the model writes land at 33, 55, 59, 59, 67, 70, 78, 82,
+# 114, 149 characters, so a 42-char budget cut 9 of 10 mid-phrase to win a
+# truncation the feed performs anyway. 70 is that median and keeps 6 of 10
+# whole; the rest are shortened at a word boundary, and the 100-char YouTube
+# API cap stays the separate, looser limit the suffix arithmetic respects.
+HOOK_MAX_CHARS_DEFAULT = 70
+HOOK_MAX_WORDS_DEFAULT = 14  # 12 was the most any in-budget measured hook used
+# A first sentence past this MULTIPLE of the budget is not a long hook, it is
+# not a hook: measured 2026-09-22 the two worst were 114 and 149 characters,
+# both run-ons the model never finished. Shortening one leaves a stump, so
+# these buy the corrective call instead (see CONTENT_DEFECTS). 1.5 x 70 = 105,
+# which sits in the gap between the longest real claim (82) and those two.
+HOOK_RUNAWAY_FACTOR_DEFAULT = 1.5
 # Below this a "sentence" is a fragment, not a claim. Also the floor that
 # stops a strip from eating the sentence it was meant to trim.
 HOOK_MIN_WORDS = 3
@@ -131,6 +140,7 @@ def hook_defects(
     max_chars: int = HOOK_MAX_CHARS_DEFAULT,
     max_words: int = HOOK_MAX_WORDS_DEFAULT,
     article_title: str = "",
+    runaway_factor: float = HOOK_RUNAWAY_FACTOR_DEFAULT,
 ) -> tuple[str, ...]:
     """Every reason ``sentence`` is a poor Short hook, most structural first.
 
@@ -158,7 +168,11 @@ def hook_defects(
         out.append("not_a_claim")
     if len(words) > max_words:
         out.append("too_many_words")
-    if len(clean.rstrip(".").strip()) > max_chars:
+    bare = len(clean.rstrip(".").strip())
+    if bare > max_chars * max(1.0, runaway_factor):
+        # Not a long hook — not a hook. Regenerate rather than shorten.
+        out.append("runaway")
+    elif bare > max_chars:
         out.append("too_long")
     if article_title:
         # A hook that is just the article's title restates rather than hooks;
@@ -171,14 +185,14 @@ def hook_defects(
 
 
 # Length is a SHORTENING problem, not a generation problem. Measured
-# 2026-09-22: asked for <=42 chars, phi4:14b returned 59-92 and
+# 2026-09-22: asked for <=42 chars, phi4:14b returned 33-82 and
 # gemma-4-31B restated the prompt — but phi4's sentences were good claims,
 # just long. So an LLM repair fires only for a CONTENT defect; the title
 # builder shortens at a word boundary, and the narration keeps the full
 # sentence (the viewer reads a prefix of what they hear).
 CONTENT_DEFECTS = frozenset({
     "empty", "fragment", "question", "describes_article", "run_up",
-    "not_a_claim", "restates_title",
+    "not_a_claim", "restates_title", "runaway",
 })
 
 
@@ -206,16 +220,30 @@ def hook_limits(site_config: Any) -> tuple[int, int]:
     )
 
 
+def runaway_factor(site_config: Any) -> float:
+    """How far past the budget a first sentence stops being a hook at all."""
+    if site_config is None:
+        return HOOK_RUNAWAY_FACTOR_DEFAULT
+    try:
+        return max(1.0, float(str(site_config.get(
+            "media.short_hook.runaway_factor", HOOK_RUNAWAY_FACTOR_DEFAULT,
+        )).strip()))
+    except (TypeError, ValueError):
+        return HOOK_RUNAWAY_FACTOR_DEFAULT
+
+
 __all__ = [
     "CONTENT_DEFECTS",
     "HOOK_MAX_CHARS_DEFAULT",
     "HOOK_MAX_WORDS_DEFAULT",
     "HOOK_MIN_WORDS",
+    "HOOK_RUNAWAY_FACTOR_DEFAULT",
     "first_sentence",
     "content_defects",
     "hook_defects",
     "hook_limits",
     "is_acceptable_hook",
+    "runaway_factor",
     "sentences",
     "strip_preamble",
 ]

@@ -188,8 +188,9 @@ Now (`services/jobs/youtube_payload.py`, both the upload and the sync go
 through the same builders):
 
 - **Short title** = the first sentence of its narration, shortened on a word
-  boundary to `youtube_short_title_max_chars` (default **42** — the Shorts
-  feed shows roughly that much), then the suffix. That first sentence is
+  boundary to `youtube_short_title_max_chars` (default **70** — punchy
+  without clipping; see the budget note below), then the suffix. That first
+  sentence is
   gated and, when it has a CONTENT defect, repaired at script time by
   `modules/content/short_hook_repair.py`, so the fixed line is what the
   presenter says as well as what the title shows.
@@ -225,10 +226,10 @@ Two lessons are baked into the design:
   shapes to avoid instead of demonstrating one.
 * **Length is a shortening problem; content is a regeneration problem.** Only
   a CONTENT defect (`services/short_hook.CONTENT_DEFECTS` — run-up, describes
-  the article, question, not a claim, restates the title, fragment) buys the
-  one corrective LLM call. Over-long is shortened at a word boundary by the
-  title builder, because the sentences phi4 wrote at 59-92 characters were
-  good claims.
+  the article, question, not a claim, restates the title, fragment, runaway)
+  buys the one corrective LLM call. Over-long is shortened at a word boundary
+  by the title builder, because the sentences phi4 wrote at 59-92 characters
+  were good claims.
 
 The hook model defaults to the **scene model**, not a bigger one, and that is
 measured rather than assumed: given the focused prompt, `gemma-4-31B` restated
@@ -237,10 +238,35 @@ phi4 wrote clean claims, and alternating an 8 GB scene model with a 17 GB hook
 model made GPU admission refuse 7 of 10 script calls. Override per install
 with `media.short_hook.model`.
 
-Known and not fixed: a title shortened to 42 characters from a sentence the
-model wrote at 65+ can end mid-phrase ("JPMorgan's 2026 report confirms
-tech"). Getting the model to write short in the first place is the next lever;
-asking it for "at most 42 characters" did not work.
+### The budget, and why it is 70 and not 42
+
+42 is the Shorts feed's visible window, and it was tried first. Measured over
+the same ten posts, the stripped first sentences land at **33, 55, 59, 59, 67,
+70, 78, 82, 114, 149** characters — median 70:
+
+| budget | hooks that survive whole |
+| --- | --- |
+| 42 | 1 of 10 |
+| 55 | 2 of 10 |
+| 60 | 4 of 10 |
+| **70** | **6 of 10** |
+| 85 | 8 of 10 |
+
+At 42 the builder was cutting 9 of 10 mid-phrase ("JPMorgan's 2026 report
+confirms tech") to win a truncation the feed performs anyway — the feed shows
+an ellipsis, the title builder shows a stump, and only the stump is ours.
+Asking the model for "at most 42 characters" did not work either. 60 was still
+cutting two finished claims at 67 and 70 characters, so the budget is the
+median, 70: punchy, not clipped. With the 8-character `" #Shorts"` suffix that
+is 78, well inside YouTube's 100-character cap.
+
+The two worst hooks in that set were 114 and 149 characters — run-ons the
+model never finished, where shortening leaves a stump no matter the budget.
+Those are now a `runaway` CONTENT defect past
+`media.short_hook.runaway_factor` × the budget (default 1.5, i.e. 105
+characters — in the gap between the longest real claim at 82 and those two),
+so they buy the corrective call instead. A merely-long good claim is still
+just shortened.
 
 **Cross-links follow what is live, never what is planned.** The two renders
 are approved, rejected and uploaded independently (7 of 13 posts on the

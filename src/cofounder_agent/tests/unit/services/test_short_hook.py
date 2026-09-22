@@ -68,8 +68,8 @@ class TestDefects:
     @pytest.mark.parametrize(
         ("sentence", "expected"),
         [
-            ("llama.cpp vs vLLM vs SGLang: The Right Tool for Your Needs", "too_many_words"),
-            ("JPMorgan Chase highlights six pivotal shifts for banks", "too_long"),
+            ("llama.cpp and vLLM and SGLang each serve a different job in a modern local inference stack today", "too_many_words"),
+            ("JPMorgan Chase highlights six pivotal shifts for banks and their clients", "too_long"),
             ("Ever wondered why nobody clicks anymore?", "question"),
             ("Zero-click content and the open web", "not_a_claim"),
             ("Clicks died", "fragment"),
@@ -90,15 +90,20 @@ class TestDefects:
         )
 
     def test_budgets_are_caller_supplied(self):
-        s = "JPMorgan Chase highlights six pivotal shifts"
-        assert "too_long" in hook_defects(s, max_chars=20)
+        s = "JPMorgan Chase highlights six pivotal shifts"   # 43 chars
+        assert "too_long" in hook_defects(s, max_chars=40)   # over, not runaway
         assert "too_long" not in hook_defects(s, max_chars=80)
+        # Far enough past the budget and it stops being "long" and becomes
+        # "not a hook" — a different defect with a different remedy.
+        assert "runaway" in hook_defects(s, max_chars=20)
 
 
 class TestLimits:
-    def test_defaults_match_the_feed_window(self):
+    def test_defaults_are_punchy_not_clipped(self):
+        """42 was measured too tight — stripped hooks land at 33-82 chars
+        (median 70), so it cut 9 of 10 mid-phrase. 70 keeps 6 of 10 whole."""
         assert hook_limits(None) == (HOOK_MAX_CHARS_DEFAULT, HOOK_MAX_WORDS_DEFAULT)
-        assert HOOK_MAX_CHARS_DEFAULT == 42
+        assert HOOK_MAX_CHARS_DEFAULT == 70
 
     def test_db_overrides(self):
         sc = SiteConfig(initial_config={
@@ -120,13 +125,14 @@ def test_sentence_helpers():
 class TestContentVsLength:
     """Length is a shortening problem, content is a regeneration problem.
 
-    Measured 2026-09-22: asked for <=42 chars, phi4:14b returned 59-92 — but
+    Measured 2026-09-22: asked for <=42 chars, phi4:14b returned 33-82 — but
     those sentences were good claims. Calling an LLM again to shorten them
     would spend a call to make them no better, so only content defects do.
     """
 
     def test_a_long_good_claim_has_no_content_defect(self):
-        s = "Our GPU lock bug was quietly wrecking our RAG sweep for weeks"
+        # 73 chars — over the 70-char budget and still a good, finished claim.
+        s = "Our GPU lock bug was quietly wrecking the nightly RAG sweep for six weeks"
         assert "too_long" in hook_defects(s)
         assert content_defects(s) == ()
 
@@ -147,3 +153,33 @@ class TestContentVsLength:
             seen |= set(hook_defects(s, article_title=t))
         assert seen, "fixtures produced no defects"
         assert seen <= (CONTENT_DEFECTS | length_only), seen - (CONTENT_DEFECTS | length_only)
+
+
+class TestRunaway:
+    """A first sentence far past the budget is not a hook — shortening it
+    leaves a stump, so it buys the corrective call instead. Measured
+    2026-09-22: the two worst were 114 and 149 characters, both unfinished,
+    while the longest real claim was 82 — the threshold sits between them.
+    """
+
+    RUNON = ("A small transformer model trained from scratch in just 1.5 hours challenges "
+             "everything the field assumed about scale and data and compute budgets")
+
+    def test_a_run_on_is_a_content_defect(self):
+        assert "runaway" in hook_defects(self.RUNON)
+        assert "runaway" in content_defects(self.RUNON)
+        assert "too_long" not in hook_defects(self.RUNON), "runaway supersedes too_long"
+
+    def test_a_merely_long_claim_is_not(self):
+        s = "JPMorgan's 2026 report confirms the tech trends small models already proved"
+        assert "too_long" in hook_defects(s)
+        assert content_defects(s) == (), "a good long claim is shortened, not regenerated"
+
+    def test_the_factor_is_configurable(self):
+        from poindexter.services.short_hook import HOOK_RUNAWAY_FACTOR_DEFAULT, runaway_factor
+
+        assert runaway_factor(None) == HOOK_RUNAWAY_FACTOR_DEFAULT
+        assert runaway_factor(SiteConfig(initial_config={"media.short_hook.runaway_factor": "3"})) == 3.0
+        assert runaway_factor(SiteConfig(initial_config={"media.short_hook.runaway_factor": "junk"})) == HOOK_RUNAWAY_FACTOR_DEFAULT
+        # never below 1.0 — that would make every over-budget hook a runaway
+        assert runaway_factor(SiteConfig(initial_config={"media.short_hook.runaway_factor": "0.2"})) == 1.0
