@@ -12,10 +12,17 @@ from __future__ import annotations
 
 from poindexter.services.jobs.youtube_payload import (
     _build_youtube_description,
+    _build_youtube_title,
     _markdown_to_plain,
     _parse_seo_keywords,
     _strip_markup,
     _trim_at_sentence,
+    first_sentences,
+    hashtags_for_short,
+    short_hook_line,
+    short_hook_title,
+    shorten_at_word,
+    twin_watch_url,
 )
 from poindexter.services.site_config import SiteConfig
 
@@ -241,3 +248,153 @@ def test_titles_are_clamped_to_the_api_limit():
 
     assert len(_build_youtube_title("x" * 400, shorts=False, site_config=_sc())) == 100
     assert len(_build_youtube_title("x" * 400, shorts=True, site_config=_sc())) <= 100
+
+
+# ---------------------------------------------------------------------------
+# A Short is not a smaller long form (2026-09-22): own title, own opener,
+# own utm_medium, hashtags, and the pair links to each other when both are live.
+# ---------------------------------------------------------------------------
+
+SHORT_SCRIPT = (
+    "Nobody clicks anymore — and that changes what you write. Platforms like "
+    "Google and LinkedIn now deliver answers directly. Here is what to do instead."
+)
+
+
+def test_first_sentences_and_shorten_at_word():
+    assert first_sentences(SHORT_SCRIPT) == "Nobody clicks anymore — and that changes what you write."
+    assert first_sentences(SHORT_SCRIPT, max_sentences=2).endswith("deliver answers directly.")
+    assert shorten_at_word("one two three four", 9) == "one two"
+    assert shorten_at_word("short", 60) == "short"
+    assert shorten_at_word("ends with a comma, then", 18) == "ends with a comma"
+
+
+def test_short_title_is_the_scripts_hook_plus_suffix():
+    hook = short_hook_title(SHORT_SCRIPT, site_config=_sc())
+    assert hook == "Nobody clicks anymore — and that changes what you write"  # no trailing stop
+    title = _build_youtube_title("Nobody Clicks Anymore: Building Content for Zero-Click Extraction", shorts=True, site_config=_sc(), hook=hook)
+    assert title == "Nobody clicks anymore — and that changes what you write #Shorts"
+    assert len(title) <= 100
+
+
+def test_short_title_hook_respects_the_feed_budget():
+    hook = short_hook_title(SHORT_SCRIPT, site_config=_sc(youtube_short_title_max_chars="30"))
+    assert len(hook) <= 30
+    assert hook == "Nobody clicks anymore — and"
+
+
+def test_short_title_keeps_a_whole_sentence_just_over_the_budget():
+    """62 chars against a 60 budget: the whole sentence beats a mid-phrase cut
+    ("…is the new"); the 100-char API cap stays the hard limit."""
+    script = "In today's digital age, zero-click content is the new standard. More."
+    hook = short_hook_title(script, site_config=_sc(youtube_short_title_max_chars="60"))
+    assert hook == "In today's digital age, zero-click content is the new standard"
+    assert short_hook_title(script, site_config=_sc(youtube_short_title_max_chars="40")) == "In today's digital age, zero-click"
+
+
+def test_description_hook_takes_whole_sentences_only():
+    script = ("In today's digital age, zero-click content is the new standard. "
+              "As platforms like Google, LinkedIn, TikTok, and Facebook evolve to keep users within their "
+              "ecosystems, they surface answers directly, reducing click-through rates intentionally. Third.")
+    hook = short_hook_line(script)
+    assert hook == "In today's digital age, zero-click content is the new standard."  # sentence 2 would overflow 220
+    assert first_sentences("A very " + "long " * 60 + "sentence.", max_sentences=2, limit=40).startswith("A very long")
+
+
+def test_short_title_falls_back_to_the_post_title_without_a_hook():
+    title = _build_youtube_title("Post Title", shorts=True, site_config=_sc(), hook="")
+    assert title == "Post Title #Shorts"
+
+
+def test_short_title_source_post_title_keeps_the_old_behaviour():
+    title = _build_youtube_title(
+        "Post Title", shorts=True, site_config=_sc(youtube_short_title_source="post_title"), hook="a hook",
+    )
+    assert title == "Post Title #Shorts"
+
+
+def test_long_form_title_ignores_the_hook():
+    assert _build_youtube_title("Post Title", shorts=False, site_config=_sc(), hook="a hook") == "Post Title"
+
+
+def test_hashtags_start_with_shorts_camelcase_capped_and_deduped():
+    tags = hashtags_for_short(
+        ["zeroclick content", "content marketing strategy", "Content Marketing Strategy", "click-through rate", "x" * 40, "extra"],
+        site_config=_sc(youtube_short_hashtags_max="3"),
+    )
+    assert tags == ["#Shorts", "#ZeroclickContent", "#ContentMarketingStrategy", "#ClickThroughRate"]
+    assert hashtags_for_short([], site_config=_sc()) == ["#Shorts"]
+    assert hashtags_for_short(["a", "b"], site_config=_sc(youtube_short_hashtags_max="0")) == ["#Shorts"]
+
+
+def test_twin_watch_url_forms():
+    assert twin_watch_url("abc123", twin_is_short=True) == "https://www.youtube.com/shorts/abc123"
+    assert twin_watch_url("abc123", twin_is_short=False) == "https://www.youtube.com/watch?v=abc123"
+    assert twin_watch_url("", twin_is_short=True) == ""
+
+
+def test_short_description_layout_with_a_live_long_form():
+    desc = _build_youtube_description(
+        seo_description="The excerpt.", body=BODY_MD, site_config=_sc(), slug="nobody-clicks-0bce0e39",
+        shorts=True, hook=short_hook_line(SHORT_SCRIPT),
+        twin_url=twin_watch_url("LONG1", twin_is_short=False),
+        hashtags=["#Shorts", "#ZeroclickContent"],
+    )
+    paragraphs = desc.split("\n\n")
+    assert paragraphs[0].startswith("Nobody clicks anymore")
+    assert "The excerpt." not in desc  # the Short opens with ITS hook, not the article's
+    assert paragraphs[1] == "Watch the full breakdown: https://www.youtube.com/watch?v=LONG1"
+    assert paragraphs[2].startswith("Read the full post: https://www.gladlabs.io/posts/nobody-clicks-0bce0e39?")
+    assert "utm_source=youtube" in paragraphs[2] and "utm_medium=shorts" in paragraphs[2]
+    assert paragraphs[3] == "#Shorts #ZeroclickContent"
+    assert "Nobody cares" not in desc  # no body snippet on a Short, ever
+
+
+def test_short_description_without_a_live_long_form_has_no_dangling_line():
+    desc = _build_youtube_description(
+        seo_description="The excerpt.", body="", site_config=_sc(), slug="s",
+        shorts=True, hook="Hook line.", twin_url="", hashtags=["#Shorts"],
+    )
+    assert "Watch the full breakdown" not in desc
+    assert desc.split("\n\n") == ["Hook line.", "Read the full post: https://www.gladlabs.io/posts/s?utm_source=youtube&utm_medium=shorts", "#Shorts"]
+
+
+def test_short_description_falls_back_to_the_excerpt_without_a_hook():
+    desc = _build_youtube_description(
+        seo_description="The excerpt.", body="", site_config=_sc(), slug="s", shorts=True, hook="", hashtags=["#Shorts"],
+    )
+    assert desc.startswith("The excerpt.")
+
+
+def test_long_description_links_the_short_only_when_it_is_live():
+    with_twin = _build_youtube_description(
+        seo_description="The excerpt.", body="", site_config=_sc(), slug="s",
+        twin_url=twin_watch_url("SHORT1", twin_is_short=True),
+    )
+    assert with_twin.split("\n\n") == [
+        "The excerpt.",
+        "Read the full post: https://www.gladlabs.io/posts/s?utm_source=youtube&utm_medium=video",
+        "Watch the Short: https://www.youtube.com/shorts/SHORT1",
+    ]
+    without = _build_youtube_description(seo_description="The excerpt.", body="", site_config=_sc(), slug="s")
+    assert "Watch the Short" not in without
+    assert "utm_medium=video" in without  # the long form keeps its medium
+
+
+def test_cross_links_can_be_switched_off():
+    desc = _build_youtube_description(
+        seo_description="The excerpt.", body="", site_config=_sc(youtube_pair_cross_links="false"), slug="s",
+        shorts=True, hook="Hook.", twin_url="https://www.youtube.com/watch?v=LONG1", hashtags=["#Shorts"],
+    )
+    assert "Watch the full breakdown" not in desc
+
+
+def test_body_snippet_still_follows_the_long_forms_cross_link():
+    desc = _build_youtube_description(
+        seo_description="You can write the best breakdown of ASUS ROG Astral RTX 5090 bandwidth. Nobody cares.",
+        body=BODY_MD, site_config=_sc(youtube_description_body_chars="400"), slug="s",
+        twin_url="https://www.youtube.com/shorts/SHORT1",
+    )
+    parts = desc.split("\n\n")
+    assert parts[2] == "Watch the Short: https://www.youtube.com/shorts/SHORT1"
+    assert "Amplification is the other half." in desc

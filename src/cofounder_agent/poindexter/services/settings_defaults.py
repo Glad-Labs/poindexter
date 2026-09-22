@@ -2491,6 +2491,23 @@ DEFAULTS: dict[str, str] = {
     # to be a marker YouTube keys off for Shorts classification. Empty = no
     # distinction (an explicit operator choice, not an accident).
     'youtube_short_title_suffix': ' #Shorts',
+    # A Short's title comes from its OWN narration (2026-09-22): the first
+    # sentence of short_summary_script — the cold-open line the short-form
+    # director writes to hook the viewer — shortened to the feed-visible
+    # budget below, then the suffix. 'post_title' = the article title (the
+    # pre-2026-09-22 behaviour; the Shorts feed showed ~40 chars of it, so
+    # the pair read as two identical stubs on the channel page).
+    'youtube_short_title_source': 'script_hook',
+    'youtube_short_title_max_chars': '60',
+    # Hashtags appended to a Short's description after '#Shorts' — CamelCase
+    # forms of the post's first N seo_keywords. 0 = '#Shorts' alone.
+    'youtube_short_hashtags_max': '3',
+    # Link the pair to each other: the Short's description carries "Watch the
+    # full breakdown: <watch URL>" and the long form's "Watch the Short:
+    # <shorts URL>" — composed from what is LIVE (pipeline_distributions
+    # status='published') and recomposed when the twin lands later. false =
+    # neither line, ever.
+    'youtube_pair_cross_links': 'true',
     # Per-request timeout (s) for the YouTube oEmbed lookup. Kept tight so a slow
     # YouTube doesn't stall the citation atom; a timeout just leaves the link as-is.
     'youtube_oembed_timeout_seconds': '8',
@@ -6545,6 +6562,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'youtube_attribution_enabled': {'owner': 'content_reconcile_citations', 'value_type': 'boolean'},
     'youtube_description_body_chars': {'owner': 'media_distribute', 'value_type': 'integer'},
     'youtube_short_title_suffix': {'owner': 'media_distribute', 'value_type': 'string'},
+    'youtube_short_title_source': {'owner': 'media_distribute', 'value_type': 'string'},
+    'youtube_short_title_max_chars': {'owner': 'media_distribute', 'value_type': 'integer'},
+    'youtube_short_hashtags_max': {'owner': 'media_distribute', 'value_type': 'integer'},
+    'youtube_pair_cross_links': {'owner': 'media_distribute', 'value_type': 'boolean'},
     'youtube_oembed_timeout_seconds': {'owner': 'content_reconcile_citations', 'value_type': 'integer'},
 
     # ----- Seed-gap audit, 2026-08-26 (see the matching DEFAULTS section) -----

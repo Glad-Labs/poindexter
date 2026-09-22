@@ -417,3 +417,52 @@ def test_cross_check_reads_the_source_that_did_not_lose_data():
     # Deliberately NOT filtered on status: a row demoted to 'deleted' is still
     # a recorded upload, and re-reporting it as unrecorded would be noise.
     assert "status" not in _ORPHAN_HANDLES_SQL
+
+
+# --------------------------------------------------------------------------
+# The pair (2026-09-22): the Short's own hook + hashtags, and cross-links
+# composed from the twin's LIVE row only
+# --------------------------------------------------------------------------
+
+
+def test_targets_sql_carries_the_twin_and_the_short_script():
+    from poindexter.services.youtube_metadata_sync import _TARGETS_SQL
+
+    assert "short_summary_script" in _TARGETS_SQL
+    assert "twin_video_id" in _TARGETS_SQL
+    # Only a LIVE twin is a link target: a vanished/deleted row must drop out.
+    assert "t.status = 'published'" in _TARGETS_SQL
+    assert "t.medium <> pd.medium" in _TARGETS_SQL
+
+
+def test_compose_gives_the_short_its_own_title_hook_and_links_the_long_form():
+    from poindexter.services.youtube_metadata_sync import _compose
+
+    row = {
+        **ROW, "medium": "video_short", "twin_video_id": "LONG1", "twin_medium": "video",
+        "short_script": "Your best breakdown dies in silence. Here is why.",
+    }
+    title, description, _tags = _compose(row, _sc())
+    assert title == "Your best breakdown dies in silence #Shorts"
+    assert description.startswith("Your best breakdown dies in silence. Here is why.")
+    assert "Watch the full breakdown: https://www.youtube.com/watch?v=LONG1" in description
+    assert "utm_medium=shorts" in description
+    assert "#Shorts #ContentAmplification #DistributionInfrastructure" in description
+
+
+def test_compose_links_the_long_form_to_its_live_short():
+    from poindexter.services.youtube_metadata_sync import _compose
+
+    title, description, _tags = _compose({**ROW, "twin_video_id": "SHORT1", "twin_medium": "video_short"}, _sc())
+    assert title == ROW["title"]
+    assert "Watch the Short: https://www.youtube.com/shorts/SHORT1" in description
+    assert "utm_medium=video" in description
+
+
+def test_compose_without_a_live_twin_omits_the_cross_link():
+    from poindexter.services.youtube_metadata_sync import _compose
+
+    _t, description, _ = _compose({**ROW, "medium": "video_short", "short_script": "Hook one."}, _sc())
+    assert "Watch the full breakdown" not in description
+    _t, description, _ = _compose(dict(ROW), _sc())
+    assert "Watch the Short" not in description

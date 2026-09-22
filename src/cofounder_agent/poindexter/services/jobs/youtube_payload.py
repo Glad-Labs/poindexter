@@ -105,56 +105,191 @@ def _trim_at_sentence(text: str, limit: int) -> str:
 _YOUTUBE_TITLE_LIMIT = 100
 
 
-def _build_youtube_title(title: str, *, shorts: bool, site_config: Any) -> str:
+_SHORT_TITLE_SOURCE_DEFAULT = "script_hook"
+_SHORT_TITLE_MAX_DEFAULT = 60
+_SHORT_HASHTAGS_MAX_DEFAULT = 3
+_SHORT_HOOK_DESCRIPTION_MAX = 220
+_HASHTAG_MAX_CHARS = 30
+_SHORTS_WATCH_URL_FMT = "https://www.youtube.com/shorts/{video_id}"
+_LONG_WATCH_URL_FMT = "https://www.youtube.com/watch?v={video_id}"
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _setting(site_config: Any, key: str, default: Any) -> Any:
+    if site_config is None:
+        return default
+    try:
+        raw = site_config.get(key, default)
+    except Exception as exc:  # noqa: BLE001 — must not block an upload
+        logger.warning(
+            "[YOUTUBE_PAYLOAD] %s read failed (%s) — using the default %r",
+            key, describe_exception(exc), default,
+        )
+        return default
+    return default if raw is None else raw
+
+
+def _setting_int(site_config: Any, key: str, default: int) -> int:
+    raw = _setting(site_config, key, default)
+    try:
+        return max(0, int(str(raw).strip()))
+    except (TypeError, ValueError):
+        logger.warning(
+            "[YOUTUBE_PAYLOAD] %s is not an integer (%r) — using %d", key, raw, default,
+        )
+        return default
+
+
+def _cross_links_enabled(site_config: Any) -> bool:
+    raw = str(_setting(site_config, "youtube_pair_cross_links", "true")).strip().lower()
+    return raw not in ("false", "0", "no", "off")
+
+
+def shorten_at_word(text: str, limit: int) -> str:
+    """``text`` cut to at most ``limit`` chars on a word boundary, trailing
+    separators dropped — the same rule the suffix budget uses. A cut that
+    already lands on a word boundary keeps the whole word before it."""
+    clean = (text or "").strip()
+    if limit <= 0 or len(clean) <= limit:
+        return clean
+    head = clean[:limit].rstrip()
+    if not clean[limit].isspace():
+        cut = head.rfind(" ")
+        if cut > limit // 2:
+            head = head[:cut]
+    return head.rstrip(" ,;:-—").rstrip()
+
+
+def _sentences(text: str) -> list[str]:
+    clean = _strip_markup(_markdown_to_plain(text or ""))
+    return [p.strip() for p in _SENTENCE_END_RE.split(clean) if p.strip()] if clean else []
+
+
+def first_sentences(text: str, *, max_sentences: int = 1, limit: int = 0) -> str:
+    """The first ``max_sentences`` sentence(s) of ``text`` (markup stripped).
+
+    With a ``limit``, whole sentences are taken while they fit; only when the
+    very first one is longer than the budget is it shortened at a word
+    boundary — a hook cut mid-sentence ("…they surface answers directly,
+    reducing") reads worse than one sentence fewer.
+    """
+    parts = _sentences(text)
+    if not parts:
+        return ""
+    take = parts[: max(1, max_sentences)]
+    if limit <= 0:
+        return " ".join(take)
+    out = ""
+    for sentence in take:
+        candidate = f"{out} {sentence}".strip() if out else sentence
+        if len(candidate) > limit:
+            break
+        out = candidate
+    return out or shorten_at_word(take[0], limit)
+
+
+def short_hook_title(script: str, *, site_config: Any) -> str:
+    """A Short's own title: the first sentence of its narration — the cold-open
+    line the short-form director writes to hook the viewer — kept whole when
+    it is within ``youtube_short_title_max_chars`` plus a quarter of slack
+    (the feed shows ~40 chars either way; the 100-char API cap is the hard
+    limit and the suffix budget below handles it), else shortened at a word
+    boundary. Trailing full stop dropped: a title is not a sentence."""
+    limit = _setting_int(site_config, "youtube_short_title_max_chars", _SHORT_TITLE_MAX_DEFAULT)
+    parts = _sentences(script)
+    if not parts:
+        return ""
+    first = parts[0]
+    hook = first if len(first) <= limit + limit // 4 else shorten_at_word(first, limit)
+    return hook.rstrip(".").strip()
+
+
+def short_hook_line(script: str) -> str:
+    """The Short's description opener: its first one or two whole sentences."""
+    return first_sentences(script, max_sentences=2, limit=_SHORT_HOOK_DESCRIPTION_MAX)
+
+
+def hashtags_for_short(keywords: list[str], *, site_config: Any) -> list[str]:
+    """``#Shorts`` plus up to ``youtube_short_hashtags_max`` CamelCase tags
+    from the post's keywords (letters/digits only, deduped, over-long
+    keywords skipped)."""
+    max_n = _setting_int(site_config, "youtube_short_hashtags_max", _SHORT_HASHTAGS_MAX_DEFAULT)
+    out = ["#Shorts"]
+    seen = {"shorts"}
+    for kw in keywords or []:
+        if len(out) - 1 >= max_n:
+            break
+        words = re.findall(r"[A-Za-z0-9]+", str(kw or ""))
+        tag = "".join(w[:1].upper() + w[1:] for w in words)
+        if not tag or len(tag) > _HASHTAG_MAX_CHARS or tag.lower() in seen:
+            continue
+        seen.add(tag.lower())
+        out.append("#" + tag)
+    return out
+
+
+def twin_watch_url(video_id: str, *, twin_is_short: bool) -> str:
+    """The public URL of the pair's other render: ``/shorts/<id>`` for a
+    Short, ``/watch?v=<id>`` for the long form — the forms YouTube treats as
+    Short-to-long and long-to-Short links."""
+    vid = (video_id or "").strip()
+    if not vid:
+        return ""
+    fmt = _SHORTS_WATCH_URL_FMT if twin_is_short else _LONG_WATCH_URL_FMT
+    return fmt.format(video_id=vid)
+
+
+def _build_youtube_title(
+    title: str, *, shorts: bool, site_config: Any, hook: str = "",
+) -> str:
     """Compose the video title, distinguishing a Short from its long-form twin.
 
     A post can produce BOTH a long-form video and a Short, and both took
     ``posts.title`` verbatim — so a channel showing both had two videos under
     one identical name, with nothing but the thumbnail to tell them apart.
 
-    The Short gets a suffix (``youtube_short_title_suffix``, default
-    ``" #Shorts"``), which does double duty: it separates the pair in every
-    listing, and ``#Shorts`` is one of the markers YouTube itself keys off for
-    Shorts classification.
+    Two levers, both DB-configured:
+
+    * ``youtube_short_title_source`` (default ``script_hook``): the Short's
+      title is ``hook`` — its own narration's first sentence, shortened to
+      ``youtube_short_title_max_chars`` — instead of the article title. The
+      Shorts feed shows ~40 characters, so an article title plus a suffix
+      was two identical stubs on the channel page anyway. ``post_title``
+      keeps the article title; an empty ``hook`` falls back to it.
+    * ``youtube_short_title_suffix`` (default ``" #Shorts"``) is appended
+      either way: it separates the pair in every listing, and ``#Shorts`` is
+      one of the markers YouTube itself keys off for Shorts classification.
 
     Budget-aware rather than a bare append: YouTube caps titles at 100 chars,
     so appending to a long title would push the suffix past the cap and the
     adapter's clamp would cut off the very thing that distinguishes it. The
     title is trimmed at a word boundary to make room first.
 
-    Empty suffix = no distinction, an operator's explicit choice.
+    Empty suffix = no suffix, an operator's explicit choice.
     """
     clean = (title or "").strip()
     if not shorts:
         return clean[:_YOUTUBE_TITLE_LIMIT]
 
-    suffix = " #Shorts"
-    if site_config is not None:
-        try:
-            raw = site_config.get("youtube_short_title_suffix", suffix)
-            suffix = suffix if raw is None else str(raw)
-        except Exception as exc:  # noqa: BLE001 — must not block an upload
-            # Visible, not swallowed: falling back here means the Short ships
-            # under the DEFAULT suffix rather than the operator's configured
-            # one, which is a quiet difference on a public channel.
-            logger.warning(
-                "[YOUTUBE_PAYLOAD] youtube_short_title_suffix read failed "
-                "(%s) — using the default %r",
-                describe_exception(exc), suffix,
-            )
+    base = clean
+    source = str(_setting(site_config, "youtube_short_title_source", _SHORT_TITLE_SOURCE_DEFAULT)).strip().lower()
+    if source == "script_hook" and (hook or "").strip():
+        base = (hook or "").strip() or clean
+
+    suffix = str(_setting(site_config, "youtube_short_title_suffix", " #Shorts"))
     if not suffix.strip():
-        return clean[:_YOUTUBE_TITLE_LIMIT]
+        return base[:_YOUTUBE_TITLE_LIMIT]
 
     # Idempotent: never stack a second marker on a title that already carries
     # one (an operator-written title, or a re-sync of an already-suffixed video).
-    if suffix.strip().lower() in clean.lower():
-        return clean[:_YOUTUBE_TITLE_LIMIT]
+    if suffix.strip().lower() in base.lower():
+        return base[:_YOUTUBE_TITLE_LIMIT]
 
     room = _YOUTUBE_TITLE_LIMIT - len(suffix)
     if room <= 0:
-        return clean[:_YOUTUBE_TITLE_LIMIT]
-    head = clean[:room].rstrip()
-    if len(clean) > room:
+        return base[:_YOUTUBE_TITLE_LIMIT]
+    head = base[:room].rstrip()
+    if len(base) > room:
         cut = head.rfind(" ")
         if cut > room // 2:
             head = head[:cut].rstrip()
@@ -207,19 +342,41 @@ def _build_youtube_description(
     body: str,
     site_config: Any,
     slug: str,
+    shorts: bool = False,
+    hook: str = "",
+    twin_url: str = "",
+    hashtags: list[str] | None = None,
 ) -> str:
-    """Compose the YouTube video description.
+    """Compose the YouTube video description — one layout per render.
 
-    Default layout (``youtube_description_body_chars=0``)::
+    Long form (``shorts=False``)::
 
         {seo_description}
 
-        Read the full post: {site_url}/posts/{slug}?utm_source=youtube&…
+        Read the full post: {site_url}/posts/{slug}?utm_source=youtube&utm_medium=video
 
-    With a positive body budget, a sentence-trimmed plain-text snippet of the
-    article follows the link — skipping its first paragraph when that is the
-    excerpt again (``posts.excerpt`` IS the post's opening paragraph, so
-    without the skip the viewer read the same two sentences twice).
+        Watch the Short: https://www.youtube.com/shorts/{twin}     (only when the Short is live)
+
+        {optional body snippet — youtube_description_body_chars}
+
+    Short (``shorts=True``)::
+
+        {hook — the Short's own first sentences, else the excerpt}
+
+        Watch the full breakdown: https://www.youtube.com/watch?v={twin}   (only when the long form is live)
+
+        Read the full post: {site_url}/posts/{slug}?utm_source=youtube&utm_medium=shorts
+
+        #Shorts #KeywordOne #KeywordTwo
+
+    Before 2026-09-22 both renders shipped one identical description: the
+    excerpt and an article link tagged ``utm_medium=video`` — so a click from
+    a Short was indistinguishable from a long-form click, the Short's own hook
+    (``short_summary_script``) went unused, and the pair never linked to each
+    other, which is the one lever YouTube gives for turning Shorts viewers
+    into long-form viewers. ``twin_url`` is composed from what is actually
+    live (``pipeline_distributions`` ``status='published'``) and recomposed
+    when the twin lands later; empty means the line is simply omitted.
 
     ``seo_description`` comes from ``posts.excerpt`` (empty string when
     null). The "Read the full post" line is omitted gracefully (logged at
@@ -230,7 +387,9 @@ def _build_youtube_description(
     # The excerpt occasionally carries inline <img> HTML or a stray markdown
     # link from the pipeline; render it to one clean line.
     seo_description = _strip_markup(_markdown_to_plain(seo_description or ""))
-
+    opener = (hook or "").strip() if shorts else ""
+    if not opener:
+        opener = seo_description
     # Resolve the canonical back-link. Missing site_url / slug → omit the
     # line (the only deliberate graceful fallback here, per the #275
     # design); log it so the operator knows why it's absent.
@@ -248,19 +407,27 @@ def _build_youtube_description(
     if site_url and slug:
         # Tagged so a click from the description is attributable to YouTube
         # rather than landing in the "(direct)" bucket — a video description is
-        # exactly the kind of link a browser sends no referrer for.
+        # exactly the kind of link a browser sends no referrer for. A Short's
+        # link says so (utm_medium=shorts) so the two renders stay separable.
         backlink = "Read the full post: " + tag_for(
-            site_config, f"{site_url}/posts/{slug}", surface="youtube"
+            site_config, f"{site_url}/posts/{slug}", surface="youtube",
+            medium="shorts" if shorts else None,
         )
     elif not slug:
         logger.info(
             "[YOUTUBE_PAYLOAD] slug missing — omitting YouTube back-link",
         )
+    cross = ""
+    if twin_url and _cross_links_enabled(site_config):
+        cross = ("Watch the full breakdown: " if shorts else "Watch the Short: ") + twin_url
 
-    header_parts = [p for p in (seo_description, backlink) if p]
+    if shorts:
+        tag_line = " ".join(hashtags or [])
+        header_parts = [p for p in (opener, cross, backlink, tag_line) if p]
+    else:
+        header_parts = [p for p in (opener, backlink, cross) if p]
     header = "\n\n".join(header_parts)
-
-    body_budget = _body_chars_budget(site_config)
+    body_budget = 0 if shorts else _body_chars_budget(site_config)
     body_snippet = ""
     if body_budget > 0:
         rendered = _markdown_to_plain(body)
@@ -276,7 +443,6 @@ def _build_youtube_description(
                     rendered = "\n\n".join(paragraphs[1:])
         room = _YOUTUBE_DESCRIPTION_BUDGET - len(header) - 2 if header else _YOUTUBE_DESCRIPTION_BUDGET
         body_snippet = _trim_at_sentence(rendered, min(body_budget, max(room, 0)))
-
     if not header:
         composed = body_snippet[:_YOUTUBE_DESCRIPTION_BUDGET]
     elif not body_snippet:
@@ -295,4 +461,10 @@ __all__ = [
     "_parse_seo_keywords",
     "_strip_markup",
     "_trim_at_sentence",
+    "first_sentences",
+    "hashtags_for_short",
+    "short_hook_line",
+    "short_hook_title",
+    "shorten_at_word",
+    "twin_watch_url",
 ]

@@ -2,16 +2,18 @@
 
 ## What each upload carries
 
-| Field       | Source                                                       | Limit enforced                 |
-| ----------- | ------------------------------------------------------------ | ------------------------------ |
-| Title       | `posts.title` (+ `#Shorts` suffix on a Short)                | 100 chars (adapter clamps)     |
-| Description | `posts.excerpt` + tagged back-link (+ optional body snippet) | 4,800 composed / 5,000 API cap |
-| Tags        | `posts.seo_keywords`, comma-split                            | 30 tags / 500 joined chars     |
+| Field       | Long form                                                                              | Short                                                                                                            | Limit enforced                 |
+| ----------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| Title       | `posts.title`                                                                          | first sentence of its own narration (`short_summary_script`), ≤ `youtube_short_title_max_chars`, + `#Shorts`     | 100 chars (adapter clamps)     |
+| Description | `posts.excerpt` · tagged back-link (`utm_medium=video`) · "Watch the Short" when live · optional body snippet | its first two sentences · "Watch the full breakdown" when the long form is live · tagged back-link (`utm_medium=shorts`) · `#Shorts` + N keyword hashtags | 4,800 composed / 5,000 API cap |
+| Tags        | `posts.seo_keywords`, comma-split                                                      | same                                                                                                             | 30 tags / 500 joined chars     |
 
 Composed by `services/jobs/youtube_payload.py`, dispatched by
 `services/jobs/media_distribute.py`. The back-link carries
-`?utm_source=youtube&utm_medium=video` so a click from a description is
-attributable — see [distribution-attribution.md](../architecture/distribution-attribution.md).
+`?utm_source=youtube&utm_medium=video` (long form) or `utm_medium=shorts`
+(Short) so a click from a description is attributable, and the two renders
+stay separable in analytics — see
+[distribution-attribution.md](../architecture/distribution-attribution.md).
 
 **The description does not carry the article.** `youtube_description_body_chars`
 defaults to `0`. Set it positive to append a sentence-trimmed plain-text
@@ -170,25 +172,54 @@ The YouTube Data API v3 is free; quota is units, not dollars (10,000/day).
 `videos.update` 50, so a full-channel metadata resync of a few dozen videos is
 quota-trivial next to a single upload.
 
-## Long-form vs Short titles
+## Long-form vs Short: titles, descriptions, cross-links
 
-A post can produce both a long-form video and a Short. Both used to take
-`posts.title` verbatim, which would have put two identically-named videos on
-the channel with only the thumbnail to tell them apart.
+A post can produce both a long-form video and a Short. Until 2026-09-22 the
+pair shipped as near-copies: both took `posts.title` (the Short with a
+`#Shorts` suffix that the Shorts feed, showing ~40 characters, never
+displayed), and both carried one identical description — the excerpt plus an
+article link tagged `utm_medium=video`, so a click from a Short was
+indistinguishable from a long-form click. The Short's own narration hook
+(`short_summary_script`, written to open the clip) went unused, and the two
+never linked to each other, which is the one lever YouTube gives for turning
+Shorts viewers into long-form viewers.
 
-The Short now gets `youtube_short_title_suffix` (default `" #Shorts"`)
-appended. It does double duty: it separates the pair in every listing, and
-`#Shorts` is one of the markers YouTube keys off for Shorts classification.
+Now (`services/jobs/youtube_payload.py`, both the upload and the sync go
+through the same builders):
 
-The append is budget-aware — a title already near the 100-char cap is trimmed
-at a word boundary to make room, so the adapter's clamp can't cut off the very
-thing that distinguishes it. It is idempotent (a re-sync never stacks a second
-marker), and `sync-metadata` reads `pipeline_distributions.medium` so re-syncing
-a Short doesn't rebuild its title as long-form and re-collide the pair.
+- **Short title** = the first sentence of its narration, shortened on a word
+  boundary to `youtube_short_title_max_chars` (default 60), then the suffix.
+  `youtube_short_title_source=post_title` restores the article title; an empty
+  script falls back to it too.
+- **Suffix** (`youtube_short_title_suffix`, default `" #Shorts"`) still applies
+  either way — it separates the pair in every listing and is one of the
+  markers YouTube keys off for Shorts classification. Budget-aware (a title
+  near the 100-char cap is trimmed to make room) and idempotent (a re-sync
+  never stacks a second marker). Empty = no suffix.
+- **Short description** = its first two sentences · `Watch the full breakdown:
+  https://www.youtube.com/watch?v=<long id>` · `Read the full post: …
+  utm_medium=shorts` · `#Shorts` plus up to `youtube_short_hashtags_max`
+  CamelCase hashtags from `seo_keywords`. No body snippet on a Short.
+- **Long-form description** gains `Watch the Short:
+  https://www.youtube.com/shorts/<short id>` after the article link.
 
-That read used to be a correlated subquery back into `media_assets`, because the
-distribution row had no idea which render it described. The column that fixed
-the overwrite bug above is the same column that gives this one source of truth
-instead of two that can disagree.
+**Cross-links follow what is live, never what is planned.** The two renders
+are approved, rejected and uploaded independently (7 of 13 posts on the
+channel had one of the pair up when this shipped), so:
 
-Set the suffix empty to opt out.
+- the "Watch …" line is composed from `pipeline_distributions` rows with
+  `status='published'` for the *other* medium of the same task — absent twin,
+  absent line, nothing dangling;
+- whichever render lands **second** knows both ids: right after its upload
+  `media_distribute` recomposes the already-live twin through
+  `sync_youtube_metadata(selector=<twin id>, apply=True)` and pushes one
+  `videos.update` (`youtube_pair_cross_links=false` disables both the lines
+  and the refresh);
+- a twin that later vanishes is demoted to `status='deleted'` by the reconcile
+  above, so the next recompose drops the dead link;
+- `sync-metadata --apply` remains the sweeper: it recomposes every video from
+  the same table, so the channel converges in one pass.
+
+`sync-metadata` reads `pipeline_distributions.medium` for "which render is
+this" — one source of truth, the same column that fixed the overwrite bug
+above.

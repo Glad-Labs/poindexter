@@ -13,6 +13,7 @@ switch), so it's scheduled but dormant in prod until the operator opts in.
 """
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -837,3 +838,104 @@ async def test_dispatch_payload_carries_the_disclosure():
         await md._dispatch_asset(pool, _persona_sc(media_pipeline_trigger_enabled="true"), _presenter_row(), shorts=False)
     payload = dispatch.await_args.args[2]
     assert payload["contains_synthetic_media"] is True
+
+
+# --------------------------------------------------------------------------
+# The pair (2026-09-22): the Short's own hook + medium; the render that lands
+# second gives its live twin the cross-link
+# --------------------------------------------------------------------------
+
+
+def _pair_pool(*, script=None, twin=None, adapters=None):
+    """``fetch`` serves the adapter rows; ``fetchval`` routes on the SQL text."""
+    pool = AsyncMock()
+    pool.fetch = AsyncMock(return_value=adapters if adapters is not None else [
+        {"name": "yt", "platform": "youtube", "handler_name": "youtube", "config": {}, "metadata": {}},
+    ])
+
+    async def _fetchval(sql, *args):
+        if "short_summary_script" in sql:
+            return script
+        if "pipeline_distributions" in sql:
+            return twin
+        return None
+    pool.fetchval = AsyncMock(side_effect=_fetchval)
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_short_payload_uses_its_own_hook_medium_and_links_the_live_long_form():
+    pool = _pair_pool(script="Nobody clicks anymore. Here is what to do.", twin="LONG1")
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID1", "url": "u"})
+    row = {
+        "post_id": "p1", "task_id": "t1", "title": "Nobody Clicks Anymore: Building Content",
+        "content": "c", "excerpt": "The excerpt.", "seo_keywords": "zeroclick content",
+        "slug": "s", "storage_path": "/tmp/v.mp4",
+    }
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true", site_url="https://www.gladlabs.io"), row, shorts=True)
+    payload = dispatch.await_args.args[2]
+    assert payload["title"] == "Nobody clicks anymore #Shorts"
+    assert payload["description"].startswith("Nobody clicks anymore. Here is what to do.")
+    assert "Watch the full breakdown: https://www.youtube.com/watch?v=LONG1" in payload["description"]
+    assert "utm_medium=shorts" in payload["description"]
+    assert "#Shorts #ZeroclickContent" in payload["description"]
+
+
+@pytest.mark.asyncio
+async def test_long_payload_links_a_live_short_and_keeps_its_medium():
+    pool = _pair_pool(twin="SHORT1")
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID1", "url": "u"})
+    row = {"post_id": "p1", "task_id": "t1", "title": "T", "content": "c", "excerpt": "The excerpt.",
+           "seo_keywords": "", "slug": "s", "storage_path": "/tmp/v.mp4"}
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true", site_url="https://www.gladlabs.io"), row, shorts=False)
+    payload = dispatch.await_args.args[2]
+    assert payload["title"] == "T"
+    assert "Watch the Short: https://www.youtube.com/shorts/SHORT1" in payload["description"]
+    assert "utm_medium=video" in payload["description"]
+    # The short-script lookup is a Short-only cost.
+    assert not any("short_summary_script" in c.args[0] for c in pool.fetchval.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_twin_refresh_recomposes_the_live_twin_through_sync_metadata(monkeypatch):
+    """Second render lands → the first gets its cross-link via ONE update, through
+    the same recompose path sync-metadata --apply uses."""
+    pool = _pair_pool(twin="LONG1")
+    calls = {}
+
+    async def fake_sync(p, sc, *, selector=None, apply=False, limit=None):
+        calls.update(selector=selector, apply=apply, limit=limit)
+        return [SimpleNamespace(applied=True)]
+
+    import poindexter.services.youtube_metadata_sync as sync_mod
+    monkeypatch.setattr(sync_mod, "sync_youtube_metadata", fake_sync)
+    applied = await md._refresh_twin_after_upload(pool, _sc(), task_id="t1", medium="video_short")
+    assert applied is True
+    assert calls == {"selector": "LONG1", "apply": True, "limit": 1}
+
+
+@pytest.mark.asyncio
+async def test_twin_refresh_is_skipped_without_a_live_twin_or_when_disabled(monkeypatch):
+    import poindexter.services.youtube_metadata_sync as sync_mod
+    fake_sync = AsyncMock(return_value=[])
+    monkeypatch.setattr(sync_mod, "sync_youtube_metadata", fake_sync)
+
+    assert await md._refresh_twin_after_upload(_pair_pool(twin=None), _sc(), task_id="t1", medium="video") is False
+    assert await md._refresh_twin_after_upload(
+        _pair_pool(twin="X"), _sc(youtube_pair_cross_links="false"), task_id="t1", medium="video",
+    ) is False
+    assert await md._refresh_twin_after_upload(_pair_pool(twin="X"), _sc(), task_id=None, medium="video") is False
+    fake_sync.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_twin_refresh_failure_never_fails_the_landed_upload(monkeypatch):
+    import poindexter.services.youtube_metadata_sync as sync_mod
+    monkeypatch.setattr(sync_mod, "sync_youtube_metadata", AsyncMock(side_effect=RuntimeError("scope")))
+    assert await md._refresh_twin_after_upload(_pair_pool(twin="LONG1"), _sc(), task_id="t1", medium="video_short") is False

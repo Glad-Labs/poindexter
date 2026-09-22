@@ -169,6 +169,101 @@ _APPROVED_UNDISPATCHED_SQL = """
     LIMIT $2
 """
 
+# The Short's own narration — its YouTube title + description hook (2026-09-22).
+_SHORT_SCRIPT_SQL = """
+    SELECT v.stage_data -> 'task_metadata' ->> 'short_summary_script'
+      FROM pipeline_versions v
+     WHERE v.task_id = $1
+     ORDER BY v.version DESC
+     LIMIT 1
+"""
+
+# The pair's other render, only while it is LIVE on YouTube. Read from
+# pipeline_distributions (the row the dispatcher writes with the upload and the
+# only record carrying a status) — never from the approval row: approved is not
+# uploaded, and a rejected twin simply never appears here.
+_TWIN_SQL = """
+    SELECT external_id
+      FROM pipeline_distributions
+     WHERE task_id = $1
+       AND target = 'youtube'
+       AND medium = $2
+       AND status = 'published'
+       AND external_id IS NOT NULL
+     ORDER BY published_at DESC NULLS LAST
+     LIMIT 1
+"""
+
+_PAIR_MEDIA = {"video": "video_short", "video_short": "video"}
+
+
+async def _fetch_short_script(pool: Any, task_id: str | None) -> str:
+    if not task_id:
+        return ""
+    try:
+        raw = await pool.fetchval(_SHORT_SCRIPT_SQL, str(task_id))
+    except Exception as exc:  # noqa: BLE001 — a hook is a refinement, never a blocker
+        logger.warning("[MEDIA_DISTRIBUTE] short script lookup failed for %s: %s", task_id, describe_exception(exc))
+        return ""
+    return raw if isinstance(raw, str) else ""
+
+
+async def _fetch_twin_video_id(pool: Any, task_id: str | None, medium: str) -> str:
+    """The LIVE YouTube id of ``medium``'s pair (``video`` ↔ ``video_short``), or ""."""
+    other = _PAIR_MEDIA.get(medium)
+    if not task_id or not other:
+        return ""
+    try:
+        raw = await pool.fetchval(_TWIN_SQL, str(task_id), other)
+    except Exception as exc:  # noqa: BLE001 — a cross-link is a refinement, never a blocker
+        logger.warning("[MEDIA_DISTRIBUTE] twin lookup failed for %s: %s", task_id, describe_exception(exc))
+        return ""
+    return raw.strip() if isinstance(raw, str) else ""
+
+
+async def _refresh_twin_after_upload(
+    pool: Any, site_config: Any, *, task_id: str | None, medium: str,
+) -> bool:
+    """After ``medium`` landed, give its already-live twin the cross-link.
+
+    A post's two renders are approved and uploaded independently (7 of 13
+    posts on the channel had one of the pair up, 2026-09-22), so the link
+    cannot be assumed at upload time: whichever render lands second is the
+    one that knows both ids. Recomposes the twin through the same
+    ``sync_youtube_metadata`` path the operator's ``sync-metadata --apply``
+    uses — same builders, so the two can never drift — and pushes ONE
+    ``videos.update``. Best-effort: a failure here leaves the twin as it was
+    and the next ``sync-metadata --apply`` sweeps it. Returns True when an
+    update was applied.
+    """
+    from poindexter.services.jobs.youtube_payload import _cross_links_enabled
+
+    if not _cross_links_enabled(site_config):
+        return False
+    twin_id = await _fetch_twin_video_id(pool, task_id, medium)
+    if not twin_id:
+        return False
+    try:
+        from poindexter.services.youtube_metadata_sync import sync_youtube_metadata
+
+        outcomes = await sync_youtube_metadata(
+            pool, site_config, selector=twin_id, apply=True, limit=1,
+        )
+    except Exception as exc:  # noqa: BLE001 — the upload already succeeded; never fail it here
+        logger.warning(
+            "[MEDIA_DISTRIBUTE] twin cross-link refresh raised for %s (%s): %s — "
+            "sync-metadata --apply will catch it",
+            twin_id, medium, describe_exception(exc),
+        )
+        return False
+    applied = any(getattr(o, "applied", False) for o in outcomes)
+    logger.info(
+        "[MEDIA_DISTRIBUTE] twin %s cross-linked to the new %s upload: %s",
+        twin_id, medium, "applied" if applied else "not applied",
+    )
+    return applied
+
+
 # Enabled video-platform adapter rows (the registry routes the handler by name).
 _ADAPTERS_SQL = """
     SELECT name, platform, handler_name, config, metadata
@@ -242,6 +337,10 @@ async def _dispatch_asset(
         _build_youtube_description,
         _build_youtube_title,
         _parse_seo_keywords,
+        hashtags_for_short,
+        short_hook_line,
+        short_hook_title,
+        twin_watch_url,
     )
 
     try:
@@ -259,20 +358,35 @@ async def _dispatch_asset(
         logger.debug("[MEDIA_DISTRIBUTE] no enabled video adapters — skipping")
         return []
 
+    # The pair's own material (2026-09-22): a Short titles and opens with its
+    # narration's hook, its article link says utm_medium=shorts, and each
+    # render links to the other — when the other is already LIVE. The twin
+    # that lands second refreshes the first (see _refresh_twin_after_upload).
+    task_id = row.get("task_id")
+    script = await _fetch_short_script(pool, task_id) if shorts else ""
+    twin_url = twin_watch_url(
+        await _fetch_twin_video_id(pool, task_id, "video_short" if shorts else "video"),
+        twin_is_short=not shorts,
+    )
+    tags = _parse_seo_keywords(row.get("seo_keywords") or "")
     description = _build_youtube_description(
         seo_description=row.get("excerpt") or "",
         body=row.get("content") or "",
         site_config=site_config,
         slug=row.get("slug") or "",
+        shorts=shorts,
+        hook=short_hook_line(script) if shorts else "",
+        twin_url=twin_url,
+        hashtags=hashtags_for_short(tags, site_config=site_config) if shorts else None,
     )
-    tags = _parse_seo_keywords(row.get("seo_keywords") or "")
     payload = {
         "media_path": row["storage_path"],
-        # Shorts get a distinguishing suffix — a post can produce BOTH a
-        # long-form video and a Short, and taking posts.title verbatim for
-        # each put two identically-named videos on the channel.
+        # Shorts get their own title (narration hook + suffix) — a post can
+        # produce BOTH a long-form video and a Short, and taking posts.title
+        # verbatim for each put two identically-named videos on the channel.
         "title": _build_youtube_title(
             row.get("title") or "", shorts=shorts, site_config=site_config,
+            hook=short_hook_title(script, site_config=site_config) if shorts else "",
         ),
         "description": description,
         "tags": tags or None,
@@ -564,6 +678,17 @@ class MediaDistributeJob:
                     dispatched += 1
                     if medium == "video":
                         rss_dispatched += 1
+                    # The render that lands second knows both ids: give the
+                    # already-live twin its cross-link (one videos.update).
+                    try:
+                        await _refresh_twin_after_upload(
+                            pool, sc, task_id=row.get("task_id"), medium=medium,
+                        )
+                    except Exception as exc:  # noqa: BLE001 — never fail a landed upload
+                        logger.warning(
+                            "[MEDIA_DISTRIBUTE] twin refresh failed for post %s (%s): %s",
+                            row["post_id"], medium, describe_exception(exc),
+                        )
 
         # Refresh the public video RSS feed once per cycle when this pass put a
         # new long-form episode behind it. Podcast's twin lane has always done

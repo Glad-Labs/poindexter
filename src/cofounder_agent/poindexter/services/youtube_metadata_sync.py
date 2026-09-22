@@ -34,6 +34,10 @@ from poindexter.services.jobs.youtube_payload import (
     _build_youtube_description,
     _build_youtube_title,
     _parse_seo_keywords,
+    hashtags_for_short,
+    short_hook_line,
+    short_hook_title,
+    twin_watch_url,
 )
 from poindexter.services.publish_adapters.youtube import STATUS_NOT_FOUND
 from poindexter.utils.findings import emit_finding
@@ -64,9 +68,31 @@ _TARGETS_SQL = """
            p.content,
            p.seo_keywords,
            p.slug,
-           pd.medium
+           pd.medium,
+           pd.task_id,
+           -- The Short's own narration (its title + description hook, 2026-09-22).
+           pv.stage_data -> 'task_metadata' ->> 'short_summary_script' AS short_script,
+           -- The pair's other render, only while it is LIVE: the cross-link is
+           -- composed from this and recomposed when the twin lands or vanishes.
+           twin.external_id AS twin_video_id,
+           twin.medium      AS twin_medium
       FROM pipeline_distributions pd
       JOIN posts p ON p.id = pd.post_id
+      LEFT JOIN LATERAL (
+           SELECT v.stage_data FROM pipeline_versions v
+            WHERE v.task_id = pd.task_id
+            ORDER BY v.version DESC LIMIT 1
+      ) pv ON TRUE
+      LEFT JOIN LATERAL (
+           SELECT t.external_id, t.medium FROM pipeline_distributions t
+            WHERE t.task_id = pd.task_id
+              AND t.target = 'youtube'
+              AND t.status = 'published'
+              AND t.external_id IS NOT NULL
+              AND t.medium IN ('video', 'video_short')
+              AND t.medium <> pd.medium
+            ORDER BY t.published_at DESC NULLS LAST LIMIT 1
+      ) twin ON TRUE
      WHERE pd.target = 'youtube'
        AND pd.status = 'published'
        AND pd.external_id IS NOT NULL
@@ -210,18 +236,32 @@ async def _mark_distribution_deleted(pool: Any, video_id: str, reason: str) -> b
 
 
 def _compose(row: dict[str, Any], site_config: Any) -> tuple[str, str, list[str]]:
-    """Recompose (title, description, tags) exactly as an upload would."""
+    """Recompose (title, description, tags) exactly as an upload would.
+
+    Same builders, same inputs as ``media_distribute``: the Short's hook from
+    its narration, the twin's live URL for the cross-link (``twin_video_id``
+    is NULL when the other render is not published — the line is then
+    omitted, so a re-sync after a twin vanishes drops the dead link).
+    """
+    shorts = row.get("medium") == "video_short"
+    script = str(row.get("short_script") or "")
+    tags = _parse_seo_keywords(row.get("seo_keywords") or "")
+    twin_url = twin_watch_url(str(row.get("twin_video_id") or ""), twin_is_short=not shorts)
     description = _build_youtube_description(
         seo_description=row.get("excerpt") or "",
         body=row.get("content") or "",
         site_config=site_config,
         slug=row.get("slug") or "",
+        shorts=shorts,
+        hook=short_hook_line(script) if shorts else "",
+        twin_url=twin_url,
+        hashtags=hashtags_for_short(tags, site_config=site_config) if shorts else None,
     )
-    tags = _parse_seo_keywords(row.get("seo_keywords") or "")
     title = _build_youtube_title(
         row.get("title") or "",
-        shorts=row.get("medium") == "video_short",
+        shorts=shorts,
         site_config=site_config,
+        hook=short_hook_title(script, site_config=site_config) if shorts else "",
     )
     return (title, description, tags)
 
