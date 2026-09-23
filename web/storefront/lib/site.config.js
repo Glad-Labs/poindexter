@@ -15,9 +15,10 @@ export const POINDEXTER_VERSION = '0.146.0'; // x-release-please-version
 
 // Lemon Squeezy subscription product URL for Poindexter Pro.
 // Single tier: $19/month or $180/year (7-day trial applies once CHECKOUT_LIVE).
-// NOTE: the LS product is currently UNPUBLISHED and checkout is gated (see
-// CHECKOUT_LIVE) until the Pro delivery channel ships. Re-publish the product
-// and flip CHECKOUT_LIVE to turn billing back on.
+// The product is PUBLISHED and this URL resolves to a live checkout cart
+// (verified 2026-09-23). It read "currently UNPUBLISHED / checkout gated"
+// for a month after CHECKOUT_LIVE went true on 2026-08-26 — see the block
+// below, which was right while this one contradicted it.
 export const LS_PRO_URL =
   'https://gladlabs.lemonsqueezy.com/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9';
 

@@ -128,16 +128,18 @@ async def probe_webhook_freshness(pool, notify_fn) -> dict:
     subscriber_threshold_days = float(await _read_setting(
         pool, "webhook_freshness_subscriber_threshold_days", "7",
     ) or 7)
-    # Revenue isn't live yet (poindexter#2132) — revenue_events holds a
-    # single 2026-04-25 test-wiring row, so this half of the probe would
-    # otherwise re-fire a misleading "verify your webhook config" alert
-    # every time the threshold is raised far enough to buy a few months
-    # (30d -> 90d already happened once, due again in ~10d as of
-    # 2026-07-14). Mirrors the Revenue Grafana dashboard's own "parked
-    # until real data exists" convention (infrastructure/grafana/
-    # dashboards-parked/README.md) instead of an ever-climbing threshold.
-    # subscriber_events is unaffected — it's getting real fresh writes
-    # and this check is genuinely useful there.
+    # Gated because the check is only meaningful once SOMETHING writes
+    # revenue_events on a cadence. That became true 2026-09-22: the
+    # pro_delivery invoice poll (stack#3954) writes one row per Lemon
+    # Squeezy charge, and checkout is live. Before that the table held a
+    # single test-wiring row and this half re-fired a misleading "verify
+    # your webhook config" alert every time the threshold was raised far
+    # enough to buy a few months (30d -> 90d happened once that way).
+    #
+    # Raising a threshold to silence a probe converts it into a no-op
+    # while every config surface still reads "enabled" — so if this fires
+    # and the absence is real, the answer is to fix the producer or turn
+    # the check off deliberately, NOT to buy another 90 days.
     revenue_check_enabled = (await _read_setting(
         pool, "probe_webhook_freshness_revenue_check_enabled", "false",
     )).lower() not in ("false", "0", "no", "off")
@@ -164,8 +166,14 @@ async def probe_webhook_freshness(pool, notify_fn) -> dict:
             age_str = f"{revenue_age:.1f}d"
         alerts.append(
             f"revenue_events: no row in {age_str} (threshold "
-            f"{revenue_threshold_days:.0f}d). Verify Lemon Squeezy webhook "
-            "config: https://app.lemonsqueezy.com/settings/webhooks"
+            f"{revenue_threshold_days:.0f}d). The producer is the "
+            "pro_delivery invoice poll (LS GET /v1/subscription-invoices, "
+            "every 5 min) — check the sync_pro_subscriptions job run "
+            "metrics first, NOT the webhook config: the "
+            "/api/webhooks/lemon-squeezy route is unreachable from the "
+            "internet and has never fired. With checkout live, no row in "
+            "this window means either no sales or a broken poll, and the "
+            "job's invoices_seen metric tells you which."
         )
 
     if subscriber_age is None:
@@ -195,10 +203,13 @@ async def probe_webhook_freshness(pool, notify_fn) -> dict:
     body = (
         "WEBHOOK QUIET — provider deliveries appear to have stopped.\n\n"
         + "\n\n".join(alerts)
-        + "\n\nOperator action: verify the provider admin pages above. "
-        "If config is correct and the absence is real (no sales / no "
-        "sends), tighten or loosen the thresholds via "
-        "`poindexter settings set webhook_freshness_*_threshold_days`."
+        + "\n\nOperator action: check the PRODUCER named above before the "
+        "provider admin page — a stalled poll and a genuine absence look "
+        "identical from this table alone. If the absence is real (no "
+        "sales / no sends), the honest fix is to restore the producer or "
+        "disable that half of the check deliberately; raising "
+        "`webhook_freshness_*_threshold_days` just buys silence and "
+        "leaves every config surface still reading \"enabled\"."
     )
     try:
         await _maybe_await(notify_fn(body))

@@ -131,8 +131,14 @@ class TestProbeWebhookFreshness:
         notify.assert_called_once()
         body = notify.call_args.args[0]
         assert "revenue_events" in body
-        assert "lemonsqueezy" in body.lower()
         assert "subscriber_events" not in body
+        # The alert must point at the PRODUCER (the invoice poll), not at
+        # the webhook admin page: /api/webhooks/lemon-squeezy is unreachable
+        # from the internet and has never fired, so sending the operator
+        # there to "verify webhook config" is a dead end (stack#3954).
+        assert "invoice poll" in body.lower()
+        assert "sync_pro_subscriptions" in body
+        assert "app.lemonsqueezy.com/settings/webhooks" not in body
 
     async def test_stale_subscribers_fires_alert(self):
         recent = datetime.now(timezone.utc) - timedelta(days=1)
