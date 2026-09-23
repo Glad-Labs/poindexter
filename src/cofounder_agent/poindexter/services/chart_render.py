@@ -65,17 +65,28 @@ _INK_SECONDARY = "#52514e"
 _INK_MUTED = "#84837d"
 _GRID = "#e6e5e1"
 
-# NOTE: in the worker image NONE of these families is installed — measured
-# 2026-09-23 with `fc-list` inside `poindexter-worker`, which ships JetBrains
-# Mono and Liberation only. `sans-serif` therefore falls back to JetBrains
-# Mono, so production charts render MONOSPACE at a flat 0.60em advance. That is
-# why `text_width` below must be calibrated against a monospace floor and not
-# against the proportional font this stack asks for. (Adding "Liberation Sans"
-# here would give charts a proportional face, but it changes the typography of
-# every published chart, so it is a deliberate decision, not a drive-by.)
+# "Liberation Sans" leads DELIBERATELY, and it must stay in front of
+# `system-ui` — a test pins the order.
+#
+# `system-ui` is a CSS *generic*: it always resolves, so it short-circuits
+# every family after it. In the worker image that resolution is JetBrains Mono
+# (measured with `fc-list` inside `poindexter-worker` 2026-09-23: it ships
+# JetBrains Mono and Liberation ONLY — none of the named desktop faces below),
+# so charts published MONOSPACE for as long as this stack led with the generic.
+# Adding "Liberation Sans" anywhere AFTER `system-ui` is inert — verified, the
+# probe string measured an unchanged 210.00px. In front of it, the same string
+# measures 161.09px in a real proportional face.
+#
+# Leading with a concrete family also makes the rendering DETERMINISTIC across
+# host, worker and a consumer install, which matters more for an image that
+# gets published than matching each machine's UI font would. `system-ui` stays
+# on as the fallback for an install without Liberation.
+#
+# `text_width` below is still calibrated against a monospace floor, because
+# that fallback is exactly what a machine lacking Liberation drops to.
 _FONT_STACK = (
-    'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", '
-    '"DejaVu Sans", Arial, sans-serif'
+    '"Liberation Sans", system-ui, -apple-system, "Segoe UI", Roboto, '
+    '"Helvetica Neue", "DejaVu Sans", Arial, sans-serif'
 )
 
 # --- Mark specs (house data-viz method) --------------------------------------

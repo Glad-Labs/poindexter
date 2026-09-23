@@ -83,14 +83,14 @@ That bug had two causes, and the second is the interesting one:
 1. The gutter was `len(label) * 7.9 + 16` — sized from the character **count**,
    which is blind to _which_ characters, and it never subtracted the 12px the
    label is drawn back from the baseline. A 210px label got a 201px budget.
-2. **The font is not the font this file asks for.** `fc-list` inside
+2. **The font was not the font this file asked for.** `fc-list` inside
    `poindexter-worker` (2026-09-23) shows the image ships **JetBrains Mono** and
-   Liberation only — none of `system-ui` / `Segoe UI` / Roboto / Helvetica Neue
-   / **DejaVu Sans** / Arial that `_FONT_STACK` names, despite a code comment
-   claiming DejaVu is "what Debian-family images actually ship". So
-   `sans-serif` falls back to JetBrains Mono and every published chart renders
+   Liberation only — none of `-apple-system` / `Segoe UI` / Roboto / Helvetica
+   Neue / **DejaVu Sans** / Arial that `_FONT_STACK` named, despite a code
+   comment claiming DejaVu is "what Debian-family images actually ship". The
+   stack resolved to JetBrains Mono and every published chart rendered
    **monospace** at a flat 0.60em — 8.40px/char at 14px, against an estimate of
-   7.9.
+   7.9. Fixed by leading the stack with a concrete family; see below.
 
 `text_width` therefore takes per-character advances as the **max over every
 font the stack can land on** (JetBrains Mono's 0.60em floor, Liberation/Arial,
@@ -104,10 +104,31 @@ The gutter is capped (`_GUTTER_MAX_PX`, and never more than
 Past the cap a label is **ellipsized**, not clipped — the full name still
 reaches the reader through `chart_alt_text`, which a sliced glyph cannot do.
 
-Charts currently publish in a monospace face as a consequence of (2). Adding
-`"Liberation Sans"` to `_FONT_STACK` would give them a proportional face, but
-that changes the typography of every published chart, so it is a deliberate
-decision rather than a drive-by — it is **not** done.
+## A concrete family must lead the stack
+
+`_FONT_STACK` begins with `"Liberation Sans"`, and a test pins it **in front of
+`system-ui`**. That ordering is the whole point, not a style preference:
+
+**`system-ui` is a CSS _generic_. It always resolves, so every family listed
+after it is unreachable.** Adding `"Liberation Sans"` anywhere behind the
+generic is completely inert — measured in `poindexter-worker`, the probe string
+`qwen3-vl:30b-a3b-instruct` stayed at exactly **210.00px** (monospace) with
+Liberation listed sixth, and dropped to **161.09px** in a real proportional
+face once it led. This is the trap that made cause (2) above survive: the stack
+_read_ as though it asked for six proportional desktop faces while the generic
+in front of them decided every render.
+
+Leading with a concrete family also makes rendering **deterministic** across
+host, worker and a consumer install, which matters more for an image that gets
+published than matching each machine's UI font would. `system-ui` stays on as
+the fallback for an install without Liberation.
+
+`text_width` keeps its monospace floor even so, because that fallback is
+exactly what such an install drops to. The cost is visible and accepted: with
+Liberation rendering ~161px where the estimate reserves 210px, a chart carries
+roughly 60px of dead margin at the canvas left. Reserving space that is not
+used is a layout blemish; under-reserving it slices a glyph and changes what
+the label says.
 
 ## Accessibility
 

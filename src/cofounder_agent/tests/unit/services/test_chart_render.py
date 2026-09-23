@@ -327,6 +327,38 @@ class TestCategoryLabelsAreNeverClipped:
             assert left >= 0, f"{text!r} starts at x={left:.1f}"
 
 
+class TestFontStack:
+    """A concrete family must lead, or the whole stack is decoration.
+
+    `system-ui` is a CSS *generic*: it always resolves, so every family listed
+    after it is unreachable. The worker image resolves it to JetBrains Mono
+    (it ships JetBrains Mono + Liberation and none of the named desktop
+    faces), which is why charts published monospace for months while the
+    stack read as though it asked for a proportional face.
+    """
+
+    def test_a_concrete_family_precedes_the_system_ui_generic(self):
+        doc = build_chart_html(_bar())
+        stack = list(
+            nonempty(
+                re.findall(r"font-family:([^;}]+)", doc),
+                "font-family in chart CSS",
+            )
+        )[0]
+        assert "Liberation Sans" in stack, stack
+        assert stack.index('"Liberation Sans"') < stack.index("system-ui"), (
+            "Liberation Sans must precede system-ui. Behind the generic it is "
+            "INERT — measured in poindexter-worker, the probe string stayed at "
+            "210.00px (monospace) with it listed after system-ui, and dropped "
+            f"to 161.09px in front. Got: {stack}"
+        )
+
+    def test_the_generic_is_still_there_as_a_fallback(self):
+        """An install without Liberation must still get *a* font."""
+        doc = build_chart_html(_bar())
+        assert "system-ui" in doc and "sans-serif" in doc
+
+
 class TestChartAltText:
     def test_carries_every_data_point(self):
         """A PNG has no table view — alt text is where the numbers live."""
