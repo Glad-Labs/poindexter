@@ -3381,11 +3381,12 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'newsletter_from_name': '',
     'newsletter_provider': 'resend',
     # Unsubscribe relay (infrastructure/cloudflare/unsubscribe-relay). Empty
-    # by default: a fresh install has no Worker deployed, and
-    # send_post_newsletter REFUSES to send while this is unset rather than
-    # emitting a dead unsubscribe link. That is deliberate — a 404 opt-out is
-    # a compliance problem (CAN-SPAM, GDPR, Gmail bulk-sender one-click), and
-    # it is exactly what shipped in every email between #252 and 2026-09-23.
+    # by default: a fresh install has no Worker deployed. While unset, sends
+    # continue but carry the legacy {site_url}/newsletter/unsubscribe link,
+    # which 404s — so each send raises newsletter_unsubscribe_unconfigured.
+    # A 404 opt-out is a compliance problem (CAN-SPAM, GDPR, Gmail
+    # bulk-sender one-click) and it is what shipped in every email between
+    # #252 and 2026-09-23; the warning exists so it cannot go quiet again.
     'newsletter_unsubscribe_relay_url': '',
     'smtp_host': '',
     'smtp_port': '587',
@@ -3822,12 +3823,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.resend_delivery_poll_failed.fallback': 'discord',
     'findings.resend_delivery_poll_failed.cooldown_minutes': '180',
     'findings.resend_delivery_poll_failed.min_severity': 'warning',
-    # newsletter_unsubscribe_unconfigured: the newsletter is STOPPED while
-    # this fires — a skipped send looks identical to "no posts published", so
-    # it has to reach a human. Telegram because it blocks a shipping feature.
-    'findings.newsletter_unsubscribe_unconfigured.delivery': 'telegram',
+    # newsletter_unsubscribe_unconfigured: the send goes out anyway carrying
+    # a dead unsubscribe link (operator's deliberate choice), so this fires on
+    # EVERY publish until the relay is deployed. Discord + a daily cooldown:
+    # Telegram is for waking someone up, and a chronic accepted condition
+    # repeated per-post is how an alert channel gets tuned out
+    # (feedback_telegram_vs_discord, feedback_dont_silence_fix_dedup — the fix
+    # is deploying the relay, not muting this).
+    'findings.newsletter_unsubscribe_unconfigured.delivery': 'discord',
     'findings.newsletter_unsubscribe_unconfigured.fallback': 'discord',
-    'findings.newsletter_unsubscribe_unconfigured.cooldown_minutes': '720',
+    'findings.newsletter_unsubscribe_unconfigured.cooldown_minutes': '1440',
     'findings.newsletter_unsubscribe_unconfigured.min_severity': 'warning',
     # unsubscribe_relay_poll_failed: queued opt-outs are not lost (they sit
     # in KV for RETENTION_DAYS), but they are not APPLIED either, so the next

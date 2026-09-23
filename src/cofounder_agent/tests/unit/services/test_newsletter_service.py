@@ -760,18 +760,20 @@ class TestTotalFailureFinding:
 # ---------------------------------------------------------------------------
 
 
-class TestUnsubscribeSurfaceRequired:
+class TestUnsubscribeSurfaceWarns:
     """Every email between #252 and 2026-09-23 carried a 404 unsubscribe:
     the backend flow was complete, `{site_url}/newsletter/unsubscribe` did
     not exist, and the `List-Unsubscribe` header pointed at the same dead
-    URL. Sending mail nobody can opt out of is a compliance problem
-    (CAN-SPAM, GDPR, Gmail bulk-sender one-click), so the send now REFUSES
-    rather than degrades.
+    URL.
+
+    The operator chose warn-and-send over refusing, so the send CONTINUES
+    with the legacy link and raises a finding every time. These cases pin
+    that the warning is real and unconditional — a degraded send that goes
+    quiet is the failure mode that let this run for months.
     """
 
-    @pytest.mark.asyncio
-    async def test_refuses_to_send_without_a_relay_url(self):
-        pool = AsyncMock()
+    @staticmethod
+    def _cfg_without_relay():
         cfg = _resend_cfg_mock()
         cfg.get.side_effect = lambda k, d="": {
             "newsletter_provider": "resend",
@@ -779,6 +781,17 @@ class TestUnsubscribeSurfaceRequired:
             "newsletter_from_name": "Test",
             # relay deliberately absent
         }.get(k, d)
+        return cfg
+
+    @pytest.mark.asyncio
+    async def test_sends_anyway_and_flags_the_send_as_degraded(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(side_effect=[
+            [{"id": 1, "email": "a@b.com", "first_name": "A",
+              "unsubscribe_token": "t1"}],
+            [],
+        ])
+        pool.execute = AsyncMock()
 
         with patch(
             "poindexter.utils.findings.emit_finding"
@@ -786,48 +799,60 @@ class TestUnsubscribeSurfaceRequired:
             "poindexter.services.newsletter_service._send_via_resend",
             new_callable=AsyncMock,
         ) as mock_send:
-            result = await send_post_newsletter(pool, "T", "E", "s", site_config=cfg)
+            mock_send.return_value = (True, None)
+            result = await send_post_newsletter(
+                pool, "T", "E", "s", site_config=self._cfg_without_relay()
+            )
 
-        assert result["skipped_reason"] == "no_unsubscribe_url"
-        assert result["sent"] == 0
-        # Nothing was mailed — not even the first subscriber.
-        mock_send.assert_not_called()
-        # And it is loud: a skipped newsletter is indistinguishable from
-        # "no posts published" unless something says so.
+        assert result["sent"] == 1                     # the mail went out
+        assert result["unsubscribe_degraded"] is True  # and said so
+        assert "skipped_reason" not in result
         assert mock_finding.call_args.kwargs["kind"] == (
             "newsletter_unsubscribe_unconfigured"
         )
 
     @pytest.mark.asyncio
-    async def test_checked_before_the_loop_not_per_subscriber(self):
-        """A half-mailed list is worse than an unmailed one — the whole
-        campaign is non-compliant, so the refusal happens once, up front."""
+    async def test_warning_is_not_suppressed_by_a_healthy_send(self):
+        """The finding fires on the send path, not an error path — a
+        successful campaign is exactly when this is easiest to stop
+        noticing."""
         pool = AsyncMock()
-        cfg = _resend_cfg_mock()
-        cfg.get.side_effect = lambda k, d="": {
-            "newsletter_provider": "resend",
-            "newsletter_from_email": "x@y.com",
-            "newsletter_from_name": "Test",
-        }.get(k, d)
+        pool.fetch = AsyncMock(side_effect=[
+            [{"id": 1, "email": "a@b.com", "first_name": "A",
+              "unsubscribe_token": "t1"}],
+            [],
+        ])
+        pool.execute = AsyncMock()
 
-        with patch("poindexter.utils.findings.emit_finding"):
-            await send_post_newsletter(pool, "T", "E", "s", site_config=cfg)
+        with patch(
+            "poindexter.utils.findings.emit_finding"
+        ) as mock_finding, patch(
+            "poindexter.services.newsletter_service._send_via_resend",
+            new_callable=AsyncMock,
+        ) as mock_send:
+            mock_send.return_value = (True, None)
+            await send_post_newsletter(
+                pool, "T", "E", "s", site_config=self._cfg_without_relay()
+            )
 
-        # Never even asked who the subscribers are.
-        pool.fetch.assert_not_called()
+        kinds = [c.kwargs.get("kind") for c in mock_finding.call_args_list]
+        assert "newsletter_unsubscribe_unconfigured" in kinds
 
-    def test_unsubscribe_url_points_at_the_relay_not_the_site(self):
+    def test_unsubscribe_url_prefers_the_relay(self):
         html = _build_html(
             "T", "E", "s", unsubscribe_token=_FAKE_TOKEN, site_config=_SC
         )
         assert "relay.test.example.com" in html
         assert "test.example.com/newsletter/unsubscribe" not in html
 
-    def test_unsubscribe_url_raises_when_no_relay_configured(self):
+    def test_unsubscribe_url_falls_back_to_the_legacy_path(self):
+        """Known dead, but a present-and-broken List-Unsubscribe beats an
+        absent one: Gmail's bulk-sender rules require the header to exist,
+        so omitting it adds a deliverability problem to the compliance one."""
         bare = SiteConfig(initial_config={
             "site_url": "https://test.example.com",
             "company_name": "T",
             "site_name": "T",
         })
-        with pytest.raises(RuntimeError, match="newsletter_unsubscribe_relay_url"):
-            _unsubscribe_url(_FAKE_TOKEN, site_config=bare)
+        url = _unsubscribe_url(_FAKE_TOKEN, site_config=bare)
+        assert url.startswith("https://test.example.com/newsletter/unsubscribe?token=")

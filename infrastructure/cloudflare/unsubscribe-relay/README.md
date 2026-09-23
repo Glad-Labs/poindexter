@@ -78,11 +78,16 @@ poindexter settings set newsletter_unsubscribe_relay_url https://unsubscribe-rel
 poindexter settings set newsletter_unsubscribe_relay_secret '<same value>' --secret --allow-new
 ```
 
-**Until `newsletter_unsubscribe_relay_url` is set the newsletter refuses to
-send** and raises a `newsletter_unsubscribe_unconfigured` finding. That is
-deliberate: mail with a dead opt-out is a compliance problem (CAN-SPAM,
-GDPR, Gmail's bulk-sender rules), so stopping is the correct failure mode,
-and it is loud rather than silent.
+**Until `newsletter_unsubscribe_relay_url` is set, sends continue but carry
+the legacy `{site_url}/newsletter/unsubscribe` link — which 404s** — and each
+send raises a `newsletter_unsubscribe_unconfigured` finding to Discord
+(daily cooldown, since it would otherwise fire on every publish).
+
+That is the operator's deliberate choice of warn-and-send over refusing. The
+trade is explicit: recipients cannot opt out until the relay is deployed,
+which is a compliance exposure (CAN-SPAM, GDPR, Gmail's bulk-sender rules).
+The warning exists so the gap cannot go quiet again the way it did between
+#252 and 2026-09-23.
 
 ### 3. Smoke test
 
