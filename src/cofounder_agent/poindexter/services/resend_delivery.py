@@ -115,19 +115,16 @@ async def _record_event(conn: Any, record: dict[str, Any]) -> tuple[int, bool]:
         return (0, False)
 
     email = _first_recipient(record)
-    # EMAIL is the identity here, not subscriber_id.
+    # EMAIL is the identity for this table — every writer sets it, and the
+    # uuid ``subscriber_id`` column that used to sit beside it was dropped
+    # (stack migration 20260923_225300) because ``newsletter_subscribers.id``
+    # is a serial int and the two could never be joined. Binding the int
+    # anyway was a DataError that failed all 19 messages on this poll's first
+    # production tick.
     #
-    # ``subscriber_events.subscriber_id`` is a **uuid** while
-    # ``newsletter_subscribers.id`` is a **serial int**, so the two cannot be
-    # joined and the column is structurally unpopulatable from the subscriber
-    # table — which is why all 56 rows the webhook era left behind carry a
-    # NULL there and a populated ``email``. Binding the int anyway is a
-    # DataError ("'int' object has no attribute 'bytes'"), which is exactly
-    # how this was caught: the first prod run errored on all 19 messages.
-    #
-    # The lookup survives as an existence check only, because a delivery to
-    # an address that is not on the list is worth counting even though we
-    # cannot foreign-key it.
+    # The subscriber lookup survives as an existence check only: a delivery
+    # to an address that is not on the list is worth counting even though it
+    # cannot be foreign-keyed.
     subscriber_known = False
     if email:
         subscriber_known = bool(
@@ -140,14 +137,13 @@ async def _record_event(conn: Any, record: dict[str, Any]) -> tuple[int, bool]:
     result = await conn.execute(
         """
         INSERT INTO subscriber_events (
-            subscriber_id, email, event_type, event_data, provider_message_id
+            email, event_type, event_data, provider_message_id
         )
-        VALUES ($1, $2, $3, $4, $5)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (provider_message_id, event_type)
         WHERE provider_message_id IS NOT NULL
         DO NOTHING
         """,
-        None,  # see the identity note above — never the int subscriber id
         email,
         f"email.{last_event}",
         json.dumps(

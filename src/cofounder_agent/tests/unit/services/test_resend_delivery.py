@@ -33,24 +33,20 @@ class FakeConn:
 
     async def execute(self, query: str, *args: Any) -> str:
         if "INSERT INTO subscriber_events" in query:
-            subscriber_id, email, event_type, event_data, message_id = args
-            # subscriber_events.subscriber_id is a uuid column. asyncpg
-            # rejects an int with "'int' object has no attribute 'bytes'",
-            # which is how the first prod run failed on all 19 messages
-            # while 11 green unit tests said otherwise. The fake now models
-            # the column type so the gap cannot reopen.
-            if subscriber_id is not None and not isinstance(subscriber_id, str):
-                raise TypeError(
-                    "invalid input for query argument $1: "
-                    f"{subscriber_id!r} ('int' object has no attribute 'bytes')"
-                )
+            # The uuid subscriber_id column was dropped (migration
+            # 20260923_225300) — nothing could ever populate it, and reading
+            # its NULLs as meaningful is what failed this poll's first prod
+            # tick on all 19 messages. email is the identity.
+            assert "subscriber_id" not in query, (
+                "subscriber_events.subscriber_id was dropped; do not write it"
+            )
+            email, event_type, event_data, message_id = args
             key = (message_id, event_type)
             if key in self.db.keys:
                 return "INSERT 0 0"          # ux_subscriber_events_provider_event
             self.db.keys.add(key)
             self.db.events.append(
                 {
-                    "subscriber_id": subscriber_id,
                     "email": email,
                     "event_type": event_type,
                     "event_data": json.loads(event_data),
@@ -126,10 +122,8 @@ async def test_delivered_email_is_recorded():
     assert row["event_type"] == "email.delivered"
     assert row["provider_message_id"] == "e1"
     assert row["event_data"]["via"] == "resend_delivery_poll"
-    # Identity is the EMAIL. subscriber_id stays NULL because the column is
-    # a uuid and newsletter_subscribers.id is a serial int — the same reason
-    # every webhook-era row carries a NULL there.
-    assert row["subscriber_id"] is None
+    # Identity is the EMAIL — the uuid subscriber_id column is gone.
+    assert "subscriber_id" not in row
     assert row["email"] == "buyer@example.com"
     # A known recipient is not counted as unknown.
     assert outcome.unknown_recipients == 0
@@ -197,7 +191,6 @@ async def test_unknown_recipient_is_counted_but_still_recorded():
     )
     assert outcome.rows_written == 1
     assert outcome.unknown_recipients == 1
-    assert db.events[0]["subscriber_id"] is None
     assert db.events[0]["email"] == "buyer@example.com"
 
 
