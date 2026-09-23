@@ -1605,6 +1605,19 @@ DEFAULTS: dict[str, str] = {
     # at 1024, so the vision leg returns None and qa.vision false-pages the model
     # as "unavailable" though it ran fine (vision_scorer_unavailable RCA 2026-07-12).
     'qa_vision_thinking_num_predict': '8000',
+    # Rendered-text penalty for the image-relevance rail. The vision judge
+    # scores SUBJECT relevance and is structurally blind to text garbage — on
+    # task 243f3123 (2026-09-23) it scored a hero 95 whose top ~40% was a
+    # nonsense headline, and cited the gibberish as "its title". Text in these
+    # images is always unintended (the image negative prompt bans it), so any
+    # coverage deducts. Proportional so a stray glyph in a corner doesn't tank
+    # an otherwise good illustration: 0 at or below _ignore_coverage_pct,
+    # ramping to _penalty_max at or above _full_penalty_pct. At the defaults a
+    # 40%-of-frame headline costs 60 points, which drops a 95 to 35 — under
+    # qa_vision_pass_threshold (60).
+    'qa_vision_text_penalty_max': '60',
+    'qa_vision_text_ignore_coverage_pct': '5',
+    'qa_vision_text_full_penalty_pct': '40',
     # why: structured-JSON extraction calls (topic discovery distill +
     # candidate ranking) need a JSON-reliable INSTRUCT model. The writer
     # model (pipeline_writer_model) may be a reasoning model that returns
@@ -4216,6 +4229,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.vision_scorer_unavailable.fallback': 'log_only',
     'findings.vision_scorer_unavailable.cooldown_minutes': '360',
     'findings.vision_scorer_unavailable.min_severity': 'warn',
+    # The vision judge stopped returning the text_coverage array the
+    # qa.vision_image_relevance prompt asks for — the rendered-text deduction
+    # is inert and gibberish-headline heroes score in the 90s again. Long
+    # cooldown: it is a prompt/model regression, not a per-post event.
+    'findings.vision_text_signal_missing.delivery': 'discord',
+    'findings.vision_text_signal_missing.fallback': 'log_only',
+    'findings.vision_text_signal_missing.cooldown_minutes': '1440',
+    'findings.vision_text_signal_missing.min_severity': 'warn',
 
     # ----- GPU eviction-credit staleness tolerance (poindexter#914) -----
     # Per-card VRAM that nvidia_gpu_process_memory_mib may leave unattributed
@@ -5438,6 +5459,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_preview_vision_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'qa_vision_num_predict': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_vision_thinking_num_predict': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_vision_text_penalty_max': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_vision_text_ignore_coverage_pct': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_vision_text_full_penalty_pct': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
@@ -5972,6 +5996,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.vision_scorer_unavailable.delivery': {'value_type': 'string'},
     'findings.vision_scorer_unavailable.fallback': {'value_type': 'string'},
     'findings.vision_scorer_unavailable.min_severity': {'value_type': 'string'},
+    'findings.vision_text_signal_missing.cooldown_minutes': {'value_type': 'integer'},
+    'findings.vision_text_signal_missing.delivery': {'value_type': 'string'},
+    'findings.vision_text_signal_missing.fallback': {'value_type': 'string'},
+    'findings.vision_text_signal_missing.min_severity': {'value_type': 'string'},
     'findings.vram_reclaim_ineffective.cooldown_minutes': {'value_type': 'integer'},
     'findings.vram_reclaim_ineffective.delivery': {'value_type': 'string'},
     'findings.vram_reclaim_ineffective.fallback': {'value_type': 'string'},

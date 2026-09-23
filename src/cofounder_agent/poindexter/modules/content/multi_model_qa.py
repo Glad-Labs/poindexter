@@ -145,6 +145,111 @@ def extract_inline_image_urls(content: str) -> list[str]:
     return urls
 
 
+# ---------------------------------------------------------------------------
+# Rendered-text penalty for the image-relevance rail
+# ---------------------------------------------------------------------------
+# The relevance judge scores SUBJECT match and is structurally blind to
+# rendered-text garbage: on task 243f3123 (2026-09-23) a hero whose top ~40% was
+# a nonsense headline reading "TYMENEITUR" scored 95, and the judge's own
+# feedback cited the gibberish as "its title" — i.e. it read fake lettering as
+# evidence the image was well-composed. Text in these images is ALWAYS a defect:
+# the image negative prompt already carries "text, words, letters, numbers,
+# watermark, signature, logo", so anything legible (or legible-shaped) is
+# something the generator was told not to draw. Garbled pseudo-text is the
+# dominant failure mode of the local diffusion models.
+#
+# So the rail asks the vision model for a second, independent number per image —
+# what share of the frame the text occupies — and subtracts a penalty that
+# scales with it. Proportional on purpose: a stray glyph in a corner must not
+# tank an otherwise good illustration, while a banner across the top must.
+_TEXT_PENALTY_MAX_DEFAULT = 60
+_TEXT_IGNORE_COVERAGE_DEFAULT = 5
+_TEXT_FULL_PENALTY_COVERAGE_DEFAULT = 40
+
+
+def _float_setting(raw: Any, default: float) -> float:
+    """Coerce an app_settings value to float, keeping a deliberate ``0``.
+
+    ``float(raw or default)`` is the idiom everywhere else in this file, but it
+    collapses ``0`` / ``"0"`` onto the default — which matters for the text
+    thresholds, where 0 is a real operator choice. Only ``None`` and a blank
+    string fall back.
+    """
+    if raw is None:
+        return float(default)
+    text = str(raw).strip()
+    if not text:
+        return float(default)
+    # A malformed value RAISES on purpose: the caller's config-read block
+    # catches it, logs loud, and leaves the whole vision check on its safe
+    # defaults. Quietly substituting the default here would hide a broken key.
+    return float(text)
+
+
+def normalize_text_coverage(raw: Any) -> float | None:
+    """Coerce one ``text_coverage`` entry to a 0-100 percentage, or None.
+
+    ``None`` means "no usable estimate" — a missing entry, a null, prose, or a
+    NaN. The caller must treat that as *no signal*, never as a clean frame:
+    inventing a 0 from an unreadable answer is how a rail reports coverage it
+    never had. Models answer ``40`` and ``"40%"`` about equally often, so the
+    percent sign is not a reason to drop the reading; out-of-range values are
+    clamped rather than discarded.
+    """
+    if isinstance(raw, bool) or raw is None:
+        return None
+    if isinstance(raw, str):
+        raw = raw.strip().rstrip("%").strip()
+    try:
+        pct = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if pct != pct:  # NaN
+        return None
+    return max(0.0, min(100.0, pct))
+
+
+def text_coverage_penalty(
+    # Deliberately `Any`: this value comes straight out of an LLM's JSON, so a
+    # string, a null or a missing entry are all realistic. The body decides
+    # what is usable rather than the type checker pretending it is a float.
+    coverage_pct: Any,
+    *,
+    max_penalty: float = _TEXT_PENALTY_MAX_DEFAULT,
+    ignore_pct: float = _TEXT_IGNORE_COVERAGE_DEFAULT,
+    full_pct: float = _TEXT_FULL_PENALTY_COVERAGE_DEFAULT,
+) -> float:
+    """Points to subtract from an image's relevance score for rendered text.
+
+    Linear ramp between two operator-tunable thresholds:
+
+    - ``coverage_pct <= ignore_pct`` → 0. A few pixels of noise in a corner is
+      an artifact nobody sees at hero size; penalising it would just add false
+      negatives to an advisory rail.
+    - ``coverage_pct >= full_pct`` → ``max_penalty``. A headline band or a
+      block of fake copy makes the image unusable regardless of how good the
+      composition underneath it is.
+    - in between → proportional.
+
+    Defensive about the input because it comes from an LLM: a non-numeric or
+    negative estimate yields 0 (no penalty invented from a bad reading), and
+    anything above 100 is clamped. ``full_pct <= ignore_pct`` (a nonsense
+    operator config) degrades to a step function at ``ignore_pct`` rather than
+    dividing by zero.
+    """
+    pct = normalize_text_coverage(coverage_pct)
+    if pct is None:
+        return 0.0
+    ignore = max(0.0, float(ignore_pct))
+    full = float(full_pct)
+    if pct <= ignore:
+        return 0.0
+    if full <= ignore:
+        return max(0.0, float(max_penalty))
+    ramp = min(1.0, (pct - ignore) / (full - ignore))
+    return max(0.0, float(max_penalty)) * ramp
+
+
 def _images_to_score(
     content: str, featured_image_url: str | None, max_images: int
 ) -> list[str]:
@@ -2594,6 +2699,14 @@ class MultiModelQA:
         None when disabled (default), when no images are present, or when
         the vision model is unavailable.
 
+        The model returns TWO numbers per image: a relevance score, and the
+        share of the frame covered by rendered text. Text is always a defect
+        here (the generator is told to draw none), so the coverage estimate is
+        converted to a proportional deduction by ``text_coverage_penalty`` and
+        subtracted from that image's relevance score before the average decides
+        pass/fail. Without it the rail credited garbled headlines as evidence of
+        good composition — see that function's comment.
+
         Settings:
             qa_vision_check_enabled    — default "false" (opt-in; vision
                                          inference is ~10s per image)
@@ -2601,6 +2714,15 @@ class MultiModelQA:
             qa_vision_max_images       — default 3
             qa_vision_pass_threshold   — default 60 (min per-image score
                                          the gate considers "relevant")
+            qa_vision_text_penalty_max — default 60 (points subtracted when
+                                         rendered text dominates the frame)
+            qa_vision_text_ignore_coverage_pct
+                                       — default 5 (text at or below this
+                                         share of the frame is a negligible
+                                         artifact; no penalty)
+            qa_vision_text_full_penalty_pct
+                                       — default 40 (at or above this share
+                                         the full penalty applies)
         """
         import base64
         import json
@@ -2621,6 +2743,11 @@ class MultiModelQA:
         # good images (#563). 1024 leaves room for thinking + the small JSON;
         # tunable per vision model via qa_vision_num_predict.
         num_predict = 1024
+        # Rendered-text penalty knobs — see text_coverage_penalty() for why a
+        # relevance-only verdict credits gibberish headlines as "the title".
+        text_penalty_max = float(_TEXT_PENALTY_MAX_DEFAULT)
+        text_ignore_pct = float(_TEXT_IGNORE_COVERAGE_DEFAULT)
+        text_full_pct = float(_TEXT_FULL_PENALTY_COVERAGE_DEFAULT)
         if self.settings:
             try:
                 enabled = str(
@@ -2639,12 +2766,28 @@ class MultiModelQA:
                 num_predict = int(
                     await self.settings.get("qa_vision_num_predict") or 1024
                 )
+                # NB: `or default` would silently turn an operator's
+                # deliberate 0 into the default, and 0 is meaningful on all
+                # three of these ("penalise any text at all", "never penalise").
+                # Only an unset/blank key falls back.
+                text_penalty_max = _float_setting(
+                    await self.settings.get("qa_vision_text_penalty_max"),
+                    _TEXT_PENALTY_MAX_DEFAULT,
+                )
+                text_ignore_pct = _float_setting(
+                    await self.settings.get("qa_vision_text_ignore_coverage_pct"),
+                    _TEXT_IGNORE_COVERAGE_DEFAULT,
+                )
+                text_full_pct = _float_setting(
+                    await self.settings.get("qa_vision_text_full_penalty_pct"),
+                    _TEXT_FULL_PENALTY_COVERAGE_DEFAULT,
+                )
             except Exception as exc:
                 # poindexter#455 — used to silently swallow this. If
                 # qa_vision_check_enabled was set to true in DB but the
                 # read raised, vision QA was disabled with no signal.
                 # Now log loud so the operator knows their config-read
-                # is broken; values stay at the safe-default trio.
+                # is broken; values stay at their safe defaults.
                 logger.warning(
                     "[multi_model_qa] qa_vision config read failed: %s: %s — "
                     "vision check stays disabled with defaults "
@@ -2775,6 +2918,7 @@ class MultiModelQA:
 
         scores_list = parsed.get("scores") or []
         reasons_list = parsed.get("reasons") or []
+        coverage_list = parsed.get("text_coverage")
         overall = parsed.get("overall")
         if not isinstance(scores_list, list) or not scores_list:
             logger.warning(
@@ -2782,36 +2926,126 @@ class MultiModelQA:
                 "array (keys=%s) — no verdict", sorted(parsed.keys()),
             )
             return None
-        try:
-            score_values = [float(s) for s in scores_list if isinstance(s, (int, float))]
-        except Exception as exc:
-            logger.warning("[VISION_QA] score coercion failed; skipping vision verdict: %s", exc)
-            return None
-        if not score_values:
+        # Keep the ORIGINAL index alongside each score: text_coverage[i] and
+        # reasons[i] are positional, so dropping a non-numeric entry without
+        # remembering where it was would silently shift every later image's
+        # penalty onto the wrong picture.
+        scored: list[tuple[int, float]] = []
+        for i, s in enumerate(scores_list):
+            if isinstance(s, bool) or not isinstance(s, (int, float)):
+                continue
+            scored.append((i, float(s)))
+        if not scored:
             logger.warning(
                 "[VISION_QA] vision 'scores' array held no numeric values "
                 "(%r) — no verdict", scores_list,
             )
             return None
-        avg_score = sum(score_values) / len(score_values)
-        if overall is None or not isinstance(overall, (int, float)):
+
+        # Rendered-text deduction. The judge scores SUBJECT relevance and is
+        # blind to text garbage — it has credited a nonsense headline as "its
+        # title" and scored the image 95 (task 243f3123, 2026-09-23). Text in a
+        # generated illustration is unintended by construction (the negative
+        # prompt bans it), so any coverage deducts, proportionally to how much
+        # of the frame it eats.
+        if (
+            not isinstance(coverage_list, list)
+            and len(scored) == 1
+            and normalize_text_coverage(coverage_list) is not None
+        ):
+            # A single-image post often comes back with a bare number instead
+            # of a one-element array. Unambiguous, so accept it rather than
+            # discarding the signal and paging about a missing array. Only a
+            # READABLE scalar counts — an unusable one leaves the signal absent
+            # so the finding still fires.
+            coverage_list = [coverage_list]
+        have_coverage_signal = isinstance(coverage_list, list) and bool(coverage_list)
+        penalties: dict[int, float] = {}
+        coverages: dict[int, float | None] = {}
+        for i, _raw in scored:
+            cov = (
+                coverage_list[i]
+                if have_coverage_signal and i < len(coverage_list)
+                else None
+            )
+            coverages[i] = normalize_text_coverage(cov)
+            penalties[i] = text_coverage_penalty(
+                cov,
+                max_penalty=text_penalty_max,
+                ignore_pct=text_ignore_pct,
+                full_pct=text_full_pct,
+            )
+        if not have_coverage_signal:
+            # The prompt asks for this array. Its absence means the rail is
+            # running relevance-only again — the exact blind spot this deduction
+            # exists to close — and nothing downstream would ever say so. Page
+            # it rather than let the signal go dark behind a green 95.
+            logger.warning(
+                "[VISION_QA] vision response carried no 'text_coverage' array "
+                "(keys=%s, model=%s) — scoring relevance only; rendered-text "
+                "garbage will NOT be penalised on this run",
+                sorted(parsed.keys()), model,
+            )
+            try:
+                from poindexter.utils.findings import emit_finding
+
+                emit_finding(
+                    source="multi_model_qa",
+                    kind="vision_text_signal_missing",
+                    title=(
+                        f"qa.vision: {model} returned no text_coverage — "
+                        "rendered-text penalty is inert"
+                    ),
+                    body=(
+                        "The qa.vision_image_relevance response parsed but had no "
+                        f"'text_coverage' array (keys={sorted(parsed.keys())}). The "
+                        "image-relevance rail is scoring subject relevance only, so "
+                        "an image whose frame is dominated by gibberish lettering "
+                        "can score in the 90s again. Check that the "
+                        "qa.vision_image_relevance prompt still asks for "
+                        "text_coverage (SKILL.md pack, or a Langfuse override if "
+                        f"langfuse_prompt_overrides_enabled is on) and that {model} "
+                        "can follow it."
+                    ),
+                    severity="warn",
+                    dedup_key=f"vision_text_signal_missing:{model}",
+                    extra={"surface": "qa_vision", "model": model},
+                )
+            except Exception as exc:  # noqa: BLE001 — finding emission must not gate QA
+                logger.warning("[VISION_QA] finding emission failed: %s", exc)
+
+        penalized = [max(0.0, raw - penalties[i]) for i, raw in scored]
+        avg_score = sum(penalized) / len(penalized)
+        if overall is None or isinstance(overall, bool) or not isinstance(overall, (int, float)):
             overall = avg_score
+        elif any(p > 0 for p in penalties.values()):
+            # The model's own `overall` was formed from the same text-blind
+            # reading as the per-image scores, so it must not be allowed to
+            # carry a penalised image back over the line. Text can only lower
+            # the number; a model that was already harsher keeps its verdict.
+            overall = min(float(overall), avg_score)
+        overall = float(overall)
 
         # Build feedback with per-image detail (urls get truncated)
         parts: list[str] = []
         for i, (url, _b64) in enumerate(encoded_images):
             s = scores_list[i] if i < len(scores_list) else "?"
             r = reasons_list[i] if i < len(reasons_list) else ""
-            parts.append(f"[{s}] {url[-40:]}: {str(r)[:80]}")
-        feedback = f"Vision QA avg={avg_score:.0f}, overall={overall}. " + "; ".join(parts[:3])
+            pen = penalties.get(i, 0.0)
+            pen_note = ""
+            if pen > 0:
+                pen_note = f" (-{pen:.0f} text {coverages.get(i) or 0:.0f}% of frame)"
+            parts.append(f"[{s}]{pen_note} {url[-40:]}: {str(r)[:80]}")
+        feedback = f"Vision QA avg={avg_score:.0f}, overall={overall:.0f}. " + "; ".join(parts[:3])
 
-        # Approval: the average per-image score must clear the threshold.
+        # Approval: the text-penalised average per-image score must clear the
+        # threshold.
         passed = avg_score >= pass_threshold
 
         return ReviewerResult(
             reviewer="image_relevance",
             approved=passed,
-            score=float(overall),
+            score=overall,
             feedback=feedback[:500],
             provider="vision_gate",
         )

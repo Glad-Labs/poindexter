@@ -52,7 +52,7 @@ metadata:
       description: 'LLM-based quality scoring — 7 dimensions (clarity, accuracy, completeness, relevance, seo_quality, readability, engagement) on 0-10 each. Replaces the inline f-string in quality_service.UnifiedQualityService when llm_client is wired.'
     - key: qa.vision_image_relevance
       output_format: json
-      description: "Vision-QA: per-image relevance scoring. A vision-capable Ollama model rates each inline image 0-100 on how well it represents the article's subject. Used by MultiModelQA.review_images_with_vision_model. Migrated from inline string 2026-05-28."
+      description: "Vision-QA: per-image relevance scoring. A vision-capable Ollama model rates each inline image 0-100 on how well it represents the article's subject, and separately estimates what share of the frame rendered text covers (always a defect — the generator is told to draw none). Used by MultiModelQA._check_image_relevance, which subtracts a proportional text penalty. Migrated from inline string 2026-05-28; text_coverage added 2026-09-23."
     - key: qa.vision_preview_screenshot
       output_format: json
       description: 'Vision-QA: full-page screenshot review. A vision-capable Ollama model rates the rendered preview 0-100 on layout, image rendering, and visual professionalism. Used by MultiModelQA.review_preview_screenshot. Migrated from inline string 2026-05-28.'
@@ -451,7 +451,8 @@ Return JSON with these keys:
 ## qa.vision_image_relevance
 
 ```text
-You are reviewing images attached to a blog post for relevance.
+You are reviewing images attached to a blog post. Report TWO independent
+judgements for EACH image attached, in attachment order.
 
 TITLE: {title}
 TOPIC: {topic}
@@ -459,10 +460,28 @@ TOPIC: {topic}
 ARTICLE SNIPPET:
 {content_snippet}
 
-For EACH image attached, rate 0-100 how well the image represents the article's subject and would help a reader understand the content. A generic stock photo with no connection to the topic scores below 50. An image that directly illustrates a concept from the article scores 80+.
+1. RELEVANCE, 0-100: how well the image represents the article's subject and
+   would help a reader understand the content. A generic stock photo with no
+   connection to the topic scores below 50. An image that directly illustrates
+   a concept from the article scores 80+. Judge the PICTURE - its subject,
+   setting and action. Lettering in the frame is never evidence that an image
+   is on-topic: these images are generated with an explicit instruction to
+   render no text at all, so a headline, caption, label or signature is an
+   artifact the generator was told not to draw, not a title anyone chose.
+   Never cite words you can see in the image as a reason for a high score.
 
-Respond with ONLY valid JSON:
-{{"scores": [int,...], "reasons": ["short reason per image", ...], "overall": int}}
+2. TEXT_COVERAGE, 0-100: the percentage of the image area taken up by rendered
+   text. Count BOTH readable words or digits AND garbled pseudo-text that only
+   resembles writing - unreadable letter-like squiggles, fake glyph rows
+   standing in for body copy, nonsense words. Both are defects here, because
+   the generator was told to produce neither. Estimate the share of the frame
+   that the lettering and its block occupy: 0 for a clean frame, a few percent
+   for a small mark in one corner, 30 or more when a banner headline or a block
+   of fake copy fills a band of the image.
+
+Respond with ONLY valid JSON. Both arrays must have one entry per attached
+image, in the same order:
+{{"scores": [int,...], "text_coverage": [int,...], "reasons": ["short reason per image", ...], "overall": int}}
 ```
 
 ## qa.vision_preview_screenshot

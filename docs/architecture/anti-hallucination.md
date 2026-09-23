@@ -670,6 +670,68 @@ a preview-only review didn't satisfy `vision_gate`; it now aliases there too
 (both vision legs share the `vision_gate` row). `test_qa_vision_atom.py`,
 `test_vision_image_normalization.py`, and `test_qa_gates_db_writer.py` pin all four.
 
+##### The rail scored subject relevance and credited text garbage as a title
+
+`image_relevance` asks one question — does this picture match the article? — and
+that question is **blind to rendered-text garbage**, which is the dominant
+failure mode of the local diffusion models. Task `243f3123-711387d7`
+(2026-09-23, hero for "Beyond Arrival: Why Shipping Isn't the Same as Impact")
+is the case: the composition was genuinely on-concept — a figure on a broken
+bridge, a trophy across the gap — but roughly the **top 40% of the frame** was a
+giant nonsense headline reading `TÝMENEITUR`, with four more blocks of fake-text
+noise elsewhere. The rail scored it **95**, and its own feedback cited the
+gibberish as _"its title 'TÝMENEITUR'"_. The judge did not merely miss the
+defect; it read unintended lettering as **evidence the image was well composed**.
+
+The image is unusable, and it is unusable by construction rather than by taste:
+the image negative prompt already carries `text, words, letters, numbers,
+watermark, signature, logo`, so **any** legible — or legible-shaped — mark in a
+generated illustration is something the generator was told not to draw. There is
+no such thing as text the artist chose here.
+
+So the rail now asks for two independent numbers per image. The
+`qa.vision_image_relevance` prompt returns `scores` as before, plus a
+`text_coverage` array: the share of the frame taken up by rendered text,
+counting **both** readable words/digits and garbled pseudo-text (fake glyph
+rows, unreadable squiggles standing in for copy — both are defects, because
+neither was asked for). The prompt also tells the judge explicitly never to cite
+words it can see in the image as a reason for a high relevance score.
+
+`text_coverage_penalty()` converts that estimate into points subtracted from
+**that image's own** relevance score, on a linear ramp between two DB-tunable
+thresholds — the penalty is proportional on purpose, so a stray glyph in a
+corner cannot tank an otherwise good illustration:
+
+| Setting                              | Default | Meaning                                                                               |
+| ------------------------------------ | ------- | ------------------------------------------------------------------------------------- |
+| `qa_vision_text_ignore_coverage_pct` | `5`     | At or below this share, no deduction — a small artifact nobody sees at hero size.     |
+| `qa_vision_text_full_penalty_pct`    | `40`    | At or above this share, the full deduction — a headline band or a block of fake copy. |
+| `qa_vision_text_penalty_max`         | `60`    | The full deduction, in points.                                                        |
+
+At the defaults the `TÝMENEITUR` hero takes the full 60 off its 95 and scores
+**35**, under `qa_vision_pass_threshold` (60), so the rail fails it. A 3%-of-frame
+smudge on a 92 stays a 92. Three details that are load-bearing:
+
+- **Per-image, not smeared.** The penalty is applied to each image's own score
+  before the average, and the original array index is carried alongside each
+  score — dropping a non-numeric entry without remembering where it sat would
+  shift every later image's deduction onto the wrong picture.
+- **The model's `overall` cannot rescue a penalised image.** `overall` is formed
+  from the same text-blind reading, so it is clamped to the penalised average.
+  Text can only lower the verdict; a judge that was already harsher keeps its own.
+- **A missing signal is not a clean frame.** If the response parses but carries
+  no `text_coverage` array, nothing is deducted (no penalty is invented from an
+  absent reading) — and a `vision_text_signal_missing` finding fires, because the
+  rail silently reverting to relevance-only behind a green 95 is exactly the
+  blind spot this closes. Delivery: Discord, 1440-minute cooldown (it is a
+  prompt/model regression, not a per-post event).
+
+The fail-open contract is unchanged: a judge that cannot be parsed at all still
+returns `None` — no review, no fabricated verdict — which `qa.vision` turns into
+a `vision_scorer_unavailable` finding. `vision_gate` stays advisory; this is a
+scoring-accuracy fix, not a gating change. Pinned by
+`test_vision_text_penalty.py`.
+
 #### Four more dropped checks: topic-delivery, citations, consistency, web-factcheck
 
 Four additional `MultiModelQA.review()` checks went cold the same way the
