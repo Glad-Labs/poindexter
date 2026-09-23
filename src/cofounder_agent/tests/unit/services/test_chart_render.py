@@ -20,6 +20,7 @@ from poindexter.services.chart_render import (
     format_value,
     nice_ticks,
     render_chart,
+    text_width,
 )
 from tests.unit._nonempty import nonempty
 
@@ -181,6 +182,149 @@ class TestBuildChartHtml:
         assert "a-very-long-model-name-indeed:latest" in long
         # Wider gutter pushes the plot's left edge right.
         assert len(long) != len(short)
+
+
+# --- Label clipping ----------------------------------------------------------
+
+# Anchored, end-aligned category labels: x is the label's RIGHT edge, so the
+# left edge is x - width and that is what has to stay on canvas.
+_END_LABEL = re.compile(
+    r'<text x="([0-9.]+)"[^>]*font-size="(\d+)"[^>]*text-anchor="end"[^>]*>'
+    r"([^<]*)</text>"
+)
+_MID_LABEL = re.compile(
+    r'<text x="([0-9.]+)"[^>]*font-size="(\d+)"[^>]*text-anchor="middle"[^>]*>'
+    r"([^<]*)</text>"
+)
+
+
+def _left_edges(doc: str, pattern: re.Pattern) -> list[tuple[str, float]]:
+    """(text, leftmost x) for every anchored label in ``doc``."""
+    out = []
+    for x, size, text in nonempty(
+        pattern.findall(doc), "anchored <text> labels in the rendered SVG"
+    ):
+        w = text_width(text, float(size))
+        out.append((text, float(x) - w if pattern is _END_LABEL else float(x) - w / 2))
+    return out
+
+
+class TestTextWidth:
+    """The estimate must never under-read, or the gutter under-sizes."""
+
+    def test_is_blind_to_neither_length_nor_which_characters(self):
+        # The bug: sizing from len() alone. 'M' and 'i' are the same count.
+        assert text_width("M" * 10, 14) > text_width("i" * 10, 14)
+
+    def test_meets_the_monospace_floor_the_worker_image_falls_back_to(self):
+        """Measured in `poindexter-worker` 2026-09-23: 8.40px/char at 14px.
+
+        The image ships JetBrains Mono and Liberation only — none of the
+        families `_FONT_STACK` names — so `sans-serif` resolves to a
+        monospace face at a flat 0.60em. An estimate below that floor is what
+        clipped `qwen3-vl:30b-a3b-instruct` in production.
+        """
+        for label in ("qwen3-vl:30b-a3b-instruct", "gemma-4-31B-it-qat:latest"):
+            assert text_width(label, 14) >= 8.40 * len(label)
+
+    def test_scales_linearly_with_font_size(self):
+        assert text_width("abc", 28) == pytest.approx(2 * text_width("abc", 14))
+
+
+class TestCategoryLabelsAreNeverClipped:
+    """Regression: two published charts lost the first glyph of a model name.
+
+    R2 `images/charts/bcc985ab.webp` + `34b0a7f7.webp`, 2026-09-23 — the gutter
+    was sized from `len(label) * 7.9` and did not subtract the 12px the label
+    is drawn back from the baseline, so a 210px label got a 201px budget and
+    `qwen3-vl:30b-a3b-instruct` rendered as `wen3-vl:30b-a3b-instruct`.
+    """
+
+    # The real production categories, including the two that clipped.
+    CATALOG = [
+        "qwen3-vl:30b-a3b-instruct",
+        "gemma-4-31B-it-qat:latest",
+        "glm-4.7-5090:latest",
+        "qwen3-vl:30b",
+        "phi4:14b",
+    ]
+
+    def test_the_labels_that_clipped_in_production_now_fit(self):
+        spec = _bar(
+            categories=self.CATALOG,
+            series=[Series("Raw decode", [float(i) for i in range(5)])],
+        )
+        for text, left in nonempty(
+            _left_edges(build_chart_html(spec), _END_LABEL),
+            "category labels in the rendered bar chart",
+        ):
+            assert left >= 0, f"{text!r} starts at x={left:.1f}"
+
+    @pytest.mark.parametrize(
+        "label",
+        [
+            # Longer than anything in the catalog, in each direction the
+            # estimate could be wrong about.
+            "qwen3-vl:30b-a3b-instruct-2511-extended-context:latest",
+            "M" * 60,                      # widest glyphs in every font
+            "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW@@@@@@@@@@",
+            "a" * 400,                     # past even the maximum gutter
+            "模型名称-非常长的中文标签-测试用例",   # full-width, non-ASCII
+        ],
+    )
+    def test_a_label_longer_than_the_catalog_still_starts_on_canvas(self, label):
+        spec = _bar(
+            categories=[label, "b"],
+            series=[Series("Raw decode", [1.0, 2.0])],
+        )
+        doc = build_chart_html(spec)
+        for text, left in nonempty(
+            _left_edges(doc, _END_LABEL),
+            "category labels in the rendered bar chart",
+        ):
+            assert left >= 0, f"{text!r} starts at x={left:.1f}"
+
+    def test_a_label_too_long_for_the_gutter_is_ellipsized_not_clipped(self):
+        """The gutter is capped so labels cannot eat the plot area.
+
+        Past that cap the only honest options are an ellipsis or a glyph
+        sliced off at the canvas edge; a sliced glyph reads as a DIFFERENT
+        model name, so it truncates. The full name survives in the alt text.
+        """
+        label = "a" * 400
+        spec = _bar(categories=[label, "b"], series=[Series("s", [1.0, 2.0])])
+        doc = build_chart_html(spec)
+        assert "\u2026" in doc
+        assert label not in doc
+        assert label in chart_alt_text(spec)   # nothing is actually lost
+
+    def test_the_gutter_never_swallows_the_plot_area(self):
+        spec = _bar(categories=["a" * 400, "b"], series=[Series("s", [1.0, 2.0])])
+        doc = build_chart_html(spec)
+        # Category labels (font-size 14) are drawn back from the bars'
+        # baseline, so their x is the gutter's right edge; it must leave room.
+        baseline = max(
+            float(x) for x, size, _ in _END_LABEL.findall(doc) if size == "14"
+        )
+        assert baseline < spec.width * 0.5
+
+    def test_line_chart_edge_labels_stay_on_canvas(self):
+        """Same defect one function over: x labels are centered on the point,
+
+        so the first and last hang half their run past the plot edge.
+        """
+        spec = ChartSpec(
+            form="line",
+            title="Trend",
+            categories=["qwen3-vl:30b-a3b-instruct-extended:latest", "b", "c"],
+            series=[Series("all", [1.0, 2.0, 3.0])],
+        )
+        doc = build_chart_html(spec)
+        for text, left in nonempty(
+            _left_edges(doc, _MID_LABEL),
+            "x-axis labels in the rendered line chart",
+        ):
+            assert left >= 0, f"{text!r} starts at x={left:.1f}"
 
 
 class TestChartAltText:

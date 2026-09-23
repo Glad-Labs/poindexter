@@ -65,9 +65,14 @@ _INK_SECONDARY = "#52514e"
 _INK_MUTED = "#84837d"
 _GRID = "#e6e5e1"
 
-# The worker container is slim; DejaVu is what Debian-family images actually
-# ship, so it is named explicitly rather than trusting `sans-serif` to resolve
-# to something with digits of consistent width.
+# NOTE: in the worker image NONE of these families is installed — measured
+# 2026-09-23 with `fc-list` inside `poindexter-worker`, which ships JetBrains
+# Mono and Liberation only. `sans-serif` therefore falls back to JetBrains
+# Mono, so production charts render MONOSPACE at a flat 0.60em advance. That is
+# why `text_width` below must be calibrated against a monospace floor and not
+# against the proportional font this stack asks for. (Adding "Liberation Sans"
+# here would give charts a proportional face, but it changes the typography of
+# every published chart, so it is a deliberate decision, not a drive-by.)
 _FONT_STACK = (
     'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", '
     '"DejaVu Sans", Arial, sans-serif'
@@ -80,6 +85,84 @@ _SURFACE_GAP = 2             # separates touching marks, in the surface color
 _LINE_WIDTH = 2
 _MARKER_RADIUS = 4           # >= 8px diameter
 _MARKER_RING = 2
+
+# --- Text metrics ------------------------------------------------------------
+# Labels are placed by arithmetic here but laid out by chromium there, so the
+# gutter has to be sized from an estimate of the RENDERED width. A flat
+# px-per-character average is not good enough: it sized the gutter from the
+# character COUNT, which is blind to which characters, and it under-read the
+# monospace fallback the worker image actually resolves to. Measured
+# 2026-09-23, `qwen3-vl:30b-a3b-instruct` rendered 210.0px against a 201px
+# budget and lost its leading `q` in two published charts.
+#
+# So widths come from per-character advances taken as the MAX over every font
+# this stack can land on — JetBrains Mono (the worker's actual fallback, a flat
+# 0.60em), Liberation Sans/Arial and DejaVu Sans — all measured in chromium via
+# `getBoundingClientRect` at 100px. Over-estimating only moves the plot right;
+# under-estimating clips a label, so the asymmetry is deliberate.
+_CHAR_EM_BASE = 0.60         # JetBrains Mono advance — the floor for ASCII
+_CHAR_EM_UNKNOWN = 1.0       # non-ASCII (CJK, em-dash): assume full-width
+_CHAR_EM_WIDE = {
+    "m": 0.84, "w": 0.73, "@": 1.02, "%": 0.89, "&": 0.78,
+    "A": 0.73, "B": 0.67, "C": 0.73, "D": 0.73, "E": 0.67, "F": 0.62,
+    "G": 0.78, "H": 0.73, "K": 0.73, "L": 0.62, "M": 0.89, "N": 0.73,
+    "O": 0.78, "P": 0.67, "Q": 0.78, "R": 0.73, "S": 0.67, "T": 0.62,
+    "U": 0.73, "V": 0.73, "W": 0.95, "X": 0.73, "Y": 0.73, "Z": 0.62,
+}
+
+_ELLIPSIS = "\u2026"
+
+
+def _char_em(ch: str) -> float:
+    if ch in _CHAR_EM_WIDE:
+        return _CHAR_EM_WIDE[ch]
+    return _CHAR_EM_BASE if ch.isascii() else _CHAR_EM_UNKNOWN
+
+
+def text_width(text: str, font_size: float) -> float:
+    """Conservative rendered width of ``text`` in px. Pure, browser-free.
+
+    Never under-reports for any font in ``_FONT_STACK``, which is the property
+    the gutter depends on: a label is clipped only if this returns too small.
+    """
+    return font_size * sum(_char_em(c) for c in text)
+
+
+def _truncate_to_width(text: str, max_px: float, font_size: float) -> str:
+    """``text`` shortened with an ellipsis until it fits ``max_px``.
+
+    The backstop for a label too long for even the maximum gutter. Truncating
+    loses characters, which is why ``chart_alt_text`` always serializes the
+    FULL category name — the reader can still get it, and a clipped glyph at
+    the canvas edge (which reads as a different string) cannot.
+    """
+    if max_px <= 0:
+        return ""
+    if text_width(text, font_size) <= max_px:
+        return text
+    budget = max_px - text_width(_ELLIPSIS, font_size)
+    kept: list[str] = []
+    used = 0.0
+    for ch in text:
+        w = _char_em(ch) * font_size
+        if used + w > budget:
+            break
+        kept.append(ch)
+        used += w
+    if not kept:
+        # Not even one glyph fits. An ellipsis still says "a label belongs
+        # here, shortened"; an empty string says the category has no name.
+        return _ELLIPSIS if text_width(_ELLIPSIS, font_size) <= max_px else ""
+    return "".join(kept) + _ELLIPSIS
+
+
+# --- Bar-chart label gutter --------------------------------------------------
+_LABEL_FONT_SIZE = 14        # category labels
+_LABEL_GAP = 12              # label's right edge to the value baseline
+_LABEL_EDGE_PAD = 4          # never sit a glyph flush against the canvas edge
+_GUTTER_MIN = 90
+_GUTTER_MAX_PX = 360         # absolute ceiling, wide charts included
+_GUTTER_MAX_FRACTION = 0.42  # ...and never more than this share of the canvas
 
 
 @dataclass
@@ -228,8 +311,10 @@ def _legend_svg(spec: ChartSpec, x: float, y: float) -> str:
             f'<text x="{cursor + 18:.1f}" y="{y:.1f}" font-size="14" '
             f'fill="{_INK_SECONDARY}">{_esc(s.label)}</text>'
         )
-        # Advance past the swatch, the gap, and an estimate of the text run.
-        cursor += 18 + len(s.label) * 7.6 + 26
+        # Advance past the swatch, the gap, and the text run. Same character-
+        # count estimate the gutter used to make, and the same failure mode:
+        # under-reading the run overlaps the next swatch onto this label.
+        cursor += 18 + text_width(s.label, 14) + 26
     return "".join(out)
 
 
@@ -238,9 +323,26 @@ def _bar_svg(spec: ChartSpec) -> tuple[str, int]:
     n_series = len(spec.series)
     n_cats = len(spec.categories)
 
-    # Left gutter scales with the longest category label so nothing is clipped.
-    longest = max((len(c) for c in spec.categories), default=0)
-    gutter = min(320, max(90, int(longest * 7.9) + 16))
+    # Left gutter is sized from the WIDEST RENDERED label, not the longest one
+    # by character count, and it includes the gap the label is drawn back from
+    # (`_LABEL_GAP`) — omitting that gap is what pushed a 210px label into a
+    # 201px budget and cut its first glyph.
+    widest = max(
+        (text_width(c, _LABEL_FONT_SIZE) for c in spec.categories), default=0.0
+    )
+    gutter_cap = max(
+        _GUTTER_MIN,
+        min(_GUTTER_MAX_PX, int(spec.width * _GUTTER_MAX_FRACTION)),
+    )
+    gutter = int(
+        min(
+            gutter_cap,
+            max(_GUTTER_MIN, math.ceil(widest) + _LABEL_GAP + _LABEL_EDGE_PAD),
+        )
+    )
+    # Whatever the cap left over is the hard budget every label must fit in, so
+    # a pathologically long one is ellipsized rather than drawn off-canvas.
+    label_budget = gutter - _LABEL_GAP - _LABEL_EDGE_PAD
 
     pad_l, pad_r, pad_t = gutter, 84, 16
     legend_h = 30 if n_series >= 2 else 0
@@ -289,9 +391,12 @@ def _bar_svg(spec: ChartSpec) -> tuple[str, int]:
         y0 = band_top + (band - group_h) / 2
 
         out.append(
-            f'<text x="{pad_l - 12:.1f}" y="{band_top + band / 2 + 5:.1f}" '
-            f'font-size="14" fill="{_INK_PRIMARY}" text-anchor="end">'
-            f'{_esc(cat)}</text>'
+            f'<text x="{pad_l - _LABEL_GAP:.1f}" '
+            f'y="{band_top + band / 2 + 5:.1f}" '
+            f'font-size="{_LABEL_FONT_SIZE}" fill="{_INK_PRIMARY}" '
+            f'text-anchor="end">'
+            f'{_esc(_truncate_to_width(cat, label_budget, _LABEL_FONT_SIZE))}'
+            f'</text>'
         )
 
         for s_idx, s in enumerate(spec.series):
@@ -375,10 +480,14 @@ def _line_svg(spec: ChartSpec) -> tuple[str, int]:
     for idx, cat in enumerate(spec.categories):
         if idx % stride and idx != n_cats - 1:
             continue
+        # Centered on the data point, so half the run hangs each side: the
+        # first and last labels are the ones that can cross the canvas edge.
+        cx = px(idx)
+        room = 2 * min(cx, spec.width - cx) - _LABEL_EDGE_PAD
         out.append(
-            f'<text x="{px(idx):.1f}" y="{plot_top + plot_h + 24:.1f}" '
+            f'<text x="{cx:.1f}" y="{plot_top + plot_h + 24:.1f}" '
             f'font-size="13" fill="{_INK_MUTED}" text-anchor="middle">'
-            f'{_esc(cat)}</text>'
+            f'{_esc(_truncate_to_width(cat, room, 13))}</text>'
         )
 
     for s_idx, s in enumerate(spec.series):
@@ -516,4 +625,5 @@ __all__ = [
     "format_value",
     "nice_ticks",
     "render_chart",
+    "text_width",
 ]

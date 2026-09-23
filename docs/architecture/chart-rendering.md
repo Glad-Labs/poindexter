@@ -61,9 +61,53 @@ These are correctness properties, not taste:
   final tick ≥ `max_value`. This was a real bug: a 235 tok/s bar drew past a
   200 axis and lost its value label. Found by rendering the chart and looking
   at it — which is a required step, not an optional one.
+- **A category label is never clipped.** The left gutter is sized from the
+  widest _rendered_ label, and past a cap the label is ellipsized rather than
+  sliced at the canvas edge — see below.
 - **Provenance is a field, not a caption someone might forget.** `source`
   renders as a footer line, so a published chart always says what produced it
   and over what sample.
+
+## Text width: the estimate has to be conservative
+
+Labels are _placed_ by arithmetic in Python and _laid out_ by chromium, so the
+gutter is sized from an estimate of the rendered width. The asymmetry matters:
+over-estimating only shifts the plot right, while under-estimating slices a
+glyph off the canvas edge — and a sliced glyph reads as a **different string**
+(`qwen3-vl:30b-a3b-instruct` rendered as `wen3-vl:30b-a3b-instruct` in two
+published charts on 2026-09-23, R2 `images/charts/bcc985ab.webp` and
+`34b0a7f7.webp`).
+
+That bug had two causes, and the second is the interesting one:
+
+1. The gutter was `len(label) * 7.9 + 16` — sized from the character **count**,
+   which is blind to _which_ characters, and it never subtracted the 12px the
+   label is drawn back from the baseline. A 210px label got a 201px budget.
+2. **The font is not the font this file asks for.** `fc-list` inside
+   `poindexter-worker` (2026-09-23) shows the image ships **JetBrains Mono** and
+   Liberation only — none of `system-ui` / `Segoe UI` / Roboto / Helvetica Neue
+   / **DejaVu Sans** / Arial that `_FONT_STACK` names, despite a code comment
+   claiming DejaVu is "what Debian-family images actually ship". So
+   `sans-serif` falls back to JetBrains Mono and every published chart renders
+   **monospace** at a flat 0.60em — 8.40px/char at 14px, against an estimate of
+   7.9.
+
+`text_width` therefore takes per-character advances as the **max over every
+font the stack can land on** (JetBrains Mono's 0.60em floor, Liberation/Arial,
+DejaVu), all measured in chromium via `getBoundingClientRect` at 100px. It is
+pure, so the clipping property is testable without a browser:
+`TestCategoryLabelsAreNeverClipped` asserts `x - text_width(label) >= 0` for
+every anchored label, including labels longer than anything in the catalog.
+
+The gutter is capped (`_GUTTER_MAX_PX`, and never more than
+`_GUTTER_MAX_FRACTION` of the canvas) so labels cannot eat the plot area.
+Past the cap a label is **ellipsized**, not clipped — the full name still
+reaches the reader through `chart_alt_text`, which a sliced glyph cannot do.
+
+Charts currently publish in a monospace face as a consequence of (2). Adding
+`"Liberation Sans"` to `_FONT_STACK` would give them a proportional face, but
+that changes the typography of every published chart, so it is a deliberate
+decision rather than a drive-by — it is **not** done.
 
 ## Accessibility
 
