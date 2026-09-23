@@ -42,7 +42,7 @@
     "from": "now-90d",
     "to": "now"
   },
-  "description": "Money in. Reads the revenue_events table (written by the Lemon Squeezy webhook route, routes/external_webhooks.py, plus any affiliate/webhook source). Refunds are stored as negative amount_usd, so SUM(amount_usd) is net. Was a documented gap: revenue_events had zero dashboards until 2026-06-02.",
+  "description": "Money in. Reads the revenue_events table, written by the pro_delivery invoice poll (LS GET /v1/subscription-invoices, every 5 min) — NOT by routes/external_webhooks.py, which is unreachable from the internet and has never fired in production. One row per charge: billing_reason initial vs renewal drives recurring. Refunds append a negative counter-row, so SUM(amount_usd) is net.",
   "panels": [
     {
       "type": "row",
