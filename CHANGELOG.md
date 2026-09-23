@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [0.146.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.145.0...v0.146.0) (2026-09-23)
+
+
+### Features
+
+* **media:** gate the Short's hook, repair it with one focused call, tighten the title to the feed ([#3953](https://github.com/Glad-Labs/glad-labs-stack/issues/3953)) ([f9370e8](https://github.com/Glad-Labs/glad-labs-stack/commit/f9370e81fc79efb741ad848fe4e9d2e218cdd91b))
+* **media:** the Short's first sentence is a claim, not a run-up ([#3951](https://github.com/Glad-Labs/glad-labs-stack/issues/3951)) ([201fe38](https://github.com/Glad-Labs/glad-labs-stack/commit/201fe384303c20d5a5ca2a33d9d44437be2d2ea5))
+* **revenue:** capture every Lemon Squeezy charge, renewal and refund from the invoice API ([#3954](https://github.com/Glad-Labs/glad-labs-stack/issues/3954)) ([dafb1b5](https://github.com/Glad-Labs/glad-labs-stack/commit/dafb1b51b925bb8c3dd3e57eb1239c9929e235c0))
+
+
+### Bug Fixes
+
+* **captions:** measure caption fidelity in words, not autojunked characters ([#3959](https://github.com/Glad-Labs/glad-labs-stack/issues/3959)) ([476ecc5](https://github.com/Glad-Labs/glad-labs-stack/commit/476ecc503beb5c1196789f6fedf2b96d7fa16300))
+* **deploy:** recreate what we rebuilt — compose leaves same-tag image changes alone ([#3950](https://github.com/Glad-Labs/glad-labs-stack/issues/3950)) ([e8ab7de](https://github.com/Glad-Labs/glad-labs-stack/commit/e8ab7de109dd21fb9fd9885cd2d5a59c72554cd1))
+* **media:** the hook example was being copied onto unrelated articles ([#3952](https://github.com/Glad-Labs/glad-labs-stack/issues/3952)) ([3d56ddd](https://github.com/Glad-Labs/glad-labs-stack/commit/3d56dddb23fedd68931337272840e6a81d935766))
+* **shorts:** accept the corrective hook when it is better but still long ([#3957](https://github.com/Glad-Labs/glad-labs-stack/issues/3957)) ([2998557](https://github.com/Glad-Labs/glad-labs-stack/commit/299855798db44f634b6a4983ab34e147e01f1da2))
+* **shorts:** clean the hook before it becomes a title ([#3956](https://github.com/Glad-Labs/glad-labs-stack/issues/3956)) ([21bee16](https://github.com/Glad-Labs/glad-labs-stack/commit/21bee16daab71597adda066d8a8b8e51efb80b87))
+* **shorts:** relax the hook budget to 70/14 and make a run-on regenerate ([#3955](https://github.com/Glad-Labs/glad-labs-stack/issues/3955)) ([a9d0a35](https://github.com/Glad-Labs/glad-labs-stack/commit/a9d0a35497fe0b3a6521f68338dfdef4bbcfa6f8))
+* **video:** make the house style replace the modifier menu, not precede it ([#3958](https://github.com/Glad-Labs/glad-labs-stack/issues/3958)) ([ed7376f](https://github.com/Glad-Labs/glad-labs-stack/commit/ed7376f4a934b9308aded02e98f1a77d2fbc6a9f))
+
 ## [0.145.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.144.0...v0.145.0) (2026-09-22)
 
 
