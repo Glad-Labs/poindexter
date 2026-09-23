@@ -372,7 +372,7 @@ HARD RULES (short-form)
 5. Sum of shots[].duration_s MUST equal target_duration_s ±0.5s.
 6. shots[].narration_offset_s is REQUIRED on EVERY shot — no shot may omit
    it. It is the cumulative duration of all prior shots.
-7. Punchy pacing: 4-8 shots total, each 2-6 seconds (duration_s MUST NOT
+7. Punchy pacing: 8-12 shots total, each 2-5 seconds (duration_s MUST NOT
    exceed 30.0 — hard schema cap). Short clips drag with long holds — keep
    cuts frequent.
 8. Never more than 2 consecutive shots from the same source. First and last

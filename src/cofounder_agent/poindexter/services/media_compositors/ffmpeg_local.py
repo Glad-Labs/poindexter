@@ -160,6 +160,10 @@ def _sanitize_force_style_extra(extra: str) -> str:
 # scenes aren't all zooming the same way. Each entry is a (start_x_expr,
 # start_y_expr) tuple in zoompan's coordinate space (the upscaled frame).
 # Center is iw/2, ih/2; corners are 0,0 / iw,0 / 0,ih / iw,ih.
+#: Index of the centre-anchored preset, for callers pinning a composition
+#: whose subject sits at a central vanishing point.
+KEN_BURNS_CENTER = 0
+
 _KEN_BURNS_VARIANTS: tuple[tuple[str, str], ...] = (
     ("iw/2-(iw/zoom/2)",    "ih/2-(ih/zoom/2)"),     # zoom-in to center
     ("0",                   "0"),                     # zoom-in from top-left
@@ -381,13 +385,17 @@ def _build_normalize_cmd(
             max(1.0 + ken_burns_zoom_per_s * duration_s, 1.04),
             max(ken_burns_zoom, 1.04),
         )
+        # A pinned variant wins over the by-index rotation: the caller can
+        # see the prompt, this cannot, and the rotation will happily drift a
+        # corridor shot toward a corner (see CompositionScene).
+        pinned = getattr(scene, "ken_burns_variant", None)
         vf = _build_ken_burns_filter(
             width=width,
             height=height,
             fps=fps,
             duration_s=duration_s,
             zoom_factor=effective_zoom,
-            variant_idx=scene_idx,
+            variant_idx=scene_idx if pinned is None else int(pinned),
         )
     else:
         hold = (

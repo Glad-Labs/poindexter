@@ -435,12 +435,17 @@ def video_presenter_policy(policy: MediaPolicy) -> str:
     return (
         f'PRESENTER AVAILABLE. "{policy.presenter_display_name}" is this channel\'s '
         'on-camera presenter: source "presenter" renders a talking-head clip of them '
-        "speaking that shot's narration, lip-synced to the voice track. Use it for the "
-        'opening address, the close, or one direct-address beat where a person speaking '
-        f'to the viewer lands harder than footage. At most {policy.presenter_max_shots} '
-        'presenter shots per video, each 3-10 seconds. No "query" and no "demo_id"; an '
-        'optional "prompt" is a one-line delivery note (mood, framing), never a scene '
-        'description. A presenter shot MAY open or close the video.'
+        "speaking that shot's narration, lip-synced to the voice track. Use it where a "
+        'person speaking to the viewer lands harder than footage: the line that names '
+        'the stakes, the turn in the argument, the one claim you want them to believe. '
+        f'At most {policy.presenter_max_shots} presenter shots per video, each 3-10 '
+        'seconds. No "query" and no "demo_id"; an optional "prompt" is a one-line '
+        'delivery note (mood, framing), never a scene description.\n'
+        'PLACE THEM INSIDE THE VIDEO, not as bookends. Opening AND closing on the '
+        'presenter is the pattern to avoid — it reads as a template, and the face '
+        'stops being a change of pace when it is only ever the frame around one. '
+        'Prefer an interior beat; at least one presenter shot MUST sit away from both '
+        'the first and last shot when you use more than one.'
     )
 
 

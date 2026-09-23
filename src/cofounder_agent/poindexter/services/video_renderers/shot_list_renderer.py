@@ -56,6 +56,7 @@ import httpx
 
 from poindexter.plugins.media_compositor import CompositionRequest, CompositionScene
 from poindexter.schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
+from poindexter.services.media_compositors.ffmpeg_local import KEN_BURNS_CENTER
 from poindexter.services.settings_defaults import default_int
 from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from poindexter.utils.exception_format import describe_exception
@@ -2101,6 +2102,34 @@ def _select_ai_style(site_config: Any, shot_idx: int, *, niche_slug: str | None 
             if picked:
                 styles = picked
     return styles[shot_idx % len(styles)]
+
+
+#: Compositions whose subject recedes to a point in the MIDDLE of the frame —
+#: a corridor, an aisle, a tunnel, a beam converging. The Ken Burns rotation
+#: is blind to content and will happily drift one of these toward a corner,
+#: panning away from the thing the picture is looking down (operator
+#: feedback 2026-09-23, on a long shot of a pipe hallway that drifted to the
+#: top-left). These pin the centre-anchored preset instead.
+_VANISHING_POINT_RE = re.compile(
+    r"\b(hallway|corridor|aisle|tunnel|walkway|passage|nave|"
+    r"vanishing point|receding|recedes|converging|converges|"
+    r"down a row|rows? of|into the distance|stretching away|"
+    r"perspective view|one[- ]point perspective)\b",
+    re.I,
+)
+
+
+def kenburns_variant_for(prompt: str) -> int | None:
+    """Pin a Ken Burns preset from what the shot DEPICTS, or ``None``.
+
+    Only one rule today, because only one is earned: a composition that
+    recedes to a central vanishing point must zoom toward that centre. Every
+    other shot keeps the by-index rotation, which is what stops adjacent
+    stills all drifting the same way.
+    """
+    if not prompt:
+        return None
+    return KEN_BURNS_CENTER if _VANISHING_POINT_RE.search(prompt) else None
 
 
 def _ai_prompt_from_stock_shot(shot: Shot, *, style: str) -> str:
@@ -4324,6 +4353,14 @@ async def render_shot_list(
             clip_path=rendered[idx].clip_path or "",
             narration_path=None,
             duration_s=dur,
+            # The compositor cannot see the prompt; we can. A corridor shot
+            # zooms to its vanishing point instead of drifting to a corner.
+            # ``scene_plan`` may CYCLE indices to stretch a short plan over a
+            # long narration, so index defensively rather than zip.
+            ken_burns_variant=kenburns_variant_for(
+                str(getattr(shot_list.shots[idx], "prompt", "") or "")
+                if 0 <= idx < len(shot_list.shots) else ""
+            ),
             # A presenter clip covers its speech in whole S2V chunks capped
             # by video_comfyui_s2v_max_chunks, so it can run a little short
             # of the fitted scene. The compositor's default for a short clip

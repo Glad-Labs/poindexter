@@ -70,6 +70,13 @@ class CompositionScene:
             drifting brand frame reads as a mistake, 2026-08-26
             operator feedback); ``True`` forces motion on even
             when the global is off.
+        ken_burns_variant: Pin which Ken Burns motion this still gets,
+            overriding the by-index rotation. The rotation is blind to what
+            the picture SHOWS, so an image composed down a corridor to a
+            central vanishing point can be handed the drift-to-a-corner
+            variant and pan away from the very thing it is looking at
+            (operator feedback 2026-09-23). The caller knows the prompt;
+            the compositor does not. ``None`` keeps the rotation.
         hold_last_frame: For a VIDEO clip shorter than ``duration_s``,
             hold the final frame for the remainder instead of looping
             the clip from the start. Looping is right for an abstract
@@ -84,6 +91,7 @@ class CompositionScene:
     caption_text: str = ""
     ken_burns: bool | None = None
     hold_last_frame: bool = False
+    ken_burns_variant: int | None = None
 
 
 @dataclass
