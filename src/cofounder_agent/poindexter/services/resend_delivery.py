@@ -115,15 +115,26 @@ async def _record_event(conn: Any, record: dict[str, Any]) -> tuple[int, bool]:
         return (0, False)
 
     email = _first_recipient(record)
-    # subscriber_id is a soft join — a recipient who has since unsubscribed
-    # (row deleted) still gets their delivery state recorded against the
-    # email address, because a bounce for a departed subscriber is exactly
-    # the kind of thing worth keeping.
-    subscriber_id = None
+    # EMAIL is the identity here, not subscriber_id.
+    #
+    # ``subscriber_events.subscriber_id`` is a **uuid** while
+    # ``newsletter_subscribers.id`` is a **serial int**, so the two cannot be
+    # joined and the column is structurally unpopulatable from the subscriber
+    # table — which is why all 56 rows the webhook era left behind carry a
+    # NULL there and a populated ``email``. Binding the int anyway is a
+    # DataError ("'int' object has no attribute 'bytes'"), which is exactly
+    # how this was caught: the first prod run errored on all 19 messages.
+    #
+    # The lookup survives as an existence check only, because a delivery to
+    # an address that is not on the list is worth counting even though we
+    # cannot foreign-key it.
+    subscriber_known = False
     if email:
-        subscriber_id = await conn.fetchval(
-            "SELECT id FROM newsletter_subscribers WHERE lower(email) = lower($1)",
-            email,
+        subscriber_known = bool(
+            await conn.fetchval(
+                "SELECT 1 FROM newsletter_subscribers WHERE lower(email) = lower($1)",
+                email,
+            )
         )
 
     result = await conn.execute(
@@ -136,7 +147,7 @@ async def _record_event(conn: Any, record: dict[str, Any]) -> tuple[int, bool]:
         WHERE provider_message_id IS NOT NULL
         DO NOTHING
         """,
-        subscriber_id,
+        None,  # see the identity note above — never the int subscriber id
         email,
         f"email.{last_event}",
         json.dumps(
@@ -150,7 +161,7 @@ async def _record_event(conn: Any, record: dict[str, Any]) -> tuple[int, bool]:
         str(message_id),
     )
     written = 1 if str(result).strip().endswith(" 1") else 0
-    return (written, subscriber_id is not None)
+    return (written, subscriber_known)
 
 
 async def poll_delivery_state(
