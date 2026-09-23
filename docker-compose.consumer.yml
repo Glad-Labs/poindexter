@@ -195,6 +195,17 @@ services:
       GF_SECURITY_ALLOW_EMBEDDING: "true"
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Grafana gates the Explore UI behind the `datasources:explore`
+      # permission, which the Viewer role does NOT carry by default — so the
+      # anonymous session every operator surface uses was bounced straight to
+      # /?redirectTo=%2Fexplore. That silently broke the Tempo + Loki links on
+      # Mission Control: they are /explore deep-links, and they landed on Home
+      # instead of the query. `viewers_can_edit` is the OSS lever that grants
+      # Viewer that permission (it also allows in-browser panel edits, which
+      # cannot be SAVED — provisioned dashboards are file-backed). Verified
+      # 2026-09-23: without it `datasources:explore` is absent from
+      # /api/access-control/user/permissions and /explore 302s to Home.
+      GF_USERS_VIEWERS_CAN_EDIT: "true"
       LOCAL_POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
