@@ -108,6 +108,27 @@ Then send yourself a post and click the unsubscribe link end to end. Within
 that, not the page, because the page confirms optimistically while the DB
 write happens on the next poll tick.
 
+### Don't trust an immediate `/pending` read
+
+`/pending` is a Workers KV `list()`, and **`list()` is eventually consistent
+in both directions**: a token just POSTed may not appear yet, and a token
+just acked may still appear. Propagation is usually seconds, occasionally up
+to ~60s.
+
+Verifying the first deploy (2026-09-23) this produced two false alarms in a
+row, each the worst-sounding failure possible for an unsubscribe flow:
+
+- POST returned "you're unsubscribed" and an immediate `/pending` was empty —
+  it looked like opt-outs were being **silently dropped**. They weren't; the
+  token was listed a moment later.
+- The drain reported `acked: 2` and `/pending` still showed both — it looked
+  like `/ack` was **broken** and would re-drain forever. Empty a moment later.
+
+So poll for up to a minute before concluding either. The design already
+tolerates the lag: re-applying a token is a no-op against
+`unsubscribed_at IS NULL`, and a token not yet listable at one 5-minute tick
+is simply picked up at the next, with `RETENTION_DAYS` behind it.
+
 ### Note on already-sent mail
 
 Emails sent **before** the relay was configured carry the old
