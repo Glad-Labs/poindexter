@@ -58,4 +58,54 @@ had drifted apart across surfaces and could not be tuned per vertical. People
 are now allowed by default; the house style stays stylized until a niche opts
 into `any`.
 
+## The house style REPLACES the modifier menu
+
+`niche.<slug>.media.house_style` (falling back to `media_house_style`) names
+one look every AI shot must open with. It was first added by *prepending* a
+"do not vary the modifier" block to the existing style policy — and that did
+nothing at all, because the very next paragraph still offered a menu:
+
+> Begin EVERY … prompt with exactly: "retro-tech cyberpunk illustration". **Do
+> not vary the modifier between shots.**
+>
+> … Stylized: **pick a modifier such as** flat vector illustration / isometric
+> 3D / line art / cyberpunk neon / low poly / watercolor / paper cutout.
+
+The director read the menu as the operative instruction. Measured on the
+2026-09-22 NCCL pair, **0 of 12 AI shots** began with the house style, and
+five different modifiers did: cinematic illustration ×3, flat vector
+illustration ×2, cyberpunk neon, isometric 3D, and — via the `style_policy:
+any` photoreal branch — abstract photorealism.
+
+Two rules come out of that, and both are pinned by test:
+
+* **A house style replaces the menu, it does not precede it.**
+  `video_style_policy` returns the house-style block plus a tail that names
+  **no modifier at all**, because a list in this prompt is an invitation.
+  Whether shots read as illustration or as photography is settled by the
+  house-style string itself, so the tail is style-agnostic and keeps only the
+  buzzword ban (`8K` / `DSLR` / `hyper-realistic` / `ultra-detailed`), which is
+  an AI tell in any style.
+* **The worked examples are part of the instruction.** The director's three
+  example prompts carried three *different* literal modifiers, two of them in
+  the same example shot list — so the examples demonstrated a look per shot,
+  which is the thing the house style forbids. They now all render
+  `{style_prefix}`, which is the house style when one is set. This is the same
+  failure as [the hook prompt's quotable example](../operations/youtube-metadata.md):
+  **a model copies an example far more readily than it obeys a rule.**
+
+`{style_prefix}` belongs to the two director sections only. The five prompt
+keys share one `SKILL.md` but have different callers, so a variable added for
+the director would raise `KeyError` inside the reviewer's `.format()` — and
+both call sites catch `Exception` and log "prompt render failed — skipping",
+so the failure mode is not a crash but the stage quietly not running. A test
+walks every key's section and asserts each placeholder is supplied by that
+key's real call site.
+
+**Pexels is still exempt, deliberately.** Stock footage is real, so a house
+style cannot apply to it, and a hard rule in the director skill tells it to
+mix sources. On the NCCL pair that was 5 of 20 shots, so an "illustration"
+video still carries photoreal interludes by construction. That is a product
+decision, not a bug.
+
 Related: [media personas](media-personas.md) — a presenter is a face bound to a voice (`persona.<slug>.*`), selected per niche by `niche.<slug>.media.persona`; its `style_policy` must be allowed by the policy above.

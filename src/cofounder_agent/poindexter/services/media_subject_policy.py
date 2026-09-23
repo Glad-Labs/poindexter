@@ -309,17 +309,62 @@ def house_style_block(policy: MediaPolicy) -> str:
         return ""
     return (
         "HOUSE STYLE — ONE LOOK PER VIDEO\n"
-        f"Begin EVERY image_gen / image_kenburns / generative prompt with exactly: "
-        f"\"{policy.house_style}\". Do not vary the modifier between shots; the "
-        "subject changes, the look does not. Pexels is exempt (real footage).\n\n"
+        "EVERY image_gen / image_kenburns / generative prompt starts with the "
+        f"exact words \"{policy.house_style}\", then a comma, then that shot's "
+        "subject. Do not vary it between shots; the subject changes, the look "
+        "does not. Pexels is exempt (real footage).\n\n"
     )
 
 
+def video_style_prefix(policy: MediaPolicy) -> str:
+    """What every AI prompt in the director's WORKED EXAMPLES begins with.
+
+    The examples used to carry three DIFFERENT literal modifiers — flat
+    vector illustration, cinematic illustration, cyberpunk neon illustration
+    — and a director copies an example far more readily than it obeys a rule:
+    on the 2026-09-22 NCCL pair those three accounted for 6 of the 8 AI
+    shots. Worse, two of them sat in the SAME example shot list, so the
+    examples were demonstrating a different look per shot, which is the exact
+    thing the house style forbids. One prefix, shown consistently.
+    """
+    return policy.house_style or "flat vector illustration"
+
+
 def video_style_policy(policy: MediaPolicy) -> str:
-    """The STYLE POLICY FOR AI SOURCES block body."""
+    """The STYLE POLICY FOR AI SOURCES block body.
+
+    A house style REPLACES the modifier menu; it does not sit on top of it.
+    Prepending was tried first and measured to do nothing: the block said "do
+    not vary the modifier" and the very next paragraph offered seven to pick
+    from, so the director picked. On the 2026-09-22 NCCL pair, 0 of 12 AI
+    shots began with the house style and five different menu modifiers did —
+    cinematic illustration x3, flat vector illustration x2, cyberpunk neon,
+    isometric 3D, and (via the photoreal branch) abstract photorealism.
+    """
     if policy.house_style:
-        return house_style_block(policy) + _video_style_policy_base(policy)
+        return house_style_block(policy) + _house_style_tail()
     return _video_style_policy_base(policy)
+
+
+def _house_style_tail() -> str:
+    """What still applies once the look is settled.
+
+    Deliberately names NO modifier: a list here is a menu, and the director
+    reads a menu as an invitation. Whether shots read as illustration or as
+    photography is decided by the house style string itself, so this tail is
+    style-agnostic and only keeps the buzzword ban, which is an AI tell in
+    every style.
+    """
+    return (
+        "That house style is the ONLY modifier. Do not add a second one, do "
+        "not swap in a different one for variety, and do not give any shot a "
+        "look of its own — whether these shots read as illustration or as "
+        "photography is already settled above.\n"
+        "Never include \"8K\", \"DSLR\", \"hyper-realistic\" or \"ultra-detailed\" "
+        "in a prompt: those trigger the AI tell whatever the style.\n"
+        "\n"
+        "Pexels is exempt from the style policy — it IS real footage."
+    )
 
 
 def _video_style_policy_base(policy: MediaPolicy) -> str:
@@ -428,6 +473,7 @@ def prompt_variables(policy: MediaPolicy) -> dict[str, str]:
         "human_subject_policy": video_human_subject_policy(policy),
         "human_subject_rule": video_human_subject_rule(policy),
         "style_policy": video_style_policy(policy),
+        "style_prefix": video_style_prefix(policy),
         "image_subject_rule": writer_image_subject_rule(policy),
         "people_sentence": image_people_sentence(policy),
         "people_rule": image_decision_people_rule(policy),

@@ -198,7 +198,7 @@ SCHEMA (output this shape):
       "duration_s": 5.0,
       "intent": "abstract — illustrate the metaphor",
       "source": "image_kenburns",
-      "prompt": "flat vector illustration, a glass door opening with abstract data flowing through, cyan and dark navy palette, empty unpopulated scene",
+      "prompt": "{style_prefix}, a glass door opening with abstract data flowing through, cyan and dark navy palette, empty unpopulated scene",
       "kenburns_zoom": [1.0, 1.2],
       "narration_offset_s": 6.0
     }},
@@ -207,7 +207,7 @@ SCHEMA (output this shape):
       "duration_s": 5.0,
       "intent": "hero beat — the key reveal gets real motion",
       "source": "generative",
-      "prompt": "cinematic illustration, a river of glowing cyan data streams winding through a dark navy canyon of server towers, empty unpopulated scene",
+      "prompt": "{style_prefix}, a river of glowing cyan data streams winding through a dark navy canyon of server towers, empty unpopulated scene",
       "motion": "slow push-in along the canyon as the data streams flow forward; faint particles drift upward with gentle parallax",
       "narration_offset_s": 11.0
     }},
@@ -394,7 +394,7 @@ SCHEMA (output this shape):
       "duration_s": 2.0,
       "intent": "cold-open hook — land the promise in the first second",
       "source": "image_kenburns",
-      "prompt": "cyberpunk neon illustration, a single glowing server rack pulsing with data, vertical composition, dark navy and cyan palette, empty unpopulated scene",
+      "prompt": "{style_prefix}, a single glowing server rack pulsing with data, vertical composition, dark navy and cyan palette, empty unpopulated scene",
       "kenburns_zoom": [1.0, 1.15],
       "narration_offset_s": 0.0
     }},

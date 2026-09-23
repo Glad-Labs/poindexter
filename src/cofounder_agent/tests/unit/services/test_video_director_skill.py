@@ -333,3 +333,79 @@ def test_every_director_template_forbids_words_inside_ai_images(key: str) -> Non
     lowered = template.lower()
     assert "logos" in lowered and "brand names" in lowered
     assert "ocr gate" in lowered
+
+
+# What each prompt key's REAL call site supplies, transcribed from the code:
+#   video.director_*  -> generate_video_shot_list._render (**prompt_variables)
+#   video.review_*    -> review_video_shot_list._render (named policy vars only)
+#   video.restock_query -> video_renderers/shot_list_renderer._llm_restock_query
+_CALL_SITE_KWARGS: dict[str, set[str]] = {
+    "video.director_v1": {
+        "title", "content", "target_duration_s", "model", "now_iso",
+        "site_name", "demo_catalog", "podcast_script", *_POLICY_VARS,
+    },
+    "video.director_short_v1": {
+        "title", "content", "target_duration_s", "model", "now_iso",
+        "site_name", "demo_catalog", "short_script", *_POLICY_VARS,
+    },
+    "video.review_v1": {
+        "title", "content", "current_shot_list", "model", "now_iso",
+        "site_name", "human_subject_rule", "style_policy", "presenter_policy",
+        "podcast_script",
+    },
+    "video.review_short_v1": {
+        "title", "content", "current_shot_list", "model", "now_iso",
+        "site_name", "human_subject_rule", "style_policy", "presenter_policy",
+        "short_script",
+    },
+    "video.restock_query": {"video_context", "intent", "failed_query"},
+}
+
+
+def _section(key: str) -> str:
+    text = Path(__file__).resolve().parents[3].joinpath(
+        "skills", "content", "video-director", "SKILL.md"
+    ).read_text(encoding="utf-8")
+    start = text.index(f"## {key}")
+    nxt = re.search(r"\n## ", text[start + 3:])
+    return text[start: start + 3 + nxt.start()] if nxt else text[start:]
+
+
+@pytest.mark.parametrize("key", sorted(_CALL_SITE_KWARGS))
+def test_every_placeholder_is_supplied_by_its_call_site(key: str) -> None:
+    """A placeholder nobody passes raises KeyError inside `.format()`, and both
+    render call sites catch Exception and log "prompt render failed — skipping".
+    So the failure mode is not a crash, it is the director quietly not running.
+
+    The five keys share ONE SKILL.md but have different callers, so a variable
+    added for the director can silently break the reviewer. `{style_prefix}`
+    (2026-09-22) is exactly that shape: it belongs to the director sections and
+    the reviewer's call site does not pass it.
+    """
+    placeholders = set(re.findall(r"(?<!\{)\{([a-z_][a-z0-9_]*)\}(?!\})", _section(key)))
+    missing = placeholders - _CALL_SITE_KWARGS[key]
+    assert not missing, f"{key} uses {sorted(missing)}, which its call site never passes"
+
+
+def test_style_prefix_reached_the_director_sections_only() -> None:
+    """It replaced three different literal modifiers in the worked examples.
+    The reviewer revises a draft rather than writing prompts from an example,
+    so it neither needs the variable nor is passed it."""
+    for key in ("video.director_v1", "video.director_short_v1"):
+        assert "{style_prefix}" in _section(key)
+    for key in ("video.review_v1", "video.review_short_v1", "video.restock_query"):
+        assert "{style_prefix}" not in _section(key)
+
+
+@pytest.mark.parametrize("key", ["video.director_v1", "video.director_short_v1"])
+def test_worked_examples_never_show_two_different_looks(key: str) -> None:
+    """The examples are copied more readily than the rules are followed: on the
+    2026-09-22 NCCL pair the director reproduced all three example modifiers
+    (cinematic illustration x3, flat vector illustration x2, cyberpunk neon),
+    6 of its 8 AI shots. Two of those literals sat in the SAME example list, so
+    the examples were teaching a look per shot."""
+    section = _section(key)
+    example_prompts = re.findall(r'"prompt": "([^"]+)"', section)
+    assert example_prompts, f"{key} has no worked example prompts to check"
+    prefixes = {p.split(",")[0].strip() for p in example_prompts}
+    assert prefixes == {"{style_prefix}"}, f"{key} examples show {sorted(prefixes)}"
