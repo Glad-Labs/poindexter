@@ -13,6 +13,7 @@ import pytest
 from poindexter.services.newsletter_service import (  # noqa: E402
     _build_html,
     _get_active_subscribers,
+    _unsubscribe_url,
     send_post_newsletter,
 )
 from poindexter.services.site_config import SiteConfig
@@ -26,6 +27,11 @@ _SC = SiteConfig(initial_config={
     "site_url": "https://test.example.com",
     "company_name": "Test Company",
     "site_name": "Test Site",
+    # send_post_newsletter refuses to mail without a reachable opt-out — a
+    # 404 unsubscribe is a compliance problem, not a degraded send. These
+    # cases exercise the send path, so they configure one; the refusal has
+    # its own tests in TestUnsubscribeSurfaceRequired.
+    "newsletter_unsubscribe_relay_url": "https://relay.test.example.com",
 })
 
 # ---------------------------------------------------------------------------
@@ -110,7 +116,10 @@ class TestSendNewsletterDisabled:
         pool = AsyncMock()
         mock_cfg = MagicMock()
         mock_cfg.get_bool.return_value = False
-        mock_cfg.get.return_value = ""
+        mock_cfg.get.side_effect = lambda k, d="": (
+            "https://relay.test.example.com"
+            if k == "newsletter_unsubscribe_relay_url" else ""
+        )
         mock_cfg.get_int.return_value = 50
         mock_cfg.get_secret = AsyncMock(return_value="")
         result = await send_post_newsletter(pool, "Title", "Excerpt", "slug", site_config=mock_cfg)
@@ -122,6 +131,7 @@ class TestSendNewsletterDisabled:
         mock_cfg = MagicMock()
         mock_cfg.get_bool.return_value = True
         mock_cfg.get.side_effect = lambda k, d="": {
+        "newsletter_unsubscribe_relay_url": "https://relay.test.example.com",
             "newsletter_provider": "resend",
             "newsletter_from_email": "x@y.com",
             "newsletter_from_name": "Test",
@@ -162,6 +172,7 @@ class TestSendNewsletterSuccess:
             "smtp_use_tls": True,
         }.get(k, d)
         mock_cfg.get.side_effect = lambda k, d="": {
+        "newsletter_unsubscribe_relay_url": "https://relay.test.example.com",
             "newsletter_provider": "resend",
             "newsletter_from_email": "x@y.com",
             "newsletter_from_name": "Test",
@@ -216,6 +227,7 @@ class TestSendNewsletterSuccess:
             "smtp_use_tls": True,
         }.get(k, d)
         mock_cfg.get.side_effect = lambda k, d="": {
+        "newsletter_unsubscribe_relay_url": "https://relay.test.example.com",
             "newsletter_provider": "resend",
             "newsletter_from_email": "x@y.com",
             "newsletter_from_name": "Test",
@@ -251,6 +263,7 @@ class TestSendNewsletterSuccess:
             "newsletter_enabled": True,
         }.get(k, d)
         mock_cfg.get.side_effect = lambda k, d="": {
+        "newsletter_unsubscribe_relay_url": "https://relay.test.example.com",
             "newsletter_provider": "resend",
             "resend_api_key": "key",
             "newsletter_from_email": "x@y.com",
@@ -487,6 +500,7 @@ class TestSendNewsletterSmtpProvider:
             "newsletter_enabled": True,
         }.get(k, d)
         mock_cfg.get.side_effect = lambda k, d="": {
+        "newsletter_unsubscribe_relay_url": "https://relay.test.example.com",
             "newsletter_provider": "smtp",
             "smtp_host": "",  # missing
         }.get(k, d)
@@ -514,6 +528,7 @@ class TestSendNewsletterSmtpProvider:
             "newsletter_enabled": True, "smtp_use_tls": True,
         }.get(k, d)
         mock_cfg.get.side_effect = lambda k, d="": {
+        "newsletter_unsubscribe_relay_url": "https://relay.test.example.com",
             "newsletter_provider": "smtp",
             "smtp_host": "smtp.example.com",
             "newsletter_from_email": "from@x.com",
@@ -608,6 +623,7 @@ def _resend_cfg_mock(from_email: str = "x@y.com") -> MagicMock:
         "newsletter_provider": "resend",
         "newsletter_from_email": from_email,
         "newsletter_from_name": "Test",
+        "newsletter_unsubscribe_relay_url": "https://relay.test.example.com",
     }.get(k, d)
     mock_cfg.get_int.side_effect = lambda k, d=0: {
         "newsletter_batch_size": 50,
@@ -737,3 +753,81 @@ class TestTotalFailureFinding:
             )
 
         mock_finding.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# send_post_newsletter — a reachable opt-out is a precondition, not a nicety
+# ---------------------------------------------------------------------------
+
+
+class TestUnsubscribeSurfaceRequired:
+    """Every email between #252 and 2026-09-23 carried a 404 unsubscribe:
+    the backend flow was complete, `{site_url}/newsletter/unsubscribe` did
+    not exist, and the `List-Unsubscribe` header pointed at the same dead
+    URL. Sending mail nobody can opt out of is a compliance problem
+    (CAN-SPAM, GDPR, Gmail bulk-sender one-click), so the send now REFUSES
+    rather than degrades.
+    """
+
+    @pytest.mark.asyncio
+    async def test_refuses_to_send_without_a_relay_url(self):
+        pool = AsyncMock()
+        cfg = _resend_cfg_mock()
+        cfg.get.side_effect = lambda k, d="": {
+            "newsletter_provider": "resend",
+            "newsletter_from_email": "x@y.com",
+            "newsletter_from_name": "Test",
+            # relay deliberately absent
+        }.get(k, d)
+
+        with patch(
+            "poindexter.utils.findings.emit_finding"
+        ) as mock_finding, patch(
+            "poindexter.services.newsletter_service._send_via_resend",
+            new_callable=AsyncMock,
+        ) as mock_send:
+            result = await send_post_newsletter(pool, "T", "E", "s", site_config=cfg)
+
+        assert result["skipped_reason"] == "no_unsubscribe_url"
+        assert result["sent"] == 0
+        # Nothing was mailed — not even the first subscriber.
+        mock_send.assert_not_called()
+        # And it is loud: a skipped newsletter is indistinguishable from
+        # "no posts published" unless something says so.
+        assert mock_finding.call_args.kwargs["kind"] == (
+            "newsletter_unsubscribe_unconfigured"
+        )
+
+    @pytest.mark.asyncio
+    async def test_checked_before_the_loop_not_per_subscriber(self):
+        """A half-mailed list is worse than an unmailed one — the whole
+        campaign is non-compliant, so the refusal happens once, up front."""
+        pool = AsyncMock()
+        cfg = _resend_cfg_mock()
+        cfg.get.side_effect = lambda k, d="": {
+            "newsletter_provider": "resend",
+            "newsletter_from_email": "x@y.com",
+            "newsletter_from_name": "Test",
+        }.get(k, d)
+
+        with patch("poindexter.utils.findings.emit_finding"):
+            await send_post_newsletter(pool, "T", "E", "s", site_config=cfg)
+
+        # Never even asked who the subscribers are.
+        pool.fetch.assert_not_called()
+
+    def test_unsubscribe_url_points_at_the_relay_not_the_site(self):
+        html = _build_html(
+            "T", "E", "s", unsubscribe_token=_FAKE_TOKEN, site_config=_SC
+        )
+        assert "relay.test.example.com" in html
+        assert "test.example.com/newsletter/unsubscribe" not in html
+
+    def test_unsubscribe_url_raises_when_no_relay_configured(self):
+        bare = SiteConfig(initial_config={
+            "site_url": "https://test.example.com",
+            "company_name": "T",
+            "site_name": "T",
+        })
+        with pytest.raises(RuntimeError, match="newsletter_unsubscribe_relay_url"):
+            _unsubscribe_url(_FAKE_TOKEN, site_config=bare)

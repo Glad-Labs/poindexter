@@ -1,0 +1,38 @@
+name = "unsubscribe-relay"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+
+# KV namespace holding pending unsubscribe requests until the operator poll
+# applies them. The block ships COMMENTED OUT because wrangler refuses to
+# parse a config with a placeholder id — even for the create command itself:
+#   npx wrangler kv namespace create RELAY_KV   # works while commented out
+# then uncomment and paste the returned id before deploying.
+#
+# [[kv_namespaces]]
+# binding = "RELAY_KV"
+# id = "<namespace id from `wrangler kv namespace create`>"
+
+# Rate limiting — 30 requests/min per IP. The write side is deliberately
+# unauthenticated (the token in the URL is the credential), so this is what
+# stops anyone using KV as free storage or grinding the token space. A real
+# recipient clicks once.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "3002"
+simple = { limit = 30, period = 60 }
+
+[vars]
+# Days a pending request survives if the poll stops. The poll runs every few
+# minutes, so this only bounds the damage during an outage — an unsubscribe
+# must not be silently dropped, and CAN-SPAM allows 10 business days.
+RETENTION_DAYS = "30"
+
+# UNSUBSCRIBE_RELAY_SECRET is intentionally NOT a [vars] entry — set it as a
+# Worker secret so it never lands in this repo:
+#
+#   npx wrangler secret put UNSUBSCRIBE_RELAY_SECRET
+#
+# Use the SAME value as app_settings.newsletter_unsubscribe_relay_secret.
+# It guards the READ side only (/pending, /ack) — the recipient-facing paths
+# are open by design. Unset → the Worker refuses everything (503).

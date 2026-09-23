@@ -49,6 +49,7 @@ def _cfg() -> MagicMock:
         "smtp_use_tls": True,
     }.get(k, d)
     cfg.get.side_effect = lambda k, d="": {
+        "newsletter_unsubscribe_relay_url": "https://relay.test.example.com",
         "newsletter_provider": "resend",
         "newsletter_from_email": "x@y.com",
         "newsletter_from_name": "Test",

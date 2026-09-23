@@ -93,10 +93,55 @@ def _unsubscribe_url(token: str, *, site_config: SiteConfig) -> str:
     agree on shape or one-click clients (Gmail/Apple Mail) silently
     fall back to the inline link.
 
-    DI (#272 Phase-2b): threads the keyword-required ``site_config``
-    through to ``_site_url``.
+    Points at the **unsubscribe relay** (a Cloudflare Worker,
+    ``infrastructure/cloudflare/unsubscribe-relay``). It has to be a public
+    surface: a recipient clicking a link in their mail client must reach
+    something live, and this worker is local-first with no public ingress —
+    the one part of the system a poll cannot substitute for.
+
+    This previously built ``{site_url}/newsletter/unsubscribe``, a page that
+    does not exist on the public site. Every email sent between the #252
+    hardening and 2026-09-23 carried a 404 in both the body link and the
+    ``List-Unsubscribe`` header, so the flow was complete on the backend and
+    unreachable from the outside.
+
+    Raises when no relay is configured rather than emitting a dead link —
+    see ``_require_unsubscribe_base``.
     """
-    return f"{_site_url(site_config=site_config)}/newsletter/unsubscribe?token={token}"
+    return f"{_require_unsubscribe_base(site_config=site_config)}?token={token}"
+
+
+#: Shared by the raising and non-raising accessors so the operator sees the
+#: same remediation whichever path reports it.
+_NO_RELAY_MESSAGE = (
+    "newsletter_unsubscribe_relay_url is not set — refusing to send mail "
+    "with an unsubscribe link that goes nowhere. Deploy "
+    "infrastructure/cloudflare/unsubscribe-relay and set the URL "
+    "(see that directory's README)."
+)
+
+
+def _unsubscribe_base(*, site_config: SiteConfig) -> str | None:
+    """The relay base URL, or ``None`` when unconfigured."""
+    url = (site_config.get("newsletter_unsubscribe_relay_url", "") or "").strip()
+    return url.rstrip("/") or None
+
+
+def _require_unsubscribe_base(*, site_config: SiteConfig) -> str:
+    """The relay base URL, or raise.
+
+    A dead unsubscribe link is not a degraded send, it is a non-compliant
+    one — CAN-SPAM requires a working opt-out and Gmail's bulk-sender rules
+    require working one-click. Mirrors ``_site_url``'s fail-loud stance, for
+    the same reason: silence here is the expensive outcome.
+
+    The send gate uses the ``None``-returning sibling instead, so the refusal
+    is a plain branch rather than an exception caught one frame away.
+    """
+    url = _unsubscribe_base(site_config=site_config)
+    if url is None:
+        raise RuntimeError(_NO_RELAY_MESSAGE)
+    return url
 
 
 def _build_html(
@@ -375,6 +420,26 @@ async def send_post_newsletter(
     if provider == "smtp" and not cfg["smtp_host"]:
         logger.warning("[NEWSLETTER] SMTP selected but no host configured")
         result["skipped_reason"] = "no_smtp_host"
+        return result
+
+    # Checked BEFORE the send loop, not per-subscriber: the whole campaign is
+    # non-compliant without a reachable opt-out, so refusing once is the
+    # honest outcome rather than mailing some of the list and failing on the
+    # rest. Emits a finding because a silently-skipped newsletter looks
+    # identical to "no posts published".
+    if _unsubscribe_base(site_config=site_config) is None:
+        from poindexter.utils.findings import emit_finding
+
+        logger.error("[NEWSLETTER] %s", _NO_RELAY_MESSAGE)
+        emit_finding(
+            source="newsletter",
+            kind="newsletter_unsubscribe_unconfigured",
+            title="Newsletter send skipped — no working unsubscribe surface",
+            body=_NO_RELAY_MESSAGE,
+            severity="error",
+            dedup_key="newsletter_unsubscribe_unconfigured",
+        )
+        result["skipped_reason"] = "no_unsubscribe_url"
         return result
 
     try:

@@ -857,6 +857,14 @@ def get_core_samples() -> dict[str, list[Any]]:
             "poindexter.services.jobs.sync_resend_delivery",
             "SyncResendDeliveryEventsJob",
         ),
+        # ApplyUnsubscribeRequestsJob — drains the edge unsubscribe relay.
+        # The click needs public ingress (a human in a mail client); the DB
+        # write stays outbound-only. No-op until the relay URL is set.
+        (
+            "jobs",
+            "poindexter.services.jobs.apply_unsubscribe_requests",
+            "ApplyUnsubscribeRequestsJob",
+        ),
         ("jobs", "poindexter.services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
         ("jobs", "poindexter.services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing

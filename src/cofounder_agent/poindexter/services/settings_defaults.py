@@ -3380,6 +3380,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'newsletter_enabled': 'false',
     'newsletter_from_name': '',
     'newsletter_provider': 'resend',
+    # Unsubscribe relay (infrastructure/cloudflare/unsubscribe-relay). Empty
+    # by default: a fresh install has no Worker deployed, and
+    # send_post_newsletter REFUSES to send while this is unset rather than
+    # emitting a dead unsubscribe link. That is deliberate — a 404 opt-out is
+    # a compliance problem (CAN-SPAM, GDPR, Gmail bulk-sender one-click), and
+    # it is exactly what shipped in every email between #252 and 2026-09-23.
+    'newsletter_unsubscribe_relay_url': '',
     'smtp_host': '',
     'smtp_port': '587',
     'smtp_use_tls': 'true',
@@ -3815,6 +3822,20 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.resend_delivery_poll_failed.fallback': 'discord',
     'findings.resend_delivery_poll_failed.cooldown_minutes': '180',
     'findings.resend_delivery_poll_failed.min_severity': 'warning',
+    # newsletter_unsubscribe_unconfigured: the newsletter is STOPPED while
+    # this fires — a skipped send looks identical to "no posts published", so
+    # it has to reach a human. Telegram because it blocks a shipping feature.
+    'findings.newsletter_unsubscribe_unconfigured.delivery': 'telegram',
+    'findings.newsletter_unsubscribe_unconfigured.fallback': 'discord',
+    'findings.newsletter_unsubscribe_unconfigured.cooldown_minutes': '720',
+    'findings.newsletter_unsubscribe_unconfigured.min_severity': 'warning',
+    # unsubscribe_relay_poll_failed: queued opt-outs are not lost (they sit
+    # in KV for RETENTION_DAYS), but they are not APPLIED either, so the next
+    # send would mail someone who asked to leave.
+    'findings.unsubscribe_relay_poll_failed.delivery': 'discord',
+    'findings.unsubscribe_relay_poll_failed.fallback': 'discord',
+    'findings.unsubscribe_relay_poll_failed.cooldown_minutes': '180',
+    'findings.unsubscribe_relay_poll_failed.min_severity': 'warning',
     # retention_backlog: advisory. A policy that runs clean but does not drain
     # is a slow leak, not an outage — Discord, not a page.
     'findings.retention_backlog.delivery': 'discord',
