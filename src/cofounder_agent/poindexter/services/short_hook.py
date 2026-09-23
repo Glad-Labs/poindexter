@@ -145,18 +145,50 @@ def strip_scaffold(sentence: str) -> str:
     which the gate reads as the ``empty`` defect and regenerates.
     """
     clean = (sentence or "").strip()
+    # Wrappers NEST, and in any order: a quote can hide a label from the label
+    # pattern (which anchors at ^), and a label can hide emphasis. Measured
+    # 2026-09-23 on '"**HOOK:** the cheapest model won"'. So each pass runs the
+    # whole pipeline and they repeat until nothing more comes off.
     while True:
+        before = clean
         stepped = _SCAFFOLD_RE.sub("", clean, count=1).strip()
-        if stepped == clean:
-            break
-        clean = stepped
-    # Unwrap only a matched pair, so `He said "no" to the merge` keeps its quotes.
-    while len(clean) >= 2 and clean[0] in _QUOTE_CHARS and clean[-1] in _QUOTE_CHARS:
-        clean = clean[1:-1].strip()
-    # A single opening quote with no partner is still scaffolding.
-    # `""[:1] in s` is True for every s, so test the character, not the slice.
-    if clean and clean[0] in _QUOTE_CHARS and clean.count(clean[0]) == 1:
-        clean = clean[1:].strip()
+        if stepped != clean:
+            clean = stepped
+        # Unwrap only a matched pair, so `He said "no" to the merge` keeps its quotes.
+        while len(clean) >= 2 and clean[0] in _QUOTE_CHARS and clean[-1] in _QUOTE_CHARS:
+            clean = clean[1:-1].strip()
+        # A single opening quote with no partner is still scaffolding.
+        # `""[:1] in s` is True for every s, so test the character, not the slice.
+        if clean and clean[0] in _QUOTE_CHARS and clean.count(clean[0]) == 1:
+            clean = clean[1:].strip()
+        clean = _strip_wrapping_emphasis(clean)
+        if clean == before:
+            return clean
+
+
+def _strip_wrapping_emphasis(text: str) -> str:
+    """Remove markdown emphasis the model wrapped the whole line in.
+
+    Measured 2026-09-23: a repair replied with ``"** Single-GPU VRAM
+    budgeting can freeze your entire desktop"`` and the bare ``**`` was
+    written into the stored narration. The YouTube title survived only
+    because the payload builder runs its own markdown strip on the way out —
+    the presenter would have spoken it on the next re-render.
+
+    INTERNAL emphasis is part of the claim and is left alone: ``He said *no*
+    to the merge`` keeps its asterisks, and ``snake_case`` keeps its
+    underscore.
+    """
+    clean = (text or "").strip()
+    for marker in ("***", "**", "__", "*", "_"):
+        while clean.startswith(marker):
+            rest = clean[len(marker):]
+            if rest.endswith(marker) and len(rest) > len(marker):
+                clean = rest[: -len(marker)].strip()   # a matched wrapper
+            elif marker not in rest:
+                clean = rest.strip()                   # an unclosed opener
+            else:
+                break                                  # partner is mid-sentence
     return clean
 
 

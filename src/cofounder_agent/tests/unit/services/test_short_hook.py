@@ -298,3 +298,59 @@ class TestStripScaffold:
         assert strip_preamble(
             '"In a surprising twist, the cheapest model won the benchmark"'
         ) == "The cheapest model won the benchmark"
+
+
+class TestWrappingEmphasis:
+    """Found in production 2026-09-23, on the first live run of the sync-path
+    repair: the model replied ``"** Single-GPU VRAM budgeting can freeze your
+    entire desktop"`` and the bare ``**`` was written into the STORED
+    narration. The YouTube title survived only because the payload builder
+    runs its own markdown strip on the way out — the presenter would have
+    spoken it on the next re-render.
+
+    `strip_scaffold` handled ``**Narration:**`` (emphasis around a LABEL) but
+    not emphasis around the line itself.
+    """
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            # the exact production case
+            ("** Single-GPU VRAM budgeting can freeze your entire desktop",
+             "Single-GPU VRAM budgeting can freeze your entire desktop"),
+            ("**Five tech giants hide $1.65 trillion**",
+             "Five tech giants hide $1.65 trillion"),
+            ("*An opener whose emphasis never closes",
+             "An opener whose emphasis never closes"),
+            ("__Underscore wrapper__", "Underscore wrapper"),
+            ("***Triple emphasis***", "Triple emphasis"),
+        ],
+    )
+    def test_emphasis_around_the_whole_line_comes_off(self, raw, expected):
+        assert strip_scaffold(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            # INTERNAL emphasis is part of the claim.
+            "He said *no* to the merge and shipped it anyway",
+            "The *real* cost is the reload, not the inference",
+            # Not emphasis at all — an identifier and an operator.
+            "Snake_case names break the tokenizer",
+            "2 * 3 is the whole benchmark",
+        ],
+    )
+    def test_emphasis_inside_the_claim_survives(self, raw):
+        assert strip_scaffold(raw) == raw
+
+    @pytest.mark.parametrize("raw", ["**", "*", "__", "***"])
+    def test_emphasis_only_comes_back_empty(self, raw):
+        """Which the gate reads as `empty` and regenerates."""
+        assert strip_scaffold(raw) == ""
+        assert "empty" in hook_defects(strip_preamble(raw))
+
+    def test_it_composes_with_the_other_wrappers(self):
+        """A quote outside emphasis outside a label — all of it is wrapper."""
+        assert strip_scaffold('"**HOOK:** the cheapest model won the benchmark"') == (
+            "the cheapest model won the benchmark"
+        )
