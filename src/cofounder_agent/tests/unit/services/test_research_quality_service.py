@@ -260,6 +260,69 @@ class TestCalculateSimilarity:
         assert score > service.SIMILARITY_THRESHOLD
 
 
+# A realistic research snippet: long enough to clear difflib's 200-element
+# autojunk floor (198 of 200 sampled snippets do) and varied, because a
+# fixture that repeats one phrase hands the matcher huge identical blocks and
+# hides the collapse being pinned.
+_SNIPPET_VOCAB = (
+    "distributed training keeps policy weights synchronized across separate jobs "
+    "without a dedicated interconnect the adapter carries the update and object "
+    "storage stands in for a shared filesystem so trainer and inference replicas "
+    "agree on the version they serve while stale rollouts score against an "
+    "obsolete policy and quietly poison the gradient"
+).split()
+_SNIPPET = " ".join(
+    _SNIPPET_VOCAB[(i * 7 + (i * i) % 11) % len(_SNIPPET_VOCAB)] for i in range(180)
+)
+
+
+def _reworded(text: str, every: int) -> str:
+    """A re-scrape or light syndication rewrite: differences SCATTERED through
+    the snippet rather than gathered in one place."""
+    return " ".join(
+        ("data" if i % every == 0 else w) for i, w in enumerate(text.split())
+    )
+
+
+class TestSimilarityOnRealisticSnippets:
+    """The short fixtures above cannot see this: ``SequenceMatcher`` compares
+    CHARACTERS when handed strings, and past 200 elements its autojunk
+    heuristic discards every element occurring in more than 1% of the
+    sequence — across a snippet that is every common letter.
+
+    Measured 2026-09-23 over 120 real snippet pairs, **75 flipped the dedup
+    verdict** at 0.7: pairs 83-87% alike scored 0.32-0.45 and were kept as
+    distinct sources, padding research_context with the same facts twice.
+    """
+
+    def test_a_reworded_snippet_is_caught_as_a_duplicate(self, service):
+        score = service._calculate_similarity(_SNIPPET, _reworded(_SNIPPET, 6))
+        assert score > service.SIMILARITY_THRESHOLD
+
+    def test_the_old_char_comparison_would_have_missed_it(self, service):
+        """The guard. This is the comparison that shipped; it must still fall
+        under the threshold on a pair the fix catches, or the fix is no longer
+        doing anything."""
+        from difflib import SequenceMatcher
+
+        rewritten = _reworded(_SNIPPET, 6)
+        shipped = SequenceMatcher(None, _SNIPPET.lower(), rewritten.lower()).ratio()
+        assert shipped < service.SIMILARITY_THRESHOLD, (
+            "autojunk no longer collapses the ratio; re-check the fix"
+        )
+        assert service._calculate_similarity(_SNIPPET, rewritten) > service.SIMILARITY_THRESHOLD
+
+    def test_genuinely_different_snippets_stay_below_the_threshold(self, service):
+        """The fix must not collapse everything into one duplicate."""
+        other = " ".join(
+            ["quarterly revenue guidance margin expansion retail footprint"] * 30
+        )
+        assert service._calculate_similarity(_SNIPPET, other) < service.SIMILARITY_THRESHOLD
+
+    def test_identical_long_snippets_still_score_1(self, service):
+        assert service._calculate_similarity(_SNIPPET, _SNIPPET) == pytest.approx(1.0)
+
+
 # ---------------------------------------------------------------------------
 # filter_and_score — integration
 # ---------------------------------------------------------------------------

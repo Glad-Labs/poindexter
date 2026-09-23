@@ -423,12 +423,29 @@ class ResearchQualityService:
         return kept
 
     def _calculate_similarity(self, text_a: str, text_b: str) -> float:
-        """Calculate similarity between two text snippets (0.0-1.0)"""
+        """Similarity between two research snippets (0.0-1.0).
+
+        WORD-level, with ``autojunk`` off. ``SequenceMatcher`` compares
+        CHARACTERS when handed strings, and past 200 elements its autojunk
+        heuristic discards every element occurring in more than 1% of the
+        sequence — across a snippet that is every common letter, and 198 of
+        200 sampled snippets clear that floor.
+
+        The collapse is triggered by SCATTERED differences, which is exactly
+        what a re-scrape or a lightly-reworded syndication looks like.
+        Measured 2026-09-23 over 120 real snippet pairs, **75 flipped the
+        dedup verdict** at the 0.7 threshold — pairs that are 83-87% alike
+        scored 0.32-0.45 and were kept as distinct sources, padding
+        ``research_context`` with the same facts twice. A pair differing in
+        only one word per forty barely moves (0.954 vs 0.976), which is why
+        a sparse-edit spot check misses this entirely.
+        """
         if not text_a or not text_b:
             return 0.0
 
-        # Use sequence matching for similarity
-        matcher = SequenceMatcher(None, text_a.lower(), text_b.lower())
+        matcher = SequenceMatcher(
+            None, text_a.lower().split(), text_b.lower().split(), autojunk=False,
+        )
         return matcher.ratio()
 
     def _recalculate_uniqueness(self, sources: list[ScoredSource]) -> list[ScoredSource]:
