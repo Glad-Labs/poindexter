@@ -909,7 +909,7 @@
       "id": 29,
       "type": "stat",
       "title": "GT open",
-      "description": "Unresolved GlitchTip issues from the latest brain triage probe cycle. Sourced from audit_log details->>'issues_seen' on the most recent probe.glitchtip_triage_cycle row (5-min cadence). Triage at http://localhost:8080.",
+      "description": "Unresolved GlitchTip issues from the latest brain triage probe cycle. Sourced from audit_log details->>'issues_seen' on the most recent probe.glitchtip_triage_cycle row (5-min cadence). Triage at http://__POINDEXTER_SERVICE_HOST__:8080.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"

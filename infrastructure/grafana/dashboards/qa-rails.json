@@ -40,7 +40,7 @@
       "title": "Langfuse UI",
       "tooltip": "LLM trace explorer — drill into specific reviewer LLM calls",
       "type": "link",
-      "url": "http://localhost:3010"
+      "url": "http://__POINDEXTER_SERVICE_HOST__:3010"
     },
     {
       "asDropdown": false,
@@ -52,7 +52,7 @@
       "title": "GlitchTip",
       "tooltip": "Self-hosted error tracker — reviewer exceptions land here",
       "type": "link",
-      "url": "http://localhost:8080/glad-labs/poindexter/issues/"
+      "url": "http://__POINDEXTER_SERVICE_HOST__:8080/glad-labs/poindexter/issues/"
     }
   ],
   "tags": ["qa", "lane-d", "issue-329"],

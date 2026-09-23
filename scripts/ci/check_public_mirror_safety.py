@@ -236,11 +236,10 @@ _STRIP_FILES = (
     # Dashboards are not feature-gated for Poindexter Pro — Pro is a wholly
     # separate, out-of-tree private repo (Glad-Labs/poindexter-pro) that ships
     # a refreshed COPY of a curated board set; see the dashboard-strip block
-    # in scripts/sync-to-github.sh for the full rationale. mission-control.json
-    # is the one exception, stripped for privacy, not monetization: it embeds
-    # the operator's Tailscale Funnel voice URL + other operator-specific
-    # dashboard links (Pyroscope, Loki, Tempo).
-    "infrastructure/grafana/dashboards/mission-control.json",
+    # in scripts/sync-to-github.sh for the full rationale. No dashboard is
+    # stripped any more: mission-control.json was the one exception (stripped
+    # for privacy, not monetization) and its operator literals are gone — see
+    # _SHIPS_TO_PUBLIC below.
 )
 
 
@@ -297,6 +296,18 @@ _SHIPS_TO_PUBLIC: tuple[str, ...] = (
     # 2026-07-13. Listed here so a future reader doesn't re-strip it on sight
     # of the word "premium" without reading the full rationale.
     "infrastructure/grafana/dashboards/cost-analytics.json",
+    # Was in _STRIP_FILES until 2026-09-23, stripped for privacy: it embedded
+    # the operator's Tailscale Funnel voice URL and hardcoded operator-host
+    # links to Prefect/Langfuse/Pyroscope/pgAdmin/etc. The voice link was
+    # removed (the feature has been parked off since 2026-08-19 and the link
+    # 404'd), and every service link now carries the
+    # __POINDEXTER_SERVICE_HOST__ placeholder that the Grafana entrypoint
+    # renders per-install from app_settings.operator_service_host. Nothing
+    # operator-specific remains, so the board ships and OSS gains the
+    # top-level dashboard it never had. Listed here — not allowlisted — so it
+    # is SCANNED: re-introducing a hostname must redden CI, which is exactly
+    # what _LEAK_GUARD_ALLOW failed to do.
+    "infrastructure/grafana/dashboards/mission-control.json",
 )
 
 

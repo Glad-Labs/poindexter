@@ -72,6 +72,20 @@ DEFAULTS: dict[str, str] = {
     # operator-facing timestamps in (store-UTC / present-local, services/clock.py).
     # OSS default UTC — location-neutral; the operator overlay sets the real zone.
     "operator_timezone": "UTC",
+    # Hostname the OPERATOR'S BROWSER uses to reach the sibling service UIs
+    # (Prefect :4200, Langfuse :3010, GlitchTip :8080, pgAdmin :18443,
+    # Prometheus :9091, worker API :8002) that Grafana dashboards link out to.
+    # Rendered into the dashboard JSON at Grafana container start, replacing the
+    # __POINDEXTER_SERVICE_HOST__ placeholder — Grafana does NOT interpolate
+    # env vars or ${__env.X} inside dashboard JSON (verified on 13.0.1), so a
+    # render step is the only way this can be configuration rather than a
+    # hardcoded literal. OSS default `localhost` reproduces the historical
+    # behaviour exactly: correct for a browser on the Docker host, and the
+    # single value a fresh install wants. An operator who reaches Grafana from
+    # another device (phone over a tailnet, say) sets this to the name that
+    # resolves there, and every cross-service dashboard link follows.
+    # Host ONLY — no scheme, no port, no trailing slash.
+    "operator_service_host": "localhost",
     # ----- Console task-trace (per-node capture) -----
     # Max bytes of a node's changed-output snapshot stored in
     # atom_runs.output_preview (the readable per-node preview the console
@@ -6295,6 +6309,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'ollama_model_validation_skip_keys': {'owner': 'startup_manager'},
     'operator_page_cooldown_minutes': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'operator_timezone': {'value_type': 'string'},
+    'operator_service_host': {'value_type': 'string'},
     'ops_firefighter_action_allowlist': {'owner': 'rules'},
     'ops_firefighter_enabled': {'value_type': 'boolean'},
     'ops_firefighter_llm_exclude_regex': {'owner': 'rules', 'value_type': 'string'},

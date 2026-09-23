@@ -16,7 +16,7 @@
       "title": "Prefect UI",
       "tooltip": "Open Prefect 3 flow-runs UI (workstation tailscale IP, port 4200)",
       "type": "link",
-      "url": "http://localhost:4200"
+      "url": "http://__POINDEXTER_SERVICE_HOST__:4200"
     },
     {
       "asDropdown": false,
@@ -28,7 +28,7 @@
       "title": "Langfuse UI",
       "tooltip": "Open Langfuse 3 — LLM traces, prompts, experiments (workstation tailscale IP, port 3010)",
       "type": "link",
-      "url": "http://localhost:3010"
+      "url": "http://__POINDEXTER_SERVICE_HOST__:3010"
     }
   ],
   "panels": [

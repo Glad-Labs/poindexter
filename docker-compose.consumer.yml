@@ -186,6 +186,57 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    # Render the repo-shipped dashboard JSON into the container, substituting
+    # __POINDEXTER_SERVICE_HOST__ for the host an operator's BROWSER can reach
+    # the sibling service UIs on (Prefect/Langfuse/GlitchTip/pgAdmin/...).
+    #
+    # Why a render step at all: Grafana does NOT interpolate env vars inside
+    # dashboard JSON. ${__env.X} is not a thing there — verified on 13.0.1, the
+    # href came back literal — so the host cannot be configuration without
+    # rewriting the file. Hardcoding it is what broke these links: `localhost`
+    # only resolves for a browser ON this host, and the operator's real
+    # hostname is an identity leak the public-mirror guard (correctly) refuses
+    # to let ship.
+    #
+    # Why in THIS service's entrypoint rather than an init container: adding a
+    # compose service changes the set that brain's compose_drift_probe audits,
+    # and an init container that exits reads as "down". An entrypoint prelude
+    # keeps the service list byte-identical.
+    #
+    # The re-render loop preserves the edit-JSON-and-wait-30s workflow the bind
+    # mount used to give: the provider below rescans every 30s, so a re-synced
+    # file hot-reloads exactly as before. Files are compared and only replaced
+    # when they actually differ, so an unchanged dashboard is never rewritten
+    # (a needless mtime bump would make Grafana re-provision every cycle).
+    # Written via a dot-prefixed .tmp that the provider's *.json glob ignores,
+    # so Grafana can never observe a half-written dashboard.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        SRC=/etc/grafana/dashboards-src
+        DST=/var/lib/grafana/dashboards
+        HOST="$${POINDEXTER_SERVICE_HOST:-localhost}"
+        render() {
+          mkdir -p "$$DST"
+          for f in "$$SRC"/*.json; do
+            [ -e "$$f" ] || continue
+            b=$$(basename "$$f")
+            t="$$DST/.$$b.tmp"
+            sed "s|__POINDEXTER_SERVICE_HOST__|$$HOST|g" "$$f" > "$$t"
+            if cmp -s "$$t" "$$DST/$$b"; then rm -f "$$t"; else mv "$$t" "$$DST/$$b"; fi
+          done
+          # Drop rendered copies whose source dashboard was deleted/parked.
+          for g in "$$DST"/*.json; do
+            [ -e "$$g" ] || continue
+            [ -e "$$SRC/$$(basename "$$g")" ] || rm -f "$$g"
+          done
+        }
+        render
+        echo "[grafana] dashboards rendered for host '$$HOST'"
+        while sleep 30; do render || true; done &
+        exec /run.sh
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Run 'poindexter setup' — GRAFANA_PASSWORD is generated in bootstrap.toml}
@@ -220,7 +271,17 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/grafana/dashboards:/etc/grafana/dashboards
+      # Dashboards are now mounted READ-ONLY as the render SOURCE; the
+      # entrypoint above renders them into /var/lib/grafana/dashboards (inside
+      # the existing grafana-data volume), which is what the file provider
+      # reads. That path rather than a second named volume because a fresh
+      # volume is created root-owned and Grafana runs as uid 472 — it fails
+      # with 'Permission denied' on the first render.
+      # Still anchored on POINDEXTER_DEPLOY_ROOT for the same reason as before
+      # (poindexter#923): it is repo-shipped JSON that must follow the deployed
+      # tree, and not anchoring it is why merged dashboard changes stayed dark
+      # until the operator checkout happened to be pulled.
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/grafana/dashboards:/etc/grafana/dashboards-src:ro
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
       interval: 30s

@@ -258,7 +258,14 @@ git rm --cached --quiet scripts/bootstrap.sh 2>/dev/null || true              # 
 # does still exist and has no independent leak content) was withheld for a
 # monetization model that no longer exists. Trimmed to the one real strip
 # 2026-07-13.
-git rm --cached --quiet infrastructure/grafana/dashboards/mission-control.json 2>/dev/null || true   # embeds operator-only Tailscale Funnel voice URL + Pyroscope/Loki/Tempo links
+# mission-control.json used to be stripped here: it embedded the operator's
+# Tailscale Funnel voice URL and hardcoded operator-host service links. Both are
+# gone — the voice link was dead (parked 2026-08-19) and every service link now
+# carries the __POINDEXTER_SERVICE_HOST__ placeholder the Grafana entrypoint
+# renders per-install. With no operator literal left, the board ships, and OSS
+# finally gets the top-level dashboard it never had. The leak guard scans it
+# like any other public-bound file, so a re-introduced hostname reddens CI
+# rather than quietly shipping.
 
 # === Gitleaks baseline — SHIPPED to public mirror, NOT stripped ===
 # 2026-05-12: previously this line stripped .gitleaks-baseline.json from

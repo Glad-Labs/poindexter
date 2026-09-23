@@ -148,6 +148,42 @@ if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_grafana_webhook_token.py" ]; then
     export GRAFANA_WEBHOOK_TOKEN
 fi
 
+# Grafana service host — read app_settings.operator_service_host (non-secret)
+# and append it to the same env_file. The Grafana entrypoint substitutes it for
+# the __POINDEXTER_SERVICE_HOST__ placeholder in every dashboard JSON, so the
+# cross-service links (Prefect/Langfuse/GlitchTip/pgAdmin/Prometheus/worker API)
+# point at a host the operator's BROWSER can actually reach. Hardcoded
+# `localhost` is why those links were dead from a phone, and the operator's real
+# hostname cannot ship in the repo — the public-mirror leak guard refuses it.
+#
+# Same best-effort contract as the JWT above: an empty result (no bootstrap.toml,
+# Postgres still booting, row unset on a fresh install) leaves the var unset and
+# the entrypoint falls back to `localhost` — the historical behaviour, correct
+# for a browser on this host. Unlike the JWT, an empty value here is NOT worth
+# preserving a stale one for: the fallback is already the sane default, so a
+# transient DB miss should not pin yesterday's hostname forever.
+if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_grafana_service_host.py" ]; then
+    _RUNTIME_ENV="$PROJECT_DIR/.poindexter-grafana.env"
+    POINDEXTER_SERVICE_HOST="$("$PYTHON_BIN" "$SCRIPT_DIR/_grafana_service_host.py" || true)"
+    if [ -f "$_RUNTIME_ENV" ]; then
+        # Drop any previous line before re-appending, so repeated runs don't
+        # accumulate duplicates (last-wins in env_file, but noise either way).
+        # `grep -v` exits 1 when EVERY line matched, i.e. nothing is left to
+        # keep. That is a valid empty result, not an error — but this script
+        # runs under `set -euo pipefail`, so an unguarded non-zero here aborts
+        # the entire stack launch. The `|| true` is load-bearing, not cargo
+        # cult: verified by simulating a .poindexter-grafana.env holding only a
+        # POINDEXTER_SERVICE_HOST line, which exits 1 without it.
+        grep -v '^POINDEXTER_SERVICE_HOST=' "$_RUNTIME_ENV" > "$_RUNTIME_ENV.tmp" 2>/dev/null || true
+        mv "$_RUNTIME_ENV.tmp" "$_RUNTIME_ENV"
+    fi
+    if [ -n "$POINDEXTER_SERVICE_HOST" ]; then
+        echo "POINDEXTER_SERVICE_HOST=$POINDEXTER_SERVICE_HOST" >> "$_RUNTIME_ENV"
+        echo "Grafana dashboard links will point at: $POINDEXTER_SERVICE_HOST"
+    fi
+    export POINDEXTER_SERVICE_HOST
+fi
+
 # Offsite-backup secrets (poindexter#386) — decrypt the three encrypted
 # app_settings rows into .poindexter-backup-offsite.env so the backup-offsite
 # service's env_file picks up RESTIC_PASSWORD + AWS_* on every up/restart.

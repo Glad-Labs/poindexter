@@ -8,5 +8,11 @@ providers:
     updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
-      path: /etc/grafana/dashboards
+      # Rendered by the grafana service entrypoint from the read-only
+      # /etc/grafana/dashboards-src bind mount, substituting the
+      # __POINDEXTER_SERVICE_HOST__ placeholder. Inside grafana-data
+      # because a fresh named volume would be root-owned and Grafana
+      # runs as uid 472. Re-synced every 30s, so editing repo JSON
+      # still hot-reloads exactly as the old bind mount did.
+      path: /var/lib/grafana/dashboards
       foldersFromFilesStructure: false

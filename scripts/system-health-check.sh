@@ -263,9 +263,16 @@ check observability "Alertmanager routing to worker webhook" bash -c '
   echo "$resp" | grep -q "poindexter-webhook" || { echo "alertmanager receiver not configured"; exit 2; }
 '
 
-check observability "QA Observability dashboard provisioned" bash -c '
-  # Reads file presence rather than hitting Grafana API (no admin password exposure)
-  docker exec poindexter-grafana sh -c "test -f /etc/grafana/dashboards/qa-observability.json" || { echo "dashboard not mounted"; exit 2; }
+check observability "QA Rails dashboard rendered" bash -c '
+  # Reads file presence rather than hitting Grafana API (no admin password exposure).
+  # Was asserting qa-observability.json, which has not existed since the board was
+  # renamed — so this check could only ever fail. Now points at the real file, in
+  # the RENDERED dir (/var/lib/grafana/dashboards): the entrypoint substitutes
+  # __POINDEXTER_SERVICE_HOST__ out of the read-only source mount into there.
+  docker exec poindexter-grafana sh -c "test -f /var/lib/grafana/dashboards/qa-rails.json" || { echo "dashboard not rendered"; exit 2; }
+  # A surviving placeholder means the render silently no-opped and every
+  # cross-service link on every board is a dead hostname.
+  docker exec poindexter-grafana sh -c "! grep -ql __POINDEXTER_SERVICE_HOST__ /var/lib/grafana/dashboards/*.json" || { echo "unrendered __POINDEXTER_SERVICE_HOST__ placeholder left in dashboards"; exit 2; }
 '
 
 # ---------------------------------------------------------------------------

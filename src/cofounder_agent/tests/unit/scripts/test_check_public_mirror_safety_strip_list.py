@@ -24,13 +24,16 @@ import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+# Anchored on a sentinel pair rather than a parents[N] depth: the #1046
+# namespace move made every fixed-depth walk in the tree one level wrong.
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
+
 
 def _load_check_module():
-    repo_root = next(
-        p for p in Path(__file__).resolve().parents
-        if (p / "pyproject.toml").exists() and (p / "src").exists()
-    )
-    script = repo_root / "scripts" / "ci" / "check_public_mirror_safety.py"
+    script = _REPO_ROOT / "scripts" / "ci" / "check_public_mirror_safety.py"
     spec = spec_from_file_location("check_public_mirror_safety_strip", script)
     assert spec is not None and spec.loader is not None
     module = module_from_spec(spec)
@@ -655,27 +658,48 @@ def test_retired_dashboard_monetization_strips_are_not_reintroduced() -> None:
 _MISSION_CONTROL_DASHBOARD = "infrastructure/grafana/dashboards/mission-control.json"
 
 
-def test_mission_control_dashboard_is_still_stripped_for_privacy() -> None:
-    """mission-control.json must stay in _STRIP_FILES -- a privacy strip, not monetization.
+def test_mission_control_dashboard_ships_and_carries_no_operator_host() -> None:
+    """mission-control.json SHIPS now -- and the reason it used to not must stay gone.
 
-    It embeds the operator's real Tailscale Funnel hostname
-    (nightrider.taild4f626.ts.net) plus Pyroscope/Loki/Tempo deep-links.
-    Unlike the other 5 dashboard filenames this block used to strip, this one
-    has independent leak content and must not be removed just because the
-    monetization rationale for its siblings went away.
+    It was stripped for privacy (not monetization): it embedded the operator's
+    real Tailscale Funnel hostname plus a Funnel voice URL. Both are gone as of
+    2026-09-23 -- the voice link was dead (feature parked 2026-08-19) and every
+    service link now carries the ``__POINDEXTER_SERVICE_HOST__`` placeholder
+    that the Grafana entrypoint renders per-install from
+    ``app_settings.operator_service_host``.
+
+    This test is deliberately NOT just ``in _SHIPS_TO_PUBLIC``. The listing is
+    a declaration; the file content is the actual invariant. Asserting the
+    content means re-introducing a hardcoded host fails HERE with a readable
+    message, rather than only in the leak guard's regex sweep.
     """
-    assert _MISSION_CONTROL_DASHBOARD in CHECK._STRIP_FILES, (
-        f"{_MISSION_CONTROL_DASHBOARD} is not in _STRIP_FILES. It leaks the "
-        "operator's Tailscale hostname and Pyroscope/Loki/Tempo links -- strip "
-        "it here AND keep the `git rm --cached` line in scripts/sync-to-github.sh."
+    assert _MISSION_CONTROL_DASHBOARD not in CHECK._STRIP_FILES, (
+        f"{_MISSION_CONTROL_DASHBOARD} is back in _STRIP_FILES. It ships now; "
+        "OSS would lose its only top-level board again."
+    )
+    assert _MISSION_CONTROL_DASHBOARD in CHECK._SHIPS_TO_PUBLIC, (
+        f"{_MISSION_CONTROL_DASHBOARD} must stay listed in _SHIPS_TO_PUBLIC so "
+        "the ship decision is explicit and the file is SCANNED."
+    )
+
+    body = (_REPO_ROOT / _MISSION_CONTROL_DASHBOARD).read_text(encoding="utf-8")
+    assert "taild4f626" not in body and "nightrider" not in body, (
+        f"{_MISSION_CONTROL_DASHBOARD} carries the operator hostname again. "
+        "Dashboard link hosts must use the __POINDEXTER_SERVICE_HOST__ "
+        "placeholder, which the Grafana entrypoint renders per-install."
+    )
+    assert "/voice/join" not in body, (
+        "The LiveKit voice link is back. Voice has been parked off since "
+        "2026-08-19 and the Funnel route was never re-established, so the link "
+        "404s -- and it is an operator-specific URL that must not ship."
     )
 
 
-def test_would_ship_rejects_mission_control_dashboard() -> None:
-    """would_ship() must classify mission-control.json as NOT shipping."""
-    assert not CHECK.would_ship(_MISSION_CONTROL_DASHBOARD), (
-        f"would_ship({_MISSION_CONTROL_DASHBOARD!r}) is True -- it leaks the "
-        "operator's Tailscale hostname and must be stripped."
+def test_would_ship_accepts_mission_control_dashboard() -> None:
+    """would_ship() must classify mission-control.json as shipping AND scanned."""
+    assert CHECK.would_ship(_MISSION_CONTROL_DASHBOARD), (
+        f"would_ship({_MISSION_CONTROL_DASHBOARD!r}) is False -- it no longer "
+        "carries operator literals and must ship so OSS gets the board."
     )
 
 
