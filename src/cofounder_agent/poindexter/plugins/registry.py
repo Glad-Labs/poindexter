@@ -847,6 +847,16 @@ def get_core_samples() -> dict[str, list[Any]]:
             "poindexter.services.jobs.sync_pro_subscriptions",
             "SyncProSubscriptionsJob",
         ),
+        # SyncResendDeliveryEventsJob — the newsletter's receipt feed.
+        # campaign_email_logs records that we HANDED a message to Resend;
+        # this records what happened to it. Its predecessor was the
+        # unreachable POST /api/webhooks/resend route, so receipts stopped
+        # 2026-07-19 while sending stayed healthy.
+        (
+            "jobs",
+            "poindexter.services.jobs.sync_resend_delivery",
+            "SyncResendDeliveryEventsJob",
+        ),
         ("jobs", "poindexter.services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
         ("jobs", "poindexter.services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing

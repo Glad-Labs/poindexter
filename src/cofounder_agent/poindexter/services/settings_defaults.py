@@ -3782,6 +3782,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.deploy_sync_failing.fallback': 'discord',
     'findings.deploy_sync_failing.cooldown_minutes': '120',
     'findings.deploy_sync_failing.min_severity': 'warning',
+    # resend_delivery_poll_failed: the newsletter still SENDS when this
+    # fires — only the receipt feed is down, so it informs rather than
+    # pages. Its predecessor (the unreachable webhook) failed silently for
+    # two months behind a threshold raised 7 -> 180 days, which is the
+    # outcome a declared policy exists to prevent: findings.default is
+    # log_only, so an undeclared kind reaches nobody at all.
+    'findings.resend_delivery_poll_failed.delivery': 'discord',
+    'findings.resend_delivery_poll_failed.fallback': 'discord',
+    'findings.resend_delivery_poll_failed.cooldown_minutes': '180',
+    'findings.resend_delivery_poll_failed.min_severity': 'warning',
     # retention_backlog: advisory. A policy that runs clean but does not drain
     # is a slow leak, not an outage — Discord, not a page.
     'findings.retention_backlog.delivery': 'discord',
