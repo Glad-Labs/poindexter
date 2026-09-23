@@ -784,9 +784,28 @@ def youtube_sync_metadata(selector: str | None, limit: int | None, do_apply: boo
     async def _go(pool):
         sc = SiteConfig(pool=pool)
         await sc.load(pool)
+        # A platform opts the run into repairing a Short whose stored hook has
+        # a CONTENT defect (one local call, written back to the task). Only on
+        # --apply: a dry run reports the defects without spending the call.
+        repair_hook = None
+        if do_apply:
+            from functools import partial
+
+            from poindexter.modules.content.api import repair_short_hook
+            from poindexter.services.di_wiring import build_platform_for_subprocess
+
+            platform = build_platform_for_subprocess(pool, sc)
+            if platform is None:
+                click.echo(
+                    "Note: no LLM platform available — a Short with a defective "
+                    "hook keeps it and its title is shortened instead.", err=True,
+                )
+            else:
+                repair_hook = partial(repair_short_hook, platform=platform)
         return (
             await sync_youtube_metadata(
                 pool, sc, selector=selector, apply=do_apply, limit=limit,
+                repair_hook=repair_hook,
             ),
             # Completeness cross-check against the other record of what landed
             # on the channel. Reported even on a narrowed run: the whole failure
@@ -829,6 +848,13 @@ def youtube_sync_metadata(selector: str | None, limit: int | None, do_apply: boo
     for o in outcomes:
         if o.reconciled_deleted:
             mark = "  — gone from channel, marked deleted"
+        elif o.hook_repaired:
+            mark = "  ♻ hook repaired + saved"
+        elif o.hook_defects and not do_apply:
+            # A dry run names what --apply would fix, without paying for it.
+            mark = f"  ⚠ hook {','.join(o.hook_defects)} — --apply would repair"
+        elif o.hook_defects:
+            mark = f"  ⚠ hook {','.join(o.hook_defects)} — NOT repaired"
         elif o.applied or not do_apply:
             mark = ""
         else:
@@ -839,6 +865,19 @@ def youtube_sync_metadata(selector: str | None, limit: int | None, do_apply: boo
         )
     click.echo("-" * 72)
     click.echo(f"{len(outcomes)} video(s); {len(failures)} failed")
+    repaired = [o for o in outcomes if o.hook_repaired]
+    defective = [o for o in outcomes if o.hook_defects and not o.hook_repaired]
+    if repaired:
+        click.echo(
+            f"{len(repaired)} Short hook(s) regenerated and written back to the "
+            "task — the next sync will not pay for them again."
+        )
+    if defective:
+        click.echo(
+            f"{len(defective)} Short(s) still carry a hook defect a shorten "
+            "cannot fix; their titles are cut at the budget."
+            + ("  Re-run with --apply to repair them." if not do_apply else "")
+        )
     if vanished:
         click.echo(
             f"{len(vanished)} no longer on the channel — demoted to "

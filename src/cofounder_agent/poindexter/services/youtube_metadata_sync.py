@@ -40,6 +40,14 @@ from poindexter.services.jobs.youtube_payload import (
     twin_watch_url,
 )
 from poindexter.services.publish_adapters.youtube import STATUS_NOT_FOUND
+from poindexter.services.short_hook import (
+    content_defects,
+    first_sentence,
+    hook_limits,
+    runaway_factor,
+    strip_preamble,
+)
+from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -156,6 +164,13 @@ class SyncOutcome:
     description_chars: int = 0
     tag_count: int = 0
     reconciled_deleted: bool = False
+    #: CONTENT defects on the stored hook — the ones a shorten cannot fix.
+    #: Populated on every run so a DRY run still names what --apply would
+    #: repair, without spending a GPU call to find out.
+    hook_defects: tuple[str, ...] = ()
+    #: True when the corrective call ran, improved the hook, and the repaired
+    #: script was written back to the task.
+    hook_repaired: bool = False
 
 
 async def _load_targets(pool: Any, selector: str | None) -> list[dict[str, Any]]:
@@ -235,6 +250,105 @@ async def _mark_distribution_deleted(pool: Any, video_id: str, reason: str) -> b
     return True
 
 
+#: Persist a repaired narration back onto the task's latest version row, so
+#: the fix outlives this sync instead of being recomputed (and re-paid for)
+#: on every run. Scoped to the row the read came from —
+#: ``_TARGETS_SQL`` joins the same ``ORDER BY version DESC LIMIT 1``.
+_PERSIST_SCRIPT_SQL = """
+    UPDATE pipeline_versions
+       SET stage_data = jsonb_set(
+               stage_data, '{task_metadata,short_summary_script}',
+               to_jsonb($2::text), true)
+     WHERE task_id = $1
+       AND version = (SELECT MAX(version) FROM pipeline_versions WHERE task_id = $1)
+       AND stage_data -> 'task_metadata' ->> 'short_summary_script' IS NOT NULL
+"""
+
+
+def stored_hook_defects(row: dict[str, Any], site_config: Any) -> tuple[str, ...]:
+    """CONTENT defects on this row's stored hook; ``()`` for a long-form row.
+
+    Length is NOT a defect here — the title builder shortens at a word
+    boundary and that is the designed behaviour. Only the defects a shorten
+    cannot fix (a question, a run-on, a restatement of the title) are worth a
+    corrective call.
+    """
+    if row.get("medium") != "video_short":
+        return ()
+    script = str(row.get("short_script") or "")
+    if not script.strip():
+        return ()
+    max_chars, max_words = hook_limits(site_config)
+    hook = strip_preamble(first_sentence(script)).rstrip(".").strip()
+    return content_defects(
+        hook,
+        max_chars=max_chars,
+        max_words=max_words,
+        article_title=str(row.get("title") or ""),
+        runaway_factor=runaway_factor(site_config),
+    )
+
+
+async def _repair_stored_hook(
+    pool: Any, row: dict[str, Any], site_config: Any, repair_hook: Any,
+) -> bool:
+    """Regenerate this Short's opening line and persist it. ``True`` if it changed.
+
+    The gate that writes a good hook runs at SCRIPT-generation time, so a
+    Short rendered before it existed keeps whatever the model first wrote —
+    and this path can only SHORTEN, which turns an unfinished sentence into a
+    stump. Measured 2026-09-23, that was 4 of the 9 live Shorts.
+
+    ``repair_hook`` is INJECTED rather than imported: the repair lives in
+    ``modules.content`` and this is kernel, so importing it here would put a
+    module dependency in ``services/`` (``scripts/ci/kernel_purity_lint.py``,
+    poindexter#666). The CLI owns the wiring and passes the callable in.
+
+    Never raises: the metadata sync's job is the metadata, and a Short with
+    its original opener is the status quo, not a regression.
+    """
+    script = str(row.get("short_script") or "")
+    try:
+        repaired, outcome = await repair_hook(
+            script,
+            title=str(row.get("title") or ""),
+            article=str(row.get("content") or ""),
+            site_config=site_config,
+            pool=pool,
+            task_id=row.get("task_id"),
+        )
+    except Exception as exc:  # noqa: BLE001 — a hook is never worth failing a sync over
+        logger.warning(
+            "[YOUTUBE_SYNC] hook repair raised for %s (%s) — keeping the original",
+            row.get("video_id"), describe_exception(exc),
+        )
+        return False
+
+    if not outcome.get("repaired") or repaired == script:
+        logger.info(
+            "[YOUTUBE_SYNC] hook NOT repaired for %s (%s); keeping the original",
+            row.get("video_id"), outcome.get("skipped") or outcome.get("error") or "no improvement",
+        )
+        return False
+
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(_PERSIST_SCRIPT_SQL, row.get("task_id"), repaired)
+    except Exception as exc:  # noqa: BLE001 — the better hook still ships on this run
+        logger.warning(
+            "[YOUTUBE_SYNC] repaired hook for %s could not be persisted (%s) — "
+            "this run uses it, the next will recompute it",
+            row.get("video_id"), describe_exception(exc),
+        )
+
+    row["short_script"] = repaired
+    logger.info(
+        "[YOUTUBE_SYNC] repaired the hook for %s: %r -> %r",
+        row.get("video_id"), first_sentence(script), first_sentence(repaired),
+    )
+    return True
+
+
 def _compose(row: dict[str, Any], site_config: Any) -> tuple[str, str, list[str]]:
     """Recompose (title, description, tags) exactly as an upload would.
 
@@ -273,6 +387,7 @@ async def sync_youtube_metadata(
     selector: str | None = None,
     apply: bool = False,
     limit: int | None = None,
+    repair_hook: Any = None,
 ) -> list[SyncOutcome]:
     """Recompose and (optionally) push metadata for published YouTube videos.
 
@@ -280,6 +395,16 @@ async def sync_youtube_metadata(
     published upload. ``apply`` defaults to **False** — this writes to a public
     platform, so the caller has to say so explicitly and a mistake costs a
     printed diff rather than 12 rewritten videos.
+
+    ``repair_hook`` opts the run into repairing a Short whose stored hook has
+    a CONTENT defect — one local LLM call, and the improved narration is
+    written back to the task so it is paid for once. It is injected rather
+    than imported because the repair lives in ``modules.content`` and this is
+    kernel; the CLI owns that wiring. Omit it (the default) and the run
+    composes from whatever is stored, which is the pre-2026-09-23 behaviour.
+    A DRY run never repairs and never writes; it still reports the defects on
+    :attr:`SyncOutcome.hook_defects`, so the operator can see what ``--apply``
+    would fix without spending a GPU call to find out.
 
     Returns one :class:`SyncOutcome` per video, failures included: a partial
     result is the useful one when a scope error stops the run at the first
@@ -299,6 +424,12 @@ async def sync_youtube_metadata(
 
     outcomes: list[SyncOutcome] = []
     for row in rows:
+        # Computed BEFORE any repair, so it reports what was stored.
+        defects = stored_hook_defects(row, site_config)
+        repaired = False
+        if defects and apply and repair_hook is not None:
+            repaired = await _repair_stored_hook(pool, row, site_config, repair_hook)
+
         title, description, tags = _compose(row, site_config)
         if not apply:
             outcomes.append(
@@ -309,6 +440,7 @@ async def sync_youtube_metadata(
                     applied=False,
                     description_chars=len(description),
                     tag_count=len(tags),
+                    hook_defects=defects,
                 )
             )
             continue
@@ -335,6 +467,8 @@ async def sync_youtube_metadata(
                 description_chars=len(description),
                 tag_count=len(tags),
                 reconciled_deleted=vanished,
+                hook_defects=defects,
+                hook_repaired=repaired,
             )
         )
         if ok:
@@ -351,4 +485,9 @@ async def sync_youtube_metadata(
     return outcomes
 
 
-__all__ = ["SyncOutcome", "find_unrecorded_uploads", "sync_youtube_metadata"]
+__all__ = [
+    "SyncOutcome",
+    "find_unrecorded_uploads",
+    "stored_hook_defects",
+    "sync_youtube_metadata",
+]

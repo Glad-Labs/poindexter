@@ -466,3 +466,182 @@ def test_compose_without_a_live_twin_omits_the_cross_link():
     assert "Watch the full breakdown" not in description
     _t, description, _ = _compose(dict(ROW), _sc())
     assert "Watch the Short" not in description
+
+
+# ---------------------------------------------------------------------------
+# Hook repair on the sync path (pd#1074)
+# ---------------------------------------------------------------------------
+#
+# The gate that writes a good hook runs at SCRIPT-generation time. This path
+# can only SHORTEN, so a Short rendered before the gate existed keeps whatever
+# the model first wrote and its title comes out mid-phrase. Measured
+# 2026-09-23: 4 of the 9 live Shorts.
+
+# A run-on the model never finished — `runaway`, which shortening cannot fix.
+_BAD_SCRIPT = (
+    "The hidden debt of five tech giants, including Alphabet, Microsoft, Amazon, "
+    "Meta, and Oracle, is an astounding $1.65 trillion, $300 billion more than "
+    "officially listed on their balance sheets. That gap is the story."
+)
+_GOOD_SCRIPT = (
+    "Five tech giants hide $1.65 trillion in AI infrastructure debt. "
+    "That gap is the story."
+)
+
+SHORT_ROW = {
+    **ROW,
+    "medium": "video_short",
+    "video_id": "Q2Sc2niHIgI",
+    "task_id": "f555bedc-1dac-44de-ba06-911cf97d088c",
+    "short_script": _BAD_SCRIPT,
+}
+
+
+def _short_row(**over):
+    return {**SHORT_ROW, **over}
+
+
+class TestStoredHookDefects:
+    def test_a_runaway_hook_is_reported(self):
+        from poindexter.services.youtube_metadata_sync import stored_hook_defects
+
+        assert "runaway" in stored_hook_defects(_short_row(), _sc())
+
+    def test_a_clean_hook_reports_nothing(self):
+        from poindexter.services.youtube_metadata_sync import stored_hook_defects
+
+        assert stored_hook_defects(_short_row(short_script=_GOOD_SCRIPT), _sc()) == ()
+
+    def test_a_long_form_row_is_never_scored(self):
+        """Only a Short titles itself from its narration."""
+        from poindexter.services.youtube_metadata_sync import stored_hook_defects
+
+        assert stored_hook_defects(_short_row(medium="video"), _sc()) == ()
+
+    def test_length_alone_is_not_a_defect(self):
+        """Over-long is a SHORTENING problem — the title builder handles it and
+        it must not buy an LLM call."""
+        from poindexter.services.short_hook import first_sentence, hook_defects, strip_preamble
+        from poindexter.services.youtube_metadata_sync import stored_hook_defects
+
+        # 79-char hook: past the 70 budget, inside the 105 runaway threshold,
+        # and a finished claim. Exactly the case a shorten handles.
+        long_but_good = (
+            "Five tech giants are hiding one point six five trillion dollars off "
+            "their books. Here is the gap."
+        )
+        hook = strip_preamble(first_sentence(long_but_good)).rstrip(".").strip()
+        assert hook_defects(hook) == ("too_long",), "fixture must be over budget"
+        assert stored_hook_defects(_short_row(short_script=long_but_good), _sc()) == ()
+
+
+@pytest.mark.asyncio
+class TestHookRepairOnSync:
+    async def test_a_dry_run_reports_the_defect_and_spends_nothing(self):
+        """A dry run must not cost a GPU call or touch the DB, but it still has
+        to say what --apply would fix."""
+        async def _boom(*a, **k):  # pragma: no cover - must never run
+            raise AssertionError("repair called during a dry run")
+
+        pool = _FakePool([_short_row()])
+        out = await sync_youtube_metadata(pool, _sc(), repair_hook=_boom)
+        assert out[0].applied is False
+        assert "runaway" in out[0].hook_defects
+        assert out[0].hook_repaired is False
+        assert pool.conn.executed == [], "a dry run wrote to the database"
+
+    async def test_no_repair_hook_means_no_repair(self, monkeypatch):
+        """Backcompat: the pre-2026-09-23 callers inject nothing and must keep
+        composing from whatever is stored — media_distribute is one of them."""
+        import poindexter.services.publish_adapters.youtube as yt
+
+        class _Adapter:
+            def __init__(self, **k): pass
+            async def update_metadata(self, **k):
+                return SimpleNamespace(success=True, status="ok")
+
+        monkeypatch.setattr(yt, "YouTubePublishAdapter", _Adapter)
+        out = await sync_youtube_metadata(_FakePool([_short_row()]), _sc(), apply=True)
+        assert out[0].hook_repaired is False
+        assert "runaway" in out[0].hook_defects
+
+    async def test_apply_repairs_titles_from_the_new_hook_and_persists_it(self, monkeypatch):
+        import poindexter.services.publish_adapters.youtube as yt
+
+        async def _repair(script, **kwargs):
+            return _GOOD_SCRIPT, {"repaired": True}
+
+        seen = {}
+
+        class _Adapter:
+            def __init__(self, **k): pass
+            async def update_metadata(self, **k):
+                seen.update(k)
+                return SimpleNamespace(success=True, status="ok")
+
+        monkeypatch.setattr(yt, "YouTubePublishAdapter", _Adapter)
+        pool = _FakePool([_short_row()])
+        out = await sync_youtube_metadata(pool, _sc(), apply=True, repair_hook=_repair)
+
+        assert out[0].hook_repaired is True
+        assert out[0].applied is True
+        # The title YouTube receives comes from the REPAIRED hook.
+        assert seen["title"].startswith("Five tech giants hide")
+        # ...and the repaired narration was written back, so it is paid for once.
+        writes = [e for e in pool.conn.executed if "pipeline_versions" in e[0]]
+        assert len(writes) == 1
+        assert writes[0][1] == SHORT_ROW["task_id"]
+        assert writes[0][2] == _GOOD_SCRIPT
+
+    async def test_a_refused_repair_keeps_the_original_and_writes_nothing(self, monkeypatch):
+        """repair_short_hook never returns a worse hook; when it declines, the
+        sync proceeds with what was stored."""
+        import poindexter.services.publish_adapters.youtube as yt
+
+        async def _declined(script, **kwargs):
+            return script, {"repaired": False, "skipped": "gpu_busy"}
+
+        class _Adapter:
+            def __init__(self, **k): pass
+            async def update_metadata(self, **k):
+                return SimpleNamespace(success=True, status="ok")
+
+        monkeypatch.setattr(yt, "YouTubePublishAdapter", _Adapter)
+        pool = _FakePool([_short_row()])
+        out = await sync_youtube_metadata(pool, _sc(), apply=True, repair_hook=_declined)
+        assert out[0].hook_repaired is False
+        assert out[0].applied is True, "a declined repair must not fail the sync"
+        assert [e for e in pool.conn.executed if "pipeline_versions" in e[0]] == []
+
+    async def test_a_raising_repair_never_fails_the_sync(self, monkeypatch):
+        import poindexter.services.publish_adapters.youtube as yt
+
+        async def _raise(script, **kwargs):
+            raise RuntimeError("ollama down")
+
+        class _Adapter:
+            def __init__(self, **k): pass
+            async def update_metadata(self, **k):
+                return SimpleNamespace(success=True, status="ok")
+
+        monkeypatch.setattr(yt, "YouTubePublishAdapter", _Adapter)
+        out = await sync_youtube_metadata(
+            _FakePool([_short_row()]), _sc(), apply=True, repair_hook=_raise)
+        assert out[0].applied is True and out[0].hook_repaired is False
+
+    async def test_a_clean_hook_never_buys_a_call(self, monkeypatch):
+        import poindexter.services.publish_adapters.youtube as yt
+
+        async def _boom(*a, **k):  # pragma: no cover - must never run
+            raise AssertionError("repair called on a clean hook")
+
+        class _Adapter:
+            def __init__(self, **k): pass
+            async def update_metadata(self, **k):
+                return SimpleNamespace(success=True, status="ok")
+
+        monkeypatch.setattr(yt, "YouTubePublishAdapter", _Adapter)
+        out = await sync_youtube_metadata(
+            _FakePool([_short_row(short_script=_GOOD_SCRIPT)]),
+            _sc(), apply=True, repair_hook=_boom)
+        assert out[0].hook_defects == () and out[0].hook_repaired is False

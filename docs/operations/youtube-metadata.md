@@ -44,6 +44,41 @@ path uses**, so a future change to the composition rules reaches new and old
 videos through one code path instead of two that can disagree. Dry run is the
 default because this writes to a public channel.
 
+### A Short with a bad stored hook is repaired, not stumped
+
+The gate that writes a good opening line runs at **script-generation** time.
+This path can only SHORTEN, so a Short rendered before that gate existed keeps
+whatever the model first wrote — and shortening an unfinished sentence gives a
+title cut mid-phrase. Measured 2026-09-23, that was **4 of the 9** live Shorts:
+
+```
+The hidden debt of five tech giants, including Alphabet, Microsoft #Shorts
+Imagine your child learning to code through an adventure filled with #Shorts
+```
+
+So `--apply` now repairs a Short whose stored hook has a CONTENT defect — a
+question, a run-on, a restatement of the title — with one local LLM call, and
+**writes the improved narration back to the task**. The cost is paid once, not
+per sync, and the presenter says the better line on any future re-render.
+
+Length alone is never a defect here: over-long is a shortening problem and the
+title builder handles it, so a merely-long good claim buys no call.
+
+A **dry run never repairs and never writes.** It still names the defects, so
+you can see what `--apply` would fix without spending the calls to find out:
+
+```
+Q2Sc2niHIgI    312     4  The hidden debt of five tech giants…  ⚠ hook runaway — --apply would repair
+```
+
+The repair is **injected, not imported**: it lives in `modules.content` and the
+sync is kernel, so the CLI owns the wiring and passes the callable in
+(`scripts/ci/kernel_purity_lint.py`, poindexter#666). A caller that injects
+nothing — `media_distribute`'s twin cross-link refresh, for instance — composes
+from whatever is stored, which is deliberate: that path runs right after a
+render whose script already passed the script-time gate, so a second call there
+would buy nothing.
+
 ### What it can reach
 
 `pipeline_distributions` is the list of uploads, and until 2026-09-01 it could

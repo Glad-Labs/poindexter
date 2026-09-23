@@ -176,6 +176,13 @@ from poindexter.modules.content.quality_service import (
 )
 
 # ---------------------------------------------------------------------------
+# short_hook_repair — one corrective LLM call for a Short's opening line.
+# Reached by ``services.youtube_metadata_sync`` so a Short rendered before the
+# script-time gate existed can still get a hook worth titling with.
+# ---------------------------------------------------------------------------
+from poindexter.modules.content.short_hook_repair import repair_short_hook  # noqa: E402
+
+# ---------------------------------------------------------------------------
 # stages.topic_decision_gate
 # ---------------------------------------------------------------------------
 from poindexter.modules.content.stages.topic_decision_gate import (
@@ -213,6 +220,8 @@ __all__ = [
     "build_topic_decision_artifact",
     # atoms.narrate_bundle
     "narrate_bundle",
+    # short_hook_repair
+    "repair_short_hook",
     # atoms.social_generate_drafts
     "generate_social_drafts",
     # posts_service
