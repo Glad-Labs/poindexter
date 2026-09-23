@@ -207,11 +207,40 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", stripped).strip()
 
 
+def _fidelity_detail(asr_transcript: str, script: str) -> tuple[float, int, int]:
+    """``(ratio, words_matched, words_total)`` for ASR vs the voiced script.
+
+    WORD-level, and ``autojunk=False``, both load-bearing:
+
+    * ``SequenceMatcher`` compares CHARACTERS when handed strings, and for any
+      sequence longer than 200 elements its autojunk heuristic silently
+      discards every element occurring in more than 1% of it. Across a
+      3,800-character narration that is every common letter, so the ratio
+      collapses. Measured on the 2026-09-22 NCCL long form: this check scored
+      **0.400** on a transcript that matched **548 of 591 words** — the same
+      comparison scores 0.980 with autojunk off. The check was not detecting a
+      TTS fault, it was reporting one that did not exist.
+    * Words are also the unit :func:`_normalize`'s docstring always claimed:
+      "the WORDS the ASR heard vs the WORDS the writer scripted".
+
+    A perfect round trip does NOT score 1.0, and should not be expected to:
+    the reference is the text TTS received, so acronyms and numbers are
+    spelled out ("v l l m", "one point one four") while ASR writes them back
+    fused ("vllm", "1 14"). That costs a few points and is not a fault.
+    """
+    asr_words = _normalize(asr_transcript).split()
+    script_words = _normalize(script).split()
+    total = max(len(asr_words), len(script_words))
+    if not asr_words or not script_words:
+        return 0.0, 0, total
+    sm = difflib.SequenceMatcher(None, asr_words, script_words, autojunk=False)
+    matched = sum(block.size for block in sm.get_matching_blocks())
+    return sm.ratio(), matched, total
+
+
 def _fidelity_ratio(asr_transcript: str, script: str) -> float:
-    """Normalized similarity ratio (0.0–1.0) between ASR + source script."""
-    return difflib.SequenceMatcher(
-        None, _normalize(asr_transcript), _normalize(script)
-    ).ratio()
+    """Word-level similarity ratio (0.0–1.0); see :func:`_fidelity_detail`."""
+    return _fidelity_detail(asr_transcript, script)[0]
 
 
 def _resolve_threshold(site_config: Any) -> float:
@@ -486,7 +515,7 @@ async def _transcribe_one(
     # Only when both are non-empty — nothing to compare otherwise.
     if asr_transcript and script:
         threshold = _resolve_threshold(site_config)
-        ratio = _fidelity_ratio(asr_transcript, script)
+        ratio, words_matched, words_total = _fidelity_detail(asr_transcript, script)
         if ratio < threshold:
             emit_finding(
                 source="media.transcribe_narration",
@@ -495,9 +524,14 @@ async def _transcribe_one(
                 body=(
                     f"The {label} narration ASR transcript for task {task_id} "
                     f"diverged from the voiced narration text — its script (labels "
-                    f"stripped) plus the CTA outro (normalized SequenceMatcher "
-                    f"ratio {ratio:.3f} < {threshold}). Likely a TTS dropout or "
-                    "truncation. Captions still burned in; advisory only."
+                    f"stripped) plus the CTA outro. Word-level similarity "
+                    f"{ratio:.3f} < {threshold}: {words_matched} of {words_total} "
+                    "words matched. At this threshold that means roughly a third "
+                    "or more of the narration is absent from the audio, so look "
+                    "for a TTS dropout or a truncated render. A few points of "
+                    "loss are normal — the reference is the text TTS received, "
+                    "with acronyms and numbers spelled out. Captions still "
+                    "burned in; advisory only."
                 ),
                 severity="warn",
                 dedup_key=f"caption_fidelity:{task_id}:{label}",
@@ -508,6 +542,11 @@ async def _transcribe_one(
                     "threshold": threshold,
                     "asr_len": len(asr_transcript),
                     "script_len": len(script),
+                    # Characters are what the old char-level ratio compared and
+                    # they hid the bug: 3794 vs 3836 looked like a truncation.
+                    # Words are what the ratio means, so report them too.
+                    "words_matched": words_matched,
+                    "words_total": words_total,
                 },
             )
 

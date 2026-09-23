@@ -147,3 +147,42 @@ inconclusive — only _changed_ text is proof.
 Caption fidelity is unaffected by the compound rule in either direction: the
 `_fidelity_ratio` tokenizer strips all punctuation before diffing, so
 "state-of-the-art" and "state of the art" compare equal.
+
+## Caption fidelity is measured in WORDS, and that is load-bearing
+
+`difflib.SequenceMatcher` compares **characters** when you hand it strings,
+and past 200 elements its `autojunk` heuristic silently discards every element
+occurring in more than 1% of the sequence. Across a 3,800-character narration
+that is every common letter, so the ratio collapses.
+
+Measured on the 2026-09-22 "Skip NCCL" long form:
+
+| comparison | ratio |
+| --- | --- |
+| **as shipped** — characters, autojunk on | **0.400** |
+| characters, `autojunk=False` | 0.980 |
+| **words, `autojunk=False`** (now) | **0.941** |
+
+548 of its 591 words matched. The check was not detecting a TTS fault; it was
+reporting one that did not exist, and its finding text asserted "likely a TTS
+dropout or truncation", which sent the next reader looking for a problem in
+the wrong component. The `asr_len` / `script_len` in that finding (3794 vs
+3836) were the tell: a truncation does not preserve length.
+
+The old tests could not catch this — their fixtures were a few dozen
+characters, under the autojunk floor. **A guard for a length-dependent bug has
+to use a realistic length**, and a repetitive fixture will not do either: a
+script that repeats one sentence gives the character matcher huge identical
+blocks to lock onto and scores 0.65 where varied prose scores 0.04.
+
+### What the threshold means now
+
+For a transcript holding fraction *k* of the script, the word-level ratio is
+`2k / (k + 1)`, so the default `0.80` sits at **k = 2/3** — it fires when
+roughly a third or more of the narration is missing from the audio. That is a
+dropout alarm, not a transcription-accuracy alarm.
+
+A perfect round trip does **not** score 1.0 and should not be expected to. The
+reference is the text TTS received, so acronyms and numbers are spelled out —
+`v l l m` against ASR's `vllm`, `one point one four` against `1 14`. On the
+NCCL narration that accounted for most of the 43 unmatched words.

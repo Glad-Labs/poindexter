@@ -668,3 +668,94 @@ def test_transient_classifier():
         CaptionResult(success=False, segments=[], srt_text="", error="audio_path does not exist"),
     )
     assert not media_transcribe_narration._is_transient_caption_failure(_caption_result())
+
+
+# ~600 words of VARIED prose, the size of a 4-minute narration. Varied on
+# purpose: a fixture that repeats one sentence hands the character matcher
+# huge identical blocks to lock onto, which masks the very collapse these
+# tests exist to pin — the repetitive first draft scored 0.65 where real prose
+# scores 0.04.
+_FIDELITY_VOCAB = (
+    "distributed reinforcement learning keeps policy weights synchronized across "
+    "separate jobs without a high speed interconnect the adapter becomes the "
+    "transport and a storage bucket stands in for the shared network so trainer "
+    "and inference replicas agree on which version they are serving while drift "
+    "quietly scores rollouts against an obsolete policy"
+).split()
+_FIDELITY_SCRIPT = " ".join(
+    _FIDELITY_VOCAB[(i * 7 + (i * i) % 11) % len(_FIDELITY_VOCAB)] for i in range(600)
+)
+
+
+class TestFidelityIsMeasuredInWords:
+    """The check scored 0.400 on the 2026-09-22 NCCL long form while 548 of its
+    591 words matched, and its finding blamed "a TTS dropout or truncation"
+    that never happened.
+
+    Cause: `SequenceMatcher` compares CHARACTERS when given strings, and past
+    200 elements its autojunk heuristic drops every element occurring in more
+    than 1% of the sequence — in a 3,800-character narration, every common
+    letter. The old fixtures here were a few dozen characters, under that
+    floor, so they could not see it. Every fixture below is realistically long
+    on purpose.
+    """
+
+    SCRIPT = _FIDELITY_SCRIPT
+
+    @staticmethod
+    def _drop_words(text: str, keep: float) -> str:
+        words = text.split()
+        return " ".join(words[: int(len(words) * keep)])
+
+    def test_a_near_perfect_long_transcript_scores_high(self):
+        """One word in 30 misheard — the normal ASR case."""
+        words = self.SCRIPT.split()
+        asr = " ".join(w if i % 30 else "misheard" for i, w in enumerate(words))
+        assert len(self.SCRIPT) > 3000, "fixture must clear the autojunk floor"
+        assert media_transcribe_narration._fidelity_ratio(asr, self.SCRIPT) > 0.9
+
+    def test_the_old_char_level_call_would_have_failed_that_same_pair(self):
+        """The guard: this is the exact comparison that shipped, and it scores
+        a near-perfect transcript far below the 0.80 threshold."""
+        import difflib
+
+        words = self.SCRIPT.split()
+        asr = " ".join(w if i % 30 else "misheard" for i, w in enumerate(words))
+        shipped = difflib.SequenceMatcher(
+            None,
+            media_transcribe_narration._normalize(asr),
+            media_transcribe_narration._normalize(self.SCRIPT),
+        ).ratio()
+        assert shipped < 0.5, "autojunk no longer collapses the ratio; re-check the fix"
+        assert media_transcribe_narration._fidelity_ratio(asr, self.SCRIPT) > 0.9
+
+    def test_a_real_dropout_is_still_caught(self):
+        """Half the narration missing must still fall under 0.80, or the fix
+        would have traded a false alarm for a blind spot."""
+        asr = self._drop_words(self.SCRIPT, 0.5)
+        assert media_transcribe_narration._fidelity_ratio(asr, self.SCRIPT) < 0.80
+
+    def test_a_third_missing_is_the_threshold(self):
+        """What 0.80 means in words: ratio is 2k/(k+1) for a transcript holding
+        fraction k of the script, so 0.80 sits at k = 2/3. Stated here so the
+        setting's sensitivity is on the record."""
+        assert media_transcribe_narration._fidelity_ratio(
+            self._drop_words(self.SCRIPT, 0.60), self.SCRIPT) < 0.80
+        assert media_transcribe_narration._fidelity_ratio(
+            self._drop_words(self.SCRIPT, 0.75), self.SCRIPT) > 0.80
+
+    def test_spelled_out_acronyms_cost_only_a_few_points(self):
+        """The reference is the text TTS received, so it carries "v l l m"
+        where ASR writes "vllm". Real, expected, and must not trip the gate."""
+        script = self.SCRIPT + " the v l l m server reached one point one four"
+        asr = self.SCRIPT + " the vllm server reached 1 14"
+        assert media_transcribe_narration._fidelity_ratio(asr, script) > 0.90
+
+    def test_detail_reports_the_word_counts(self):
+        ratio, matched, total = media_transcribe_narration._fidelity_detail(
+            self.SCRIPT, self.SCRIPT)
+        assert ratio == 1.0 and matched == total == len(self.SCRIPT.split())
+
+    def test_empty_either_side_is_zero_not_a_crash(self):
+        assert media_transcribe_narration._fidelity_detail("", self.SCRIPT)[0] == 0.0
+        assert media_transcribe_narration._fidelity_detail(self.SCRIPT, "")[0] == 0.0
