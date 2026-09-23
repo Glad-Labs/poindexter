@@ -1167,6 +1167,125 @@ class TestProbeContentGenGpuLock:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+class TestBrainGpuLockIsSelfIdentifying:
+    """A brain-held GPU lock must name itself, like the worker's does.
+
+    The worker stamps its advisory-lock connection so any process can read the
+    holder out of pg_stat_activity (poindexter#1018). These two probes took the
+    SAME lock from an unlabelled POOLED connection, so while one was running
+    the operator's 503 said "an untagged session" and the console panel showed
+    a holder with no name — a GPU demonstrably busy, held by nobody you can go
+    look at.
+
+    Pooled, not dedicated, is why the tag is set at lock time and restored at
+    unlock: the label must describe the LOCK, not the connection carrying it.
+    """
+
+    def _pool(self, *, writer="gemma3:27b"):
+        p = _make_pool()
+
+        async def _fv(query, *args):
+            # The settings pool answers by key; the lock connection is separate.
+            key = args[0] if args else None
+            return {"pipeline_writer_model": writer}.get(key)
+
+        p.fetchval = AsyncMock(side_effect=_fv)
+        return p
+
+    @staticmethod
+    def _lock_conn_fetchval(previous_app_name="brain"):
+        """Answer the three fetchvals a tagged lock makes, in order."""
+        calls: list[tuple] = []
+
+        async def _fv(query, *args):
+            calls.append((query, args))
+            if "pg_try_advisory_lock" in query:
+                return True
+            if "SHOW application_name" in query:
+                return previous_app_name
+            return args[0] if args else None  # set_config echoes its value
+
+        return AsyncMock(side_effect=_fv), calls
+
+    async def test_content_gen_stamps_and_restores_application_name(self):
+        p = self._pool()
+        p._lock_conn.fetchval, calls = self._lock_conn_fetchval()
+        resp = MagicMock()
+        resp.read.return_value = (
+            b'{"response": "FastAPI is a modern Python web framework for APIs."}'
+        )
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            await hp.probe_content_gen(p)
+
+        stamps = [
+            args[0]
+            for query, args in calls
+            if "set_config" in query and args
+        ]
+        assert stamps, "the lock was taken without ever labelling itself"
+        tag = stamps[0]
+        assert tag.startswith("poindexter-gpu:brain_probe:content_gen:")
+        assert len(tag.encode()) <= 63, "Postgres truncates application_name at 63"
+        # Restored before the pooled connection goes back to the pool.
+        assert stamps[-1] == "brain"
+
+    async def test_embedding_probe_stamps_its_own_phase(self):
+        p = self._pool()
+        p._lock_conn.fetchval, calls = self._lock_conn_fetchval()
+        resp = MagicMock()
+        resp.read.return_value = b'{"embeddings": [[0.1, 0.2]]}'
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            await hp.probe_ollama_embedding(p)
+
+        stamps = [args[0] for query, args in calls if "set_config" in query and args]
+        assert stamps and stamps[0].startswith(
+            "poindexter-gpu:brain_probe:ollama_embedding:"
+        )
+
+    async def test_the_worker_can_parse_what_the_brain_writes(self):
+        """The brain rebuilds the tag by hand (stdlib + asyncpg container, no
+        gpu_scheduler import). If the shapes drift, a brain-held lock silently
+        goes back to reading as anonymous — so round-trip it against the real
+        parser rather than against a literal."""
+        from poindexter.services.gpu_scheduler import parse_holder_tag_fields
+
+        p = self._pool()
+        p._lock_conn.fetchval, calls = self._lock_conn_fetchval()
+        resp = MagicMock()
+        resp.read.return_value = b'{"response": "ok ok ok ok ok ok ok ok ok ok"}'
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            await hp.probe_content_gen(p)
+
+        tag = next(args[0] for query, args in calls if "set_config" in query and args)
+        fields = parse_holder_tag_fields(tag)
+        assert fields["owner"] == "brain_probe"
+        assert fields["phase"] == "content_gen"
+        assert isinstance(fields["pid"], int)
+
+    async def test_a_failed_stamp_never_costs_us_the_probe(self):
+        """Labelling is observability. If SHOW/set_config fails the probe must
+        still run and still release the lock — the old, unlabelled behaviour."""
+        async def _fv(query, *args):
+            if "pg_try_advisory_lock" in query:
+                return True
+            raise RuntimeError("no set_config for you")
+
+        p = self._pool()
+        p._lock_conn.fetchval = AsyncMock(side_effect=_fv)
+        resp = MagicMock()
+        resp.read.return_value = (
+            b'{"response": "FastAPI is a modern Python web framework for APIs."}'
+        )
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            r = await hp.probe_content_gen(p)
+
+        assert r.get("status") != "skipped_gpu_busy"
+        assert [
+            c for c in p._lock_conn.execute.await_args_list
+            if "pg_advisory_unlock" in c.args[0]
+        ], "the lock must still be released"
+
+
 class TestOllamaEmbeddingProbe:
     """probe_ollama_embedding validates /api/embed, not just /api/tags.
     The existing probe_ollama_models only checks the model list; this probe

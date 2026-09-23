@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail a net-new hardcoded copy of the GPU advisory-lock key.
+"""Fail a net-new hardcoded copy of the GPU advisory-lock key or holder tag.
 
 Why
 ===
@@ -36,6 +36,19 @@ brain tree and cannot — add the file here *and* add a test pinning it against
 Planned follow-up (2026-08-28 device-scoping spec): when the key becomes a
 *derived set* rather than one constant, this lint is what stops a consumer
 being left behind on the old single key.
+
+The holder TAG is the same contract, one layer up
+============================================================
+
+``application_name`` is stamped as ``poindexter-gpu:<owner>:<phase>[:<task>]:pid<N>``
+by the process holding the lock, and parsed back by
+``gpu_scheduler.parse_holder_tag_fields`` so any other process can name the
+holder. The brain writes that shape by hand for the same reason it duplicates
+the key, and it fails the same way: nothing raises, the holder just reads as
+"an untagged session" again — which is the exact symptom the tag was added to
+cure. So the prefix is ratcheted alongside the key, and each sanctioned copy
+must be round-tripped against the real parser by a test, not compared to a
+literal (a literal-vs-literal assertion passes happily while the trees drift).
 """
 
 from __future__ import annotations
@@ -64,6 +77,16 @@ SANCTIONED = {
 #: Underscored and bare spellings of the same int64.
 KEY_RE = re.compile(r"\b7_?777_?777_?777\b")
 
+#: The holder-tag prefix, in any quoting. Same contract, same failure mode.
+TAG_RE = re.compile(r"[\"']poindexter-gpu(?:[:\"'])")
+
+#: Files allowed to spell the holder-tag prefix literally.
+TAG_SANCTIONED = {
+    "src/cofounder_agent/poindexter/services/gpu_scheduler.py",  # defines + parses it
+    "src/cofounder_agent/poindexter/brain/health_probes.py",     # writes it (probe locks)
+    "scripts/ci/gpu_lock_key_contract_lint.py",                  # this file
+}
+
 
 def main() -> int:
     roots = []
@@ -77,21 +100,26 @@ def main() -> int:
 
     scanned = 0
     offenders: list[tuple[str, int, str]] = []
+    tag_offenders: list[tuple[str, int, str]] = []
     for root in roots:
         for path in root.rglob("*.py"):
             rel = path.relative_to(REPO).as_posix()
             if "/tests/" in rel or rel.startswith("tests/"):
                 continue  # tests SHOULD pin the literal; that is the point
             scanned += 1
-            if rel in SANCTIONED:
-                continue
             try:
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
+            check_key = rel not in SANCTIONED
+            check_tag = rel not in TAG_SANCTIONED
+            if not (check_key or check_tag):
+                continue
             for n, line in enumerate(text.splitlines(), 1):
-                if KEY_RE.search(line):
+                if check_key and KEY_RE.search(line):
                     offenders.append((rel, n, line.strip()[:100]))
+                elif check_tag and TAG_RE.search(line):
+                    tag_offenders.append((rel, n, line.strip()[:100]))
 
     require_scanned(
         scanned,
@@ -111,6 +139,20 @@ def main() -> int:
             "services.gpu_scheduler.GPU_ADVISORY_LOCK_KEY — an unpinned "
             "duplicate diverges silently and disarms a probe."
         )
+
+    if tag_offenders:
+        print("\nGPU holder-tag prefix hardcoded outside the sanctioned modules:\n")
+        for rel, n, line in tag_offenders:
+            print(f"  {rel}:{n}: {line}")
+        print(
+            "\nUse services.gpu_scheduler._holder_tag / parse_holder_tag_fields. "
+            "If you are in the brain tree and cannot import the worker package, "
+            "add the file to TAG_SANCTIONED here AND add a test that ROUND-TRIPS "
+            "your tag through parse_holder_tag_fields — a drifted shape does not "
+            "raise, it just makes the holder anonymous again."
+        )
+
+    if offenders or tag_offenders:
         return 1
 
     print(f"gpu_lock_key_contract_lint: clean ({scanned} python files scanned)")

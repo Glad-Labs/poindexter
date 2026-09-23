@@ -12,17 +12,57 @@ queue + admission spec (`docs/superpowers/specs/2026-07-26-gpu-scheduler-queue-a
 
 Observability is unconditional — never gated by any scheduler flag.
 
-| Surface                  | What it shows                                                                                                                                                         |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gpu_lease_stats` table  | Rolling hold-duration stats per `(owner, phase)`: samples, EWMA, streaming p50/p90 (P² estimators; fold state survives restarts). Captured on **every** lock release. |
-| `gpu_queue` table        | Live cross-process mirror of waiters (contended acquires only). Rows are deleted on every wait outcome; a 1200s orphan reap covers crashes.                           |
-| `GET /api/gpu/queue`     | Current holder (owner · model · held seconds), waiters, and the stats snapshot. OAuth-protected.                                                                      |
-| Console GPU HUD          | "Scheduler" strip: holder line or `lock free`, up to 3 waiters, `+N more waiting`. Polls every 10s.                                                                   |
-| Grafana Hardware & Power | "GPU Scheduler" row: queue-depth stat + p50/p90 hold-duration table.                                                                                                  |
+| Surface                         | What it shows                                                                                                                                                                                                                                                    |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gpu_lease_stats` table         | Rolling hold-duration stats per `(owner, phase)`: samples, EWMA, streaming p50/p90 (P² estimators; fold state survives restarts). Captured on **every** lock release.                                                                                            |
+| `gpu_queue` table               | Live cross-process mirror of waiters. A wait is recorded once it outlives `gpu_queue_mirror_delay_seconds`, whichever stage it is parked at. Rows are deleted on every wait outcome; a 1200s orphan reap covers crashes.                                         |
+| `pg_locks` / `pg_stat_activity` | The **holder**, cross-process. The lock sits on a connection stamped `poindexter-gpu:<owner>:<phase>[:<task>]:pid<N>`, so any process can name it (`gpu_scheduler.list_pg_holders`). No holder table exists, by design — the lock's own lifecycle is the record. |
+| `GET /api/gpu/queue`            | `holders[]` (owner · phase · task · held seconds · keys), `holder` as the head of that list, waiters, and the stats snapshot. OAuth-protected.                                                                                                                   |
+| Console GPU HUD                 | "Scheduler" strip: holder line(s) or `lock free`, up to 3 waiters, `+N more waiting`. Polls every 10s.                                                                                                                                                           |
+| Grafana Hardware & Power        | "GPU Scheduler" row: queue-depth stat + p50/p90 hold-duration table.                                                                                                                                                                                             |
 
 The stats feed the admission ETA below — the p90 for a phase is "how long
 does this kind of hold usually run", so a waiter can be told honestly
 whether the current holder will be done inside its budget.
+
+### Why the holder comes from Postgres
+
+Both halves of that panel once answered at different scopes, and the result
+read as a contradiction: waiters from the DB (cross-process) printed beneath a
+holder line from `gpu._current_owner` (a module global in whichever process
+served the request). The console runs in `poindexter-worker`; the pipeline's
+GPU work runs in `poindexter-prefect-worker`. So a render could hold the card
+for 20 minutes, queue three callers behind it, and the panel would say **`lock
+free · nothing holding the GPU`** directly above them.
+
+Three mechanisms produced it, and all three are closed:
+
+1. **The holder was process-local.** Now resolved from `pg_locks` joined to
+   `pg_stat_activity`. Every holder — scoped or not — takes the base key
+   (`7777777777`), exclusively when unscoped and shared when device-scoped, so
+   one filter on that key enumerates them all without knowing the unbounded
+   set of device keys.
+2. **A gate can be held while `_current_owner` is still `None`.** `lock()`
+   takes the in-process gates, _then_ blocks on `pg_advisory_lock`, and sets
+   `_current_owner` only after both succeed. For the whole pg wait — up to the
+   900s ceiling — later callers queue behind a holder that names itself
+   nowhere. That window is why the `in_process`-stage timeout used to print
+   `waiting for in-process holder None (None)`, the exact phrasing
+   poindexter#1018 set out to kill (it had only been wired to the
+   `pg_advisory` stage). Both stages now ask Postgres.
+3. **The waiter mirror was stage-dependent.** It recorded only waits queued
+   behind an in-process holder, on the premise that "all observed contention
+   is in-process within prefect-worker". Device scoping retired that premise:
+   a caller blocked at the pg stage behind another container appeared in no
+   waiter list at all. Visibility now keys off _time waited_, not _where the
+   wait is parked_ — which is also what keeps the uncontended path zero-I/O.
+
+`holder.source` says which answer you are reading: `postgres` is the
+cross-process truth, `in_process` is the fallback used only when Postgres
+named nobody (it can only see one container, and the console labels it
+`this process only`). A holder whose connection carries no tag is still
+reported, as `unknown` with its backend pid — "held by someone who won't say
+who" is a different fact from "free", and collapsing the two was the bug.
 
 ## Queue admission (P1 — opt-in per caller)
 
@@ -92,16 +132,17 @@ restores that caller's unbounded legacy contract.
 
 ## Settings
 
-| Key                                   | Default  | Meaning                                                                                      |
-| ------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| `gpu_sched_enabled`                   | `false`  | Master switch for admission + wait-cap.                                                      |
-| `gpu_sched_eta_fallback_seconds`      | `120`    | Assumed holder ETA when a key has no stats yet.                                              |
-| `gpu_sched_aging_seconds`             | `300`    | Priority-class promotion window (0 = no aging).                                              |
-| `gpu_sched_qa_rail_max_wait_s`        | `45`     | Wait budget for the fail-soft QA rails (P2 group 1). `0` = unbounded.                        |
-| `gpu_sched_media_max_wait_s`          | `120`    | Wait budget for the media stages (P2 group 2). `0` = unbounded.                              |
-| `gpu_sched_operator_image_max_wait_s` | `150`    | Wait budget for operator single-image renders (P2 group 3). `0` = unbounded.                 |
-| `gpu0_headroom_gb`                    | `6`      | VRAM held back for mid-hold invisible claims (desktop transients + idle-unloaded residents). |
-| `gpu_evictable_process_pattern`       | `ollama` | Substring matching the primary Ollama runner in the per-process VRAM series.                 |
+| Key                                   | Default  | Meaning                                                                                                              |
+| ------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `gpu_sched_enabled`                   | `false`  | Master switch for admission + wait-cap.                                                                              |
+| `gpu_sched_eta_fallback_seconds`      | `120`    | Assumed holder ETA when a key has no stats yet.                                                                      |
+| `gpu_sched_aging_seconds`             | `300`    | Priority-class promotion window (0 = no aging).                                                                      |
+| `gpu_sched_qa_rail_max_wait_s`        | `45`     | Wait budget for the fail-soft QA rails (P2 group 1). `0` = unbounded.                                                |
+| `gpu_sched_media_max_wait_s`          | `120`    | Wait budget for the media stages (P2 group 2). `0` = unbounded.                                                      |
+| `gpu_sched_operator_image_max_wait_s` | `150`    | Wait budget for operator single-image renders (P2 group 3). `0` = unbounded.                                         |
+| `gpu0_headroom_gb`                    | `6`      | VRAM held back for mid-hold invisible claims (desktop transients + idle-unloaded residents).                         |
+| `gpu_evictable_process_pattern`       | `ollama` | Substring matching the primary Ollama runner in the per-process VRAM series.                                         |
+| `gpu_queue_mirror_delay_seconds`      | `2`      | How long a wait must last before it appears in `gpu_queue`. The grace is what keeps an uncontended acquire zero-I/O. |
 
 Pre-existing lock tunables (`gpu_lock_acquire_timeout_seconds`,
 `gpu_lock_release_timeout_seconds`, `gpu_serialize_llm_dispatch`, the
@@ -165,6 +206,8 @@ that evicts a model it needn't have.
 ## Soak checklist (before P2 caller migration)
 
 - `gpu_lease_stats` p90s look sane against known render durations.
-- `/api/gpu/queue` matches reality during a busy render window.
+- `/api/gpu/queue` matches reality during a busy render window — check it
+  from the CONSOLE's process while the holder is in another container, since
+  that cross-process case is the one that used to read as an empty lock.
 - Zero unexpected `gpu_admission_rejected` findings (there should be none
   at all until a caller passes a budget).

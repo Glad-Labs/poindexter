@@ -125,7 +125,7 @@ function App() {
   // GPU scheduler queue (poindexter#914 P0) — holder + waiters + hold stats
   // for the GPU panel's "holder / waiting" strip. 10s: queue movement is
   // operator-watchable but not sub-second.
-  const GPU_QUEUE_EMPTY = { holder: null, waiters: [], stats: [] };
+  const GPU_QUEUE_EMPTY = { holder: null, holders: [], waiters: [], stats: [] };
   const gpuQueueR = window.PXR.usePolledResource(
     () =>
       PX.api.isLive() ? PX.api.gpuQueue() : Promise.resolve(GPU_QUEUE_EMPTY),

@@ -1,6 +1,14 @@
 """gpu_queue mirroring — module seam + lock() wiring (poindexter#914 P0,
 plan Task A4). The uncontended fast path stays zero-I/O; contended waits
-insert a row and delete it on acquire, timeout, and cancellation alike."""
+insert a row and delete it on acquire, timeout, and cancellation alike.
+
+Follow-on: a wait is mirrored once it outlives `gpu_queue_mirror_delay_seconds`,
+whichever STAGE it is parked at. The older rule mirrored only waits that
+queued behind an in-process holder, so a caller blocked at the pg_advisory
+stage behind another container was invisible for the full 900s ceiling while
+the console's holder line — read from this process's own memory — said the
+lock was free.
+"""
 
 from __future__ import annotations
 
@@ -98,6 +106,14 @@ def _quiet(gpu: GPUScheduler) -> GPUScheduler:
 
 
 async def test_uncontended_path_never_touches_mirror(monkeypatch):
+    """An acquire that never waits must issue NO statement — not an insert,
+    and not a delete either.
+
+    gpu.lock wraps every local LLM call, so a single unconditional DELETE here
+    would be a per-call round-trip. The deferred mirror task is armed on this
+    path and then cancelled inside its grace period; the `attempted` flag is
+    what stops the cleanup from firing against a row that was never written.
+    """
     enq = AsyncMock(return_value="row-1")
     deq = AsyncMock()
     monkeypatch.setattr(mirror, "enqueue", enq)
@@ -106,6 +122,92 @@ async def test_uncontended_path_never_touches_mirror(monkeypatch):
 
     async with gpu.lock("ollama"):
         pass
+
+    enq.assert_not_awaited()
+    deq.assert_not_awaited()
+
+
+async def test_pg_stage_wait_is_mirrored(monkeypatch):
+    """The gap this follow-on closes: a wait with NO in-process contention,
+    parked inside the pg_advisory acquire behind another container, is still
+    recorded. Under the old rule it was mirrored nowhere.
+    """
+    enq = AsyncMock(return_value="row-pg")
+    deq = AsyncMock()
+    monkeypatch.setattr(mirror, "enqueue", enq)
+    monkeypatch.setattr(mirror, "dequeue", deq)
+    monkeypatch.setattr(
+        "poindexter.services.gpu_scheduler._cfg_float",
+        lambda key, default: 0.01 if key == "gpu_queue_mirror_delay_seconds" else default,
+    )
+    gpu = _quiet(GPUScheduler())
+
+    # No in-process holder — the ONLY wait is inside the pg step.
+    blocked = asyncio.Event()
+
+    async def _slow_pg(*a, **k):
+        await blocked.wait()
+
+    gpu._acquire_pg_advisory_lock = _slow_pg
+
+    async def waiter():
+        async with gpu.lock("ollama", phase="writer"):
+            return "acquired"
+
+    w = asyncio.create_task(waiter())
+    await asyncio.sleep(0.1)  # outlive the grace period while parked at pg
+    enq.assert_awaited_once()
+    assert enq.await_args.kwargs["phase"] == "writer"
+
+    blocked.set()
+    assert await w == "acquired"
+    deq.assert_awaited_once_with(enq.await_args.kwargs["row_id"])
+
+
+async def test_wait_shorter_than_grace_writes_nothing(monkeypatch):
+    """A brief pg wait stays zero-I/O — the grace period is what keeps the
+    fast path free, now that stage no longer decides visibility."""
+    enq = AsyncMock(return_value="row-x")
+    deq = AsyncMock()
+    monkeypatch.setattr(mirror, "enqueue", enq)
+    monkeypatch.setattr(mirror, "dequeue", deq)
+    monkeypatch.setattr(
+        "poindexter.services.gpu_scheduler._cfg_float",
+        lambda key, default: 30.0 if key == "gpu_queue_mirror_delay_seconds" else default,
+    )
+    gpu = _quiet(GPUScheduler())
+
+    async def _brief_pg(*a, **k):
+        await asyncio.sleep(0.01)
+
+    gpu._acquire_pg_advisory_lock = _brief_pg
+
+    async with gpu.lock("ollama"):
+        pass
+
+    enq.assert_not_awaited()
+    deq.assert_not_awaited()
+
+
+async def test_no_key_caller_is_never_queued(monkeypatch):
+    """A caller that occupies no GPU (resolve_lock_keys -> []) contends for
+    nothing, so it must not appear in a GPU queue at all."""
+    enq = AsyncMock(return_value="row-y")
+    deq = AsyncMock()
+    monkeypatch.setattr(mirror, "enqueue", enq)
+    monkeypatch.setattr(mirror, "dequeue", deq)
+    monkeypatch.setattr(
+        "poindexter.services.gpu_scheduler.resolve_lock_keys",
+        lambda owner, model: [],
+    )
+    monkeypatch.setattr(
+        "poindexter.services.gpu_scheduler._cfg_float",
+        lambda key, default: 0.01 if key == "gpu_queue_mirror_delay_seconds" else default,
+    )
+    gpu = _quiet(GPUScheduler())
+
+    async with gpu.lock("ollama"):
+        await asyncio.sleep(0.05)
 
     enq.assert_not_awaited()
     deq.assert_not_awaited()
@@ -141,7 +243,9 @@ async def test_contended_wait_enqueues_then_dequeues_on_acquire(monkeypatch):
     enq.assert_awaited_once()
     assert enq.await_args.args == ("ollama",)
     assert enq.await_args.kwargs["phase"] == "writer"
-    deq.assert_awaited_once_with("row-2")
+    # The row id is minted by the CALLER and handed down, so the delete can
+    # name the row even if the insert task is cancelled mid-statement.
+    deq.assert_awaited_once_with(enq.await_args.kwargs["row_id"])
 
 
 async def test_timeout_still_dequeues(monkeypatch):
@@ -174,7 +278,7 @@ async def test_timeout_still_dequeues(monkeypatch):
     await h
 
     enq.assert_awaited_once()
-    deq.assert_awaited_once_with("row-3")
+    deq.assert_awaited_once_with(enq.await_args.kwargs["row_id"])
 
 
 async def test_mirror_failure_never_blocks_the_wait(monkeypatch):

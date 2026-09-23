@@ -131,6 +131,56 @@ VISION_OLLAMA = localize_url(os.getenv("OLLAMA_VISION_URL") or "")
 # into VRAM mid-render (would oversubscribe the 32GB card → image-gen CUDA-OOM →
 # degraded video; observed 2026-06-21).
 GPU_ADVISORY_LOCK_KEY: int = 7_777_777_777
+
+# Holder self-identification. MUST stay in sync, BY VALUE, with
+# ``services.gpu_scheduler._HOLDER_TAG_PREFIX`` and the tag shape
+# ``<prefix>:<owner>:<phase>[:<task>]:pid<N>`` that ``_parse_holder_tag`` /
+# ``parse_holder_tag_fields`` read back — duplicated for the same reason the
+# key above is.
+#
+# Why the brain bothers: the worker stamps its advisory-lock connection so any
+# process can name the holder (poindexter#1018), but the two probes below took
+# the SAME lock from an unlabelled pooled connection. A brain-held lock
+# therefore surfaced as "an untagged session" to the operator's 503 message
+# and as a nameless holder on the console panel — a GPU that is demonstrably
+# busy, held by nobody you can go look at. Tagging is the whole fix.
+#
+# Unlike the worker's dedicated connection, these run on a POOLED one, so the
+# tag is set at lock time and restored at unlock: the name must describe the
+# lock, not the connection that happens to be carrying it.
+_HOLDER_TAG_PREFIX = "poindexter-gpu"
+
+
+async def _gpu_lock_tag(conn, phase: str) -> str | None:
+    """Stamp ``application_name`` for the life of a probe's GPU lock.
+
+    Returns the previous value so the caller can restore it. Fail-soft: a
+    failure here loses a label, and must never cost us the probe.
+    """
+    tag = f"{_HOLDER_TAG_PREFIX}:brain_probe:{phase}:pid{os.getpid()}"[:63]
+    try:
+        previous = await conn.fetchval("SHOW application_name")
+        await conn.fetchval("SELECT set_config('application_name', $1, false)", tag)
+        return previous or ""
+    except Exception as exc:  # noqa: BLE001
+        # silent-ok: labelling is observability — an unlabelled lock is the
+        # old behaviour, not a new failure.
+        logger.debug("[gpu_lock] application_name stamp failed: %s", exc)
+        return None
+
+
+async def _gpu_lock_untag(conn, previous: str | None) -> None:
+    """Restore the connection's ``application_name`` before it returns to the pool."""
+    if previous is None:
+        return
+    try:
+        await conn.fetchval(
+            "SELECT set_config('application_name', $1, false)", previous
+        )
+    except Exception as exc:  # noqa: BLE001
+        # silent-ok: a stale label on a pooled connection is cosmetic; the
+        # lock itself is already released by the caller's finally.
+        logger.debug("[gpu_lock] application_name restore failed: %s", exc)
 # Where Alertmanager is reachable from the brain. Used to decide whether the
 # PROMETHEUS_COVERED suppression is safe (#304): if Alertmanager is down, the
 # brain must NOT defer covered-probe alerts to it (that would be a double-blind).
@@ -462,12 +512,14 @@ async def probe_ollama_embedding(_pool) -> dict:
                     "the next cycle — not an embed outage"
                 ),
             }
+        previous_app_name = await _gpu_lock_tag(conn, "ollama_embedding")
         try:
             ok, result = await asyncio.to_thread(_call_embed)
         finally:
             await conn.execute(
                 "SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY
             )
+            await _gpu_lock_untag(conn, previous_app_name)
     if not ok:
         return {
             "ok": False,
@@ -749,12 +801,14 @@ async def probe_content_gen(pool) -> dict:
                     "next cycle to avoid VRAM oversubscription"
                 ),
             }
+        previous_app_name = await _gpu_lock_tag(conn, "content_gen")
         try:
             return await _probe_content_gen_inner(pool)
         finally:
             await conn.execute(
                 "SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY
             )
+            await _gpu_lock_untag(conn, previous_app_name)
 
 
 async def probe_research_service(pool) -> dict:

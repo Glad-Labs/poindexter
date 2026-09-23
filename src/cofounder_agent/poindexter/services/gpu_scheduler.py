@@ -62,6 +62,7 @@ Usage:
 import asyncio
 import itertools
 import time
+import uuid
 from collections.abc import Callable, Collection
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -103,6 +104,90 @@ _stats_capture_tasks: set = set()
 # exactly like the old per-module ``site_config`` global did before its
 # lifespan setter fired. Never crashes when the container is unset.
 _FALLBACK_SITE_CONFIG = SiteConfig()
+
+
+# Grace before a wait is mirrored into `gpu_queue` (poindexter#914 P0 follow-on).
+#
+# The mirror's whole point was to keep the uncontended fast path zero-I/O, and
+# the original way of getting that was to mirror ONLY the in-process-gate
+# branch — which is why a caller blocked at the pg_advisory stage behind
+# another CONTAINER appeared nowhere. Mirroring every acquire instead would
+# put two round-trips on the fast path. Deferring by a grace period gets both:
+# a wait that resolves inside the grace writes nothing at all, and a wait long
+# enough for an operator to be looking at the panel is always recorded,
+# whichever stage it is parked at.
+_DEFAULT_QUEUE_MIRROR_DELAY_S = 2.0
+
+
+@dataclass
+class _WaiterMirror:
+    """One wait's mirror row, and whether the INSERT was ever attempted.
+
+    ``attempted`` is what keeps the uncontended fast path at zero I/O while
+    still closing the cancel-mid-INSERT leak. The id is minted UP FRONT, so
+    cancelling the task after the INSERT landed but before it returned still
+    leaves us able to delete the row; but a wait that resolved inside the
+    grace period never set the flag, so it issues no statement at all. Without
+    the flag the choice would be between a DELETE on every single acquire (and
+    gpu.lock wraps every local LLM call) and a phantom waiter sitting on the
+    console until the 1200s orphan horizon.
+    """
+
+    row_id: str
+    attempted: bool = False
+
+
+async def _mirror_waiter_after(
+    delay_s: float,
+    owner: str,
+    *,
+    state: _WaiterMirror,
+    model: str | None,
+    phase: str | None,
+    priority: str,
+) -> None:
+    """Sleep ``delay_s``, then record this waiter under ``state.row_id``."""
+    if delay_s > 0:
+        await asyncio.sleep(delay_s)
+    from poindexter.services.gpu_queue_mirror import enqueue as _queue_enqueue
+
+    # Set BEFORE the await: from here on a row may exist, so the finally must
+    # clean up even if this task never returns.
+    state.attempted = True
+    await _queue_enqueue(
+        owner, model=model, phase=phase, priority=priority, row_id=state.row_id
+    )
+
+
+async def _finish_waiter_mirror(
+    task: "asyncio.Task[None] | None", state: _WaiterMirror | None
+) -> None:
+    """Cancel a pending mirror task and delete any row it may have written.
+
+    Runs in a ``finally`` on every wait outcome — acquire, timeout, or
+    cancellation.
+
+    If the OUTER task is being cancelled the awaits below re-raise, leaving
+    the row for the orphan reap; that is the right trade, because swallowing a
+    CancelledError here to tidy up a row would break cancellation semantics
+    for the caller.
+    """
+    if task is not None:
+        task.cancel()
+        # `asyncio.wait` (unlike awaiting the task) does not raise the awaited
+        # task's CancelledError back at us — see the note above on why
+        # catching that exception here would be the wrong shape.
+        await asyncio.wait({task})
+    if state is None or not state.attempted:
+        return
+    try:
+        from poindexter.services.gpu_queue_mirror import dequeue as _queue_dequeue
+
+        await _queue_dequeue(state.row_id)
+    except Exception:  # noqa: BLE001
+        # silent-ok: a leaked row is reaped by the orphan horizon; the wait
+        # outcome itself must propagate untouched.
+        logger.debug("gpu_queue mirror dequeue failed", exc_info=True)
 
 
 def _sc() -> SiteConfig:
@@ -481,8 +566,179 @@ def _parse_holder_tag(application_name: str) -> str:
     return f"{owner} (phase={phase}{' ' + tail if tail else ''})"
 
 
+def parse_holder_tag_fields(application_name: str) -> dict[str, Any]:
+    """Structured read of a holder tag — the machine-readable ``_parse_holder_tag``.
+
+    Returns ``owner``/``phase``/``task_id``/``pid`` (any of which may be None
+    for a session this module did not tag). An UNTAGGED holder is still a
+    holder: it comes back as ``owner=None`` with the raw ``application_name``,
+    never dropped. "Someone is holding it and won't say who" is a materially
+    different answer from "nobody is holding it", and collapsing the two is
+    the whole bug this function exists to stop repeating.
+    """
+    raw = application_name or ""
+    out: dict[str, Any] = {
+        "owner": None,
+        "phase": None,
+        "task_id": None,
+        "pid": None,
+        "application_name": raw,
+    }
+    if not raw.startswith(_HOLDER_TAG_PREFIX + ":"):
+        return out
+    bits = raw.split(":")[1:]
+    if bits:
+        out["owner"] = bits[0] or None
+    if len(bits) > 1:
+        out["phase"] = bits[1] or None
+    for bit in bits[2:]:
+        if bit.startswith("pid") and bit[3:].isdigit():
+            out["pid"] = int(bit[3:])
+        elif out["task_id"] is None:
+            out["task_id"] = bit
+    return out
+
+
+# How long a holder has held the lock, measured from the LATER of the
+# connection's start and its last state change.
+#
+# Both holder shapes take the lock and then stop issuing queries for its
+# duration — gpu_scheduler on a dedicated connection that does nothing else
+# until unlock, the brain's probes inside an `async with pool.acquire()` that
+# runs the HTTP call off-connection — so `state_change` lands on the acquire
+# itself and is the truer number. `backend_start` alone would report a pooled
+# connection's whole lifetime as hold time (hours, for a brain probe holding
+# it for seconds). GREATEST keeps the dedicated case correct too, where the
+# two are milliseconds apart. The assumption this rests on is "a holder runs
+# no other query while holding"; a future holder that does would under-report,
+# which is why it is written down here rather than left in the SQL.
+#
+# Written inline below rather than interpolated from a constant: an f-string
+# around SQL is a bandit B608, and the honest fix for a query with no user
+# input is to have nothing to interpolate, not a `# nosec`.
+
+# Every GPU holder — scoped or not — holds the BASE key: an unscoped caller
+# takes it exclusively, a device-scoped one takes it shared (see
+# _acquire_pg_advisory_lock). So one filter on the base key enumerates every
+# holder without having to know the unbounded set of device keys.
+_PG_HOLDERS_SQL = """
+WITH holders AS (
+    SELECT DISTINCT l.pid
+      FROM pg_locks l
+     WHERE l.locktype = 'advisory' AND l.objsubid = 1 AND l.granted
+       AND ((l.classid::bigint << 32) | l.objid::bigint) = $1
+)
+SELECT a.pid                                          AS backend_pid,
+       coalesce(a.application_name, '')                AS app,
+       host(a.client_addr)                             AS client_addr,
+       EXTRACT(EPOCH FROM (now() - GREATEST(a.backend_start, a.state_change)))
+                                                       AS held_for_s,
+       array_agg(DISTINCT ((l.classid::bigint << 32) | l.objid::bigint))
+                                                       AS keys,
+       bool_or(l.mode = 'ExclusiveLock')               AS exclusive
+  FROM holders h
+  JOIN pg_stat_activity a ON a.pid = h.pid
+  JOIN pg_locks l ON l.pid = h.pid
+                 AND l.locktype = 'advisory'
+                 AND l.objsubid = 1
+                 AND l.granted
+ GROUP BY a.pid, a.application_name, a.client_addr, a.backend_start, a.state_change
+ ORDER BY GREATEST(a.backend_start, a.state_change)
+"""
+
+
+async def list_pg_holders(dsn: str | None = None) -> list[dict[str, Any]]:
+    """Who holds the GPU right now, ACROSS processes — Postgres as the truth.
+
+    ``_current_owner`` answers only for the calling process, so every consumer
+    outside the holding process (the console route, an operator error message)
+    read it as "nobody" while a render in another container held the card.
+    Postgres already knows: the advisory lock sits on a connection this module
+    stamps with ``_holder_tag``, so the holder is self-describing and any
+    process can read it back.
+
+    Fail-soft and honest-empty: every failure path returns ``[]``, and an
+    empty list means "no holder found", never "the query broke" — callers that
+    need to tell those apart should look at the log.
+
+    Hermetic under pytest, same posture as ``gpu_lease_stats._connect``:
+    ``resolve_database_url()`` reads bootstrap.toml, which on an operator box
+    resolves the REAL prod DSN, so a unit test that merely times out a lock
+    would open a live connection and grade prod state. Tests that exercise
+    this function monkeypatch it (or ``_PG_HOLDERS_SQL``'s caller) directly.
+    """
+    import os
+
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return []
+    try:
+        import asyncpg  # type: ignore[import-untyped]
+
+        from poindexter.brain.bootstrap import (
+            resolve_database_url,  # type: ignore[import-untyped]
+        )
+    except ImportError:
+        logger.debug("[GPU] asyncpg/brain.bootstrap unavailable — no holder lookup")
+        return []
+
+    resolved = dsn or resolve_database_url()
+    if not resolved:
+        return []
+
+    try:
+        conn = await asyncio.wait_for(asyncpg.connect(resolved), timeout=5.0)
+    except Exception as exc:  # noqa: BLE001
+        # silent-ok: an unreachable DB renders as "no holder" in the console,
+        # exactly as the waiter mirror does; the panel's freshness chip is the
+        # staleness signal.
+        logger.debug("[GPU] holder lookup connect failed: %s", describe_exception(exc))
+        return []
+    try:
+        rows = await asyncio.wait_for(
+            conn.fetch(_PG_HOLDERS_SQL, GPU_ADVISORY_LOCK_KEY), timeout=5.0
+        )
+    except Exception as exc:  # noqa: BLE001
+        # silent-ok: same posture — diagnostics must never raise into a caller
+        # that is only trying to render a panel.
+        logger.debug("[GPU] holder lookup query failed: %s", describe_exception(exc))
+        return []
+    finally:
+        try:
+            await conn.close()
+        except Exception:  # noqa: BLE001
+            # silent-ok: closing a short-lived diagnostic connection.
+            pass
+
+    holders: list[dict[str, Any]] = []
+    for r in rows:
+        fields = parse_holder_tag_fields(r["app"] or "")
+        held = r["held_for_s"]
+        holders.append(
+            {
+                "owner": fields["owner"],
+                "phase": fields["phase"],
+                "task_id": fields["task_id"],
+                "pid": fields["pid"],
+                "backend_pid": int(r["backend_pid"]),
+                "client_addr": r["client_addr"],
+                "application_name": fields["application_name"],
+                "held_for_s": max(0.0, float(held)) if held is not None else None,
+                "keys": [int(k) for k in (r["keys"] or [])],
+                "exclusive": bool(r["exclusive"]),
+            }
+        )
+    return holders
+
+
 async def _describe_pg_holder(dsn: str, keys: list[int]) -> str:
     """Who currently holds ``keys``, phrased for the operator's error message.
+
+    Deliberately NOT ``list_pg_holders``, despite the family resemblance: this
+    one is scoped to the CALLER'S OWN keys ("who is blocking *me*", which on a
+    device-scoped rig is a different and smaller set than "who holds a GPU"),
+    and it runs on an already-failing path where the caller supplies the DSN it
+    was using. ``list_pg_holders`` answers the panel's question instead — every
+    holder, resolved from the base key — and is hermetic under pytest.
 
     Best-effort and fail-soft: this runs on a path that is ALREADY failing, so
     any error here must degrade the message rather than replace the timeout
@@ -1006,6 +1262,37 @@ class GPUScheduler:
                 )
         self._held_keys = []
 
+    async def _describe_cross_process_holder(self) -> str:
+        """One phrase naming whoever holds the GPU in another process.
+
+        Fail-soft by construction: this only ever runs on a path that is
+        already failing, so it must degrade the wording rather than replace a
+        timeout with a diagnostics crash.
+        """
+        try:
+            holders = await list_pg_holders()
+        except Exception as exc:  # noqa: BLE001
+            # silent-ok: diagnostics only — the caller still raises its
+            # timeout, it just keeps the generic wording.
+            logger.debug(
+                "[GPU] cross-process holder lookup failed: %s",
+                describe_exception(exc),
+            )
+            return "another process holds the GPU lock (holder unidentified)"
+        if not holders:
+            return (
+                "the GPU lock was held for the whole wait but is free now — "
+                "a busy pipeline, not a wedge; retry"
+            )
+        parts = []
+        for h in holders[:3]:
+            who = h["owner"] or (h["application_name"] or "an untagged session")
+            phase = f" phase={h['phase']}" if h.get("phase") else ""
+            held = h.get("held_for_s")
+            for_s = f" for {held:.0f}s" if held is not None else ""
+            parts.append(f"{who}{phase}{for_s} (backend pid {h['backend_pid']})")
+        return "held by " + "; ".join(parts)
+
     async def _acquire_pg_advisory_lock(
         self,
         timeout_s: float | None = None,
@@ -1410,34 +1697,61 @@ class GPUScheduler:
         # Wait for gaming to stop before acquiring lock
         await self._wait_for_gaming_clear()
 
-        waited = False
-        queue_row_id: str | None = None
-        if self._any_gate_locked():
+        # Which physical cards does this caller contend for? Derived from the
+        # owner/model args every call site already passes (#3457 Phase 2).
+        # Returns the single whole-GPU key when scoping is off or unresolvable
+        # — today's exact behaviour — and [] when the caller occupies no GPU at
+        # all (managed API / serverless / CPU). Resolved HERE, above the wait,
+        # because the waiter mirror needs the same answer: a caller that takes
+        # no key contends for nothing and must not appear in a GPU queue.
+        want_keys = resolve_lock_keys(owner, model)
+
+        waited = self._any_gate_locked()
+        if waited:
             logger.info(
                 "GPU busy — waiting",
                 waiting_for=owner,
                 current_owner=self._current_owner,
                 current_model=self._current_model,
             )
-            waited = True
-            # GPU-scheduler P0 (poindexter#914): mirror this waiter into the
-            # gpu_queue table so the console/Grafana can show the queue
-            # cross-process. Contended branch only — the uncontended fast
-            # path stays zero-I/O. Best-effort: enqueue returns None on any
-            # failure and the wait proceeds regardless. (pg-advisory-stage
-            # waits are not mirrored in P0 — in practice all observed
-            # contention is in-process within prefect-worker; revisit with
-            # the P4 lease-table gate if cross-process waits become common.)
-            try:
-                from poindexter.services.gpu_queue_mirror import enqueue as _queue_enqueue
 
-                queue_row_id = await _queue_enqueue(
-                    owner, model=model, phase=phase, priority=priority
+        # GPU-scheduler P0 (poindexter#914): mirror this waiter into the
+        # gpu_queue table so the console/Grafana can show the queue
+        # cross-process.
+        #
+        # This used to fire ONLY on the in-process-gate branch above, with a
+        # note that "all observed contention is in-process within
+        # prefect-worker". Device scoping (#3457 Phase 2) retired that
+        # premise: a caller can now sit at the pg_advisory stage for the full
+        # 900s behind a render in ANOTHER container, and it appeared in no
+        # waiter list at all. So the mirror is armed for EVERY wait and
+        # deferred by a grace period instead — the fast path still writes
+        # nothing, and which stage the wait parks at no longer decides whether
+        # it is visible. Best-effort throughout: a failed mirror only
+        # under-reports the panel, never touches the wait.
+        mirror_task: asyncio.Task[None] | None = None
+        mirror_state: _WaiterMirror | None = None
+        if want_keys:
+            mirror_state = _WaiterMirror(row_id=str(uuid.uuid4()))
+            mirror_task = asyncio.create_task(
+                _mirror_waiter_after(
+                    # A wait that ALREADY knows it is contended (an in-process
+                    # holder is sitting on the gate) is recorded immediately —
+                    # that is the pre-existing behaviour, unchanged. Only the
+                    # not-yet-known-contended case pays the grace period.
+                    0.0
+                    if waited
+                    else _cfg_float(
+                        "gpu_queue_mirror_delay_seconds",
+                        _DEFAULT_QUEUE_MIRROR_DELAY_S,
+                    ),
+                    owner,
+                    state=mirror_state,
+                    model=model,
+                    phase=phase,
+                    priority=priority,
                 )
-            except Exception:
-                # silent-ok: mirroring is observability — the wait itself is
-                # untouched; the orphan reap covers anything half-written.
-                queue_row_id = None
+            )
 
         # poindexter#807 — bounded acquisition. An unbounded wait here let a
         # graph node block forever behind a wedged holder; the brain probe
@@ -1465,13 +1779,6 @@ class GPUScheduler:
             rank = _PRIORITY_RANKS.get(priority, 0)
             acquire_started = time.monotonic()
 
-            # Which physical cards does this caller contend for? Derived from
-            # the owner/model args every call site already passes (#3457
-            # Phase 2). Returns the single whole-GPU key when scoping is off
-            # or unresolvable — today's exact behaviour — and [] when the
-            # caller occupies no GPU at all (managed API / serverless / CPU).
-            want_keys = resolve_lock_keys(owner, model)
-
             # Acquire in-process lock first (fast path for same-process callers)
             if acquire_timeout > 0:
                 try:
@@ -1479,11 +1786,27 @@ class GPUScheduler:
                         want_keys, rank=rank, timeout_s=acquire_timeout
                     )
                 except TimeoutError:
+                    # poindexter#1018 covered the pg_advisory stage only, so
+                    # this branch kept printing the exact phrasing it set out
+                    # to kill: "in-process holder None (None)". `_current_owner`
+                    # is None here whenever the gate-holder in THIS process is
+                    # itself still parked at the pg stage behind another
+                    # container — the common case, not a rare one — so ask
+                    # Postgres for the real holder before giving up.
+                    in_proc = (
+                        f"{self._current_owner!r} ({self._current_model!r})"
+                        if self._current_owner
+                        else None
+                    )
+                    cross = await self._describe_cross_process_holder()
                     self._emit_lock_timeout_finding(
                         owner=owner,
                         stage="in_process",
                         timeout_s=acquire_timeout,
-                        holder=self._current_owner,
+                        # The finding used to carry `_current_owner`, which is
+                        # None on exactly the path that most needs naming a
+                        # holder. Fall back to what Postgres saw.
+                        holder=self._current_owner or cross,
                         phase=phase,
                         task_id=task_id,
                         max_wait_s=max_wait_s,
@@ -1491,8 +1814,13 @@ class GPUScheduler:
                     )
                     raise GpuLockTimeoutError(
                         f"gpu.lock({owner!r}) timed out after {acquire_timeout}s "
-                        f"waiting for in-process holder "
-                        f"{self._current_owner!r} ({self._current_model!r})"
+                        + (
+                            f"waiting for in-process holder {in_proc}"
+                            if in_proc
+                            else "waiting for the in-process gate, held by a "
+                            "caller that is itself queued behind another "
+                            f"process — {cross}"
+                        )
                     ) from None
             else:
                 await self._acquire_gates(want_keys, rank=rank, timeout_s=None)
@@ -1530,15 +1858,7 @@ class GPUScheduler:
                 )
                 raise
         finally:
-            if queue_row_id is not None:
-                try:
-                    from poindexter.services.gpu_queue_mirror import dequeue as _queue_dequeue
-
-                    await _queue_dequeue(queue_row_id)
-                except Exception:
-                    # silent-ok: a leaked row is reaped by the orphan horizon;
-                    # the wait outcome itself must propagate untouched.
-                    logger.debug("gpu_queue mirror dequeue failed")
+            await _finish_waiter_mirror(mirror_task, mirror_state)
 
         wait_msg = " (waited)" if waited else ""
         logger.info("GPU acquired%s", wait_msg, owner=owner, model=model)

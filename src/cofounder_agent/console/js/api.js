@@ -1864,7 +1864,7 @@
     // GPU panel's "holder / waiting" strip. Mock + empty: honest-empty —
     // never a fabricated queue.
     gpuQueue() {
-      const empty = { holder: null, waiters: [], stats: [] };
+      const empty = { holder: null, holders: [], waiters: [], stats: [] };
       return pick(
         () => http('GET', '/api/gpu/queue'),
         () => pair(empty, empty)

@@ -1268,6 +1268,15 @@ DEFAULTS: dict[str, str] = {
     # locks server-side. Read via _cfg_int in services/gpu_scheduler.py.
     'gpu_lock_acquire_timeout_seconds': '900',
     'gpu_lock_release_timeout_seconds': '15',
+    # How long a GPU wait must last before it is mirrored into `gpu_queue` for
+    # the console/Grafana queue view. The grace is what keeps an uncontended
+    # acquire zero-I/O; it replaced a rule that mirrored only waits queued
+    # behind an IN-PROCESS holder, which made a wait's visibility depend on
+    # which stage it parked at — a caller blocked at the pg_advisory stage
+    # behind another container was invisible for the full 900s ceiling. Raise
+    # it to quieten a chatty queue panel, lower it to see short waits. Read
+    # via _cfg_float in services/gpu_scheduler.py.
+    'gpu_queue_mirror_delay_seconds': '2',
     # --- GPU scheduler P1: queue admission + wait contracts (poindexter#914,
     # spec docs/superpowers/specs/2026-07-26-gpu-scheduler-queue-admission-design.md).
     # Master switch for the admission step in gpu.lock(): when true AND a caller
@@ -6049,6 +6058,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'gpu_metrics_prometheus_url': {'value_type': 'url'},
     'gpu_model': {'owner': 'startup_manager'},
     'gpu_pinned_endpoint_skips_lock': {'owner': 'dispatcher', 'value_type': 'boolean'},
+    'gpu_queue_mirror_delay_seconds': {'owner': 'gpu_scheduler', 'value_type': 'float'},
     'gpu_sched_aging_seconds': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'gpu_sched_enabled': {'owner': 'gpu_scheduler', 'value_type': 'boolean'},
     'gpu_sched_eta_fallback_seconds': {'owner': 'gpu_scheduler', 'value_type': 'integer'},

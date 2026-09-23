@@ -381,7 +381,13 @@ function ServiceGrid({ services, onOpen, onRestart, fresh }) {
 function GpuHud({ gpu, queue, onOpen }) {
   const cards = gpu.gpus && gpu.gpus.length ? gpu.gpus : [gpu];
   const multi = cards.length > 1;
-  const q = queue || { holder: null, waiters: [], stats: [] };
+  const q = queue || { holder: null, holders: [], waiters: [], stats: [] };
+  // `holders` is the cross-process list; `holder` is its head, kept for
+  // older payloads that predate the list. Falling back to the scalar means a
+  // stale worker still renders a holder instead of an empty lock.
+  const holders =
+    (Array.isArray(q.holders) && q.holders.length && q.holders) ||
+    (q.holder ? [q.holder] : []);
   return (
     <Panel
       icon="gpu"
@@ -451,12 +457,22 @@ function GpuHud({ gpu, queue, onOpen }) {
         <div className="section-label" style={{ marginBottom: 2 }}>
           Scheduler
         </div>
-        {q.holder ? (
-          <div>
-            <span className="c-cyan">HOLDER</span> {q.holder.owner}
-            {q.holder.model ? ` · ${q.holder.model}` : ''} ·{' '}
-            {Math.round(q.holder.held_for_s)}s
-          </div>
+        {holders.length ? (
+          holders.map((h, i) => (
+            <div key={i}>
+              <span className="c-cyan">HOLDER</span> {h.owner}
+              {h.phase ? ` · ${h.phase}` : ''}
+              {h.model ? ` · ${h.model}` : ''} · {Math.round(h.held_for_s)}s
+              {/* The holder used to be read from the answering process's own
+                  memory, so this line said "lock free" while another container
+                  held the card and the waiters below queued behind it. It now
+                  comes from Postgres; `source` says so, and an in_process
+                  answer is flagged because it can only see one container. */}
+              {h.source === 'in_process' ? (
+                <span className="c-dim"> · this process only</span>
+              ) : null}
+            </div>
+          ))
         ) : (
           <div className="c-dim">lock free · nothing holding the GPU</div>
         )}

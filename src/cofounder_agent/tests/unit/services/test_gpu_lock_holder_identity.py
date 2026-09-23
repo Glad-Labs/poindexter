@@ -13,6 +13,11 @@ holder is by definition somewhere else, so it can only ever be None here.
 Postgres already knows: the advisory lock sits on a dedicated connection, so
 stamping that connection's ``application_name`` makes the holder
 self-describing and any waiter can read it back from ``pg_stat_activity``.
+
+#1018 wired that into the ``pg_advisory``-stage timeout ONLY, so the exact
+message it set out to kill kept shipping from the ``in_process`` stage — which
+is the stage that produces it, because a gate-holder still parked at the pg
+step has not set ``_current_owner`` yet. The last class here pins both stages.
 """
 
 from __future__ import annotations
@@ -132,3 +137,114 @@ class TestDescribeHolderIsFailSoft:
         assert "writer" in out
         assert "phase=generate_draft" in out
         assert "212s" in out
+
+
+class TestInProcessStageNamesTheCrossProcessHolder:
+    """The in_process branch is where "holder None (None)" actually came from.
+
+    `_current_owner` is set only AFTER both the gate and the pg lock are held.
+    So whenever the gate-holder in this process is itself queued behind another
+    container, every later caller times out against a gate whose owner reads
+    None — and the operator is told a wedge is in progress by the one message
+    that could have named the render responsible.
+    """
+
+    @pytest.mark.asyncio
+    async def test_message_names_the_other_process(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        from poindexter.services.gpu_scheduler import GpuLockTimeoutError, GPUScheduler
+
+        gpu = GPUScheduler()
+        gpu._wait_for_gaming_clear = AsyncMock()
+        gpu._unload_ollama_models = AsyncMock()
+        gpu._acquire_pg_advisory_lock = AsyncMock()
+        gpu._release_pg_advisory_lock = AsyncMock()
+        monkeypatch.setattr(
+            "poindexter.services.gpu_scheduler._cfg_int", lambda key, default: 1
+        )
+        monkeypatch.setattr(
+            "poindexter.services.gpu_scheduler.list_pg_holders",
+            AsyncMock(
+                return_value=[
+                    {
+                        "owner": "video",
+                        "phase": "media_render",
+                        "task_id": "f555bedc",
+                        "pid": 7564,
+                        "backend_pid": 245475,
+                        "application_name": "poindexter-gpu:video:media_render:pid7564",
+                        "held_for_s": 1419.0,
+                        "keys": [7777777777],
+                        "exclusive": True,
+                    }
+                ]
+            ),
+        )
+
+        import asyncio
+
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def gate_holder():
+            # Takes the in-process gate, then parks — exactly the shape of a
+            # caller blocked inside the pg step. `_current_owner` stays None.
+            await gpu._acquire_gates([7777777777], rank=0, timeout_s=None)
+            entered.set()
+            await release.wait()
+            gpu._release_gates()
+
+        h = asyncio.create_task(gate_holder())
+        await entered.wait()
+        assert gpu._current_owner is None, "precondition: the bug's shape"
+
+        with pytest.raises(GpuLockTimeoutError) as err:
+            async with gpu.lock("ollama"):
+                pass  # pragma: no cover — never acquired
+
+        message = str(err.value)
+        assert "video" in message and "media_render" in message
+        assert "holder None (None)" not in message
+
+        release.set()
+        await h
+
+    @pytest.mark.asyncio
+    async def test_in_process_holder_is_still_named_when_known(self, monkeypatch):
+        """When this process DOES own the lock, say so plainly — the pg lookup
+        is for the case the local view cannot answer, not a replacement."""
+        from unittest.mock import AsyncMock
+
+        from poindexter.services.gpu_scheduler import GpuLockTimeoutError, GPUScheduler
+
+        gpu = GPUScheduler()
+        gpu._wait_for_gaming_clear = AsyncMock()
+        gpu._unload_ollama_models = AsyncMock()
+        gpu._acquire_pg_advisory_lock = AsyncMock()
+        gpu._release_pg_advisory_lock = AsyncMock()
+        monkeypatch.setattr(
+            "poindexter.services.gpu_scheduler._cfg_int", lambda key, default: 1
+        )
+
+        import asyncio
+
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def holder():
+            async with gpu.lock("image_gen", model="z-image"):
+                entered.set()
+                await release.wait()
+
+        h = asyncio.create_task(holder())
+        await entered.wait()
+
+        with pytest.raises(GpuLockTimeoutError) as err:
+            async with gpu.lock("ollama"):
+                pass  # pragma: no cover — never acquired
+
+        assert "in-process holder 'image_gen' ('z-image')" in str(err.value)
+
+        release.set()
+        await h

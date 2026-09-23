@@ -1,10 +1,17 @@
 """Cross-process mirror of GPU-lock waiters — the console's queue view.
 
 P0 (observe) of poindexter#914. ``gpu_scheduler`` inserts a ``gpu_queue`` row
-when a caller starts a CONTENDED wait (the uncontended fast path stays
-zero-I/O) and deletes it when the wait ends — acquire, timeout, or
-cancellation alike. Rows are ephemeral state, not history; the release-time
-stats (``gpu_lease_stats``) are the durable record.
+for a wait that outlives a short grace period and deletes it when the wait
+ends — acquire, timeout, or cancellation alike. Rows are ephemeral state, not
+history; the release-time stats (``gpu_lease_stats``) are the durable record.
+
+The grace period is what keeps the uncontended fast path zero-I/O. It replaced
+a narrower rule — mirror only a wait that queued behind an IN-PROCESS holder —
+which had the same effect for free but made visibility depend on which STAGE a
+wait parked at: once device scoping (#3457 Phase 2) made cross-container
+contention ordinary, a caller could sit at the ``pg_advisory`` stage for the
+full 900s ceiling and appear in no waiter list anywhere. Time waited is the
+honest trigger; where the wait happens to be parked is not.
 
 Crash orphans: a process that dies mid-wait leaves its row behind. Every
 ``enqueue`` piggybacks a reap of rows older than ``_ORPHAN_HORIZON_S`` —
@@ -38,9 +45,17 @@ async def enqueue(
     model: str | None = None,
     phase: str | None = None,
     priority: str = "pipeline",
+    row_id: str | None = None,
 ) -> str | None:
-    """Record a waiter; returns the row id (None when mirroring unavailable)."""
-    row_id = str(uuid.uuid4())
+    """Record a waiter; returns the row id (None when mirroring unavailable).
+
+    ``row_id`` lets the CALLER mint the id up front. That matters when the
+    enqueue runs in a task that may be cancelled mid-INSERT: a caller holding
+    the id can delete the row unconditionally, instead of leaving a phantom
+    waiter on the panel until the 1200s orphan horizon reaps it. A phantom
+    waiter is precisely the kind of lie this mirror exists to prevent.
+    """
+    row_id = row_id or str(uuid.uuid4())
     try:
         conn = await _connect()
         if conn is None:
