@@ -29,10 +29,10 @@ else
 fi
 
 if [ ! -f "$BOOTSTRAP" ]; then
-    echo "ERROR: $BOOTSTRAP not found."
-    echo ""
-    echo "Run 'poindexter setup' first — it generates secrets and writes"
-    echo "the bootstrap file. No .env needed."
+    echo "ERROR: $BOOTSTRAP not found." >&2
+    echo "" >&2
+    echo "Run 'poindexter setup' first — it generates secrets and writes" >&2
+    echo "the bootstrap file. No .env needed." >&2
     exit 1
 fi
 
@@ -179,7 +179,12 @@ if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_grafana_service_host.py" ]; then
     fi
     if [ -n "$POINDEXTER_SERVICE_HOST" ]; then
         echo "POINDEXTER_SERVICE_HOST=$POINDEXTER_SERVICE_HOST" >> "$_RUNTIME_ENV"
-        echo "Grafana dashboard links will point at: $POINDEXTER_SERVICE_HOST"
+        # stderr, not stdout: callers consume this script's stdout as DATA.
+        # deploy-checkout-sync reads `start-stack.sh ps --format '{{.Name}}'`
+        # line-by-line as container names; this line on stdout made it run
+        # `docker start "Grafana dashboard links will point at: …"`, fail,
+        # and abort every deploy pass (2026-09-23).
+        echo "Grafana dashboard links will point at: $POINDEXTER_SERVICE_HOST" >&2
     fi
     export POINDEXTER_SERVICE_HOST
 fi

@@ -556,6 +556,16 @@ done
 stranded_failed=0; stranded_started=""
 while IFS= read -r c; do
   [ -z "$c" ] && continue
+  # A container name and nothing else. start-stack.sh's stdout is DATA here,
+  # but any preamble output that lands on stdout becomes a fake "container":
+  # on 2026-09-23 a Grafana host notice (#3976) made every pass run
+  # `docker start "Grafana dashboard links will point at: …"`, fail, and exit
+  # 1 — blocking all deploys. start-stack.sh now sends that to stderr; this
+  # guard is so the NEXT stray echo warns instead of halting the fleet.
+  if ! [[ "$c" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+    log "  ignoring non-container line on start-stack.sh stdout: '$c' (it should go to stderr)" WARN
+    continue
+  fi
   log "  stranded '$c' (created, never started) — starting" WARN
   if docker start "$c" >>"$LOG_FILE" 2>&1; then
     stranded_started="${stranded_started:+$stranded_started,}$c"
