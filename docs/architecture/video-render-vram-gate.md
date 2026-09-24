@@ -168,6 +168,38 @@ Now:
 
 The reason is capped at `_MAX_REASON_CHARS` (400) — deliberately more generous than the 200-char log clip, because the _tail_ of a CUDA OOM message ("Tried to allocate 1.48 GiB … 1.47 GiB is free") is its diagnostic half.
 
+### Idle models, and tenants that arrive mid-wait (2026-09-23)
+
+One render of f555bedc lost two of its three long-video heroes to stills even
+though the ladder was working. Two separate things were on the card:
+
+- **Our own idle models.** The render's caption-fidelity check transcribes the
+  narration through speaches, which then keeps faster-whisper-medium and
+  Kokoro resident on its idle timer (`WHISPER__TTL=300`), about 2.1 GB. RIFE
+  keeps its model after interpolating a hero, about 0.86 GB. Neither was a
+  rung, so every hero wait started just under the 27 GB plate (25.8, 26.8 GB).
+  One hero only animated because speaches' timer fired 23 s into its wait,
+  and the log credited "the ladder's evictions". Both are now soft rungs in
+  `reclaim_render_vram` and in the pre-hero clear. speaches unloads Whisper
+  models via `DELETE /api/ps/{model}` and answers 409 for a model in use; RIFE
+  answers `busy` mid-interpolation. Neither is ever restarted.
+- **A tenant that loads DURING the wait.** The pre-hero clear runs once, before
+  the wait. An unrelated local app (a dev server calling `ollama-primary` on
+  `:11434`, which is pinned to the render GPU with a 1 h keep-alive) loaded an
+  18 GB model 78 s into a hero wait: headroom went 25.8 → 7.4 GB and nothing
+  evicted it. Both the hero and the presenter waits now treat a reading ≥ 2 GB
+  below the previous one as a newcomer and evict again, using only levers
+  with no restart side effect: Ollama (confirmed against `/api/ps`), speaches
+  and RIFE. Never the image-gen hard rung, whose squat rule would queue a
+  restart on a card that is short because of someone else's model (the
+  restart-storm trap). `video_reclaim_reclear_max` bounds the re-clears per
+  wait: each one makes that client reload on its next call, and an unbounded
+  eviction/reload loop is a model-thrash loop.
+
+Finding who loaded something is `journalctl -u ollama-primary` around the drop:
+a `starting llama-server` line plus its `[GIN] POST`. Client `::1` means a
+host process; `172.18.0.x` means a container.
+
 ### Settings (`settings_defaults.py`)
 
 | Key                                     | Default | Meaning                                                                                                                  |
@@ -178,6 +210,7 @@ The reason is capped at `_MAX_REASON_CHARS` (400) — deliberately more generous
 | `image_gen_hard_unload_min_reserved_mb` | `512`   | Reserved-VRAM floor below which image-gen refuses a hard unload (nothing worth the exit).                                |
 | `video_hero_unload_image_gen`           | `true`  | Hard-unload image-gen immediately before each wan hero load (#907). Off = skip the cold reload on a card that fits both. |
 | `video_hero_unload_settle_seconds`      | `3`     | Pause after that unload so the CUDA context returns to the host before wan asks for it.                                  |
+| `video_reclaim_reclear_max`             | `2`     | Newcomer evictions per headroom wait (hero and presenter). `0` = the single up-front clear.                               |
 
 ### The un-claim is bounded (poindexter#995, 2026-08-07)
 

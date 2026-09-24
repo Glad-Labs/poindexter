@@ -741,6 +741,12 @@ DEFAULTS: dict[str, str] = {
     # 4.3 GB used a minute after the refusal. Polls every 5 s until the
     # requested plate's rung fits or this budget ends; 0 = single read.
     'video_hero_reclaim_wait_s': '120',
+    # Mid-wait newcomer eviction (2026-09-23): both headroom waits clear the
+    # card again when a reading drops >= 2 GB (an unrelated app loaded an
+    # 18 GB Ollama model 78 s into a hero wait). Each re-clear makes that
+    # client reload on its next call, so this caps re-clears per wait to keep
+    # it from becoming a model-thrash loop. 0 = the old single up-front clear.
+    'video_reclaim_reclear_max': '2',
     # S2V render prompt; {display_name} is the persona's display name. The
     # persona's render_prompt_suffix and the shot's delivery note are appended.
     # Wan reads motion language LITERALLY, and the positive prompt dominates:
@@ -5431,6 +5437,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
     'video_presenter_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
+    'video_reclaim_reclear_max': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},

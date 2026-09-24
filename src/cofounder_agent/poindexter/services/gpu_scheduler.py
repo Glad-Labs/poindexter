@@ -2565,6 +2565,11 @@ class GPUScheduler:
             ("wan", lambda: self._unload_wan(hard=_hardness("wan"))),
             ("stable-audio", lambda: self._unload_stable_audio(hard=_hardness("stable-audio"))),
             ("comfyui", lambda: self._unload_comfyui(hard=_hardness("comfyui"))),
+            # Soft-only rungs (2026-09-23): each drops idle models and is never
+            # queued for a restart. speaches is load-bearing; RIFE is cheap to
+            # keep up and refuses while it is interpolating.
+            ("speaches", self._unload_speaches),
+            ("rife", self._unload_rife),
         ))
         skip = {str(x).strip().lower() for x in (exclude or ())}
         for name, call in levers:
@@ -3283,6 +3288,90 @@ class GPUScheduler:
                 "[GPU] stable-audio /unload call failed (%s): %s: %s",
                 "expected — hard unload may exit before responding" if hard
                 else "server likely offline",
+                type(exc).__name__, exc,
+            )
+
+    async def _unload_speaches(self) -> None:
+        """Drop the speaches sidecar's IDLE Whisper models. Never restarts it.
+
+        speaches is load-bearing (captions, narration QA, TTS), so the ladder
+        never bounces it. What it holds on the render card between jobs,
+        though, is models on an idle timer (``WHISPER__TTL``, 300 s here):
+        a render's own caption-fidelity transcription left
+        faster-whisper-medium plus Kokoro resident for five minutes, about
+        2.1 GB, and every hero wait on 2026-09-23 started below the 27 GB
+        plate because of it. One hero only animated because the timer
+        happened to fire 23 s into its wait.
+
+        ``DELETE /api/ps/{model}`` unloads one model and the service stays
+        up. speaches answers 409 for a model still in use, so an in-flight
+        transcription is never cut. Its API covers only the Whisper manager;
+        Kokoro (a few hundred MB) keeps its own timer.
+        """
+        base = _sc_get("plugin.caption_provider.speaches.base_url", "")
+        if not base:
+            return
+        root = base.rstrip("/").removesuffix("/v1")
+        try:
+            client = self._get_http_client()
+            resp = await client.get(f"{root}/api/ps", timeout=10)
+            if resp.status_code != 200:
+                logger.warning(
+                    "[GPU] speaches /api/ps returned %d: %s",
+                    resp.status_code, (getattr(resp, "text", "") or "")[:200],
+                )
+                return
+            models = [str(m) for m in ((resp.json() or {}).get("models") or [])]
+            for model_id in models:
+                gone = await client.delete(f"{root}/api/ps/{model_id}", timeout=15)
+                if gone.status_code in (200, 204, 404):
+                    logger.info("[GPU] speaches model %s unloaded", model_id)
+                elif gone.status_code == 409:
+                    logger.info("[GPU] speaches model %s is in use — left loaded", model_id)
+                else:
+                    logger.warning(
+                        "[GPU] speaches unload of %s returned %d: %s",
+                        model_id, gone.status_code,
+                        (getattr(gone, "text", "") or "")[:200],
+                    )
+        except Exception as exc:
+            # silent-ok: a transport failure means the sidecar is down or not
+            # deployed on this install; nothing of it is on the card then.
+            logger.debug(
+                "[GPU] speaches idle-model unload failed (sidecar likely "
+                "offline): %s: %s", type(exc).__name__, exc,
+            )
+
+    async def _unload_rife(self) -> None:
+        """Ask the RIFE interpolation sidecar to drop its model. Soft only.
+
+        RIFE keeps its model after interpolating a hero clip, about 0.86 GB
+        on the card, which on 2026-09-23 was exactly the 0.2 GB a later hero
+        wait fell short by. The soft unload frees the model and the cached
+        allocator pool; the CUDA context stays (only an exit returns that,
+        and bouncing the sidecar before every hero is not worth ~0.6 GB).
+        The sidecar answers ``busy`` while an interpolation is in flight, so
+        this can never cut one short.
+        """
+        base = _sc_get("rife_server_url", "")
+        if not base:
+            return
+        try:
+            client = self._get_http_client()
+            resp = await client.post(
+                f"{base.rstrip('/')}/unload", timeout=15, json={"hard": False},
+            )
+            if resp.status_code == 200:
+                logger.info("[GPU] rife model unloaded via /unload (%s)", resp.text[:120])
+            else:
+                logger.warning(
+                    "[GPU] rife /unload returned %d: %s",
+                    resp.status_code, (getattr(resp, "text", "") or "")[:200],
+                )
+        except Exception as exc:
+            # silent-ok: RIFE is an optional sidecar; unreachable = not on the card.
+            logger.debug(
+                "[GPU] rife /unload call failed (sidecar likely offline): %s: %s",
                 type(exc).__name__, exc,
             )
 

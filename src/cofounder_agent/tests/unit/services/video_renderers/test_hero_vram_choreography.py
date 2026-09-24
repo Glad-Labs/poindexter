@@ -877,3 +877,139 @@ async def test_wan_animator_does_not_touch_comfyui():
     with patch("poindexter.services.gpu_scheduler.gpu", gpu):
         await slr._clear_image_gen_for_hero(_sc(video_generative_provider="wan21"))
     gpu._unload_comfyui.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-23 render of f555bedc: every hero wait started under the 27 GB plate
+# (speaches' Whisper + RIFE's model, ~2.4 GB, idle on the card), and twice an
+# unrelated app's 18 GB Ollama model landed MID-wait, after the one up-front
+# clear, so two heroes shipped as stills.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_idle_speaches_and_rife_models_are_dropped_before_the_hero_load():
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    speaches, rife = AsyncMock(), AsyncMock()
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", AsyncMock()), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_ollama_models", AsyncMock()), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_speaches", speaches), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_rife", rife), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        await slr._clear_image_gen_for_hero(_sc())
+
+    speaches.assert_awaited_once_with()
+    rife.assert_awaited_once_with()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_a_newcomer_mid_wait_is_evicted_and_the_hero_gets_its_plate():
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    evict = AsyncMock()
+    readings = AsyncMock(side_effect=[7.4, 27.5])  # something loaded; evicted
+    with patch.object(slr, "_hero_headroom_gb", readings), \
+         patch.object(slr, "_evict_newcomers", evict), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        got = await slr._wait_for_hero_headroom(
+            _sc(video_hero_reclaim_wait_s="60"), 27.0, first=25.8,
+        )
+
+    assert got == 27.5
+    evict.assert_awaited_once_with(evict_ollama=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_newcomer_evictions_are_capped_per_wait():
+    """A client that reloads after every eviction must not turn the wait into
+    a model-thrash loop: default cap 2 re-clears per wait."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    evict = AsyncMock()
+    readings = AsyncMock(side_effect=[7.4, 25.8, 7.4, 25.8] + [7.4] * 30)
+    with patch.object(slr, "_hero_headroom_gb", readings), \
+         patch.object(slr, "_evict_newcomers", evict), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        await slr._wait_for_hero_headroom(
+            _sc(video_hero_reclaim_wait_s="60"), 27.0, first=25.8,
+        )
+
+    assert evict.await_count == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_reclear_max_zero_keeps_the_single_up_front_clear():
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    evict = AsyncMock()
+    with patch.object(slr, "_hero_headroom_gb", AsyncMock(side_effect=[7.4] * 30)), \
+         patch.object(slr, "_evict_newcomers", evict), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        await slr._wait_for_hero_headroom(
+            _sc(video_hero_reclaim_wait_s="60", video_reclaim_reclear_max="0"),
+            27.0, first=25.8,
+        )
+
+    evict.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_newcomer_eviction_never_touches_image_gen():
+    """image-gen's hard rung QUEUES A RESTART when it frees nothing on a short
+    card, and a card short from someone else's model is exactly this case:
+    the reclaim restart-storm trap. The mid-wait eviction leaves it alone."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    image_gen, ollama, speaches, rife = AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", image_gen), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_ollama_models", ollama), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_speaches", speaches), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_rife", rife):
+        await slr._evict_newcomers(evict_ollama=True)
+        await slr._evict_newcomers(evict_ollama=False)
+
+    image_gen.assert_not_awaited()
+    assert ollama.await_count == 1  # only the evict_ollama=True call
+    assert speaches.await_count == 2 and rife.await_count == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_the_hero_wait_respects_the_operators_ollama_switch():
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    evict = AsyncMock()
+    with patch.object(slr, "_hero_headroom_gb", AsyncMock(side_effect=[7.4, 27.5])), \
+         patch.object(slr, "_evict_newcomers", evict), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        await slr._wait_for_hero_headroom(
+            _sc(video_hero_reclaim_wait_s="60", video_hero_evict_ollama="false"),
+            27.0, first=25.8,
+        )
+
+    evict.assert_awaited_once_with(evict_ollama=False)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_the_presenter_wait_evicts_a_newcomer_too():
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    evict = AsyncMock()
+    readings = AsyncMock(side_effect=[22.0, 5.0, 24.0])  # first read, landed, evicted
+    with patch.object(slr, "_presenter_headroom_gb", readings), \
+         patch.object(slr, "_evict_newcomers", evict), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        got = await slr._wait_for_presenter_headroom(
+            _sc(video_presenter_reclaim_wait_s="60"), 23.0,
+        )
+
+    assert got == 24.0
+    evict.assert_awaited_once_with(evict_ollama=True)

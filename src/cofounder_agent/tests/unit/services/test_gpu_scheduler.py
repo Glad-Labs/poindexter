@@ -649,6 +649,8 @@ def _mock_all_rungs(scheduler):
     scheduler._unload_wan = AsyncMock()
     scheduler._unload_stable_audio = AsyncMock()
     scheduler._unload_comfyui = AsyncMock()
+    scheduler._unload_speaches = AsyncMock()
+    scheduler._unload_rife = AsyncMock()
 
 
 class TestReclaimRenderVram:
@@ -672,6 +674,9 @@ class TestReclaimRenderVram:
         scheduler._unload_wan.assert_awaited_once_with(hard=True)
         scheduler._unload_stable_audio.assert_awaited_once_with(hard=True)
         scheduler._unload_comfyui.assert_awaited_once_with(hard=True)
+        # Soft-only rungs: no hardness argument, never a restart.
+        scheduler._unload_speaches.assert_awaited_once_with()
+        scheduler._unload_rife.assert_awaited_once_with()
 
     @pytest.mark.asyncio
     async def test_include_ollama_false_skips_only_the_ollama_rung(self):
@@ -1407,3 +1412,137 @@ class TestReclaimLadderSparesTheCallee:
         s = self._scheduler_with_mocked_rungs()
         await s.reclaim_render_vram(exclude=("comfyui",), soft=("comfyui",))
         s._unload_comfyui.assert_not_awaited()
+
+
+def _sc_with(**values):
+    from poindexter.services.site_config import SiteConfig
+
+    return SiteConfig(initial_config=values)
+
+
+class TestUnloadSpeaches:
+    """speaches holds IDLE Whisper models on the render card for its TTL
+    after the render's own caption check (~2.1 GB with Kokoro, 2026-09-23).
+    The lever unloads them through the model API and never restarts the
+    service, which is load-bearing for captions and TTS."""
+
+    @staticmethod
+    def _client(models, delete_status=204):
+        from unittest.mock import AsyncMock, MagicMock
+
+        client = MagicMock()
+        client.get = AsyncMock(return_value=MagicMock(
+            status_code=200, json=MagicMock(return_value={"models": models}),
+        ))
+        client.delete = AsyncMock(return_value=MagicMock(status_code=delete_status, text=""))
+        return client
+
+    @pytest.mark.asyncio
+    async def test_every_loaded_model_is_unloaded_at_the_api_root(self):
+        from unittest.mock import patch
+
+        from poindexter.services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = self._client(["Systran/faster-whisper-medium"])
+        sc = _sc_with(**{"plugin.caption_provider.speaches.base_url": "http://speaches:8000/v1"})
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=sc), \
+             patch.object(scheduler, "_get_http_client", return_value=client):
+            await scheduler._unload_speaches()
+
+        assert client.get.await_args.args[0] == "http://speaches:8000/api/ps"
+        assert client.delete.await_args.args[0] == (
+            "http://speaches:8000/api/ps/Systran/faster-whisper-medium"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_model_in_use_is_left_loaded_without_raising(self):
+        from unittest.mock import patch
+
+        from poindexter.services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = self._client(["Systran/faster-whisper-medium"], delete_status=409)
+        sc = _sc_with(**{"plugin.caption_provider.speaches.base_url": "http://speaches:8000/v1"})
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=sc), \
+             patch.object(scheduler, "_get_http_client", return_value=client):
+            await scheduler._unload_speaches()  # 409 = in use; no raise
+        client.delete.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_configured_url_means_no_http(self):
+        from unittest.mock import MagicMock, patch
+
+        from poindexter.services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = MagicMock()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_sc_with()), \
+             patch.object(scheduler, "_get_http_client", return_value=client):
+            await scheduler._unload_speaches()
+        client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_transport_failure_is_swallowed(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from poindexter.services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=ConnectionError("refused"))
+        sc = _sc_with(**{"plugin.caption_provider.speaches.base_url": "http://speaches:8000/v1"})
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=sc), \
+             patch.object(scheduler, "_get_http_client", return_value=client):
+            await scheduler._unload_speaches()  # must not raise
+
+
+class TestUnloadRife:
+    """RIFE keeps its model after interpolating a hero (~0.86 GB, 2026-09-23).
+    The lever asks for a SOFT unload only; the sidecar refuses while busy."""
+
+    @pytest.mark.asyncio
+    async def test_soft_unload_posts_to_the_configured_server(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from poindexter.services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = MagicMock()
+        client.post = AsyncMock(return_value=MagicMock(status_code=200, text='{"status":"unloaded"}'))
+        with patch("poindexter.services.gpu_scheduler._sc",
+                   return_value=_sc_with(rife_server_url="http://rife-server:9842/")), \
+             patch.object(scheduler, "_get_http_client", return_value=client):
+            await scheduler._unload_rife()
+
+        args, kwargs = client.post.await_args
+        assert args[0] == "http://rife-server:9842/unload"
+        assert kwargs["json"] == {"hard": False}
+
+    @pytest.mark.asyncio
+    async def test_no_configured_url_means_no_http(self):
+        from unittest.mock import MagicMock, patch
+
+        from poindexter.services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = MagicMock()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_sc_with()), \
+             patch.object(scheduler, "_get_http_client", return_value=client):
+            await scheduler._unload_rife()
+        client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_transport_failure_is_swallowed(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from poindexter.services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=ConnectionError("refused"))
+        with patch("poindexter.services.gpu_scheduler._sc",
+                   return_value=_sc_with(rife_server_url="http://rife-server:9842")), \
+             patch.object(scheduler, "_get_http_client", return_value=client):
+            await scheduler._unload_rife()  # must not raise
+

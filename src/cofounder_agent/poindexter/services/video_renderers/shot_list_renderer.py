@@ -493,6 +493,67 @@ _FREE_VRAM_SAMPLES = 4
 _HERO_HEADROOM_POLL_S = 5.0
 _HERO_RECLAIM_WAIT_DEFAULT_S = 120.0
 _FREE_VRAM_SAMPLE_GAP_S = 4.0
+# Newcomer detection (2026-09-23). The co-resident clear runs once, BEFORE a
+# headroom wait, so a model that lands DURING the wait was never evicted: an
+# unrelated local app loaded an 18 GB Ollama model 78 s into a hero wait
+# (headroom 25.8 -> 7.4 GB) and the hero shipped as a still. A reading this
+# far below the previous one means something loaded, so the wait clears again.
+_NEWCOMER_DROP_GB = 2.0
+# How many re-clears one wait may run (``video_reclaim_reclear_max``). Bounded
+# because each re-clear makes the newcomer reload on its next call, and an
+# unbounded loop against a client that keeps calling is a model-thrash loop.
+# Those freeze the desktop (reference_ollama_model_thrash_freezes_desktop).
+_RECLEAR_MAX_DEFAULT = 2
+
+
+def _reclear_max(site_config: Any) -> int:
+    if site_config is None:
+        return _RECLEAR_MAX_DEFAULT
+    try:
+        return max(0, int(site_config.get_int("video_reclaim_reclear_max", _RECLEAR_MAX_DEFAULT)))
+    except Exception:  # noqa: BLE001  # silent-ok: a settings read must not decide a render
+        return _RECLEAR_MAX_DEFAULT
+
+
+def _newcomer_landed(previous: float | None, current: float | None, target: float) -> bool:
+    """Did something load onto the card between two headroom readings?"""
+    return (
+        previous is not None and current is not None and current < target
+        and previous - current >= _NEWCOMER_DROP_GB
+    )
+
+
+async def _evict_newcomers(*, evict_ollama: bool) -> None:
+    """Clear what can land on the card mid-wait, with no restart side effects.
+
+    Deliberately NOT the full pre-hero clear: its image-gen hard rung QUEUES A
+    RESTART when it frees nothing while the card is short, and "short because
+    of someone else's model" is exactly this situation (the reclaim
+    restart-storm trap). Ollama's eviction is confirmed against ``/api/ps``,
+    and speaches and RIFE only drop idle models.
+    """
+    try:
+        from poindexter.services.gpu_scheduler import gpu
+
+        if evict_ollama:
+            await gpu._unload_ollama_models()
+        await gpu._unload_speaches()
+        await gpu._unload_rife()
+    except Exception as exc:  # noqa: BLE001  # silent-ok: best-effort, logged
+        logger.warning(
+            "[SHOT_LIST] mid-wait newcomer eviction failed (%s) — the wait "
+            "carries on with what the card has", describe_exception(exc),
+        )
+
+
+def _hero_evicts_ollama(site_config: Any) -> bool:
+    try:
+        return (
+            site_config.get_bool("video_hero_evict_ollama", True)
+            if site_config is not None else True
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: default to the documented behaviour
+        return True
 
 # (width, height, free_GB_required). Landscape-first; the caller swaps for
 # portrait. Ordered largest-first — the first rung that fits wins.
@@ -506,10 +567,12 @@ _FREE_VRAM_SAMPLE_GAP_S = 4.0
 #
 # There is deliberately NO rung above 832x480 on this hardware. The same fit
 # puts 896x512 at ~27.5 GB peak (~29.3 required) and 960x544 at ~29.9 GB peak
-# (~31.7 required) on a 31.8 GB card — and speaches alone holds ~2.8 GB that
-# the reclaim ladder deliberately never evicts (it is load-bearing for
-# podcast/video TTS). A rung above 832x480 could therefore never fire; adding
-# one would be dead code that makes the ceiling look higher than it is.
+# (~31.7 required) on a 31.8 GB card. A rung above 832x480 could therefore
+# never fire; adding one would be dead code that makes the ceiling look higher
+# than it is. (This comment used to add that speaches "holds ~2.8 GB the ladder
+# never evicts". It holds ~0.5 GB idle; the rest was Whisper + Kokoro on a
+# 300 s idle timer after the render's own caption check, which the pre-hero
+# clear now unloads without restarting the service: 2026-09-23.)
 _HERO_PLATE_LADDER: tuple[tuple[int, int, float], ...] = (
     (832, 480, 27.0),   # validated: 4-for-4, good output; measured peak 25.2GB
     (704, 400, 22.0),   # quality floor — modest step, still coherent
@@ -653,18 +716,30 @@ async def _wait_for_hero_headroom(
     attempts = max(1, math.ceil(wait_s / _HERO_HEADROOM_POLL_S))
     deadline = time.monotonic() + wait_s
     headroom: float | None = first
-    polls = 0
+    polls = reclears = 0
+    reclear_max = _reclear_max(site_config)
     while (
         headroom is not None and headroom < target_gb
         and polls < attempts and time.monotonic() < deadline
     ):
         await asyncio.sleep(_HERO_HEADROOM_POLL_S)
-        headroom = await _hero_headroom_gb(site_config)
+        previous, headroom = headroom, await _hero_headroom_gb(site_config)
         polls += 1
+        if _newcomer_landed(previous, headroom, target_gb) and reclears < reclear_max:
+            reclears += 1
+            logger.info(
+                "[SHOT_LIST] hero headroom fell %.1fGB -> %.1fGB mid-wait — "
+                "something loaded onto the card; evicting it (%d/%d)",
+                previous, headroom, reclears, reclear_max,
+            )
+            await _evict_newcomers(evict_ollama=_hero_evicts_ollama(site_config))
+            headroom = await _hero_headroom_gb(site_config)
     if headroom is not None and headroom >= target_gb:
+        # No claim about WHO freed it: on 2026-09-23 this line credited the
+        # ladder when speaches' own idle timer had fired a second earlier.
         logger.info(
-            "[SHOT_LIST] hero headroom %.1fGB -> %.1fGB after %d poll(s) — the "
-            "ladder's evictions landed; animating at the requested plate",
+            "[SHOT_LIST] hero headroom %.1fGB -> %.1fGB after %d poll(s) — "
+            "enough for the requested plate",
             first, headroom, polls,
         )
     elif headroom is not None:
@@ -935,9 +1010,20 @@ async def _wait_for_presenter_headroom(
             wait_s = 60.0
     deadline = time.monotonic() + max(0.0, wait_s)
     headroom = await _presenter_headroom_gb(site_config)
+    reclears, reclear_max = 0, _reclear_max(site_config)
     while headroom is not None and headroom < min_free and time.monotonic() < deadline:
         await asyncio.sleep(5.0)
-        headroom = await _presenter_headroom_gb(site_config)
+        previous, headroom = headroom, await _presenter_headroom_gb(site_config)
+        if _newcomer_landed(previous, headroom, min_free) and reclears < reclear_max:
+            reclears += 1
+            logger.info(
+                "[presenter] headroom fell %.1fGB -> %.1fGB mid-wait — something "
+                "loaded onto the card; evicting it (%d/%d)",
+                previous, headroom, reclears, reclear_max,
+            )
+            # The presenter ladder always evicts Ollama (include_ollama=True).
+            await _evict_newcomers(evict_ollama=True)
+            headroom = await _presenter_headroom_gb(site_config)
     return headroom
 
 
@@ -1022,6 +1108,22 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
             # the next prompt is about to go to this very server) returns it,
             # and ComfyUI reloads from its RAM cache.
             await gpu._unload_comfyui(hard=False)
+        # Idle models the clip does not need (2026-09-23): the render's own
+        # caption check leaves speaches' Whisper resident on its idle timer,
+        # and RIFE keeps its model after interpolating the previous hero.
+        # Together about 2.4 GB, which is what kept every hero wait of that
+        # render under the 27 GB plate. Both are soft (no restart) and both
+        # sidecars refuse while their own work is in flight. Isolated, and
+        # after the levers above: an optional sidecar failing must not cost
+        # the hero its ComfyUI or Ollama headroom.
+        for lever in (gpu._unload_speaches, gpu._unload_rife):
+            try:
+                await lever()
+            except Exception as exc:  # noqa: BLE001  # silent-ok: logged, best-effort
+                logger.warning(
+                    "[SHOT_LIST] pre-hero idle-model unload failed (%s) — "
+                    "continuing", describe_exception(exc),
+                )
         settle = (
             site_config.get_float("video_hero_unload_settle_seconds", 3.0)
             if site_config is not None else 3.0
@@ -1031,7 +1133,8 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
         await asyncio.sleep(settle)
         logger.info(
             "[SHOT_LIST] cleared co-residents before hero clip (image-gen "
-            "hard-unload + Ollama evict, settle %.1fs) — poindexter#907/#992",
+            "hard-unload + Ollama evict + speaches/RIFE idle models, settle "
+            "%.1fs) — poindexter#907/#992",
             settle,
         )
     except Exception as exc:  # noqa: BLE001  # silent-ok: reclaim is an
