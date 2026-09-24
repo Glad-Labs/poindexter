@@ -134,7 +134,11 @@ def known_wrong_fact_rescued(
     web = next(
         (r for r in reviews if r.get("reviewer") == "web_factcheck"), None,
     )
-    return bool(web is not None and web.get("approved"))
+    # A not-applicable review is ``approved`` only in the sense of "had nothing
+    # to object to" — it verified nothing, so it must never overturn a veto.
+    return bool(
+        web is not None and web.get("approved") and not web.get("not_applicable")
+    )
 
 
 def is_rescuable_reject(

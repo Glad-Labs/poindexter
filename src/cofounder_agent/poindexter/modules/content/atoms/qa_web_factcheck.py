@@ -36,8 +36,10 @@ Advisory status is DB-driven via ``qa_gates.web_factcheck.required_to_pass``
 (``enabled=true, required_to_pass=false``) and the restore keeps it there — the
 rail scores but never vetoes on its own. Its RESCUE power (suppressing a
 known_wrong_fact veto) is a correctness fix that PREVENTS a wrong hard-reject,
-not a new veto. Returns nothing when no checkable product/spec claims are found
-or the search fails (both legacy no-ops).
+not a new veto. When the draft has no checkable product/spec claims it appends
+a scoreless not-applicable review; when the check itself fails it appends
+nothing and emits a ``qa_rail_degraded`` finding. Those two used to share a bare
+``{}`` and were indistinguishable for six days (poindexter#1062).
 """
 
 from __future__ import annotations
@@ -45,8 +47,15 @@ from __future__ import annotations
 from typing import Any
 
 from poindexter.modules.content.atoms._pool import resolve_pool
-from poindexter.modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from poindexter.modules.content.atoms._qa_rail_common import (
+    not_applicable_review,
+    resolve_gate_states,
+    reviewer_to_dict,
+)
 from poindexter.plugins.atom import AtomMeta, FieldSpec
+from poindexter.services.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 ATOM_META = AtomMeta(
     name="qa.web_factcheck",
@@ -91,6 +100,27 @@ class _RailReviewView:
         self.provider = d.get("provider")
 
 
+def _degraded(reason: str) -> None:
+    """The fact-check could not run — make the absence loud via the shared
+    ``qa_rail_degraded`` finding kind (same shape as qa.title_coherence)."""
+    logger.warning("[qa.web_factcheck] no measurement — %s", reason)
+    from poindexter.utils.findings import emit_finding
+
+    emit_finding(
+        source="qa.web_factcheck",
+        kind="qa_rail_degraded",
+        title="web_factcheck rail could not run",
+        body=(
+            f"{reason}\n\nNo review was appended for this post, so "
+            "qa.aggregate cannot use the web to rescue a known_wrong_fact "
+            "rejection on it."
+        ),
+        severity="warn",
+        dedup_key="qa_rail_degraded:web_factcheck",
+        extra={"rail": "web_factcheck", "reason": reason},
+    )
+
+
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     content = (state.get("content") or "").strip()
     site_config = state.get("site_config")
@@ -114,11 +144,25 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
     gate_states = await resolve_gate_states(qa)
-    review = await qa._web_fact_check(title, topic, content, existing)  # type: ignore[arg-type]
+    review, status, detail = await qa._web_fact_check_outcome(
+        title, topic, content, existing,  # type: ignore[arg-type]
+    )
+    if status == "no_claims":
+        # Ran to completion, nothing checkable — say so, scorelessly, so the
+        # gate row and the QA pass record the run (poindexter#1062). A
+        # not-applicable review never rescues a known_wrong_fact veto
+        # (known_wrong_fact_rescued requires a real, approved verdict).
+        return {"qa_rail_reviews": [not_applicable_review(
+            reviewer="web_factcheck",
+            provider="web_factcheck",
+            feedback="Web fact-check: no product/spec claims to verify.",
+        )]}
     if review is None:
-        # No checkable claims / search failed — legacy no-op. The
-        # known_wrong_fact rescue in qa.aggregate then finds no web review and
-        # upholds the validator rejection (mirrors review()'s else-branch).
+        # The check broke. No review (a check that did not run must not render
+        # as a score), and a finding so the absence is visible. qa.aggregate's
+        # known_wrong_fact rescue then finds no web review and upholds the
+        # validator rejection — the fail-closed direction.
+        _degraded(detail or status)
         return {}
     # Advisory is DB-driven: the baseline seeds web_factcheck advisory, so this
     # rail scores but does not veto on its own. (Its rescue power lives in

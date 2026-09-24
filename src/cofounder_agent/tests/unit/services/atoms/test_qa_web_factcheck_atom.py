@@ -66,20 +66,52 @@ class TestQaWebFactcheckAtom:
 
     async def test_review_emitted(self, monkeypatch):
         async def fc(self, title, topic, content, existing):
-            return ReviewerResult("web_factcheck", True, 100.0, "verified", "web_factcheck")
-        monkeypatch.setattr(MultiModelQA, "_web_fact_check", fc)
+            return (ReviewerResult("web_factcheck", True, 100.0, "verified", "web_factcheck"), "reviewed", "")
+        monkeypatch.setattr(MultiModelQA, "_web_fact_check_outcome", fc)
         _patch_gates(monkeypatch, _ADVISORY_STATES)
         out = await qa_web_factcheck.run(_state())
         rev = out["qa_rail_reviews"][0]
         assert rev["reviewer"] == "web_factcheck"
         assert rev["provider"] == "web_factcheck"
 
-    async def test_none_when_no_claims(self, monkeypatch):
+    async def test_no_claims_appends_a_not_applicable_review(self, monkeypatch):
+        """poindexter#1062: "nothing to check" is a completed run, recorded
+        scorelessly — no longer the same bare {} as a broken search."""
         async def fc(self, title, topic, content, existing):
-            return None
-        monkeypatch.setattr(MultiModelQA, "_web_fact_check", fc)
+            return None, "no_claims", ""
+        monkeypatch.setattr(MultiModelQA, "_web_fact_check_outcome", fc)
         _patch_gates(monkeypatch, _ADVISORY_STATES)
+        emitted = []
+        monkeypatch.setattr(
+            "poindexter.utils.findings.emit_finding",
+            lambda **kw: emitted.append(kw),
+        )
+        out = await qa_web_factcheck.run(_state())
+        rev = out["qa_rail_reviews"][0]
+        assert rev["reviewer"] == "web_factcheck"
+        assert rev["not_applicable"] is True
+        assert emitted == []
+        # Scoreless: it must not move the gating mean.
+        decision = aggregate_rail_reviews(out["qa_rail_reviews"])
+        assert "web_factcheck" not in decision["vetoed_by"]
+
+    async def test_failed_search_emits_degraded_finding_and_no_review(self, monkeypatch):
+        """poindexter#1062: a broken check appends nothing (a check that did
+        not run must not render as a score) and says so via qa_rail_degraded."""
+        async def fc(self, title, topic, content, existing):
+            return None, "failed", "ReadTimeout: "
+        monkeypatch.setattr(MultiModelQA, "_web_fact_check_outcome", fc)
+        _patch_gates(monkeypatch, _ADVISORY_STATES)
+        emitted = []
+        monkeypatch.setattr(
+            "poindexter.utils.findings.emit_finding",
+            lambda **kw: emitted.append(kw),
+        )
         assert await qa_web_factcheck.run(_state()) == {}
+        assert len(emitted) == 1
+        assert emitted[0]["kind"] == "qa_rail_degraded"
+        assert emitted[0]["extra"]["rail"] == "web_factcheck"
+        assert "ReadTimeout" in emitted[0]["extra"]["reason"]
 
     async def test_existing_reviews_passed_as_views(self, monkeypatch):
         """The upstream rail reviews are wrapped so _web_fact_check's
@@ -88,8 +120,8 @@ class TestQaWebFactcheckAtom:
 
         async def fc(self, title, topic, content, existing):
             seen["existing"] = existing
-            return ReviewerResult("web_factcheck", True, 80.0, "ok", "web_factcheck")
-        monkeypatch.setattr(MultiModelQA, "_web_fact_check", fc)
+            return (ReviewerResult("web_factcheck", True, 80.0, "ok", "web_factcheck"), "reviewed", "")
+        monkeypatch.setattr(MultiModelQA, "_web_fact_check_outcome", fc)
         _patch_gates(monkeypatch, _ADVISORY_STATES)
         upstream = [
             {"reviewer": "ollama_qa", "approved": False, "score": 40.0,
@@ -105,8 +137,8 @@ class TestQaWebFactcheckAtom:
 
     async def test_advisory_marks_review(self, monkeypatch):
         async def fc(self, title, topic, content, existing):
-            return ReviewerResult("web_factcheck", False, 30.0, "weak", "web_factcheck")
-        monkeypatch.setattr(MultiModelQA, "_web_fact_check", fc)
+            return (ReviewerResult("web_factcheck", False, 30.0, "weak", "web_factcheck"), "reviewed", "")
+        monkeypatch.setattr(MultiModelQA, "_web_fact_check_outcome", fc)
         _patch_gates(monkeypatch, _ADVISORY_STATES)
         out = await qa_web_factcheck.run(_state())
         rev = out["qa_rail_reviews"][0]
@@ -159,6 +191,15 @@ class TestKnownWrongFactRescue:
             reviews, ["programmatic_validator"], known_wrong_fact_only=True,
         ) is False
 
+    def test_not_applicable_web_review_never_rescues(self):
+        """poindexter#1062: a not-applicable review is ``approved=True`` but
+        verified nothing — it must not overturn the validator's veto."""
+        na = {**_web(True), "score": 0.0, "not_applicable": True}
+        assert known_wrong_fact_rescued(
+            [_validator_kwf_veto(), na], ["programmatic_validator"],
+            known_wrong_fact_only=True,
+        ) is False
+
     def test_rescue_helper_needs_kwf_flag(self):
         """Without the known_wrong_fact-only flag (a normal fabrication), the
         web check NEVER rescues — only stale-regex known_wrong_fact qualifies."""
@@ -207,3 +248,49 @@ class TestKnownWrongFactRescue:
         decision = aggregate_rail_reviews(reviews)
         assert decision["known_wrong_fact_rescued"] is False
         assert decision["approved"] is True
+
+
+@pytest.mark.unit
+class TestWebFactCheckOutcome:
+    """The method distinguishes the two review-less outcomes (poindexter#1062)."""
+
+    class _SC:
+        def get_int(self, key, default):
+            return default
+
+        def get_float(self, key, default):
+            return default
+
+        def get(self, key, default=None):
+            return default
+
+    def _qa(self):
+        qa = MultiModelQA.__new__(MultiModelQA)
+        qa._site_config = self._SC()
+        return qa
+
+    async def test_no_claims(self):
+        review, status, _ = await self._qa()._web_fact_check_outcome(
+            "t", "t", "A post about gardening, with no hardware in it.", [],
+        )
+        assert (review, status) == (None, "no_claims")
+
+    async def test_search_failure_is_reported_as_failed(self, monkeypatch):
+        class _Boom:
+            def __init__(self, **_kw):
+                pass
+
+            async def search(self, *_a, **_kw):
+                raise TimeoutError()
+
+        monkeypatch.setattr("poindexter.services.web_research.WebResearcher", _Boom)
+        review, status, detail = await self._qa()._web_fact_check_outcome(
+            "t", "t", "The RTX 5090 ships with 32GB VRAM.", [],
+        )
+        assert review is None
+        assert status == "failed"
+        # str(TimeoutError()) is empty — the type name must still name the cause.
+        assert "TimeoutError" in detail
+
+    async def test_legacy_wrapper_still_returns_review_or_none(self):
+        assert await self._qa()._web_fact_check("t", "t", "no claims here", []) is None

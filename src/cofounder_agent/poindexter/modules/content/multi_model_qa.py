@@ -3324,11 +3324,24 @@ class MultiModelQA:
 
     async def _web_fact_check(
         self,
+        title: str,
+        topic: str,
+        content: str,
+        existing_reviews: list[ReviewerResult],
+    ) -> ReviewerResult | None:
+        """Legacy shape of :meth:`_web_fact_check_outcome` — the review or None."""
+        review, _status, _detail = await self._web_fact_check_outcome(
+            title, topic, content, existing_reviews,
+        )
+        return review
+
+    async def _web_fact_check_outcome(
+        self,
         title: str,  # noqa: ARG002 — reserved for future title-level grounding
         topic: str,  # noqa: ARG002 — reserved for future topic-level grounding
         content: str,
         existing_reviews: list[ReviewerResult],
-    ) -> ReviewerResult | None:
+    ) -> tuple[ReviewerResult | None, str, str]:
         """Web-grounded fact check for claims the LLM critic can't verify.
 
         Extracts product names, version numbers, and spec claims from the
@@ -3338,8 +3351,11 @@ class MultiModelQA:
         VRAM" because they were trained before release, but a web search
         confirms it in seconds.
 
-        Returns a ReviewerResult with provider='web_factcheck'.
-        Returns None if no checkable claims found or search fails.
+        Returns ``(review, status, detail)``. ``status`` is ``"reviewed"``
+        (review set), ``"no_claims"`` (nothing checkable in the draft) or
+        ``"failed"`` (the check raised; ``detail`` names why). The two
+        review-less outcomes used to share a bare ``None``, so a broken search
+        read exactly like a post with nothing to check (poindexter#1062).
         """
         import re
 
@@ -3377,7 +3393,7 @@ class MultiModelQA:
 
             if not claims:
                 logger.debug("[WEB_FACTCHECK] No product/spec claims found, skipping")
-                return None
+                return None, "no_claims", ""
 
             # Also check if any reviewer flagged uncertain/fabrication concerns
             critic_concerned = any(
@@ -3427,7 +3443,7 @@ class MultiModelQA:
 
             total = len(claims_list)
             if total == 0:
-                return None
+                return None, "no_claims", ""
 
             score = 100 * verified / total if total > 0 else 50
             # Boost score if nothing was actively contradicted
@@ -3452,10 +3468,10 @@ class MultiModelQA:
                 score=score,
                 feedback=feedback,
                 provider="web_factcheck",
-            )
+            ), "reviewed", ""
 
         except Exception as e:
             logger.warning("[WEB_FACTCHECK] Failed (non-fatal): %s", e)
-            return None
+            return None, "failed", f"{type(e).__name__}: {e}"
 
     # _review_with_gemini removed — Ollama-only policy
