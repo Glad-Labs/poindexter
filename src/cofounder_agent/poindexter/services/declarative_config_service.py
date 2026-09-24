@@ -219,6 +219,8 @@ async def upsert_row(
     """
     spec = resolve_surface(surface)
     data = spec.validate(dict(payload)) if spec.validate else dict(payload)
+    if surface == "qa-gates":
+        await _refuse_required_gate_with_master_switch_off(pool, data)
 
     cols = [c for c in spec.mutable_columns if c in data]
     if spec.key_column not in cols:
@@ -250,6 +252,40 @@ async def upsert_row(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(sql, *args)
     return _row_to_dict(row, spec)
+
+
+async def _refuse_required_gate_with_master_switch_off(
+    pool: Any, data: dict[str, Any],
+) -> None:
+    """Refuse to make a gate required while its rail's master switch is off.
+
+    Such a rail appends no review, and ``missing_required_gates`` reads an
+    absent required rail as a veto — so the write would hard-reject every post
+    with a cause that reads as a QA failure (poindexter#1065 / #1060). Turn the
+    switch on first, or leave the gate advisory.
+    """
+    from poindexter.services.qa_gates_db import (
+        RAIL_MASTER_SWITCHES,
+        master_switch_is_on,
+        read_master_switches,
+    )
+
+    name = str(data.get("name") or "")
+    if not data.get("required_to_pass") or name not in RAIL_MASTER_SWITCHES:
+        return
+    # An omitted ``enabled`` is treated as enabled — the conservative read.
+    if not data.get("enabled", True):
+        return
+    settings = await read_master_switches(pool)
+    if master_switch_is_on(name, settings):
+        return
+    key = RAIL_MASTER_SWITCHES[name][0]
+    raise SurfaceValidationError(
+        f"qa gate {name!r} cannot be required_to_pass while its master switch "
+        f"{key!r} is off: the rail would produce no review and every post would "
+        f"be rejected as missing a required gate. Set {key}=true first, or "
+        f"keep the gate advisory."
+    )
 
 
 async def delete_row(pool: Any, surface: str, key: str) -> bool:

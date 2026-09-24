@@ -26,6 +26,7 @@ import click
 
 from poindexter.cli._dataplane import dump_row, render_table, run_service
 from poindexter.services import declarative_config_service as dcs
+from poindexter.services import qa_gates_db
 
 _SURFACE = "qa-gates"
 
@@ -71,6 +72,22 @@ def qa_gates_list(state: str, stage: str) -> None:
     # execution_order, so sort here for display.
     rows.sort(key=lambda r: (r.get("execution_order", 0), r.get("name", "")))
     render_table(rows, _COLUMNS, empty="(no qa_gates rows — run migrations 0093/0094)")
+    _warn_master_switch_conflicts()
+
+
+def _warn_master_switch_conflicts() -> None:
+    """Flag enabled gates whose rail's master switch is off (poindexter#1065)."""
+    try:
+        conflicts = run_service(qa_gates_db.find_master_switch_conflicts)
+    except Exception as e:  # noqa: BLE001 — advisory output; the list already printed
+        click.echo(f"(could not check rail master switches: {e})", err=True)
+        return
+    for gate, key in conflicts:
+        click.secho(
+            f"warning: {gate} is enabled but {key} is off — the rail produces "
+            f"no review; disable the gate or turn the switch on",
+            fg="yellow", err=True,
+        )
 
 
 @qa_gates_group.command("show")

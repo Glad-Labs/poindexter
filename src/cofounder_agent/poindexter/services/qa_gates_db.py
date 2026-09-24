@@ -32,6 +32,7 @@ Design notes
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -199,4 +200,94 @@ async def load_qa_gate_chain(
     return chain
 
 
-__all__ = ["QAGateSpec", "load_qa_gate_chain"]
+# ---------------------------------------------------------------------------
+# Master-switch consistency (poindexter#1065)
+# ---------------------------------------------------------------------------
+#
+# Several rails have an ``app_settings`` master switch that makes the rail
+# produce NO review at all when off (the atom returns ``{}``). A gate row
+# that is ``enabled`` for such a rail while its switch is off is inert today
+# but a landmine: graduating it (``required_to_pass=true``) makes
+# ``missing_required_gates`` read the absent review as a veto and hard-reject
+# every post — the poindexter#1060 incident shape.
+#
+# Only rails that go SILENT when switched off belong here. Rails that append a
+# not-applicable review when disabled (``self_claim``, ``freshness``) are safe
+# to require regardless of their switch, so they are deliberately absent.
+#
+# Value = (settings key, default the rail's reader uses when the key is unset).
+RAIL_MASTER_SWITCHES: dict[str, tuple[str, bool]] = {
+    "ragas_eval": ("ragas_enabled", False),
+    "deepeval_brand_fabrication": ("deepeval_enabled", False),
+    "deepeval_g_eval": ("deepeval_enabled", False),
+    "deepeval_faithfulness": ("deepeval_enabled", False),
+    "guardrails_brand": ("guardrails_enabled", False),
+    "guardrails_competitor": ("guardrails_enabled", False),
+    "self_consistency": ("self_consistency_enabled", False),
+    "vision_gate": ("qa_vision_check_enabled", False),
+    "numeric_fidelity": ("qa_numeric_fidelity_enabled", True),
+    "title_coherence": ("qa_title_coherence_enabled", True),
+    "content_originality": ("content_originality_enabled", True),
+}
+
+_TRUTHY = frozenset({"true", "1", "yes", "on"})
+
+
+def master_switch_is_on(gate: str, settings: Mapping[str, Any]) -> bool:
+    """True when ``gate`` has no master switch, or its switch reads on.
+
+    ``settings`` maps app_settings key -> raw value; an absent key falls back
+    to the default the rail's own reader uses.
+    """
+    entry = RAIL_MASTER_SWITCHES.get(gate)
+    if entry is None:
+        return True
+    key, default = entry
+    raw = settings.get(key)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in _TRUTHY
+
+
+def master_switch_conflicts(
+    gates: list[Mapping[str, Any]], settings: Mapping[str, Any],
+) -> list[tuple[str, str]]:
+    """Return ``(gate_name, switch_key)`` for every ENABLED gate whose rail's
+    master switch is off. Pure — callers supply the rows and settings."""
+    out: list[tuple[str, str]] = []
+    for g in gates:
+        name = str(g.get("name") or "")
+        if not g.get("enabled") or master_switch_is_on(name, settings):
+            continue
+        out.append((name, RAIL_MASTER_SWITCHES[name][0]))
+    return out
+
+
+async def read_master_switches(pool: Any) -> dict[str, Any]:
+    """Load the app_settings rows backing :data:`RAIL_MASTER_SWITCHES`."""
+    keys = sorted({k for k, _ in RAIL_MASTER_SWITCHES.values()})
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT key, value FROM app_settings WHERE key = ANY($1::text[])",
+            keys,
+        )
+    return {r["key"]: r["value"] for r in rows}
+
+
+async def find_master_switch_conflicts(pool: Any) -> list[tuple[str, str]]:
+    """Every enabled ``qa_gates`` row whose rail's master switch is off."""
+    async with pool.acquire() as conn:
+        gates = await conn.fetch("SELECT name, enabled FROM qa_gates")
+    settings = await read_master_switches(pool)
+    return master_switch_conflicts([dict(g) for g in gates], settings)
+
+
+__all__ = [
+    "RAIL_MASTER_SWITCHES",
+    "QAGateSpec",
+    "find_master_switch_conflicts",
+    "load_qa_gate_chain",
+    "master_switch_conflicts",
+    "master_switch_is_on",
+    "read_master_switches",
+]
