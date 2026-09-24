@@ -87,7 +87,31 @@ _DESCRIBES_RE = re.compile(
     r"|this (?:article|post|video|short)\s+(?:reveals|explains|shows|covers|looks at|explores)"
     r"\s*(?:how|why|what|that)?"
     r"|here['’]s (?:how|why|what)"
+    # "Get ready to supercharge your local LLM inference" -> "Supercharge your
+    # local LLM inference": what survives is an imperative, i.e. a usable hook.
+    # 12 of 491 stored short scripts (poindexter#1072).
+    r"|get ready to"
     r")\s+",
+    re.I,
+)
+
+# Openers that ANNOUNCE the article but do not strip into a claim: cutting
+# "Welcome to" / "Get ready for" / "Discover the" leaves a noun phrase ("The
+# era of cheap inference", "Secrets to building …"). So these are never
+# stripped — they only mark the sentence ``describes_article``, which buys the
+# one corrective LLM call the way a question does. Kept separate from
+# _DESCRIBES_RE because that regex's job is "prefix you can cut", and folding
+# these in would cut them. Measured 2026-09-24 on 491 stored short scripts:
+# 9 "Welcome to", 3 "Get ready for", 3 "Discover the" (poindexter#1072).
+_ANNOUNCES_RE = re.compile(
+    r"^(?:"
+    r"welcome to"
+    r"|get ready for"
+    # "Get ready to dive into the latest updates" strips to "Dive into the
+    # latest updates" — still an announcement, so it must still be flagged.
+    r"|dive (?:deep )?into"
+    r"|(?:discover|uncover|explore|unlock|unleash|reveal)\s+the"
+    r")\b",
     re.I,
 )
 
@@ -248,8 +272,10 @@ def hook_defects(
     out: list[str] = []
     if _QUESTION_RE.match(clean) or clean.rstrip().endswith("?"):
         out.append("question")
-    if _DESCRIBES_RE.match(clean):
-        out.append("describes_article")   # survived the strip (too short to cut)
+    if _DESCRIBES_RE.match(clean) or _ANNOUNCES_RE.match(clean):
+        # A cuttable prefix that survived the strip (too short to cut), or an
+        # announcer that never strips into a claim.
+        out.append("describes_article")
     if _PREAMBLE_RE.match(clean):
         out.append("run_up")
     if len(words) < HOOK_MIN_WORDS:

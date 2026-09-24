@@ -354,3 +354,44 @@ class TestWrappingEmphasis:
         assert strip_scaffold('"**HOOK:** the cheapest model won the benchmark"') == (
             "the cheapest model won the benchmark"
         )
+
+
+class TestAnnouncerFamilies:
+    """poindexter#1072 — measured 2026-09-24 over 491 stored short scripts:
+    27 first sentences announced the article in four families the prefix list
+    did not name. One of them strips into a hook; the rest only mark a defect,
+    because cutting them leaves a noun phrase rather than a claim."""
+
+    def test_get_ready_to_strips_into_an_imperative(self):
+        assert strip_preamble(
+            "Get ready to supercharge your local LLM inference!"
+        ) == "Supercharge your local LLM inference!"
+
+    @pytest.mark.parametrize(
+        "sentence",
+        [
+            "Welcome to the world of Zero Trust architecture!",
+            "Welcome to the era of cheap inference.",
+            "Get ready for a game-changing upgrade!",
+            "Discover the secrets to building scalable and maintainable APIs.",
+            "Unlock the power of local inference on one GPU.",
+            # "Get ready to dive into …" strips to this, and it still announces.
+            "Get ready to dive into the latest updates from Glad Labs!",
+        ],
+    )
+    def test_announcers_are_a_content_defect_and_are_not_stripped(self, sentence):
+        assert "describes_article" in content_defects(sentence)
+        stripped = strip_preamble(sentence)
+        assert not stripped.lower().startswith(("the ", "secrets", "a game"))
+
+    @pytest.mark.parametrize(
+        "sentence",
+        [
+            # Same words mid-sentence, or a different verb sense, are claims.
+            "Nobody gets ready for a GPU driver regression until it ships.",
+            "Discovery budgets shrank as zero-click search grew.",
+            "Explorers of local inference keep hitting the VRAM wall.",
+        ],
+    )
+    def test_the_words_elsewhere_are_not_announcers(self, sentence):
+        assert "describes_article" not in hook_defects(sentence)

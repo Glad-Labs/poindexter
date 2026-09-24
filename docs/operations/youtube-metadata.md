@@ -2,11 +2,11 @@
 
 ## What each upload carries
 
-| Field       | Long form                                                                              | Short                                                                                                            | Limit enforced                 |
-| ----------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| Title       | `posts.title`                                                                          | first sentence of its own narration (`short_summary_script`), ≤ `youtube_short_title_max_chars`, + `#Shorts`     | 100 chars (adapter clamps)     |
+| Field       | Long form                                                                                                     | Short                                                                                                                                                     | Limit enforced                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| Title       | `posts.title`                                                                                                 | first sentence of its own narration (`short_summary_script`), ≤ `youtube_short_title_max_chars`, + `#Shorts`                                              | 100 chars (adapter clamps)     |
 | Description | `posts.excerpt` · tagged back-link (`utm_medium=video`) · "Watch the Short" when live · optional body snippet | its first two sentences · "Watch the full breakdown" when the long form is live · tagged back-link (`utm_medium=shorts`) · `#Shorts` + N keyword hashtags | 4,800 composed / 5,000 API cap |
-| Tags        | `posts.seo_keywords`, comma-split                                                      | same                                                                                                             | 30 tags / 500 joined chars     |
+| Tags        | `posts.seo_keywords`, comma-split                                                                             | same                                                                                                                                                      | 30 tags / 500 joined chars     |
 
 Composed by `services/jobs/youtube_payload.py`, dispatched by
 `services/jobs/media_distribute.py`. The back-link carries
@@ -237,29 +237,29 @@ through the same builders):
   near the 100-char cap is trimmed to make room) and idempotent (a re-sync
   never stacks a second marker). Empty = no suffix.
 - **Short description** = its first two sentences · `Watch the full breakdown:
-  https://www.youtube.com/watch?v=<long id>` · `Read the full post: …
-  utm_medium=shorts` · `#Shorts` plus up to `youtube_short_hashtags_max`
+https://www.youtube.com/watch?v=<long id>` · `Read the full post: …
+utm_medium=shorts` · `#Shorts` plus up to `youtube_short_hashtags_max`
   CamelCase hashtags from `seo_keywords`. No body snippet on a Short.
 - **Long-form description** gains `Watch the Short:
-  https://www.youtube.com/shorts/<short id>` after the article link.
+https://www.youtube.com/shorts/<short id>` after the article link.
 
 ### The hook the title comes from
 
 Measured 2026-09-22 over the ten most recent published posts, with the
 production scene model (`video_scene_model`, phi4:14b):
 
-| | result |
-| --- | --- |
-| a verbatim example in the script prompt | copied onto 4 of 10 unrelated articles (#3951, reverted #3952) |
-| example removed | 0/10 parrot, but 4/10 opened "Discover how …" and 10/10 overran the feed's ~40 chars |
-| `services/short_hook.py` strip + gate | every title on-topic and inside the budget |
+|                                         | result                                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------------------ |
+| a verbatim example in the script prompt | copied onto 4 of 10 unrelated articles (#3951, reverted #3952)                       |
+| example removed                         | 0/10 parrot, but 4/10 opened "Discover how …" and 10/10 overran the feed's ~40 chars |
+| `services/short_hook.py` strip + gate   | every title on-topic and inside the budget                                           |
 
 Two lessons are baked into the design:
 
-* **Never put a quotable example sentence in a prompt whose output is
+- **Never put a quotable example sentence in a prompt whose output is
   published.** The model copied it verbatim. `build_hook_prompt` names the
   shapes to avoid instead of demonstrating one.
-* **Length is a shortening problem; content is a regeneration problem.** Only
+- **Length is a shortening problem; content is a regeneration problem.** Only
   a CONTENT defect (`services/short_hook.CONTENT_DEFECTS` — run-up, describes
   the article, question, not a claim, restates the title, fragment, runaway)
   buys the one corrective LLM call. Over-long is shortened at a word boundary
@@ -274,11 +274,11 @@ Two passes run before either the gate or the title builder sees the sentence.
 instead of writing the line. Over the same 489 stored scripts, **157 first
 sentences carried some** and every one became a YouTube title verbatim:
 
-| wrapper | count | example |
-| --- | --- | --- |
-| a quote character | 144 | `"Imagine having an AI assistant that never goes down` |
-| a code fence | 7 | an opened fence the model never closed |
-| a stage direction or label | 6 | `[ Hook ]` · `[0:00]` · `HOOK:` · `**Narration:**` |
+| wrapper                    | count | example                                                |
+| -------------------------- | ----- | ------------------------------------------------------ |
+| a quote character          | 144   | `"Imagine having an AI assistant that never goes down` |
+| a code fence               | 7     | an opened fence the model never closed                 |
+| a stage direction or label | 6     | `[ Hook ]` · `[0:00]` · `HOOK:` · `**Narration:**`     |
 
 Only a wrapper comes off. An INTERNAL quote is part of the claim, so
 `He said "no" to the merge` keeps its quotes, and a bracketed token the
@@ -298,14 +298,32 @@ instead of making it.
 
 The other 25 must survive, and are pinned by test as must-survive:
 
-| clause | why it stays |
-| --- | --- |
-| `In 2026,` · `On June 19th,` · `In December 2025,` | a date is usually the most concrete thing in the hook |
-| `In production environments,` · `In our development stack,` | a real qualifier scopes the claim rather than delaying it |
-| `In a single afternoon,` | `In a <noun>,` only goes when the noun is a framing device |
+| clause                                                      | why it stays                                               |
+| ----------------------------------------------------------- | ---------------------------------------------------------- |
+| `In 2026,` · `On June 19th,` · `In December 2025,`          | a date is usually the most concrete thing in the hook      |
+| `In production environments,` · `In our development stack,` | a real qualifier scopes the claim rather than delaying it  |
+| `In a single afternoon,`                                    | `In a <noun>,` only goes when the noun is a framing device |
 
 `Imagine you're building …` needs no strip: it is already a `question`
 defect, so it buys the corrective call instead.
+
+### Openers that announce the article
+
+A second census (491 rows, 2026-09-24, poindexter#1072) found 27 first
+sentences that survive both strips yet only announce the article. They need
+two different treatments, which is why there are two regexes:
+
+| opener                              | count                               | treatment                                         | why                                                                   |
+| ----------------------------------- | ----------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
+| `Get ready to <verb> …`             | 12                                  | **stripped** (`_DESCRIBES_RE`)                    | what's left is an imperative: `Supercharge your local LLM inference!` |
+| `Welcome to …`                      | 9                                   | **flagged** `describes_article` (`_ANNOUNCES_RE`) | cutting it leaves a noun phrase (`The era of cheap inference`)        |
+| `Get ready for …`                   | 3                                   | flagged                                           | same: `A game-changing upgrade!` isn't a claim                        |
+| `Discover / Unlock / Explore the …` | 3                                   | flagged                                           | `Secrets to building …` is a noun phrase                              |
+| `Dive into …`                       | (what one `Get ready to` strips to) | flagged                                           | still an announcement after the strip                                 |
+
+A flagged opener buys the one corrective call, the same as a question.
+`_DESCRIBES_RE` only lists prefixes that are safe to cut. Adding a
+noun-phrase opener to it would cut the opener and publish the stump.
 
 ### When the corrective call's answer is accepted
 
@@ -337,12 +355,12 @@ the same ten posts, the stripped first sentences land at **33, 55, 59, 59, 67,
 70, 78, 82, 114, 149** characters — median 70:
 
 | budget | hooks that survive whole |
-| --- | --- |
-| 42 | 1 of 10 |
-| 55 | 2 of 10 |
-| 60 | 4 of 10 |
-| **70** | **6 of 10** |
-| 85 | 8 of 10 |
+| ------ | ------------------------ |
+| 42     | 1 of 10                  |
+| 55     | 2 of 10                  |
+| 60     | 4 of 10                  |
+| **70** | **6 of 10**              |
+| 85     | 8 of 10                  |
 
 At 42 the builder was cutting 9 of 10 mid-phrase ("JPMorgan's 2026 report
 confirms tech") to win a truncation the feed performs anyway — the feed shows
@@ -353,7 +371,7 @@ median, 70: punchy, not clipped. With the 8-character `" #Shorts"` suffix that
 is 78, well inside YouTube's 100-character cap.
 
 **The budget is not a hard cut.** `short_hook_title` keeps a sentence whole
-when it is within the budget *plus a quarter* (70 → 87) and only shortens
+when it is within the budget _plus a quarter_ (70 → 87) and only shortens
 past that, because chopping a claim that is barely over buys nothing. So the
 ten measured hooks land as **8 kept whole, 0 shortened, 2 regenerated** — the
 shortening band between 87 and the runaway threshold at 105 is deliberately
@@ -372,7 +390,7 @@ are approved, rejected and uploaded independently (7 of 13 posts on the
 channel had one of the pair up when this shipped), so:
 
 - the "Watch …" line is composed from `pipeline_distributions` rows with
-  `status='published'` for the *other* medium of the same task — absent twin,
+  `status='published'` for the _other_ medium of the same task — absent twin,
   absent line, nothing dangling;
 - whichever render lands **second** knows both ids: right after its upload
   `media_distribute` recomposes the already-live twin through
