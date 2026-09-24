@@ -385,6 +385,31 @@ def image_dimensions(image_path: Path | str) -> tuple[int, int]:
         return int(im.size[0]), int(im.size[1])
 
 
+def normalize_upload_to_png(data: bytes, dst: Path | str) -> tuple[int, int]:
+    """Decode arbitrary uploaded image bytes and write them as an RGB PNG.
+
+    The OCR reader must never see the upload's raw bytes under a made-up
+    filename. EasyOCR loads a path through scikit-image, which picks its
+    decoder BY FILE EXTENSION — and an unrecognised one (the original `/scan`
+    wrote `scan_*.img`) falls through to the `itk` plugin, which is not
+    installed. Every live scan therefore failed with `ImportError: itk could
+    not be found` and was reported `ocr_unavailable`, although the image and
+    the reader were both fine. PIL sniffs the real format from the content
+    (PNG / WebP / JPEG, whatever the caller sent) and this writes one format
+    the reader always decodes. Returns ``(width, height)``; raises on bytes
+    that are not an image.
+    """
+    import io
+
+    from PIL import Image
+
+    with Image.open(io.BytesIO(data)) as im:
+        im.load()
+        rgb = im.convert("RGB")
+        rgb.save(str(dst), format="PNG")
+        return int(rgb.size[0]), int(rgb.size[1])
+
+
 def scan_leaked_text(
     image_path: Path | str, reader: Any, *, min_confidence: float,
 ) -> TextScanResult:
@@ -1347,13 +1372,15 @@ async def scan(request: Request, min_confidence: float | None = None):
             detail={"error": "too_large", "max_bytes": SCAN_MAX_BYTES},
         )
 
-    fd, tmp_name = tempfile.mkstemp(prefix="scan_", suffix=".img")
+    # `.png`, and a real PNG in it: the reader picks its decoder by extension
+    # (see normalize_upload_to_png — `.img` routed every scan to a missing
+    # `itk` plugin).
+    fd, tmp_name = tempfile.mkstemp(prefix="scan_", suffix=".png")
+    os.close(fd)
     tmp_path = Path(tmp_name)
     try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(body)
         try:
-            await asyncio.to_thread(image_dimensions, tmp_path)
+            await asyncio.to_thread(normalize_upload_to_png, body, tmp_path)
         except Exception as e:
             raise HTTPException(
                 status_code=400,

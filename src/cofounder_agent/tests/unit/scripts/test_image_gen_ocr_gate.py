@@ -533,3 +533,54 @@ def test_scan_endpoint_reports_a_broken_reader_as_unavailable(monkeypatch):
     resp = TestClient(img_gen_server.app).post("/scan", content=_png_bytes())
     assert resp.status_code == 503
     assert resp.json()["detail"]["error"] == "ocr_unavailable"
+
+
+# ---------------------------------------------------------------------------
+# Regression (2026-09-23, first live deploy of /scan): the upload was written
+# to `scan_*.img`. EasyOCR loads paths through scikit-image, which picks a
+# decoder by extension, so `.img` fell through to the uninstalled `itk` plugin
+# and EVERY live scan returned 503 ocr_unavailable. The FakeReader above never
+# opens the file, which is why the suite stayed green. These pin what the
+# reader is handed: a `.png` path holding a real PNG, whatever format arrived.
+# ---------------------------------------------------------------------------
+
+
+class _PathCheckingReader:
+    def __init__(self):
+        self.paths = []
+
+    def readtext(self, image_path, detail=1):
+        from PIL import Image
+
+        self.paths.append(str(image_path))
+        with Image.open(image_path) as im:
+            assert im.format == "PNG", im.format
+        return [(_quad(0, 0, 10, 10), "AB", 0.9)]
+
+
+@pytest.mark.parametrize("fmt", ["PNG", "WEBP", "JPEG"])
+def test_scan_hands_the_reader_a_real_png_whatever_was_uploaded(monkeypatch, fmt):
+    import io
+
+    from fastapi.testclient import TestClient
+    from PIL import Image
+
+    reader = _PathCheckingReader()
+
+    async def fake_reader():
+        return reader
+
+    monkeypatch.setattr(img_gen_server, "ensure_ocr_reader", fake_reader)
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 32), (5, 6, 7)).save(buf, format=fmt)
+
+    resp = TestClient(img_gen_server.app).post("/scan", content=buf.getvalue())
+
+    assert resp.status_code == 200, resp.text
+    assert reader.paths and reader.paths[0].endswith(".png")
+    assert (resp.json()["width"], resp.json()["height"]) == (64, 32)
+
+
+def test_normalize_upload_rejects_non_images(tmp_path):
+    with pytest.raises(Exception):
+        img_gen_server.normalize_upload_to_png(b"nope", tmp_path / "x.png")
