@@ -628,6 +628,49 @@ def _unsafe_concurrency_and_orphans(
     return errors
 
 
+# An atom declares ``post_write`` in its ``side_effects`` when running it can
+# change or create a post: republish over the live article, publish through
+# the auto-publish gate, or persist a task whose approval creates a post.
+POST_WRITE_EFFECT = "post_write"
+_EXISTING_POST_ENTRY = "content.load_existing_post"
+
+
+def _post_writes_on_an_existing_post(nodes: Any) -> list[str]:
+    """A composed plan that loads an existing post may not write a post.
+
+    poindexter#1056: asked for exactly eleven media atoms to render a video
+    for a published post, the architect returned — on one of four attempts —
+    a graph adding ``stage.generate_content`` + ``stage.generate_seo_metadata``
+    + ``content.republish_post``: a request to render a video would have
+    rewritten and republished the live article. Nothing checked intent
+    against side effects. The seeded ``seo_refresh`` graph is the reviewed
+    path for changing a live post and is not composed here, so an
+    architect-composed plan that starts from ``content.load_existing_post``
+    treats the post as read-only. Keyed on the atoms' declared
+    ``side_effects``, so a new post-writing atom is covered by tagging it.
+    """
+    if not isinstance(nodes, list):
+        return []
+    atoms = [
+        (n.get("id"), n.get("atom")) for n in nodes
+        if isinstance(n, dict) and isinstance(n.get("atom"), str)
+    ]
+    if not any(atom == _EXISTING_POST_ENTRY for _, atom in atoms):
+        return []
+    errors: list[str] = []
+    for nid, atom in atoms:
+        meta = get_atom_meta(atom)
+        if meta is not None and POST_WRITE_EFFECT in (meta.side_effects or ()):
+            errors.append(
+                f"FIX node {nid!r}: remove it. This plan loads an existing "
+                f"published post ({_EXISTING_POST_ENTRY}), and {atom!r} writes "
+                "or publishes a post, which would replace or duplicate the live "
+                "article as a side effect. A plan built on an existing post must "
+                "leave the post untouched; do not add any post-writing atom."
+            )
+    return errors
+
+
 def _validate_spec(
     spec: dict[str, Any], *, seed_keys: set[str] | None = None
 ) -> tuple[bool, list[str]]:
@@ -858,6 +901,7 @@ def _validate_spec(
     # concurrent fan-out onto a node that declares it cannot be concurrent,
     # and a node nothing reaches. Both wedged a live plan run (2026-09-15).
     errors.extend(_unsafe_concurrency_and_orphans(spec, node_atoms))
+    errors.extend(_post_writes_on_an_existing_post(nodes))
 
     return (not errors), errors
 

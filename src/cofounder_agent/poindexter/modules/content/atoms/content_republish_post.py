@@ -64,7 +64,7 @@ ATOM_META = AtomMeta(
     capability_tier=None,
     cost_class="free",
     idempotent=False,
-    side_effects=("db_write", "r2_export", "isr_revalidate"),
+    side_effects=("db_write", "r2_export", "isr_revalidate", "post_write"),
     retry=RetryPolicy(max_attempts=1),
     parallelizable=False,
 )

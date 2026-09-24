@@ -511,3 +511,65 @@ def test_the_shipped_render_atoms_declare_they_are_exclusive():
 
     assert media_render_long_video.ATOM_META.parallelizable is False
     assert media_render_short_video.ATOM_META.parallelizable is False
+
+
+class TestExistingPostIsReadOnly:
+    """poindexter#1056 — asked for eleven media atoms to render a video for a
+    published post, the architect returned a graph that also rewrote the draft
+    and SEO metadata and ran content.republish_post. The validator now refuses
+    any post-writing atom in a composed plan built on content.load_existing_post,
+    keyed on the atoms' declared side_effects."""
+
+    _MEDIA = [
+        "content.load_existing_post", "stage.generate_media_scripts",
+        "stage.generate_video_shot_list", "media.render_narration",
+        "media.persist", "atoms.approval_gate",
+    ]
+
+    def _chain(self, atoms):
+        from poindexter.services.atom_registry import discover
+
+        discover()
+        nodes = [{"id": f"n{i}", "atom": a} for i, a in enumerate(atoms)]
+        edges = [{"from": f"n{i}", "to": f"n{i + 1}"} for i in range(len(atoms) - 1)]
+        edges.append({"from": nodes[-1]["id"], "to": "END"})
+        return _spec(nodes, edges)
+
+    def _post_write_errors(self, atoms):
+        _ok, errors = pipeline_architect._validate_spec(self._chain(atoms))
+        return [e for e in errors if "writes or publishes a post" in e]
+
+    def test_the_measured_rewrite_and_republish_plan_is_refused(self):
+        bad = self._MEDIA[:1] + ["stage.generate_content", "stage.generate_seo_metadata"] \
+            + self._MEDIA[1:] + ["content.republish_post", "atoms.set_task_status"]
+        errors = self._post_write_errors(bad)
+        assert len(errors) == 1
+        assert "content.republish_post" in errors[0]
+        # The FIX tells the model to remove the node, never how to unlock it.
+        assert "remove it" in errors[0]
+
+    def test_the_requested_media_plan_passes_this_rule(self):
+        assert self._post_write_errors(self._MEDIA) == []
+
+    def test_persist_and_auto_publish_are_refused_too(self):
+        errors = self._post_write_errors(
+            self._MEDIA + ["content.persist_task", "content.evaluate_auto_publish"]
+        )
+        assert len(errors) == 2
+
+    def test_a_new_post_plan_may_still_persist(self):
+        """Without load_existing_post there is no live post to protect."""
+        assert self._post_write_errors(
+            ["stage.verify_task", "content.generate_draft", "content.persist_task"]
+        ) == []
+
+    def test_the_post_writing_atoms_declare_it(self):
+        from poindexter.services.atom_registry import discover, get_atom_meta
+
+        discover()
+        for name in ("content.republish_post", "content.persist_task",
+                     "content.evaluate_auto_publish"):
+            assert pipeline_architect.POST_WRITE_EFFECT in get_atom_meta(name).side_effects, name
+        assert pipeline_architect.POST_WRITE_EFFECT not in (
+            get_atom_meta("content.load_existing_post").side_effects
+        )
