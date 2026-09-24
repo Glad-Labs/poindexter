@@ -134,6 +134,11 @@ if TYPE_CHECKING:  # annotation-only — the runtime import stays lazy, inside
 
 logger = logging.getLogger(__name__)
 
+# Outer bound on claim age (poindexter#971). 120, not 45: a render with S2V
+# presenter clips measured 58 min on 2026-09-22 (poindexter#1069).
+_INFLIGHT_GRACE_DEFAULT_MINUTES = 120
+_LIVENESS_DEFAULT_SECONDS = 600
+
 
 _DEFAULT_PODCAST_CDN_VERSION = "v2"
 
@@ -1085,6 +1090,15 @@ class MediaReconciliationJob:
     # free-outage-retry budget. Without the reset a piece that once exhausted
     # that budget would permanently lose its outage tolerance — the exact
     # wedge the un-claim path was built to prevent.
+    #
+    # The liveness guard (poindexter#1069): claim AGE cannot tell a slow render
+    # from a dead one. 2026-09-22 a render with two S2V presenter clips ran
+    # 58 min, past the 45-min grace, and had its marker cleared + a redispatch
+    # attempt burned while ComfyUI was mid-prompt. The render heartbeats two
+    # places — its ``live_activity`` row (kind=media, ref_id=task) every ~30 s,
+    # and ``pipeline_tasks.last_progress_at`` from ComfyUI's poll loop — so a
+    # fresh heartbeat on either means "alive", whatever the claim's age. The
+    # grace stays as the outer bound. Same clause in _CAP_RESET_SQL below.
     _CLEAR_MARKER_SQL = """
         UPDATE pipeline_tasks
            SET media_pipeline_dispatched_at = NULL,
@@ -1094,6 +1108,15 @@ class MediaReconciliationJob:
            AND media_pipeline_redispatch_count < $2
            AND media_pipeline_dispatched_at IS NOT NULL
            AND media_pipeline_dispatched_at < NOW() - make_interval(mins => $3)
+           AND NOT EXISTS (
+               SELECT 1 FROM live_activity la
+                WHERE la.kind = 'media'
+                  AND la.ref_id = pipeline_tasks.task_id::text
+                  AND la.finished_at IS NULL
+                  AND la.updated_at > NOW() - make_interval(secs => $4))
+           AND (pipeline_tasks.last_progress_at IS NULL
+                OR pipeline_tasks.last_progress_at
+                   < NOW() - make_interval(secs => $4))
     """
 
     # Bounded cap-reset self-heal (2026-07-03, feedback_self_heal_not_suppress):
@@ -1129,6 +1152,15 @@ class MediaReconciliationJob:
                 OR media_pipeline_cap_reset_at < NOW() - make_interval(hours => $3))
            AND (media_pipeline_dispatched_at IS NULL
                 OR media_pipeline_dispatched_at < NOW() - make_interval(mins => $4))
+           AND NOT EXISTS (
+               SELECT 1 FROM live_activity la
+                WHERE la.kind = 'media'
+                  AND la.ref_id = pipeline_tasks.task_id::text
+                  AND la.finished_at IS NULL
+                  AND la.updated_at > NOW() - make_interval(secs => $6))
+           AND (pipeline_tasks.last_progress_at IS NULL
+                OR pipeline_tasks.last_progress_at
+                   < NOW() - make_interval(secs => $6))
     """
 
     async def _redispatch_video(self, pool: Any, post_row: dict[str, Any]) -> bool:
@@ -1164,10 +1196,11 @@ class MediaReconciliationJob:
             return False
         result = await pool.execute(
             self._CLEAR_MARKER_SQL, row["task_id"], cap, grace_minutes,
+            self._liveness_window_seconds(),
         )
-        # 'UPDATE 0' folds three benign cases: already pending pickup (marker
-        # NULL), raced by a concurrent cycle, or stamped within the in-flight
-        # grace window — the render is likely still running, so leave it be.
+        # 'UPDATE 0' folds four benign cases: already pending pickup (marker
+        # NULL), raced by a concurrent cycle, stamped within the in-flight
+        # grace window, or a render still heartbeating — leave it be.
         return str(result).strip().endswith(" 1")
 
     def _inflight_grace_minutes(self) -> int:
@@ -1175,12 +1208,27 @@ class MediaReconciliationJob:
         "in flight", not "missing" (poindexter#971)."""
         sc = getattr(self, "_site_config", None)
         if sc is None:
-            return 45
-        return sc.get_int("media_redispatch_inflight_grace_minutes", 45) or 45
+            return _INFLIGHT_GRACE_DEFAULT_MINUTES
+        return (
+            sc.get_int("media_redispatch_inflight_grace_minutes", _INFLIGHT_GRACE_DEFAULT_MINUTES)
+            or _INFLIGHT_GRACE_DEFAULT_MINUTES
+        )
+
+    def _liveness_window_seconds(self) -> int:
+        """How recent a render heartbeat must be to count as alive
+        (poindexter#1069) — well above the ~30 s beat, so one missed write or
+        a quiet compose phase doesn't read as death."""
+        sc = getattr(self, "_site_config", None)
+        if sc is None:
+            return _LIVENESS_DEFAULT_SECONDS
+        return (
+            sc.get_int("media_redispatch_liveness_window_seconds", _LIVENESS_DEFAULT_SECONDS)
+            or _LIVENESS_DEFAULT_SECONDS
+        )
 
     async def _maybe_reset_video_redispatch_cap(
         self, pool: Any, post_id: str, task_id: str, cap: int,
-        grace_minutes: int = 45,
+        grace_minutes: int = 120,
     ) -> bool:
         """Bounded self-heal for a cap-wedged video task (2026-07-03).
 
@@ -1215,7 +1263,7 @@ class MediaReconciliationJob:
         )
         result = await pool.execute(
             self._CAP_RESET_SQL, task_id, cap, cooldown_h, grace_minutes,
-            max_resets,
+            max_resets, self._liveness_window_seconds(),
         )
         if not str(result).strip().endswith(" 1"):
             # Distinguish the terminal case from the benign ones: a task whose

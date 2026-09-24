@@ -3096,8 +3096,14 @@ DEFAULTS: dict[str, str] = {
     # wasted duplicate render (~25 min GPU) per completed video. A genuinely
     # dead flow ages past the grace and re-dispatches exactly as before. Size
     # comfortably above the slowest expected render, below the point where a
-    # dead flow's recovery lag hurts.
-    'media_redispatch_inflight_grace_minutes': '45',
+    # dead flow's recovery lag hurts. 120 since poindexter#1069: a render with
+    # two S2V presenter clips measured 58 min.
+    'media_redispatch_inflight_grace_minutes': '120',
+    # Liveness (poindexter#1069): a render whose live_activity row or
+    # last_progress_at heartbeat is younger than this is ALIVE and is never
+    # re-dispatched, whatever its claim age. The grace above is the outer
+    # bound; this is what tells a slow render from a dead one.
+    'media_redispatch_liveness_window_seconds': '600',
     # media_feed_reconciliation — converges the published podcast/video RSS
     # feeds on R2 onto the DB's eligible-episode set. ON by default: unlike the
     # Stage-2 media jobs it needs no GPU and no dormant master switch, and its
@@ -5723,6 +5729,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_redispatch_cap_reset_cooldown_hours': {'owner': 'media_reconciliation', 'value_type': 'integer'},
     'media_redispatch_cap_reset_max_resets': {'owner': 'media_reconciliation', 'value_type': 'integer'},
     'media_redispatch_inflight_grace_minutes': {'owner': 'media_reconciliation', 'value_type': 'integer'},
+    'media_redispatch_liveness_window_seconds': {'owner': 'media_reconciliation', 'value_type': 'integer'},
 
     # ----- R2 media orphan-reaper (design 2026-07-11) -----
     'media_orphan_sweep_armed': {'owner': 'media_orphan_sweep', 'value_type': 'boolean'},

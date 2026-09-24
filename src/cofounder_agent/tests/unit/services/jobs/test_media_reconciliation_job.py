@@ -945,14 +945,41 @@ class TestVideoRedispatch:
         assert "media_pipeline_dispatched_at IS NULL" in cap_sql
 
     async def test_redispatch_video_passes_grace_minutes_to_the_guard(self):
-        """The configured grace threads into the SQL as $3 (default 45)."""
+        """The configured grace threads into the SQL as $3 (default 120 —
+        a render with presenter clips measured 58 min, poindexter#1069)."""
         job = MediaReconciliationJob()
         job._site_config = SiteConfig(initial_config={"media_pipeline_redispatch_max": "3"})
         pool = self._RedispatchPool({"task_id": "t1", "media_pipeline_redispatch_count": 0})
         await job._redispatch_video(pool, {"id": "post-1"})
         args = pool.execute.await_args.args
         assert args[1] == "t1"
-        assert args[3] == 45
+        assert args[3] == 120
+        assert args[4] == 600  # liveness window, seconds
+
+    def test_both_rearm_paths_skip_a_render_that_is_still_heartbeating(self):
+        """poindexter#1069: claim age can't tell a slow render from a dead one.
+        A fresh live_activity row or last_progress_at stamp means alive."""
+        for sql, n in (
+            (MediaReconciliationJob._CLEAR_MARKER_SQL, "$4"),
+            (MediaReconciliationJob._CAP_RESET_SQL, "$6"),
+        ):
+            assert "FROM live_activity la" in sql
+            assert "la.kind = 'media'" in sql
+            assert "la.finished_at IS NULL" in sql
+            assert f"la.updated_at > NOW() - make_interval(secs => {n})" in sql
+            assert f"< NOW() - make_interval(secs => {n})" in sql
+            assert "last_progress_at" in sql
+            assert "{live}" not in sql
+
+    async def test_liveness_window_is_configurable(self):
+        job = MediaReconciliationJob()
+        job._site_config = SiteConfig(initial_config={
+            "media_pipeline_redispatch_max": "3",
+            "media_redispatch_liveness_window_seconds": "900",
+        })
+        pool = self._RedispatchPool({"task_id": "t1", "media_pipeline_redispatch_count": 0})
+        await job._redispatch_video(pool, {"id": "post-1"})
+        assert pool.execute.await_args.args[4] == 900
 
     async def test_redispatch_video_grace_is_configurable(self):
         """Operators with slower renders can widen the window via
