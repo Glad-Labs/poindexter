@@ -302,3 +302,62 @@ class TestClauseAwareCuts:
         )
         assert len(out) == 2
         assert " ".join(c.text for c in out) == text
+
+
+class TestStrandedSentenceTail:
+    """poindexter#1070 — Whisper split a sentence across two segments, so the
+    next segment opened with the one-word tail ``articles.`` and the cutter
+    (which works per segment) burned "than just producing lengthy" /
+    "articles. Instant value wins,". The real 2026-09-22 segments:"""
+
+    SEGS = [
+        _seg(22.20, 27.62,
+             "focus on crafting valuable, easily extractable insights rather "
+             "than just producing lengthy"),
+        _seg(27.62, 35.30,
+             "articles. Instant value wins, particularly in B2B settings where "
+             "decision makers seek quick answers."),
+    ]
+
+    def test_the_tail_rejoins_its_sentence(self):
+        cues = [c.text for c in split_segments_for_display(self.SEGS, max_words=5)]
+        assert any(c.endswith("lengthy articles.") for c in cues), cues
+        assert not any(c.startswith("articles.") for c in cues), cues
+        assert any(c.startswith("Instant value wins") for c in cues), cues
+
+    def test_every_word_survives_in_order(self):
+        before = " ".join(s.text for s in self.SEGS).split()
+        after = " ".join(c.text for c in split_segments_for_display(self.SEGS, max_words=5)).split()
+        assert after == before
+
+    def test_timing_stays_contiguous_and_monotone(self):
+        out = split_segments_for_display(self.SEGS, max_words=5)
+        assert out[0].start_s == 22.20 and out[-1].end_s == 35.30
+        for a, b in zip(out, out[1:], strict=False):
+            assert abs(a.end_s - b.start_s) < 1e-9
+            assert a.start_s < a.end_s
+        # The boundary moved past 27.62 by the tail's share of segment two.
+        lengthy = next(c for c in out if c.text.endswith("lengthy articles."))
+        assert 27.62 < lengthy.end_s < 29.0
+
+    def test_a_real_sentence_start_is_not_moved(self):
+        """Segment one ENDS a sentence: "Yes." opening segment two is its own
+        sentence, not a stranded tail."""
+        segs = [
+            _seg(0.0, 3.0, "Did the cheap model win the benchmark?"),
+            _seg(3.0, 6.0, "Yes. It beat the frontier model on every task."),
+        ]
+        cues = [c.text for c in split_segments_for_display(segs, max_words=5)]
+        assert not any("benchmark? Yes." in c for c in cues)
+
+    def test_different_speakers_are_not_merged(self):
+        a = CaptionSegment(start_s=0.0, end_s=3.0, text="the answer is really", speaker="A")
+        b = CaptionSegment(start_s=3.0, end_s=6.0, text="simple. Then I said more words here", speaker="B")
+        cues = [c.text for c in split_segments_for_display([a, b], max_words=5)]
+        assert any(c.startswith("simple.") for c in cues)
+
+    def test_a_whole_tail_segment_is_absorbed(self):
+        segs = [_seg(0.0, 3.0, "we shipped it on"), _seg(3.0, 3.5, "Tuesday.")]
+        out = split_segments_for_display(segs, max_words=5)
+        assert [c.text for c in out] == ["we shipped it on Tuesday."]
+        assert out[0].end_s == 3.5

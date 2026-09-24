@@ -199,6 +199,71 @@ def _cut_on_clauses(
     return chunks
 
 
+_SENTENCE_END = (".", "!", "?", "\u2026")
+
+
+def _ends_sentence(word: str) -> bool:
+    return word.rstrip(_CLOSERS).endswith(_SENTENCE_END)
+
+
+def _reattach_stranded_sentence_tails(
+    segments: list[CaptionSegment], *, max_words: int,
+) -> list[CaptionSegment]:
+    """Move a sentence tail Whisper split onto the NEXT segment back where it belongs.
+
+    Clause-aware cutting works inside one ASR segment, but Whisper sometimes
+    breaks a segment mid-sentence (2026-09-22, poindexter#1070)::
+
+        22.20-27.62 '... rather than just producing lengthy'
+        27.62-35.30 'articles. Instant value wins, ...'
+
+    The cutter cannot end a cue on the lone ``articles.`` (a one-word cue is
+    folded), so the burned cues read "than just producing lengthy" /
+    "articles. Instant value wins,". When segment *k* ends mid-sentence and
+    segment *k+1* opens with a sentence end within ``_MIN_CUE_WORDS`` words,
+    those words move to *k* — unless *k*'s last cue would then pass
+    ``max_words + 1``, or the two belong to different speakers. The boundary
+    between the two windows moves by the tail's share of *k+1*'s text so the
+    interpolated timing stays honest; the word-level retime pass re-anchors it
+    anyway when timestamps exist.
+    """
+    out = list(segments)
+    absorbed: set[int] = set()
+    for k in range(len(out) - 1):
+        prev, nxt = out[k], out[k + 1]
+        prev_words = (prev.text or "").split()
+        next_words = (nxt.text or "").split()
+        if not prev_words or not next_words or _ends_sentence(prev_words[-1]):
+            continue
+        if getattr(prev, "speaker", None) != getattr(nxt, "speaker", None):
+            continue
+        tail_len = next(
+            (i + 1 for i, w in enumerate(next_words[:_MIN_CUE_WORDS]) if _ends_sentence(w)),
+            0,
+        )
+        if not tail_len:
+            continue
+        merged = prev_words + next_words[:tail_len]
+        last_cue = (
+            _cut_on_clauses(merged, max_words=max_words, max_chunks=len(merged)) or [merged]
+        )[-1]
+        if len(merged) > max_words and len(last_cue) > max_words + 1:
+            continue
+        rest = next_words[tail_len:]
+        if not rest:
+            out[k] = replace(prev, text=" ".join(merged), end_s=nxt.end_s)
+            out[k + 1] = replace(nxt, text="")
+            absorbed.add(k + 1)
+            continue
+        weight = lambda ws: sum(len(w) + 1 for w in ws)  # noqa: E731
+        span = max(0.0, float(nxt.end_s) - float(nxt.start_s))
+        shift = span * weight(next_words[:tail_len]) / (weight(next_words) or 1)
+        boundary = float(nxt.start_s) + shift
+        out[k] = replace(prev, text=" ".join(merged), end_s=boundary)
+        out[k + 1] = replace(nxt, text=" ".join(rest), start_s=boundary)
+    return [seg for i, seg in enumerate(out) if i not in absorbed]
+
+
 def split_segments_for_display(
     segments: list[CaptionSegment],
     *,
@@ -230,6 +295,7 @@ def split_segments_for_display(
     if max_words <= 0:
         return segments
 
+    segments = _reattach_stranded_sentence_tails(segments, max_words=max_words)
     out: list[CaptionSegment] = []
     for seg in segments:
         words = (seg.text or "").split()
