@@ -863,6 +863,46 @@ def _build_video_narration_prompt(
         )
 
 
+# Short-lane prompt: PART 1 (SDXL scene lines) + PART 2 (the Short's
+# narration) in one call. DB-configurable via UnifiedPromptManager — key
+# ``video.short_form_narration`` in skills/content/video/SKILL.md, the single
+# source of truth (poindexter#1071: until then the SKILL entry was a fossil
+# nothing resolved, while this text lived only in code). The fallback below is
+# BYTE-IDENTICAL to the SKILL body (pinned by test) so tests / bootstrap
+# resolve without a prompt store. ``_parse_scene_output`` depends on the
+# PART 1 / "SHORT:" / PART 2 structure — keep it in any edit to the pack.
+_SHORT_SCENES_FALLBACK = (
+    "Generate TWO things for a blog post video:\n\n"
+    "PART 1 — Write 6-8 numbered lines, each describing a photorealistic image "
+    "for a video slideshow about this article. Each line is a Stable Diffusion XL prompt. "
+    "Requirements: cinematic lighting, no people, no text, no faces, no hands, 4K quality. "
+    "One scene per line.\n\n"
+    "PART 2 — After a blank line, write \"SHORT:\" on its own line, then write a "
+    "~{target_seconds}-second narration (about {target_words} words) "
+    "summarizing the article for TikTok/YouTube Shorts. "
+    "Start with a hook, cover 2-3 key takeaways, end with \"Full article at {site_name}.\"\n"
+    "Narration rules: spoken prose only — no emojis, no markdown, no "
+    "hashtags, at most one exclamation mark. THE FIRST SENTENCE IS THE "
+    "TITLE — it is published verbatim as the video's title, and a Shorts "
+    "feed shows about its first forty characters — so make it a flat "
+    "claim THIS article proves, naming this article's own subject in the "
+    "first three words, under ten words total, nothing before it. Write "
+    "the claim itself, never a description of it: an opener that begins "
+    "\"Discover how\", \"Learn how\", \"Find out\" or \"This article\" is "
+    "describing the article instead of making its point. Cut every "
+    "run-up — \"In today's ...\", \"In the world of ...\", \"These days "
+    "...\", \"As we all know ...\", \"Let's talk about ...\" — and every "
+    "question cliche (\"Ever wondered\", \"Imagine\"): they spend the "
+    "hook saying nothing. Keep every number and statistic "
+    "exactly as the article states it. Use commas and periods, not "
+    "semicolons. Output NOTHING after the narration text — no notes, no "
+    "commentary about the script, no END marker.\n\n"
+    "ARTICLE: {title}\n\n"
+    "{content}\n\n"
+    "SCENES:"
+)
+
+
 def _build_scene_prompt(
     title: str,
     clean_content: str,
@@ -873,41 +913,30 @@ def _build_scene_prompt(
 ) -> str:
     """Build the prompt for the video-scenes + short-summary LLM call.
 
-    The short narration's second/word target is substituted from
-    ``video_short_target_seconds`` (issue #867) — never hardcoded — so the prompt
-    ask and the shot-list clamp agree (the old 60s/150w prompt vs a 45s clamp
-    guaranteed a ~15s frozen tail on every compliant script).
+    Resolved from the ``video.short_form_narration`` SKILL pack (operator
+    edits there now take effect — poindexter#1071), falling back to
+    :data:`_SHORT_SCENES_FALLBACK`. The short narration's second/word target
+    is substituted from ``video_short_target_seconds`` (issue #867) — never
+    hardcoded — so the prompt ask and the shot-list clamp agree (the old
+    60s/150w prompt vs a 45s clamp guaranteed a ~15s frozen tail on every
+    compliant script).
     """
-    return (
-        "Generate TWO things for a blog post video:\n\n"
-        "PART 1 — Write 6-8 numbered lines, each describing a photorealistic image "
-        "for a video slideshow about this article. Each line is a Stable Diffusion XL prompt. "
-        "Requirements: cinematic lighting, no people, no text, no faces, no hands, 4K quality. "
-        "One scene per line.\n\n"
-        "PART 2 — After a blank line, write \"SHORT:\" on its own line, then write a "
-        f"~{target_seconds}-second narration (about {target_words} words) "
-        "summarizing the article for TikTok/YouTube Shorts. "
-        f"Start with a hook, cover 2-3 key takeaways, end with \"Full article at {site_name}.\"\n"
-        "Narration rules: spoken prose only — no emojis, no markdown, no "
-        "hashtags, at most one exclamation mark. THE FIRST SENTENCE IS THE "
-        "TITLE — it is published verbatim as the video's title, and a Shorts "
-        "feed shows about its first forty characters — so make it a flat "
-        "claim THIS article proves, naming this article's own subject in the "
-        "first three words, under ten words total, nothing before it. Write "
-        "the claim itself, never a description of it: an opener that begins "
-        "\"Discover how\", \"Learn how\", \"Find out\" or \"This article\" is "
-        "describing the article instead of making its point. Cut every "
-        "run-up — \"In today's ...\", \"In the world of ...\", \"These days "
-        "...\", \"As we all know ...\", \"Let's talk about ...\" — and every "
-        "question cliche (\"Ever wondered\", \"Imagine\"): they spend the "
-        "hook saying nothing. Keep every number and statistic "
-        "exactly as the article states it. Use commas and periods, not "
-        "semicolons. Output NOTHING after the narration text — no notes, no "
-        "commentary about the script, no END marker.\n\n"
-        f"ARTICLE: {title}\n\n"
-        f"{clean_content[:3000]}\n\n"
-        "SCENES:"
-    )
+    fields = {
+        "title": title,
+        "content": clean_content[:3000],
+        "site_name": site_name,
+        "target_seconds": target_seconds,
+        "target_words": target_words,
+    }
+    try:
+        from poindexter.services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt("video.short_form_narration", **fields)
+    except Exception as exc:  # noqa: BLE001 — prompt resolution is best-effort
+        logger.warning(
+            "[MEDIA] video.short_form_narration unresolved (%s: %s) — using the "
+            "in-code fallback", type(exc).__name__, exc,
+        )
+        return _SHORT_SCENES_FALLBACK.format(**fields)
 
 
 # Sentence boundary for the runaway-short trim (#867): split after . ! ? + space.

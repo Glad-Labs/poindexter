@@ -1,9 +1,9 @@
 ---
 name: video
 description: >
-  Short-form video narration. Turn a published blog article into a
-  ~150-word spoken script for TikTok / YouTube Shorts — hook first,
-  two or three takeaways, a closing call to action. Use during the
+  Video narration. Turn a published blog article into a spoken script:
+  a Short (scene prompts plus a hook-first narration sized from
+  video_short_target_seconds) or a long-form voiceover. Use during the
   media-script stage of the pipeline, after a post is written.
 license: Apache-2.0
 metadata:
@@ -11,7 +11,7 @@ metadata:
   prompts:
     - key: video.short_form_narration
       output_format: text
-      description: 'Short-form vertical-video narration writer — produces a ~150-word TikTok/YouTube-Shorts script summarising a blog article. Used by video_service short-form pipeline'
+      description: "Short-lane media script — one call producing SDXL scene prompts (PART 1) and the TikTok/YouTube-Shorts narration (PART 2, sized from video_short_target_seconds; its first sentence becomes the Short's title). Used by the media-scripts stage."
     - key: video.long_form_narration
       output_format: text
       description: 'Long-form video voiceover writer — produces a spoken narration script for a long blog-article video. Pure standalone audio: never references on-screen visuals, since the renderer pairs it with generic static imagery. Used by the media-scripts stage.'
@@ -19,8 +19,8 @@ metadata:
 
 # Video skill
 
-One prompt the pipeline uses to turn a finished article into a spoken
-short-form video narration. The architect routes on the `description`
+The prompts the media-scripts stage uses to turn a finished article into
+spoken video narration, short and long. The architect routes on the `description`
 above; `UnifiedPromptManager` resolves the template by `key` (Langfuse
 override still wins over the body below).
 
@@ -29,34 +29,28 @@ Default prompts — basic but functional; production-quality prompt packs ship a
 ## video.short_form_narration
 
 ```text
-Write a 60-second video narration (about 150 words) summarizing this article.
+Generate TWO things for a blog post video:
 
-RULES:
-- Start with a compelling hook that grabs attention in the first 5 seconds
-- Cover the 2-3 most important takeaways
-- End with a call to action inviting viewers to read the full article at {site_name}
-- Conversational, energetic tone — this is for TikTok/YouTube Shorts
-- No URLs, no markdown, no special characters
-- Write ONLY the narration text, nothing else
+PART 1 — Write 6-8 numbered lines, each describing a photorealistic image for a video slideshow about this article. Each line is a Stable Diffusion XL prompt. Requirements: cinematic lighting, no people, no text, no faces, no hands, 4K quality. One scene per line.
 
-ARTICLE TITLE: {title}
+PART 2 — After a blank line, write "SHORT:" on its own line, then write a ~{target_seconds}-second narration (about {target_words} words) summarizing the article for TikTok/YouTube Shorts. Start with a hook, cover 2-3 key takeaways, end with "Full article at {site_name}."
+Narration rules: spoken prose only — no emojis, no markdown, no hashtags, at most one exclamation mark. THE FIRST SENTENCE IS THE TITLE — it is published verbatim as the video's title, and a Shorts feed shows about its first forty characters — so make it a flat claim THIS article proves, naming this article's own subject in the first three words, under ten words total, nothing before it. Write the claim itself, never a description of it: an opener that begins "Discover how", "Learn how", "Find out" or "This article" is describing the article instead of making its point. Cut every run-up — "In today's ...", "In the world of ...", "These days ...", "As we all know ...", "Let's talk about ..." — and every question cliche ("Ever wondered", "Imagine"): they spend the hook saying nothing. Keep every number and statistic exactly as the article states it. Use commas and periods, not semicolons. Output NOTHING after the narration text — no notes, no commentary about the script, no END marker.
 
-ARTICLE CONTENT:
+ARTICLE: {title}
+
 {content}
 
-NARRATION:
+SCENES:
 ```
 
-> **NOT WIRED — do not edit this expecting an effect.** No caller resolves
-> `video.short_form_narration`; the short lane's live prompt is built in
-> `modules/content/stages/generate_media_scripts.py::_build_scene_prompt`,
-> which asks for PART 1 (scenes) and PART 2 (the short narration) in one call
-> and substitutes the real `video_short_target_seconds` / words-per-second
-> budget. The "60-second … about 150 words" above is the pre-#867 ask and
-> contradicts the live one (45 s, ~95 words at 2.1 wps). Wiring this key up —
-> so the short hook is DB-configurable like every other prompt — is the fix;
-> until then the text above is a fossil. Found 2026-09-22 while sharpening
-> the hook.
+Wired since poindexter#1071: `generate_media_scripts._build_scene_prompt`
+resolves this key (it used to build the prompt in code while this entry sat
+unread). `{target_seconds}` / `{target_words}` come from
+`video_short_target_seconds` × `media_narration_words_per_second`, and
+`{site_name}` from site_config. Keep the PART 1 / `SHORT:` / PART 2 shape:
+`_parse_scene_output` splits on it. The first sentence of PART 2 becomes
+the Short's YouTube title, and `services/short_hook.py` judges it after
+generation.
 
 The long-form prompt's `{target_seconds}` / `{target_words}` placeholders are
 substituted from `video_long_target_seconds` (words = seconds × 2.5 WPS) — the

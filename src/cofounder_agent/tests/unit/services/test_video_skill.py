@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from poindexter.services.prompt_manager import UnifiedPromptManager
 
-_VIDEO_KEYS = ("video.short_form_narration",)
+_VIDEO_KEYS = ("video.short_form_narration", "video.long_form_narration")
 
 
 def test_video_keys_resolve_from_skill() -> None:
@@ -38,8 +38,36 @@ def test_video_templates_contain_key_placeholders() -> None:
     assert "{title}" in narration
     assert "{content}" in narration
     assert "{site_name}" in narration
-    assert "summarizing this article" in narration
+    assert "{target_seconds}" in narration
+    assert "{target_words}" in narration
+    assert "summarizing the article" in narration
     assert "TikTok/YouTube Shorts" in narration
+    # _parse_scene_output splits on this marker.
+    assert '"SHORT:"' in narration
+
+
+def test_short_narration_is_wired_and_matches_its_fallback() -> None:
+    """poindexter#1071: the key must be the prompt the stage actually sends.
+
+    The stage resolves this key and falls back to an in-code copy; the two
+    must be identical or an edit to the pack silently diverges from what a
+    store-less boot sends. The pre-#867 fossil ("60-second", "150 words")
+    must not come back.
+    """
+    from poindexter.modules.content.stages.generate_media_scripts import (
+        _SHORT_SCENES_FALLBACK,
+        _build_scene_prompt,
+    )
+
+    pm = UnifiedPromptManager()
+    narration = pm.prompts["video.short_form_narration"]["template"]
+    assert narration.rstrip("\n") == _SHORT_SCENES_FALLBACK
+    assert "150 words" not in narration and "60-second" not in narration
+    rendered = _build_scene_prompt(
+        "T", "body", "Site", target_seconds=45, target_words=95,
+    )
+    assert "~45-second narration (about 95 words)" in rendered
+    assert "Full article at Site." in rendered
 
 
 def test_video_narration_renders_branded_cta() -> None:
@@ -47,7 +75,7 @@ def test_video_narration_renders_branded_cta() -> None:
 
     The public skill ships a ``{site_name}`` placeholder (brand-free in
     the file). The operator's deployment fills it from site_config —
-    video_service passes ``site_name=site_config.get("site_name") or ""``.
+    the media-scripts stage passes ``site_name`` from site_config.
     When formatted with a concrete name, the rendered prompt must carry
     that name and leave no literal ``{site_name}`` behind.
     """
@@ -58,6 +86,8 @@ def test_video_narration_renders_branded_cta() -> None:
         title="Why Local LLMs Beat Cloud APIs",
         content="Some body text about local models.",
         site_name="Glad Labs",
+        target_seconds=45,
+        target_words=95,
     )
     assert "Glad Labs" in rendered
     assert "{site_name}" not in rendered
@@ -66,7 +96,7 @@ def test_video_narration_renders_branded_cta() -> None:
 def test_video_narration_renders_with_empty_site_name() -> None:
     """A fresh install (no site_name) renders without raising or leaking.
 
-    video_service passes ``site_name=site_config.get("site_name") or ""``;
+    the media-scripts stage passes an empty ``site_name`` when unset;
     an empty string is the unset sentinel, so the template must format
     cleanly with no leftover placeholder.
     """
@@ -77,6 +107,8 @@ def test_video_narration_renders_with_empty_site_name() -> None:
         title="A Title",
         content="Body.",
         site_name="",
+        target_seconds=45,
+        target_words=95,
     )
     assert "{site_name}" not in rendered
 
