@@ -504,6 +504,31 @@ def _reconcile_shot_list(parsed: Any) -> Any:
     return parsed
 
 
+def _apply_presenter_format(parsed: Any, fmt: Any) -> tuple[Any, list[str]]:
+    """Put the presenter on the format's beats once the mechanics are repaired.
+
+    Unlike :func:`_reconcile_shot_list` this DOES change a creative field, a
+    shot's source, because the opening / midpoint / closing format is the
+    operator's rule rather than the director's call (see
+    ``media_subject_policy.place_presenter_beats``). A capped presenter budget
+    can demote a presenter shot to a still and open a same-source run, so the
+    reconcile runs again after any change.
+    """
+    if fmt is None or getattr(fmt, "beats", 0) <= 0 or not isinstance(parsed, dict):
+        return parsed, []
+    shots = parsed.get("shots")
+    if not isinstance(shots, list) or not shots:
+        return parsed, []
+    from poindexter.services.media_subject_policy import place_presenter_beats
+
+    dict_shots = [s for s in shots if isinstance(s, dict)]
+    notes = place_presenter_beats(dict_shots, fmt)
+    if notes:
+        parsed["shots"] = dict_shots
+        parsed = _reconcile_shot_list(parsed)
+    return parsed, notes
+
+
 async def _log_audit(
     pool: Any,
     *,
@@ -571,6 +596,7 @@ class GenerateVideoShotListStage:
         think: bool | None = None,
         max_tokens: int = _DIRECTOR_MAX_TOKENS_DEFAULT,
         max_retries: int = 0,
+        presenter_format: Any = None,
     ) -> dict[str, Any] | None:
         """Render the director prompt, dispatch the LLM, validate the result.
 
@@ -759,6 +785,12 @@ class GenerateVideoShotListStage:
             # no-ops Stage-2 video. Creative fields untouched.
             parsed = _tolerant_json_loads(json_body)
             parsed = _reconcile_shot_list(parsed)
+            parsed, beat_notes = _apply_presenter_format(parsed, presenter_format)
+            if beat_notes:
+                logger.info(
+                    "[VIDEO_DIRECTOR] %s: presenter format applied: %s",
+                    prompt_key, "; ".join(beat_notes),
+                )
             shot_list = VideoShotList.model_validate(parsed, context={"human_subjects": human_subjects})
         except Exception as exc:
             await _log_audit(
@@ -786,6 +818,7 @@ class GenerateVideoShotListStage:
                 "shot_count": len(shot_list.shots),
                 "total_duration_s": shot_list.total_duration_s,
                 "sources": [s.source for s in shot_list.shots],
+                "presenter_format_changes": beat_notes,
             },
         )
         logger.info(
@@ -818,6 +851,11 @@ class GenerateVideoShotListStage:
         from poindexter.services.media_subject_policy import prompt_variables, resolve_media_policy
         _policy = resolve_media_policy(context.get("site_config"), context.get("niche_slug"))
         _policy_vars = prompt_variables(_policy)
+        from poindexter.services.media_subject_policy import (
+            presenter_format as _presenter_format_of,
+        )
+
+        _presenter_format = _presenter_format_of(_policy)
 
         if not content_text or not title:
             return StageResult(
@@ -907,6 +945,7 @@ class GenerateVideoShotListStage:
         # with frozen prompt overrides; the CONTENT is the narration script.
         long_shot_list = await self._produce_shot_list(
                 policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
+                presenter_format=_presenter_format,
             platform=platform,
             pool=pool,
             model=model,
@@ -963,6 +1002,7 @@ class GenerateVideoShotListStage:
         if short_summary_script:
             short_shot_list = await self._produce_shot_list(
                 policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
+                presenter_format=_presenter_format,
                 platform=platform,
                 pool=pool,
                 model=model,

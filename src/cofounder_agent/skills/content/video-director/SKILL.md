@@ -138,7 +138,7 @@ SHOT SOURCES AVAILABLE
 
 - "presenter": a talking-head clip of the channel's on-camera presenter
   speaking THIS shot's narration, lip-synced to the voice track. Whether one
-  exists, and the limits, are stated in the PRESENTER section below. No
+  exists, and where it appears, are stated in the PRESENTER section below. No
   "query" and no "demo_id"; an optional "prompt" is a one-line delivery note
   (mood, framing), never a scene description.
 
@@ -168,12 +168,15 @@ HARD RULES
    liberally — Pexels for concrete, image_kenburns for abstract,
    generative for the hero motion beats.
 6. First and last shots MUST NOT be "generative" — its artifacts are most
-   visible at attention peaks (start + close). A "presenter" shot MAY open
-   or close the video.
-7. 6-12 shots total, NEVER more than 30 (hard schema cap). Each shot
-   3-15 seconds; duration_s MUST NOT exceed 30.0 — a longer value is
-   rejected outright, so split a long beat into multiple shots instead
-   of holding one shot past 30 seconds.
+   visible at attention peaks (start + close). When the PRESENTER section
+   makes a presenter available, the first and last shots are presenter shots.
+7. Cut with the narration: start a new shot when the narration moves to a new
+   idea, so the picture keeps pace with the voice. How many shots that takes
+   is yours to judge. Two limits are hard: at most 30 shots, and duration_s
+   never above 30.0 (a longer value is rejected outright, so split a long
+   beat into several shots). A generative clip runs about 5 seconds and loops
+   when its shot is longer, so carry longer moments on image_kenburns stills
+   or stock footage.
 8. AI-source prompts (image_gen / image_kenburns / generative) MUST follow the
    HUMAN-SUBJECT POLICY and STYLE POLICY above. {human_subject_rule}
    Never ask an AI image for WORDS: no logos, brand names, titles, labels, signs or UI text as the subject or the point of the shot — the image OCR gate rejects renders carrying more than a few characters and the shot ships as a plain brand card instead. Illustrate the idea (a screen, a terminal, a device) and let the captions and the brand card carry the words.
@@ -336,8 +339,8 @@ makes it unreadable on a phone. Do not emit source="cli_demo" in a short.
   keep it smooth and subtle).
 - "holdover": cross-fade transition (max 1). No prompt/query.
 - "presenter": talking-head clip of the channel's on-camera presenter speaking
-  this shot's narration (see PRESENTER below). At most 1 in a short. No
-  "query"/"demo_id"; optional "prompt" = one-line delivery note.
+  this shot's narration (see PRESENTER below). No "query"/"demo_id";
+  optional "prompt" = one-line delivery note.
 
 PRESENTER (same presenter as the long director)
 -----------------------------------------------
@@ -366,15 +369,19 @@ HARD RULES (short-form)
    markdown fences. Strict JSON syntax: every key MUST be enclosed in
    double quotes ("idx": — never a bare idx:).
 2. Set "aspect" to "9:16".
-3. THE FIRST SHOT IS A COLD-OPEN HOOK: ≤ 2.5s, visually arresting, lands the
-   core promise of the clip immediately. Never open on "holdover".
+3. THE FIRST SHOT IS THE COLD-OPEN HOOK: it lands the core promise of the
+   clip in its first second. When the PRESENTER section makes a presenter
+   available, it is the presenter saying the hook to camera; otherwise it is
+   the most arresting visual you have. Open on a real shot (a "holdover" has
+   no earlier shot to fade from).
 4. shots[].idx is 0-indexed contiguous (0, 1, 2, ...).
 5. Sum of shots[].duration_s MUST equal target_duration_s ±0.5s.
 6. shots[].narration_offset_s is REQUIRED on EVERY shot — no shot may omit
    it. It is the cumulative duration of all prior shots.
-7. Punchy pacing: 8-12 shots total, each 2-5 seconds (duration_s MUST NOT
-   exceed 30.0 — hard schema cap). Short clips drag with long holds — keep
-   cuts frequent.
+7. Punchy pacing: cut on the narration's lines so the picture changes as the
+   voice moves; a short drags on long holds. A generative clip runs about 5
+   seconds and loops when its shot is longer. duration_s MUST NOT exceed 30.0
+   (hard schema cap).
 8. Never more than 2 consecutive shots from the same source. First and last
    shots MUST NOT be "generative".
 9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above.
@@ -476,8 +483,8 @@ CONSTRAINTS (keep the draft valid):
     * holdover                     -> neither "query" nor "prompt"
     * presenter                    -> NEITHER "query" NOR "demo_id"; "prompt"
       optional (a one-line delivery note). Keep an existing presenter shot as
-      it is unless it breaks a rule; never add one the PRESENTER line below
-      forbids.
+      it is unless it breaks a rule, and switch a shot to "presenter" where
+      the PRESENTER line below calls for a beat the draft is missing.
   A generative / image_gen / image_kenburns shot with an empty or missing "prompt" is
   INVALID and the whole revision is discarded - always write the "prompt" when
   you choose those sources.
@@ -511,9 +518,12 @@ THE DRAFT SHOT LIST you are revising (JSON):
 {current_shot_list}
 
 REVISE for retention, then output the REVISED list:
-1. COLD-OPEN - shot 0 is at most 2.5s and visually arresting; lands the promise
-   in the first second. Never "holdover" or "generative" on the open.
-2. PACE - punchy; kill slow holds. 4-8 shots, each 2-6s.
+1. COLD-OPEN - shot 0 lands the promise in the first second: the presenter
+   saying the hook when the PRESENTER line makes one available, otherwise the
+   most arresting visual. Open on a real shot (a "holdover" has nothing to fade
+   from, and "generative" artifacts show most at the open).
+2. PACE - punchy: kill slow holds and cut on the narration's lines. A
+   generative clip runs about 5 seconds and loops when its shot is longer.
 3. VARIETY + HERO - vary source; upgrade at most 1-2 mid-clip beats to "generative"
    for motion (never the first or last shot; never more than 2 generative in a short).
 4. ON-BRAND + HUMAN/STYLE POLICY - identical to the long director (dark-techno
@@ -523,8 +533,9 @@ REVISE for retention, then output the REVISED list:
    name, never let the short wear more than one look.
    STYLE POLICY:
    {style_policy}
-5. PRESENTER - {presenter_policy} At most 1 presenter shot in a short; it
-   carries no "query"/"demo_id" and an optional one-line "prompt".
+5. PRESENTER - {presenter_policy} Keep the draft's presenter shots, and switch
+   a shot to "presenter" where the format calls for a beat the draft is
+   missing.
 
 CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; image_gen /
 image_kenburns / generative use a non-empty on-brand "prompt" (per the human-subject policy; never

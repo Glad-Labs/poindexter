@@ -17,6 +17,7 @@ import pytest
 from poindexter.modules.content.stages.generate_video_shot_list import (
     _WORDS_PER_SECOND,
     GenerateVideoShotListStage,
+    _apply_presenter_format,
     _estimate_short_duration,
     _estimate_target_duration,
     _extract_json_object,
@@ -1360,3 +1361,54 @@ async def test_short_skipped_when_the_script_is_junk() -> None:
     assert platform.dispatch.complete.call_count == 1
     assert "video_shot_list" in result.context_updates
     assert "short_shot_list" not in result.context_updates
+
+
+# ---------------------------------------------------------------------------
+# _apply_presenter_format — the opening / midpoint / closing presenter beats
+# land in the STORED list (the synthetic-media disclosure reads it), and the
+# result still passes the schema.
+# ---------------------------------------------------------------------------
+
+
+def _fmt(**kw):
+    from poindexter.services.media_subject_policy import PresenterFormat
+
+    return PresenterFormat(**{"beats": 3, "max_shots": -1, "style_prefix": "flat vector illustration", **kw})
+
+
+def _validated(parsed: dict) -> VideoShotList:
+    return VideoShotList.model_validate(parsed, context={"human_subjects": "allow"})
+
+
+def test_apply_presenter_format_puts_the_presenter_on_every_beat() -> None:
+    shots = [_raw_shot(i, src, 3.0) for i, src in enumerate(["image_kenburns", "pexels"] * 4 + ["image_kenburns"])]
+    parsed = _reconcile_shot_list(_raw_list(shots, total=27.0))
+    parsed, notes = _apply_presenter_format(parsed, _fmt())
+    sources = [s.source for s in _validated(parsed).shots]
+    assert [i for i, src in enumerate(sources) if src == "presenter"] == [0, 4, 8]
+    assert len(notes) == 3
+
+
+def test_apply_presenter_format_without_a_format_changes_nothing() -> None:
+    shots = [_raw_shot(i, src, 3.0) for i, src in enumerate(["image_kenburns", "pexels", "image_kenburns"])]
+    parsed = _reconcile_shot_list(_raw_list(shots, total=9.0))
+    before = json.dumps(parsed, sort_keys=True)
+    for fmt in (None, _fmt(beats=0)):
+        out, notes = _apply_presenter_format(parsed, fmt)
+        assert notes == [] and json.dumps(out, sort_keys=True) == before
+
+
+def test_a_budget_demotion_that_opens_a_same_source_run_still_validates() -> None:
+    # The extra presenter at shot 2 becomes an image_kenburns still between
+    # two more stills; the schema rejects a source three times running, so
+    # the reconcile runs again and breaks the run with a holdover.
+    sources = ["presenter", "image_kenburns", "presenter", "image_kenburns", "presenter",
+               "pexels", "image_kenburns", "pexels", "presenter"]
+    shots = [_raw_shot(i, src, 3.0) for i, src in enumerate(sources)]
+    parsed = _reconcile_shot_list(_raw_list(shots, total=27.0))
+    parsed, notes = _apply_presenter_format(parsed, _fmt(max_shots=3))
+    shot_list = _validated(parsed)
+    assert "holdover" in [s.source for s in shot_list.shots]
+    assert [s.source for s in shot_list.shots].count("presenter") == 3
+    assert any("budget" in n for n in notes)
+

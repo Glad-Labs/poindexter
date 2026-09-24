@@ -86,9 +86,26 @@ clip's own muxed speech is never doubled. Every miss returns a failed shot
 with a `presenter_render_fallback` finding and the substitution ladder fills
 the slot.
 
-Budget: `video_presenter_shots_max` (default 2) caps presenter shots per video
-the way `video_hero_shots_max` caps heroes; excess and any presenter shot on
-a niche with no available persona downgrade to `image_kenburns`
+Format (2026-09-23): the presenter opens the video (the hook, to camera),
+returns at the midpoint (the turn) and closes it (the takeaway), and the
+director adds as many further presenter shots as the script earns. The four
+prompts carry the format through `{presenter_policy}`, and
+`media_subject_policy.place_presenter_beats` enforces it on every director and
+review output before the list is stored. It has to be the stored list: the
+YouTube synthetic-media disclosure reads it, so a face added only at render
+time would ship undisclosed. A missing beat adopts a presenter shot the
+director put beside it (for the midpoint, anywhere in the middle third) or
+else promotes the target shot, dropping its visual fields. A `holdover` or
+`cli_demo` is never overwritten, and three presenter shots are never stacked,
+because the schema rejects any source three times running.
+
+Budget: `video_presenter_shots_max` defaults to `-1`, meaning no ceiling. The
+operator's rule is no limit the render does not need in order to work. A
+value of 0 or more is an optional GPU budget (each clip is a full S2V render,
+about 12 minutes on the 5090): it trims the beats in priority order (opening,
+midpoint, closing) and demotes extra presenter shots to `image_kenburns`
+stills of their intent. Any presenter shot on a niche with no available
+persona is downgraded to `image_kenburns` at render time
 (`presenter_unavailable` finding). Presenter shots are not vision-QA
 regenerable — a regen would cost a full render for a stochastic gain.
 `video_presenter_render_prompt` is the S2V prompt template

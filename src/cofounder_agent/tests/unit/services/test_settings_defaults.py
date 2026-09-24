@@ -191,6 +191,19 @@ def test_piece4_video_hero_defaults_present():
     assert METADATA["video_hero_shots_max"]["value_type"] == "integer"
 
 
+def test_presenter_shots_are_uncapped_by_default():
+    """The opening / midpoint / closing beats are the format and the director
+    adds as many more presenter shots as the script earns (operator,
+    2026-09-23); a number >= 0 remains available as a GPU budget. The code
+    default and the seeded default must agree."""
+    from poindexter.services.media_subject_policy import DEFAULT_PRESENTER_MAX_SHOTS
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["video_presenter_shots_max"] == "-1"
+    assert int(DEFAULTS["video_presenter_shots_max"]) == DEFAULT_PRESENTER_MAX_SHOTS
+    assert METADATA["video_presenter_shots_max"]["value_type"] == "integer"
+
+
 def test_qa_vision_num_predict_has_headroom_for_thinking_plus_json():
     """qwen3-vl's <think> trace shares the num_predict budget with the JSON
     verdict; the old hardcoded 400 truncated the JSON and the vision rail

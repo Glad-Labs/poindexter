@@ -101,14 +101,201 @@ def test_presenter_available_when_persona_has_portrait_and_policy_allows():
     p = mp.resolve_media_policy(_presenter_sc(), "glad-labs")
     assert p.presenter_available is True
     assert (p.presenter_slug, p.presenter_display_name, p.presenter_style) == ("presenter", "Ada", "photoreal")
-    assert p.presenter_max_shots == 2
     text = mp.prompt_variables(p)["presenter_policy"]
-    assert "PRESENTER AVAILABLE" in text and '"Ada"' in text and "At most 2" in text
+    assert "PRESENTER AVAILABLE" in text and '"Ada"' in text
 
 
 def test_presenter_cap_is_a_setting():
     p = mp.resolve_media_policy(_presenter_sc(video_presenter_shots_max="1"), None)
     assert p.presenter_max_shots == 1
+
+
+# ---------------------------------------------------------------------------
+# presenter format: opening / midpoint / closing, no ceiling by default
+# (operator, 2026-09-23: "no limits unless absolutely necessary to function")
+# ---------------------------------------------------------------------------
+
+
+def test_default_is_three_beats_and_no_ceiling():
+    p = mp.resolve_media_policy(_presenter_sc(), "glad-labs")
+    assert p.presenter_max_shots == -1
+    assert mp.presenter_beat_count(p) == 3
+    text = mp.video_presenter_policy(p)
+    for beat in ("OPENING", "MIDDLE", "CLOSING"):
+        assert beat in text
+    assert "The script decides how many" in text
+    assert "At most" not in text and "budget" not in text
+
+
+def test_a_budget_trims_the_beats_in_priority_order():
+    one = mp.resolve_media_policy(_presenter_sc(video_presenter_shots_max="1"), "glad-labs")
+    assert mp.presenter_beat_count(one) == 1
+    text = mp.video_presenter_policy(one)
+    assert "OPENING" in text and "MIDDLE" not in text and "CLOSING" not in text
+    # Two keeps the midpoint, never the bare opening+closing bookend pair.
+    two = mp.resolve_media_policy(_presenter_sc(video_presenter_shots_max="2"), "glad-labs")
+    text = mp.video_presenter_policy(two)
+    assert "OPENING" in text and "MIDDLE" in text and "CLOSING" not in text
+
+
+def test_a_budget_above_three_allows_extra_presenter_shots():
+    p = mp.resolve_media_policy(_presenter_sc(video_presenter_shots_max="5"), "glad-labs")
+    assert mp.presenter_beat_count(p) == 3
+    assert "budget of 5" in mp.video_presenter_policy(p)
+
+
+def test_a_zero_budget_forbids_the_presenter():
+    p = mp.resolve_media_policy(_presenter_sc(video_presenter_shots_max="0"), "glad-labs")
+    assert mp.presenter_beat_count(p) == 0
+    assert "NEVER emit" in mp.video_presenter_policy(p)
+
+
+def test_no_presenter_means_no_beats():
+    assert mp.presenter_beat_count(mp.resolve_media_policy(_sc(), None)) == 0
+
+
+def test_beat_indices_are_opening_midpoint_closing():
+    assert mp.presenter_beat_indices([3.0] * 10, 3) == [0, 5, 9]
+    assert mp.presenter_beat_indices([3.0] * 10, 2) == [0, 5]
+    assert mp.presenter_beat_indices([3.0] * 10, 1) == [0]
+    assert mp.presenter_beat_indices([3.0, 3.0], 3) == [0, 1]
+    assert mp.presenter_beat_indices([3.0], 3) == [0]
+    assert mp.presenter_beat_indices([], 3) == []
+    assert mp.presenter_beat_indices([3.0] * 10, 0) == []
+
+
+def test_the_midpoint_stays_interior_when_one_shot_spans_half_the_video():
+    # Shot 0 covers 0-20 s of 28 s, so the halfway point falls inside it; the
+    # midpoint beat still needs a shot of its own.
+    assert mp.presenter_beat_indices([20.0, 2.0, 2.0, 2.0, 2.0], 3) == [0, 1, 4]
+
+
+_FMT = mp.PresenterFormat(beats=3, max_shots=-1, style_prefix="flat vector illustration")
+
+
+def _beat_shots(sources: list[str], duration: float = 3.0) -> list[dict]:
+    shots = []
+    for i, source in enumerate(sources):
+        shot = {
+            "idx": i, "duration_s": duration, "intent": f"beat {i}",
+            "source": source, "narration_offset_s": i * duration,
+        }
+        if source in ("image_kenburns", "generative"):
+            shot["prompt"] = f"flat vector illustration, scene {i}"
+        if source == "generative":
+            shot["motion"] = "slow push-in"
+        if source == "pexels":
+            shot["query"] = "server rack close up"
+        if source == "cli_demo":
+            shot["demo_id"] = "posts-list"
+        shots.append(shot)
+    return shots
+
+
+def _presenters(shots: list[dict]) -> list[int]:
+    return [i for i, s in enumerate(shots) if s["source"] == "presenter"]
+
+
+def _validates(shots: list[dict]) -> None:
+    from poindexter.schemas.video_shot_list import VideoShotList
+
+    VideoShotList.model_validate(
+        {
+            "version": 1,
+            "total_duration_s": sum(s["duration_s"] for s in shots),
+            "shots": shots,
+            "director_model": "test", "director_prompt_version": "v1",
+            "director_decided_at": "2026-09-23T00:00:00+00:00",
+        },
+        context={"human_subjects": "allow"},
+    )
+
+
+def test_place_promotes_every_missing_beat_and_drops_its_visual_fields():
+    shots = _beat_shots(["image_kenburns", "pexels", "generative"] * 3)
+    notes = mp.place_presenter_beats(shots, _FMT)
+    assert _presenters(shots) == [0, 4, 8]
+    assert len(notes) == 3
+    for i in (0, 4, 8):
+        assert not {"prompt", "query", "motion"} & set(shots[i])
+    _validates(shots)
+
+
+def test_place_leaves_a_list_that_already_follows_the_format_alone():
+    shots = _beat_shots(["presenter", "pexels", "image_kenburns", "pexels",
+                         "presenter", "image_kenburns", "pexels", "image_kenburns",
+                         "presenter"])
+    before = [dict(s) for s in shots]
+    assert mp.place_presenter_beats(shots, _FMT) == []
+    assert shots == before
+
+
+def test_place_adopts_the_directors_presenter_beside_a_beat():
+    shots = _beat_shots(["image_kenburns", "presenter"] + ["pexels", "image_kenburns"] * 3 + ["pexels"])
+    mp.place_presenter_beats(shots, _FMT)
+    # The director opened on a visual hook and cut to the presenter: that IS
+    # the opening beat, so shot 0 keeps its visual.
+    assert shots[0]["source"] == "image_kenburns"
+    assert _presenters(shots) == [1, 4, 8]
+
+
+def test_place_adopts_a_middle_third_presenter_over_the_exact_midpoint():
+    # 27 s: the middle third is 9-18 s; shot 3 (9-12 s) sits in it.
+    shots = _beat_shots(["image_kenburns", "pexels", "image_kenburns", "presenter",
+                         "pexels", "image_kenburns", "pexels", "image_kenburns", "pexels"])
+    notes = mp.place_presenter_beats(shots, _FMT)
+    assert _presenters(shots) == [0, 3, 8]
+    assert not any("midpoint" in n for n in notes)
+
+
+def test_place_never_overwrites_real_footage_or_a_transition():
+    shots = _beat_shots(["image_kenburns", "pexels", "image_kenburns", "pexels",
+                         "cli_demo", "image_kenburns", "pexels", "image_kenburns", "pexels"])
+    mp.place_presenter_beats(shots, _FMT)
+    assert shots[4]["source"] == "cli_demo" and shots[4]["demo_id"] == "posts-list"
+    assert _presenters(shots) == [0, 3, 8]
+
+
+def test_place_never_stacks_three_presenter_shots_in_a_row():
+    # The schema rejects a source three times running, which would throw away
+    # the whole list, so shot 3 (after presenters 1 and 2) is passed over.
+    shots = _beat_shots(["image_kenburns", "presenter", "presenter", "image_kenburns",
+                         "cli_demo", "image_kenburns", "pexels", "image_kenburns", "pexels"])
+    mp.place_presenter_beats(shots, _FMT)
+    assert _presenters(shots) == [1, 2, 5, 8]
+    _validates(shots)
+
+
+def test_uncapped_keeps_every_presenter_shot_the_director_added():
+    shots = _beat_shots(["presenter", "pexels", "presenter", "image_kenburns", "presenter",
+                         "pexels", "presenter", "image_kenburns", "presenter"])
+    assert mp.place_presenter_beats(shots, _FMT) == []
+    assert _presenters(shots) == [0, 2, 4, 6, 8]
+
+
+def test_a_budget_turns_extra_presenter_shots_into_on_style_stills():
+    shots = _beat_shots(["presenter", "pexels", "presenter", "image_kenburns", "presenter",
+                         "pexels", "presenter", "image_kenburns", "presenter"])
+    capped = mp.PresenterFormat(beats=3, max_shots=3, style_prefix="flat vector illustration")
+    notes = mp.place_presenter_beats(shots, capped)
+    assert _presenters(shots) == [0, 4, 8]
+    assert shots[2]["source"] == "image_kenburns"
+    assert shots[2]["prompt"] == "flat vector illustration, beat 2"
+    assert len(notes) == 2
+
+
+def test_no_beats_is_a_no_op():
+    shots = _beat_shots(["image_kenburns", "pexels", "image_kenburns"])
+    before = [dict(s) for s in shots]
+    assert mp.place_presenter_beats(shots, mp.PresenterFormat(beats=0, max_shots=-1)) == []
+    assert shots == before
+
+
+def test_presenter_format_carries_the_style_prefix_for_demoted_stills():
+    p = mp.resolve_media_policy(_presenter_sc(media_house_style="bold flat vector"), "glad-labs")
+    fmt = mp.presenter_format(p)
+    assert (fmt.beats, fmt.max_shots) == (3, -1)
+    assert fmt.style_prefix == mp.video_style_prefix(p)
 
 
 def test_no_persona_means_never_emit_presenter():

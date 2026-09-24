@@ -702,8 +702,11 @@ DEFAULTS: dict[str, str] = {
     # Presenter (talking-head) shots — source "presenter" in the shot list,
     # rendered through the ComfyUI provider's speech path with the niche's
     # persona (docs/architecture/media-personas.md). ~420 s and ~31.9 GB per
-    # 4.8 s chunk on a 5090 (2026-09-14), so the cap is GPU budget, not taste.
-    'video_presenter_shots_max': '2',
+    # 4.8 s chunk on a 5090 (2026-09-14). -1 = uncapped: the opening, midpoint
+    # and closing beats are the format and the director adds as many more as
+    # the script earns (operator, 2026-09-23: no limit the render does not
+    # need to work). A number >= 0 is an optional GPU budget.
+    'video_presenter_shots_max': '-1',
     # YouTube altered/synthetic-content disclosure: auto = true when the video
     # has a presenter shot and the niche's persona is photoreal; true/false
     # force it for the channel.

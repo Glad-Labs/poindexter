@@ -83,7 +83,9 @@ class MediaPolicy:
     presenter_display_name: str = ""
     presenter_style: str = ""
     presenter_available: bool = False
-    presenter_max_shots: int = 2
+    # Negative = no ceiling (the default): the three format beats are required
+    # and the director adds as many more as the script earns.
+    presenter_max_shots: int = -1
 
     @property
     def humans_allowed(self) -> bool:
@@ -128,7 +130,11 @@ def _resolve(site_config: Any, leaf: str, key: str, allowed: tuple[str, ...], de
 
 
 PRESENTER_MAX_SHOTS_KEY = "video_presenter_shots_max"
-DEFAULT_PRESENTER_MAX_SHOTS = 2
+# -1 = uncapped. The operator asked for the presenter at the opening, the
+# midpoint and the close as the format, with no limit on further presenter
+# shots; a ceiling stays available as a GPU budget (each clip is a full S2V
+# render), not as a format rule.
+DEFAULT_PRESENTER_MAX_SHOTS = -1
 
 
 def _get_int(site_config: Any, key: str, default: int) -> int:
@@ -424,29 +430,233 @@ def image_decision_people_rule(policy: MediaPolicy) -> str:
     )
 
 
+# The talking-head format, in priority order: the presenter OPENS the video
+# (the hook, said to camera), comes back at the MIDPOINT (the turn) and CLOSES
+# it (the takeaway). A capped budget keeps the first N, so a single presenter
+# shot still opens on the face and two never collapse into the bare bookend
+# pair the operator rejected on 2026-09-23.
+PRESENTER_BEATS: tuple[str, ...] = ("opening", "midpoint", "closing")
+
+_BEAT_DIRECTIONS: dict[str, str] = {
+    "opening": "OPENING: shot 0 is the presenter saying the hook straight to camera.",
+    "midpoint": (
+        "MIDDLE: one presenter shot in the middle third of the running time, on the "
+        "turn: the line that reframes the problem or lands the key claim."
+    ),
+    "closing": (
+        "CLOSING: the last shot is the presenter saying the takeaway as the "
+        "sign-off. The branded end card follows it automatically."
+    ),
+}
+
+# Sources a beat never overwrites: a holdover is a half-second cross-fade with
+# no room for a face, and a cli_demo is real footage of the product the beat
+# would erase.
+_BEAT_KEEP_SOURCES = frozenset({"holdover", "cli_demo"})
+_PRESENTER_SOURCE = "presenter"
+
+
+@dataclass(frozen=True)
+class PresenterFormat:
+    """What :func:`place_presenter_beats` needs from the policy: how many
+    beats to guarantee, the ceiling (negative = none), and the style prefix a
+    demoted over-cap shot is re-prompted with."""
+
+    beats: int
+    max_shots: int
+    style_prefix: str = ""
+
+
+def presenter_beat_count(policy: MediaPolicy) -> int:
+    """Beats this video carries: none without a presenter, otherwise all three
+    unless a ceiling below three trims them (a negative ceiling is no ceiling)."""
+    if not policy.presenter_available:
+        return 0
+    cap = policy.presenter_max_shots
+    if cap < 0:
+        return len(PRESENTER_BEATS)
+    return min(cap, len(PRESENTER_BEATS))
+
+
+def presenter_format(policy: MediaPolicy) -> PresenterFormat:
+    return PresenterFormat(
+        beats=presenter_beat_count(policy),
+        max_shots=policy.presenter_max_shots,
+        style_prefix=video_style_prefix(policy),
+    )
+
+
 def video_presenter_policy(policy: MediaPolicy) -> str:
-    """The PRESENTER section of the director prompts: whether a talking-head
-    shot exists for this niche and how it may be used."""
+    """The PRESENTER section of the director and review prompts: whether a
+    talking-head shot exists for this niche, and the format it follows."""
     if not policy.presenter_available:
         return (
             'No on-camera presenter is configured for this niche. NEVER emit '
             'source "presenter".'
         )
-    return (
-        f'PRESENTER AVAILABLE. "{policy.presenter_display_name}" is this channel\'s '
-        'on-camera presenter: source "presenter" renders a talking-head clip of them '
-        "speaking that shot's narration, lip-synced to the voice track. Use it where a "
-        'person speaking to the viewer lands harder than footage: the line that names '
-        'the stakes, the turn in the argument, the one claim you want them to believe. '
-        f'At most {policy.presenter_max_shots} presenter shots per video, each 3-10 '
-        'seconds. No "query" and no "demo_id"; an optional "prompt" is a one-line '
-        'delivery note (mood, framing), never a scene description.\n'
-        'PLACE THEM INSIDE THE VIDEO, not as bookends. Opening AND closing on the '
-        'presenter is the pattern to avoid — it reads as a template, and the face '
-        'stops being a change of pace when it is only ever the frame around one. '
-        'Prefer an interior beat; at least one presenter shot MUST sit away from both '
-        'the first and last shot when you use more than one.'
+    name = policy.presenter_display_name
+    beats = presenter_beat_count(policy)
+    if beats == 0:
+        return (
+            f'"{name}" is this channel\'s on-camera presenter, but the presenter '
+            'budget (video_presenter_shots_max) is 0. NEVER emit source "presenter".'
+        )
+    # Only the beats are fixed. How many more presenter shots, and how long any
+    # of them runs, is the director's call: the operator's rule (2026-09-23) is
+    # no limit that the render does not need in order to work.
+    cap = policy.presenter_max_shots
+    if cap < 0:
+        more = (
+            "Beyond those, use the presenter wherever a person speaking to the viewer "
+            "lands harder than footage: the line that names the stakes, the one claim "
+            "you want them to believe. The script decides how many."
+        )
+    elif cap > beats:
+        more = (
+            "Beyond those, use the presenter wherever a person speaking to the viewer "
+            f"lands harder than footage, within this channel's budget of {cap} "
+            "presenter shots in total."
+        )
+    else:
+        more = f"This channel's presenter budget ({cap}) covers only those beats."
+    return "\n".join([
+        f'PRESENTER AVAILABLE. "{name}" is this channel\'s on-camera presenter: '
+        'source "presenter" renders a talking-head clip of them speaking that '
+        "shot's narration, lip-synced to the voice track.",
+        "THE FORMAT: the presenter anchors the video at these beats:",
+        *(f"- {_BEAT_DIRECTIONS[b]}" for b in PRESENTER_BEATS[:beats]),
+        more,
+        'A presenter shot carries no "query" and no "demo_id". Its optional '
+        '"prompt" is a one-line delivery note (mood, framing) that is added to the '
+        "talking-head render, so it describes the delivery, not a scene.",
+    ])
+
+
+def _as_seconds(value: Any) -> float:
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def presenter_beat_indices(durations: list[Any], beats: int) -> list[int]:
+    """The target shot index of each of the first ``beats`` beats, in beat order.
+
+    opening = shot 0, closing = the last shot, midpoint = the interior shot
+    whose span holds the halfway point of the running time. A list too short to
+    keep them apart returns fewer (a two-shot list has no midpoint of its own).
+    """
+    n = len(durations)
+    if n == 0 or beats <= 0:
+        return []
+    spans = [_as_seconds(d) for d in durations]
+    half, start, mid = sum(spans) / 2.0, 0.0, n // 2
+    for i, span in enumerate(spans):
+        if span > 0 and start <= half < start + span:
+            mid = i
+            break
+        start += span
+    if n >= 3:
+        mid = min(max(mid, 1), n - 2)
+    target = {"opening": 0, "midpoint": mid, "closing": n - 1}
+    out: list[int] = []
+    for beat in PRESENTER_BEATS[:beats]:
+        if target[beat] not in out:
+            out.append(target[beat])
+    return out
+
+
+def _stacks_presenters(shots: list[dict[str, Any]], i: int) -> bool:
+    """Would making shot ``i`` a presenter put three presenter shots in a row?
+    The schema rejects any source repeated more than twice consecutively, and
+    a rejected list loses every shot the director chose."""
+    def is_p(j: int) -> bool:
+        return 0 <= j < len(shots) and shots[j].get("source") == _PRESENTER_SOURCE
+
+    return (is_p(i - 1) and is_p(i - 2)) or (is_p(i - 1) and is_p(i + 1)) or (
+        is_p(i + 1) and is_p(i + 2)
     )
+
+
+def place_presenter_beats(shots: list[dict[str, Any]], fmt: PresenterFormat) -> list[str]:
+    """Make a director shot list follow the presenter format, in place.
+
+    The director and reviewer are TOLD the format (:func:`video_presenter_policy`);
+    this makes it hold when they drift, before the list is stored. It has to be
+    the stored list: the YouTube synthetic-media disclosure is read from it, so a
+    face added only at render time would ship undisclosed. For each beat, in order:
+
+    1. the target shot is already a presenter shot: keep it;
+    2. the director put a presenter shot beside it (or, for the midpoint, anywhere
+       in the middle third): adopt that one. It is the director's pick of the
+       moment, and promoting the target as well could stack three presenter shots;
+    3. otherwise promote the target, or the nearest shot a beat may take, to
+       ``presenter``, dropping its visual fields (the face is the shot there).
+
+    Uncapped, every other presenter shot the director chose stays. With a ceiling
+    (``fmt.max_shots >= 0``), presenter shots past it that are not beats become
+    Ken-Burns stills of their intent. Returns one note per change, for the log.
+    """
+    notes: list[str] = []
+    n = len(shots)
+    if n == 0 or fmt.beats <= 0:
+        return notes
+    spans = [_as_seconds(s.get("duration_s")) for s in shots]
+    total = sum(spans)
+    centers, start = [], 0.0
+    for span in spans:
+        centers.append(start + span / 2.0)
+        start += span
+
+    def is_p(i: int) -> bool:
+        return shots[i].get("source") == _PRESENTER_SOURCE
+
+    taken: set[int] = set()
+    # A list too short to keep the beats apart yields fewer targets than beats;
+    # the unmatched beats are simply not placed.
+    targets = presenter_beat_indices(spans, fmt.beats)
+    for beat, target in zip(PRESENTER_BEATS[: fmt.beats], targets, strict=False):
+        if is_p(target) and target not in taken:
+            taken.add(target)
+            continue
+        adopt = [target - 1, target + 1]
+        if beat == "midpoint":
+            third = [
+                i for i in range(1, n - 1)
+                if is_p(i) and total / 3.0 <= centers[i] <= 2.0 * total / 3.0
+            ]
+            adopt = sorted(third, key=lambda i: abs(centers[i] - total / 2.0)) + adopt
+        chosen = next((i for i in adopt if 0 <= i < n and i not in taken and is_p(i)), None)
+        if chosen is None:
+            order = sorted(range(n), key=lambda i: (abs(i - target), i))
+            for i in order:
+                if (
+                    i in taken
+                    or shots[i].get("source") in _BEAT_KEEP_SOURCES
+                    or _stacks_presenters(shots, i)
+                ):
+                    continue
+                notes.append(
+                    f"{beat} beat: shot {i} {shots[i].get('source')!r} -> presenter"
+                )
+                shots[i]["source"] = _PRESENTER_SOURCE
+                for key in ("prompt", "query", "demo_id", "motion", "kenburns_zoom"):
+                    shots[i].pop(key, None)
+                chosen = i
+                break
+        if chosen is not None:
+            taken.add(chosen)
+
+    if fmt.max_shots >= 0:
+        extras = [i for i in range(n) if is_p(i) and i not in taken]
+        for i in extras[max(0, fmt.max_shots - len(taken)):]:
+            subject = str(shots[i].get("intent") or "").strip() or "an abstract visual for this beat"
+            shots[i]["source"] = "image_kenburns"
+            shots[i]["prompt"] = f"{fmt.style_prefix}, {subject}" if fmt.style_prefix else subject
+            shots[i].pop("query", None)
+            shots[i].pop("demo_id", None)
+            notes.append(f"shot {i} presenter -> image_kenburns (over the {fmt.max_shots}-shot budget)")
+    return notes
 
 
 def video_contains_synthetic_media(policy: MediaPolicy, shot_list: Any) -> bool:

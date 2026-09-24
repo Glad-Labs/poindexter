@@ -176,6 +176,15 @@ The prompt lives in YAML + Langfuse like every other production prompt
 
 Output: validated JSON per the schema above.
 
+The live prompt is `skills/content/video-director/SKILL.md`, and it has moved
+on from this sketch. Since 2026-09-23 it sets no shot count: the director cuts
+when the narration moves to a new idea, within the schema's hard limits (30
+shots, 30.0 s per shot). The old "6-12 shots" rule could not cover a 221 s
+narration without stretching every shot to ~20 s, and the compositor loops a
+clip shorter than its scene (`-stream_loop -1`), so a 5 s hero repeated three
+or four times on screen. The presenter format (opening / midpoint / closing)
+is enforced in code; see [media personas](media-personas.md).
+
 ## Per-source plugin contract
 
 Each `source` value resolves to one of:

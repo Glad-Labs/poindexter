@@ -25,6 +25,7 @@ from poindexter.modules.content.stages.generate_video_shot_list import (
     _DIRECTOR_MAX_RETRIES_DEFAULT,
     _DIRECTOR_MAX_TOKENS_DEFAULT,
     _DIRECTOR_TIMEOUT_DEFAULT,
+    _apply_presenter_format,
     _extract_json_object,
     _log_audit,
     _reconcile_shot_list,
@@ -98,6 +99,7 @@ class ReviewVideoShotListStage:
         think: bool | None = None,
         max_tokens: int = _DIRECTOR_MAX_TOKENS_DEFAULT,
         max_retries: int = 0,
+        presenter_format: Any = None,
     ) -> dict[str, Any] | None:
         """Render the review prompt, dispatch, validate. ``None`` on any failure."""
         from poindexter.services.gpu_scheduler import gpu
@@ -190,6 +192,14 @@ class ReviewVideoShotListStage:
             return None
         try:
             parsed = _reconcile_shot_list(_tolerant_json_loads(body))
+            # The reviewer can move or drop a beat the director placed, so the
+            # format is re-applied to its output too.
+            parsed, beat_notes = _apply_presenter_format(parsed, presenter_format)
+            if beat_notes:
+                logger.info(
+                    "[VIDEO_REVIEW] %s: presenter format applied: %s",
+                    prompt_key, "; ".join(beat_notes),
+                )
             revised = VideoShotList.model_validate(parsed, context={"human_subjects": human_subjects})
         except Exception as exc:
             logger.warning("[VIDEO_REVIEW] revised list invalid (%s): %s", prompt_key, exc)
@@ -203,6 +213,7 @@ class ReviewVideoShotListStage:
                 "prompt_key": prompt_key,
                 "shot_count": len(revised.shots),
                 "sources": [s.source for s in revised.shots],
+                "presenter_format_changes": beat_notes,
             },
         )
         return revised.model_dump(mode="json")
@@ -255,6 +266,11 @@ class ReviewVideoShotListStage:
         from poindexter.services.media_subject_policy import prompt_variables, resolve_media_policy
         _policy = resolve_media_policy(context.get("site_config"), context.get("niche_slug"))
         _policy_vars = prompt_variables(_policy)
+        from poindexter.services.media_subject_policy import (
+            presenter_format as _presenter_format_of,
+        )
+
+        _presenter_format = _presenter_format_of(_policy)
         # Disable the reasoning channel (default) — same rationale as the
         # director: leaving it on starves the revised JSON (see
         # _resolve_director_think). Same output-token + retry budget too.
@@ -277,6 +293,7 @@ class ReviewVideoShotListStage:
         )
         revised = await self._review_one(
                 policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
+                presenter_format=_presenter_format,
             platform=platform, pool=pool, model=model, timeout_s=review_timeout,
             prompt_key="video.review_v1", script_var="podcast_script",
             script=long_narration_script, current=current,
@@ -293,6 +310,7 @@ class ReviewVideoShotListStage:
         if short:
             revised_short = await self._review_one(
                 policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
+                presenter_format=_presenter_format,
                 platform=platform, pool=pool, model=model, timeout_s=review_timeout,
                 prompt_key="video.review_short_v1", script_var="short_script",
                 script=context.get("short_summary_script", ""), current=short,
