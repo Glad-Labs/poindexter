@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## [0.147.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.146.0...v0.147.0) (2026-09-24)
+
+
+### Features
+
+* **charts:** render in a proportional face, with Liberation Sans leading ([#3978](https://github.com/Glad-Labs/glad-labs-stack/issues/3978)) ([accc1d6](https://github.com/Glad-Labs/glad-labs-stack/commit/accc1d632a2122118530ce90ebd41058e237b2cf))
+* **grafana:** render dashboard link hosts from app_settings ([#3976](https://github.com/Glad-Labs/glad-labs-stack/issues/3976)) ([2e57535](https://github.com/Glad-Labs/glad-labs-stack/commit/2e575352acba90bcc2987f8cbbc52213a210e9c7))
+* **images:** backend-agnostic text scan — every fan-out candidate faces the no-text rule ([#3985](https://github.com/Glad-Labs/glad-labs-stack/issues/3985)) ([2f2802f](https://github.com/Glad-Labs/glad-labs-stack/commit/2f2802f29428592eb3b3fe9095a20ad2056db4e8))
+* **newsletter:** a working unsubscribe — edge relay + outbound drain ([#3981](https://github.com/Glad-Labs/glad-labs-stack/issues/3981)) ([8093a56](https://github.com/Glad-Labs/glad-labs-stack/commit/8093a56ccb0214bc61abcf931645f8cf2209afca))
+* **newsletter:** recover the delivery-receipt feed by polling Resend, not by ingress ([#3971](https://github.com/Glad-Labs/glad-labs-stack/issues/3971)) ([f65f2ad](https://github.com/Glad-Labs/glad-labs-stack/commit/f65f2addca60a2279a7a6c16d45e65c0b539b09b))
+* **newsletter:** warn and send instead of refusing, per operator decision ([#3982](https://github.com/Glad-Labs/glad-labs-stack/issues/3982)) ([1c72f3e](https://github.com/Glad-Labs/glad-labs-stack/commit/1c72f3e446d0b8b80edbe41654d13740e4b18f69))
+* **video:** presenter opens, returns at the midpoint and closes every video ([#3987](https://github.com/Glad-Labs/glad-labs-stack/issues/3987)) ([1ac147d](https://github.com/Glad-Labs/glad-labs-stack/commit/1ac147dd557eeea6a43d0c582efa31a876e36bb9))
+* **youtube:** repair a Short's stored hook on --apply, and write it back ([#3966](https://github.com/Glad-Labs/glad-labs-stack/issues/3966)) ([518e3f8](https://github.com/Glad-Labs/glad-labs-stack/commit/518e3f8c60848ac194def1beee12f25cecbe8c52))
+
+
+### Bug Fixes
+
+* **auto-publish:** stop autojunk inflating the gate's edit distance ([#3964](https://github.com/Glad-Labs/glad-labs-stack/issues/3964)) ([cb2c95b](https://github.com/Glad-Labs/glad-labs-stack/commit/cb2c95b5f0d0e91f6b13d99302355cab0f18ef9e))
+* **charts:** size the bar gutter from rendered label width, not character count ([#3970](https://github.com/Glad-Labs/glad-labs-stack/issues/3970)) ([3c5b865](https://github.com/Glad-Labs/glad-labs-stack/commit/3c5b86586e4bca76ed6b2c310a29d6544254bd8c))
+* **deploy:** start-stack.sh stdout is data — a log line there halted every deploy ([#3984](https://github.com/Glad-Labs/glad-labs-stack/issues/3984)) ([5c967b1](https://github.com/Glad-Labs/glad-labs-stack/commit/5c967b17400316a657b43cf345258b9c73b4ced0))
+* **gpu:** name the GPU holder across processes, not just in this one ([#3974](https://github.com/Glad-Labs/glad-labs-stack/issues/3974)) ([c1c9b05](https://github.com/Glad-Labs/glad-labs-stack/commit/c1c9b0536cd8c43c9cbf81800772c86f64c83c7a))
+* **grafana:** repair the dashboard links that never resolved off-host ([#3972](https://github.com/Glad-Labs/glad-labs-stack/issues/3972)) ([89c5b6c](https://github.com/Glad-Labs/glad-labs-stack/commit/89c5b6cd097c3949b2b475ed53ae80831af61c6a))
+* **image-gen:** /scan hands the OCR reader a real PNG, not raw bytes under `.img` ([#3986](https://github.com/Glad-Labs/glad-labs-stack/issues/3986)) ([7a5b0d4](https://github.com/Glad-Labs/glad-labs-stack/commit/7a5b0d4299efe87e6d27e5c313f88052e2c49c1b))
+* **newsletter:** email is the identity — stop binding an int to a uuid column ([#3975](https://github.com/Glad-Labs/glad-labs-stack/issues/3975)) ([2d155de](https://github.com/Glad-Labs/glad-labs-stack/commit/2d155de1a469108a00d22085682f29915c3a91fc))
+* **probe:** point the revenue-freshness alert at the producer, not the dead webhook ([#3969](https://github.com/Glad-Labs/glad-labs-stack/issues/3969)) ([4823e64](https://github.com/Glad-Labs/glad-labs-stack/commit/4823e64b7d5f9598ac0ef1004340345f8c1d1c28))
+* **qa:** penalise rendered text in the vision rail, proportionally to frame ([#3973](https://github.com/Glad-Labs/glad-labs-stack/issues/3973)) ([8134e77](https://github.com/Glad-Labs/glad-labs-stack/commit/8134e77f9430059c8b886a388be80c881e3f3aa6))
+* **research:** dedup snippets by words, not autojunked characters ([#3965](https://github.com/Glad-Labs/glad-labs-stack/issues/3965)) ([c8b84b4](https://github.com/Glad-Labs/glad-labs-stack/commit/c8b84b48f42f65e6d2d97363d2289386801ad83f))
+* **shorts:** strip markdown emphasis wrapping a hook, and nest the wrappers ([#3967](https://github.com/Glad-Labs/glad-labs-stack/issues/3967)) ([20bea3f](https://github.com/Glad-Labs/glad-labs-stack/commit/20bea3f73e68c0fac648fe7f8bce57a0d127bc6f))
+* **video:** a clip a sliver short of its scene holds its last frame, never loops ([#3990](https://github.com/Glad-Labs/glad-labs-stack/issues/3990)) ([e66f291](https://github.com/Glad-Labs/glad-labs-stack/commit/e66f2915b85be9004163521bace64e4f1d798607))
+* **video:** a clip shorter than its scene plays once, never loops ([#3989](https://github.com/Glad-Labs/glad-labs-stack/issues/3989)) ([5420b41](https://github.com/Glad-Labs/glad-labs-stack/commit/5420b41a629b02472ee31358f5f1187b35b2c323))
+* **video:** evict idle speaches/RIFE models and mid-wait newcomers before heroes ([#3988](https://github.com/Glad-Labs/glad-labs-stack/issues/3988)) ([007dd8c](https://github.com/Glad-Labs/glad-labs-stack/commit/007dd8c4ad36e6c61075aee79bd4203bca117a84))
+* **video:** judge stock footage on fit to the video, not on its search words ([#3994](https://github.com/Glad-Labs/glad-labs-stack/issues/3994)) ([dda5c3c](https://github.com/Glad-Labs/glad-labs-stack/commit/dda5c3c20da5dc32ffda41ec738a16b79c9a3904))
+* **video:** pan to the vanishing point, sprinkle the presenter, cut faster ([#3979](https://github.com/Glad-Labs/glad-labs-stack/issues/3979)) ([1cb97f2](https://github.com/Glad-Labs/glad-labs-stack/commit/1cb97f22acb2fd596d7bf123e2222a76d9ad4a6c))
+
 ## [0.146.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.145.0...v0.146.0) (2026-09-23)
 
 
