@@ -49,13 +49,21 @@ class FakePlanPool:
         self.plans: dict[str, dict[str, Any]] = {}
         self.messages: dict[str, list] = {}
         self.executes: list[tuple] = []
+        self.templates: dict[str, dict] = {}
         self._n = 0
+
+    async def fetchval(self, sql: str, *args: Any):
+        s = " ".join(sql.split())
+        if s.startswith("SELECT graph_def FROM pipeline_templates"):
+            g = self.templates.get(args[0])
+            return None if g is None else json.dumps(g)
+        raise AssertionError(f"unexpected fetchval: {s[:70]}")
 
     async def fetchrow(self, sql: str, *args: Any):
         s = " ".join(sql.split())
         if s.startswith("INSERT INTO chat_plans"):
             self._n += 1
-            pid = f"plan-{self._n}"
+            pid = args[6] if len(args) > 6 else f"plan-{self._n}"
             self.plans[pid] = {
                 "id": pid, "conversation_id": args[0], "message_id": args[1],
                 "intent": args[2], "topic": args[3], "template_slug": args[4],
@@ -100,7 +108,10 @@ def plan_env(monkeypatch):
     async def cache_template(p, spec):
         cached["spec"] = spec
         import re
-        return re.sub(r"[^a-z0-9_]+", "_", spec["name"].lower()).strip("_")
+        slug = re.sub(r"[^a-z0-9_]+", "_", spec["name"].lower()).strip("_")
+        if hasattr(p, "templates"):
+            p.templates[slug] = json.loads(json.dumps(spec))
+        return slug
 
     monkeypatch.setattr(pipeline_architect, "cache_template", cache_template)
 
@@ -145,8 +156,8 @@ class TestCreatePlan:
             intent="write about X, skip video", topic="X",
             spec=_spec("canonical blog"),
         ))
-        assert cached["spec"]["name"] == "plan_canonical blog"
-        assert out["slug"].startswith("plan_")
+        assert cached["spec"]["name"].startswith("plan_canonical blog ")
+        assert out["slug"].startswith("plan_canonical_blog_")
         # 3 composed nodes + the appended ensure_terminal_status node.
         assert out["node_count"] == 4
         assert out["nodes"][0] == "verify_task"
@@ -604,3 +615,60 @@ class TestInferTaskType:
             pool=pool, db_service=db, plan_id=plan["plan_id"],
         ))
         assert db.added["task_type"] == "podcast"
+
+
+@pytest.mark.unit
+class TestTheCardIsWhatRuns:
+    """poindexter#1057: the router executes pipeline_templates by slug, so a
+    composition that reused a name overwrote the row — a never-run draft
+    rewrote the graph a later, approved plan then executed."""
+
+    def _create(self, pool, spec):
+        return asyncio.run(chat_plans.create_plan(
+            pool, conversation_id="c1", message_id="m1",
+            intent="i", topic="t", spec=spec,
+        ))
+
+    def test_two_compositions_with_one_name_get_two_rows(self, plan_env):
+        pool, _, _, _ = plan_env
+        a = self._create(pool, _spec("media pipeline"))
+        b = self._create(pool, _spec("media pipeline"))
+        assert a["slug"] != b["slug"]
+        assert a["slug"].endswith(a["plan_id"].replace("-", "")[:8])
+
+    def test_run_executes_the_approved_spec_even_after_the_row_was_rewritten(self, plan_env):
+        pool, _, _, _ = plan_env
+        plan = self._create(pool, _spec())
+        pool.messages["m1"] = [{"type": "card", "card": {"kind": "plan", "plan_id": plan["plan_id"]}}]
+        # Something rewrites the plan's row after approval (the pre-fix
+        # shared-slug overwrite, or a hand edit).
+        pool.templates[plan["slug"]] = {"nodes": [{"id": "x", "atom": "content.republish_post"}]}
+        asyncio.run(chat_plans.run_plan(pool=pool, db_service=FakeDb(), plan_id=plan["plan_id"]))
+        approved = json.loads(pool.plans[plan["plan_id"]]["spec"])
+        stored = pool.templates[plan["slug"]]
+        assert chat_plans._graph_shape(stored) == chat_plans._graph_shape(approved)
+        assert "content.republish_post" not in json.dumps(stored)
+
+    def test_a_row_that_will_not_take_the_spec_refuses_the_run_and_keeps_the_draft(
+        self, plan_env, monkeypatch,
+    ):
+        pool, _, _, _ = plan_env
+        plan = self._create(pool, _spec())
+
+        async def silent_failure(p, spec):  # cache_template swallows its errors
+            import re
+            return re.sub(r"[^a-z0-9_]+", "_", spec["name"].lower()).strip("_")
+
+        monkeypatch.setattr(pipeline_architect, "cache_template", silent_failure)
+        pool.templates[plan["slug"]] = {"nodes": [{"id": "x", "atom": "content.republish_post"}]}
+        db = FakeDb()
+        with pytest.raises(RuntimeError, match="approved graph"):
+            asyncio.run(chat_plans.run_plan(pool=pool, db_service=db, plan_id=plan["plan_id"]))
+        assert db.added is None
+        assert pool.plans[plan["plan_id"]]["status"] == "draft"
+
+    def test_fingerprint_stamps_are_not_shape(self):
+        spec = {"nodes": [{"id": "a", "atom": "x"}], "edges": [{"from": "a", "to": "b"}]}
+        stamped = {"nodes": [{"id": "a", "atom": "x", "contract_fp": "abc"}],
+                   "edges": [{"from": "a", "to": "b"}]}
+        assert chat_plans._graph_shape(spec) == chat_plans._graph_shape(json.dumps(stamped))

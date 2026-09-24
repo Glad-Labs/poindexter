@@ -10,7 +10,10 @@ The chat agent's ``plan_pipeline`` tool calls
    (fingerprint-stamped, ``active=true`` — exactly what
    ``load_active_graph_def`` needs at run time) and inserts the durable
    card row.
-2. :func:`run_plan` resolves atomically (``status='draft'`` → ``'ran'``,
+   Each plan gets its OWN slug (``plan_<name>_<plan id prefix>``) so two
+   compositions can never share — and overwrite — one row (poindexter#1057).
+2. :func:`run_plan` re-caches the plan's approved spec onto that row and
+   reads it back (refusing on a mismatch), then resolves atomically (``status='draft'`` → ``'ran'``,
    the ``chat_approvals`` one-shot pattern), creates the ``pipeline_tasks``
    row with ``template_slug`` = the cached slug (Prefect claims it like any
    other pending task; the runner loads the composed graph_def), links the
@@ -120,7 +123,16 @@ async def create_plan(
     """Cache the composed spec and insert the plan row; returns card fields."""
     from poindexter.services.pipeline_architect import cache_template
 
+    # One template row per plan (poindexter#1057). cache_template upserts by a
+    # slug derived from the spec's name, and the architect reuses names — so
+    # every composition landing on "plan_content_load_and_media_pipeline"
+    # overwrote the same row, including DRAFTS nobody approved, and a later
+    # run executed whichever graph was written last rather than the one on
+    # its own card. Suffixing the plan's id means a row is only ever written
+    # by the plan it belongs to.
+    plan_uuid = uuid_lib.uuid4()
     safe_spec = ensure_terminal(namespace_spec(spec))
+    safe_spec["name"] = f"{safe_spec['name']} {plan_uuid.hex[:8]}"
     slug = await cache_template(pool, safe_spec)
     if not slug.startswith(_SLUG_PREFIX):
         # cache_template normalizes the name itself; a prefix that didn't
@@ -133,12 +145,12 @@ async def create_plan(
     row = await pool.fetchrow(
         """
         INSERT INTO chat_plans
-            (conversation_id, message_id, intent, topic, template_slug, spec)
-        VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb)
+            (conversation_id, message_id, intent, topic, template_slug, spec, id)
+        VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb, $7::uuid)
         RETURNING id
         """,
         conversation_id, message_id, intent[:2000], topic[:200], slug,
-        json.dumps(safe_spec, default=str),
+        json.dumps(safe_spec, default=str), str(plan_uuid),
     )
     return {
         "plan_id": str(row["id"]),
@@ -253,6 +265,7 @@ async def run_plan(
     ``ValueError`` for bad params.
     """
     clean_params = validate_run_params(params)
+    await _pin_template_to_approved_spec(pool, plan_id)
     row = await pool.fetchrow(
         """
         UPDATE chat_plans
@@ -339,6 +352,62 @@ async def run_plan(
     resolved = await get_plan(pool, plan_id)
     assert resolved is not None
     return resolved
+
+
+def _graph_shape(graph: Any) -> tuple[list[tuple[str, str]], set[tuple[str, str]]]:
+    """``(nodes, edges)`` of a spec or stored graph_def — the parts an operator
+    approves. Contract fingerprints are stamping metadata, not shape."""
+    if isinstance(graph, str):
+        graph = json.loads(graph)
+    graph = graph or {}
+    nodes = [
+        (str(n.get("id") or n.get("atom") or ""), str(n.get("atom") or ""))
+        for n in graph.get("nodes") or []
+    ]
+    edges = {
+        (str(e.get("from") or ""), str(e.get("to") or ""))
+        for e in graph.get("edges") or []
+    }
+    return nodes, edges
+
+
+async def _pin_template_to_approved_spec(pool: Any, plan_id: str) -> None:
+    """Make the template row the runner will execute BE the approved spec.
+
+    poindexter#1057: the router runs ``pipeline_templates.graph_def`` by slug,
+    not ``chat_plans.spec`` — so the card the operator approved was only what
+    ran if nothing had rewritten the row since. Plans created before per-plan
+    slugs still share rows. So at run time the plan's own spec is re-cached
+    (re-stamped against current atom contracts) and read back, and a row that
+    does not match the approved nodes + edges refuses the run BEFORE the draft
+    is consumed. ``cache_template`` swallows its own failures, so the
+    read-back is the part that makes this a guarantee.
+
+    A plan that is not a draft is left alone — ``run_plan``'s one-shot resolve
+    reports it as already resolved.
+    """
+    from poindexter.services.pipeline_architect import cache_template
+
+    plan = await get_plan(pool, plan_id)
+    if plan is None or plan.get("status") != "draft":
+        return
+    spec = plan.get("spec")
+    if not isinstance(spec, dict):
+        raise RuntimeError(f"plan {plan_id} has no readable spec — refusing to run")
+    slug = await cache_template(pool, spec)
+    if slug != plan["template_slug"]:
+        raise RuntimeError(
+            f"plan {plan_id}: spec caches under {slug!r}, but the plan runs "
+            f"{plan['template_slug']!r} — refusing to run a graph that isn't the card"
+        )
+    stored = await pool.fetchval(
+        "SELECT graph_def FROM pipeline_templates WHERE slug = $1", slug,
+    )
+    if stored is None or _graph_shape(stored) != _graph_shape(spec):
+        raise RuntimeError(
+            f"plan {plan_id}: template {slug!r} does not hold the approved graph "
+            "after re-caching — refusing to run something other than the card"
+        )
 
 
 async def _stamp_plan_card(
