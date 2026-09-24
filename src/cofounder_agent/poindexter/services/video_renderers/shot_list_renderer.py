@@ -48,7 +48,7 @@ import shutil
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -158,11 +158,15 @@ class ShotListRenderResult:
 
 @dataclass
 class _QAConfig:
-    """Render-check loop tunables, read once per render off the DI seam."""
+    """Render-check loop tunables, read once per render off the DI seam, plus
+    the per-render context the stock-fit judge needs: what the video is about
+    and the words spoken over each shot (``qa.video_stock_fit``)."""
 
     enabled: bool
     threshold: float
     max_retries: int
+    topic: str = ""
+    narration: dict[int, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -1812,6 +1816,71 @@ def _parse_srt_cues(srt_text: str) -> list[tuple[float, float, str]]:
         if end > start and text:
             cues.append((start, end, text))
     return cues
+
+
+# Enough of the narration for the stock judge to see the shot's point.
+_QA_NARRATION_MAX_WORDS = 60
+
+
+def _read_caption_cues(caption_path: str | None) -> list[tuple[float, float, str]]:
+    """The caption track's cues, or ``[]`` when there is no readable SRT."""
+    if not caption_path or not os.path.exists(caption_path):
+        return []
+    try:
+        with open(caption_path, encoding="utf-8") as fh:
+            return _parse_srt_cues(fh.read())
+    except OSError:
+        return []
+
+
+def _narration_by_shot(
+    shots: list[Shot],
+    cues: list[tuple[float, float, str]],
+    *,
+    narration_s: float | None = None,
+) -> dict[int, str]:
+    """The words spoken while each shot is planned to be on screen.
+
+    Shot offsets are in the director's plan; the narration runs to its own
+    length, and the assembly later fits one to the other proportionally. So
+    each window is scaled by ``narration / plan`` before collecting the cues it
+    overlaps. Approximate by a sentence at most, which is plenty for judging
+    whether footage fits what is being said.
+    """
+    plan_total = sum(float(s.duration_s) for s in shots)
+    total = narration_s or max((end for _, end, _ in cues), default=0.0)
+    if not cues or plan_total <= 0 or total <= 0:
+        return {}
+    scale = total / plan_total
+    out: dict[int, str] = {}
+    for shot in shots:
+        start = float(shot.narration_offset_s) * scale
+        end = start + float(shot.duration_s) * scale
+        words = " ".join(text for a, b, text in cues if b > start and a < end).split()
+        if words:
+            out[shot.idx] = " ".join(words[:_QA_NARRATION_MAX_WORDS])
+    return out
+
+
+_VIDEO_TOPIC_SQL = """
+    SELECT COALESCE(NULLIF(p.title, ''), pt.topic) AS topic
+      FROM pipeline_tasks pt
+      LEFT JOIN posts p ON p.metadata->>'pipeline_task_id' = pt.task_id::text
+     WHERE pt.task_id::text = $1
+     LIMIT 1
+"""
+
+
+async def _video_topic(pool: Any, task_id: str) -> str:
+    """What the video is about: the post's title, else the task's topic."""
+    if pool is None or not task_id:
+        return ""
+    try:
+        row = await pool.fetchrow(_VIDEO_TOPIC_SQL, task_id)
+    except Exception as exc:  # noqa: BLE001  # silent-ok: the judge still has the narration
+        logger.debug("[SHOT_QA] topic lookup failed for %s: %s", task_id, describe_exception(exc))
+        return ""
+    return str(row["topic"] or "") if row else ""
 
 
 def _endcard_tokens(text: str) -> list[str]:
@@ -3595,6 +3664,7 @@ async def _score_pass(
         st.qa = await score_shot_frame(
             frame_path=st.result.clip_path, shot=st.shot,
             site_config=site_config, pool=pool,
+            topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
         )
 
 
@@ -3652,6 +3722,7 @@ async def _repair_pass(
             cand_qa = await score_shot_frame(
                 frame_path=cand.clip_path, shot=st.shot,
                 site_config=site_config, pool=pool,
+                topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
             )
             best = st.qa
             if (cand_qa.score is not None and best is not None
@@ -3750,6 +3821,7 @@ async def _escalate_offtopic_stock(
                 cand_qa = await score_shot_frame(
                     frame_path=cand.clip_path, shot=requeried,
                     site_config=site_config, pool=pool,
+                    topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
                 )
                 if cand_qa.score is not None and cand_qa.score > st.qa.score:
                     logger.info(
@@ -3836,6 +3908,7 @@ async def _escalate_offtopic_stock(
         cand_qa = await score_shot_frame(
             frame_path=cand.clip_path, shot=ai_shot,
             site_config=site_config, pool=pool,
+            topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
         )
         if cand_qa.score is None or cand_qa.score <= st.qa.score:
             # Log the REJECTION too. A silent keep-best made the whole repair
@@ -4421,6 +4494,15 @@ async def render_shot_list(
         capped_shots, render_kwargs=render_kwargs, progress_cb=progress_cb,
         presenter_window_fn=presenter_window_fn,
     )
+    if qa.enabled:
+        qa = replace(
+            qa,
+            topic=await _video_topic(pool, post_id),
+            narration=_narration_by_shot(
+                capped_shots, _read_caption_cues(caption_path),
+                narration_s=await _probe_duration_s(audio_path) if audio_path else None,
+            ),
+        )
     await _score_pass(
         states, qa=qa, site_config=site_config, pool=pool,
     )

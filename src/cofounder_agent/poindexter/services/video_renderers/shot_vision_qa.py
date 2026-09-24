@@ -30,6 +30,20 @@ logger = logging.getLogger(__name__)
 
 _VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv")
 
+# Stock-footage fit (2026-09-24). The general shot judge compared a stock clip
+# with its own SEARCH WORDS, so footage matching the words passed whatever it
+# showed: blockchain node logs for "code scrolling", street bokeh for "blurred
+# lights", a mostly black glitch clip for "screen noise", all 92. The stock
+# judge sees the video's topic and the narration under the shot instead.
+# Calibrated on those three plus a clip that fits (server racks under a line
+# about clusters): its LABELS were right 4/4 while its numbers were not ("loose"
+# came back 65, over the 60 threshold), so the label decides the ceiling.
+_STOCK_FIT_CAPS: dict[str, float] = {"off": 20.0, "loose": 45.0}
+_STOCK_FRAMES_DEFAULT = 3
+# A frame this dark and this flat is black or blank; no model call needed.
+_BLANK_MEAN_LUMA = 10.0
+_BLANK_LUMA_STDDEV = 6.0
+
 
 @dataclass
 class ShotQAResult:
@@ -42,6 +56,8 @@ class ShotQAResult:
 
     score: float | None
     reason: str = ""
+    # Stock-footage judge only: "fits" | "loose" | "off" (empty elsewhere).
+    fit: str = ""
 
 
 async def _extract_video_frame(video_path: str) -> str | None:
@@ -149,7 +165,11 @@ def _parse_score(text: str) -> ShotQAResult:
     raw = parsed.get("score")
     if not isinstance(raw, (int, float)):
         return ShotQAResult(score=None, reason="vision response missing numeric score")
-    return ShotQAResult(score=float(raw), reason=str(parsed.get("reason", ""))[:200])
+    return ShotQAResult(
+        score=float(raw),
+        reason=str(parsed.get("reason", ""))[:200],
+        fit=str(parsed.get("fit", "") or "").strip().lower(),
+    )
 
 
 async def score_shot_frame(
@@ -158,6 +178,8 @@ async def score_shot_frame(
     shot: Shot,
     site_config: Any,
     pool: Any = None,
+    topic: str = "",
+    narration: str = "",
 ) -> ShotQAResult:
     """Score one rendered shot frame 0-100 with the vision model.
 
@@ -184,6 +206,14 @@ async def score_shot_frame(
     if not model:
         logger.debug("[SHOT_QA] qa_vision_model not set — shot QA skipped")
         return ShotQAResult(score=None, reason="no vision model configured")
+
+    if shot.source == "pexels":
+        # Stock is judged on FIT to this video, not on how well it matches the
+        # words it was found by. See ``_STOCK_FIT_CAPS``.
+        return await _score_stock(
+            frame_path=frame_path, shot=shot, site_config=site_config,
+            pool=pool, model=model, topic=topic, narration=narration,
+        )
 
     image_path = await _ensure_image_frame(frame_path)
     if not image_path:
@@ -224,6 +254,124 @@ async def score_shot_frame(
     # Measured false-positive rate of the crop pass on 7 known-clean frames:
     # zero — every one scored 95.0 sd 0.0 cropped, same as uncropped.
     return close if close.score < full.score else full
+
+
+async def _probe_seconds(path: str) -> float | None:
+    """Clip duration via ffprobe, or ``None``."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "csv=p=0", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await proc.communicate()
+        value = float(out.decode().strip())
+        return value if value > 0 else None
+    except Exception:  # noqa: BLE001  # silent-ok: fall back to a single frame
+        return None
+
+
+async def _frame_at(video_path: str, at_s: float, tag: str) -> str | None:
+    """One PNG frame ``at_s`` seconds into ``video_path``, or ``None``."""
+    out = os.path.join(
+        tempfile.gettempdir(), f"shotqa_{tag}_{os.path.basename(video_path)}.png",
+    )
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{at_s:.2f}", "-i",
+           video_path, "-frames:v", "1", out]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[SHOT_QA] frame extract raised for %s: %s", video_path, exc)
+        return None
+    if os.path.exists(out) and os.path.getsize(out) > 0:
+        return out
+    return None
+
+
+def _is_blank(image_path: str) -> bool:
+    """Black or blank: dark AND flat over the central 80% of the frame."""
+    try:
+        from PIL import Image, ImageStat
+
+        with Image.open(image_path) as img:
+            gray = img.convert("L")
+            w, h = gray.size
+            stat = ImageStat.Stat(gray.crop((w // 10, h // 10, w - w // 10, h - h // 10)))
+            return stat.mean[0] < _BLANK_MEAN_LUMA and stat.stddev[0] < _BLANK_LUMA_STDDEV
+    except Exception:  # noqa: BLE001  # silent-ok: an unreadable frame is not proof of black
+        return False
+
+
+async def _score_stock(
+    *,
+    frame_path: str,
+    shot: Shot,
+    site_config: Any,
+    pool: Any,
+    model: str,
+    topic: str,
+    narration: str,
+) -> ShotQAResult:
+    """Judge a stock clip's FIT to this video over several frames; worst wins.
+
+    One frame ~1 s in is how the mostly black glitch clip passed: the frames
+    are sampled evenly across the part of the clip that will actually play
+    (``video_shot_qa_stock_frames``, default 3). A black or blank frame scores
+    0 without a model call. A judged frame labelled ``loose`` or ``off`` is
+    capped under the escalation threshold whatever number came with it, so
+    ``_escalate_offtopic_stock`` re-queries it and then swaps in a still.
+    """
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    prompt = get_prompt_manager().get_prompt(
+        "qa.video_stock_fit",
+        topic=topic or "(not given)",
+        narration=narration or "(not given)",
+        intent=shot.intent,
+        visual=(shot.query or shot.prompt or ""),
+    )
+    frames: list[tuple[float | None, str]] = []
+    if frame_path.lower().endswith(_VIDEO_EXTS):
+        n = max(1, int(_sc_float(site_config, "video_shot_qa_stock_frames", _STOCK_FRAMES_DEFAULT)))
+        seconds = await _probe_seconds(frame_path)
+        used = min(seconds, float(shot.duration_s)) if seconds else None
+        if used:
+            for k in range(n):
+                at = used * (k + 0.5) / n
+                img = await _frame_at(frame_path, at, f"s{k}")
+                if img:
+                    frames.append((at, img))
+        else:
+            img = await _extract_video_frame(frame_path)
+            if img:
+                frames.append((1.0, img))
+    else:
+        img = await _ensure_image_frame(frame_path)
+        if img:
+            frames.append((None, img))
+    if not frames:
+        return ShotQAResult(score=None, reason="no scoreable frame")
+
+    worst: ShotQAResult | None = None
+    for at, img in frames:
+        where = f" at {at:.1f}s" if at is not None else ""
+        if _is_blank(img):
+            result = ShotQAResult(score=0.0, reason=f"black or blank frame{where}", fit="off")
+        else:
+            result = await _score_image(img, prompt=prompt, model=model, pool=pool, shot_idx=shot.idx)
+            if result.score is None:
+                continue
+            cap = _STOCK_FIT_CAPS.get(result.fit)
+            if cap is not None and result.score > cap:
+                result = ShotQAResult(
+                    score=cap, reason=f"{result.fit}{where}: {result.reason}"[:200], fit=result.fit,
+                )
+        if worst is None or (result.score or 0.0) < (worst.score or 0.0):
+            worst = result
+    return worst or ShotQAResult(score=None, reason="stock frames unscoreable")
 
 
 async def _score_image(

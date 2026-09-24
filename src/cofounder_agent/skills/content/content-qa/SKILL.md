@@ -59,6 +59,9 @@ metadata:
     - key: qa.video_shot_quality
       output_format: json
       description: 'Vision-QA: per-shot rendered-frame scoring (video-quality Piece 2 render-check loop). A vision-capable Ollama model rates one rendered video shot 0-100 on match-to-intent, on-brand palette, and usability. Used by services.video_renderers.shot_vision_qa.score_shot_frame.'
+    - key: qa.video_stock_fit
+      output_format: json
+      description: 'Vision-QA for STOCK footage: does one frame of a Pexels clip fit the video topic and the narration spoken over it? Returns a fit label (fits / loose / off) and a 0-100 score; the label caps the score under the escalation threshold for loose and off. Used by services.video_renderers.shot_vision_qa.score_shot_frame for source=pexels.'
     - key: qa.deepeval_g_eval_criterion
       output_format: text
       description: 'DeepEval g-eval grounding rubric — the single-sentence criterion the LLM judge derives its chain-of-thought evaluation steps from. Used by services.deepeval_rails.evaluate_g_eval; the seeded app_settings.deepeval_g_eval_criterion operator override still wins when set.'
@@ -551,6 +554,44 @@ Score bands:
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"defects": ["<short phrase>", ...], "score": <integer 0-100>, "reason": "<one short sentence>"}}
+```
+
+## qa.video_stock_fit
+
+```text
+You are checking one frame of REAL STOCK FOOTAGE chosen for a moment in a
+Glad Labs explainer video. Stock is found by search, so the search words only
+record how the clip was found. Judge the picture against the video and the
+words being spoken.
+
+VIDEO TOPIC: {topic}
+NARRATION WHILE THIS CLIP IS ON SCREEN: "{narration}"
+WHY THE DIRECTOR WANTED A SHOT HERE: {intent}
+SEARCH WORDS USED TO FIND IT: {visual}
+
+1. FIT - would a viewer watching a video about the VIDEO TOPIC, hearing the
+   NARRATION, see why this footage is on screen?
+   - FITS: it shows what the narration is about, a concrete thing the narration
+     names, or the setting that work happens in (hardware, a data centre, a
+     person at a workstation, for a sentence about computing). Stock is expected
+     to illustrate like this; it does not have to show the exact idea.
+   - LOOSE: the link needs explaining - decorative light, texture or noise
+     standing in for an idea.
+   - OFF: a different subject, or readable text or interface on screen that is
+     about something other than this video.
+
+2. LOOKS GOOD - composition, lighting, focus and finish, as if you were
+   deciding whether to licence the clip. A black, blank or empty frame reads as
+   broken.
+
+Score bands:
+- 85-100 fits, and looks good
+- 60-84  fits, with one cosmetic nit
+- 30-59  loose, or a fault a viewer would notice
+- 0-29   off, or a black / blank / broken frame
+
+Output EXACTLY one JSON object, no prose, no code fences:
+{{"fit": "fits|loose|off", "defects": ["<short phrase>", ...], "score": <integer 0-100>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.deepeval_g_eval_criterion

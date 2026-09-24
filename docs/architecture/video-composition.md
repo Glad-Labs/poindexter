@@ -193,6 +193,35 @@ centred pad), so the handoff is pixel-identical. Scenes are joined with the
 concat demuxer (hard cuts, no overlap), so the split adds no time and the
 narration stays in sync. Presenter clips keep holding their last frame.
 
+### Stock footage is judged on fit to the video (2026-09-24)
+
+Stock clips used to be scored by the same vision judge as AI renders, against
+the shot's intent and **its own search words**. Footage that matched its
+search words passed whatever it showed: on f555bedc, geth blockchain node logs
+("computer code scrolling"), street bokeh ("abstract blurred lights") and a
+mostly black glitch clip ("glitchy digital screen noise") all scored 92.
+
+`shot_vision_qa._score_stock` (prompt `qa.video_stock_fit`) now judges stock
+against what the viewer experiences:
+
+- **Context:** the video's topic (the post title, else the task topic) and the
+  words narrated while the clip is on screen. The narration comes from the
+  caption cues over the shot's planned window, scaled onto the narration's
+  length. The search words are shown only as how the clip was found.
+- **Frames:** `video_shot_qa_stock_frames` (default 3), spread across the part
+  of the clip that actually plays. The worst frame decides. A black or blank
+  frame scores 0 without a model call.
+- **Label over number:** the judge returns `fits` / `loose` / `off`. `loose` is
+  capped at 45 and `off` at 20, so both land under the escalation threshold
+  (60) and `_escalate_offtopic_stock` re-queries, then swaps in an on-style
+  still. Calibrated on the four f555bedc clips: the labels were right 4/4
+  (server racks under a sentence about clusters `fits`; glitch `off`; logs and
+  bokeh `loose`), while the numbers were not ("loose" came back as 65).
+
+AI renders keep `qa.video_shot_quality`. Those are the director's own
+illustrations, and judging them against the narration would re-roll
+deliberate metaphors for nothing.
+
 ## Per-source plugin contract
 
 Each `source` value resolves to one of:

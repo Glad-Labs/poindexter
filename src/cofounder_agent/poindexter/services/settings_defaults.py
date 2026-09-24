@@ -849,6 +849,10 @@ DEFAULTS: dict[str, str] = {
     'video_shot_qa_crop_enabled': 'true',
     'video_shot_qa_crop_fraction': '0.62',
     'video_shot_qa_crop_zoom': '2.0',
+    # Stock clips are judged on FIT to the video over this many frames spread
+    # across the part that plays; the worst frame decides (2026-09-24: a single
+    # frame ~1 s in let a mostly black glitch clip through).
+    'video_shot_qa_stock_frames': '3',
     # Compose-network service DNS, NOT host.docker.internal: the sidecar
     # publishes on 127.0.0.1 only (unauthenticated API stays off the LAN),
     # and a loopback publish is unreachable via the host-gateway route —
@@ -5454,6 +5458,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_shot_qa_crop_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_crop_fraction': {'owner': 'video', 'value_type': 'float'},
     'video_shot_qa_crop_zoom': {'owner': 'video', 'value_type': 'float'},
+    'video_shot_qa_stock_frames': {'owner': 'video', 'value_type': 'integer'},
     'video_comfyui_server_url': {'owner': 'video', 'value_type': 'string'},
     'video_comfyui_steps': {'owner': 'video', 'value_type': 'integer'},
     'video_comfyui_cfg': {'owner': 'video', 'value_type': 'float'},

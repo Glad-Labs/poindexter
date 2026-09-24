@@ -3395,7 +3395,7 @@ class TestEscalateOfftopicStock:
                 duration_s=shot.duration_s,
             )
 
-        async def _fake_score(*, frame_path, shot, site_config, pool):
+        async def _fake_score(*, frame_path, shot, site_config, pool, **_ctx):
             return ShotQAResult(score=cand_score, reason="on topic")
 
         monkeypatch.setattr(slr, "_render_one_shot", _fake_render)
@@ -3554,7 +3554,7 @@ class TestRestockQuery:
                 clip_path="/tmp/good.mp4", duration_s=shot.duration_s,
             )
 
-        async def _fake_score(*, frame_path, shot, site_config, pool):
+        async def _fake_score(*, frame_path, shot, site_config, pool, **_ctx):
             return ShotQAResult(score=82.0, reason="on topic")
 
         monkeypatch.setattr(slr, "_llm_restock_query", _fake_restock)
@@ -3602,7 +3602,7 @@ class TestRestockQuery:
                 clip_path="/tmp/worse.mp4", duration_s=shot.duration_s,
             )
 
-        async def _fake_score(*, frame_path, shot, site_config, pool):
+        async def _fake_score(*, frame_path, shot, site_config, pool, **_ctx):
             return ShotQAResult(score=15.0, reason="worse")
 
         monkeypatch.setattr(slr, "_llm_restock_query", _fake_restock)
@@ -3651,7 +3651,7 @@ class TestRestockQuery:
                 clip_path="/tmp/ai.png", duration_s=shot.duration_s,
             )
 
-        async def _fake_score(*, frame_path, shot, site_config, pool):
+        async def _fake_score(*, frame_path, shot, site_config, pool, **_ctx):
             return ShotQAResult(score=78.0, reason="on theme")
 
         monkeypatch.setattr(slr, "_llm_restock_query", _no_restock)
