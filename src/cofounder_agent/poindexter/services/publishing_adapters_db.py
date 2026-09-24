@@ -8,11 +8,13 @@ publishing-surface dispatch (``registry.dispatch("publishing", ...)``) walks.
 Design notes
 ------------
 
-- **Read-only here.** Mutations live in the
-  ``poindexter publishers ...`` CLI (see ``poindexter/cli/publishers.py``)
-  and the per-row counter writes in the dispatch loop (mirrors what
-  ``services.integrations.tap_runner`` does — counter writes inline in
-  the runner, not in a separate writer module).
+- **Reads, plus one telemetry write.** Config mutations live in the
+  ``poindexter publishers ...`` CLI (see ``poindexter/cli/publishers.py``).
+  :func:`record_adapter_run` stamps the run counters after each dispatch
+  attempt — ``media_distribute`` is the caller. Nothing wrote them from
+  2026-06-24 to 2026-09-24, so ``youtube_main`` read "3 runs, 3 failures"
+  (three June social-payload misroutes) for three months while it uploaded
+  every approved video (poindexter#1067).
 
 - **Graceful fallback.** When ``pool`` is ``None`` (unit tests, callers
   without a DB) or the table doesn't exist yet (fresh checkout that
@@ -162,6 +164,46 @@ async def load_enabled_publishers(
     return out
 
 
+async def record_adapter_run(
+    pool: Any,
+    name: str,
+    *,
+    ok: bool,
+    duration_ms: int | None = None,
+    error: str | None = None,
+) -> None:
+    """Stamp one dispatch attempt on a ``publishing_adapters`` row.
+
+    Best-effort: telemetry must never fail an upload that already happened,
+    so a write error is logged, not raised.
+    """
+    if pool is None or not name:
+        return
+    try:
+        await pool.execute(
+            """
+            UPDATE publishing_adapters
+               SET last_run_at = NOW(),
+                   last_run_status = $2,
+                   last_run_duration_ms = $3,
+                   last_error = $4::text,  -- NULL on success, as tap_runner does
+                   total_runs = COALESCE(total_runs, 0) + 1,
+                   total_failures = COALESCE(total_failures, 0) + $5
+             WHERE name = $1
+            """,
+            name,
+            "success" if ok else "failed",
+            duration_ms,
+            None if ok else (error or "dispatch failed")[:1000],
+            0 if ok else 1,
+        )
+    except Exception as exc:  # noqa: BLE001 — telemetry never fails the dispatch
+        logger.warning(
+            "publishing_adapters run record failed for %s: %s",
+            name, describe_exception(exc),
+        )
+
+
 def _parse_jsonb(value: Any) -> dict[str, Any]:
     """Return ``value`` as a dict, parsing JSON if asyncpg handed back a string.
 
@@ -183,4 +225,4 @@ def _parse_jsonb(value: Any) -> dict[str, Any]:
     return {}
 
 
-__all__ = ["PublishingAdapterRow", "load_enabled_publishers"]
+__all__ = ["PublishingAdapterRow", "load_enabled_publishers", "record_adapter_run"]

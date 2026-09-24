@@ -522,6 +522,64 @@ async def test_dispatch_asset_marks_failure_without_external_id():
     assert results[0].external_id is None
 
 
+def _adapter_run_calls(pool):
+    return [
+        c for c in pool.execute.await_args_list
+        if "UPDATE publishing_adapters" in c.args[0]
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("dispatch", "ok", "error_part"),
+    [
+        (AsyncMock(return_value={"success": True, "post_id": "V", "url": "u"}), True, None),
+        (AsyncMock(return_value={"success": False, "error": "quota"}), False, "quota"),
+        (AsyncMock(side_effect=RuntimeError("boom")), False, "boom"),
+    ],
+)
+async def test_every_dispatch_attempt_is_recorded_on_its_adapter_row(dispatch, ok, error_part):
+    """poindexter#1067: nothing wrote publishing_adapters' run counters, so
+    youtube_main read "3 runs, 3 failures" (June misroutes) for three months
+    while uploading every approved video. Success, handler failure and a
+    raising handler each stamp one run on the row they went through."""
+    pool = AsyncMock()
+    pool.fetch = AsyncMock(return_value=[
+        {"name": "youtube_main", "platform": "youtube", "handler_name": "youtube",
+         "config": {}, "metadata": {}},
+    ])
+    row = {
+        "post_id": "p1", "title": "Clip", "content": "c", "excerpt": "e",
+        "seo_keywords": "", "slug": "s", "storage_path": "/tmp/v.mp4",
+    }
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(
+            pool, _sc(media_pipeline_trigger_enabled="true"), row, shorts=False
+        )
+    calls = _adapter_run_calls(pool)
+    assert len(calls) == 1
+    _sql, name, status, duration_ms, error, failed = calls[0].args
+    assert name == "youtube_main"
+    assert status == ("success" if ok else "failed")
+    assert failed == (0 if ok else 1)
+    assert isinstance(duration_ms, int) and duration_ms >= 0
+    if error_part:
+        assert error_part in error
+    else:
+        assert error is None
+
+
+@pytest.mark.asyncio
+async def test_a_failed_run_record_never_fails_the_upload():
+    from poindexter.services.publishing_adapters_db import record_adapter_run
+
+    pool = AsyncMock()
+    pool.execute = AsyncMock(side_effect=RuntimeError("db down"))
+    await record_adapter_run(pool, "youtube_main", ok=True, duration_ms=5)  # no raise
+
+
 @pytest.mark.asyncio
 async def test_persist_dispatch_result_records_id_and_url():
     """A successful youtube dispatch persists the external id + url:

@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any
 
 from poindexter.plugins.job import JobResult
@@ -395,9 +396,19 @@ async def _dispatch_asset(
         "contains_synthetic_media": _contains_synthetic_media(row, site_config),
     }
 
+    from poindexter.services.publishing_adapters_db import record_adapter_run
+
     results: list[_PlatformDispatchResult] = []
     for adapter in adapters:
         platform = adapter["platform"]
+        started = time.monotonic()
+
+        async def _record(ok: bool, error: str | None = None, _a=adapter, _t=started) -> None:
+            await record_adapter_run(
+                pool, _a["name"], ok=ok, error=error,
+                duration_ms=int((time.monotonic() - _t) * 1000),
+            )
+
         try:
             result = await registry.dispatch(
                 "publishing",
@@ -424,15 +435,17 @@ async def _dispatch_asset(
                     "(shorts=%s, external_id=%s)",
                     platform, row["post_id"], shorts, result.get("post_id"),
                 )
+                await _record(True)
             else:
                 results.append(
                     _PlatformDispatchResult(platform=platform, success=False)
                 )
+                error = (result or {}).get("error") if isinstance(result, dict) else result
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] %s upload failed for post %s: %s",
-                    platform, row["post_id"],
-                    (result or {}).get("error") if isinstance(result, dict) else result,
+                    platform, row["post_id"], error,
                 )
+                await _record(False, str(error) if error else None)
         except Exception as exc:  # noqa: BLE001 — one platform must not starve others
             results.append(
                 _PlatformDispatchResult(platform=platform, success=False)
@@ -441,6 +454,7 @@ async def _dispatch_asset(
                 "[MEDIA_DISTRIBUTE] %s upload raised for post %s: %s",
                 platform, row["post_id"], describe_exception(exc),
             )
+            await _record(False, describe_exception(exc))
     return results
 
 
