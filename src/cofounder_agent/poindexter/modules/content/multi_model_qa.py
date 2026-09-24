@@ -162,9 +162,25 @@ def extract_inline_image_urls(content: str) -> list[str]:
 # what share of the frame the text occupies — and subtracts a penalty that
 # scales with it. Proportional on purpose: a stray glyph in a corner must not
 # tank an otherwise good illustration, while a banner across the top must.
+#
+# The coverage figure is MEASURED where possible (2026-09-23): an image of a
+# kind whose text policy is ``forbidden`` is OCR-scanned by
+# ``services/image_text_scan.py`` and the share of the frame its text boxes
+# cover replaces the judge's eyeballed estimate. An LLM guessing what fraction
+# of a frame is text is strictly worse than measuring the boxes. The judge's
+# number remains the fallback when a scan is unavailable, and an image whose
+# kind EXPECTS text (a chart, a dashboard screenshot, the composed brand hero)
+# takes no text penalty at all — its text is its content.
 _TEXT_PENALTY_MAX_DEFAULT = 60
 _TEXT_IGNORE_COVERAGE_DEFAULT = 5
 _TEXT_FULL_PENALTY_COVERAGE_DEFAULT = 40
+# Seeded in settings_defaults.py; this is only the read-failure fallback.
+_VISION_PASS_THRESHOLD_DEFAULT = 60
+
+#: Where an image's text-coverage figure came from (surfaced in feedback).
+_COVERAGE_MEASURED = "measured"
+_COVERAGE_JUDGED = "judged"
+_COVERAGE_EXEMPT = "exempt"
 
 
 def _float_setting(raw: Any, default: float) -> float:
@@ -2699,6 +2715,11 @@ class MultiModelQA:
         None when disabled (default), when no images are present, or when
         the vision model is unavailable.
 
+        Text coverage per image comes from ``_resolve_text_coverage``: MEASURED
+        by the shared OCR scanner for kinds where text is forbidden, the judge's
+        estimate when that scan is unavailable, and exempt (no penalty) for
+        kinds whose text is their content.
+
         The model returns TWO numbers per image: a relevance score, and the
         share of the frame covered by rendered text. Text is always a defect
         here (the generator is told to draw none), so the coverage estimate is
@@ -2735,7 +2756,7 @@ class MultiModelQA:
         # operator deliberately cleared the key — treat as "no model".
         model = ""
         max_images = 3
-        pass_threshold = 60
+        pass_threshold = _VISION_PASS_THRESHOLD_DEFAULT
         # qwen3-vl emits a long <think> trace even with think=False, and that
         # trace shares the num_predict budget with the JSON answer — at 400 the
         # JSON was getting truncated ('{"scores":[30],...,"overall":' cut off)
@@ -2760,9 +2781,12 @@ class MultiModelQA:
                 max_images = int(
                     await self.settings.get("qa_vision_max_images") or 3
                 )
-                pass_threshold = int(
-                    await self.settings.get("qa_vision_pass_threshold") or 60
-                )
+                # Explicit blank-check, not `or 60`: a deliberately configured
+                # 0 ("pass anything relevant at all") must survive the read.
+                pass_threshold = int(_float_setting(
+                    await self.settings.get("qa_vision_pass_threshold"),
+                    _VISION_PASS_THRESHOLD_DEFAULT,
+                ))
                 num_predict = int(
                     await self.settings.get("qa_vision_num_predict") or 1024
                 )
@@ -2820,6 +2844,8 @@ class MultiModelQA:
 
         # Download each image and base64-encode it for the Ollama chat API.
         encoded_images: list[tuple[str, str]] = []
+        # The same normalized bytes, positionally aligned, for the OCR scan.
+        image_bytes: list[bytes] = []
 
         async def _download_loop(client: "httpx.AsyncClient") -> None:
             for url in urls:
@@ -2840,6 +2866,7 @@ class MultiModelQA:
                     encoded_images.append(
                         (url, base64.b64encode(img_bytes).decode("ascii"))
                     )
+                    image_bytes.append(img_bytes)
                 except Exception as e:
                     logger.warning(
                         "[VISION_QA] image download failed for %s: %s",
@@ -2962,12 +2989,26 @@ class MultiModelQA:
         have_coverage_signal = isinstance(coverage_list, list) and bool(coverage_list)
         penalties: dict[int, float] = {}
         coverages: dict[int, float | None] = {}
+        coverage_sources: dict[int, str] = {}
+        needs_judged: list[int] = []
+        # Shared across this call's images: once the scanner is known down,
+        # the remaining images skip straight to the judge's estimate instead
+        # of each burning the scan's full retry budget.
+        scan_state: dict[str, Any] = {}
         for i, _raw in scored:
-            cov = (
+            judged = (
                 coverage_list[i]
                 if have_coverage_signal and i < len(coverage_list)
                 else None
             )
+            url_i = encoded_images[i][0] if i < len(encoded_images) else ""
+            bytes_i = image_bytes[i] if i < len(image_bytes) else None
+            cov, source = await self._resolve_text_coverage(
+                url_i, bytes_i, judged, scan_state=scan_state,
+            )
+            coverage_sources[i] = source
+            if source == _COVERAGE_JUDGED:
+                needs_judged.append(i)
             coverages[i] = normalize_text_coverage(cov)
             penalties[i] = text_coverage_penalty(
                 cov,
@@ -2975,11 +3016,12 @@ class MultiModelQA:
                 ignore_pct=text_ignore_pct,
                 full_pct=text_full_pct,
             )
-        if not have_coverage_signal:
-            # The prompt asks for this array. Its absence means the rail is
-            # running relevance-only again — the exact blind spot this deduction
-            # exists to close — and nothing downstream would ever say so. Page
-            # it rather than let the signal go dark behind a green 95.
+        if not have_coverage_signal and needs_judged:
+            # The prompt asks for this array. Its absence, for an image the
+            # OCR scan could not measure, means that image is scored
+            # relevance-only — the exact blind spot this deduction exists to
+            # close — and nothing downstream would ever say so. Page it rather
+            # than let the signal go dark behind a green 95.
             logger.warning(
                 "[VISION_QA] vision response carried no 'text_coverage' array "
                 "(keys=%s, model=%s) — scoring relevance only; rendered-text "
@@ -3034,7 +3076,10 @@ class MultiModelQA:
             pen = penalties.get(i, 0.0)
             pen_note = ""
             if pen > 0:
-                pen_note = f" (-{pen:.0f} text {coverages.get(i) or 0:.0f}% of frame)"
+                pen_note = (
+                    f" (-{pen:.0f} text {coverages.get(i) or 0:.0f}% of frame, "
+                    f"{coverage_sources.get(i, _COVERAGE_JUDGED)})"
+                )
             parts.append(f"[{s}]{pen_note} {url[-40:]}: {str(r)[:80]}")
         feedback = f"Vision QA avg={avg_score:.0f}, overall={overall:.0f}. " + "; ".join(parts[:3])
 
@@ -3049,6 +3094,52 @@ class MultiModelQA:
             feedback=feedback[:500],
             provider="vision_gate",
         )
+
+    async def _resolve_text_coverage(
+        self, url: str, image: bytes | None, judged: Any,
+        *, scan_state: dict[str, Any] | None = None,
+    ) -> tuple[Any, str]:
+        """This image's text coverage for the penalty, and where it came from.
+
+        * The URL's provider kind EXPECTS text (chart / screenshot / composed
+          brand hero) → ``(0, "exempt")``: its text is the content, and the
+          judge's estimate of it is not a defect to deduct.
+        * Text is FORBIDDEN for the kind → OCR-scan the pixels and use the
+          measured share of the frame the text boxes cover.
+        * Otherwise — scan unavailable or disabled, kind not applicable (stock)
+          or unknown — the judge's estimate, exactly as #3973 shipped it.
+
+        Never raises: a scanner fault costs the measurement, never the rail.
+        Only a MEASURED scan replaces the estimate; ``unavailable`` falls back
+        rather than reading as a clean 0. ``scan_state`` (one dict per rail
+        call) remembers an unavailable scanner so later images don't retry it.
+        """
+        from poindexter.services import image_text_scan as its
+
+        try:
+            kind = its.infer_image_kind_from_url(url)
+            policy = its.policy_for_kind(kind, self._site_config)
+            if policy == its.POLICY_EXPECTED:
+                return 0.0, _COVERAGE_EXEMPT
+            state = scan_state if scan_state is not None else {}
+            if policy == its.POLICY_FORBIDDEN and image and not state.get("down"):
+                scan = await its.scan_image_text(
+                    image, kind=kind, site_config=self._site_config,
+                )
+                if scan.measured and scan.coverage_pct is not None:
+                    return scan.coverage_pct, _COVERAGE_MEASURED
+                if scan.status == its.STATUS_UNAVAILABLE:
+                    state["down"] = True
+                logger.info(
+                    "[VISION_QA] text scan %s for %s (%s) — using the judge's "
+                    "coverage estimate", scan.status, url[-60:], scan.reason,
+                )
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            logger.warning(
+                "[VISION_QA] text-coverage measurement failed for %s: %s — "
+                "using the judge's estimate", url[-60:], exc,
+            )
+        return judged, _COVERAGE_JUDGED
 
     @observe(as_type="generation", name="multi_model_qa._check_rendered_preview")
     async def _check_rendered_preview(

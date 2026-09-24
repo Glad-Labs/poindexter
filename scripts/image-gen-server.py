@@ -43,6 +43,10 @@ reported ``ocr_gate_passed=false`` in a field no caller read. 67 of 693 renders
 Endpoints:
     GET  /health              — status, model, degradation reason, gate config
     POST /generate            — generate image from prompt (OCR-gated, see above)
+    POST /scan                — OCR-scan any image (raw bytes body); returns
+                                text_chars + text_coverage_pct. The backend of
+                                services/image_text_scan.py, so renders from
+                                OTHER servers (ComfyUI) face the same check.
     POST /reload              — re-read DB config (call after changing setting)
     POST /unload              — free VRAM (called by GPU scheduler)
     GET  /images/{filename}   — serve generated image
@@ -54,6 +58,8 @@ import json
 import logging
 import os
 import sys
+import tempfile
+import threading
 import time
 import uuid
 from contextlib import suppress
@@ -64,7 +70,7 @@ from typing import Any
 import asyncpg
 import torch
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -273,6 +279,18 @@ def pick_best_attempt(attempts: list[GenAttempt]) -> GenAttempt:
     )
 
 
+# EasyOCR's Reader is one torch model shared by /generate's gate and /scan.
+# Both run it through ``asyncio.to_thread``, so without this two concurrent
+# requests would drive the same model from two threads at once. A scan is
+# ~1-2s of CPU; serialising them costs nothing next to the render it checks.
+_ocr_readtext_lock = threading.Lock()
+
+
+def _readtext(reader: Any, image_path: Path | str) -> list:
+    with _ocr_readtext_lock:
+        return reader.readtext(str(image_path), detail=1)
+
+
 def count_leaked_text_chars(image_path: Path | str, reader: Any, *, min_confidence: float) -> int:
     """Sum character counts of confident OCR text detections in one image.
 
@@ -287,8 +305,113 @@ def count_leaked_text_chars(image_path: Path | str, reader: Any, *, min_confiden
     is what let a silently-missing easyocr report a passing gate on every
     image it never actually scanned.
     """
-    detections = reader.readtext(str(image_path), detail=1)
+    detections = _readtext(reader, image_path)
     return sum(len(text) for _box, text, conf in detections if conf >= min_confidence)
+
+
+@dataclass(frozen=True)
+class TextScanResult:
+    """What one OCR pass measured: how much text, and how much of the frame.
+
+    ``coverage_pct`` is the share of the frame's area covered by the union of
+    the confident detections' bounding boxes. It is the measured counterpart
+    of the ``text_coverage`` the qa.vision judge used to *estimate* by eye.
+    """
+
+    text_chars: int
+    coverage_pct: float
+    detections: int
+    width: int
+    height: int
+
+
+def text_box_union_area(boxes: list[Any], width: int, height: int) -> float:
+    """Area (px²) covered by the union of OCR detection boxes, clipped to frame.
+
+    EasyOCR returns each box as four ``[x, y]`` corner points. Each is reduced
+    to its axis-aligned bounding rectangle — EasyOCR's own boxes are
+    axis-aligned for horizontal text, and a slightly generous rectangle around
+    a tilted line is the right error direction for a defect measure.
+
+    UNION, not sum: detections overlap (a headline often comes back as a line
+    box plus word boxes), and summing would double-count them and could report
+    more than 100% of the frame. Exact via coordinate compression — sweep the
+    distinct x edges, merge the covered y-intervals inside each slab. O(n²)
+    for n boxes, and n is a few dozen at most.
+
+    Malformed boxes (empty, non-numeric, degenerate) are skipped rather than
+    raising: one unreadable box must not void the measurement of the rest.
+    """
+    rects: list[tuple[float, float, float, float]] = []
+    for box in boxes:
+        try:
+            xs = [float(pt[0]) for pt in box]
+            ys = [float(pt[1]) for pt in box]
+        except (TypeError, ValueError, IndexError):
+            continue
+        if not xs or not ys:
+            continue
+        x0, x1 = max(0.0, min(xs)), min(float(width), max(xs))
+        y0, y1 = max(0.0, min(ys)), min(float(height), max(ys))
+        if x1 > x0 and y1 > y0:
+            rects.append((x0, y0, x1, y1))
+    if not rects:
+        return 0.0
+    edges = sorted({r[0] for r in rects} | {r[2] for r in rects})
+    area = 0.0
+    for xa, xb in zip(edges, edges[1:], strict=False):
+        spans = sorted((r[1], r[3]) for r in rects if r[0] <= xa and r[2] >= xb)
+        covered = 0.0
+        cur_start: float | None = None
+        cur_end = 0.0
+        for start, end in spans:
+            if cur_start is None or start > cur_end:
+                if cur_start is not None:
+                    covered += cur_end - cur_start
+                cur_start, cur_end = start, end
+            else:
+                cur_end = max(cur_end, end)
+        if cur_start is not None:
+            covered += cur_end - cur_start
+        area += covered * (xb - xa)
+    return area
+
+
+def image_dimensions(image_path: Path | str) -> tuple[int, int]:
+    """``(width, height)`` of an image file. Raises on anything not an image."""
+    from PIL import Image
+
+    with Image.open(str(image_path)) as im:
+        return int(im.size[0]), int(im.size[1])
+
+
+def scan_leaked_text(
+    image_path: Path | str, reader: Any, *, min_confidence: float,
+) -> TextScanResult:
+    """One OCR pass returning character count AND frame coverage.
+
+    Same confidence filter and character arithmetic as
+    ``count_leaked_text_chars`` — so ``text_chars`` here is directly
+    comparable to the gate's number — plus the bounding boxes that function
+    throws away. Synchronous/CPU-bound: run it via ``asyncio.to_thread``.
+
+    Raises whatever the reader or the image decode raises; the caller reports
+    that as "could not verify", never as a clean frame.
+    """
+    width, height = image_dimensions(image_path)
+    detections = _readtext(reader, image_path)
+    confident = [(box, text) for box, text, conf in detections if conf >= min_confidence]
+    chars = sum(len(text) for _box, text in confident)
+    frame = float(width * height)
+    covered = text_box_union_area([box for box, _t in confident], width, height)
+    coverage_pct = round(100.0 * covered / frame, 2) if frame > 0 else 0.0
+    return TextScanResult(
+        text_chars=chars,
+        coverage_pct=min(100.0, coverage_pct),
+        detections=len(confident),
+        width=width,
+        height=height,
+    )
 
 
 def resolve_gate_status(best: GenAttempt, gate: OcrGateConfig) -> str:
@@ -1178,6 +1301,99 @@ async def _generate_inner(req: GenerateRequest):
         ocr_gate_passed=gate_passed,
         ocr_gate_status=status,
     )
+
+
+#: Upper bound on a /scan body. A 2048x2048 PNG is ~6-12 MB; this leaves room
+#: without letting one request pin arbitrary memory on a GPU host.
+SCAN_MAX_BYTES = 32 * 1024 * 1024
+
+
+@app.post("/scan")
+async def scan(request: Request, min_confidence: float | None = None):
+    """OCR-scan an image this server did NOT render. Body = raw image bytes.
+
+    The text-leakage check used to exist only inside /generate, welded to this
+    server's own renders — so the featured fan-out's three ComfyUI candidates
+    were never scanned at all, and only the production model was held to the
+    no-text rule (``services/image_text_scan.py`` is the client). The reader is
+    the same resident, CPU-only EasyOCR instance the gate uses, so a scan
+    competes with no render for VRAM, and the numbers are the gate's numbers.
+
+    Independent of the diffusion pipeline on purpose: a DEGRADED server (bad
+    model setting, failed load) can still scan, and a scan neither loads the
+    pipeline nor refreshes ``last_used``, so it cannot keep 13+ GB of weights
+    resident on the idle timer.
+
+    Status contract — the client relies on it to tell a window from a verdict:
+      * 200 — scanned. ``text_chars`` / ``text_coverage_pct`` are measured.
+      * 400 — the request is unusable (empty body, not an image, bad
+        min_confidence). Retrying the same bytes cannot help.
+      * 413 — body over ``SCAN_MAX_BYTES``.
+      * 503 ``{"error": "ocr_unavailable"}`` — the OCR engine itself failed.
+        Reported so the caller records "could not verify", never "clean".
+    """
+    conf = state.ocr_gate.min_confidence if min_confidence is None else float(min_confidence)
+    if not 0.0 <= conf <= 1.0:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "bad_min_confidence", "message": "min_confidence must be in [0, 1]"},
+        )
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail={"error": "empty_body"})
+    if len(body) > SCAN_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={"error": "too_large", "max_bytes": SCAN_MAX_BYTES},
+        )
+
+    fd, tmp_name = tempfile.mkstemp(prefix="scan_", suffix=".img")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(body)
+        try:
+            await asyncio.to_thread(image_dimensions, tmp_path)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "not_an_image", "message": f"{type(e).__name__}: {e}"[:200]},
+            ) from e
+        start = time.time()
+        try:
+            reader = await ensure_ocr_reader()
+            result = await asyncio.to_thread(
+                scan_leaked_text, tmp_path, reader, min_confidence=conf,
+            )
+        except Exception as e:
+            logger.error(
+                "[OCR-SCAN] scan UNAVAILABLE: %s — the caller will record this "
+                "image as unverified, not clean", e,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "ocr_unavailable", "message": f"{type(e).__name__}: {e}"[:300]},
+            ) from e
+    finally:
+        with suppress(OSError):
+            tmp_path.unlink()
+
+    elapsed_ms = int((time.time() - start) * 1000)
+    logger.info(
+        "[OCR-SCAN] %dx%d: text_chars=%d coverage=%.2f%% detections=%d (%d ms)",
+        result.width, result.height, result.text_chars, result.coverage_pct,
+        result.detections, elapsed_ms,
+    )
+    return {
+        "text_chars": result.text_chars,
+        "text_coverage_pct": result.coverage_pct,
+        "detections": result.detections,
+        "width": result.width,
+        "height": result.height,
+        "min_confidence": conf,
+        "elapsed_ms": elapsed_ms,
+        "engine": "easyocr",
+    }
 
 
 @app.post("/unload")

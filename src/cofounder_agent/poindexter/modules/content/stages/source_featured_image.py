@@ -218,7 +218,10 @@ def resolve_stage_timeout_seconds(site_config: Any) -> int:
     # a cold Qwen load can consume most of one) plus up to three judge calls.
     # The floor must cover it or the node wrapper kills the render it asked
     # for — the exact bug this function exists to prevent.
-    from poindexter.services.image_fanout import fanout_enabled
+    from poindexter.services.image_fanout import (
+        fanout_enabled,
+        text_scan_budget_seconds,
+    )
 
     if fanout_enabled(site_config):
         fanout_render = (
@@ -226,7 +229,12 @@ def resolve_stage_timeout_seconds(site_config: Any) -> int:
             if site_config is not None else 600
         )
         judge_budget = 3 * 150
-        budget += 2 * int(fanout_render) + judge_budget
+        # Every candidate is text-scanned before judging, and the first scan
+        # can land while image-gen restarts from the fan-out's hard unload.
+        budget += (
+            2 * int(fanout_render) + judge_budget
+            + text_scan_budget_seconds(site_config)
+        )
     return budget
 
 
@@ -903,6 +911,10 @@ async def _try_image_gen_featured(
                 task_id=task_id,
             )
             if fanout_result is not None:
+                # (None, meta) is a verdict: every candidate — zimage included —
+                # was excluded by the shared text scan. output_path goes None on
+                # purpose, so the no-image path below runs instead of shipping
+                # the zimage render the scan just rejected.
                 output_path, server_meta = fanout_result
 
         if output_path is None:
@@ -1353,7 +1365,7 @@ async def _render_image_gen(
         return None, {"transient": True, "failure": f"HTTP {resp.status_code}"}
 
     if resp.status_code != 200:
-        from poindexter.services.image_ocr_gate import (
+        from poindexter.services.image_text_scan import (
             describe_ocr_gate_rejection,
             is_ocr_gate_rejection,
             safe_json,

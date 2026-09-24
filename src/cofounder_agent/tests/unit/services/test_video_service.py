@@ -137,3 +137,48 @@ class TestConsumeImageGenResponse:
             output_path=str(tmp_path / "f.png"), frame_label="t",
         )
         assert got is None
+
+
+class TestOcrRejectionIsNamed:
+    """A shot still blocked by image-gen's text gate (HTTP 422) is a verdict,
+    not a server fault — the log line has to say which."""
+
+    @pytest.mark.asyncio
+    async def test_422_gate_rejection_is_logged_as_a_verdict(self, tmp_path, caplog):
+        import logging
+
+        from poindexter.services.video_service import _consume_image_gen_response
+
+        resp = MagicMock()
+        resp.status_code = 422
+        resp.text = "{}"
+        resp.json = MagicMock(return_value={"detail": {
+            "error": "ocr_gate_rejected", "ocr_gate_status": "fail",
+            "ocr_text_chars": 44, "threshold": 6, "ocr_gate_attempts": 3,
+        }})
+        with caplog.at_level(logging.WARNING):
+            got = await _consume_image_gen_response(
+                resp, image_gen_url="http://ig", output_path=str(tmp_path / "f.png"),
+                frame_label="shot 3",
+            )
+        assert got is None
+        assert "OCR text-leakage gate rejected" in caplog.text
+        assert "not a transient failure" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_other_non_200_keeps_the_generic_message(self, tmp_path, caplog):
+        import logging
+
+        from poindexter.services.video_service import _consume_image_gen_response
+
+        resp = MagicMock()
+        resp.status_code = 503
+        resp.text = "degraded"
+        with caplog.at_level(logging.WARNING):
+            got = await _consume_image_gen_response(
+                resp, image_gen_url="http://ig", output_path=str(tmp_path / "f.png"),
+                frame_label="shot 3",
+            )
+        assert got is None
+        assert "image-gen returned 503" in caplog.text
+        resp.json.assert_not_called()

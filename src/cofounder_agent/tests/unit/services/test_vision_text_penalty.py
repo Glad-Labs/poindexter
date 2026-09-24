@@ -460,3 +460,193 @@ class TestImageRelevanceTextPenalty:
         assert review is not None
         assert review.score == pytest.approx(5.0)
         assert review.approved is False
+
+
+# ---------------------------------------------------------------------------
+# Measured coverage (2026-09-23)
+#
+# The ramp above is unchanged; only its INPUT moved. For an image whose kind
+# forbids text, services/image_text_scan.py OCR-measures the share of the
+# frame the text boxes cover, and that number replaces the judge's eyeballed
+# estimate. The estimate stays the fallback when the scan is unavailable, and
+# a kind whose text IS its content (chart / screenshot / brand hero) takes no
+# text penalty at all.
+# ---------------------------------------------------------------------------
+
+
+def _stub_scan(monkeypatch, *, status="pass", coverage=0.0, calls=None):
+    from poindexter.services import image_text_scan as its
+
+    async def fake(image, *, kind, site_config=None, settings=None, backend=None):
+        if calls is not None:
+            calls.append(kind)
+        measured = status in ("pass", "fail")
+        return its.ImageTextScan(
+            status=status, kind=kind, policy="forbidden",
+            text_chars=20 if measured else None,
+            coverage_pct=coverage if measured else None,
+        )
+
+    monkeypatch.setattr(its, "scan_image_text", fake)
+
+
+CHART_CONTENT = (
+    "Benchmarks below. "
+    '<img src="https://r2.example.dev/images/charts/ab12cd34.png" alt="chart"/>'
+)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("_stub_image_download", "_no_thinking_bump")
+class TestMeasuredTextCoverage:
+    async def test_measured_coverage_replaces_a_judge_that_missed_the_text(
+        self, monkeypatch,
+    ):
+        """The judge says 0% text; the boxes say 40%. The boxes win."""
+        _stub_scan(monkeypatch, coverage=40.0)
+        qa = _qa(monkeypatch, {
+            "scores": [95], "text_coverage": [0], "reasons": ["x"], "overall": 95,
+        })
+
+        review = await qa._check_image_relevance("t", "topic", CONTENT)
+
+        assert review is not None
+        assert review.score == pytest.approx(35.0)
+        assert "text 40% of frame, measured" in review.feedback
+
+    async def test_measured_clean_frame_overrides_a_judged_estimate(
+        self, monkeypatch,
+    ):
+        _stub_scan(monkeypatch, coverage=0.0)
+        qa = _qa(monkeypatch, {
+            "scores": [90], "text_coverage": [40], "reasons": ["x"], "overall": 90,
+        })
+
+        review = await qa._check_image_relevance("t", "topic", CONTENT)
+
+        assert review is not None
+        assert review.score == pytest.approx(90.0)
+
+    async def test_unavailable_scan_falls_back_to_the_judge_estimate(
+        self, monkeypatch,
+    ):
+        """'Could not verify' must never read as a measured clean 0."""
+        _stub_scan(monkeypatch, status="unavailable")
+        qa = _qa(monkeypatch, {
+            "scores": [95], "text_coverage": [40], "reasons": ["x"], "overall": 95,
+        })
+
+        review = await qa._check_image_relevance("t", "topic", CONTENT)
+
+        assert review is not None
+        assert review.score == pytest.approx(35.0)
+        assert "judged" in review.feedback
+
+    async def test_chart_text_is_content_not_a_defect(self, monkeypatch):
+        calls: list = []
+        _stub_scan(monkeypatch, coverage=60.0, calls=calls)
+        qa = _qa(monkeypatch, {
+            "scores": [88], "text_coverage": [45], "reasons": ["axis labels"],
+            "overall": 88,
+        })
+
+        review = await qa._check_image_relevance("t", "topic", CHART_CONTENT)
+
+        assert review is not None
+        assert review.score == pytest.approx(88.0)
+        assert calls == []  # an expected-text kind is never sent to the scanner
+
+    async def test_missing_judge_array_does_not_page_when_every_image_is_measured(
+        self, monkeypatch,
+    ):
+        emitted: list[dict] = []
+        import poindexter.utils.findings as findings
+
+        monkeypatch.setattr(findings, "emit_finding", lambda **kw: emitted.append(kw))
+        _stub_scan(monkeypatch, coverage=40.0)
+        qa = _qa(monkeypatch, {"scores": [95], "reasons": ["x"], "overall": 95})
+
+        review = await qa._check_image_relevance("t", "topic", CONTENT)
+
+        assert review is not None
+        assert review.score == pytest.approx(35.0)  # the measurement still bites
+        assert emitted == []
+
+    async def test_unknown_url_kind_keeps_the_judged_path(self, monkeypatch):
+        """An image the URL can't classify is not scanned — exactly the #3973
+        behaviour, so an unrecognised host changes nothing."""
+        calls: list = []
+        _stub_scan(monkeypatch, coverage=0.0, calls=calls)
+        qa = _qa(monkeypatch, {
+            "scores": [95], "text_coverage": [40], "reasons": ["x"], "overall": 95,
+        })
+        content = '<img src="https://r2.example.dev/a.png"/>'
+
+        review = await qa._check_image_relevance("t", "topic", content)
+
+        assert review is not None
+        assert review.score == pytest.approx(35.0)
+        assert calls == []
+
+    async def test_scanner_down_is_asked_once_per_rail_call(self, monkeypatch):
+        calls: list = []
+        _stub_scan(monkeypatch, status="unavailable", calls=calls)
+        qa = _qa(monkeypatch, {
+            "scores": [90, 90], "text_coverage": [0, 0], "reasons": ["a", "b"],
+            "overall": 90,
+        })
+        content = (
+            '<img src="https://r2.example.dev/images/inline/aaaaaaaaaaaa.png"/>\n'
+            '<img src="https://r2.example.dev/images/inline/bbbbbbbbbbbb.png"/>'
+        )
+
+        await qa._check_image_relevance("t", "topic", content)
+
+        assert calls == ["generate"]
+
+    async def test_real_default_scan_path_degrades_to_judged(self, monkeypatch):
+        """No stub: the conftest-isolated backend reports unavailable and the
+        rail behaves exactly as it did before measurement existed."""
+        qa = _qa(monkeypatch, {
+            "scores": [95], "text_coverage": [40], "reasons": ["x"], "overall": 95,
+        })
+
+        review = await qa._check_image_relevance("t", "topic", CONTENT)
+
+        assert review is not None
+        assert review.score == pytest.approx(35.0)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("_stub_image_download", "_no_thinking_bump")
+class TestPassThresholdSetting:
+    async def test_deliberate_zero_threshold_is_honoured(self, monkeypatch):
+        """`or 60` used to turn a configured 0 into 60."""
+        qa = _qa(
+            monkeypatch,
+            {"scores": [20], "text_coverage": [0], "reasons": ["x"], "overall": 20},
+            qa_vision_pass_threshold="0",
+        )
+
+        review = await qa._check_image_relevance("t", "topic", CONTENT)
+
+        assert review is not None
+        assert review.approved is True
+
+    async def test_blank_threshold_uses_the_default(self, monkeypatch):
+        qa = _qa(
+            monkeypatch,
+            {"scores": [59], "text_coverage": [0], "reasons": ["x"], "overall": 59},
+            qa_vision_pass_threshold="",
+        )
+
+        review = await qa._check_image_relevance("t", "topic", CONTENT)
+
+        assert review is not None
+        assert review.approved is False
+
+    def test_threshold_is_seeded(self):
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
+
+        assert DEFAULTS["qa_vision_pass_threshold"] == str(PASS_THRESHOLD)
+        assert METADATA["qa_vision_pass_threshold"]["value_type"] == "integer"

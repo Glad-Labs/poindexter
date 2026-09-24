@@ -8,12 +8,12 @@ defaults to `false`).
 For the **featured (hero) image only**, the same brief is rendered by up to
 four models and a vision judge picks the winner:
 
-| Candidate | Renderer                                                     | Warm speed | Notes                                                                         |
-| --------- | ------------------------------------------------------------ | ---------- | ----------------------------------------------------------------------------- |
-| `zimage`  | production image-gen server (`_render_image_gen`, OCR-gated) | ~10-15s    | today's model; the stage renders it first while the server is warm            |
-| `schnell` | FLUX.1-schnell fp8 via the ComfyUI sidecar                   | ~3s        | Apache-2.0 (schnell, NOT dev)                                                 |
-| `klein`   | FLUX.2-klein-4B distilled via the ComfyUI sidecar            | ~4s        | Apache-2.0 and ungated (4B ONLY — see the licence note below)                 |
-| `qwen`    | Qwen-Image fp8 via the ComfyUI sidecar                       | ~24s       | first load after an unload takes minutes — the per-candidate budget covers it |
+| Candidate | Renderer                                          | Warm speed | Notes                                                                         |
+| --------- | ------------------------------------------------- | ---------- | ----------------------------------------------------------------------------- |
+| `zimage`  | production image-gen server (`_render_image_gen`) | ~10-15s    | today's model; the stage renders it first while the server is warm            |
+| `schnell` | FLUX.1-schnell fp8 via the ComfyUI sidecar        | ~3s        | Apache-2.0 (schnell, NOT dev)                                                 |
+| `klein`   | FLUX.2-klein-4B distilled via the ComfyUI sidecar | ~4s        | Apache-2.0 and ungated (4B ONLY — see the licence note below)                 |
+| `qwen`    | Qwen-Image fp8 via the ComfyUI sidecar            | ~24s       | first load after an unload takes minutes — the per-candidate budget covers it |
 
 The 2026-08-15 bake-off motivated this: schnell/qwen beat z-image on prompt
 adherence for diagram/text-adjacent briefs, and z-image is structurally
@@ -53,8 +53,11 @@ the catalog stops being single-model monotone.
   zimage via its existing retry/OCR path, then hands off:
   fan-out returns the winning `(path, meta)` and the stage's R2-upload /
   `gen_meta` flow continues unchanged (`gen_meta.fanout` carries winner +
-  scores). Fan-out returning nothing → the existing Pexels-stock fallback,
-  untouched. `resolve_stage_timeout_seconds` grows by the fan-out budget so
+  scores + the `excluded` names, `gen_meta.text_scan` the winner's scan).
+  Fan-out returning `None` (nothing rendered) → the existing no-image path,
+  untouched. Fan-out returning `(None, meta)` (every candidate text-rejected)
+  → also the no-image path, and deliberately **not** a fallback to the zimage
+  render the scan just rejected. `resolve_stage_timeout_seconds` grows by the fan-out budget so
   the node wrapper can't kill a render it asked for.
 - **Judge** — mirrors `shot_vision_qa.score_shot_frame`: one image per call
   to `qa_vision_model` via `dispatch_complete` (cost_logs + Langfuse free),
@@ -70,6 +73,33 @@ the catalog stops being single-model monotone.
   images by construction. That is a property of the design, not a model
   defect; read a cross-candidate inconsistency as evidence about the _rule
   shape_ before concluding the judge is miscalibrated.
+
+- **Every candidate faces the same text scan — before the judge.**
+  `_scan_candidates` runs `services/image_text_scan.py` over all four renders
+  (zimage included, even though image-gen's own gate already passed it — same
+  instrument, same threshold, and it earns a coverage figure like its rivals).
+  A candidate over `image_ocr_gate_max_chars` under `image_ocr_gate_enforce`
+  is **excluded**: it never reaches the judge and is written under the row's
+  `excluded` list, not `candidates`, with its `text_scan`
+  (`status`, `text_chars`, `coverage_pct`, `max_chars`). A zimage excluded
+  this way gets `zimage_absent_reason="ocr_gate_rejected"`, the same label as
+  the server's own 422, so the panel groups them. `unavailable` competes
+  (unless `image_ocr_gate_fail_closed_when_unavailable`) with its status
+  recorded; once one scan comes back unavailable the rest of that fan-out
+  are recorded unavailable without re-asking, so a down scanner costs one
+  retry budget, not four. Excluded renders are still retained to R2 so
+  "what did the scan reject?" is answerable by looking. The stage's node-timeout
+  floor grows by `text_scan_budget_seconds`. Details and the per-kind policy:
+  [`image-ocr-text-gate.md`](image-ocr-text-gate.md#scanning-any-image).
+
+  **Why:** until 2026-09-23 only zimage faced a text gate. Over 30 days it was
+  ejected from 19 of 74 contests (26%; 4 of 7 in the last week) while the
+  three unscanned ComfyUI candidates won 77% of heroes, their text discipline
+  resting on a prompt clause measured not to work and a judge that scored a
+  hero while calling its gibberish headline "its title". Re-scanning the
+  retained candidates of task 243f3123 with the real reader: the winning
+  `klein` render carried 27 characters (`TLMENEITIR`, …) and `schnell` 7
+  (`Macline`) — both would now be excluded; `qwen` was clean.
 
 - **Judge output budget — `_judge_token_budget`.** qwen3-vl's reasoning
   channel shares `max_tokens` with the JSON answer, and when the trace
@@ -293,6 +323,18 @@ Two panels at the foot of the Pipeline board, beside the wins/presence table:
   looking for a parser bug that did not exist. Rows written before that date
   all read `unparseable` regardless of which they were.
 
+Text-rejected candidates never appear in either panel: they live under the
+row's `excluded` list, so an exclusion is never miscounted as a lost score. The
+wins-&-presence table reports them in its own **Text-rejected** column (and
+"Competed" replaces "Rendered" — a rejected render did render, it just never
+competed), and the recent-renders table lists them with their character count.
+`ProbeFanoutDatasetHealthJob` watches the scan itself: it pages when more than
+`image_fanout_probe_max_text_scan_unavailable_pct` (10%) of scanned candidates
+competed **unverified**. The scan fails open by design, so without that watcher
+a dark scanner (image-gen down, or an image that predates `POST /scan`) would
+leave rows that look complete while applying no rule at all. Rows where every
+candidate was excluded are classified `no_contest`, not `judge_down`.
+
 ### The judge's model is pinned here
 
 `image_fanout_judge_model` selects the vision model that scores candidates.
@@ -323,8 +365,8 @@ Across the 2026-08-31 → 09-10 calibration corpus (34 image-backed rows, all
 cites legible text.** The other criteria only separate the survivors.
 
 That makes the cap's reliability the judge's reliability, and until
-2026-09-10 it was inverted: it fired readily on *garbled* pseudo-glyphs and
-missed *readable* digits. In five audited rows the capped candidate carried
+2026-09-10 it was inverted: it fired readily on _garbled_ pseudo-glyphs and
+missed _readable_ digits. In five audited rows the capped candidate carried
 visibly **less** text than a sibling scoring ≥ 90 — most starkly a caliper
 render whose large, transcribable scale digits scored 95 and won the row
 while the three siblings with smaller markings scored 38–40, and a
@@ -341,8 +383,10 @@ brief itself sometimes asks for code fragments or blueprint annotations.
 
 ## Known gaps (Phase 2)
 
-- ComfyUI candidates have **no OCR gate** — text discipline rides the
-  prompt's textless clause + the judge's legible-text score cap (≤40).
+- ~~ComfyUI candidates have **no OCR gate**~~ — closed 2026-09-23: every
+  candidate faces the shared text scan before judging (above). The prompt's
+  textless clause and the judge's legible-text cap remain, but as secondary
+  signals, not the control.
 - Inline images stay single-model (fan-out is featured-only).
 - The class→provider routing map (seeded from this phase's audit rows) and
   provider extraction into registered ImageProvider plugins.
@@ -365,11 +409,17 @@ brief itself sometimes asks for code fragments or blueprint annotations.
   answerable, because the judge model changed on 2026-09-09 and only four rows
   post-date it. Tracked in Glad-Labs/poindexter#1032.
 
-- **zimage's numbers are conditioned on a gate its rivals do not face.** It is
-  absent from 11 of 34 image-backed rows, every one `ocr_gate_rejected`, so
-  its *worst* renders are deleted from the dataset rather than scored badly
-  while the ComfyUI three carry theirs into the judge. Its median 95 is a
-  survivor statistic. Any routing map seeded from these rows has to model that
-  selection, or gate the other three the same way. (Relatedly,
-  `image_ocr_gate_max_chars=6` passed a hero with **"HUOH"** across the top at
-  full size — four characters is under the limit.)
+- **Retired 2026-09-23 — zimage's numbers were a survivor statistic.** Until
+  every candidate was scanned, zimage was absent from 11 of 34 image-backed
+  rows, every one `ocr_gate_rejected`: its _worst_ renders were deleted from
+  the dataset while the ComfyUI three carried theirs into the judge, so its
+  median 95 was conditioned on a gate its rivals did not face. The shared
+  scan removes that asymmetry **from 2026-09-23 on** — rows from then carry an
+  `excluded` array (possibly empty), and the "Text-rejected" column on the
+  wins-&-presence panel counts every candidate's exclusions the same way.
+  **Rows before that date still carry the bias**: a routing map seeded from
+  the full history must either start at 2026-09-23 or model the selection for
+  the older rows. (Still open: `image_ocr_gate_max_chars=6` passed a hero with
+  **"HUOH"** across the top at full size — four characters is under the
+  limit. Coverage is now recorded per candidate, so a coverage-based
+  threshold can be evaluated against real rows before anyone adopts one.)

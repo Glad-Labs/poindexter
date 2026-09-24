@@ -4,7 +4,7 @@ Phase 1 of the multi-provider image plan (2026-08-15 bake-off follow-up):
 for the FEATURED image only, the same brief is rendered by up to four
 models and a vision judge picks the winner —
 
-- ``zimage`` — the production image-gen server render (OCR-gated). The
+- ``zimage`` — the production image-gen server render. The
   *stage* renders this one through its existing ``_render_image_gen`` path
   and passes the file in; this service never imports stage code (services
   must not depend on ``modules/content`` — the engine never imports content).
@@ -30,6 +30,17 @@ render writes an ``image_fanout_judged`` row to ``audit_log`` (winner +
 per-candidate scores + the brief) — the Phase-2 class→provider routing map
 is seeded from these rows' win rates, so running Phase 1 IS collecting the
 dataset.
+
+**Every candidate faces the same text scan before it is judged.** Until
+2026-09-23 only ``zimage`` was OCR-gated (inside image-gen's ``/generate``);
+the ComfyUI three were never scanned, so the one provider held to the no-text
+rule was the one being benched — ejected from 26% of contests while the
+unscanned three won 77% of heroes. ``services/image_text_scan.py`` now scans
+all four with one instrument and one threshold (``image_ocr_gate_max_chars``).
+A candidate over it is EXCLUDED — recorded under the row's ``excluded`` list,
+not ``candidates`` — so the win-rate panel can tell "lost" from "never
+competed". If every candidate is excluded the fan-out returns ``(None, meta)``:
+an OCR rejection is a verdict, and the stage takes its no-image path.
 
 Judging mirrors ``shot_vision_qa.score_shot_frame``: one image per call to
 ``qa_vision_model`` through ``dispatch_complete`` (cost_logs + Langfuse for
@@ -102,10 +113,10 @@ _DEFAULT_KLEIN_MODEL = "flux-2-klein-4b.safetensors"
 _DEFAULT_KLEIN_TE = "qwen_3_4b.safetensors"
 _DEFAULT_KLEIN_VAE = "flux2-vae.safetensors"
 
-# Appended to every ComfyUI candidate's positive prompt. The production
-# zimage path has a server-side OCR gate; the ComfyUI candidates have no
-# equivalent yet (Phase-2 note in the doc), so text discipline rides the
-# prompt AND the judge's no-legible-text criterion.
+# Appended to every ComfyUI candidate's positive prompt. NOT the text control
+# — the 2026-07 bake-off measured a "textless" positive clause leaving 25.33
+# leaked chars/image — it only shifts the odds. The control is the text scan
+# every candidate faces in ``_scan_candidates`` before judging.
 _NO_TEXT_CLAUSE = (
     "no text, no words, no letters, no captions, no labels, textless "
     "composition"
@@ -121,6 +132,9 @@ class FanoutCandidate:
     meta: dict[str, Any] = field(default_factory=dict)
     score: float | None = None
     reason: str = ""
+    #: ``ImageTextScan.to_dict()`` for this candidate — None only when the
+    #: scan step never ran (it always runs in ``run_featured_fanout``).
+    text_scan: dict[str, Any] | None = None
 
 
 def _sc_get(site_config: Any, key: str, default: Any) -> Any:
@@ -604,6 +618,82 @@ async def _score_candidate(
     candidate.score, candidate.reason = _parse_score(text)
 
 
+async def _scan_candidates(
+    candidates: list[FanoutCandidate], *, site_config: Any,
+) -> list[FanoutCandidate]:
+    """Text-scan every candidate; return the ones the verdict EXCLUDES.
+
+    Sequential on purpose: the scanner is one CPU-bound OCR reader on the
+    image-gen server, so parallel requests would only queue there. Each
+    candidate is a ``generate``-kind render, and all four are measured by the
+    same instrument at the same threshold — the symmetry is the point.
+
+    The zimage candidate is scanned too even though image-gen's own gate
+    already passed it: that gives it a coverage figure like its rivals, and
+    keeps the rule in one place instead of trusting a second copy of it.
+
+    ``unavailable`` keeps the candidate in the contest (unless fail-closed is
+    configured) with the status recorded — scanning being down must not turn
+    into "no hero image at all", but it must not read as clean either.
+
+    Once one scan comes back ``unavailable`` the rest are recorded unavailable
+    without asking again: the scanner is one server, and a down server would
+    otherwise cost every candidate its full retry budget and push the stage
+    toward its node timeout (``text_scan_budget_seconds`` assumes this).
+    """
+    from dataclasses import replace
+
+    from poindexter.services import image_text_scan
+
+    settings = image_text_scan.TextScanSettings.from_site_config(site_config)
+    excluded: list[FanoutCandidate] = []
+    scanner_down: Any = None
+    for c in candidates:
+        if scanner_down is not None:
+            scan = replace(
+                scanner_down,
+                reason=f"not attempted — scanner unavailable earlier in this "
+                       f"fan-out: {scanner_down.reason}"[:300],
+            )
+        else:
+            scan = await image_text_scan.scan_image_text(
+                c.path, kind=image_text_scan.KIND_GENERATE,
+                site_config=site_config, settings=settings,
+            )
+            if scan.status == image_text_scan.STATUS_UNAVAILABLE:
+                scanner_down = scan
+        c.text_scan = scan.to_dict()
+        if image_text_scan.should_exclude(scan, settings):
+            excluded.append(c)
+            logger.warning(
+                "[IMAGE_FANOUT] %s excluded by the text scan (status=%s, "
+                "chars=%s, coverage=%s%%, max_chars=%s)",
+                c.name, scan.status, scan.text_chars, scan.coverage_pct,
+                scan.max_chars,
+            )
+    return excluded
+
+
+def text_scan_budget_seconds(site_config: Any) -> int:
+    """Seconds the fan-out's text scans can take, for the stage's node floor.
+
+    The first scan may land while image-gen is coming back from the hard
+    unload this service issues before the ComfyUI renders, so it gets the full
+    retry budget. The remaining candidates hit a warm server (or are skipped
+    once the scanner is known down — see ``_scan_candidates``), so one request
+    timeout each.
+    """
+    from poindexter.services.image_text_scan import TextScanSettings
+
+    cfg = TextScanSettings.from_site_config(site_config)
+    if not cfg.enabled:
+        return 0
+    first = cfg.attempts * cfg.timeout_s + (cfg.attempts - 1) * cfg.backoff_s
+    others = (len(_csv(_sc_get(
+        site_config, "image_fanout_candidates", _DEFAULT_CANDIDATES))) - 1)
+    return int(first + max(0, others) * cfg.timeout_s)
+
+
 def _pick_winner(
     candidates: list[FanoutCandidate], priority: list[str],
 ) -> FanoutCandidate:
@@ -690,33 +780,48 @@ async def _retain_candidates(
 
 async def _record_outcome(
     pool: Any, *, task_id: str | None, brief: str,
-    candidates: list[FanoutCandidate], winner: FanoutCandidate,
+    candidates: list[FanoutCandidate], winner: FanoutCandidate | None,
     judge_ran: bool, zimage_absent_reason: str = "",
+    excluded: list[FanoutCandidate] | None = None,
 ) -> None:
     """Write the ``image_fanout_judged`` audit row — the Phase-2 router's
     training data AND the Pipeline-board win-rate panel's source. Best-effort:
-    losing the row loses telemetry, never the image."""
+    losing the row loses telemetry, never the image.
+
+    ``candidates`` are the ones that COMPETED. Text-scan exclusions go under
+    ``excluded`` instead: they never faced the judge, and counting them as
+    candidates would read a never-competed render as a loss (and, with its
+    NULL score, as a judge failure on the loss-rate panel). ``winner`` is None
+    only when every candidate was excluded — the row is still written, because
+    a contest nobody could enter is exactly what the dataset must show.
+    """
     if pool is None:
         return
     from poindexter.services.audit_event_schemas import validate_event_details
 
+    def _entry(c: FanoutCandidate) -> dict[str, Any]:
+        return {
+            "name": c.name, "score": c.score, "reason": c.reason[:200],
+            "elapsed_s": c.meta.get("elapsed_s"),
+            "width": c.meta.get("width"), "height": c.meta.get("height"),
+            # The image this score describes. None (key omitted) when
+            # retention is off or the upload missed — see _retain_candidates.
+            "url": c.meta.get("url"),
+            # The vision model that produced this score. Without it, a
+            # judge-model swap is invisible in the dataset and the rows on
+            # either side read as one population — see resolve_judge_model.
+            "judge_model": c.meta.get("judge_model"),
+            # Measured text (chars + frame coverage) and the verdict, so a
+            # score can be read against how much text the image carried.
+            "text_scan": c.text_scan,
+        }
+
     payload: dict[str, Any] = {
-        "winner": winner.name,
+        "winner": winner.name if winner is not None else None,
         "judge_ran": judge_ran,
         "brief": brief[:300],
-        "candidates": [
-            {"name": c.name, "score": c.score, "reason": c.reason[:200],
-             "elapsed_s": c.meta.get("elapsed_s"),
-             "width": c.meta.get("width"), "height": c.meta.get("height"),
-             # The image this score describes. None (key omitted) when
-             # retention is off or the upload missed — see _retain_candidates.
-             "url": c.meta.get("url"),
-             # The vision model that produced this score. Without it, a
-             # judge-model swap is invisible in the dataset and the rows on
-             # either side read as one population — see resolve_judge_model.
-             "judge_model": c.meta.get("judge_model")}
-            for c in candidates
-        ],
+        "candidates": [_entry(c) for c in candidates],
+        "excluded": [_entry(c) for c in (excluded or [])],
     }
     if zimage_absent_reason:
         payload["zimage_absent_reason"] = zimage_absent_reason
@@ -749,15 +854,21 @@ async def run_featured_fanout(
     site_config: Any,
     pool: Any,
     task_id: str | None,
-) -> tuple[str, dict[str, Any]] | None:
-    """Render the ComfyUI candidates, judge everything present, return the
-    winner ``(path, meta)``.
+) -> tuple[str | None, dict[str, Any]] | None:
+    """Render the ComfyUI candidates, text-scan and judge everything present,
+    return the winner ``(path, meta)``.
 
     ``zimage_path`` is the stage's own OCR-gated render (None when it failed
     or was gate-blocked — the fan-out's other candidates then cover for it,
     which is exactly the class the bake-off showed z-image cannot serve).
-    Returns ``None`` only when NO candidate rendered — the stage then falls
-    through to its existing Pexels-stock path unchanged.
+
+    Three outcomes:
+
+    * ``(path, meta)`` — a winner.
+    * ``(None, meta)`` — candidates rendered but the text scan excluded every
+      one. A verdict, not a window: the stage must take its no-image path and
+      must NOT fall back to ``zimage_path`` (it was scanned and excluded too).
+    * ``None`` — NO candidate rendered; the stage's existing path is unchanged.
     """
     wanted = _csv(_sc_get(
         site_config, "image_fanout_candidates", _DEFAULT_CANDIDATES))
@@ -818,6 +929,13 @@ async def run_featured_fanout(
     if not candidates:
         return None
 
+    # Before judging: every candidate faces the same text scan, so no model is
+    # held to a rule its rivals skip (see the module docstring).
+    excluded = await _scan_candidates(candidates, site_config=site_config)
+    rendered = candidates
+    excluded_ids = {id(c) for c in excluded}
+    candidates = [c for c in rendered if id(c) not in excluded_ids]
+
     judge_wanted = fanout_enabled(site_config) and str(_sc_get(
         site_config, "image_fanout_judge_enabled", True),
     ).strip().lower() not in ("false", "0", "no", "off")
@@ -828,7 +946,7 @@ async def run_featured_fanout(
                 c, brief=prompt, site_config=site_config, pool=pool)
         judge_ran = any(c.score is not None for c in candidates)
 
-    winner = _pick_winner(candidates, priority)
+    winner = _pick_winner(candidates, priority) if candidates else None
     # Router-dataset completeness: when the production model never made it
     # into the fan-out, record WHY (the stage's failure meta rides in via
     # zimage_meta) — 24/32 early rows were zimage-less with the reason
@@ -841,7 +959,11 @@ async def run_featured_fanout(
     # this — one unexplained absence that cost a round of forensics to rule
     # out as a starvation.)
     zimage_absent_reason = ""
-    if not any(c.name == "zimage" for c in candidates):
+    if any(c.name == "zimage" for c in excluded):
+        # Same label the stage's own 422 produces: both mean "the text rule
+        # kept it out", which is what the panel groups on.
+        zimage_absent_reason = "ocr_gate_rejected"
+    elif not any(c.name == "zimage" for c in candidates):
         if "zimage" not in wanted:
             zimage_absent_reason = "not in candidates"
         else:
@@ -854,17 +976,21 @@ async def run_featured_fanout(
             )[:200]
     # Before the row is written, and before the ComfyUI free below: the
     # candidate temp files are still on disk only until this frame ends.
+    # Excluded candidates are retained too: "what did the text scan reject?"
+    # has to be answerable by looking, the same as "did the judge's score
+    # match the image?".
     await _retain_candidates(
-        candidates, task_id=task_id, site_config=site_config)
+        rendered, task_id=task_id, site_config=site_config)
     await _record_outcome(
         pool, task_id=task_id, brief=prompt, candidates=candidates,
         winner=winner, judge_ran=judge_ran,
-        zimage_absent_reason=zimage_absent_reason,
+        zimage_absent_reason=zimage_absent_reason, excluded=excluded,
     )
     logger.info(
-        "[IMAGE_FANOUT] winner=%s (judge_ran=%s) scores=%s",
-        winner.name, judge_ran,
+        "[IMAGE_FANOUT] winner=%s (judge_ran=%s) scores=%s excluded=%s",
+        winner.name if winner else None, judge_ran,
         {c.name: c.score for c in candidates},
+        [c.name for c in excluded],
     )
 
     # Free the ComfyUI models before the post moves on (fix for the 8-day
@@ -887,17 +1013,28 @@ async def run_featured_fanout(
                 "[IMAGE_FANOUT] post-fanout comfyui free failed (%s)", exc,
             )
 
-    meta = dict(winner.meta)
-    meta["fanout"] = {
-        "winner": winner.name,
+    fanout_meta = {
+        "winner": winner.name if winner else None,
         "judge_ran": judge_ran,
         "scores": {c.name: c.score for c in candidates},
+        "excluded": [c.name for c in excluded],
     }
+    if winner is None:
+        logger.warning(
+            "[IMAGE_FANOUT] every rendered candidate (%s) was excluded by the "
+            "text scan — no fan-out winner; the stage takes its no-image path",
+            ", ".join(c.name for c in excluded),
+        )
+        return None, {"fanout": fanout_meta, "ocr_gate_rejected": True}
+    meta = dict(winner.meta)
+    meta["fanout"] = fanout_meta
+    meta["text_scan"] = winner.text_scan
     return winner.path, meta
 
 
 __all__ = [
     "FanoutCandidate",
+    "text_scan_budget_seconds",
     "fanout_enabled",
     "klein_graph",
     "run_featured_fanout",

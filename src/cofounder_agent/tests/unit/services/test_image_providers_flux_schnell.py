@@ -479,3 +479,59 @@ class TestFluxSchnellProviderFetch:
 # that lived here always failed. Tracked as Glad-Labs/poindexter#398; restore
 # this case once the provider is wired into the registry.
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Text scan (2026-09-23) — the FLUX sidecar has no text gate of its own, so
+# the provider scans its `generate`-kind render through
+# services/image_text_scan.py, the same rule image-gen applies server-side.
+# ---------------------------------------------------------------------------
+
+
+def _scan_result(status: str):
+    from poindexter.services.image_text_scan import ImageTextScan
+
+    measured = status in ("pass", "fail")
+    return ImageTextScan(
+        status=status, kind="generate", policy="forbidden",
+        text_chars=(30 if status == "fail" else 0) if measured else None,
+        coverage_pct=(25.0 if status == "fail" else 0.0) if measured else None,
+        max_chars=6,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestFluxSchnellTextScan:
+    async def test_text_rejected_render_returns_nothing_and_is_deleted(self, tmp_path):
+        output_path = tmp_path / "out.png"
+        with _mock_httpx_post(_image_response()), patch(
+            "poindexter.services.image_text_scan.scan_image_text",
+            AsyncMock(return_value=_scan_result("fail")),
+        ) as scan:
+            results = await FluxSchnellProvider().fetch(
+                "a hero", {"output_path": str(output_path)},
+            )
+        assert results == []
+        assert not output_path.exists()
+        assert scan.await_args.kwargs["kind"] == "generate"
+
+    async def test_clean_render_carries_its_scan(self, tmp_path):
+        with _mock_httpx_post(_image_response()), patch(
+            "poindexter.services.image_text_scan.scan_image_text",
+            AsyncMock(return_value=_scan_result("pass")),
+        ):
+            [r] = await FluxSchnellProvider().fetch(
+                "a hero", {"output_path": str(tmp_path / "out.png")},
+            )
+        assert r.metadata["text_scan"]["status"] == "pass"
+        assert r.metadata["text_scan"]["text_chars"] == 0
+
+    async def test_unavailable_scan_ships_but_says_unverified(self, tmp_path):
+        """A broken OCR dep must not become an image outage — nor a pass."""
+        with _mock_httpx_post(_image_response()):
+            [r] = await FluxSchnellProvider().fetch(
+                "a hero", {"output_path": str(tmp_path / "out.png")},
+            )
+        assert r.metadata["text_scan"]["status"] == "unavailable"
+        assert "text_chars" not in r.metadata["text_scan"]

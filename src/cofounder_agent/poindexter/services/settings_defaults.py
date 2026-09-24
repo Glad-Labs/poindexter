@@ -1639,6 +1639,10 @@ DEFAULTS: dict[str, str] = {
     # 40%-of-frame headline costs 60 points, which drops a 95 to 35 — under
     # qa_vision_pass_threshold (60).
     'qa_vision_text_penalty_max': '60',
+    # Min text-penalised average per-image score for qa.vision to approve.
+    # Read since the rail existed but never seeded, so every install ran on a
+    # `or 60` literal in code (and a deliberate 0 would have been read as 60).
+    'qa_vision_pass_threshold': '60',
     'qa_vision_text_ignore_coverage_pct': '5',
     'qa_vision_text_full_penalty_pct': '40',
     # why: structured-JSON extraction calls (topic discovery distill +
@@ -2923,6 +2927,32 @@ DEFAULTS: dict[str, str] = {
     # server logs at ERROR. Turn it on when no image at all is preferable to
     # an unverified one.
     'image_ocr_gate_fail_closed_when_unavailable': 'false',
+    # Backend-agnostic text scan (services/image_text_scan.py, 2026-09-23).
+    # The gate above only ever scanned image-gen's OWN renders, so the fan-out's
+    # ComfyUI candidates and the flux_schnell provider were never held to the
+    # no-text rule. The scan applies the SAME image_ocr_gate_* knobs (enabled /
+    # max_chars / min_confidence / enforce / fail_closed) to any image, via POST
+    # /scan on the image-gen server. Empty server_url = image_gen_server_url.
+    'image_text_scan_server_url': '',
+    # Per-request budget. The reader is CPU-only and lazy-loads on first use
+    # in a fresh process (~100 MB of weights from the mounted cache), which the
+    # first scan after a hard unload pays.
+    'image_text_scan_timeout_seconds': '90',
+    # Transport retries — a connection refused while image-gen restarts from
+    # the fan-out's own hard unload is a window, not a verdict. A scan VERDICT
+    # is never retried.
+    'image_text_scan_attempts': '4',
+    'image_text_scan_retry_backoff_seconds': '5',
+    # Text policy per image-provider kind. `forbidden` = scanned and held to
+    # max_chars; `expected` = text is the content (charts, screenshots, the
+    # composed brand hero), never scanned or penalised; `not_applicable` = not
+    # ours to judge (stock photos). A kind missing from BOTH this list and the
+    # code table is not scanned — adding a provider must never start rejecting
+    # its output silently. Listed kinds override the code default one by one.
+    'image_text_kind_policy': (
+        'generate=forbidden,chart=expected,screenshot=expected,'
+        'composed=expected,search=not_applicable'
+    ),
 
     # ----- Video / podcast / TTS -----
     'audio_gen_engine': '',
@@ -4406,6 +4436,12 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'image_fanout_probe_min_sample': '20',
     'image_fanout_probe_max_unscored_pct': '10',
     'image_fanout_probe_min_url_coverage_pct': '95',
+    # Share of text-scanned fan-out candidates whose scan came back
+    # `unavailable` (image-gen down, or a server image that predates POST
+    # /scan). Above this the symmetric text gate is effectively off — every
+    # candidate competes unverified while the rows still look complete — so
+    # the probe pages. A check that scanned nothing has not passed.
+    'image_fanout_probe_max_text_scan_unavailable_pct': '10',
     'llm_decode_split_probe_enabled': 'true',
     # Alert window. Coverage is judged over the last N hours only: a wider window
     # keeps re-reporting the pre-2026-08-26 rows that predate the capture and can
@@ -5519,6 +5555,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_vision_num_predict': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_vision_thinking_num_predict': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_vision_text_penalty_max': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_vision_pass_threshold': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_vision_text_ignore_coverage_pct': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_vision_text_full_penalty_pct': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
@@ -6178,6 +6215,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_ocr_gate_max_attempts': {'value_type': 'integer'},
     'image_ocr_gate_max_chars': {'value_type': 'integer'},
     'image_ocr_gate_min_confidence': {'value_type': 'float'},
+    'image_text_scan_server_url': {'owner': 'image_text_scan', 'value_type': 'url'},
+    'image_text_scan_timeout_seconds': {'owner': 'image_text_scan', 'value_type': 'integer'},
+    'image_text_scan_attempts': {'owner': 'image_text_scan', 'value_type': 'integer'},
+    'image_text_scan_retry_backoff_seconds': {'owner': 'image_text_scan', 'value_type': 'integer'},
+    'image_text_kind_policy': {'owner': 'image_text_scan', 'value_type': 'string'},
     'image_pexels_fallback_keywords': {'owner': 'image_service'},
     'image_prompt_max_tokens': {'value_type': 'integer'},
     'image_prompt_model': {'owner': 'ai_generation', 'value_type': 'model'},
@@ -6582,6 +6624,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_fanout_probe_min_sample': {'owner': 'probe_fanout_dataset_health', 'value_type': 'integer'},
     'image_fanout_probe_max_unscored_pct': {'owner': 'probe_fanout_dataset_health', 'value_type': 'integer'},
     'image_fanout_probe_min_url_coverage_pct': {'owner': 'probe_fanout_dataset_health', 'value_type': 'integer'},
+    'image_fanout_probe_max_text_scan_unavailable_pct': {'owner': 'probe_fanout_dataset_health', 'value_type': 'integer'},
     'llm_decode_split_probe_enabled': {'owner': 'probe_decode_split_coverage', 'value_type': 'boolean'},
     'llm_decode_split_window_hours': {'owner': 'probe_decode_split_coverage', 'value_type': 'integer'},
     'settings_zero_reader_probe_enabled': {'owner': 'probe_zero_reader_settings', 'value_type': 'boolean'},

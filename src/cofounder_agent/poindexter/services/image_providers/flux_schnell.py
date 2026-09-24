@@ -38,6 +38,7 @@ Kind: ``"generate"``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import shutil
@@ -147,6 +148,33 @@ class FluxSchnellProvider:
                     pass
             return []
 
+        # The FLUX sidecar has no text-leakage gate of its own — the image-gen
+        # server's gate only ever scanned image-gen's renders. Scan here so a
+        # `generate`-kind image is held to the same no-text rule whichever
+        # backend drew it. A `fail` is a verdict: drop the file and return
+        # nothing, the same no-image path a failed render takes. `unavailable`
+        # passes through (unless fail-closed is configured) but is recorded.
+        from poindexter.services import image_text_scan
+
+        text_scan = await image_text_scan.scan_image_text(
+            output_path, kind=self.kind, site_config=site_config,
+        )
+        if image_text_scan.should_exclude(
+            text_scan, image_text_scan.TextScanSettings.from_site_config(site_config),
+        ):
+            logger.warning(
+                "[FluxSchnellProvider] render rejected by the text scan "
+                "(status=%s, chars=%s, coverage=%s%%, max_chars=%s) — returning "
+                "no image",
+                text_scan.status, text_scan.text_chars, text_scan.coverage_pct,
+                text_scan.max_chars,
+            )
+            # silent-ok: best-effort delete of a rejected render; the verdict
+            # is already logged above and nothing returns the file.
+            with contextlib.suppress(OSError):
+                os.remove(output_path)
+            return []
+
         url = f"file://{output_path}"
         upload_target = str(config.get("upload_to", "") or "")
         if upload_target == "cloudinary":
@@ -193,6 +221,7 @@ class FluxSchnellProvider:
                     "license": "apache-2.0",
                     "server_url": server_url,
                     "task_id": str(task_id) if task_id is not None else "",
+                    "text_scan": text_scan.to_dict(),
                 },
             ),
         ]

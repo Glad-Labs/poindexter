@@ -605,6 +605,50 @@ def _isolate_ollama_model_arch_probe(request):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_image_text_scan(request):
+    """Keep unit tests off the real image-gen ``POST /scan``.
+
+    ``services/image_text_scan.py`` OCR-scans images by posting them to the
+    image-gen server (``image_gen_server_url``, default
+    ``http://image-gen-server:9836``), and three hot paths now call it: the
+    featured fan-out scans every candidate, ``flux_schnell`` scans its render,
+    and the qa.vision rail scans ``generate``-kind images for a measured text
+    coverage. Unstubbed, every such test either reaches the live server on the
+    operator-box runner (the poindexter#1011 hazard) or burns the scan's
+    transport-retry backoff against an unresolvable name.
+
+    Default: the backend reports itself unavailable — the documented degraded
+    path, which every consumer already handles (fan-out candidates compete
+    with the scan recorded ``unavailable``; qa.vision falls back to the
+    judge's estimate). Tests that need a verdict stub ``scan_image_text`` or
+    pass their own backend; ``@pytest.mark.real_image_text_scan`` opts out for
+    tests of the backend itself (which inject their own transport).
+    """
+    from unittest.mock import AsyncMock, patch
+
+    if request.node.get_closest_marker("real_image_text_scan"):
+        yield
+        return
+    try:
+        from poindexter.services.image_text_scan import TextScanUnavailable
+
+        patcher = patch(
+            "poindexter.services.image_text_scan.ImageGenServerScanBackend.scan",
+            new=AsyncMock(side_effect=TextScanUnavailable(
+                "image-gen /scan isolated in unit tests (_isolate_image_text_scan)",
+            )),
+        )
+        patcher.start()
+    except (ImportError, AttributeError, ModuleNotFoundError):
+        patcher = None
+    try:
+        yield
+    finally:
+        if patcher is not None:
+            patcher.stop()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_coldload_reclaim_guard():
     """Keep unit tests off the real host Ollama via the cold-load guard.
 

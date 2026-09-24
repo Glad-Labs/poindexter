@@ -465,7 +465,10 @@ class PostEditService:
             tmp.write(png)
             out_path = tmp.name
         try:
-            url = await self._upload_image(out_path, task_id)
+            # `brand-` prefix: this hero is composed from real type, so the
+            # text in it is intended. image_text_scan.infer_image_kind_from_url
+            # keys on it to exempt the hero from qa.vision's text penalty.
+            url = await self._upload_image(out_path, task_id, key_prefix="brand-")
         finally:
             with suppress(OSError):
                 os.remove(out_path)
@@ -744,7 +747,9 @@ class PostEditService:
             logger.warning("post-edit validator failed (edit still applies): %s", e)
             return []
 
-    async def _upload_image(self, path: str, task_id: str) -> str:
+    async def _upload_image(
+        self, path: str, task_id: str, *, key_prefix: str = "",
+    ) -> str:
         """Upload a generated image to R2 and return its servable URL.
 
         Mirrors the pipeline's featured path (``source_featured_image``'s
@@ -756,7 +761,7 @@ class PostEditService:
         if self._site_config is None:
             raise RuntimeError("site_config required to upload generated image")
         svc = R2UploadService(site_config=self._site_config)
-        key = f"images/featured/{task_id[:8]}-{uuid.uuid4().hex[:8]}.jpg"
+        key = f"images/featured/{key_prefix}{task_id[:8]}-{uuid.uuid4().hex[:8]}.jpg"
         url = await svc.upload_to_r2(path, key, content_type="image/jpeg")
         if not url:
             raise RuntimeError("image upload returned no URL")

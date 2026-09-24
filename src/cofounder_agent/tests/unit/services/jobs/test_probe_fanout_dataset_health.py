@@ -195,3 +195,88 @@ class TestProbeRun:
     async def test_no_pool_is_reported(self):
         result = await ProbeFanoutDatasetHealthJob().run(None, {})
         assert result.ok is False
+
+
+# ---------------------------------------------------------------------------
+# Text-scan signal (2026-09-23) — every fan-out candidate is now OCR-scanned
+# before judging. The scan fails OPEN (an unavailable scanner must not become
+# "no hero image"), so a dark scanner and a clean dataset read identically in
+# the row counts. This probe is the watcher: a check that scanned nothing has
+# not passed.
+# ---------------------------------------------------------------------------
+
+
+def _scanned_row(scores: list[float], *, unverified: int = 0, excluded: int = 0,
+                 disabled: int = 0) -> dict:
+    row = _row(scores)
+    total = len(scores) + excluded
+    row.update({
+        "text_scan_era": True,
+        "n_excluded": excluded,
+        "text_scan_expected": total - disabled,
+        "text_scan_unverified": unverified,
+    })
+    return row
+
+
+class TestTextScanSignal:
+    def test_pre_scan_rows_are_not_held_to_the_scan(self):
+        """Rows written before the scan existed carry no `excluded` array —
+        counting them as unverified would page for a week after deploy."""
+        s = summarize([_row([95.0, 40.0]) for _ in range(5)])
+        assert s["text_scan_expected"] == 0
+        assert s["text_scan_unverified_pct"] == 0.0
+
+    def test_unverified_share_is_counted(self):
+        s = summarize([_scanned_row([95.0, 40.0], unverified=1)])
+        assert s["text_scan_expected"] == 2
+        assert s["text_scan_unverified_pct"] == 50.0
+
+    def test_all_excluded_row_is_no_contest_not_judge_down(self):
+        row = _scanned_row([], excluded=4)
+        row["judge_ran"] = False
+        s = summarize([row])
+        assert s["provenance"] == {"no_contest": 1}
+        assert s["text_scan_excluded"] == 4
+
+    async def test_dark_scanner_emits(self):
+        rows = [_scanned_row([95.0, 40.0, 20.0], unverified=3) for _ in range(9)]
+        with patch(f"{_MODULE}.emit_finding") as emit:
+            result = await ProbeFanoutDatasetHealthJob().run(
+                _make_pool(rows), {"_site_config": SiteConfig()},
+            )
+        assert result.ok and emit.call_count == 1
+        body = emit.call_args.kwargs["body"]
+        assert "without a verified text scan" in body
+        assert "rebuild" in body
+
+    async def test_healthy_scan_is_quiet(self):
+        rows = [_scanned_row([95.0, 40.0, 20.0], excluded=1) for _ in range(9)]
+        with patch(f"{_MODULE}.emit_finding") as emit:
+            result = await ProbeFanoutDatasetHealthJob().run(
+                _make_pool(rows), {"_site_config": SiteConfig()},
+            )
+        assert result.ok and emit.call_count == 0
+        assert result.metrics["text_scan_unverified_pct"] == 0.0
+        assert result.metrics["text_scan_excluded"] == 9
+
+    async def test_small_scanned_sample_gives_no_scan_verdict(self):
+        """During rollout the window mixes old and new rows; two unverified
+        scans must not page at 2/2."""
+        rows = [_row([95.0, 40.0, 20.0]) for _ in range(9)] + [
+            _scanned_row([95.0, 40.0], unverified=2),
+        ]
+        with patch(f"{_MODULE}.emit_finding") as emit:
+            await ProbeFanoutDatasetHealthJob().run(
+                _make_pool(rows), {"_site_config": SiteConfig()},
+            )
+        assert emit.call_count == 0
+
+    async def test_threshold_is_db_tunable(self):
+        rows = [_scanned_row([95.0, 40.0, 20.0], unverified=1) for _ in range(9)]
+        sc = SiteConfig(initial_config={
+            "image_fanout_probe_max_text_scan_unavailable_pct": "50",
+        })
+        with patch(f"{_MODULE}.emit_finding") as emit:
+            await ProbeFanoutDatasetHealthJob().run(_make_pool(rows), {"_site_config": sc})
+        assert emit.call_count == 0

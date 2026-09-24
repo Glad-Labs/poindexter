@@ -541,7 +541,7 @@ async def _try_image_gen(
                 )
 
         if img_resp.status_code != 200:
-            from poindexter.services.image_ocr_gate import (
+            from poindexter.services.image_text_scan import (
                 describe_ocr_gate_rejection,
                 is_ocr_gate_rejection,
                 safe_json,
@@ -629,7 +629,7 @@ async def _render_one_with_retry(
                 timeout=render_timeout,
             )
             if img_resp.status_code != 200:
-                from poindexter.services.image_ocr_gate import (
+                from poindexter.services.image_text_scan import (
                     describe_ocr_gate_rejection,
                     is_ocr_gate_rejection,
                     safe_json,

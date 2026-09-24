@@ -942,3 +942,297 @@ class TestJudgePromptTextRule:
         the candidate with the LEAST glyph content while a sibling rendering
         two full pseudo-code panels scored 97."""
         assert "text-adjacent" in self._body()
+
+
+# ---------------------------------------------------------------------------
+# Symmetric text scan (2026-09-23)
+#
+# Until this change only zimage faced the OCR gate (inside image-gen's
+# /generate), so the one provider held to the no-text rule was the one being
+# benched — ejected from 26% of contests while the unscanned ComfyUI three won
+# 77% of heroes. Every candidate now faces services/image_text_scan.py before
+# the judge sees it.
+# ---------------------------------------------------------------------------
+
+
+def _scan_stub(verdicts: dict[str, str], calls: list | None = None):
+    """Stub ``scan_image_text``: ``verdicts`` maps a path substring to a
+    status. Unlisted paths pass clean."""
+    from poindexter.services.image_text_scan import ImageTextScan
+
+    async def fake(image, *, kind, site_config=None, settings=None, backend=None):
+        if calls is not None:
+            calls.append((str(image), kind))
+        for needle, status in verdicts.items():
+            if needle in str(image):
+                chars = 40 if status == "fail" else None
+                cov = 35.0 if status == "fail" else None
+                return ImageTextScan(
+                    status=status, kind=kind, policy="forbidden",
+                    text_chars=chars, coverage_pct=cov, max_chars=6,
+                    reason="" if status == "fail" else "scanner down",
+                )
+        return ImageTextScan(
+            status="pass", kind=kind, policy="forbidden",
+            text_chars=0, coverage_pct=0.0, max_chars=6,
+        )
+
+    return fake
+
+
+def _three_renders(tmp_path):
+    files = {}
+    for n in ("schnell", "klein", "qwen"):
+        f = tmp_path / f"{n}.png"
+        f.write_bytes(b"PNG")
+        files[n] = str(f)
+
+    async def render(name, graph, **kw):
+        return files[name], {"model": name}
+
+    return files, render
+
+
+class TestSymmetricTextScan:
+    @pytest.mark.asyncio
+    async def test_every_candidate_is_scanned_as_generate(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        files, render = _three_renders(tmp_path)
+        calls: list = []
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()), \
+             patch("poindexter.services.image_text_scan.scan_image_text",
+                   _scan_stub({}, calls)):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(), pool=_pool(), task_id="t1",
+            )
+        assert {p for p, _ in calls} == {zimage_file, *files.values()}
+        assert {k for _, k in calls} == {"generate"}
+
+    @pytest.mark.asyncio
+    async def test_text_rejected_candidate_never_faces_the_judge(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        _, render = _three_renders(tmp_path)
+        judged: list[str] = []
+
+        async def score(candidate, **kw):
+            judged.append(candidate.name)
+            # Without the scan, the leaking render would win outright.
+            candidate.score = 99.0 if candidate.name == "qwen" else 80.0
+
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", score), \
+             patch("poindexter.services.image_text_scan.scan_image_text",
+                   _scan_stub({"/qwen.png": "fail"})):
+            path, meta = await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(), pool=pool, task_id="t1",
+            )
+        assert "qwen" not in judged
+        assert meta["fanout"]["winner"] != "qwen"
+        assert meta["fanout"]["excluded"] == ["qwen"]
+
+        details = json.loads(pool.execute.await_args.args[4])
+        # Never competed ≠ lost: it is under `excluded`, not `candidates`.
+        assert "qwen" not in {c["name"] for c in details["candidates"]}
+        [ex] = details["excluded"]
+        assert ex["name"] == "qwen"
+        # Never judged: no score (the row drops None fields on validation).
+        assert ex.get("score") is None
+        assert ex["text_scan"]["status"] == "fail"
+        assert ex["text_scan"]["text_chars"] == 40
+        assert ex["text_scan"]["coverage_pct"] == 35.0
+        # Competitors carry their measured scan too.
+        assert all(c["text_scan"]["status"] == "pass" for c in details["candidates"])
+
+    @pytest.mark.asyncio
+    async def test_zimage_excluded_by_the_scan_reads_as_ocr_gate_rejected(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        _, render = _three_renders(tmp_path)
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()), \
+             patch("poindexter.services.image_text_scan.scan_image_text",
+                   _scan_stub({"/zimage.png": "fail"})):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(), pool=pool, task_id="t1",
+            )
+        details = json.loads(pool.execute.await_args.args[4])
+        assert details["zimage_absent_reason"] == "ocr_gate_rejected"
+        assert [e["name"] for e in details["excluded"]] == ["zimage"]
+
+    @pytest.mark.asyncio
+    async def test_all_rejected_is_a_verdict_not_a_fallback(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        """(None, meta), NOT None: the stage must not fall back to shipping the
+        zimage render the scan just rejected."""
+        _, render = _three_renders(tmp_path)
+        judge = AsyncMock()
+        pool = _pool()
+        verdicts = {f"/{n}.png": "fail" for n in ("zimage", "schnell", "klein", "qwen")}
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", judge), \
+             patch("poindexter.services.image_text_scan.scan_image_text",
+                   _scan_stub(verdicts)):
+            out = await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(), pool=pool, task_id="t1",
+            )
+        assert out is not None
+        path, meta = out
+        assert path is None
+        assert meta["ocr_gate_rejected"] is True
+        assert meta["fanout"]["winner"] is None
+        judge.assert_not_awaited()
+        details = json.loads(pool.execute.await_args.args[4])
+        # A None winner is dropped by the schema dump — absent, never a name.
+        assert details.get("winner") is None
+        assert details["candidates"] == []
+        assert len(details["excluded"]) == 4
+
+    @pytest.mark.asyncio
+    async def test_unavailable_scan_competes_but_is_recorded(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        """A dark scanner must not become 'no hero image' — nor read as clean."""
+        _, render = _three_renders(tmp_path)
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()), \
+             patch("poindexter.services.image_text_scan.scan_image_text",
+                   _scan_stub({"png": "unavailable"})):
+            path, meta = await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(), pool=pool, task_id="t1",
+            )
+        assert path is not None
+        details = json.loads(pool.execute.await_args.args[4])
+        assert details["excluded"] == []
+        assert {c["text_scan"]["status"] for c in details["candidates"]} == {"unavailable"}
+        assert all("text_chars" not in c["text_scan"] for c in details["candidates"])
+
+    @pytest.mark.asyncio
+    async def test_unavailable_excludes_when_fail_closed(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        _, render = _three_renders(tmp_path)
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()), \
+             patch("poindexter.services.image_text_scan.scan_image_text",
+                   _scan_stub({"png": "unavailable"})):
+            path, meta = await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={},
+                site_config=_sc(image_ocr_gate_fail_closed_when_unavailable="true"),
+                pool=_pool(), task_id="t1",
+            )
+        assert path is None
+        assert len(meta["fanout"]["excluded"]) == 4
+
+    @pytest.mark.asyncio
+    async def test_enforce_off_annotates_without_excluding(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        _, render = _three_renders(tmp_path)
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()), \
+             patch("poindexter.services.image_text_scan.scan_image_text",
+                   _scan_stub({"/qwen.png": "fail"})):
+            _, meta = await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(image_ocr_gate_enforce="false"),
+                pool=_pool(), task_id="t1",
+            )
+        assert meta["fanout"]["excluded"] == []
+        assert "qwen" in meta["fanout"]["scores"]
+
+    @pytest.mark.asyncio
+    async def test_scanner_down_is_asked_once_per_fanout(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        """A down server would otherwise cost every candidate the full retry
+        budget and push the stage toward its node timeout."""
+        _, render = _three_renders(tmp_path)
+        calls: list = []
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()), \
+             patch("poindexter.services.image_text_scan.scan_image_text",
+                   _scan_stub({"png": "unavailable"}, calls)):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(), pool=_pool(), task_id="t1",
+            )
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_real_default_path_degrades_to_unavailable(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        """No stub on scan_image_text: the conftest-isolated backend reports
+        unavailable, and the fan-out still ships a winner."""
+        _, render = _three_renders(tmp_path)
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()):
+            path, _ = await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(), pool=pool, task_id="t1",
+            )
+        assert path is not None
+        details = json.loads(pool.execute.await_args.args[4])
+        assert details["candidates"][0]["text_scan"]["status"] == "unavailable"
+
+
+class TestTextScanBudget:
+    def test_budget_covers_one_full_retry_plus_a_request_per_other_candidate(self):
+        sc = _sc(
+            image_text_scan_timeout_seconds="90",
+            image_text_scan_attempts="4",
+            image_text_scan_retry_backoff_seconds="5",
+        )
+        # first: 4*90 + 3*5 = 375; others: 3 * 90 = 270
+        assert image_fanout.text_scan_budget_seconds(sc) == 645
+
+    def test_disabled_gate_needs_no_budget(self):
+        assert image_fanout.text_scan_budget_seconds(
+            _sc(image_ocr_gate_enabled="false"),
+        ) == 0
+
+    def test_stage_node_floor_includes_the_scan_budget(self):
+        from poindexter.modules.content.stages.source_featured_image import (
+            resolve_stage_timeout_seconds,
+        )
+        from poindexter.services.site_config import SiteConfig
+
+        on = SiteConfig(initial_config={"image_fanout_enabled": "true"})
+        off_scan = SiteConfig(initial_config={
+            "image_fanout_enabled": "true", "image_ocr_gate_enabled": "false",
+        })
+        assert resolve_stage_timeout_seconds(on) - resolve_stage_timeout_seconds(
+            off_scan,
+        ) == image_fanout.text_scan_budget_seconds(on)
+
+
+class TestAuditSchemaTextScan:
+    def test_excluded_and_null_winner_validate(self):
+        from poindexter.services.audit_event_schemas import validate_event_details
+
+        out = validate_event_details("image_fanout_judged", {
+            "winner": None,
+            "judge_ran": False,
+            "brief": "b",
+            "candidates": [],
+            "excluded": [{"name": "qwen", "score": None,
+                          "text_scan": {"status": "fail", "text_chars": 40}}],
+        })
+        # Validated (not the error path, which returns the input unchanged
+        # and would keep the key): model_dump(exclude_none) drops it.
+        assert "winner" not in out
+        assert out["excluded"][0]["text_scan"]["status"] == "fail"

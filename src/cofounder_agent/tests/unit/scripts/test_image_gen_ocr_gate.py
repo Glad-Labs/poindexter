@@ -369,3 +369,167 @@ def test_read_ocr_gate_settings_returns_empty_dict_on_connect_failure(monkeypatc
         assert result == {}
 
     asyncio.run(body())
+
+
+# ---------------------------------------------------------------------------
+# POST /scan + measured text coverage (2026-09-23)
+#
+# The gate above only ever scanned image-gen's OWN renders. /scan exposes the
+# same resident, CPU-only reader to any caller (services/image_text_scan.py),
+# and returns the frame coverage computed from the OCR boxes the gate used to
+# throw away (`_box` in count_leaked_text_chars).
+# ---------------------------------------------------------------------------
+
+
+def _quad(x0, y0, x1, y1):
+    """EasyOCR box shape: four [x, y] corners, clockwise from top-left."""
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+
+
+def test_union_area_of_disjoint_boxes_is_their_sum():
+    area = img_gen_server.text_box_union_area(
+        [_quad(0, 0, 10, 10), _quad(20, 20, 30, 30)], 100, 100,
+    )
+    assert area == pytest.approx(200.0)
+
+
+def test_union_area_counts_overlap_once():
+    """A headline often comes back as a line box AND word boxes inside it;
+    summing would double-count and could exceed the frame."""
+    area = img_gen_server.text_box_union_area(
+        [_quad(0, 0, 10, 10), _quad(5, 5, 15, 15), _quad(0, 0, 10, 10)], 100, 100,
+    )
+    assert area == pytest.approx(100 + 100 - 25)
+
+
+def test_union_area_is_clipped_to_the_frame():
+    area = img_gen_server.text_box_union_area([_quad(-50, -50, 10, 10)], 100, 100)
+    assert area == pytest.approx(100.0)
+
+
+def test_union_area_skips_malformed_boxes():
+    area = img_gen_server.text_box_union_area(
+        [[], None, [["a", "b"]], _quad(5, 5, 5, 20), _quad(0, 0, 10, 10)], 100, 100,
+    )
+    assert area == pytest.approx(100.0)
+
+
+def test_union_area_never_exceeds_the_frame():
+    boxes = [_quad(0, 0, 100, 100)] * 5 + [_quad(10, 10, 90, 90)]
+    assert img_gen_server.text_box_union_area(boxes, 100, 100) == pytest.approx(10_000)
+
+
+def _png(tmp_path, w=200, h=100):
+    from PIL import Image
+
+    p = tmp_path / "frame.png"
+    Image.new("RGB", (w, h), (20, 30, 40)).save(p, format="PNG")
+    return p
+
+
+def test_scan_leaked_text_reports_chars_and_coverage(tmp_path):
+    reader = FakeReader([
+        (_quad(0, 0, 200, 40), "TYMENEITUR", 0.9),  # banner: 40% of a 200x100 frame
+        (_quad(0, 90, 10, 100), "x", 0.05),          # low-confidence noise: ignored
+    ])
+    result = img_gen_server.scan_leaked_text(_png(tmp_path), reader, min_confidence=0.3)
+    assert result.text_chars == 10
+    assert result.coverage_pct == pytest.approx(40.0)
+    assert result.detections == 1
+    assert (result.width, result.height) == (200, 100)
+
+
+def test_scan_chars_match_the_gate_count(tmp_path):
+    """Same filter, same arithmetic: the scan's number is the gate's number."""
+    detections = [(_quad(0, 0, 5, 5), "HELLO", 0.9), (_quad(0, 0, 5, 5), "no", 0.1)]
+    reader = FakeReader(detections)
+    path = _png(tmp_path)
+    assert img_gen_server.scan_leaked_text(
+        path, reader, min_confidence=0.3,
+    ).text_chars == img_gen_server.count_leaked_text_chars(path, reader, min_confidence=0.3)
+
+
+def test_clean_frame_scans_as_zero_not_none(tmp_path):
+    result = img_gen_server.scan_leaked_text(_png(tmp_path), FakeReader([]), min_confidence=0.3)
+    assert (result.text_chars, result.coverage_pct) == (0, 0.0)
+
+
+def test_scan_raises_on_a_non_image(tmp_path):
+    """The caller turns a raise into 'could not verify' — never a clean 0."""
+    bad = tmp_path / "bad.png"
+    bad.write_bytes(b"not an image")
+    with pytest.raises(Exception):
+        img_gen_server.scan_leaked_text(bad, FakeReader([]), min_confidence=0.3)
+
+
+@pytest.fixture
+def scan_client(monkeypatch):
+    """TestClient on the real FastAPI app, WITHOUT entering its context
+    manager — so startup (DB config load, idle unloader) never runs."""
+    from fastapi.testclient import TestClient
+
+    reader = FakeReader([(_quad(0, 0, 200, 50), "HEADLINE", 0.9)])
+
+    async def fake_reader():
+        return reader
+
+    monkeypatch.setattr(img_gen_server, "ensure_ocr_reader", fake_reader)
+    return TestClient(img_gen_server.app)
+
+
+def _png_bytes(w=200, h=100):
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h), (1, 2, 3)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_scan_endpoint_measures_posted_bytes(scan_client):
+    resp = scan_client.post("/scan", content=_png_bytes(), params={"min_confidence": 0.5})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["text_chars"] == 8
+    assert body["text_coverage_pct"] == pytest.approx(50.0)
+    assert body["min_confidence"] == 0.5
+    assert (body["width"], body["height"]) == (200, 100)
+
+
+def test_scan_endpoint_does_not_touch_the_diffusion_pipeline(scan_client):
+    """A scan must neither load the pipeline nor refresh the idle timer, or it
+    would keep 13+ GB of weights resident on scans alone."""
+    img_gen_server.state.last_used = 0.0
+    scan_client.post("/scan", content=_png_bytes())
+    assert img_gen_server.state.last_used == 0.0
+    assert img_gen_server.state.pipeline is None
+
+
+@pytest.mark.parametrize("payload,status,error", [
+    (b"", 400, "empty_body"),
+    (b"definitely not a png", 400, "not_an_image"),
+])
+def test_scan_endpoint_rejects_unusable_requests(scan_client, payload, status, error):
+    resp = scan_client.post("/scan", content=payload)
+    assert resp.status_code == status
+    assert resp.json()["detail"]["error"] == error
+
+
+def test_scan_endpoint_rejects_out_of_range_confidence(scan_client):
+    resp = scan_client.post("/scan", content=_png_bytes(), params={"min_confidence": 3})
+    assert resp.status_code == 400
+
+
+def test_scan_endpoint_reports_a_broken_reader_as_unavailable(monkeypatch):
+    """503 ocr_unavailable — the client records 'could not verify', and does
+    not retry it the way it retries a restart window."""
+    from fastapi.testclient import TestClient
+
+    async def broken_reader():
+        raise ModuleNotFoundError("No module named 'easyocr'")
+
+    monkeypatch.setattr(img_gen_server, "ensure_ocr_reader", broken_reader)
+    resp = TestClient(img_gen_server.app).post("/scan", content=_png_bytes())
+    assert resp.status_code == 503
+    assert resp.json()["detail"]["error"] == "ocr_unavailable"

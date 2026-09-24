@@ -189,6 +189,12 @@ class ImageFanoutCandidateEntry(BaseModel):
     # nothing in the row to say so — rows either side of the swap read as one
     # population. None on rows written before the pin existed.
     judge_model: str | None = None
+    # ``ImageTextScan.to_dict()`` from services/image_text_scan.py: status
+    # (pass / fail / unavailable / disabled), text_chars, coverage_pct,
+    # max_chars. Measured by the same scanner for every candidate, so the
+    # score can be read against how much text the image actually carried.
+    # None on rows written before every candidate was scanned (2026-09-23).
+    text_scan: dict[str, Any] | None = None
 
 
 class ImageFanoutJudgedDetails(BaseModel):
@@ -200,10 +206,18 @@ class ImageFanoutJudgedDetails(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     schema_version: int = 1
-    winner: str
+    # None only when the text scan excluded every rendered candidate — a
+    # contest nobody could enter, recorded rather than dropped.
+    winner: str | None
     judge_ran: bool
     brief: str
+    # The candidates that COMPETED (faced the judge).
     candidates: list[ImageFanoutCandidateEntry]
+    # Rendered but kept out by the text scan — never judged, so never a loss.
+    # Separate from ``candidates`` so the win-rate panel can distinguish "lost"
+    # from "never competed", the same distinction ``zimage_absent_reason``
+    # draws for the stage-side gate.
+    excluded: list[ImageFanoutCandidateEntry] = []
 
 
 EVENT_SCHEMAS: dict[str, type[BaseModel]] = {

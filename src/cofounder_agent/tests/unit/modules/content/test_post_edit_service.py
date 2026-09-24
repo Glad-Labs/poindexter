@@ -646,3 +646,50 @@ async def test_retitle_warns_when_title_has_no_searchable_entity():
     assert res.ok
     assert any("searchable entity" in w for w in res.warnings)
     assert [e for e in pool.executed if "SET title" in e[0]]  # warn-only: still written
+
+
+async def test_brand_hero_uploads_under_the_composed_key_prefix(monkeypatch):
+    """The brand hero is real type set in HTML — its text is intended. Its key
+    carries `brand-` so image_text_scan classifies it `composed` and qa.vision
+    does not deduct its lettering as generator garbage."""
+    import poindexter.services.brand_hero as brand_hero
+
+    monkeypatch.setattr(brand_hero, "render_hero_png", AsyncMock(return_value=b"PNG"))
+    seen: dict = {}
+
+    async def fake_upload(self, path, task_id, *, key_prefix=""):
+        seen["key_prefix"] = key_prefix
+        return f"https://cdn/images/featured/{key_prefix}{task_id}-x.jpg"
+
+    monkeypatch.setattr(PostEditService, "_upload_image", fake_upload, raising=True)
+    svc = PostEditService(pool=FakePool(content="body", version=1))
+    monkeypatch.setattr(
+        svc, "replace_image",
+        AsyncMock(return_value=EditResult(task_id="t1", field="featured", ok=True, detail="")),
+    )
+    monkeypatch.setattr(svc, "_audit", AsyncMock())
+
+    await svc.brand_hero("t1")
+
+    assert seen["key_prefix"] == "brand-"
+
+
+async def test_upload_key_prefix_is_classified_as_composed():
+    from poindexter.services.image_text_scan import infer_image_kind_from_url
+    from poindexter.services.site_config import SiteConfig
+
+    keys: list[str] = []
+
+    async def fake_r2(self, path, key, content_type=None):
+        keys.append(key)
+        return f"https://cdn.example/{key}"
+
+    svc = PostEditService(pool=FakePool(), site_config=SiteConfig())
+    with patch(
+        "poindexter.services.r2_upload_service.R2UploadService.upload_to_r2", fake_r2,
+    ):
+        brand = await svc._upload_image("/tmp/x.png", "abcdef1234", key_prefix="brand-")
+        plain = await svc._upload_image("/tmp/x.png", "abcdef1234")
+
+    assert infer_image_kind_from_url(brand) == "composed"
+    assert infer_image_kind_from_url(plain) == "generate"

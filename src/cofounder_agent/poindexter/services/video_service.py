@@ -64,6 +64,22 @@ async def _consume_image_gen_response(
     the featured-image path; this extends it to the shot-render path).
     """
     if resp.status_code != 200:
+        from poindexter.services.image_text_scan import (
+            describe_ocr_gate_rejection,
+            is_ocr_gate_rejection,
+            safe_json,
+        )
+
+        parsed = safe_json(resp) if resp.status_code == 422 else None
+        if is_ocr_gate_rejection(resp.status_code, parsed):
+            # A verdict, not a window: the server already re-rolled the seed
+            # image_ocr_gate_max_attempts times. Named as such so a shot that
+            # lost its still to the text gate doesn't read as a server fault.
+            logger.warning(
+                "[VIDEO] %s for %s — not a transient failure",
+                describe_ocr_gate_rejection(parsed), frame_label,
+            )
+            return None
         body = resp.text[:200] if resp.text else "(empty)"
         logger.warning(
             "[VIDEO] image-gen returned %d for %s: %s",
