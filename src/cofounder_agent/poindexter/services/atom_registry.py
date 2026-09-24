@@ -457,6 +457,13 @@ async def sync_to_db(pool: Any) -> int:
     every row so operators can spot dead atoms (rows older than the
     latest sweep timestamp).
 
+    Then prunes rows no sync has stamped in ``pipeline_atoms_prune_after_days``
+    (poindexter#1066): the upsert alone could only add, so atoms whose files
+    were deleted stayed in the catalogue forever and an SQL reader would be
+    offered atoms it cannot compose. A grace window rather than "absent from
+    THIS process's discovery" because several entry points sync, and one that
+    fails to import an atom must not delete a row the others still serve.
+
     Best-effort: a transient DB failure logs and returns 0 rather than
     blocking startup. The Python registry is the source of truth; this
     table is just a query convenience.
@@ -490,10 +497,53 @@ async def sync_to_db(pool: Any) -> int:
                 )
                 n += 1
             logger.info("[atom_registry] synced %d atom(s) to pipeline_atoms", n)
+            pruned = await _prune_unseen(conn, list(_ATOMS))
+            if pruned:
+                logger.info(
+                    "[atom_registry] pruned %d pipeline_atoms row(s) no sync has "
+                    "seen within the grace window: %s",
+                    len(pruned), ", ".join(pruned),
+                )
             return n
     except Exception as exc:  # noqa: BLE001
         logger.warning("[atom_registry] sync_to_db failed: %s", exc)
         return 0
+
+
+_PRUNE_SETTING = "pipeline_atoms_prune_after_days"
+_PRUNE_DEFAULT_DAYS = 7
+
+
+async def _prune_unseen(conn: Any, discovered: list[str]) -> list[str]:
+    """Delete catalogue rows not stamped within the grace window; return names.
+
+    Reads the window straight from ``app_settings`` — this runs at startup,
+    before (and independent of) any SiteConfig. Never deletes a name this
+    process just discovered, whatever the clock says.
+    """
+    raw = await conn.fetchval(
+        "SELECT value FROM app_settings WHERE key = $1", _PRUNE_SETTING,
+    )
+    try:
+        days = int(str(raw).strip()) if raw not in (None, "") else _PRUNE_DEFAULT_DAYS
+    except ValueError:
+        logger.warning(
+            "[atom_registry] %s=%r is not an integer — using %d",
+            _PRUNE_SETTING, raw, _PRUNE_DEFAULT_DAYS,
+        )
+        days = _PRUNE_DEFAULT_DAYS
+    if days <= 0:
+        return []
+    rows = await conn.fetch(
+        """
+        DELETE FROM pipeline_atoms
+         WHERE last_seen_at < NOW() - make_interval(days => $1)
+           AND NOT (name = ANY($2::text[]))
+        RETURNING name
+        """,
+        days, discovered,
+    )
+    return sorted(r["name"] for r in rows)
 
 
 def _json_dumps(payload: dict[str, Any]) -> str:

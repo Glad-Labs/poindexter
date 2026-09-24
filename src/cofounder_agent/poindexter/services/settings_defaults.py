@@ -92,6 +92,12 @@ DEFAULTS: dict[str, str] = {
     # trace deep-dive shows). Bounded so a full draft never lands in every
     # row. Capture itself is gated by atom_runs_capture_enabled (baseline).
     "atom_runs_output_preview_max_bytes": "2048",
+    # pipeline_atoms catalogue (poindexter#1066): atom_registry.sync_to_db
+    # deletes rows no process has stamped in this many days — atoms whose file
+    # is gone. A grace window, not "absent from this process's discovery", so
+    # one process that fails to import an atom cannot flap the catalogue.
+    # 0 disables pruning.
+    "pipeline_atoms_prune_after_days": "7",
     # How many recently-finished tasks the trace board's "recent" rail shows
     # (GET /api/trace/active). The running list is unbounded (few at a time).
     "trace_recent_limit": "10",
@@ -5372,6 +5378,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
 METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- Cost guard (incident: spend-limit rename fallthrough 2026-05-27) -----
     'daily_spend_limit_usd': {'owner': 'cost_guard', 'value_type': 'float'},
+    'pipeline_atoms_prune_after_days': {'owner': 'atom_registry', 'value_type': 'integer'},
     'monthly_spend_limit_usd': {'owner': 'cost_guard', 'value_type': 'float'},
     'electricity_measured_min_coverage_pct': {'owner': 'cost_ledger', 'value_type': 'float'},
     'electricity_source_gap_minutes': {'owner': 'cost_ledger', 'value_type': 'integer'},
