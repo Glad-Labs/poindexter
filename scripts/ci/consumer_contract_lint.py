@@ -33,9 +33,14 @@ Skipping (4) produces false accusations: ``routing_outcomes`` and
 
 **``finding_kind_unrouted``** — every literal ``kind=`` passed to
 ``emit_finding`` should have a ``findings.<kind>.delivery`` policy declared in
-``settings_defaults.py`` or the baseline seeds. ``findings.default`` is
-deliberately inert (``log_only``), so an undeclared kind reaches nobody —
-indistinguishable, from the operator's side, from never having been emitted.
+``settings_defaults.py`` or the baseline seeds, so that a kind's delivery,
+cooldown and severity floor are a decision someone made. ``findings.default.*``
+is deliberately inert: ``findings_alert_router._load_policies`` skips it. An
+undeclared kind therefore routes LOUD through the dispatcher's default severity
+matrix with no per-kind cooldown. It is NOT dropped. (An earlier version of
+this docstring said an undeclared kind "reaches nobody". That was wrong and
+sent poindexter#1063 chasing it. On 2026-09-24 ``qa_rail_degraded`` had been
+routed 127 times and sent 88 in 30 days with no policy.)
 
 What it deliberately does NOT check
 -----------------------------------
@@ -236,10 +241,11 @@ def main() -> int:
             else:
                 print(
                     "\n  emit_finding() uses a kind with no findings.<kind>.delivery policy.\n"
-                    "  findings.default is deliberately inert (log_only), so this finding\n"
-                    "  reaches nobody — the same as not emitting it. Declare a policy in\n"
-                    "  services/settings_defaults.py (log_only is a fine CHOICE; the point\n"
-                    "  is that it be one)."
+                    "  findings.default is inert (the router skips it), so this kind pages\n"
+                    "  through the dispatcher's default severity matrix with no per-kind\n"
+                    "  cooldown or floor, i.e. loud by accident rather than by decision.\n"
+                    "  Declare a policy in services/settings_defaults.py (log_only is a\n"
+                    "  fine CHOICE; the point is that it be one)."
                 )
 
     if failed:

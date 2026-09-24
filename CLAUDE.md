@@ -454,15 +454,20 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
   `qa_numeric_fidelity` ran 37 times in 30 days while its `qa_gates` row read
   `total_runs=0` (no `_REVIEWER_TO_GATE` alias — the **eighth** recurrence of
   that one shape); `capability_registry` takes a worker heartbeat every 30 s
-  that nothing has ever queried; `qa_rail_degraded` correctly fired 156 times
-  about a crashed judge rail into a log with no delivery policy.
+  that nothing has ever queried.
   `scripts/ci/consumer_contract_lint.py` (+ baseline, ratchet) enforces the
   statically-checkable half — a table this code writes must be read by app
   Python, the console, a Grafana panel **or a Postgres view** (skip views and it
   falsely accuses `routing_outcomes`/`capability_outcomes`, which `lab_outcomes_v1`
   reads), and every literal `emit_finding(kind=...)` must have a
-  `findings.<kind>.delivery` policy, since `findings.default` is inert and an
-  undeclared kind reaches nobody. **Two rules earned the hard way.** First, an
+  `findings.<kind>.delivery` policy. That rule is about making delivery a
+  decision, not about rescuing silent kinds. `findings.default.*` is inert
+  because the router **skips** it, so an undeclared kind routes **loud** through
+  the dispatcher's default severity matrix. It isn't dropped (verified
+  2026-09-24, poindexter#1063: `qa_rail_degraded` routed 127 times and was sent
+  88 in 30 days, and `job_failure` was sent too; the rest were dedup repeats). Read
+  `findings.default.delivery = log_only` as "the default is never applied", not
+  "unlisted kinds are logged". **Two rules earned the hard way.** First, an
   expectation must be DERIVED, never hand-listed: the alias guard compared
   against a literal set typed by the same person who forgot the alias, so it
   agreed with them eight times and said so in its own comments ("slipped past
