@@ -2251,6 +2251,113 @@ async def _llm_restock_query(
     return cleaned
 
 
+#: Things an image model renders WITH legible writing on them. The OCR gate
+#: rejects those renders, so an escalation subject naming one is discarded in
+#: favour of the shot's intent (2026-09-24: a graph screen and scrolling code
+#: drew 26-235 characters and failed all six attempts).
+_TEXT_MAGNET_RE = re.compile(
+    r"\b(screens?|monitors?|displays?|terminals?|code|dashboards?|charts?|graphs?|"
+    r"diagrams?|documents?|spreadsheets?|text|letters?|words?|signs?|signage|labels?|"
+    r"logos?|newspapers?|books?|pages?|keyboards?|whiteboards?|numbers?|digits?)\b",
+    re.I,
+)
+_SUBJECT_ECHO_STARTS = (
+    "write", "provide", "return", "here", "output", "sure", "certainly", "describe",
+)
+
+
+def _clean_image_subject(raw: str) -> str:
+    """Reduce an LLM reply to a wordless illustration subject, or ``""``.
+
+    First non-empty line, a short leading label dropped, quotes and the final
+    full stop stripped. Rejected (``""``): an instruction echo, a length
+    outside 3-24 words, and a subject naming something the image model would
+    draw with writing on it (``_TEXT_MAGNET_RE``).
+    """
+    line = ""
+    for candidate in (raw or "").splitlines():
+        candidate = candidate.strip()
+        if candidate:
+            line = candidate
+            break
+    if ":" in line and len(line.split(":", 1)[0]) <= 12:
+        line = line.split(":", 1)[1]  # drop a "Subject:" style label
+    line = " ".join(line.strip().strip("\"'`").split()).rstrip(".").strip()[:200]
+    low = line.lower()
+    words = line.split()
+    if not (3 <= len(words) <= 24):
+        return ""
+    if words[0].lower().strip(",") in _SUBJECT_ECHO_STARTS or any(
+        w in low for w in ("this shot", "the intent", "the subject", "illustration shows")
+    ):
+        return ""
+    if _TEXT_MAGNET_RE.search(line):
+        return ""
+    return line
+
+
+async def _llm_image_subject(
+    shot: Shot,
+    *,
+    all_shots: list[Shot],
+    site_config: Any,
+    pool: Any,
+) -> str:
+    """Ask the director model for a WORDLESS subject to illustrate one shot.
+
+    Used by the cross-family escalation (rung 2), whose substitute still is
+    checked by image-gen's OCR gate. Same model and thinking switch as the
+    re-query. Returns ``""`` on any failure, including a subject that names a
+    text-bearing thing, and the caller falls back to the shot's intent.
+    """
+    if site_config is None or pool is None:
+        return ""
+    model = (site_config.get("video_director_model", "") or "").strip()
+    if not model:
+        return ""
+    context = "; ".join(
+        (s.intent or "").strip() for s in all_shots
+        if s.idx != shot.idx and (s.intent or "").strip()
+    )[:600]
+
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    prompt = get_prompt_manager().get_prompt(
+        "video.escalation_image_subject",
+        video_context=context or "(no other shots)",
+        intent=(shot.intent or "").strip(),
+    )
+
+    from poindexter.services.llm_providers.dispatcher import dispatch_complete
+
+    kwargs: dict[str, Any] = {}
+    if str(
+        site_config.get("video_director_disable_thinking", "true") or "true",
+    ).strip().lower() in ("true", "1", "yes"):
+        kwargs["think"] = False
+    try:
+        completion = await dispatch_complete(
+            pool, [{"role": "user", "content": prompt}], model,
+            tier="standard", phase="video_escalation_subject",
+            temperature=0.5, max_tokens=256, timeout_s=90.0, **kwargs,
+        )
+        raw = getattr(completion, "text", "") or ""
+    except Exception as exc:  # noqa: BLE001 — a subject failure must not halt the render
+        logger.warning(
+            "[SHOT_QA] shot %d illustration-subject call failed: %s",
+            shot.idx, describe_exception(exc),
+        )
+        return ""
+    cleaned = _clean_image_subject(raw)
+    if not cleaned:
+        logger.info(
+            "[SHOT_QA] shot %d illustration subject unusable (model said %r) — "
+            "using the shot's intent",
+            shot.idx, raw.strip()[:120],
+        )
+    return cleaned
+
+
 def _select_ai_style(site_config: Any, shot_idx: int, *, niche_slug: str | None = None) -> str:
     """Style modifier for an escalated shot.
 
@@ -2303,19 +2410,26 @@ def kenburns_variant_for(prompt: str) -> int | None:
     return KEN_BURNS_CENTER if _VANISHING_POINT_RE.search(prompt) else None
 
 
-def _ai_prompt_from_stock_shot(shot: Shot, *, style: str) -> str:
+def _ai_prompt_from_stock_shot(shot: Shot, *, style: str, subject: str = "") -> str:
     """Build a stylized image-gen prompt for an off-topic stock shot.
 
-    The stock QUERY is what went wrong (a literal scene noun the search
-    matched to unrelated footage), so the prompt leads with the shot's
-    INTENT — why the shot exists, which carries the topic — and keeps the
-    query only as secondary subject detail. Style modifier + palette follow
-    the director's STYLE POLICY (stylized, never photoreal) so the
-    substitute lands on-brand rather than as a second miss.
+    The subject is, in order: a wordless visual metaphor the director model
+    wrote for the shot (``_llm_image_subject``), else the shot's INTENT, which
+    carries the topic. The stock QUERY is left out. It is what went wrong (a
+    literal scene noun the search matched to unrelated footage), and its camera
+    nouns are exactly what an image model draws WITH writing on: on 2026-09-24
+    "diverging lines graph screen" and "computer code scrolling on monitor"
+    drew 26-235 legible characters, the OCR gate rejected every attempt, and
+    both shots shipped as the previous shot running on. The query is only the
+    last resort for a shot with no intent. Style modifier + palette follow the
+    director's STYLE POLICY (stylized, never photoreal) so the substitute
+    lands on-brand rather than as a second miss.
     """
-    intent = (shot.intent or "").strip().rstrip(".")
-    query = (shot.query or "").strip()
-    subject = f"{intent}, {query}" if intent and query else (intent or query)
+    subject = (
+        (subject or "").strip()
+        or (shot.intent or "").strip().rstrip(".")
+        or (shot.query or "").strip()
+    )
     return (
         f"{style}, {subject}, deep navy and cyan palette, "
         "clean composition, empty unpopulated scene"
@@ -3845,7 +3959,9 @@ async def _escalate_offtopic_stock(
        home for humans IS real footage (2026-08-27 operator call: "stock video
        should be fine if it illustrates the shot").
     2. **Cross-family** — if it's STILL off-topic, re-render as a stylized
-       Ken-Burns still built from the shot's intent.
+       Ken-Burns still of a wordless visual metaphor the director model writes
+       for the shot's intent (``video.escalation_image_subject``; the intent
+       itself when that fails). The card is cleared before every still.
 
     The AI-human ban applies to rung 2 only, and stays: synthetic faces/hands
     are the strongest slop tell, so a human-subject shot keeps its real
@@ -3885,7 +4001,6 @@ async def _escalate_offtopic_stock(
             for st in states if st.shot.source == "pexels"
         ) or "no stock shots",
     )
-    card_ready = False
     for st in candidates:
 
         # RUNG 1 — re-query stock with a better search string. The clip missed
@@ -3958,10 +4073,13 @@ async def _escalate_offtopic_stock(
 
         style = _select_ai_style(
             site_config, st.shot.idx, niche_slug=render_kwargs.get("niche_slug"))
+        subject = await _llm_image_subject(
+            st.shot, all_shots=all_shots, site_config=site_config, pool=pool,
+        )
         try:
             ai_shot = st.shot.model_copy(update={
                 "source": "image_kenburns",
-                "prompt": _ai_prompt_from_stock_shot(st.shot, style=style),
+                "prompt": _ai_prompt_from_stock_shot(st.shot, style=style, subject=subject),
                 "query": None,
                 "kenburns_zoom": (1.0, 1.12),
             })
@@ -3977,9 +4095,11 @@ async def _escalate_offtopic_stock(
             "< %.0f) with prompt %r",
             st.shot.idx, st.qa.score, qa.threshold, ai_shot.prompt,
         )
-        if not card_ready:
-            await _ready_card_for_escalation(render_kwargs)
-            card_ready = True
+        # Before EVERY still, not once per pass: rung 1's re-query and the
+        # subject call above load the director model onto the render GPU, so
+        # a card cleared for the previous shot is full again by now
+        # (2026-09-24: shots 12 and 14 hit CUDA OOM with ~25 GB of it resident).
+        await _ready_card_for_escalation(render_kwargs)
         cand = await _render_one_shot(
             ai_shot, prior_clip=None, attempt=0, **render_kwargs,
         )

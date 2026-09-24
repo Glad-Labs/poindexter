@@ -3299,7 +3299,7 @@ class TestTopicEscalationHelpers:
         # is a word; "manual" contains "man" but is not a person).
         assert not _names_human_subject("manual override switch", "")
 
-    def test_ai_prompt_leads_with_intent(self):
+    def test_ai_prompt_uses_the_intent_and_never_the_failed_query(self):
         from poindexter.services.video_renderers.shot_list_renderer import (
             _ai_prompt_from_stock_shot,
         )
@@ -3307,14 +3307,58 @@ class TestTopicEscalationHelpers:
         shot = Shot(
             idx=2, duration_s=4.0,
             intent="error rates climb on multi-speaker audio",
-            source="pexels", query="busy city street",
+            source="pexels", query="analyst reading dashboard screen",
             narration_offset_s=0.0,
         )
         out = _ai_prompt_from_stock_shot(shot, style="cyberpunk neon")
         assert out.startswith("cyberpunk neon,")
-        # Intent (the topic) leads; the stock query is only trailing detail.
-        assert out.index("error rates climb") < out.index("busy city street")
+        assert "error rates climb" in out
+        # The query missed twice, and its camera nouns (a dashboard screen)
+        # come out of an image model covered in writing the OCR gate rejects.
+        assert "dashboard" not in out
         assert "empty unpopulated scene" in out  # human-free by construction
+
+    def test_ai_prompt_prefers_the_wordless_subject(self):
+        from poindexter.services.video_renderers.shot_list_renderer import (
+            _ai_prompt_from_stock_shot,
+        )
+
+        shot = Shot(
+            idx=2, duration_s=4.0, intent="error rates climb", source="pexels",
+            query="busy city street", narration_offset_s=0.0,
+        )
+        out = _ai_prompt_from_stock_shot(
+            shot, style="line art", subject="a dam wall cracking under rising water",
+        )
+        assert "a dam wall cracking under rising water" in out
+        assert "error rates climb" not in out and "busy city street" not in out
+
+    def test_clean_image_subject_keeps_a_wordless_metaphor(self):
+        from poindexter.services.video_renderers.shot_list_renderer import (
+            _clean_image_subject,
+        )
+
+        good = "small drones lining up at a single glowing gate"
+        assert _clean_image_subject(good) == good
+        assert _clean_image_subject(f'Subject: "{good}."\nextra') == good
+
+    def test_clean_image_subject_rejects_writing_echoes_and_bad_lengths(self):
+        from poindexter.services.video_renderers.shot_list_renderer import (
+            _clean_image_subject,
+        )
+
+        for bad in (
+            "diverging lines graph screen with glowing axes",   # draws labels
+            "close up of computer code scrolling on monitor",   # draws code
+            "a dashboard of glowing numbers above a server",
+            "Here is a wordless subject for the shot",          # preamble
+            "Describe two towers linked by light",              # echo
+            "the subject is a bridge of light",                 # echo
+            "towers",                                           # too short
+            " ".join(["light"] * 30),                           # runaway
+            "",
+        ):
+            assert _clean_image_subject(bad) == "", bad
 
     def test_ai_prompt_survives_missing_fields(self):
         from poindexter.services.video_renderers.shot_list_renderer import (
@@ -3413,6 +3457,13 @@ class TestEscalateOfftopicStock:
             async def _no_restock(shot, **kwargs):
                 return ""
             monkeypatch.setattr(slr, "_llm_restock_query", _no_restock)
+        # Rung 2's illustration subject: "" (fall back to the intent) unless a
+        # test sets self._subject.
+        subject = getattr(self, "_subject", "")
+
+        async def _fake_subject(shot, **kwargs):
+            return subject
+        monkeypatch.setattr(slr, "_llm_image_subject", _fake_subject)
         qa = slr._QAConfig(enabled=True, threshold=60.0, max_retries=2)
         n = await slr._escalate_offtopic_stock(
             states, qa=qa, site_config=site_config, render_kwargs={},
@@ -3421,14 +3472,35 @@ class TestEscalateOfftopicStock:
         return n, rendered
 
     @pytest.mark.asyncio
-    async def test_the_card_is_cleared_once_before_the_first_escalation_still(self, monkeypatch):
+    async def test_the_card_is_cleared_before_every_escalation_still(self, monkeypatch):
         # 2026-09-24: three of four escalation stills died on image-gen 503
-        # CUDA OOM because ComfyUI still held the presenter weights.
+        # CUDA OOM because ComfyUI still held the presenter weights. A
+        # once-per-pass clear then failed the NEXT day: each shot's re-query
+        # reloads the 31B director model onto the render GPU, so shots 12 and
+        # 14 hit OOM on a card cleared for shot 6.
         states = [self._state(), self._state()]
         states[1].shot = states[1].shot.model_copy(update={"idx": 2})
         n, _ = await self._run(states, monkeypatch)
         assert n == 2
-        self._ready.assert_awaited_once()
+        assert self._ready.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_the_still_is_drawn_from_the_wordless_subject(self, monkeypatch):
+        self._subject = "a bridge of light snapping between two floating islands"
+        st = self._state(query="computer code scrolling on monitor")
+        n, rendered = await self._run([st], monkeypatch)
+        assert n == 1
+        prompt = rendered[0].prompt
+        assert self._subject in prompt
+        assert "computer code" not in prompt and "benchmark scores" not in prompt
+
+    @pytest.mark.asyncio
+    async def test_without_a_subject_the_still_uses_the_intent_not_the_query(self, monkeypatch):
+        st = self._state(query="computer code scrolling on monitor")
+        n, rendered = await self._run([st], monkeypatch)
+        prompt = rendered[0].prompt
+        assert "benchmark scores collapse in production" in prompt
+        assert "computer code" not in prompt  # the failed query draws writing
 
     @pytest.mark.asyncio
     async def test_a_failed_escalation_still_is_retried_after_another_clear(self, monkeypatch):
@@ -3717,6 +3789,60 @@ class TestRestockQuery:
         assert n == 1
         assert rendered[0].source == "image_kenburns"
         assert st.shot.source == "image_kenburns"
+
+
+class TestLlmImageSubject:
+    """Rung 2's subject call: director model, wordless output, fail to ""."""
+
+    class _SC:
+        def __init__(self, **values):
+            self._v = {"video_director_model": "ollama/gemma", **values}
+
+        def get(self, key, default=None):
+            return self._v.get(key, default)
+
+    def _shot(self):
+        return Shot(idx=3, duration_s=4.0, intent="the risk of policy drift",
+                    source="pexels", query="graph screen", narration_offset_s=0.0)
+
+    @pytest.mark.asyncio
+    async def test_no_model_or_pool_means_no_call(self):
+        from poindexter.services.video_renderers.shot_list_renderer import _llm_image_subject
+
+        shot = self._shot()
+        assert await _llm_image_subject(shot, all_shots=[shot], site_config=None, pool=object()) == ""
+        assert await _llm_image_subject(
+            shot, all_shots=[shot], site_config=self._SC(video_director_model=""), pool=object(),
+        ) == ""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("reply", "want"), [
+        ("two glowing paths splitting apart across a dark grid", "two glowing paths splitting apart across a dark grid"),
+        ("a line chart diverging on a monitor screen", ""),  # text magnet -> intent fallback
+    ])
+    async def test_reply_is_cleaned(self, monkeypatch, reply, want):
+        from poindexter.plugins.llm_provider import Completion
+        from poindexter.services.video_renderers.shot_list_renderer import _llm_image_subject
+
+        seen = {}
+
+        async def _fake_dispatch(pool, messages, model, **kwargs):
+            seen.update(kwargs, model=model, prompt=messages[0]["content"])
+            return Completion(text=reply, model=model)
+
+        monkeypatch.setattr(
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete", _fake_dispatch,
+        )
+        shot = self._shot()
+        other = Shot(idx=4, duration_s=4.0, intent="replicas load the new adapter",
+                     source="image_kenburns", prompt="p", narration_offset_s=4.0)
+        got = await _llm_image_subject(
+            shot, all_shots=[shot, other], site_config=self._SC(), pool=object(),
+        )
+        assert got == want
+        assert seen["model"] == "ollama/gemma" and seen["think"] is False
+        assert "the risk of policy drift" in seen["prompt"]
+        assert "replicas load the new adapter" in seen["prompt"]
 
 
 class TestRestockQueryEchoRejection:

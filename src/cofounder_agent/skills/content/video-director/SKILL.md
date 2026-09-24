@@ -20,6 +20,9 @@ metadata:
     - key: video.restock_query
       output_format: text
       description: "Rewrites the stock-footage search query for ONE shot whose fetched clip scored off-topic on vision QA. Given the video's subject (the other shots' intents), this shot's intent, and the query that missed, returns a single better Pexels search string. Used by services.video_renderers.shot_list_renderer._llm_restock_query."
+    - key: video.escalation_image_subject
+      output_format: text
+      description: "Writes a WORDLESS illustration subject for ONE shot whose stock footage stayed off-topic after re-querying, so the shot can become a generated still that passes the image OCR gate. Given the video's subject (the other shots' intents) and this shot's intent, returns one visual metaphor built from objects, light and shape. Used by services.video_renderers.shot_list_renderer._llm_image_subject."
     - key: video.review_v1
       output_format: json
       description: 'Director self-critique — revise the long-form shot list (coverage, variety, hero selection, on-brand)'
@@ -274,6 +277,43 @@ subject: model benchmark scores | missed query: people laughing
   -> analyst reading dashboard screen
 
 Output ONLY the query text on a single line.
+```
+
+## video.escalation_image_subject
+
+```text
+Stock footage for one shot of this video kept missing its subject, so that
+shot becomes a generated illustration instead. Describe what the illustration
+shows.
+
+WHAT THIS VIDEO IS ABOUT (the other shots' intents):
+{video_context}
+
+THIS SHOT'S INTENT (what it must convey): {intent}
+
+Never ask an AI image for WORDS: no logos, brand names, titles, labels, signs,
+code, numbers or chart text. The image OCR gate rejects any render carrying more
+than a few legible characters, and screens, monitors, documents, charts and
+terminals all come out covered in writing. Carry the meaning with objects,
+light, shape, motion and arrangement instead.
+
+Write ONE subject that:
+- is a single concrete visual metaphor for the intent, built from physical
+  things (crystals, cables, gears, doors, bridges, beams of light, towers,
+  rivers, machines)
+- a viewer hearing this shot's narration would connect to the video's subject
+- is set in an empty, unpopulated scene
+- is 6-16 words, commas allowed, no quotes, no explanation
+
+EXAMPLES (from other videos — write your own for this shot)
+intent: a cache keeps serving data after it goes stale
+  -> a glass jar of glowing cubes, the oldest ones fading to grey
+intent: many workers share one job queue
+  -> small drones lining up at a single glowing gate
+intent: a network partition cuts two regions apart
+  -> a bridge of light snapping between two floating islands
+
+Output ONLY the subject on a single line.
 ```
 
 ## video.director_short_v1

@@ -316,7 +316,10 @@ def test_review_prompts_carry_the_style_policy_not_a_hardcoded_rotation(key: str
 
 
 @pytest.mark.parametrize(
-    "key", ["video.director_v1", "video.director_short_v1", "video.review_v1", "video.review_short_v1"],
+    "key", [
+        "video.director_v1", "video.director_short_v1", "video.review_v1",
+        "video.review_short_v1", "video.escalation_image_subject",
+    ],
 )
 def test_every_director_template_forbids_words_inside_ai_images(key: str) -> None:
     """The short of 2026-09-22 closed on image_gen "a terminal screen displaying
@@ -339,6 +342,7 @@ def test_every_director_template_forbids_words_inside_ai_images(key: str) -> Non
 #   video.director_*  -> generate_video_shot_list._render (**prompt_variables)
 #   video.review_*    -> review_video_shot_list._render (named policy vars only)
 #   video.restock_query -> video_renderers/shot_list_renderer._llm_restock_query
+#   video.escalation_image_subject -> shot_list_renderer._llm_image_subject
 _CALL_SITE_KWARGS: dict[str, set[str]] = {
     "video.director_v1": {
         "title", "content", "target_duration_s", "model", "now_iso",
@@ -359,6 +363,7 @@ _CALL_SITE_KWARGS: dict[str, set[str]] = {
         "short_script",
     },
     "video.restock_query": {"video_context", "intent", "failed_query"},
+    "video.escalation_image_subject": {"video_context", "intent"},
 }
 
 

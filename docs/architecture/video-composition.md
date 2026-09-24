@@ -235,13 +235,25 @@ finalize held each slot over with the previous shot: three 11 s repeats.
   into that scene (`_merge_repeated_slots`). It becomes one longer continuous
   shot with the same total time, and a video that runs short of the longer
   scene continues on its final frame.
-- Escalation stills get the card first (`_ready_card_for_escalation`: ComfyUI
-  soft `/free`, Ollama evict, idle chatterbox / RIFE, then image-gen
-  `/health`), and a failed render is retried once after clearing again. All
-  of these levers are soft, so a card that is short because of someone else's
-  model cannot queue a restart storm. speaches is not among them: its unload
-  API deadlocks it (see `video-render-vram-gate.md`), and its idle Whisper
-  leaves on its own 60 s timer.
+- Escalation stills get the card first, before EVERY still
+  (`_ready_card_for_escalation`: ComfyUI soft `/free`, Ollama evict, idle
+  chatterbox / RIFE, then image-gen `/health`), and a failed render is retried
+  once after clearing again. Once per pass is not enough: each shot's re-query
+  (rung 1) and subject call load the 31B director model onto the render GPU,
+  and on 2026-09-24 that ~25 GB OOM'd the next shot's still on a card cleared
+  for the previous one. All of these levers are soft, so a card that is short
+  because of someone else's model cannot queue a restart storm. speaches is not
+  among them: its unload API deadlocks it (see `video-render-vram-gate.md`), and
+  its idle Whisper leaves on its own 60 s timer.
+- An escalation still draws a wordless subject. The director model writes a
+  visual metaphor for the shot's intent (`video.escalation_image_subject`), and
+  `_clean_image_subject` discards one that names something an image model
+  draws writing on (screens, code, charts, documents…); the fallback is the
+  intent alone. The failed stock query is never in the prompt: its camera nouns
+  are what drew the text. On 2026-09-24 "diverging lines graph screen" and
+  "computer code scrolling on monitor" put 26-235 legible characters in every
+  attempt, image-gen's OCR gate rejected all of them, and both shots shipped as
+  the previous shot running on for ~20 s.
 
 
 ## Per-source plugin contract
