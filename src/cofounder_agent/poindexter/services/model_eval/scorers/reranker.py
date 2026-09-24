@@ -24,7 +24,10 @@ def _default_encoder_factory(name: str, device: str) -> Any:
     is heavy, and unit tests inject a fake factory instead."""
     from sentence_transformers import CrossEncoder
 
-    return CrossEncoder(name, device=device)
+    # Deliberately unpinned (poindexter#879): this scores CHALLENGER models
+    # by name for the champion–challenger loop, and a candidate has no pin
+    # yet. The production load in rag_engine is pinned.
+    return CrossEncoder(name, device=device)  # hf-revision: eval-only
 
 
 class RerankerScorer:

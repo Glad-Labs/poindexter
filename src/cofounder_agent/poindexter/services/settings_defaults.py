@@ -1841,6 +1841,12 @@ DEFAULTS: dict[str, str] = {
     'rag_rerank_enabled': 'false',
     'rag_rerank_model': 'cross-encoder/ms-marco-MiniLM-L-6-v2',
     'rag_rerank_device': 'cpu',
+    # HF weight pins (poindexter#879): a commit SHA of the model named in the
+    # sibling key; '' = track upstream main. Seeded to the SHA verified equal
+    # to both upstream main and the workers' on-host HF cache (2026-09-24), so
+    # landing the pin is a no-op. Change model and revision together.
+    'rag_rerank_model_revision': '233902d25c440f23af6f7d6e94d2946bac0bee0a',
+    'topic_dedup_embedding_model_revision': '1110a243fdf4706b3f48f1d95db1a4f5529b4d41',
     # Per-candidate char budget handed to the cross-encoder. 2000 ~= the 512
     # tokens ms-marco-MiniLM-L-6-v2 accepts; past that the MODEL truncates,
     # silently and from the head. Excerpting to the same budget on our side
@@ -5601,6 +5607,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
+    'rag_rerank_model_revision': {'owner': 'rag_engine', 'value_type': 'string'},
+    'topic_dedup_embedding_model_revision': {'owner': 'topic_dedup_semantic', 'value_type': 'string'},
     'rag_rerank_max_chars': {'owner': 'rag_engine', 'value_type': 'integer'},
     'retrieval_eval_golden_size': {'owner': 'retrieval_eval', 'value_type': 'integer'},
     'retrieval_eval_min_chunk_chars': {'owner': 'retrieval_eval', 'value_type': 'integer'},

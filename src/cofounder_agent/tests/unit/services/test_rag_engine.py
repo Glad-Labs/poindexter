@@ -474,7 +474,7 @@ class TestCrossEncoderRerank:
         # Pre-populate cache so _get_model returns our stub without
         # importing sentence-transformers.
         # Device-aware cache key (site_config=None -> device "cpu").
-        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu"] = fake_model
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu@main"] = fake_model
 
         results = await r._aretrieve(QueryBundle(query_str="query text"))
 
@@ -519,7 +519,7 @@ class TestCrossEncoderRerank:
         r = cls(inner=inner, top_k=3, site_config=_site_config(
             {"rag_rerank_max_chars": 500},
         ))
-        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu"] = fake_model
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu@main"] = fake_model
 
         await r._aretrieve(QueryBundle(query_str="cross encoder reranker budget"))
 
@@ -551,7 +551,7 @@ class TestCrossEncoderRerank:
         r = cls(inner=inner, top_k=1, site_config=_site_config(
             {"rag_rerank_max_chars": 0},
         ))
-        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu"] = fake_model
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu@main"] = fake_model
 
         await r._aretrieve(QueryBundle(query_str="word"))
         assert seen["pairs"][0][1] == chunk
@@ -584,7 +584,7 @@ class TestCrossEncoderRerank:
         cls = _build_rerank_retriever_class()
         r = cls(inner=inner, top_k=1, site_config=None)
         # Device-aware cache key (site_config=None -> device "cpu").
-        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu"] = fake_model
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu@main"] = fake_model
 
         results = await r._aretrieve(QueryBundle(query_str="q"))
         assert len(results) == 1
@@ -679,7 +679,7 @@ def test_reranker_constructs_on_configured_device(monkeypatch):
     captured: dict = {}
 
     class _FakeCrossEncoder:
-        def __init__(self, name, device=None):
+        def __init__(self, name, device=None, revision=None):
             captured["name"] = name
             captured["device"] = device
 

@@ -743,13 +743,24 @@ def _build_rerank_retriever_class():
                 self._site_config.get("rag_rerank_device", "cpu") or "cpu"
             )
 
+        def _revision(self) -> str | None:
+            # poindexter#879: pin the weights. Unpinned, a cold start loads
+            # whatever the repo's main points at that day — a supply-chain
+            # hole, and retrieval quality moving with no code change. '' =
+            # track upstream. Pins a SHA OF rag_rerank_model: change both
+            # together (a SHA from another repo fails the load, loudly).
+            if self._site_config is None:
+                return None
+            return (self._site_config.get("rag_rerank_model_revision", "") or "").strip() or None
+
         def _get_model(self) -> Any:
             name = self._model_name()
             device = self._device()
-            # Cache on (name, device) so flipping rag_rerank_device at
-            # runtime loads a fresh model on the new device instead of
-            # handing back the stale one.
-            cache_key = f"{name}@{device}"
+            revision = self._revision()
+            # Cache on (name, device, revision) so flipping rag_rerank_device
+            # or the pin at runtime loads a fresh model instead of handing
+            # back the stale one.
+            cache_key = f"{name}@{device}@{revision or 'main'}"
             if cache_key in _RERANKER_CACHE:
                 return _RERANKER_CACHE[cache_key]
             # ImportError is intentionally left to bubble — when the
@@ -762,10 +773,10 @@ def _build_rerank_retriever_class():
             # logs a clearly-actionable hint about the dep + setting.
             from sentence_transformers import CrossEncoder
             logger.info(
-                "[rag/rerank] Loading cross-encoder %s on %s (first call)",
-                name, device,
+                "[rag/rerank] Loading cross-encoder %s@%s on %s (first call)",
+                name, revision or "main", device,
             )
-            _RERANKER_CACHE[cache_key] = CrossEncoder(name, device=device)
+            _RERANKER_CACHE[cache_key] = CrossEncoder(name, device=device, revision=revision)
             return _RERANKER_CACHE[cache_key]
 
         async def _aretrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:

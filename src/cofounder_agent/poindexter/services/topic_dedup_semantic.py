@@ -45,7 +45,7 @@ _model_lock = threading.Lock()
 _model_cache: dict[tuple[str, str], Any] = {}
 
 
-def _get_model(model_name: str, device: str = "cpu") -> Any:
+def _get_model(model_name: str, device: str = "cpu", revision: str | None = None) -> Any:
     """Lazy-load + cache a sentence-transformer model on ``device``.
 
     Thread-safe: two callers racing on the same (name, device) see only one
@@ -53,18 +53,20 @@ def _get_model(model_name: str, device: str = "cpu") -> Any:
     by default so topic dedup never competes for VRAM with the inference
     pipeline (mirrors the rag_rerank_device reranker-to-CPU fix).
     """
-    key = (model_name, device)
+    key = (model_name, device, revision)
     if key in _model_cache:
         return _model_cache[key]
     with _model_lock:
         if key not in _model_cache:
             from sentence_transformers import SentenceTransformer
             logger.info(
-                "[topic_dedup_semantic] Loading sentence-transformer: %s on %s "
+                "[topic_dedup_semantic] Loading sentence-transformer: %s@%s on %s "
                 "(first call — subsequent calls reuse the cached model)",
-                model_name, device,
+                model_name, revision or "main", device,
             )
-            _model_cache[key] = SentenceTransformer(model_name, device=device)
+            _model_cache[key] = SentenceTransformer(
+                model_name, device=device, revision=revision,
+            )
     return _model_cache[key]
 
 
@@ -218,13 +220,17 @@ class SemanticDeduplicator:
     def _embed(self, texts: list[str]) -> Any:
         """Encode texts to a (N, D) numpy array. Synchronous — for internal use only.
         Callers should prefer _embed_async to avoid blocking the event loop."""
-        model = _get_model(self._get_model_name(), self._get_device())
+        model = _get_model(
+            self._get_model_name(), self._get_device(), self._get_revision(),
+        )
         return model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
 
     async def _embed_async(self, texts: list[str]) -> Any:
         """Encode texts via asyncio.to_thread so the blocking sentence-transformers
         call does not freeze the event loop. Returns a (N, D) numpy array."""
-        model = _get_model(self._get_model_name(), self._get_device())
+        model = _get_model(
+            self._get_model_name(), self._get_device(), self._get_revision(),
+        )
         return await asyncio.to_thread(
             model.encode, texts,
             normalize_embeddings=True,
@@ -240,6 +246,21 @@ class SemanticDeduplicator:
             ) or self.DEFAULT_MODEL
         except Exception:
             return self.DEFAULT_MODEL
+
+    def _get_revision(self) -> str | None:
+        """Pinned commit SHA for the embedding model (poindexter#879); ''
+        tracks upstream main. It pins topic_dedup_embedding_model, so change
+        the two together."""
+        try:
+            return (
+                self._site_config.get("topic_dedup_embedding_model_revision", "") or ""
+            ).strip() or None
+        except Exception as exc:  # noqa: BLE001 — an unreadable pin must not stop dedup
+            logger.warning(
+                "[topic_dedup_semantic] topic_dedup_embedding_model_revision "
+                "unreadable (%s) — loading upstream main", exc,
+            )
+            return None
 
     def _get_device(self) -> str:
         """Device for the dedup embedding model. Default 'cpu' so it never

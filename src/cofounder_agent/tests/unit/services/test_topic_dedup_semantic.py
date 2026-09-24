@@ -247,7 +247,7 @@ class TestCpuPin:
         fake_module.SentenceTransformer = fake_st_class
         with patch.dict(sys.modules, {"sentence_transformers": fake_module}):
             mod._get_model("all-MiniLM-L6-v2", "cpu")
-        fake_st_class.assert_called_once_with("all-MiniLM-L6-v2", device="cpu")
+        fake_st_class.assert_called_once_with("all-MiniLM-L6-v2", device="cpu", revision=None)
         mod._model_cache.clear()
 
     def test_get_device_defaults_to_cpu(self):
