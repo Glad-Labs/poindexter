@@ -18,6 +18,10 @@ from poindexter.brain.remediation.registry import (
     execute,
 )
 
+# Value of an alert's ``remediation`` label that keeps it off the LLM long-tail
+# path: only an operator-written remediation_rules row may act on it.
+RULES_ONLY = "rules_only"
+
 
 @dataclass
 class RemediationDecision:
@@ -246,7 +250,17 @@ async def evaluate_for_dispatch(
     if not config.get("enabled"):
         return RemediationDecision(acted=False, reason="disabled")
 
-    alertname = (alert.get("labels", {}).get("alertname") or "").strip()
+    # Only a FIRING alert describes a problem to fix. A resolved row for the
+    # same alertname (probes write recovery rows; Alertmanager sends resolved
+    # notifications) would otherwise match the same rule and re-run its action
+    # against something that just recovered. The dispatcher defaults a missing
+    # status to "firing", so absent means firing here too.
+    status = str(alert.get("status") or "firing").strip().lower()
+    if status != "firing":
+        return RemediationDecision(acted=False, reason=f"status {status}; nothing to remediate")
+
+    labels = alert.get("labels") or {}
+    alertname = (labels.get("alertname") or "").strip()
     rule = await R.match_rule(pool, alertname=alertname, fingerprint=fingerprint)
     if rule is not None:
         return await _apply_action(
@@ -263,6 +277,12 @@ async def evaluate_for_dispatch(
     # selector is wired; otherwise page as before (unchanged back-compat).
     if select_fn is None:
         return RemediationDecision(acted=False, reason="no rule")
+    # A producer whose alert covers targets that must never be bounced blind
+    # (the container health watch fires for GPU renderers mid-job and for a
+    # busy worker) marks it rules-only: an operator-written rule may act on it,
+    # the LLM selector may not.
+    if str(labels.get("remediation") or "").strip().lower() == RULES_ONLY:
+        return RemediationDecision(acted=False, reason="no rule; alert allows rule-driven remediation only")
     return await _select_and_apply(
         pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
         config=config, logger=logger, select_fn=select_fn,

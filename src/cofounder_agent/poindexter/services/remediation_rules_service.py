@@ -19,6 +19,7 @@ name-keyed declarative surfaces in :mod:`services.declarative_config_service`,
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 # Firefighter action executors registered in ``poindexter/brain/remediation/registry.py``.
@@ -110,8 +111,8 @@ async def add_rule(
     Validates (before any DB write) that ``action_name`` is a registered
     executor, that at least one of ``alertname`` / ``match_regex`` is present
     (the table's CHECK constraint), and that a ``restart_container`` rule names
-    a ``container`` — a rule the brain can never run is a silent dead row, so it
-    fails loud here instead.
+    a ``container``, and that ``match_regex`` compiles — a rule the brain can
+    never run is a silent dead row, so it fails loud here instead.
 
     Raises:
         RemediationRuleError: on any of the above.
@@ -125,6 +126,14 @@ async def add_rule(
         raise RemediationRuleError(
             "a rule needs an alertname or a match_regex to match against"
         )
+    if match_regex:
+        # The brain skips a rule whose regex will not compile (logging a warning
+        # every dispatch), so a typo here would be the silent dead row this
+        # function exists to refuse.
+        try:
+            re.compile(match_regex)
+        except re.error as exc:
+            raise RemediationRuleError(f"match_regex {match_regex!r} does not compile: {exc}") from exc
     params = dict(params or {})
     if action_name == "restart_container" and not params.get("container"):
         raise RemediationRuleError(

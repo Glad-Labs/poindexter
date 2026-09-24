@@ -315,3 +315,78 @@ async def test_llm_selection_still_honors_breaker(monkeypatch):
     assert d.acted is False
     assert "breaker" in d.reason
     assert called["n"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Status guard + rules-only label (2026-09-24, container health watch)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_resolved_alert_never_runs_the_rule_that_matches_its_firing_twin(monkeypatch):
+    """A probe's recovery row carries the same alertname/fingerprint prefix as
+    the firing one; acting on it would restart something that just recovered."""
+    matched = {"n": 0}
+
+    async def _match(*a, **k):
+        matched["n"] += 1
+        return {"id": 1, "action_name": "restart_container", "params": {"container": "poindexter-speaches"},
+                "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None}
+
+    monkeypatch.setattr(R, "match_rule", _match)
+    monkeypatch.setattr(E, "execute", _acoro(ActionResult(status="ok", detail="restarted", latency_ms=1)))
+    pool = FakePool()
+    resolved = {**ALERT, "status": "resolved"}
+    d = await E.evaluate_for_dispatch(pool, alert=resolved, fingerprint="fp", config=CFG, logger=LOG)
+    assert d.acted is False and "resolved" in d.reason
+    assert matched["n"] == 0 and pool.executed == []
+
+
+@pytest.mark.asyncio
+async def test_an_alert_without_a_status_is_treated_as_firing(monkeypatch):
+    """The dispatcher defaults a missing status to firing; the engine agrees."""
+    rule = {"id": 7, "action_name": "restart_container", "params": {"container": "poindexter-worker"},
+            "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None}
+    monkeypatch.setattr(R, "match_rule", _acoro(rule))
+    monkeypatch.setattr(R, "circuit_breaker_tripped", _acoro(False))
+    monkeypatch.setattr(R, "global_rate_exceeded", _acoro(False))
+    monkeypatch.setattr(E, "execute", _acoro(ActionResult(status="ok", detail="restarted", latency_ms=1)))
+    d = await E.evaluate_for_dispatch(FakePool(), alert=ALERT, fingerprint="fp", config=CFG, logger=LOG)
+    assert d.acted is True
+
+
+@pytest.mark.asyncio
+async def test_a_rules_only_alert_never_reaches_the_llm_selector(monkeypatch):
+    monkeypatch.setattr(R, "match_rule", _acoro(None))
+    counter = {"n": 0}
+    alert = {"labels": {"alertname": "container_unhealthy", "severity": "warning",
+                        "container": "poindexter-worker", "remediation": E.RULES_ONLY},
+             "annotations": {}}
+    d = await E.evaluate_for_dispatch(
+        FakePool(), alert=alert, fingerprint="container_health_watch:poindexter-worker|warning",
+        config=CFG_LLM, logger=LOG,
+        select_fn=_counting_select_fn(counter, {"action_name": "restart_container", "confidence": 0.99}),
+        repeat_count=9, age_minutes=60,
+    )
+    assert d.acted is False and "rule-driven" in d.reason
+    assert counter["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_rules_only_alert_still_runs_its_rule(monkeypatch):
+    rule = {"id": 3, "action_name": "restart_container", "params": {"container": "poindexter-speaches"},
+            "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": 900}
+    monkeypatch.setattr(R, "match_rule", _acoro(rule))
+    monkeypatch.setattr(R, "circuit_breaker_tripped", _acoro(False))
+    monkeypatch.setattr(R, "global_rate_exceeded", _acoro(False))
+    monkeypatch.setattr(E, "execute", _acoro(ActionResult(status="ok", detail="restarted", latency_ms=1)))
+    alert = {"labels": {"alertname": "container_unhealthy", "severity": "warning",
+                        "remediation": E.RULES_ONLY}, "annotations": {}}
+    pool = FakePool()
+    d = await E.evaluate_for_dispatch(
+        pool, alert=alert, fingerprint="container_health_watch:poindexter-speaches|warning",
+        config=CFG, logger=LOG,
+    )
+    assert d.acted is True and d.params == {"container": "poindexter-speaches"}
+    details = json.loads([e for e in pool.executed if "audit_log" in e[0]][0][1][3])
+    assert details["verify_after_seconds"] == 900

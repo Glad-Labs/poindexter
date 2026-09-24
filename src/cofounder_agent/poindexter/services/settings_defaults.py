@@ -4900,6 +4900,18 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'container_restart_loop_threshold': '3',
     # Reminder cadence while the loop continues; 0 = page once per episode.
     'container_restart_loop_reminder_hours': '1',
+    # ----- Container health watch (poindexter/brain/container_health_watch.py) -----
+    # Docker restart policies act only when a process EXITS; a container that is
+    # alive but failing its healthcheck stays wedged. A container unhealthy this
+    # long fires `container_unhealthy` every cycle until it recovers; restarting
+    # it is a firefighter remediation_rules row per safe-to-bounce container
+    # (docs/operations/self-healing.md). 2026-09-24: speaches sat unhealthy for
+    # 154 min and every render in that window lost its captions.
+    'container_health_watch_enabled': 'true',
+    'container_health_alert_after_minutes': '10',
+    # name=minutes overrides. image-gen-server serves /health on the event loop
+    # its inference blocks, so it reads unhealthy for 8-22 min while it works.
+    'container_health_alert_after_overrides': 'poindexter-image-gen-server=30',
 
     # ----- Outlet guard (poindexter/brain/outlet_guard_probe.py, 2026-09-06) -----
     # The Shelly plug that meters the PC's wall power (bootstrap
@@ -6285,6 +6297,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'container_restart_loop_probe_enabled': {'owner': 'container_restart_loop_probe', 'value_type': 'boolean'},
     'container_restart_loop_reminder_hours': {'owner': 'container_restart_loop_probe', 'value_type': 'integer'},
     'container_restart_loop_threshold': {'owner': 'container_restart_loop_probe', 'value_type': 'integer'},
+    'container_health_watch_enabled': {'owner': 'container_health_watch', 'value_type': 'boolean'},
+    'container_health_alert_after_minutes': {'owner': 'container_health_watch', 'value_type': 'float'},
+    'container_health_alert_after_overrides': {'owner': 'container_health_watch', 'value_type': 'string'},
     'outlet_guard_enabled': {'owner': 'outlet_guard_probe', 'value_type': 'boolean'},
     'outlet_guard_min_line_voltage_volts': {'owner': 'outlet_guard_probe', 'value_type': 'float'},
     'outlet_guard_require_ups_on_battery': {'owner': 'outlet_guard_probe', 'value_type': 'boolean'},

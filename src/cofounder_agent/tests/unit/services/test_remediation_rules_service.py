@@ -100,6 +100,19 @@ async def test_add_rule_restart_container_requires_container_param():
 
 
 @pytest.mark.asyncio
+async def test_add_rule_rejects_a_regex_that_does_not_compile():
+    """The brain skips an uncompilable regex at dispatch, so storing one is a dead rule."""
+    pool = _FakePool()
+    with pytest.raises(svc.RemediationRuleError, match="does not compile"):
+        await svc.add_rule(
+            pool, action_name="restart_container",
+            match_regex="^container_health_watch:poindexter-speaches|(",
+            params={"container": "poindexter-speaches"},
+        )
+    assert pool.conn.calls == []
+
+
+@pytest.mark.asyncio
 async def test_add_rule_accepts_match_regex_only():
     pool = _FakePool(fetchrow=_rule_row(
         id=2, alertname=None, match_regex="topic.batch.stuck",

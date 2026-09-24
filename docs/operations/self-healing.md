@@ -174,6 +174,15 @@ the container on a guess is worse than reporting it.
   names both containers as never-choose, which suppresses most picks at the
   source — the executor guard is the backstop for the rest.
 
+- **Firing alerts only.** A resolved row is never remediated. A probe's recovery
+  row, or Alertmanager's resolved notification, carries the same alertname and
+  fingerprint prefix as the firing alert, so before this guard (2026-09-24) a
+  matched rule would have re-run its action against something that had just
+  recovered. A row with no status counts as firing, as it does in the dispatcher.
+- **Rules-only alerts.** An alert labelled `remediation=rules_only` can be acted
+  on by a matching rule but never by the LLM long-tail. The container health
+  watch sets it, because its alert covers GPU renderers mid-job and a busy
+  worker.
 - **Verify-then-page.** A successful action never silences an unfixed problem: if
   the alert is still firing after the grace window, it pages. Silence is earned
   only by the alert actually stopping.
@@ -574,6 +583,77 @@ in-container Docker `HEALTHCHECK` is impossible. Their liveness is an **external
 Prometheus rule instead (`up{job="..."} == 0` in
 `infrastructure/prometheus/alerts/observability-sidecars.yml`).
 
+## Container health watch — unhealthy is not exited
+
+Docker's restart policy acts when a container's main process **exits**. A
+process that is alive but failing its own `HEALTHCHECK` gets marked `unhealthy`
+and is otherwise left alone. On 2026-09-24 speaches hung inside a Whisper model
+load: its healthcheck failed for 154 minutes, every render in that window
+shipped without burned-in captions, and nothing restarted it or paged.
+`docker restart poindexter-speaches` fixed it in seconds.
+
+`poindexter/brain/container_health_watch.py` detects that state. Every cycle it
+reads each `poindexter-*` container's health, reusing the restart-loop probe's
+single `docker inspect`:
+
+| Container state | What the probe does |
+| --- | --- |
+| `unhealthy` for at least `container_health_alert_after_minutes` (default 10, measured as failing streak × check interval) | Opens an episode and writes a firing `container_unhealthy` row: fingerprint `container_health_watch:<name>`, severity `warning`, the last log lines, label `remediation=rules_only`. |
+| still `unhealthy`, episode open | Fires again every cycle, with no threshold. The dispatcher collapses the repeats into one page, and the firefighter's verify step reads them. |
+| `starting` (start period, e.g. just restarted) | Nothing. The episode stays open. |
+| `healthy` after an episode | Writes a resolved row that says whether the container was restarted in between (its `StartedAt` moved). |
+| no healthcheck | Ignored. |
+
+**The probe restarts nothing; a firefighter rule does.** Some containers are
+safe to bounce, such as a stateless sidecar. Others are not: a GPU renderer
+mid-job, the worker mid-render, a database. So each container that is safe gets
+its own `restart_container` rule matched on the fingerprint. That gives it the
+circuit breaker, the global rate cap, the never-restart denylist, audit rows and
+verify-then-page:
+
+```bash
+for c in speaches chatterbox rife stable-audio; do
+  poindexter firefighter rule add \
+    --action restart_container \
+    --match "^container_health_watch:poindexter-$c\|" \
+    --param container=poindexter-$c \
+    --verify-after 900 \
+    --description "Restart $c after 10+ min unhealthy (container health watch)."
+done
+```
+
+- `--verify-after 900`. The probe runs on the 5-minute brain cycle, and a
+  sidecar that comes back from a restart still broken reads `unhealthy` again
+  only after its start period plus retries × interval (speaches: 2 min + 5 × 30 s).
+  The global 120 s default would judge the restart "resolved" before the probe
+  could report otherwise.
+- The regex is anchored on the fingerprint plus the `|` the dispatcher appends
+  before the severity, so `poindexter-rife` cannot match a container named
+  `poindexter-rife-something`.
+- Those four were chosen from data. In the 15 days of Prometheus
+  `container_health_state` history before this shipped, none of them read
+  unhealthy for 5 minutes or more outside the speaches wedge itself.
+
+**A container with no rule pages instead.** The `remediation=rules_only` label
+keeps the LLM long-tail from choosing a restart for it (see Safety guardrails),
+because this alert covers the containers where a blind bounce kills work in
+progress.
+
+**Per-container thresholds.** `container_health_alert_after_overrides` takes
+`name=minutes,...` and defaults to `poindexter-image-gen-server=30`.
+image-gen-server runs inference and model loads on its event loop, so `/health`
+cannot answer while it works. In the same 15 days it read unhealthy 13 times,
+for 8 to 22 minutes each. The override keeps that from paging until its health
+endpoint is served off the event loop.
+
+**Known limit: one restart per dedup window.** The dispatcher consults the
+firefighter only for a page it is about to send, and repeats of a fingerprint
+inside `alert_repeat_suppress_window_minutes` (120) are suppressed rather than
+re-evaluated. A sidecar that wedges again within two hours of an earlier episode
+is therefore not restarted a second time. It pages instead, through the verify
+step's "did not resolve" or the dispatcher's summary. The same holds for every
+firefighter rule.
+
 ## Docker port-forward recovery — restart vs alert-only
 
 `docker_port_forward_probe` detects the Windows Docker Desktop / WSL2 NAT
@@ -934,6 +1014,9 @@ full incident write-up.
 | `docker_port_forward_alert_only_backoff_minutes`              | `60`                                       | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                                                                                            |
 | `docker_port_forward_pg_auth_check_enabled`                   | `true`                                     | Toggles the real-auth SCRAM-corruption tier for `probe_type=postgres` entries, independent of the base probe.                                                                                |
 | `docker_port_forward_pg_auth_timeout_seconds`                 | `5`                                        | Timeout for the real-auth `asyncpg.connect()` attempt (a few round trips, not one — set slightly above the base timeout).                                                                    |
+| `container_health_watch_enabled`                              | `true`                                     | Container health watch: fire `container_unhealthy` while a container stays unhealthy.                                                                                                     |
+| `container_health_alert_after_minutes`                        | `10`                                       | Minutes of consecutive failed healthchecks before a container's first `container_unhealthy` row.                                                                                          |
+| `container_health_alert_after_overrides`                      | `poindexter-image-gen-server=30`           | Per-container `name=minutes` thresholds for containers whose healthcheck fails while they work.                                                                                            |
 | `ops_firefighter_enabled`                                     | `true`                                     | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                                                                                        |
 | `ops_firefighter_max_attempts_per_window`                     | `3`                                        | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                                                                                                |
 | `ops_firefighter_window_minutes`                              | `60`                                       | Circuit-breaker rolling window (minutes); a matched rule may override.                                                                                                                       |

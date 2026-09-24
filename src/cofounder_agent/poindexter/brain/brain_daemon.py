@@ -236,6 +236,11 @@ try:
 except ImportError:  # pragma: no cover — package-qualified path
     _HAS_CONTAINER_RESTART_LOOP_PROBE = False
 try:
+    from poindexter.brain.container_health_watch import run_container_health_watch_probe
+    _HAS_CONTAINER_HEALTH_WATCH = True
+except ImportError:  # pragma: no cover — package-qualified path
+    _HAS_CONTAINER_HEALTH_WATCH = False
+try:
     from poindexter.brain.outlet_guard_probe import run_outlet_guard_probe
     _HAS_OUTLET_GUARD_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
@@ -331,6 +336,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "MCP HTTP server reachability monitor offline"),
     ("_HAS_CONTAINER_RESTART_LOOP_PROBE", "poindexter/brain/container_restart_loop_probe.py",
      "Container restart-loop watch offline — a crash-looping container pages nobody until a downstream probe notices (2026-09-13: chatterbox, 507 restarts, 8 h)"),
+    ("_HAS_CONTAINER_HEALTH_WATCH", "poindexter/brain/container_health_watch.py",
+     "Container health watch offline — a wedged sidecar stays unhealthy until someone notices (2026-09-24: speaches, 3 h, every render lost its captions)"),
     ("_HAS_OUTLET_GUARD_PROBE", "poindexter/brain/outlet_guard_probe.py",
      "Outlet guard offline — a metered wall plug that opens with mains present "
      "drains the UPS to a clean shutdown and stays dark until a human presses "
@@ -3204,6 +3211,24 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] container_restart_loop probe failed: %s", e)
+
+    # Container health watch (2026-09-24). Docker restart policies act only on
+    # process EXIT, so a sidecar that is alive but wedged stays unhealthy: speaches
+    # hung in a Whisper load for three hours and every render lost its captions.
+    # Detector only: fires `container_unhealthy` while a container stays unhealthy
+    # past container_health_alert_after_minutes. The restart is the firefighter's,
+    # via a per-container remediation_rules row (docs/operations/self-healing.md).
+    if _HAS_CONTAINER_HEALTH_WATCH:
+        try:
+            cycle_stage.set_stage("run_container_health_watch_probe")
+            chw_summary = await run_container_health_watch_probe(pool)
+            probe_results["container_health_watch"] = {
+                "ok": bool(chw_summary.get("ok", False)),
+                "detail": chw_summary.get("detail", ""),
+                "summary": chw_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] container_health_watch probe failed: %s", e)
 
     # Outlet guard (2026-09-06). Reads the PC's own Shelly plug every cycle;
     # if the relay is OFF with mains present on its input and the UPS is on
