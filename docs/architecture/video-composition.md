@@ -185,6 +185,14 @@ clip shorter than its scene (`-stream_loop -1`), so a 5 s hero repeated three
 or four times on screen. The presenter format (opening / midpoint / closing)
 is enforced in code; see [media personas](media-personas.md).
 
+Since then no clip loops at all, whatever the director asks for. A video clip
+shorter than its scene plays once, and the rest of the scene is a slow centred
+Ken Burns push on its final frame (`shot_list_renderer._scenes_for_plan`). That
+frame is extracted fitted exactly as the compositor fits the clip (contain +
+centred pad), so the handoff is pixel-identical. Scenes are joined with the
+concat demuxer (hard cuts, no overlap), so the split adds no time and the
+narration stays in sync. Presenter clips keep holding their last frame.
+
 ## Per-source plugin contract
 
 Each `source` value resolves to one of:

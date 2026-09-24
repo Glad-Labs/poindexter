@@ -79,10 +79,13 @@ class CompositionScene:
             the compositor does not. ``None`` keeps the rotation.
         hold_last_frame: For a VIDEO clip shorter than ``duration_s``,
             hold the final frame for the remainder instead of looping
-            the clip from the start. Looping is right for an abstract
-            hero clip; for a talking head it restarts the face
-            mid-sentence and breaks lip-sync (2026-09-17). Stills are
-            unaffected (they are already a held frame).
+            the clip from the start. A loop restarts a talking head
+            mid-sentence (2026-09-17) and plays a hero clip several times
+            over (2026-09-23), so the shot-list renderer never hands the
+            compositor a clip to loop: it plays each short clip once and
+            continues on its final frame as a separate still scene
+            (``shot_list_renderer._scenes_for_plan``). Stills are unaffected
+            (they are already a held frame).
     """
 
     clip_path: str

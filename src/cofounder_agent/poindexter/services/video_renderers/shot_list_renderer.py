@@ -3382,8 +3382,121 @@ async def _render_pass(
 
 def _holds_last_frame(result: ShotRenderResult) -> bool:
     """Presenter clips freeze on their final frame when shorter than their
-    scene; every other source keeps the compositor's loop-to-fill default."""
+    scene. Other video clips never reach the compositor's loop-to-fill
+    default any more: :func:`_scenes_for_plan` plays them once and continues
+    on their final frame."""
     return getattr(result, "source", None) == _PRESENTER_SOURCE
+
+
+# A video clip shorter than its scene used to LOOP: the compositor feeds any
+# short clip through ``-stream_loop -1``, so a ~5 s hero clip (81 frames at
+# 16 fps) in an 18 s scene played three and a half times. That was the "single
+# shot repeating" the operator flagged on 2026-09-23. A gap under this is left
+# to the compositor: a fraction of a second of restart is not worth a scene
+# boundary.
+_CONTINUE_MIN_GAP_S = 0.5
+
+
+async def _last_frame_still(clip_path: str, *, width: int, height: int) -> str | None:
+    """The final frame of ``clip_path``, fitted to ``width``x``height`` exactly
+    as the compositor fits a video scene (contain + centred pad). The
+    continuation still then starts pixel-identical to where the clip stopped,
+    so the cut between them is invisible. ``None`` on any failure: the caller
+    keeps the single-scene layout."""
+    out = f"{os.path.splitext(clip_path)[0]}_lastframe.png"
+    fit = (
+        f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
+        f"pad=w={width}:h={height}:x=(ow-iw)/2:y=(oh-ih)/2"
+    )
+    try:
+        # -sseof seeks near the end; -update 1 rewrites one file per decoded
+        # frame, so what is left on disk is the clip's very last frame.
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-loglevel", "error", "-y", "-sseof", "-0.5", "-i", clip_path,
+            "-vf", fit, "-update", "1", out,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.communicate()
+        if proc.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) == 0:
+            return None
+        return out
+    except Exception as exc:  # noqa: BLE001  # silent-ok: fall back to the single scene
+        logger.debug("[SHOT_LIST] last-frame grab failed for %s: %s", clip_path, describe_exception(exc))
+        return None
+
+
+async def _scenes_for_plan(
+    scene_plan: list[tuple[int, float]],
+    rendered: list[ShotRenderResult],
+    shot_list: Any,
+    *,
+    width: int,
+    height: int,
+    probe: Any = None,
+    grab: Any = None,
+) -> list[CompositionScene]:
+    """One composition scene per planned slot, with no clip ever looping.
+
+    A video clip shorter than its slot by at least ``_CONTINUE_MIN_GAP_S``
+    becomes two scenes: the clip once, then its final frame as a still with a
+    slow centred push for the remainder. The compositor joins scenes with the
+    concat demuxer, which is hard cuts with no overlap, so the split adds no
+    time and the narration stays in sync. Presenter clips keep their
+    hold-last-frame behaviour. Stills, clips that fill their slot, and any
+    probe or grab failure keep the single scene.
+    """
+    from poindexter.services.media_compositors.ffmpeg_local import _is_still_image
+
+    probe = probe or _probe_duration_s
+    grab = grab or _last_frame_still
+    clip_s: dict[int, float | None] = {}
+    stills: dict[int, str | None] = {}
+    scenes: list[CompositionScene] = []
+    for idx, dur in scene_plan:
+        result = rendered[idx]
+        clip = result.clip_path or ""
+        # The compositor cannot see the prompt; we can. A corridor shot zooms
+        # to its vanishing point instead of drifting to a corner.
+        # ``scene_plan`` may CYCLE indices to stretch a short plan over a long
+        # narration, so index defensively rather than zip.
+        variant = kenburns_variant_for(
+            str(getattr(shot_list.shots[idx], "prompt", "") or "")
+            if 0 <= idx < len(shot_list.shots) else ""
+        )
+        # A presenter clip covers its speech in whole S2V chunks capped by
+        # video_comfyui_s2v_max_chunks, so it can run a little short of the
+        # fitted scene; a face that jumps back to its first frame mid-sentence
+        # breaks the lip-sync, so it holds its last frame instead.
+        hold = _holds_last_frame(result)
+        if clip and not hold and not _is_still_image(clip):
+            if idx not in clip_s:
+                clip_s[idx] = await probe(clip)
+            played = clip_s[idx]
+            if played and dur - played >= _CONTINUE_MIN_GAP_S:
+                if idx not in stills:
+                    stills[idx] = await grab(clip, width=width, height=height)
+                if stills[idx]:
+                    scenes.append(CompositionScene(
+                        clip_path=clip, narration_path=None,
+                        duration_s=round(played, 3), ken_burns_variant=variant,
+                        # Covers the rounding sliver at the end of the clip.
+                        hold_last_frame=True,
+                    ))
+                    scenes.append(CompositionScene(
+                        clip_path=stills[idx] or "", narration_path=None,
+                        duration_s=round(dur - played, 3),
+                        # Push into the centre: the still starts as the exact
+                        # frame the clip ended on, so any drift would read as
+                        # the camera lurching sideways at the cut.
+                        ken_burns_variant=KEN_BURNS_CENTER,
+                    ))
+                    continue
+        scenes.append(CompositionScene(
+            clip_path=clip, narration_path=None, duration_s=dur,
+            ken_burns_variant=variant, hold_last_frame=hold,
+        ))
+    return scenes
 
 
 def _fitted_shot_window(
@@ -4451,29 +4564,15 @@ async def render_shot_list(
                 "keeping director durations (compositor tail-pad handles it)",
                 audio_path,
             )
-    scenes: list[CompositionScene] = [
-        CompositionScene(
-            clip_path=rendered[idx].clip_path or "",
-            narration_path=None,
-            duration_s=dur,
-            # The compositor cannot see the prompt; we can. A corridor shot
-            # zooms to its vanishing point instead of drifting to a corner.
-            # ``scene_plan`` may CYCLE indices to stretch a short plan over a
-            # long narration, so index defensively rather than zip.
-            ken_burns_variant=kenburns_variant_for(
-                str(getattr(shot_list.shots[idx], "prompt", "") or "")
-                if 0 <= idx < len(shot_list.shots) else ""
-            ),
-            # A presenter clip covers its speech in whole S2V chunks capped
-            # by video_comfyui_s2v_max_chunks, so it can run a little short
-            # of the fitted scene. The compositor's default for a short clip
-            # is to loop it — fine for an abstract hero, but a face that
-            # jumps back to its first frame mid-sentence breaks the lip-sync
-            # the fitted window just bought. Hold the last frame instead.
-            hold_last_frame=_holds_last_frame(rendered[idx]),
+    scenes = await _scenes_for_plan(
+        scene_plan, rendered, shot_list, width=width, height=height,
+    )
+    continued = len(scenes) - len(scene_plan)
+    if continued:
+        logger.info(
+            "[SHOT_LIST] %d clip(s) shorter than their scene play once and "
+            "continue on their final frame (no looping)", continued,
         )
-        for idx, dur in scene_plan
-    ]
     if endcard_scene is not None:
         # A SCENE, not a shot: shots_total / shots_carded stay untouched, so
         # the real-source ship gate never counts the deliberate end-card as a
