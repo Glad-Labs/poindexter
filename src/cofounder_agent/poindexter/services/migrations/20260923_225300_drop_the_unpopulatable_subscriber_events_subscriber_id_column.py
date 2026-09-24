@@ -1,6 +1,6 @@
 """Migration: drop subscriber_events.subscriber_id
 
-ISSUE: Glad-Labs/glad-labs-stack#3216 (follow-on)
+ISSUE: Glad-Labs/poindexter#3216 (follow-on)
 
 ``subscriber_events.subscriber_id`` is a **uuid**. The only subscriber table,
 ``newsletter_subscribers``, has a **serial int** primary key. The two cannot

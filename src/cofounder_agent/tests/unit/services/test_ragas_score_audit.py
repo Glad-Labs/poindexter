@@ -6,7 +6,7 @@ covered by a file that never imports datasets/pyarrow:
 ``_emit_ragas_score_audit`` only formats a dict and hands it to
 ``audit_log_bg``. (``test_ragas_eval.py`` used to carry a Windows-only
 ``pytest.skip(allow_module_level=True)`` for a Python-3.12 pyarrow native-init
-access violation; that skip was removed in Glad-Labs/glad-labs-stack#997 once
+access violation; that skip was removed in Glad-Labs/poindexter#997 once
 the repo moved to Python 3.13, where pyarrow imports cleanly.) This file
 exercises the contract the Grafana panel queries depend on
 (``event_type='ragas_score'``, ``details->>'score'`` as float, three
