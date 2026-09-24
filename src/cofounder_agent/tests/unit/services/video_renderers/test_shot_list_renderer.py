@@ -640,18 +640,19 @@ class TestRenderShotList:
         assert result.output_path == output_path
 
         # The compositor must have been called with 3 scenes in order.
-        assert len(captured_request["scenes"]) == 3
+        # The pexels shot misses here (the fake HTTP client answers every
+        # call with a PNG), so its slot resolves to shot 0's still. Since
+        # 2026-09-24 that runs on as ONE longer shot instead of replaying the
+        # still as a second scene; the slot's time is kept, so the total is 9 s.
+        assert len(captured_request["scenes"]) == 2
         scenes = captured_request["scenes"]
-        assert scenes[0].duration_s == 3.0
-        assert scenes[1].duration_s == 2.0
-        assert scenes[2].duration_s == 4.0
+        assert scenes[0].duration_s == 5.0  # shot 0 (3 s) + the missed slot (2 s)
+        assert scenes[1].duration_s == 4.0
         # ALL scenes are silent — the narration is laid over the whole
         # concat via narration_track_path, not bound to scene 0 (binding
         # to scene 0 truncated the voiceover at the first transition;
         # #media-render-fixes).
-        assert scenes[0].narration_path is None
-        assert scenes[1].narration_path is None
-        assert scenes[2].narration_path is None
+        assert all(scene.narration_path is None for scene in scenes)
         # The full-length narration rides narration_track_path.
         assert captured_request["narration_track_path"] == audio_path
         # The soundtrack is the AMBIENT bed (None here, since no ambient
@@ -3400,6 +3401,12 @@ class TestEscalateOfftopicStock:
 
         monkeypatch.setattr(slr, "_render_one_shot", _fake_render)
         monkeypatch.setattr(slr, "score_shot_frame", _fake_score)
+        # The pre-escalation card clear talks to real sidecars; tests that
+        # care inspect self._ready.
+        from unittest.mock import AsyncMock
+
+        self._ready = AsyncMock()
+        monkeypatch.setattr(slr, "_ready_card_for_escalation", self._ready)
         # Rung 1 (LLM re-query) off unless a test opts in — these cases pin
         # rung 2 (cross-family) behaviour.
         if not hasattr(self, "_restock"):
@@ -3412,6 +3419,51 @@ class TestEscalateOfftopicStock:
             pool=object(), post_id="p1",
         )
         return n, rendered
+
+    @pytest.mark.asyncio
+    async def test_the_card_is_cleared_once_before_the_first_escalation_still(self, monkeypatch):
+        # 2026-09-24: three of four escalation stills died on image-gen 503
+        # CUDA OOM because ComfyUI still held the presenter weights.
+        states = [self._state(), self._state()]
+        states[1].shot = states[1].shot.model_copy(update={"idx": 2})
+        n, _ = await self._run(states, monkeypatch)
+        assert n == 2
+        self._ready.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_failed_escalation_still_is_retried_after_another_clear(self, monkeypatch):
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+
+        st = self._state()
+        n, _ = await self._run([st], monkeypatch, cand_ok=False)  # installs the fakes
+        calls: list[int] = []
+
+        async def _fail_then_render(shot, **kwargs):
+            calls.append(kwargs.get("attempt", 0))
+            ok = len(calls) > 1
+            return slr.ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=ok,
+                clip_path="/tmp/ai.png" if ok else None, duration_s=shot.duration_s,
+                error=None if ok else "image-gen returned 503",
+            )
+
+        monkeypatch.setattr(slr, "_render_one_shot", _fail_then_render)
+        self._ready.reset_mock()
+        st = self._state()
+        n = await slr._escalate_offtopic_stock(
+            [st], qa=slr._QAConfig(enabled=True, threshold=60.0, max_retries=2),
+            site_config=None, render_kwargs={}, pool=object(), post_id="p1",
+        )
+        assert n == 1 and calls == [0, 1]
+        assert self._ready.await_count == 2  # before the first try, and before the retry
+
+    @pytest.mark.asyncio
+    async def test_an_escalation_that_fails_twice_leaves_the_shot_for_the_merge(self, monkeypatch):
+        st = self._state()
+        n, rendered = await self._run([st], monkeypatch, cand_ok=False)
+        assert n == 0 and len(rendered) == 2
+        assert st.shot.source == "pexels" and st.qa.score == 30.0
+        assert self._ready.await_count == 2
 
     @pytest.mark.asyncio
     async def test_offtopic_stock_escalates_to_ai_still(self, monkeypatch):

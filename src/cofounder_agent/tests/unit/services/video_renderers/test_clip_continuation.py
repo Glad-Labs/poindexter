@@ -143,3 +143,45 @@ async def test_the_last_frame_is_fitted_like_the_compositor_fits_the_clip(tmp_pa
     with Image.open(still) as img:
         assert img.size == (1920, 1080)
         assert img.getpixel((5, 540))[:3] == (0, 0, 0)  # the pad bar, as in the clip scene
+
+
+# ---------------------------------------------------------------------------
+# A slot that resolves to the PREVIOUS clip (holdover, pexels miss, a shot QA
+# could not rescue) runs on from that shot instead of replaying it. The
+# f555bedc long video (2026-09-24) showed three 11 s repeats of this kind.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_holdover_of_a_still_runs_on_as_one_longer_shot():
+    calls = _Calls()
+    results = _results(("image_kenburns", "/w/s5.png"), ("pexels", "/w/s5.png"))
+    scenes = await _scenes([(0, 12.0), (1, 10.5)], results, calls)
+    assert len(scenes) == 1
+    assert scenes[0].clip_path == "/w/s5.png" and scenes[0].duration_s == pytest.approx(22.5)
+
+
+async def test_a_repeated_video_clip_plays_once_then_continues():
+    calls = _Calls(clip_s=5.0)
+    results = _results(("generative", "/w/hero.mp4"), ("pexels", "/w/hero.mp4"))
+    scenes = await _scenes([(0, 5.3), (1, 5.3)], results, calls)
+    # One slot of 10.6 s: the clip once, then its last frame, never a replay.
+    assert [s.clip_path for s in scenes] == ["/w/hero.mp4", "/w/hero_lastframe.png"]
+    assert sum(s.duration_s for s in scenes) == pytest.approx(10.6)
+
+
+async def test_the_same_clip_apart_is_not_merged():
+    calls = _Calls(clip_s=30.0)
+    results = _results(("pexels", "/w/a.mp4"), ("image_kenburns", "/w/b.png"))
+    scenes = await _scenes([(0, 6.0), (1, 6.0), (0, 6.0)], results, calls)
+    assert [s.clip_path for s in scenes] == ["/w/a.mp4", "/w/b.png", "/w/a.mp4"]
+
+
+async def test_merging_keeps_the_total_duration():
+    from poindexter.services.video_renderers.shot_list_renderer import _merge_repeated_slots
+
+    results = _results(("image_kenburns", "/w/a.png"), ("pexels", "/w/a.png"),
+                       ("image_kenburns", "/w/b.png"), ("holdover", "/w/b.png"))
+    plan = [(0, 4.0), (1, 3.0), (2, 5.0), (3, 0.5)]
+    merged = _merge_repeated_slots(plan, results)
+    assert merged == [(0, 7.0), (2, 5.5)]
+    assert sum(d for _, d in merged) == pytest.approx(sum(d for _, d in plan))

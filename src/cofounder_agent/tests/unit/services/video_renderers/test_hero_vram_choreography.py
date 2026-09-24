@@ -1013,3 +1013,32 @@ async def test_the_presenter_wait_evicts_a_newcomer_too():
 
     assert got == 24.0
     evict.assert_awaited_once_with(evict_ollama=True)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_the_escalation_clear_uses_soft_levers_and_waits_for_image_gen():
+    """Escalation stills need IMAGE-GEN, so the clear frees everything else and
+    never touches image-gen itself; every lever is soft, so a card that is short
+    because of someone else's model cannot queue a restart storm."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    comfy, ollama, chatter, speaches, rife, image_gen = (AsyncMock() for _ in range(6))
+    wait = AsyncMock(return_value=True)
+    with patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", comfy), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_ollama_models", ollama), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_chatterbox", chatter), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_speaches", speaches), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_rife", rife), \
+         patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", image_gen), \
+         patch.object(slr, "_wait_image_gen_ready", wait), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        await slr._ready_card_for_escalation(
+            {"site_config": _sc(), "image_gen_url": "http://image-gen:9836"},
+        )
+
+    comfy.assert_awaited_once_with(hard=False)
+    for lever in (ollama, chatter, speaches, rife):
+        lever.assert_awaited_once()
+    image_gen.assert_not_awaited()
+    assert wait.await_args.args[0] == "http://image-gen:9836"

@@ -3498,6 +3498,35 @@ async def _last_frame_still(clip_path: str, *, width: int, height: int) -> str |
         return None
 
 
+def _merge_repeated_slots(
+    scene_plan: list[tuple[int, float]], rendered: list[ShotRenderResult],
+) -> list[tuple[int, float]]:
+    """Fold a slot into the one before it when both resolve to the same clip.
+
+    A holdover, a pexels miss, and a shot the QA finalize could not rescue all
+    resolve to the PREVIOUS shot's clip, and as a separate scene that clip
+    starts again from its first frame: the same image twice in a row (the
+    f555bedc long video, 2026-09-24, showed three such repeats of 11 s each).
+    Merged, it is one longer continuous shot. The combined duration is
+    unchanged, so narration sync is unaffected, and a video clip that now runs
+    short of its longer scene is continued on its final frame, never looped.
+    """
+    merged: list[tuple[int, float]] = []
+    for idx, dur in scene_plan:
+        clip = rendered[idx].clip_path or ""
+        if merged and clip and (rendered[merged[-1][0]].clip_path or "") == clip:
+            prev_idx, prev_dur = merged[-1]
+            merged[-1] = (prev_idx, round(prev_dur + dur, 3))
+            continue
+        merged.append((idx, dur))
+    if len(merged) < len(scene_plan):
+        logger.info(
+            "[SHOT_LIST] %d slot(s) run on from the previous shot instead of "
+            "replaying its clip", len(scene_plan) - len(merged),
+        )
+    return merged
+
+
 async def _scenes_for_plan(
     scene_plan: list[tuple[int, float]],
     rendered: list[ShotRenderResult],
@@ -3523,9 +3552,11 @@ async def _scenes_for_plan(
 
     probe = probe or _probe_duration_s
     grab = grab or _last_frame_still
+    scene_plan = _merge_repeated_slots(scene_plan, rendered)
     clip_s: dict[int, float | None] = {}
     stills: dict[int, str | None] = {}
     scenes: list[CompositionScene] = []
+    continued = 0
     for idx, dur in scene_plan:
         result = rendered[idx]
         clip = result.clip_path or ""
@@ -3564,6 +3595,7 @@ async def _scenes_for_plan(
                         # the camera lurching sideways at the cut.
                         ken_burns_variant=KEN_BURNS_CENTER,
                     ))
+                    continued += 1
                     continue
         scenes.append(CompositionScene(
             clip_path=clip, narration_path=None, duration_s=dur,
@@ -3572,6 +3604,11 @@ async def _scenes_for_plan(
             # the hold only ever covers a remainder.
             hold_last_frame=hold or bool(clip and not _is_still_image(clip)),
         ))
+    if continued:
+        logger.info(
+            "[SHOT_LIST] %d clip(s) shorter than their scene play once and "
+            "continue on their final frame (no looping)", continued,
+        )
     return scenes
 
 
@@ -3730,6 +3767,53 @@ async def _repair_pass(
                 st.result, st.qa = cand, cand_qa
 
 
+async def _ready_card_for_escalation(render_kwargs: dict[str, Any]) -> None:
+    """Give image-gen the card before an escalation still renders.
+
+    Escalation runs after the hero and presenter phases, when ComfyUI still
+    holds the last clip's weights and something else may have loaded since. On
+    f555bedc (2026-09-24) three of four escalation stills died on image-gen
+    503 "CUDA out of memory" with 78 MiB free, and each of those shots fell back
+    to replaying the one before it. Soft levers only (ComfyUI /free, Ollama
+    evict, idle TTS / ASR / RIFE models): none queues a restart, so a card that
+    is short because of someone else's model cannot set off the restart storm.
+    Then wait for image-gen /health, since the hero phase hard-exits it.
+    """
+    site_config = render_kwargs.get("site_config")
+    try:
+        from poindexter.services.gpu_scheduler import gpu
+
+        levers = (
+            ("comfyui", lambda: gpu._unload_comfyui(hard=False)),
+            ("ollama", gpu._unload_ollama_models),
+            ("chatterbox", gpu._unload_chatterbox),
+            ("speaches", gpu._unload_speaches),
+            ("rife", gpu._unload_rife),
+        )
+        for name, lever in levers:
+            try:
+                await lever()
+            except Exception as exc:  # noqa: BLE001  # silent-ok: best-effort, logged
+                logger.warning(
+                    "[SHOT_QA] pre-escalation %s release failed (%s) — continuing",
+                    name, describe_exception(exc),
+                )
+        await asyncio.sleep(3.0)
+    except Exception as exc:  # noqa: BLE001  # silent-ok: the render is attempted regardless
+        logger.warning("[SHOT_QA] pre-escalation card clear failed: %s", describe_exception(exc))
+    try:
+        budget = (
+            float(site_config.get_float("video_image_gen_ready_wait_s", 90.0))
+            if site_config is not None else 90.0
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: fall back to the documented default
+        budget = 90.0
+    if budget > 0:
+        await _wait_image_gen_ready(
+            render_kwargs.get("image_gen_url", ""), site_config, budget_s=budget,
+        )
+
+
 async def _escalate_offtopic_stock(
     states: list[_ShotState],
     *,
@@ -3801,6 +3885,7 @@ async def _escalate_offtopic_stock(
             for st in states if st.shot.source == "pexels"
         ) or "no stock shots",
     )
+    card_ready = False
     for st in candidates:
 
         # RUNG 1 — re-query stock with a better search string. The clip missed
@@ -3892,16 +3977,31 @@ async def _escalate_offtopic_stock(
             "< %.0f) with prompt %r",
             st.shot.idx, st.qa.score, qa.threshold, ai_shot.prompt,
         )
+        if not card_ready:
+            await _ready_card_for_escalation(render_kwargs)
+            card_ready = True
         cand = await _render_one_shot(
             ai_shot, prior_clip=None, attempt=0, **render_kwargs,
         )
+        if not (cand.success and cand.clip_path):
+            # One retry after clearing again: whatever took the card between
+            # escalations (an Ollama client, a sidecar) is usually evictable.
+            logger.info(
+                "[SHOT_QA] shot %d escalation render failed (%s) — clearing the "
+                "card and retrying once",
+                st.shot.idx, cand.error or "no clip produced",
+            )
+            await _ready_card_for_escalation(render_kwargs)
+            cand = await _render_one_shot(
+                ai_shot, prior_clip=None, attempt=1, **render_kwargs,
+            )
         if not (cand.success and cand.clip_path):
             # Image-gen can be cold or evicted at this point in the render
             # (the hero phase hard-unloads it), and a silent `continue` here
             # was indistinguishable from the escalation never running.
             logger.warning(
-                "[SHOT_QA] shot %d escalation render failed (%s) — keeping the "
-                "off-topic stock frame",
+                "[SHOT_QA] shot %d escalation render failed twice (%s) — the shot "
+                "stays below threshold, so the previous shot runs on over it",
                 st.shot.idx, cand.error or "no clip produced",
             )
             continue
@@ -4656,12 +4756,6 @@ async def render_shot_list(
     scenes = await _scenes_for_plan(
         scene_plan, rendered, shot_list, width=width, height=height,
     )
-    continued = len(scenes) - len(scene_plan)
-    if continued:
-        logger.info(
-            "[SHOT_LIST] %d clip(s) shorter than their scene play once and "
-            "continue on their final frame (no looping)", continued,
-        )
     if endcard_scene is not None:
         # A SCENE, not a shot: shots_total / shots_carded stay untouched, so
         # the real-source ship gate never counts the deliberate end-card as a

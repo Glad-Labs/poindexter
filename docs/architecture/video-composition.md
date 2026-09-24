@@ -222,6 +222,26 @@ AI renders keep `qa.video_shot_quality`. Those are the director's own
 illustrations, and judging them against the narration would re-roll
 deliberate metaphors for nothing.
 
+### No slot replays the previous clip (2026-09-24)
+
+A slot that resolves to the previous shot's clip used to replay that clip
+as its own scene: a holdover, a Pexels miss, or a shot the QA finalize could
+not rescue (`fallback_holdover`). The viewer saw the same image twice in a
+row. On f555bedc the stock-fit judge correctly flagged three stock clips, but
+their replacement stills died on image-gen `503 CUDA out of memory`, and the
+finalize held each slot over with the previous shot: three 11 s repeats.
+
+- `_scenes_for_plan` now folds any slot whose clip equals the previous slot's
+  into that scene (`_merge_repeated_slots`). It becomes one longer continuous
+  shot with the same total time, and a video that runs short of the longer
+  scene continues on its final frame.
+- Escalation stills get the card first (`_ready_card_for_escalation`: ComfyUI
+  soft `/free`, Ollama evict, idle chatterbox / speaches / RIFE, then image-gen
+  `/health`), and a failed render is retried once after clearing again. All
+  of these levers are soft, so a card that is short because of someone else's
+  model cannot queue a restart storm.
+
+
 ## Per-source plugin contract
 
 Each `source` value resolves to one of:
