@@ -3391,9 +3391,12 @@ def _holds_last_frame(result: ShotRenderResult) -> bool:
 # A video clip shorter than its scene used to LOOP: the compositor feeds any
 # short clip through ``-stream_loop -1``, so a ~5 s hero clip (81 frames at
 # 16 fps) in an 18 s scene played three and a half times. That was the "single
-# shot repeating" the operator flagged on 2026-09-23. A gap under this is left
-# to the compositor: a fraction of a second of restart is not worth a scene
-# boundary.
+# shot repeating" the operator flagged on 2026-09-23. A gap under this is too
+# short to be worth a continuation scene, so the clip holds its final frame for
+# it instead. It must NOT fall through to the compositor's loop: the first
+# render with the continuation (2026-09-24) ended both Short hero scenes
+# (5.000 s clips in 5.333 s slots) with a 0.33 s snap back to the clip's
+# first frame.
 _CONTINUE_MIN_GAP_S = 0.5
 
 
@@ -3442,9 +3445,10 @@ async def _scenes_for_plan(
     becomes two scenes: the clip once, then its final frame as a still with a
     slow centred push for the remainder. The compositor joins scenes with the
     concat demuxer, which is hard cuts with no overlap, so the split adds no
-    time and the narration stays in sync. Presenter clips keep their
-    hold-last-frame behaviour. Stills, clips that fill their slot, and any
-    probe or grab failure keep the single scene.
+    time and the narration stays in sync. Every other video scene holds its
+    final frame for whatever the clip does not cover (a sub-threshold sliver,
+    or a probe/grab failure), so nothing reaches the compositor's loop.
+    Presenter clips keep their hold, and stills are untouched.
     """
     from poindexter.services.media_compositors.ffmpeg_local import _is_still_image
 
@@ -3494,7 +3498,10 @@ async def _scenes_for_plan(
                     continue
         scenes.append(CompositionScene(
             clip_path=clip, narration_path=None, duration_s=dur,
-            ken_burns_variant=variant, hold_last_frame=hold,
+            ken_burns_variant=variant,
+            # Never loop. For a clip longer than its slot ``-t`` trims it, so
+            # the hold only ever covers a remainder.
+            hold_last_frame=hold or bool(clip and not _is_still_image(clip)),
         ))
     return scenes
 

@@ -82,10 +82,14 @@ async def test_a_clip_that_fills_its_slot_stays_one_scene():
     assert calls.grabbed == []
 
 
-async def test_a_sliver_of_overhang_is_left_to_the_compositor():
-    calls = _Calls(clip_s=17.8)
-    scenes = await _scenes([(0, 18.0)], _results(("generative", "/w/g.mp4")), calls)
+async def test_a_sliver_of_overhang_holds_the_final_frame_never_loops():
+    # 2026-09-24: 5.000 s hero clips in 5.333 s Short slots fell through to
+    # the compositor's -stream_loop and snapped back to frame 0 for 0.33 s.
+    calls = _Calls(clip_s=5.0)
+    scenes = await _scenes([(0, 5.333)], _results(("generative", "/w/g.mp4")), calls)
     assert len(scenes) == 1
+    assert scenes[0].hold_last_frame is True and scenes[0].duration_s == 5.333
+    assert calls.grabbed == []
 
 
 async def test_stills_are_never_probed():
@@ -101,10 +105,16 @@ async def test_a_presenter_clip_keeps_holding_its_last_frame():
     assert calls.probed == []
 
 
-async def test_a_failed_grab_or_probe_keeps_the_old_single_scene():
+async def test_a_failed_grab_or_probe_keeps_one_scene_that_holds_rather_than_loops():
     for calls in (_Calls(still=None), _Calls(clip_s=None)):
         scenes = await _scenes([(0, 18.0)], _results(("generative", "/w/g.mp4")), calls)
         assert len(scenes) == 1 and scenes[0].duration_s == 18.0
+        assert scenes[0].hold_last_frame is True
+
+
+async def test_stills_never_get_a_hold():
+    scenes = await _scenes([(0, 12.0)], _results(("image_kenburns", "/w/s.png")), _Calls())
+    assert scenes[0].hold_last_frame is False
 
 
 async def test_a_cycled_plan_probes_and_grabs_each_clip_once():
