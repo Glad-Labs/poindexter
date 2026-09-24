@@ -587,10 +587,19 @@ Prometheus rule instead (`up{job="..."} == 0` in
 
 Docker's restart policy acts when a container's main process **exits**. A
 process that is alive but failing its own `HEALTHCHECK` gets marked `unhealthy`
-and is otherwise left alone. On 2026-09-24 speaches hung inside a Whisper model
-load: its healthcheck failed for 154 minutes, every render in that window
-shipped without burned-in captions, and nothing restarted it or paged.
+and is otherwise left alone. On 2026-09-24 speaches wedged at 13:19: a
+VRAM-reclaim call to its model-unload API deadlocked its Whisper manager (see
+[the VRAM gate doc](../architecture/video-render-vram-gate.md)). Its `/health`
+kept answering, so its healthcheck only started failing at 16:14, and it stayed
+wedged until a manual restart at 18:48. Every render from 13:19 on shipped
+without burned-in captions, and nothing restarted it or paged.
 `docker restart poindexter-speaches` fixed it in seconds.
+
+The watch below sees what a healthcheck sees and no more. That day it would
+have restarted speaches at about 16:25, not 13:30. The deadlock itself is fixed
+at its cause. The watch is the backstop for the next wedge, and it is only as
+quick as the container's own healthcheck. A wedge that leaves `/health`
+answering is caught late or not at all.
 
 `poindexter/brain/container_health_watch.py` detects that state. Every cycle it
 reads each `poindexter-*` container's health, reusing the restart-loop probe's

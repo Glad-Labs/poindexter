@@ -1,8 +1,8 @@
 """Container health watch: alert while a container is stuck unhealthy.
 
-2026-09-24: speaches hung in a Whisper model load and sat ``unhealthy`` for
-154 minutes; every render in that window lost its captions and nothing noticed,
-because Docker restart policies act only on process exit. The probe is the
+2026-09-24: speaches wedged (a deadlocked model unload) and sat ``unhealthy``
+for 154 minutes; every render lost its captions and nothing noticed, because
+Docker restart policies act only on process exit. The probe is the
 detector; restarting is a firefighter rule, so what matters here is WHEN it
 fires, that it keeps firing (the firefighter's verify reads the repeats), and
 that its rows keep the LLM long-tail from bouncing a container blind.

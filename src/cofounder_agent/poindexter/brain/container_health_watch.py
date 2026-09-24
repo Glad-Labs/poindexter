@@ -1,12 +1,20 @@
 """Alert while a container is stuck ``unhealthy``; the firefighter does the restart.
 
-2026-09-24: speaches hung inside a Whisper model load. Its Docker healthcheck
-went ``unhealthy`` and stayed that way for 154 minutes, and every render in that
-window shipped without burned-in captions. Nothing restarted it and nothing
-paged. Docker restart policies act only when a process EXITS; a process that is
-alive but wedged stays wedged. The brain watched particular failures (auto-embed
-staleness, backups, restart loops) but not the ``unhealthy`` state itself. A
-plain ``docker restart`` fixed it in seconds.
+2026-09-24: speaches wedged at 13:19. A VRAM-reclaim call to its model-unload
+API deadlocked its Whisper manager (docs/architecture/video-render-vram-gate.md),
+and every later transcription blocked. Its ``/health`` kept answering, so Docker
+only marked it ``unhealthy`` at 16:14, and it stayed that way until a manual
+restart at 18:48. Every render from 13:19 on shipped without burned-in captions,
+and nothing restarted it or paged. Docker restart policies act only when a
+process EXITS; a process that is alive but wedged stays wedged. The brain
+watched particular failures (auto-embed staleness, backups, restart loops) but
+not the ``unhealthy`` state itself. A plain ``docker restart`` fixed it in
+seconds.
+
+This probe sees what a healthcheck sees and no more: on that day it would have
+restarted speaches at about 16:25, not 13:30. The deadlock is fixed at its cause
+(no API unloads). The watch is the backstop for the next wedge nobody predicted,
+and it is only as quick as the container's own healthcheck.
 
 This probe is the detector half. Every brain cycle it reads each
 ``poindexter-*`` container's health from the restart-loop probe's single

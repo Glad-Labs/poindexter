@@ -337,7 +337,7 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
     ("_HAS_CONTAINER_RESTART_LOOP_PROBE", "poindexter/brain/container_restart_loop_probe.py",
      "Container restart-loop watch offline — a crash-looping container pages nobody until a downstream probe notices (2026-09-13: chatterbox, 507 restarts, 8 h)"),
     ("_HAS_CONTAINER_HEALTH_WATCH", "poindexter/brain/container_health_watch.py",
-     "Container health watch offline — a wedged sidecar stays unhealthy until someone notices (2026-09-24: speaches, 3 h, every render lost its captions)"),
+     "Container health watch offline — a wedged sidecar stays unhealthy until someone notices (2026-09-24: speaches, 5.5 h, every render lost its captions)"),
     ("_HAS_OUTLET_GUARD_PROBE", "poindexter/brain/outlet_guard_probe.py",
      "Outlet guard offline — a metered wall plug that opens with mains present "
      "drains the UPS to a clean shutdown and stays dark until a human presses "
@@ -3214,7 +3214,7 @@ async def run_cycle(pool):
 
     # Container health watch (2026-09-24). Docker restart policies act only on
     # process EXIT, so a sidecar that is alive but wedged stays unhealthy: speaches
-    # hung in a Whisper load for three hours and every render lost its captions.
+    # stayed wedged for five and a half hours and every render lost its captions.
     # Detector only: fires `container_unhealthy` while a container stays unhealthy
     # past container_health_alert_after_minutes. The restart is the firefighter's,
     # via a per-container remediation_rules row (docs/operations/self-healing.md).

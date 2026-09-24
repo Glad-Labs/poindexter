@@ -4912,7 +4912,8 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # long fires `container_unhealthy` every cycle until it recovers; restarting
     # it is a firefighter remediation_rules row per safe-to-bounce container
     # (docs/operations/self-healing.md). 2026-09-24: speaches sat unhealthy for
-    # 154 min and every render in that window lost its captions.
+    # 154 min (wedged 5.5 h in all) and every render in that window lost its
+    # captions.
     'container_health_watch_enabled': 'true',
     'container_health_alert_after_minutes': '10',
     # name=minutes overrides. image-gen-server serves /health on the event loop
