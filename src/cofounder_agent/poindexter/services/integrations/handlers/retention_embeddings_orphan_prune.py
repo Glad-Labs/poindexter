@@ -22,9 +22,11 @@ no user-facing string interpolation.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from poindexter.services.integrations.registry import register_handler
+from poindexter.services.integrations.retention_backlog import BacklogQuery, register_backlog
 
 logger = logging.getLogger(__name__)
 
@@ -134,3 +136,56 @@ async def embeddings_orphan_prune(
         row.get("name"), deleted, source_table, batch_size,
     )
     return {"deleted": deleted, "source_table": source_table, "batch_size": batch_size}
+
+
+# COUNT forms of the three delete joins above — the same join, no LIMIT.
+_ORPHAN_COUNT_SQL = {
+    "posts": """
+        SELECT COUNT(*)::bigint
+          FROM embeddings e
+          LEFT JOIN posts p ON p.id::text = e.source_id
+         WHERE e.source_table = 'posts' AND p.id IS NULL
+    """,
+    "audit": """
+        SELECT COUNT(*)::bigint
+          FROM embeddings e
+          LEFT JOIN audit_log a ON a.id::text = e.source_id
+         WHERE e.source_table = 'audit' AND a.id IS NULL
+    """,
+    "brain": """
+        SELECT COUNT(*)::bigint
+          FROM embeddings e
+          LEFT JOIN brain_decisions b
+                 ON b.id::text = split_part(e.source_id, '/', 2)
+         WHERE e.source_table = 'brain'
+           AND e.source_id LIKE 'brain_decisions/%'
+           AND b.id IS NULL
+    """,
+}
+
+
+@register_backlog("embeddings_orphan_prune")
+def embeddings_orphan_prune_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
+    """Embeddings whose source row is gone (poindexter#1067).
+
+    The policy's predicate is the invariant: after a pass there should be no
+    orphan for ``source_table``. A pass deletes at most ``batch_size``, so an
+    orphan wave larger than that legitimately spans passes — the probe only
+    alarms on a count that stays above threshold across consecutive passes,
+    which is exactly a prune that is not keeping up. No time anchor: an
+    embedding records when it was written, not when its source was deleted.
+    Inflow is low — no retention policy deletes from ``posts`` /
+    ``audit_log`` / ``brain_decisions`` — so a residue is a real fault.
+    """
+    config = row.get("config") or {}
+    if not isinstance(config, dict):
+        config = {}
+    sql = _ORPHAN_COUNT_SQL.get(str(config.get("source_table") or ""))
+    if sql is None:
+        # The handler raises on this config; the backlog must not pretend to
+        # measure a policy that cannot run.
+        raise ValueError(
+            "retention.embeddings_orphan_prune: config.source_table must be one of "
+            f"{sorted(_ORPHAN_COUNT_SQL)}"
+        )
+    return BacklogQuery(sql=sql)

@@ -24,11 +24,14 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from typing import Any
 
 from poindexter.services.integrations.registry import register_handler
-from poindexter.services.integrations.retention_backlog import BacklogQuery, register_backlog
+from poindexter.services.integrations.retention_backlog import (
+    BacklogQuery,
+    register_backlog,
+    run_anchor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,25 +138,6 @@ async def ttl_prune(
     return {"deleted": total_deleted, "table": table_name, "ttl_days": ttl_days}
 
 
-def _run_anchor(value: Any) -> datetime | None:
-    """``last_run_at`` as a tz-aware datetime, or None when the row has none.
-
-    Rows straight from asyncpg carry a datetime; rows that travelled through
-    JSON carry an ISO string, and asyncpg refuses a str for a timestamptz bind.
-    """
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=UTC)
-    if isinstance(value, str):
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-    return None
-
-
 @register_backlog("ttl_prune")
 def ttl_prune_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
     """Rows this policy's own predicate still matches (poindexter#933).
@@ -199,7 +183,7 @@ def ttl_prune_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
     table_name = _validate_identifier(row.get("table_name") or "", "table_name")
     age_column = _validate_identifier(row.get("age_column") or "created_at", "age_column")
 
-    anchor = _run_anchor(row.get("last_run_at"))
+    anchor = run_anchor(row.get("last_run_at"))
     params: tuple[Any, ...]
     if anchor is not None:
         where_parts = [f"{age_column} < $2::timestamptz - make_interval(days => $1)"]

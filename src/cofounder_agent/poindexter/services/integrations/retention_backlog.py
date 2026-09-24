@@ -53,6 +53,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,25 @@ def register_backlog(handler_name: str) -> Callable[[BacklogBuilder], BacklogBui
 def handlers_with_backlog() -> frozenset[str]:
     """Handler names that can state whether they are keeping up."""
     return frozenset(_BACKLOG_REGISTRY)
+
+
+def run_anchor(value: Any) -> datetime | None:
+    """``last_run_at`` as a tz-aware datetime, or None when the row has none.
+
+    Rows straight from asyncpg carry a datetime; rows that travelled through
+    JSON carry an ISO string, and asyncpg refuses a str for a timestamptz bind.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
 
 
 def build_backlog_query(

@@ -47,9 +47,15 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from poindexter.services.integrations.registry import register_handler
+from poindexter.services.integrations.retention_backlog import (
+    BacklogQuery,
+    register_backlog,
+    run_anchor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -225,3 +231,44 @@ async def downsample(
         "deleted": deleted,
         "bucket_interval": interval,
     }
+
+
+@register_backlog("downsample")
+def downsample_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
+    """Raw rows past ``keep_raw_days`` that the last pass left behind (poindexter#1067).
+
+    The invariant is the rule's own: nothing raw older than ``keep_raw_days``
+    survives a pass, because the handler rolls those rows up and then deletes
+    them. Anchored at the policy's ``last_run_at`` like ``ttl_prune`` — only
+    rows that were ALREADY past the window when the pass ran count, so a
+    high-inflow table (``gpu_metrics``, ``sensor_samples``) reads ~0 after a
+    healthy pass instead of the minutes of inflow since. A rollup that keeps
+    failing (bad aggregation, missing rollup table) leaves the raw rows in
+    place and reads as a growing number here. ``dry_run`` deletes nothing by
+    design, so it declares no backlog.
+    """
+    config = row.get("config") or {}
+    if isinstance(config, dict) and bool(config.get("dry_run", False)):
+        return None
+    rule = row.get("downsample_rule") or {}
+    if not isinstance(rule, dict) or rule.get("keep_raw_days") is None:
+        return None
+    keep_raw_days = int(rule["keep_raw_days"])
+    table_name = _validate_identifier(row.get("table_name") or "", "table_name")
+    age_column = _validate_identifier(row.get("age_column") or "created_at", "age_column")
+    anchor = run_anchor(row.get("last_run_at"))
+    if anchor is not None:
+        return BacklogQuery(
+            sql=(
+                f"SELECT COUNT(*)::bigint FROM {table_name} "  # nosec B608  # identifiers validated by _validate_identifier
+                f"WHERE {age_column} < $2::timestamptz - make_interval(days => $1)"
+            ),
+            params=(keep_raw_days, anchor),
+        )
+    return BacklogQuery(
+        sql=(
+            f"SELECT COUNT(*)::bigint FROM {table_name} "  # nosec B608  # identifiers validated by _validate_identifier
+            f"WHERE {age_column} < now() - make_interval(days => $1)"
+        ),
+        params=(keep_raw_days,),
+    )

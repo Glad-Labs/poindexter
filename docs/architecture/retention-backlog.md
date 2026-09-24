@@ -127,7 +127,7 @@ are still there**. Inflow after the pass is invisible to it by construction; a
 correct policy reads ~0 at any moment after its run, and a broken one reads
 exactly what it left behind. A row fetched without `last_run_at` falls back to
 `now()`, which measures residue plus inflow — the old, pessimistic number.
- A tick where no policy is in-window records **nothing** and
+A tick where no policy is in-window records **nothing** and
 says so — writing an empty sample would break every persistence streak.
 
 A policy that has never run is not a backlog signal either: `RunRetentionJob`'s
@@ -185,10 +185,25 @@ failed", and callers must not coerce that to 0.
 A policy silently exempt from the correctness check would recreate the exact
 blind spot the probe exists to close.
 
-As of the initial rollout, 23 of 29 enabled policies are measured and 6 are
-unmonitored (`embeddings_collapse`, `embeddings_orphan_prune` ×3, `downsample`
-×2). Those handlers each need their own invariant, and the finding names them
-every time it fires until they have one.
+At the initial rollout 23 of 29 enabled policies were measured and 6 were
+unmonitored. Since poindexter#1067 (2026-09-24) five of those declare an
+invariant:
+
+| handler                                        | invariant                                             | anchor                                                                                                                                                |
+| ---------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `downsample` (`gpu_metrics`, `sensor_samples`) | no raw row older than `keep_raw_days` survives a pass | `last_run_at`, as for `ttl_prune`: these are high-inflow tables                                                                                       |
+| `embeddings_orphan_prune` (×3)                 | no embedding whose source row is gone                 | none: an embedding doesn't record when its source was deleted. Inflow is low because no policy deletes from `posts` / `audit_log` / `brain_decisions` |
+
+All five measured 0 on prod on 2026-09-24.
+
+**`embeddings_collapse` stays unmonitored on purpose.** It clusters old
+embeddings in `batch_size` slices and deliberately works through a large pool
+over many passes (`claude_sessions` deleted 1,499 of a 1,500 cap on its last
+run). "Rows older than `age_days` still unsummarised" would therefore stay above
+threshold for the whole catch-up, and the persistence rule can't tell a
+shrinking backlog from a stuck one. Monitoring it needs a trend-based
+invariant ("the eligible pool shrinks pass over pass"), not a count. The
+finding keeps naming it until that exists.
 
 A `dry_run` policy declares no backlog on purpose: it deletes nothing by
 design, so a backlog is meaningless as a fault signal and would alarm forever.
