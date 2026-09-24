@@ -60,6 +60,14 @@ than pages. A `deferred-active-flow` pass (the sync waiting out an in-flight
 render instead of restarting a busy worker) counts as **healthy** liveness —
 treating deferral as an error would page every busy evening.
 
+**Don't fast-forward the deploy clone by hand. Run
+`systemctl start poindexter-deploy-sync.service` instead.** A hand
+`git merge --ff-only` leaves the clone "already current" while the containers
+are still on the old tree. Until poindexter#1068 that path skipped the busy
+check entirely and bounced the worker straight through a live media render. The
+same `wait_for_gap_or_defer` guard now holds that path too, but the service
+run is still the route with the right logging and status.
+
 The heartbeat goes to the DB rather than being read from
 `~/.poindexter/deploy-checkout-sync.status.json`, because the brain container
 mounts only subdirectories of `~/.poindexter`; exposing the root to read one

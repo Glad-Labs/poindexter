@@ -8,14 +8,17 @@
 # One pass:
 #   1. git fetch (always safe — never touches the working tree)
 #   2. behind-check: 0 commits behind -> no-op (fail-safe parse: junk = behind)
-#   3. Prefect flow-gap guard: prefer resetting between flow runs; wait up to
+#   3. Prefect flow-gap guard (wait_for_gap_or_defer): prefer resetting between flow runs; wait up to
 #      SYNC_FLOW_WAIT_MAX_SEC (default 90s) for a gap. Still busy after that:
 #      DEFER — write status deferred-active-flow and exit 0; the timer's next
 #      tick retries (poindexter#964 — the container bounce in step 7 kills the
 #      in-flight run: a media render's nodes routinely exceed any sane gap
 #      window, and each kill costs 20-40 GPU-minutes plus a wedged dispatch
 #      claim). --force-flow-reset / SYNC_FLOW_FORCE=1 restores the old
-#      force-through behavior for genuinely stuck queues.
+#      force-through behavior for genuinely stuck queues. The same guard runs
+#      again before any rebuild/restart on a pass that did NOT reset (clone
+#      already current) — poindexter#1068: that path used to bounce the worker
+#      with no busy check at all.
 #   4. git reset --hard origin/main + git clean -fd   (SAFE: dedicated clone,
 #      nothing else ever edits it — never point this at a working checkout)
 #   5. rebuild map: diff (last-deployed..HEAD) -> image-baked services whose
@@ -287,27 +290,33 @@ media_render_running() {
 
 stack_busy() { flow_running || gpu_work_running || media_render_running; }
 
-reset_at_epoch=""
-if [ "$need_reset" = "1" ]; then
-  if [ "$NO_FLOW_CHECK" = "0" ]; then
-    waited=0
-    while [ "$waited" -lt "$MAX_WAIT_SEC" ] && stack_busy; do
-      log "Active flow run, GPU job, or media render; waiting for a gap before reset (${waited}/${MAX_WAIT_SEC}s)..."
-      sleep 5; waited=$((waited + 5))
-    done
-    if [ "$waited" -ge "$MAX_WAIT_SEC" ] && stack_busy; then
-      if [ "$FORCE_FLOW_RESET" = "1" ]; then
-        log "No flow gap after ${MAX_WAIT_SEC}s; forcing reset ($behind_raw commit(s) behind) — --force-flow-reset/SYNC_FLOW_FORCE set." WARN
-      else
-        # Killing an in-flight flow costs a full re-run (media renders:
-        # 20-40 GPU-minutes) and wedges the piece's dispatch claim. Deploys
-        # are idempotent and retried by the timer, so defer instead.
-        log "No flow gap after ${MAX_WAIT_SEC}s; DEFERRING deploy ($behind_raw commit(s) behind) — an in-flight flow holds the slot. Retry lands on the next timer tick; pass --force-flow-reset to override." WARN
-        write_status deferred-active-flow "$(git -C "$DEPLOY_DIR" rev-parse HEAD | tr -d '[:space:]')" "" "" "deferred: active flow run after ${MAX_WAIT_SEC}s wait; $behind_raw commit(s) behind"
-        exit 0
-      fi
+# Wait up to MAX_WAIT_SEC for a gap in flows / GPU work / media renders; still
+# busy after that -> write deferred-active-flow and exit 0 (the next timer tick
+# retries), unless --force-flow-reset. <what> names the step being held.
+wait_for_gap_or_defer() { # wait_for_gap_or_defer <what>
+  local what="$1" waited=0
+  [ "$NO_FLOW_CHECK" = "1" ] && return 0
+  while [ "$waited" -lt "$MAX_WAIT_SEC" ] && stack_busy; do
+    log "Active flow run, GPU job, or media render; waiting for a gap before $what (${waited}/${MAX_WAIT_SEC}s)..."
+    sleep 5; waited=$((waited + 5))
+  done
+  if [ "$waited" -ge "$MAX_WAIT_SEC" ] && stack_busy; then
+    if [ "$FORCE_FLOW_RESET" = "1" ]; then
+      log "No flow gap after ${MAX_WAIT_SEC}s; forcing $what — --force-flow-reset/SYNC_FLOW_FORCE set." WARN
+    else
+      # Killing an in-flight flow costs a full re-run (media renders:
+      # 20-40 GPU-minutes) and wedges the piece's dispatch claim. Deploys
+      # are idempotent and retried by the timer, so defer instead.
+      log "No flow gap after ${MAX_WAIT_SEC}s; DEFERRING deploy ($what) — an in-flight flow or render holds the slot. Retry lands on the next timer tick; pass --force-flow-reset to override." WARN
+      write_status deferred-active-flow "$(git -C "$DEPLOY_DIR" rev-parse HEAD | tr -d '[:space:]')" "" "" "deferred: stack busy after ${MAX_WAIT_SEC}s wait before $what"
+      exit 0
     fi
   fi
+}
+
+reset_at_epoch=""
+if [ "$need_reset" = "1" ]; then
+  wait_for_gap_or_defer "reset ($behind_raw commit(s) behind)"
   if ! git -C "$DEPLOY_DIR" reset --hard "$SOURCE_REMOTE/$SYNC_BRANCH" >>"$LOG_FILE" 2>&1; then
     log "reset failed" ERROR; write_status error "" "" "" "git reset --hard failed"; exit 1
   fi
@@ -342,6 +351,17 @@ fi
 
 last_short="${last_deployed:0:9}"
 log "Code advanced $last_short -> $short_head; deploying."
+
+# poindexter#1068: the gap wait above guards only the RESET. A pass that finds
+# the checkout already current (someone fast-forwarded the deploy clone by
+# hand, or the previous pass reset then failed) skipped it, yet still goes on
+# to rebuild, compose-apply and bounce the worker below. 2026-09-22 02:20 that
+# restarted poindexter-worker 43 s into a media render with
+# media_render_running true the whole time. So when this pass did not reset,
+# hold here instead: everything from this point on restarts containers.
+if [ -z "$reset_at_epoch" ]; then
+  wait_for_gap_or_defer "restarting onto $short_head (checkout already current)"
+fi
 
 # ---- rebuild map (generalized from the ps1's brain-only rebuild) ----------
 # path-regex -> compose services (image-baked build inputs). Restarts and
