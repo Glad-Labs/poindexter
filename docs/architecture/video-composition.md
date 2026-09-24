@@ -236,10 +236,12 @@ finalize held each slot over with the previous shot: three 11 s repeats.
   shot with the same total time, and a video that runs short of the longer
   scene continues on its final frame.
 - Escalation stills get the card first (`_ready_card_for_escalation`: ComfyUI
-  soft `/free`, Ollama evict, idle chatterbox / speaches / RIFE, then image-gen
+  soft `/free`, Ollama evict, idle chatterbox / RIFE, then image-gen
   `/health`), and a failed render is retried once after clearing again. All
   of these levers are soft, so a card that is short because of someone else's
-  model cannot queue a restart storm.
+  model cannot queue a restart storm. speaches is not among them: its unload
+  API deadlocks it (see `video-render-vram-gate.md`), and its idle Whisper
+  leaves on its own 60 s timer.
 
 
 ## Per-source plugin contract

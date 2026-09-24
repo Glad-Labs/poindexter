@@ -179,22 +179,48 @@ though the ladder was working. Two separate things were on the card:
   keeps its model after interpolating a hero, about 0.86 GB. Neither was a
   rung, so every hero wait started just under the 27 GB plate (25.8, 26.8 GB).
   One hero only animated because speaches' timer fired 23 s into its wait,
-  and the log credited "the ladder's evictions". Both are now soft rungs in
-  `reclaim_render_vram` and in the pre-hero clear. speaches unloads Whisper
-  models via `DELETE /api/ps/{model}` and answers 409 for a model in use; RIFE
-  answers `busy` mid-interpolation. Neither is ever restarted.
+  and the log credited "the ladder's evictions". RIFE is now a soft rung in
+  `reclaim_render_vram` and in the pre-hero clear: it answers `busy`
+  mid-interpolation and is never restarted. speaches is handled by its own
+  timer, now `WHISPER__TTL=60` (see below): it was a rung for one day and
+  that rung wedged it.
 - **A tenant that loads DURING the wait.** The pre-hero clear runs once, before
   the wait. An unrelated local app (a dev server calling `ollama-primary` on
   `:11434`, which is pinned to the render GPU with a 1 h keep-alive) loaded an
   18 GB model 78 s into a hero wait: headroom went 25.8 → 7.4 GB and nothing
   evicted it. Both the hero and the presenter waits now treat a reading ≥ 2 GB
   below the previous one as a newcomer and evict again, using only levers
-  with no restart side effect: Ollama (confirmed against `/api/ps`), speaches
-  and RIFE. Never the image-gen hard rung, whose squat rule would queue a
+  with no restart side effect: Ollama (confirmed against `/api/ps`) and
+  RIFE. Never the image-gen hard rung, whose squat rule would queue a
   restart on a card that is short because of someone else's model (the
   restart-storm trap). `video_reclaim_reclear_max` bounds the re-clears per
   wait: each one makes that client reload on its next call, and an unbounded
   eviction/reload loop is a model-thrash loop.
+
+### speaches is never unloaded through its API (2026-09-24)
+
+The speaches rung added on 2026-09-23 called `DELETE /api/ps/{model}`, and that
+call deadlocks speaches' Whisper manager. `WhisperModelManager.unload_model`
+holds the manager's `threading.Lock` while it unloads, and the unload callback
+(`_handle_model_unloaded`) takes the same non-reentrant lock again on the same
+thread. The request never returns, and every later transcription logs
+`Loading model …` and then waits on the lock forever. `/health` keeps answering
+200, so the Docker healthcheck is a slow witness: in prod speaches was wedged
+from 13:19, was only marked unhealthy at 16:14, and stayed wedged until a
+manual restart at 18:48. Every render in between shipped without captions. A throwaway container of the pinned image reproduces it on CPU:
+transcribe, `DELETE /api/ps/Systran/faster-whisper-medium`, transcribe again,
+and the second transcription never returns. Kokoro's and Piper's managers have
+the same structure (same lock, same callback), so neither may be unloaded
+through the API either.
+
+The timer path is safe: `SelfDisposingModel`'s idle timer unloads on its own
+thread, which does not hold the manager lock. So idle Whisper now leaves the
+card on that timer, shortened from 300 s to 60 s because a render's caption
+check runs right before its hero clips. A cold load costs about 2 s.
+`TestSpeachesHasNoUnloadLever` in `test_gpu_scheduler.py` fails if a
+`DELETE …/api/ps/…` call comes back into the scheduler under any name, and the
+choreography tests fail if the pre-hero clear or the mid-wait eviction touches
+speaches at all.
 
 Finding who loaded something is `journalctl -u ollama-primary` around the drop:
 a `starting llama-server` line plus its `[GIN] POST`. Client `::1` means a

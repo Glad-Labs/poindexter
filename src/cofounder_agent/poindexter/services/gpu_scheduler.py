@@ -2565,10 +2565,9 @@ class GPUScheduler:
             ("wan", lambda: self._unload_wan(hard=_hardness("wan"))),
             ("stable-audio", lambda: self._unload_stable_audio(hard=_hardness("stable-audio"))),
             ("comfyui", lambda: self._unload_comfyui(hard=_hardness("comfyui"))),
-            # Soft-only rungs (2026-09-23): each drops idle models and is never
-            # queued for a restart. speaches is load-bearing; RIFE is cheap to
-            # keep up and refuses while it is interpolating.
-            ("speaches", self._unload_speaches),
+            # Soft-only rung (2026-09-23): drops RIFE's idle model, is never
+            # queued for a restart, and RIFE refuses while it is interpolating.
+            # speaches has no rung on purpose: see the note above _unload_rife.
             ("rife", self._unload_rife),
         ))
         skip = {str(x).strip().lower() for x in (exclude or ())}
@@ -3291,56 +3290,18 @@ class GPUScheduler:
                 type(exc).__name__, exc,
             )
 
-    async def _unload_speaches(self) -> None:
-        """Drop the speaches sidecar's IDLE Whisper models. Never restarts it.
-
-        speaches is load-bearing (captions, narration QA, TTS), so the ladder
-        never bounces it. What it holds on the render card between jobs,
-        though, is models on an idle timer (``WHISPER__TTL``, 300 s here):
-        a render's own caption-fidelity transcription left
-        faster-whisper-medium plus Kokoro resident for five minutes, about
-        2.1 GB, and every hero wait on 2026-09-23 started below the 27 GB
-        plate because of it. One hero only animated because the timer
-        happened to fire 23 s into its wait.
-
-        ``DELETE /api/ps/{model}`` unloads one model and the service stays
-        up. speaches answers 409 for a model still in use, so an in-flight
-        transcription is never cut. Its API covers only the Whisper manager;
-        Kokoro (a few hundred MB) keeps its own timer.
-        """
-        base = _sc_get("plugin.caption_provider.speaches.base_url", "")
-        if not base:
-            return
-        root = base.rstrip("/").removesuffix("/v1")
-        try:
-            client = self._get_http_client()
-            resp = await client.get(f"{root}/api/ps", timeout=10)
-            if resp.status_code != 200:
-                logger.warning(
-                    "[GPU] speaches /api/ps returned %d: %s",
-                    resp.status_code, (getattr(resp, "text", "") or "")[:200],
-                )
-                return
-            models = [str(m) for m in ((resp.json() or {}).get("models") or [])]
-            for model_id in models:
-                gone = await client.delete(f"{root}/api/ps/{model_id}", timeout=15)
-                if gone.status_code in (200, 204, 404):
-                    logger.info("[GPU] speaches model %s unloaded", model_id)
-                elif gone.status_code == 409:
-                    logger.info("[GPU] speaches model %s is in use — left loaded", model_id)
-                else:
-                    logger.warning(
-                        "[GPU] speaches unload of %s returned %d: %s",
-                        model_id, gone.status_code,
-                        (getattr(gone, "text", "") or "")[:200],
-                    )
-        except Exception as exc:
-            # silent-ok: a transport failure means the sidecar is down or not
-            # deployed on this install; nothing of it is on the card then.
-            logger.debug(
-                "[GPU] speaches idle-model unload failed (sidecar likely "
-                "offline): %s: %s", type(exc).__name__, exc,
-            )
+    # speaches has no unload rung (2026-09-24). Its model API cannot drop an
+    # idle Whisper model safely: DELETE /api/ps/{model} holds the Whisper
+    # manager's threading.Lock while unloading, and the unload callback takes
+    # that same non-reentrant lock again on the same thread. The request never
+    # returns, and every later transcription blocks on the lock while /health
+    # keeps answering 200. Reproduced on a throwaway container of the pinned
+    # image. Prod showed the same signature on 2026-09-24, an off-timer unload
+    # right after a GET /api/ps and then loads that never acquired the lock,
+    # and speaches stayed wedged from 13:19 to 18:48; every render in between
+    # lost its captions. Idle Whisper leaves the card on speaches' own
+    # WHISPER__TTL timer instead: the timer thread does not hold the manager
+    # lock, so that path cannot deadlock.
 
     async def _unload_rife(self) -> None:
         """Ask the RIFE interpolation sidecar to drop its model. Soft only.

@@ -649,7 +649,6 @@ def _mock_all_rungs(scheduler):
     scheduler._unload_wan = AsyncMock()
     scheduler._unload_stable_audio = AsyncMock()
     scheduler._unload_comfyui = AsyncMock()
-    scheduler._unload_speaches = AsyncMock()
     scheduler._unload_rife = AsyncMock()
 
 
@@ -674,8 +673,7 @@ class TestReclaimRenderVram:
         scheduler._unload_wan.assert_awaited_once_with(hard=True)
         scheduler._unload_stable_audio.assert_awaited_once_with(hard=True)
         scheduler._unload_comfyui.assert_awaited_once_with(hard=True)
-        # Soft-only rungs: no hardness argument, never a restart.
-        scheduler._unload_speaches.assert_awaited_once_with()
+        # Soft-only rung: no hardness argument, never a restart.
         scheduler._unload_rife.assert_awaited_once_with()
 
     @pytest.mark.asyncio
@@ -1420,81 +1418,36 @@ def _sc_with(**values):
     return SiteConfig(initial_config=values)
 
 
-class TestUnloadSpeaches:
-    """speaches holds IDLE Whisper models on the render card for its TTL
-    after the render's own caption check (~2.1 GB with Kokoro, 2026-09-23).
-    The lever unloads them through the model API and never restarts the
-    service, which is load-bearing for captions and TTS."""
+class TestSpeachesHasNoUnloadLever:
+    """speaches' model API cannot drop an idle Whisper model safely (2026-09-24).
+    ``DELETE /api/ps/{model}`` holds the Whisper manager's non-reentrant lock
+    while unloading and the unload callback takes it again on the same thread,
+    so the request never returns and every later transcription blocks while
+    ``/health`` stays 200. The 2026-09-23 lever that called it wedged speaches
+    for five and a half hours. Idle Whisper leaves on speaches' own
+    ``WHISPER__TTL`` timer instead."""
 
-    @staticmethod
-    def _client(models, delete_status=204):
-        from unittest.mock import AsyncMock, MagicMock
-
-        client = MagicMock()
-        client.get = AsyncMock(return_value=MagicMock(
-            status_code=200, json=MagicMock(return_value={"models": models}),
-        ))
-        client.delete = AsyncMock(return_value=MagicMock(status_code=delete_status, text=""))
-        return client
-
-    @pytest.mark.asyncio
-    async def test_every_loaded_model_is_unloaded_at_the_api_root(self):
-        from unittest.mock import patch
-
+    def test_the_scheduler_has_no_speaches_unload(self):
         from poindexter.services.gpu_scheduler import GPUScheduler
 
-        scheduler = GPUScheduler()
-        client = self._client(["Systran/faster-whisper-medium"])
-        sc = _sc_with(**{"plugin.caption_provider.speaches.base_url": "http://speaches:8000/v1"})
-        with patch("poindexter.services.gpu_scheduler._sc", return_value=sc), \
-             patch.object(scheduler, "_get_http_client", return_value=client):
-            await scheduler._unload_speaches()
+        assert not hasattr(GPUScheduler, "_unload_speaches")
 
-        assert client.get.await_args.args[0] == "http://speaches:8000/api/ps"
-        assert client.delete.await_args.args[0] == (
-            "http://speaches:8000/api/ps/Systran/faster-whisper-medium"
-        )
+    def test_nothing_in_the_scheduler_deletes_a_model_through_api_ps(self):
+        """Catches the call coming back under any name, not just the old one."""
+        import ast
+        import inspect
 
-    @pytest.mark.asyncio
-    async def test_a_model_in_use_is_left_loaded_without_raising(self):
-        from unittest.mock import patch
+        from poindexter.services import gpu_scheduler
 
-        from poindexter.services.gpu_scheduler import GPUScheduler
-
-        scheduler = GPUScheduler()
-        client = self._client(["Systran/faster-whisper-medium"], delete_status=409)
-        sc = _sc_with(**{"plugin.caption_provider.speaches.base_url": "http://speaches:8000/v1"})
-        with patch("poindexter.services.gpu_scheduler._sc", return_value=sc), \
-             patch.object(scheduler, "_get_http_client", return_value=client):
-            await scheduler._unload_speaches()  # 409 = in use; no raise
-        client.delete.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_no_configured_url_means_no_http(self):
-        from unittest.mock import MagicMock, patch
-
-        from poindexter.services.gpu_scheduler import GPUScheduler
-
-        scheduler = GPUScheduler()
-        client = MagicMock()
-        with patch("poindexter.services.gpu_scheduler._sc", return_value=_sc_with()), \
-             patch.object(scheduler, "_get_http_client", return_value=client):
-            await scheduler._unload_speaches()
-        client.get.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_transport_failure_is_swallowed(self):
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from poindexter.services.gpu_scheduler import GPUScheduler
-
-        scheduler = GPUScheduler()
-        client = MagicMock()
-        client.get = AsyncMock(side_effect=ConnectionError("refused"))
-        sc = _sc_with(**{"plugin.caption_provider.speaches.base_url": "http://speaches:8000/v1"})
-        with patch("poindexter.services.gpu_scheduler._sc", return_value=sc), \
-             patch.object(scheduler, "_get_http_client", return_value=client):
-            await scheduler._unload_speaches()  # must not raise
+        offenders = [
+            ast.unparse(node)
+            for node in ast.walk(ast.parse(inspect.getsource(gpu_scheduler)))
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "delete"
+            and "api/ps" in ast.unparse(node)
+        ]
+        assert offenders == []
 
 
 class TestUnloadRife:

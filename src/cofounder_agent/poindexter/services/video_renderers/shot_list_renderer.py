@@ -534,14 +534,15 @@ async def _evict_newcomers(*, evict_ollama: bool) -> None:
     RESTART when it frees nothing while the card is short, and "short because
     of someone else's model" is exactly this situation (the reclaim
     restart-storm trap). Ollama's eviction is confirmed against ``/api/ps``,
-    and speaches and RIFE only drop idle models.
+    and RIFE only drops an idle model. speaches is left alone: its unload API
+    deadlocks it (2026-09-24), and its idle Whisper leaves on its own
+    ``WHISPER__TTL`` timer.
     """
     try:
         from poindexter.services.gpu_scheduler import gpu
 
         if evict_ollama:
             await gpu._unload_ollama_models()
-        await gpu._unload_speaches()
         await gpu._unload_rife()
     except Exception as exc:  # noqa: BLE001  # silent-ok: best-effort, logged
         logger.warning(
@@ -1112,22 +1113,20 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
             # the next prompt is about to go to this very server) returns it,
             # and ComfyUI reloads from its RAM cache.
             await gpu._unload_comfyui(hard=False)
-        # Idle models the clip does not need (2026-09-23): the render's own
-        # caption check leaves speaches' Whisper resident on its idle timer,
-        # and RIFE keeps its model after interpolating the previous hero.
-        # Together about 2.4 GB, which is what kept every hero wait of that
-        # render under the 27 GB plate. Both are soft (no restart) and both
-        # sidecars refuse while their own work is in flight. Isolated, and
-        # after the levers above: an optional sidecar failing must not cost
-        # the hero its ComfyUI or Ollama headroom.
-        for lever in (gpu._unload_speaches, gpu._unload_rife):
-            try:
-                await lever()
-            except Exception as exc:  # noqa: BLE001  # silent-ok: logged, best-effort
-                logger.warning(
-                    "[SHOT_LIST] pre-hero idle-model unload failed (%s) — "
-                    "continuing", describe_exception(exc),
-                )
+        # RIFE keeps its model after interpolating the previous hero (~0.86 GB,
+        # 2026-09-23). The unload is soft (no restart) and RIFE refuses while
+        # it is interpolating. Isolated, and after the levers above: an
+        # optional sidecar failing must not cost the hero its ComfyUI or
+        # Ollama headroom. speaches' idle Whisper is deliberately NOT unloaded
+        # here: its unload API deadlocks it (2026-09-24, see the note above
+        # gpu_scheduler._unload_rife). It leaves on its own WHISPER__TTL timer.
+        try:
+            await gpu._unload_rife()
+        except Exception as exc:  # noqa: BLE001  # silent-ok: logged, best-effort
+            logger.warning(
+                "[SHOT_LIST] pre-hero idle-model unload failed (%s) — "
+                "continuing", describe_exception(exc),
+            )
         settle = (
             site_config.get_float("video_hero_unload_settle_seconds", 3.0)
             if site_config is not None else 3.0
@@ -1137,7 +1136,7 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
         await asyncio.sleep(settle)
         logger.info(
             "[SHOT_LIST] cleared co-residents before hero clip (image-gen "
-            "hard-unload + Ollama evict + speaches/RIFE idle models, settle "
+            "hard-unload + Ollama evict + RIFE idle model, settle "
             "%.1fs) — poindexter#907/#992",
             settle,
         )
@@ -3775,9 +3774,11 @@ async def _ready_card_for_escalation(render_kwargs: dict[str, Any]) -> None:
     f555bedc (2026-09-24) three of four escalation stills died on image-gen
     503 "CUDA out of memory" with 78 MiB free, and each of those shots fell back
     to replaying the one before it. Soft levers only (ComfyUI /free, Ollama
-    evict, idle TTS / ASR / RIFE models): none queues a restart, so a card that
-    is short because of someone else's model cannot set off the restart storm.
-    Then wait for image-gen /health, since the hero phase hard-exits it.
+    evict, idle chatterbox / RIFE models): none queues a restart, so a card
+    that is short because of someone else's model cannot set off the restart
+    storm. speaches is not a lever: its unload API deadlocks it (2026-09-24),
+    and its idle Whisper leaves on its own WHISPER__TTL timer. Then wait for
+    image-gen /health, since the hero phase hard-exits it.
     """
     site_config = render_kwargs.get("site_config")
     try:
@@ -3787,7 +3788,6 @@ async def _ready_card_for_escalation(render_kwargs: dict[str, Any]) -> None:
             ("comfyui", lambda: gpu._unload_comfyui(hard=False)),
             ("ollama", gpu._unload_ollama_models),
             ("chatterbox", gpu._unload_chatterbox),
-            ("speaches", gpu._unload_speaches),
             ("rife", gpu._unload_rife),
         )
         for name, lever in levers:

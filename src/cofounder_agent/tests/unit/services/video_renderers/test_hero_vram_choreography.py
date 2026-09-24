@@ -887,22 +887,35 @@ async def test_wan_animator_does_not_touch_comfyui():
 # ---------------------------------------------------------------------------
 
 
+def _gpu_with(*levers: str) -> MagicMock:
+    """A scheduler stand-in with the named levers as AsyncMocks. Anything else
+    the code touches lands in ``mock_calls``, which is how the speaches tests
+    below see an unload they must never make."""
+    gpu = MagicMock()
+    for name in levers:
+        setattr(gpu, name, AsyncMock())
+    return gpu
+
+
+def _touched_speaches(gpu: MagicMock) -> bool:
+    return any("speaches" in str(c) for c in gpu.mock_calls)
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_idle_speaches_and_rife_models_are_dropped_before_the_hero_load():
+async def test_rife_is_dropped_before_the_hero_load_and_speaches_is_left_alone():
+    """RIFE's idle model goes. speaches is never asked to unload: its unload
+    API deadlocks its Whisper manager (2026-09-24), and this pre-hero call is
+    what wedged speaches and cost every render in the window its captions."""
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    speaches, rife = AsyncMock(), AsyncMock()
-    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", AsyncMock()), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_ollama_models", AsyncMock()), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_speaches", speaches), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_rife", rife), \
+    gpu = _gpu_with("_unload_image_gen", "_unload_ollama_models", "_unload_comfyui", "_unload_rife")
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
         await slr._clear_image_gen_for_hero(_sc())
 
-    speaches.assert_awaited_once_with()
-    rife.assert_awaited_once_with()
+    gpu._unload_rife.assert_awaited_once_with()
+    assert not _touched_speaches(gpu)
 
 
 @pytest.mark.unit
@@ -967,17 +980,15 @@ async def test_newcomer_eviction_never_touches_image_gen():
     the reclaim restart-storm trap. The mid-wait eviction leaves it alone."""
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    image_gen, ollama, speaches, rife = AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock()
-    with patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", image_gen), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_ollama_models", ollama), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_speaches", speaches), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_rife", rife):
+    gpu = _gpu_with("_unload_image_gen", "_unload_ollama_models", "_unload_rife")
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu):
         await slr._evict_newcomers(evict_ollama=True)
         await slr._evict_newcomers(evict_ollama=False)
 
-    image_gen.assert_not_awaited()
-    assert ollama.await_count == 1  # only the evict_ollama=True call
-    assert speaches.await_count == 2 and rife.await_count == 2
+    gpu._unload_image_gen.assert_not_awaited()
+    assert gpu._unload_ollama_models.await_count == 1  # only the evict_ollama=True call
+    assert gpu._unload_rife.await_count == 2
+    assert not _touched_speaches(gpu)  # its unload API deadlocks it (2026-09-24)
 
 
 @pytest.mark.unit
@@ -1023,22 +1034,19 @@ async def test_the_escalation_clear_uses_soft_levers_and_waits_for_image_gen():
     because of someone else's model cannot queue a restart storm."""
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    comfy, ollama, chatter, speaches, rife, image_gen = (AsyncMock() for _ in range(6))
+    gpu = _gpu_with("_unload_comfyui", "_unload_ollama_models", "_unload_chatterbox",
+                    "_unload_rife", "_unload_image_gen")
     wait = AsyncMock(return_value=True)
-    with patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", comfy), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_ollama_models", ollama), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_chatterbox", chatter), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_speaches", speaches), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_rife", rife), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_image_gen", image_gen), \
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch.object(slr, "_wait_image_gen_ready", wait), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
         await slr._ready_card_for_escalation(
             {"site_config": _sc(), "image_gen_url": "http://image-gen:9836"},
         )
 
-    comfy.assert_awaited_once_with(hard=False)
-    for lever in (ollama, chatter, speaches, rife):
+    gpu._unload_comfyui.assert_awaited_once_with(hard=False)
+    for lever in (gpu._unload_ollama_models, gpu._unload_chatterbox, gpu._unload_rife):
         lever.assert_awaited_once()
-    image_gen.assert_not_awaited()
+    gpu._unload_image_gen.assert_not_awaited()
+    assert not _touched_speaches(gpu)  # its unload API deadlocks it (2026-09-24)
     assert wait.await_args.args[0] == "http://image-gen:9836"
