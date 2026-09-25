@@ -111,9 +111,9 @@
       "tags": [],
       "targetBlank": true,
       "title": "Loki",
-      "tooltip": "Loki datasource — opens Grafana Explore view (Loki/Tempo have no standalone UI)",
+      "tooltip": "Loki logs for the poindexter fleet — opens Grafana Explore (Loki/Tempo have no standalone UI). Selector is container=~\"poindexter-.+\": this Loki has NO job label, so a {job=...} query returns empty forever.",
       "type": "link",
-      "url": "/explore?orgId=1&left=%7B%22datasource%22%3A%20%22local-loki%22%2C%20%22queries%22%3A%20%5B%7B%22refId%22%3A%20%22A%22%2C%20%22datasource%22%3A%20%7B%22type%22%3A%20%22loki%22%2C%20%22uid%22%3A%20%22local-loki%22%7D%2C%20%22expr%22%3A%20%22%7Bjob%3D~%5C%22.%2B%5C%22%7D%22%7D%5D%2C%20%22range%22%3A%20%7B%22from%22%3A%20%22now-1h%22%2C%20%22to%22%3A%20%22now%22%7D%7D"
+      "url": "/explore?orgId=1&left=%7B%22datasource%22%3A%20%22local-loki%22%2C%20%22queries%22%3A%20%5B%7B%22refId%22%3A%20%22A%22%2C%20%22datasource%22%3A%20%7B%22type%22%3A%20%22loki%22%2C%20%22uid%22%3A%20%22local-loki%22%7D%2C%20%22expr%22%3A%20%22%7Bcontainer%3D~%5C%22poindexter-.%2B%5C%22%7D%22%7D%5D%2C%20%22range%22%3A%20%7B%22from%22%3A%20%22now-1h%22%2C%20%22to%22%3A%20%22now%22%7D%7D"
     },
     {
       "asDropdown": false,
