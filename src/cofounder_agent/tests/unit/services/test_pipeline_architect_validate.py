@@ -518,7 +518,11 @@ class TestExistingPostIsReadOnly:
     published post, the architect returned a graph that also rewrote the draft
     and SEO metadata and ran content.republish_post. The validator now refuses
     any post-writing atom in a composed plan built on content.load_existing_post,
-    keyed on the atoms' declared side_effects."""
+    keyed on the atoms' declared side_effects.
+
+    The rule binds COMPOSED plans (_validate_composed_spec, which compose()
+    calls), not every graph: the seeded seo_refresh graph is that exact shape
+    on purpose, and putting the rule in _validate_spec rejected it."""
 
     _MEDIA = [
         "content.load_existing_post", "stage.generate_media_scripts",
@@ -536,7 +540,7 @@ class TestExistingPostIsReadOnly:
         return _spec(nodes, edges)
 
     def _post_write_errors(self, atoms):
-        _ok, errors = pipeline_architect._validate_spec(self._chain(atoms))
+        _ok, errors = pipeline_architect._validate_composed_spec(self._chain(atoms))
         return [e for e in errors if "writes or publishes a post" in e]
 
     def test_the_measured_rewrite_and_republish_plan_is_refused(self):
@@ -573,3 +577,59 @@ class TestExistingPostIsReadOnly:
         assert pipeline_architect.POST_WRITE_EFFECT not in (
             get_atom_meta("content.load_existing_post").side_effects
         )
+
+    def test_the_rule_binds_composed_plans_not_seeded_graphs(self):
+        """Scoped by CALLER, never by graph name: an LLM can name its plan
+        "seo_refresh". The structural validator accepts the seeded graph; the
+        composed-plan validator refuses the same shape."""
+        import copy
+
+        from poindexter.services.atom_registry import discover
+        from poindexter.services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
+
+        discover()
+        # Both validators rewrite atom names in place; never touch the seed.
+        ok, errors = pipeline_architect._validate_spec(copy.deepcopy(SEO_REFRESH_GRAPH_DEF))
+        assert ok, errors
+
+        ok, errors = pipeline_architect._validate_composed_spec(
+            copy.deepcopy(SEO_REFRESH_GRAPH_DEF)
+        )
+        assert ok is False
+        assert any("'content.republish_post'" in e and "remove it" in e for e in errors), errors
+
+    @pytest.mark.asyncio
+    async def test_compose_applies_the_rule_and_feeds_the_fix_back(self, monkeypatch):
+        """The rule protects a live post only while compose() is what runs it,
+        and its FIX only repairs a plan if it reaches the retry prompt."""
+        import json
+
+        from poindexter.services.atom_registry import discover
+        from poindexter.services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
+        from poindexter.services.site_config import SiteConfig
+
+        discover()
+        prompts: list[str] = []
+
+        async def _fake_ollama(prompt, **_kwargs):
+            prompts.append(prompt)
+            return json.dumps(SEO_REFRESH_GRAPH_DEF)
+
+        monkeypatch.setattr(
+            pipeline_architect, "to_catalog_text",
+            lambda: "content.load_existing_post v1.0.0 | atom",
+        )
+        monkeypatch.setattr(pipeline_architect, "_ollama_chat_text", _fake_ollama)
+
+        result = await pipeline_architect.compose(
+            "render a video for post 42",
+            site_config=SiteConfig(initial_config={"pipeline_architect_model": "qwen3:14b"}),
+            max_attempts=2,
+        )
+
+        assert result.ok is False
+        assert any(
+            "'content.republish_post'" in e and "remove it" in e for e in result.errors or []
+        ), result.errors
+        assert len(prompts) == 2
+        assert "FIX node 'republish': remove it" in prompts[1]

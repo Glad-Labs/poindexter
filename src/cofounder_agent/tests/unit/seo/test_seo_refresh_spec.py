@@ -1,10 +1,14 @@
 """The seo_refresh graph_def must compile cleanly (SEO Harvest Loop Phase 2 #763).
 
-Asserts the spec passes BOTH validators the seed path exercises:
+Asserts the spec passes BOTH validators CI holds every seeded graph to:
   - ``_validate_spec`` — reachability + DAG (every atom's requires are
     satisfiable from upstream produces or PipelineState-seeded initial state);
   - ``build_graph_from_spec`` — the #753 schema gate (every atom's
     produces/requires key is declared in PipelineState, else ValueError).
+
+Not ``_validate_composed_spec``: its rule that a plan built on an existing post
+may not write one (poindexter#1056) binds architect-composed plans, and this
+graph republishes an existing post by design.
 
 This is the design's acceptance criterion #1.
 """

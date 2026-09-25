@@ -501,6 +501,16 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/check-no-os-getenv-in-services.py
 
+      # The pytest steps below run one directory each, and a directory on no
+      # step never runs in CI: its tests cannot fail a PR. That happened to
+      # five directories (poindexter#641) and then three more (2026-09-25, one
+      # of them hiding a real failure). This fails when any tests/unit/**/test_*.py is
+      # named by no step, or only by one that cannot fail the job
+      # (continue-on-error / if: false / --ignore). Stdlib only.
+      - name: Unit-test directory lint (every tests/unit file runs in CI)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/unit_test_dirs_lint.py
+
       # #995: turn "N tests pass" into a coverage SIGNAL — gated to the nightly
       # schedule + manual dispatch only. The `COV` env var (job level, above) is
       # EMPTY on push/PR, so day-to-day runs don't pay the ~2x instrumentation
@@ -629,6 +639,26 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: $PYTEST tests/unit/scripts/ -q --tb=short -p no:cacheprovider $COV
+
+      # The same gap as poindexter#641, found again 2026-09-25: these three were on no
+      # list, and seo/ hid a real failure (#4011's composed-plan rule also
+      # rejected the seeded seo_refresh graph). The list is no longer on the
+      # honor system: the "Unit-test directory lint" step above fails the job
+      # when any tests/unit file is missing from every step here.
+      - name: Unit tests — console
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: $PYTEST tests/unit/console/ -q --tb=short -p no:cacheprovider $COV
+
+      - name: Unit tests — infrastructure
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: $PYTEST tests/unit/infrastructure/ -q --tb=short -p no:cacheprovider $COV
+
+      - name: Unit tests — seo
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: $PYTEST tests/unit/seo/ -q --tb=short -p no:cacheprovider $COV
 
       # Root-level tests/unit/test_*.py (test_main / test_app_container_wireup
       # / test_bootstrap / approval-service suites). These exercise the
@@ -813,6 +843,10 @@ jobs:
         run: python scripts/ci/lint_secret_ciphertext_footgun.py
       - name: Services os.getenv lint (DB-first config, GH#93)
         run: python scripts/check-no-os-getenv-in-services.py
+      # A PR that predates this lint can still land a new tests/unit/<dir>/
+      # with no step; this catches it on main instead of on the next N PRs.
+      - name: Unit-test directory lint (every tests/unit file runs in CI)
+        run: python scripts/ci/unit_test_dirs_lint.py
       - name: Clear the lint-main issue once main is green again
         # Self-heals: the fix closes the issue. Same stable title as the failure
         # handler below — that title is the dedupe key in both directions.

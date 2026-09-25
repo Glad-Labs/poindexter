@@ -403,7 +403,7 @@ async def compose(
             )
             continue
 
-        valid, validation_errors = _validate_spec(spec)
+        valid, validation_errors = _validate_composed_spec(spec)
         if valid:
             return ArchitectResult(
                 ok=True, spec=spec, raw_response=raw, model_used=model,
@@ -648,6 +648,10 @@ def _post_writes_on_an_existing_post(nodes: Any) -> list[str]:
     architect-composed plan that starts from ``content.load_existing_post``
     treats the post as read-only. Keyed on the atoms' declared
     ``side_effects``, so a new post-writing atom is covered by tagging it.
+
+    Applied by :func:`_validate_composed_spec` only, never by
+    :func:`_validate_spec`: ``seo_refresh`` is exactly this shape
+    (``load_existing_post`` → ``republish_post``) by design.
     """
     if not isinstance(nodes, list):
         return []
@@ -680,6 +684,10 @@ def _validate_spec(
     every error message tells the LLM HOW TO FIX the issue, not just
     what's wrong. The architect retries on failure with these errors
     in its prompt context, so they are the primary repair signal.
+
+    Structural only: every graph_def must pass it, the seeded ones included
+    (each seeded spec's own test holds it to this). A rule about what an LLM
+    was ASKED to do belongs in :func:`_validate_composed_spec` instead.
     """
     errors: list[str] = []
 
@@ -901,8 +909,29 @@ def _validate_spec(
     # concurrent fan-out onto a node that declares it cannot be concurrent,
     # and a node nothing reaches. Both wedged a live plan run (2026-09-15).
     errors.extend(_unsafe_concurrency_and_orphans(spec, node_atoms))
-    errors.extend(_post_writes_on_an_existing_post(nodes))
 
+    return (not errors), errors
+
+
+def _validate_composed_spec(spec: dict[str, Any]) -> tuple[bool, list[str]]:
+    """Validate a plan the architect LLM wrote: :func:`_validate_spec` plus the
+    rules that bind only a composed plan. :func:`compose` calls this.
+
+    ``_validate_spec`` asks whether a graph is well-formed. The rules added
+    here ask whether a plan did what it was asked and nothing more, which is
+    a question about the composer, not about the graph. The post-write rule
+    (poindexter#1056) first went into ``_validate_spec`` itself, where it
+    also rejected the seeded ``seo_refresh`` graph. That graph loads an
+    existing post and republishes it on purpose: it is the reviewed path for
+    changing a live post, behind an approval gate. The rejection went
+    unnoticed because ``tests/unit/seo`` ran in no CI step.
+
+    Runs ``_validate_spec`` first on purpose: it rewrites node atoms in place
+    to their canonical names (a dropped namespace, a copied ``v1.0.0``
+    suffix), and the rules below match on those canonical names.
+    """
+    _ok, errors = _validate_spec(spec)
+    errors = [*errors, *_post_writes_on_an_existing_post(spec.get("nodes"))]
     return (not errors), errors
 
 
