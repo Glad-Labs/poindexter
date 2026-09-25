@@ -156,7 +156,7 @@ This is the part most likely to bite: the key is **not** a scheduler private.
 | `services/gpu_scheduler.py`          | acquires/releases                                                                             | the change itself                                                                     |
 | `brain/health_probes.py`             | **takes** it (`pg_try_advisory_lock`) so the writer-model probe never loads ~19 GB mid-render | must take the _render_ scope keys, not the base                                       |
 | `brain/sidecar_ram_watch.py`         | **reads** it as an idle gate                                                                  | must test "any GPU key held", or it reads idle mid-render and recycles a live sidecar |
-| `brain/ollama_runner_ram_watch.py`   | **reads** it as an idle gate (#3441)                                                          | same as above — found UNPINNED by the Phase 1 ratchet, now pinned                     |
+| `brain/ollama_runner_ram_watch.py`   | **reads** it as an idle gate (#3441)                                                          | Phase-1 pinned; since 2026-09-25 reads its target's card keys + exclusive base rows   |
 | `gpu_scheduler` status surface       | exposes `pg_advisory_lock_key`                                                                | becomes a list                                                                        |
 | `social_drafts` / `dispatch_handles` | comment-only siblings                                                                         | none, but the logical/physical note belongs there                                     |
 

@@ -472,10 +472,13 @@ DEFAULTS: dict[str, str] = {
     # AND the container's CPU under cpu_idle_percent (measured idle draw for
     # these four is 0.09-1.21%). See docs/operations/host-oom-protection.md.
     # --- ollama runner RAM recycle (poindexter#3434) -----------------------
-    # The llama-server runner ollama spawns leaks ~6.9 MiB per request
-    # (measured 2026-08-28, dead linear, no plateau): a fresh runner holds
-    # 0.30 GB, one that had served ~5.5h held 9.35 GB and was the single
-    # largest holder of host swap. sidecar_ram_recycle_* cannot reach it —
+    # The llama-server runner ollama spawns keeps a host-RAM prompt cache
+    # (--cache-ram, 8 GiB of KV by default; re-measured 2026-09-25 — first read
+    # as a ~6.9 MiB/request leak on 2026-08-28). It costs 96 KiB per cached
+    # token: ~5 MiB for a short prompt, ~151 MiB for one video frame, 356 MiB
+    # for a 3,800-token prompt. Image entries carry ~46 MiB each that the cap
+    # does not count, so a vision-heavy runner plateaued at 10.6 GB and was
+    # the largest holder of host swap. sidecar_ram_recycle_* cannot reach it —
     # that probe restarts DOCKER containers and ollama is a host systemd unit.
     #
     # OFF by default: every other install's ollama layout differs (one
@@ -485,18 +488,21 @@ DEFAULTS: dict[str, str] = {
     # unit|watermark_gb|endpoint|model — PIPE-delimited, unlike its colon-
     # delimited sidecar sibling, because two fields carry their own colons (the
     # endpoint is a URL, the model has a `:tag`) and a colon split is genuinely
-    # ambiguous. 4 GB sits well above a fresh runner (0.30 GB) and well below
-    # the 9.35 GB incident.
+    # ambiguous. 4 GB sits above a fresh runner (0.2-0.4 GB) and below the
+    # cache's own 8 GiB cap, so it trips on any workload that can fill it.
+    # Memory, not a request count: per-request cost spans 75x.
     'ollama_runner_ram_recycle_targets':
         'ollama-vision.service|4|http://host.docker.internal:11435|qwen3-vl:30b-a3b-instruct',
-    # A recycle costs an ~85s model reload, so do not churn.
+    # A recycle costs a 40-85 s model reload, so do not churn.
     'ollama_runner_ram_recycle_cooldown_minutes': '120',
     # A loaded-but-idle runner reads 0.0%; one mid-generation pegs a core.
     'ollama_runner_ram_recycle_cpu_idle_percent': '5',
-    # The GPU advisory lock is held by every QA rail that calls this endpoint,
-    # so a free lock proves no rail is mid-call. Global and blunt (free only
-    # ~7% of the time under render load), so relaxing it trades safety for
-    # responsiveness — see docs/operations/host-oom-protection.md.
+    # Read for the target endpoint's OWN cards (gpu_lock_scopes), plus any
+    # whole-box session; it used to read the whole box, so a GPU-0 render
+    # deferred the GPU-1 judge's recycle for hours. It sees only callers that
+    # lock the judge explicitly: QA rails and qa_shot_vision dispatch to a
+    # pinned endpoint and take no lock (#2646), and the runner-CPU gate is
+    # what sees those. See docs/operations/host-oom-protection.md.
     'ollama_runner_ram_recycle_require_gpu_lock_free': 'true',
     # Empty = derive from the runtime (host.docker.internal in a container,
     # localhost otherwise). Set only for a non-standard exporter location.

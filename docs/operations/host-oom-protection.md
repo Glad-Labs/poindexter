@@ -224,13 +224,15 @@ Config: `infrastructure/systemd/zram/pop-zram` → `/etc/pop-zram`, deployed by
 `scripts/linux/install-swap-tiering.sh`. Read by `/usr/bin/pop-zram-config` at
 boot.
 
-The 2026-08-28 driver is a **leak in the `ollama-vision` runner**, measured
-below. An earlier revision of this section called it "a new permanent tenant …
-restarting the unit only re-deposits it" — **that was wrong, and wrong in the
-direction that costs you the fix.** Recycling the runner reclaims all of it.
+The 2026-08-28 driver is the **`ollama-vision` runner's host-RAM prompt
+cache**, measured below (first read as a leak). An earlier revision of this
+section called it "a new permanent tenant … restarting the unit only
+re-deposits it" — **that was wrong, and wrong in the direction that costs you
+the fix.** Recycling the runner reclaims all of it, and capping the cache would
+stop it at the source.
 
 The tier was still sized to 24 GiB, which remains worth doing: it buys headroom
-against the leak's refill time rather than against a fixed resident.
+against the cache's refill time rather than against a fixed resident.
 
 Three things to hold onto when changing this:
 
@@ -248,7 +250,7 @@ Three things to hold onto when changing this:
   unless `MemAvailable` covers 1.5x the net cost. At boot the same change is
   free, because nothing is in zram yet.
 
-## The ollama-vision runner leaks ~6.9 MiB per request
+## The ollama-vision runner's prompt cache (first read as a leak)
 
 Measured 2026-08-28 by A/B benching the runner. The metric is **total anonymous
 = `RssAnon` + `VmSwap`**, invariant to whether the kernel has swapped it out
@@ -273,11 +275,11 @@ Then driving plain **text** requests at a fresh runner:
 | 25       | 0.572 GiB  | +0.034                            |
 | 30       | 0.607 GiB  | +0.035                            |
 
-**Dead linear at ~6.9 MiB/request with no deceleration** — a leak, not a cache
-that plateaus. It never releases: the 5.5 h process sat idle 30+ minutes still
-holding 9.34 GiB. 9 GiB of growth is ~1,300 requests, ≈4/min over that window,
-which is ordinary QA-rail traffic. The requests were text-only, so this is
-**not** specific to the vision/mmproj path.
+That was read as "**dead linear at ~6.9 MiB/request with no deceleration** — a
+leak, not a cache that plateaus." The measurements were right and the reading
+was wrong, and this bench could not have told the difference: 30 short
+requests add ~0.2 GiB to a cache whose cap is 8 GiB, so "no deceleration" was
+true of the window, not of the process.
 
 **`use_mmap` is not the lever — do not spend time there.** llama-server's own
 load log reads `mmap = true` with `CPU_Mapped model buffer size = 166.92 MiB`;
@@ -286,12 +288,73 @@ mapped GGUF is `r--s` (shared, read-only) holding ~zero swap. Both arms of the
 A/B land at 0.3-0.5 GiB. One real difference worth knowing: `mmap=on` peaks at
 **18.4 GiB RSS** during load (the whole file paged through) versus 0.69 GiB for
 `--no-mmap` — so every load with mmap on evicts ~18 GiB of page cache, its own
-kind of pressure on a tight box, separate from the leak.
+kind of pressure on a tight box, separate from the growth.
+
+### What it actually is (re-measured 2026-09-25)
+
+Ollama 0.32 runs models through upstream `llama-server`, and llama-server keeps
+a **host-RAM prompt cache** (llama.cpp #16391): when a new task arrives, the
+idle slot's KV state is copied into host memory so a later prompt sharing its
+prefix can restore it instead of re-prefilling. Ollama starts llama-server with
+no `--cache-ram`, so the upstream default cap applies: **8192 MiB**. The
+runner logs every entry and the running total into the unit's journal:
+
+```text
+srv   prompt_save:  - saving prompt with length 3116, total state size = 292.186 MiB
+srv        update:  - cache state: 8 prompts, 2333.452 MiB (limits: 8192.000 MiB, 16384 tokens, 87363 est)
+```
+
+An entry costs its token count times the model's KV bytes per token: **96 KiB**
+for `qwen3-vl:30b-a3b-instruct` at f16 (2 × 48 layers × 4 KV heads × 128 dims
+× 2 bytes; the GGUF metadata reads `block_count=48`, `head_count_kv=4`,
+`key_length=value_length=128`). Measured with
+[`scripts/diagnostics/ollama-runner-prompt-cache-bench.sh`](../../scripts/diagnostics/ollama-runner-prompt-cache-bench.sh)
+at the pinned `num_ctx` (16384), per request, `/proc` beside the runner's own
+log:
+
+| request                     | tokens | Δ total anon  | logged KV state | above the cap |
+| --------------------------- | ------ | ------------- | --------------- | ------------- |
+| the same short prompt again | 50     | **0.1 MiB**   | 4.7 MiB         | —             |
+| short text, unique          | 49     | 4.7 MiB       | 4.6 MiB         | ~0            |
+| long text, unique           | 3,789  | 356.1 MiB     | 355.3 MiB       | ~1 MiB        |
+| one 1280×720 frame, unique  | 1,120  | **150.8 MiB** | 105.0 MiB       | **45.8 MiB**  |
+
+Three things in that table:
+
+- **The repeat is the discriminator.** A leak grows on every request. Here the
+  runner logs a save each time and the process does not grow, because the
+  entry replaces the one already holding that prompt. That is a cache.
+- **`/proc` matches the log to within 1% for text.** The growth is the saved KV
+  state, nothing else.
+- **An image entry holds ~46 MiB the cap does not count.** By elimination it
+  is image data kept with the entry: text entries show none. The cap is
+  enforced on the logged KV size only, so a vision-heavy cache settles above
+  8 GiB. Production shot frames and the bench's 1280×720 frame both come out
+  at 1,075 image tokens (`--image-min-tokens 1024` floors smaller ones).
+
+Traced through the 2026-09-25 incident in the unit's journal: one `::1` host
+poller (`/api/chat` every 10 min, ~3,100-token prompts) added **291 MiB per
+call**, ~1.5 GiB by 14:06. Then a Stage-2 render's `qa_shot_vision` burst saved
+one 150-245 MiB entry every ~2 s and took the cache from **2.9 to 8.1 GiB
+between 14:57:41 and 14:58:59**. It then held at the cap by evicting, and the
+process sat at **10.5-10.7 GiB** until the 16:04 recycle: 8 GiB of KV plus ~46
+MiB per cached frame. The 2026-08-28 "5.5 h old, 9.35 GiB" runner was the same
+cap reached by a text-heavier mix.
+
+Is the cache worth 8+ GiB? Over 2026-09-24/25, **213 of 1,347 lookups (16%)**
+found a reusable entry, 148 of them reusing ≥90% of the prompt. The rest is
+never read again, which is why the kernel swaps it out and it lands in the zram
+fast tier. The structural lever is the cap: llama-server reads
+**`LLAMA_ARG_CACHE_RAM`**, and ollama passes its environment to the runner
+(`/proc/<runner>/environ` shows the unit's `OLLAMA_*` plus ollama's own
+`LLAMA_ARG_FIT_TARGET`), so one export in `scripts/linux/ollama-vision.sh`
+would bound the footprint without any reload. Not set yet. Until it is, the
+recycle below gives the memory back.
 
 ### The recycle
 
 `poindexter/brain/ollama_runner_ram_watch.py` closes the gap, and it is a **recycle, not a
-fix** — the leak is upstream, so this keeps returning.
+fix** — the cache refills from the next request, so this keeps returning.
 
 It could not be an extension of `sidecar_ram_watch`, because _both_ halves of
 that probe are docker-shaped: it measures with `docker exec` and acts with
@@ -308,8 +371,9 @@ elsewhere:
   The brain already scrapes this exporter for wall power, so no new dependency.
 - **Act** — ollama's own HTTP API. `keep_alive: 0` terminates the runner, which
   is what actually frees the memory; a follow-up load with `keep_alive: -1`
-  restores the pin eagerly, so the ~85 s reload lands on the probe rather than
-  on whichever QA rail calls next. Restarting the systemd unit is neither
+  restores the pin eagerly, so the reload (39-66 s for each of the six
+  recycles on 2026-09-25) lands on the probe rather than on whichever QA rail
+  calls next. Restarting the systemd unit is neither
   possible from the daemon's namespaces nor necessary. The re-pin sends
   `options.num_ctx = pinned_llm_endpoint_num_ctx`, the one size every
   dispatch to that endpoint runs at (see
@@ -318,17 +382,54 @@ elsewhere:
   the first rail call reloaded the model at 16384, and every recycle cost two
   reloads instead of one.
 
-Two idle gates, same shape as its sibling, and unprovable counts as busy:
+Two idle gates, and unprovable counts as busy. They see different traffic:
 
-1. **GPU advisory lock free** — every QA rail that calls this endpoint holds it,
-   so a free lock proves no rail is mid-call. Global and blunt (free only ~7% of
-   the time under render load), so the probe can defer for hours. That is the
-   intended trade: a recycle costs an ~85 s reload, but a recycle _during_ a QA
-   pass costs that rail its answer.
-2. **Runner CPU under threshold** — not redundant with the lock. Requests that
-   never take the GPU scheduler lock (a warm-up ping, a direct curl) still peg
-   the runner. `/api/ps` is deliberately **not** used: it reports which model is
-   _loaded_, not whether it is generating, so it reads "idle" mid-inference.
+1. **The GPU advisory lock, read for the target's own cards.** Device scoping
+   (stack#3457, live 2026-08-31) has a caller pinned to a card take the base
+   key `7777777777` **shared** plus its card's derived key; only an unscoped
+   caller takes the base key exclusively. The gate resolves the target
+   endpoint to a role the way the worker does (`ollama_vision_base_url` →
+   `qa_judge`, `ollama_base_url` → `llm_primary`), looks the role up in
+   `gpu_lock_scopes`, derives the card keys from `gpu_lock_node_id`, and
+   counts a session (holding or queued) on one of those keys, or an
+   **exclusive** session on the base key. Anything it cannot resolve (`gpu_lock_per_device_enabled` off, no
+   node id, an endpoint that is neither instance, an unreadable map) falls
+   back to reading the whole box. The keys, defaults and derivation are copies
+   of `services/gpu_scheduler.py`'s, pinned by tests, and
+   `scripts/ci/gpu_lock_key_contract_lint.py` fails any further copy of the
+   derivation.
+
+   Until 2026-09-25 the gate read "any row on the base key", which under
+   scoping means any GPU work anywhere. A render on GPU 0 (task `cc260343`)
+   held the lock 13:31-16:04 EDT and deferred the recycle of the GPU-1 judge
+   the whole time, while its runner went from 1.5 to 10.6 GiB.
+
+   What the lock does **not** see: since #2646 (2026-07-17) a dispatch to a
+   model pinned to its own endpoint takes no GPU lock at all, and that covers
+   every QA rail and `qa_shot_vision`. Only callers that lock the judge
+   explicitly (image captioning, media QA) and whole-box sessions register
+   here. An earlier revision of this section said "every QA rail that calls
+   this endpoint holds it" — that stopped being true a month before the probe
+   shipped.
+
+2. **Runner CPU under threshold** — the gate that sees an in-flight request,
+   locked or not. A runner mid-generation pegs a core and an idle one reads
+   0.0%, measured over the exporter's 10 s collector interval. `/api/ps` is
+   deliberately **not** used: it reports which model is _loaded_, not whether
+   it is generating, so it reads "idle" mid-inference.
+
+**Why a memory watermark, not a request count.** Per-request cost spans 75×
+(4.7 MiB for a short prompt, 151 MiB for a frame, 356 MiB for a 3,800-token
+prompt) and a repeated prompt costs nothing. A count sized for text recycles
+on a few hundred MiB; one sized for vision lets a render add 6 GiB first. The
+watermark reads the quantity itself. The default **4 GB** sits above a fresh
+runner (0.2-0.4 GiB) and below the cache's own 8 GiB cap, so it trips on any
+workload that can fill the cache, and both observed plateaus (9.35 GiB, 10.6
+GiB) sit well above it. What it costs: the poller alone crosses 4 GB about
+2.2 h after a load and a render's shot-QA burst crosses it within ~25 frames,
+so expect roughly one recycle per `ollama_runner_ram_recycle_cooldown_minutes`
+(120) on a busy day. That was six on 2026-09-25, with the old gate still
+blocking during renders. Each one is a 39-66 s reload.
 
 Ships **off** (`ollama_runner_ram_recycle_enabled=false`) — other installs run
 ollama differently, and a probe that restarts someone's LLM endpoint uninvited
@@ -337,19 +438,22 @@ delimited unlike the colon-delimited sidecar setting, because the endpoint is a
 URL and the model carries a `:tag`; a colon split is genuinely ambiguous
 (`…:qwen3-vl:30b` right-splits to model `30b`).
 
-Watch it on the **"Ollama runner host memory"** panel: once enabled it should
-read as a sawtooth, each drop a recycle. A line that climbs without dropping
-means the recycle is off, deferring on the GPU lock, or failing — check the
-Findings board for `ollama_runner_ram_recycle_failed`.
+Watch it on the **"Ollama runner host memory"** panel: it should read as a
+sawtooth, each drop a recycle. A line that climbs without dropping means the
+recycle is off, deferring, or failing. A deferral is logged with its reason
+(`[OLLAMA_RAM] deferred: …` and, when a lock blocked it, `[OLLAMA_RAM] lock
+covering GPU 1 (qa_judge) held by: …`); the brain's heartbeat records only
+ok/issue, so the log is the only place a deferral leaves a trace. A failed
+recycle raises `ollama_runner_ram_recycle_failed` on the Findings board.
 
 **Neither of the two older recycle probes can reach a host systemd unit** — and
-now that this is a leak rather than a fixed resident, that was a real coverage
-gap, not a harmless one. `sidecar_ram_watch.py` and the comfyui probe both work through
+since this is a refilling cache rather than a fixed resident, that was a real
+coverage gap, not a harmless one. `sidecar_ram_watch.py` and the comfyui probe both work through
 `restart_container` on docker names; `ollama-vision.service` is outside them by
 construction. For host units the equivalent read is
 `systemctl show <unit> -p MemorySwapCurrent`, which no container metric covers.
-Recycling costs an ~85 s model reload, so the gate wants the same idle proof the
-sidecar probe already uses, not a blind timer.
+Recycling costs a 39-66 s model reload, so the gate wants an idle proof, not a
+blind timer.
 
 ## Related
 

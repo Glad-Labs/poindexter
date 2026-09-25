@@ -3109,8 +3109,8 @@ async def run_cycle(pool):
     # cannot cover this: ollama runs as a host systemd unit, so cadvisor never
     # sees it and `docker restart` cannot reach it. Measures via the
     # gpu-exporter (pid: host) and recycles through ollama's API — keep_alive:0
-    # terminates the runner, which is what actually frees the leaked memory.
-    # Off unless app_settings.ollama_runner_ram_recycle_enabled=true.
+    # terminates the runner, which is what actually frees its host-RAM prompt
+    # cache. Off unless app_settings.ollama_runner_ram_recycle_enabled=true.
     if _HAS_OLLAMA_RUNNER_RAM_WATCH:
         try:
             or_summary = await run_ollama_runner_ram_watch_probe(pool)
