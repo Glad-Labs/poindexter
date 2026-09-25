@@ -91,3 +91,43 @@ async def test_the_selector_narrows_to_one_video(stored):
     for selector in ("VB", "post-b", "slug-b", "b"):
         out = await bf.backfill_youtube_thumbnails(pool, None, selector=selector)
         assert [o.video_id for o in out] == ["VB"], selector
+
+
+async def test_naming_one_video_also_reaches_videos_awaiting_approval():
+    pool = _pool([])
+    await bf.backfill_youtube_thumbnails(pool, None)
+    assert pool.fetch.await_args.args[1] is False          # a sweep: published only
+    await bf.backfill_youtube_thumbnails(pool, None, selector="p1")
+    assert pool.fetch.await_args.args[1] is True           # one video: any long video
+
+
+async def test_the_operator_can_write_one_videos_text():
+    pool = _pool([_row("a", "VA"), _row("b", "")])
+    compose = AsyncMock(return_value=("/v/b_thumbnail.jpg", {"hook": "Paradox Pie", "background": "featured_image"}, ""))
+    with patch.object(bf, "_compose_and_store", compose):
+        out = await bf.backfill_youtube_thumbnails(pool, None, selector="b", hook="  Paradox  Pie ")
+    assert compose.await_args.args[3] == "Paradox  Pie"      # trimmed, passed through
+    assert out[0].action == "composed — uploads with the video when you approve it"
+    assert out[0].task_id == "b"
+
+
+@pytest.mark.parametrize(("selector", "apply", "match"), [
+    (None, False, "exactly one"),        # no --post: which video?
+    ("VA", True, "--apply without --hook"),   # never upload unreviewed text
+])
+async def test_hook_refuses_what_nobody_would_have_reviewed(selector, apply, match):
+    pool = _pool([_row("a", "VA"), _row("c", "VC")])
+    with pytest.raises(ValueError, match=match):
+        await bf.backfill_youtube_thumbnails(pool, None, selector=selector, apply=apply, hook="text")
+
+
+async def test_apply_leaves_a_video_not_on_youtube_to_its_approval(stored):
+    pool = _pool([_row("b", "", thumb=stored)])
+    adapter = MagicMock()
+    adapter.set_thumbnail = AsyncMock()
+    with patch("poindexter.services.publish_adapters.youtube.YouTubePublishAdapter", return_value=adapter):
+        out = await bf.backfill_youtube_thumbnails(pool, None, selector="b", apply=True)
+    assert out[0].action.startswith("not on YouTube yet")
+    adapter.set_thumbnail.assert_not_awaited()
+    pool.execute.assert_not_awaited()
+

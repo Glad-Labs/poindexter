@@ -740,12 +740,15 @@ async def compose_video_thumbnail(
     source_text: str = "",
     out_path: str | None = None,
     niche_slug: str | None = None,
+    hook_text: str | None = None,
 ) -> ThumbnailResult | None:
     """Compose the long video's thumbnail and write it as a JPEG.
 
     ``None`` when ``video_thumbnail_enabled`` is off or chromium fails. A
     missing hook or background degrades (brand ground, no text) rather than
     failing: a plain branded thumbnail still beats a random frame.
+    ``hook_text`` is text the operator wrote: it is used as given, with no
+    model call and none of the model-output checks.
     """
     if not _sc_bool(site_config, "video_thumbnail_enabled", True):
         return None
@@ -753,7 +756,9 @@ async def compose_video_thumbnail(
     style = style_from_settings(site_config)
 
     hook, note = "", "video_thumbnail_hook_enabled is off"
-    if _sc_bool(site_config, "video_thumbnail_hook_enabled", True):
+    if hook_text is not None:
+        hook, note = " ".join(hook_text.split()), "set by operator"
+    elif _sc_bool(site_config, "video_thumbnail_hook_enabled", True):
         recent = await load_recent_hooks(
             pool, task_id, max(0, _sc_int(site_config, "video_thumbnail_hook_opener_window", 12)),
         )

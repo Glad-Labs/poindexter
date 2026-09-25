@@ -283,7 +283,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `writing_style_context.py` | Load active writing-style samples for voice matching. |
 | `writing_style_db.py` | Writing Style Database Module |
 | `youtube_metadata_sync.py` | Re-push YouTube title/description/tags for videos already on the channel. |
-| `youtube_thumbnail_backfill.py` | Give already-published long videos their composed thumbnail. |
+| `youtube_thumbnail_backfill.py` | Compose, re-roll or hand-write long videos' thumbnails; upload the stored ones. |
 
 ## services/audio_gen_providers/
 

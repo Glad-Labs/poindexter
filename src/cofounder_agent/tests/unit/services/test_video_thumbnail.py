@@ -304,6 +304,23 @@ async def test_a_failed_recent_hook_lookup_only_skips_the_variety_rule():
 
 
 @pytest.mark.asyncio
+async def test_operator_text_replaces_the_model(tmp_path):
+    ctx = {"title": "T", "summary": "s", "featured_image_url": "", "slug": "t"}
+    gen = AsyncMock()
+    render = AsyncMock(return_value=b"\xff\xd8j")
+    with patch.object(vt, "load_post_context", AsyncMock(return_value=ctx)), \
+         patch.object(vt, "generate_thumbnail_hook", gen), \
+         patch.object(vt, "render_thumbnail_jpeg", render):
+        result = await vt.compose_video_thumbnail(
+            task_id="t", pool=object(), site_config=_SC(), out_path=str(tmp_path / "t.jpg"),
+            hook_text="  Beat the   zero-click era ",
+        )
+    gen.assert_not_awaited()
+    assert render.await_args.kwargs["hook"] == "Beat the zero-click era"
+    assert (result.hook, result.hook_note) == ("Beat the zero-click era", "set by operator")
+
+
+@pytest.mark.asyncio
 async def test_compose_hands_the_recent_hooks_to_the_hook_writer(tmp_path):
     ctx = {"title": "T", "summary": "s", "featured_image_url": "", "slug": "t"}
     gen = AsyncMock(return_value=("New words", ""))

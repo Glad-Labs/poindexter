@@ -116,8 +116,33 @@ It works in two passes, so what gets uploaded is exactly what you looked at:
    could write different words from the ones you reviewed. Videos stamped
    `set` are skipped.
 
-Add `--post <id|slug|task|video id>` to work on one video, or `--limit N` to
-cap a run. The command exits non-zero if any compose or upload fails.
+Add `--limit N` to cap a run. The command exits non-zero if any compose or
+upload fails.
+
+## Changing one video's thumbnail
+
+`--post <post id | slug | task id | YouTube video id>` narrows any run to one
+video, and it also reaches a video **still awaiting approval**. Two ways to
+change what that video's thumbnail says:
+
+- `--recompose` re-rolls it: a fresh hook from the model and a fresh render.
+- `--hook "TEXT"` sets the text yourself. The model is skipped, and so are the
+  checks on its output; the type still shrinks to fit. The stored row records
+  `hook_note: "set by operator"`.
+
+```bash
+docker exec poindexter-worker python -m poindexter.cli integrations youtube thumbnails --post <id> --hook "Your text"
+```
+
+Both are dry runs that replace the stored thumbnail. Look at it, then:
+
+- **video on YouTube:** `--apply --post <id>` uploads it, replacing the one
+  there.
+- **video awaiting approval:** approve the video. `media_distribute` uploads
+  the latest stored thumbnail with it.
+
+`--hook` refuses to run with `--apply`, or without a `--post` that matches
+exactly one video, since either would upload text nobody reviewed.
 
 ## Measuring whether it works
 

@@ -1,15 +1,19 @@
-"""Give already-published long videos their composed thumbnail.
+"""Compose, re-roll or hand-write long videos' thumbnails; upload the stored ones.
 
 The render step (``media.render_thumbnail``) covers every video rendered from
 2026-09-25 on. The videos already on the channel were uploaded with
 YouTube's own frame, and a thumbnail can be set on a published video, so this
-closes that gap.
+closes that gap. It is also the operator's lever on any single video:
 
 Two passes, so what is uploaded is exactly what the operator looked at:
 
 - **Dry run** (default) composes a thumbnail for each published long video
   that has none and stores it as its ``video_thumbnail`` asset. That is a
   LOCAL write; nothing leaves the machine. It reports every path to review.
+  ``recompose`` re-rolls stored ones. Naming ONE video (``selector``) also
+  reaches a video still awaiting approval, and ``hook`` sets that video's
+  text by hand instead of the model's; approval then uploads that stored
+  thumbnail with the video (``media_distribute`` sends the latest one).
 - **Apply** uploads the stored thumbnail of each video whose thumbnail is not
   yet set on YouTube. It never recomposes, because a second model call could
   write different text from what was reviewed. A video with no stored
@@ -31,25 +35,35 @@ from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-_PUBLISHED_LONG_SQL = """
-SELECT ma.task_id::text AS task_id,
-       ma.storage_path AS video_path,
-       ma.platform_video_ids->>'youtube' AS video_id,
-       p.id::text AS post_id, p.slug, p.title,
-       pt.niche_slug,
-       th.storage_path AS thumbnail_path,
-       th.metadata->'youtube'->>'status' AS thumbnail_status
-  FROM media_assets ma
-  LEFT JOIN posts p ON p.metadata->>'pipeline_task_id' = ma.task_id::text
-  LEFT JOIN pipeline_tasks pt ON pt.task_id::text = ma.task_id::text
-  LEFT JOIN LATERAL (
-        SELECT t.storage_path, t.metadata FROM media_assets t
-         WHERE t.task_id = ma.task_id AND t.type = 'video_thumbnail'
-         ORDER BY t.created_at DESC LIMIT 1
-  ) th ON true
- WHERE ma.type = 'video'
-   AND COALESCE(ma.platform_video_ids->>'youtube', '') <> ''
- ORDER BY ma.created_at DESC
+# One row per task (a re-rendered task holds several ``video`` rows): the one
+# on YouTube if any, else the latest. $1 = also include videos not yet on
+# YouTube, which only a single-video selection asks for.
+_LONG_VIDEOS_SQL = """
+SELECT * FROM (
+  SELECT DISTINCT ON (ma.task_id)
+         ma.task_id::text AS task_id,
+         ma.storage_path AS video_path,
+         COALESCE(ma.platform_video_ids->>'youtube', '') AS video_id,
+         p.id::text AS post_id, p.slug, p.title,
+         pt.niche_slug,
+         th.storage_path AS thumbnail_path,
+         th.metadata->'youtube'->>'status' AS thumbnail_status,
+         ma.created_at
+    FROM media_assets ma
+    LEFT JOIN posts p ON p.metadata->>'pipeline_task_id' = ma.task_id::text
+    LEFT JOIN pipeline_tasks pt ON pt.task_id::text = ma.task_id::text
+    LEFT JOIN LATERAL (
+          SELECT t.storage_path, t.metadata FROM media_assets t
+           WHERE t.task_id = ma.task_id AND t.type = 'video_thumbnail'
+           ORDER BY t.created_at DESC LIMIT 1
+    ) th ON true
+   WHERE ma.type = 'video' AND ma.task_id IS NOT NULL
+     AND ($1::boolean OR COALESCE(ma.platform_video_ids->>'youtube', '') <> '')
+   ORDER BY ma.task_id,
+            (COALESCE(ma.platform_video_ids->>'youtube', '') <> '') DESC,
+            ma.created_at DESC
+) v
+ORDER BY created_at DESC
 """
 
 _TASK_CONTEXT_SQL = """
@@ -70,6 +84,7 @@ class ThumbnailOutcome:
     hook: str = ""
     background: str = ""
     error: str = ""
+    task_id: str = ""
 
     @property
     def failed(self) -> bool:
@@ -82,8 +97,13 @@ def _matches(row: dict[str, Any], selector: str | None) -> bool:
     return selector in (row.get("post_id"), row.get("task_id"), row.get("video_id"), row.get("slug"))
 
 
-async def _compose_and_store(pool: Any, site_config: Any, row: dict[str, Any]) -> tuple[str, dict[str, Any], str]:
-    """Compose this video's thumbnail and store it as its asset. ``(path, meta, error)``."""
+async def _compose_and_store(
+    pool: Any, site_config: Any, row: dict[str, Any], hook_text: str | None = None,
+) -> tuple[str, dict[str, Any], str]:
+    """Compose this video's thumbnail and store it as its asset. ``(path, meta, error)``.
+
+    ``hook_text`` is text the operator wrote; it replaces the model's.
+    """
     from poindexter.services.video_service import VIDEO_DIR
     from poindexter.services.video_thumbnail import compose_video_thumbnail, store_thumbnail_asset
 
@@ -107,6 +127,7 @@ async def _compose_and_store(pool: Any, site_config: Any, row: dict[str, Any]) -
         video_path=str(row.get("video_path") or ""),
         shot_list=shot_list if isinstance(shot_list, dict) else None,
         source_text=script, niche_slug=row.get("niche_slug") or None,
+        hook_text=hook_text,
     )
     if result is None:
         return "", {}, "compose failed (video_thumbnail_enabled off, or chromium returned nothing)"
@@ -144,14 +165,24 @@ async def backfill_youtube_thumbnails(
     apply: bool = False,
     recompose: bool = False,
     limit: int | None = None,
+    hook: str | None = None,
 ) -> list[ThumbnailOutcome]:
-    """Compose (dry run) or upload (apply) thumbnails for published long videos.
+    """Compose (dry run) or upload (apply) long videos' thumbnails.
 
     ``recompose`` replaces a stored thumbnail with a fresh one (dry run only;
-    apply always uploads what is stored).
+    apply always uploads what is stored). ``hook`` composes the ONE selected
+    video with that text (dry run only). Raises ``ValueError`` on a
+    combination that would upload something nobody reviewed.
     """
-    rows = [dict(r) for r in await pool.fetch(_PUBLISHED_LONG_SQL)]
+    hook = (hook or "").strip() or None
+    if hook is not None and apply:
+        raise ValueError(
+            "--hook composes a thumbnail for review; look at it, then run --apply without --hook"
+        )
+    rows = [dict(r) for r in await pool.fetch(_LONG_VIDEOS_SQL, bool(selector))]
     rows = [r for r in rows if _matches(r, selector)]
+    if hook is not None and len(rows) != 1:
+        raise ValueError(f"--hook needs --post naming exactly one long video; {len(rows)} matched")
     if limit is not None:
         rows = rows[: max(0, limit)]
     adapter = None
@@ -162,39 +193,52 @@ async def backfill_youtube_thumbnails(
 
     outcomes: list[ThumbnailOutcome] = []
     for row in rows:
-        video_id, title = str(row["video_id"]), str(row.get("title") or row["task_id"])
+        task_id = str(row["task_id"])
+        video_id, title = str(row.get("video_id") or ""), str(row.get("title") or task_id)
         path = str(row.get("thumbnail_path") or "")
         status = str(row.get("thumbnail_status") or "")
         have = bool(path) and os.path.exists(path)
 
         if not apply:
-            if have and not recompose:
-                outcomes.append(ThumbnailOutcome(video_id, title, f"stored ({status or 'not uploaded'})", path))
+            if have and not recompose and hook is None:
+                outcomes.append(ThumbnailOutcome(
+                    video_id, title, f"stored ({status or 'not uploaded'})", path, task_id=task_id,
+                ))
                 continue
-            new_path, meta, error = await _compose_and_store(pool, site_config, row)
+            new_path, meta, error = await _compose_and_store(pool, site_config, row, hook)
+            done = (
+                "composed — review, then --apply" if video_id
+                else "composed — uploads with the video when you approve it"
+            )
             outcomes.append(ThumbnailOutcome(
-                video_id, title, "composed — review, then --apply" if not error else "compose failed",
-                new_path, meta.get("hook", ""), meta.get("background", ""), error,
+                video_id, title, done if not error else "compose failed",
+                new_path, meta.get("hook", ""), meta.get("background", ""), error, task_id,
             ))
             continue
 
+        if not video_id:
+            outcomes.append(ThumbnailOutcome(
+                video_id, title, "not on YouTube yet — uploads with the video when you approve it",
+                path, task_id=task_id,
+            ))
+            continue
         if status == "set":
-            outcomes.append(ThumbnailOutcome(video_id, title, "already set", path))
+            outcomes.append(ThumbnailOutcome(video_id, title, "already set", path, task_id=task_id))
             continue
         meta: dict[str, Any] = {}
         if not have:
             path, meta, error = await _compose_and_store(pool, site_config, row)
             if error:
-                outcomes.append(ThumbnailOutcome(video_id, title, "compose failed", error=error))
+                outcomes.append(ThumbnailOutcome(video_id, title, "compose failed", error=error, task_id=task_id))
                 continue
         ok, detail = await adapter.set_thumbnail(video_id=video_id, thumbnail_path=path)
         try:
-            await _stamp(pool, row["task_id"], video_id, "set" if ok else f"failed: {detail}")
+            await _stamp(pool, task_id, video_id, "set" if ok else f"failed: {detail}")
         except Exception as exc:  # noqa: BLE001 — the upload already happened; report, don't undo
             logger.warning("[thumbnail_backfill] stamp failed for %s: %s", video_id, exc)
         outcomes.append(ThumbnailOutcome(
             video_id, title, "uploaded" if ok else "upload failed", path,
-            meta.get("hook", ""), meta.get("background", ""), "" if ok else detail,
+            meta.get("hook", ""), meta.get("background", ""), "" if ok else detail, task_id,
         ))
     return outcomes
 

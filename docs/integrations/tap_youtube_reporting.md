@@ -25,13 +25,13 @@ enabled:          true
 
 `config`:
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `report_type_id` | `channel_reach_basic_a1` | Which report. Basic = date, channel_id, video_id, `video_thumbnail_impressions`, `video_thumbnail_impressions_ctr`. `channel_reach_combined_a1` adds traffic source, operating system and device dimensions. |
-| `job_name` | `poindexter-<report_type_id>` | Name given to the job if one has to be created. An existing job for the report type is reused, whatever its name. |
-| `max_reports_per_run` | `60` | Reports landed per run, oldest first. |
-| `include_unmapped_videos` | `true` | Keep rows for videos no `media_assets` row knows (uploaded outside the pipeline), with `post_id` NULL. |
-| `metrics_mapping` | see below | The writer's mapping, keyed by the report type id. |
+| Key                       | Default                       | Meaning                                                                                                                                                                                                      |
+| ------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `report_type_id`          | `channel_reach_basic_a1`      | Which report. Basic = date, channel_id, video_id, `video_thumbnail_impressions`, `video_thumbnail_impressions_ctr`. `channel_reach_combined_a1` adds traffic source, operating system and device dimensions. |
+| `job_name`                | `poindexter-<report_type_id>` | Name given to the job if one has to be created. An existing job for the report type is reused, whatever its name.                                                                                            |
+| `max_reports_per_run`     | `60`                          | Reports landed per run, oldest first.                                                                                                                                                                        |
+| `include_unmapped_videos` | `true`                        | Keep rows for videos no `media_assets` row knows (uploaded outside the pipeline), with `post_id` NULL.                                                                                                       |
+| `metrics_mapping`         | see below                     | The writer's mapping, keyed by the report type id.                                                                                                                                                           |
 
 ```json
 "metrics_mapping": {
@@ -63,13 +63,19 @@ Two operator steps:
    ```
 
    This keeps every scope the stored token already holds; `--reset-scopes` narrows on purpose. Check the result with `poindexter integrations youtube scopes`.
+
 2. **Enable the YouTube Reporting API** for the OAuth client's Google Cloud project: APIs & Services → Library → "YouTube Reporting API". It is a separate API from the YouTube Data API the uploads use.
+
+**Cadence:** the tap runner (`jobs/run_taps.py`) walks every enabled tap
+hourly and does not honour a row's `schedule` yet, so this row runs hourly.
+Each run lands only reports it has not seen, so the extra runs are cheap, and a
+failing run raises a finding at most once per `findings.tap_failure.cooldown_minutes`.
 
 ## Failure posture
 
 - **YouTube publishing not set up** (`plugin.publish_adapter.youtube.enabled` false or the OAuth secrets missing): a quiet 0-record run. Most installs never publish to YouTube, so that zero is legitimate.
 - **Missing scope or disabled API:** the run raises with the fix above. The tap runner records it on the row (`poindexter taps show youtube_reach`) and raises a `tap_failure` finding, routed from `tap_failure_alert_after_consecutive` failures on.
-- **Anything else** (5xx, network): raises and retries on the next schedule. Landed reports are remembered one at a time, so a run that dies half-way resumes where it stopped.
+- **Anything else** (5xx, network): raises and retries on the next run. Landed reports are remembered one at a time, so a run that dies half-way resumes where it stopped.
 
 ## Reading it
 

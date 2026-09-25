@@ -905,12 +905,23 @@ def youtube_test(
 @youtube_group.command("thumbnails")
 @click.option(
     "--post", "selector", default=None,
-    help="Limit to one post id, slug, task id or YouTube video id. Default: every published long video.",
+    help=(
+        "One post id, slug, task id or YouTube video id. Also reaches a video still "
+        "awaiting approval. Default: every published long video."
+    ),
 )
 @click.option("--limit", default=None, type=int, help="Cap how many videos are processed.")
 @click.option(
     "--recompose", is_flag=True,
     help="Dry run only: replace stored thumbnails with freshly composed ones.",
+)
+@click.option(
+    "--hook", "hook_text", default=None,
+    help=(
+        "Write the thumbnail text yourself for the one video named by --post, instead "
+        "of the model's. Dry run only: it is composed and stored for review, then "
+        "uploaded by --apply (or, for a video not on YouTube yet, by approving it)."
+    ),
 )
 @click.option(
     "--apply", "do_apply", is_flag=True,
@@ -921,15 +932,20 @@ def youtube_test(
     ),
 )
 def youtube_thumbnails(
-    selector: str | None, limit: int | None, recompose: bool, do_apply: bool,
+    selector: str | None, limit: int | None, recompose: bool, hook_text: str | None,
+    do_apply: bool,
 ) -> None:
-    """Give already-published long videos their composed custom thumbnail.
+    """Compose, re-roll or hand-write long videos' custom thumbnails.
 
     \b
     1. Dry run (default): compose + store a thumbnail for each published long
-       video that has none, and print where to look at it.
+       video that has none, and print where to look at it. --recompose
+       re-rolls stored ones; --post X --hook "TEXT" sets one video's text.
     2. --apply: upload exactly those stored files (never recomposed, so what
        ships is what was reviewed).
+
+    A video still awaiting approval can be re-rolled or given text with
+    --post; approving it uploads the stored thumbnail with the video.
 
     Runs in the worker container, which has the renderer and its fonts:
     `docker exec poindexter-worker python -m poindexter.cli integrations youtube thumbnails`.
@@ -945,6 +961,7 @@ def youtube_thumbnails(
         sc, _container = await build_and_wire_subprocess_with_container(pool)
         return await backfill_youtube_thumbnails(
             pool, sc, selector=selector, apply=do_apply, recompose=recompose, limit=limit,
+            hook=hook_text,
         )
 
     try:
@@ -953,12 +970,12 @@ def youtube_thumbnails(
         click.echo(f"Error: {exc}", err=True)
         raise SystemExit(1) from exc
     if not outcomes:
-        click.echo("No published long videos matched.")
+        click.echo("No long videos matched." if selector else "No published long videos matched.")
         return
     mode = "APPLIED" if do_apply else "DRY RUN — composed and stored locally, nothing sent"
     click.echo(f"YouTube thumbnails — {mode}\n")
     for o in outcomes:
-        click.echo(f"{o.video_id:<14}{o.action}  {o.title[:60]}")
+        click.echo(f"{(o.video_id or '(pending)'):<14}{o.action}  {o.title[:60]}")
         if o.hook or o.background:
             click.echo(f"{'':<14}hook {o.hook!r} on {o.background or '?'} background")
         if o.path:
@@ -966,7 +983,7 @@ def youtube_thumbnails(
         if o.error:
             click.secho(f"{'':<14}{o.error}", fg="red")
     failed = [o for o in outcomes if o.failed]
-    if not do_apply and not failed:
+    if not do_apply and not failed and any(o.video_id for o in outcomes):
         click.echo("\nReview the files above, then re-run with --apply to upload them.")
     if failed:
         raise SystemExit(1)

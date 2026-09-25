@@ -1133,7 +1133,7 @@ def test_thumbnails_default_is_a_dry_run_that_names_the_files(runner, monkeypatc
     calls = _stub_thumbnails(monkeypatch, [_thumb()])
     res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "thumbnails"])
     assert res.exit_code == 0, res.output
-    assert calls == [{"selector": None, "apply": False, "recompose": False, "limit": None}]
+    assert calls == [{"selector": None, "apply": False, "recompose": False, "limit": None, "hook": None}]
     assert "DRY RUN" in res.output and "nothing sent" in res.output
     assert "/videos/t1_thumbnail.jpg" in res.output and "'No NCCL'" in res.output
     assert "re-run with --apply" in res.output
@@ -1146,7 +1146,7 @@ def test_thumbnails_flags_reach_the_service(runner, monkeypatch):
         ["youtube", "thumbnails", "--post", "vidA", "--limit", "2", "--apply"],
     )
     assert res.exit_code == 0, res.output
-    assert calls == [{"selector": "vidA", "apply": True, "recompose": False, "limit": 2}]
+    assert calls == [{"selector": "vidA", "apply": True, "recompose": False, "limit": 2, "hook": None}]
     assert "APPLIED" in res.output and "re-run with --apply" not in res.output
 
 
@@ -1166,3 +1166,45 @@ def test_no_published_long_video_is_said_plainly(runner, monkeypatch):
     res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "thumbnails"])
     assert res.exit_code == 0
     assert "No published long videos matched." in res.output
+
+
+
+def test_thumbnails_hook_reaches_the_service_and_a_pending_video_is_labelled(runner, monkeypatch):
+    calls = _stub_thumbnails(monkeypatch, [
+        _thumb(video_id="", action="composed — uploads with the video when you approve it"),
+    ])
+    res = runner.invoke(
+        _integrations_mod.integrations_group,
+        ["youtube", "thumbnails", "--post", "task-1", "--hook", "Beat the zero-click era"],
+    )
+    assert res.exit_code == 0, res.output
+    assert calls[0]["hook"] == "Beat the zero-click era" and calls[0]["selector"] == "task-1"
+    assert "(pending)" in res.output
+    assert "re-run with --apply" not in res.output   # approval uploads it, not --apply
+
+
+def test_a_refused_hook_combination_exits_with_the_reason(runner, monkeypatch):
+    import poindexter.cli._dataplane as dp
+    import poindexter.services.di_wiring as di
+    import poindexter.services.youtube_thumbnail_backfill as svc
+
+    async def _refuse(_pool, _sc, **_kw):
+        raise ValueError("--hook needs --post naming exactly one long video; 13 matched")
+
+    async def _wire(_pool):
+        return object(), None
+
+    def _run_service(factory):
+        import asyncio
+
+        return asyncio.run(factory(object()))
+
+    monkeypatch.setattr(svc, "backfill_youtube_thumbnails", _refuse)
+    monkeypatch.setattr(di, "build_and_wire_subprocess_with_container", _wire)
+    monkeypatch.setattr(dp, "run_service", _run_service)
+    res = runner.invoke(
+        _integrations_mod.integrations_group, ["youtube", "thumbnails", "--hook", "x"],
+    )
+    assert res.exit_code == 1
+    assert "exactly one long video" in res.output
+
