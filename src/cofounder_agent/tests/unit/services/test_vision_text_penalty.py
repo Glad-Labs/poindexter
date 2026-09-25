@@ -186,15 +186,22 @@ def _no_thinking_bump(monkeypatch):
     monkeypatch.setattr(MultiModelQA, "_maybe_bump_vision_thinking_budget", _base)
 
 
-def _qa(monkeypatch, response: dict | str, **setting_overrides) -> MultiModelQA:
+def _qa(monkeypatch, response: dict | str | list, **setting_overrides) -> MultiModelQA:
+    """``response`` is the judge's answer; a LIST gives one answer per call, in
+    image order — the rail makes one call per image (poindexter#1078)."""
     qa = MultiModelQA(
         pool=None,
         settings_service=_settings_service(**setting_overrides),
         site_config=SiteConfig(),
     )
-    text = response if isinstance(response, str) else json.dumps(response)
+    answers = response if isinstance(response, list) else [response]
+    texts = [a if isinstance(a, str) else json.dumps(a) for a in answers]
+    calls = {"n": 0}
 
     async def _vision(self, **kwargs):
+        assert len(kwargs["images_b64"]) == 1, "one image per judge call"
+        text = texts[min(calls["n"], len(texts) - 1)]
+        calls["n"] += 1
         return text
 
     monkeypatch.setattr(MultiModelQA, "_vision_complete", _vision)
@@ -290,12 +297,11 @@ class TestImageRelevanceTextPenalty:
             '<img src="https://r2.example.dev/a.png"/>\n'
             '<img src="https://r2.example.dev/b.png"/>'
         )
-        qa = _qa(monkeypatch, {
-            "scores": [90, 90],
-            "text_coverage": [0, 40],
-            "reasons": ["clean", "banner headline across the top"],
-            "overall": 90,
-        })
+        qa = _qa(monkeypatch, [
+            {"scores": [90], "text_coverage": [0], "reasons": ["clean"], "overall": 90},
+            {"scores": [90], "text_coverage": [40],
+             "reasons": ["banner headline across the top"], "overall": 90},
+        ])
 
         review = await qa._check_image_relevance("t", "topic", content)
 
@@ -305,6 +311,43 @@ class TestImageRelevanceTextPenalty:
         assert review.score == pytest.approx(60.0)
         assert "b.png" in review.feedback
         assert "-60 text 40% of frame" in review.feedback
+
+    async def test_featured_image_keeps_its_own_score_and_reason(self, monkeypatch):
+        """poindexter#1078: with every image in one call the judge's arrays drifted
+        out of order and the featured image took the first inline image's
+        reason and its 30. Each image is now its own call, so the featured
+        verdict can only describe the featured image."""
+        featured = "https://r2.example.dev/images/featured/hero.webp"
+        content = '<img src="https://r2.example.dev/inline-1.png"/>'
+        qa = _qa(monkeypatch, [
+            {"scores": [90], "text_coverage": [0], "reasons": ["magnifying glass over a data grid"]},
+            {"scores": [30], "text_coverage": [0], "reasons": ["person in front of an industrial fan"]},
+        ])
+
+        review = await qa._check_image_relevance(
+            "t", "topic", content, featured_image_url=featured,
+        )
+
+        assert review is not None
+        assert review.score == pytest.approx(60.0)
+        # Each score and reason sits next to the image it was judged on
+        # (feedback truncates the url to its last 40 chars).
+        assert "[90] r2.example.dev/images/featured/hero.webp: magnifying glass" in review.feedback
+        assert "[30] https://r2.example.dev/inline-1.png: person in front of an industrial fan" in review.feedback
+
+    async def test_a_failed_call_for_one_image_leaves_the_others_on_their_own_index(
+        self, monkeypatch,
+    ):
+        content = (
+            '<img src="https://r2.example.dev/a.png"/>\n'
+            '<img src="https://r2.example.dev/b.png"/>'
+        )
+        qa = _qa(monkeypatch, ["not json at all", {"scores": [80], "text_coverage": [0], "reasons": ["ok"]}])
+
+        review = await qa._check_image_relevance("t", "topic", content)
+
+        assert review is not None
+        assert review.score == pytest.approx(80.0)
 
     async def test_model_overall_cannot_rescue_a_penalised_image(
         self, monkeypatch
@@ -371,12 +414,10 @@ class TestImageRelevanceTextPenalty:
             '<img src="https://r2.example.dev/a.png"/>\n'
             '<img src="https://r2.example.dev/b.png"/>'
         )
-        qa = _qa(monkeypatch, {
-            "scores": [80, 80],
-            "text_coverage": [40],
-            "reasons": ["banner", "clean"],
-            "overall": 80,
-        })
+        qa = _qa(monkeypatch, [
+            {"scores": [80], "text_coverage": [40], "reasons": ["banner"], "overall": 80},
+            {"scores": [80], "reasons": ["clean"], "overall": 80},  # no coverage answer
+        ])
 
         review = await qa._check_image_relevance("t", "topic", content)
 

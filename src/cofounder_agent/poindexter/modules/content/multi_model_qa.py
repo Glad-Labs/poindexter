@@ -2750,8 +2750,6 @@ class MultiModelQA:
                                          the full penalty applies)
         """
         import base64
-        import json
-        import re
 
         # Feature flag
         enabled = False
@@ -2905,47 +2903,38 @@ class MultiModelQA:
             content_snippet=content_snippet,
         )
 
-        # Vision call via the LiteLLM dispatcher (images are already
-        # normalized to JPEG above). One message carries the prompt + every
-        # image; dispatch_complete handles cost logging, Langfuse tracing, the
-        # GPU-pinned api_base override, and the gpu.lock serialisation.
+        # One vision call PER IMAGE via the LiteLLM dispatcher (images are
+        # already normalized to JPEG above). It used to be one message carrying
+        # every image, with scores[i] / reasons[i] / text_coverage[i] mapped back
+        # by position — but the judge does not reliably keep image order: the
+        # featured image received a reason describing the first inline image and
+        # a 30 it didn't earn (poindexter#1078). A call per image makes the
+        # mapping impossible to get wrong; at qa_vision_max_images (3) on the
+        # instruct judge that is a few seconds more per post. The per-image
+        # answers are reassembled into the arrays the code below already reads.
         # qwen3-vl's <think> trace shares num_predict with the JSON scores;
         # give thinking vision models a larger budget so the scores survive
         # instead of being truncated into a false "unavailable" (RCA 2026-07-12).
         num_predict = await self._maybe_bump_vision_thinking_budget(model, num_predict)
-        text = await self._vision_complete(
-            prompt=prompt,
-            images_b64=[b64 for _u, b64 in encoded_images],
-            model=model,
-            num_predict=num_predict,
-            phase="qa_vision_image_relevance",
-            mime="image/jpeg",
-        )
-        if not text:
+        per_image: list[dict[str, Any] | None] = []
+        for _url, b64 in encoded_images:
+            text = await self._vision_complete(
+                prompt=prompt,
+                images_b64=[b64],
+                model=model,
+                num_predict=num_predict,
+                phase="qa_vision_image_relevance",
+                mime="image/jpeg",
+            )
+            per_image.append(_parse_vision_relevance_json(text) if text else None)
+        if not any(per_image):
             logger.warning(
-                "[VISION_QA] vision model returned empty text for "
-                "image-relevance — no verdict (see the dispatch warning above "
-                "for the underlying cause)",
+                "[VISION_QA] vision model returned no usable verdict for any of "
+                "%d image(s) — no image-relevance verdict (see the dispatch "
+                "warning above for the underlying cause)", len(encoded_images),
             )
             return None
-
-        # Parse JSON response
-        json_text = text
-        if "```" in text:
-            m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-            if m:
-                json_text = m.group(1)
-        try:
-            parsed = json.loads(json_text)
-        except json.JSONDecodeError:
-            m = re.search(r"\{[^{}]*\"scores\".*?\}", text, re.DOTALL)
-            if not m:
-                logger.warning("[VISION_QA] unparseable response: %s", text[:200])
-                return None
-            try:
-                parsed = json.loads(m.group(0))
-            except json.JSONDecodeError:
-                return None
+        parsed = _merge_per_image_verdicts(per_image)
 
         scores_list = parsed.get("scores") or []
         reasons_list = parsed.get("reasons") or []
@@ -3479,3 +3468,68 @@ class MultiModelQA:
             return None, "failed", f"{type(e).__name__}: {e}"
 
     # _review_with_gemini removed — Ollama-only policy
+
+
+def _parse_vision_relevance_json(text: str) -> dict[str, Any] | None:
+    """The judge's JSON object from a (possibly fenced) response, or None."""
+    import json
+    import re
+
+    json_text = text
+    if "```" in text:
+        m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+        if m:
+            json_text = m.group(1)
+    try:
+        parsed = json.loads(json_text)
+    except json.JSONDecodeError:
+        m = re.search(r"\{[^{}]*\"scores\".*?\}", text, re.DOTALL)
+        if not m:
+            logger.warning("[VISION_QA] unparseable response: %s", text[:200])
+            return None
+        try:
+            parsed = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _merge_per_image_verdicts(per_image: list[dict[str, Any] | None]) -> dict[str, Any]:
+    """Reassemble one-image verdicts into the positional arrays the rail reads.
+
+    Index i is image i by construction — each verdict came from a call that
+    saw only that image. A failed call leaves a None score at its index, which
+    the scorer skips while keeping every other image on its own index.
+
+    ``text_coverage`` keeps the single-call contract: an image's value counts
+    as present when it is a list or a READABLE scalar, and the key exists only
+    when some image has one — so a judge that ignores the field (or answers
+    "could not tell") still trips the missing-signal finding. ``overall`` is
+    the mean of the per-image ``overall`` values, so a judge stricter than the
+    penalised average still keeps its verdict.
+    """
+    def first(value: Any) -> Any:
+        return value[0] if isinstance(value, list) and value else value
+
+    def coverage(p: dict[str, Any] | None) -> tuple[bool, Any]:
+        if not p or "text_coverage" not in p:
+            return False, None
+        raw = p["text_coverage"]
+        if isinstance(raw, list):
+            return bool(raw), first(raw)
+        return normalize_text_coverage(raw) is not None, raw
+
+    merged: dict[str, Any] = {
+        "scores": [first(p.get("scores")) if p else None for p in per_image],
+        "reasons": [str(first(p.get("reasons")) or "") if p else "" for p in per_image],
+    }
+    overalls = [
+        float(p["overall"]) for p in per_image
+        if p and isinstance(p.get("overall"), (int, float))
+        and not isinstance(p.get("overall"), bool)
+    ]
+    merged["overall"] = sum(overalls) / len(overalls) if overalls else None
+    covs = [coverage(p) for p in per_image]
+    if any(present for present, _ in covs):
+        merged["text_coverage"] = [value if present else None for present, value in covs]
+    return merged
