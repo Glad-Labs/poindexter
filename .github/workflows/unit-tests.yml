@@ -245,6 +245,12 @@ jobs:
           # example `^infrastructure/cloudflare/[^/]+/src/`), never the
           # lockfiles. loki/, tempo/, promtail/ and pgadmin/ are out because
           # no test reads them either.
+          # `docker-compose*.yml` for the same reason: 22 unit-test files read
+          # the compose files (mounts, parked services, the speaches seed/digest
+          # pairing in tests/unit/infrastructure/). A PR that only moves an
+          # image digest is the one those checks exist for, and without this
+          # clause it skipped them. That was 2 of the 635 merges from
+          # 2026-08-25 to 2026-09-25.
           # NOT `echo "$changed" | grep -q ...`: under `set -o pipefail`, grep -q exits
           # at its FIRST match and a list larger than the pipe buffer leaves echo
           # holding SIGPIPE, so the pipeline reports failure and the branch below
@@ -252,7 +258,7 @@ jobs:
           # PR (stack#3626, 2026-09-10) having run nothing -- the biggest changes
           # are exactly the ones that were skipping. A here-string has no pipe, and
           # -c reads the whole list; the count is printed so a skip is auditable.
-          backend_hits=$(grep -cE '^src/cofounder_agent/|^scripts/|^infrastructure/(grafana|prometheus|semgrep|systemd)/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$' <<<"$changed" || true)
+          backend_hits=$(grep -cE '^src/cofounder_agent/|^scripts/|^infrastructure/(grafana|prometheus|semgrep|systemd)/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$|^docker-compose[^/]*\.yml$' <<<"$changed" || true)
           echo "Backend-pattern matches: ${backend_hits} of $(wc -l <<<"$changed") changed paths"
           if [ "${backend_hits}" -gt 0 ]; then
             echo "Backend code or this workflow changed — running full suite."

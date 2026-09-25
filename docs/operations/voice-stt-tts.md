@@ -236,14 +236,23 @@ and it reads the file, edits it, runs tests, commits.
 
 ## Warm STT/TTS sidecar (Speaches, #1088)
 
-One GPU container (`poindexter-speaches`, `ghcr.io/speaches-ai/speaches:latest-cuda`,
-in-network `http://speaches:8000`, host port `8001`) serves **both** OpenAI-compatible
-endpoints: `POST /v1/audio/transcriptions` (faster-whisper) and `POST /v1/audio/speech`
-(Kokoro, the same `bf_emma` / `bf_isabella` voices). `WHISPER__TTL=-1` keeps the model
-resident, so a **voice-container restart no longer pays the ~12s in-process Whisper
-cold-start** — the model load moves to Speaches' own (rare) boot. Both rooms share the
-one container. Pipecat's `OpenAITTSService` requests `response_format=pcm` (24 kHz);
-Speaches returns `audio/pcm`, so no transcoding.
+One GPU container (`poindexter-speaches`, speaches v0.8.1 pinned by digest in
+`docker-compose.local.yml`, in-network `http://speaches:8000`, host port `8001`) serves
+**both** OpenAI-compatible endpoints: `POST /v1/audio/transcriptions` (faster-whisper) and
+`POST /v1/audio/speech` (Kokoro, the same `bf_emma` / `bf_isabella` voices). Both rooms
+share the one container. Pipecat's `OpenAITTSService` requests `response_format=pcm`
+(24 kHz); Speaches returns `audio/pcm`, so no transcoding.
+
+While the voice room ran, `WHISPER__TTL=-1` kept the model resident, so a voice-container
+restart skipped the ~12 s in-process Whisper cold start. With voice parked, the timer is
+60 s: batch captions reload in about 2 s, and the card gets the VRAM back (the
+`docker-compose.local.yml` comment has the history). Re-enabling the voice room means
+setting it back to `-1`.
+
+The container also sets `PYTHONHASHSEED=0`. Without a fixed seed, speaches v0.8.1 put
+Kokoro on the CPU at roughly half of all container starts, at about a tenth of GPU speed.
+[Speaches: keeping Kokoro on the GPU](speaches-kokoro-gpu.md) has the cause, the evidence
+and how to check which device Kokoro is on.
 
 `build_voice_pipeline_task` builds STT/TTS via the mode-aware `_build_stt` / `_build_tts`
 seams in `services/voice_agent.py`:

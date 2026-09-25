@@ -206,7 +206,11 @@ though the ladder was working. Two separate things were on the card:
 
 - **Our own idle models.** The render's caption-fidelity check transcribes the
   narration through speaches, which then keeps faster-whisper-medium and
-  Kokoro resident on its idle timer (`WHISPER__TTL=300`), about 2.1 GB. RIFE
+  Kokoro resident on its idle timer (`WHISPER__TTL=300`), about 2.1 GB. That
+  speaches process was running Kokoro on the CPU (see
+  `docs/operations/speaches-kokoro-gpu.md`), so none of the 2.1 GB was Kokoro.
+  A Kokoro session on the GPU also holds an onnxruntime CUDA arena until the
+  same timer fires, which reached 6.8 GB after one 5,069-character read. RIFE
   keeps its model after interpolating a hero, about 0.86 GB. Neither was a
   rung, so every hero wait started just under the 27 GB plate (25.8, 26.8 GB).
   One hero only animated because speaches' timer fired 23 s into its wait,
