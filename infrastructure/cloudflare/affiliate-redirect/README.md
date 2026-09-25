@@ -17,7 +17,11 @@ the site export — never committed to source.
    a `{ "<code>": { "url": "<merchant-url>" } }` map produced by
    `services/static_export_service.py::_export_affiliate_links`.
 3. Known code → **302** to the merchant URL. Blank/unknown code → **302** to
-   `HOME_URL` (never a broken link).
+   `HOME_URL` (never a broken link). Every response, redirects and errors
+   alike, carries `X-Robots-Tag: noindex, nofollow` so search engines don't
+   index `/go/` URLs as stand-ins for the merchant pages. Keep `/go/` **out of**
+   `robots.txt`: a disallowed URL is never crawled, so the noindex would never
+   be seen.
 4. Every resolved click writes one Analytics Engine data point to the
    `affiliate_clicks` dataset: `blob1=code`, `blob2=referer`, `blob3=country`,
    `blob4=user-agent`, `index1=code`.

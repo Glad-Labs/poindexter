@@ -24,6 +24,15 @@
 //        link.
 //   302  blank or genuinely-unknown code → HOME_URL. The one case that is
 //        normal, so it keeps the "never a broken link" promise.
+//
+// ## Indexing
+//
+// Every response carries `X-Robots-Tag: noindex, nofollow`. Without it Google
+// indexed the /go/ URLs themselves as stand-ins for the merchant pages (74
+// Search Console impressions on one Amazon link by 2026-09-25). Do NOT "fix"
+// this with a robots.txt Disallow instead: a blocked URL can't be crawled, so
+// Google never sees the noindex header and keeps the URL indexed from the links
+// alone ("Indexed, though blocked by robots.txt").
 
 export interface Env {
   ANALYTICS_ENGINE: AnalyticsEngineDataset;
@@ -41,6 +50,23 @@ export interface Env {
 }
 
 type LinkMap = Record<string, { url: string }>;
+
+export const ROBOTS_HEADER = 'noindex, nofollow';
+
+/**
+ * Build a response that search engines will not index. `Response.redirect()`
+ * returns immutable headers, so redirects are built by hand here rather than
+ * patched afterwards. `new URL(...).href` keeps Response.redirect's
+ * normalisation (`https://example.com` → `https://example.com/`).
+ */
+function respond(
+  status: number,
+  opts: { location?: string; body?: string } = {}
+): Response {
+  const headers = new Headers({ 'X-Robots-Tag': ROBOTS_HEADER });
+  if (opts.location) headers.set('Location', new URL(opts.location).href);
+  return new Response(opts.body ?? null, { status, headers });
+}
 
 /**
  * The Cloudflare edge cache — `caches.default`, an extension to the standard
@@ -121,19 +147,19 @@ export default {
       // Fail loud — the Worker isn't wired. Matches the stack's "no silent
       // fallbacks" posture and sentry-relay's 503: the operator gets a status
       // code instead of readers quietly bouncing off an unconfigured host.
-      return new Response('affiliate-redirect not configured', { status: 503 });
+      return respond(503, { body: 'affiliate-redirect not configured' });
     }
 
     const code = codeFromPath(new URL(req.url).pathname);
-    if (!code) return Response.redirect(home, 302);
+    if (!code) return respond(302, { location: home });
 
     const map = await loadMap(env);
     if (map === null) {
-      return new Response('affiliate link map unavailable', { status: 502 });
+      return respond(502, { body: 'affiliate link map unavailable' });
     }
 
     const target = resolveTarget(map, code);
-    if (!target) return Response.redirect(home, 302);
+    if (!target) return respond(302, { location: home });
 
     const cf = (req.cf as Record<string, unknown> | undefined) ?? {};
     env.ANALYTICS_ENGINE.writeDataPoint({
@@ -146,6 +172,6 @@ export default {
       doubles: [],
       indexes: [code],
     });
-    return Response.redirect(target, 302);
+    return respond(302, { location: target });
   },
 };

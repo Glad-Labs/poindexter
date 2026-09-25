@@ -14,7 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import worker, { codeFromPath, resolveTarget } from './index';
+import worker, { ROBOTS_HEADER, codeFromPath, resolveTarget } from './index';
 
 describe('codeFromPath', () => {
   it('extracts the code from /go/<code>', () => {
@@ -148,5 +148,27 @@ describe('fetch handler', () => {
     });
     const res = await call(env());
     expect(res.status).toBe(502);
+  });
+
+  // Google indexed /go/ URLs as stand-ins for the merchant pages. The header
+  // has to be on every outcome: a redirect Google follows once, then recrawls,
+  // can land on any of these depending on the map and config at that moment.
+  describe('X-Robots-Tag', () => {
+    const cases: Array<[string, () => Promise<Response>]> = [
+      ['known-code redirect', () => call(env())],
+      ['unknown-code redirect', () => call(env(), '/go/no-such-code')],
+      ['blank-code redirect', () => call(env(), '/go/')],
+      ['unconfigured 503', () => call(env({ LINKS_URL: undefined }))],
+      ['map-unavailable 502', () => call(env({ LINKS_URL: PLACEHOLDER }))],
+    ];
+
+    it.each(cases)('marks the %s noindex', async (_name, run) => {
+      const res = await run();
+      expect(res.headers.get('x-robots-tag')).toBe(ROBOTS_HEADER);
+    });
+
+    it('says noindex, not just nofollow', () => {
+      expect(ROBOTS_HEADER).toContain('noindex');
+    });
   });
 });
