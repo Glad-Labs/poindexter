@@ -17,7 +17,6 @@ import json
 import os
 import random
 import re
-import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -314,14 +313,6 @@ async def drain_background_tasks(timeout: float = 30.0) -> None:
         task.cancel()
 
 
-def _write_text_file(path: str, content: str) -> None:
-    """Small sync file-write suitable for ``asyncio.to_thread``. Avoids
-    blocking the event loop on RSS feed regeneration in publish hot
-    paths (ASYNC230)."""
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-
 class PublishResult:
     """Return value from publish_post_from_task."""
 
@@ -381,7 +372,7 @@ def _should_run_post_publish_hooks() -> bool:
     Until 2026-05-08 this read ``LOCAL_DATABASE_URL`` instead of
     ``DEPLOYMENT_MODE`` — a stale signal that no container actually sets,
     which silently disabled all six post-publish hooks. The 8-day dark
-    distribution-paths regression fixed in commit ``<this commit>``.
+    distribution-paths regression was fixed in commit ``5cd610666``.
     """
     return os.getenv("DEPLOYMENT_MODE", "coordinator").lower() == "worker"
 
@@ -1171,8 +1162,9 @@ async def _upload_media_to_r2_bg(site_config: SiteConfig, post_id: str) -> None:
     """Phase 11e (fire-and-forget) — wait for media files, then upload to R2.
 
     Waits ``media_upload_delay_seconds`` for podcast/video/short generation to
-    finish, uploads each medium to R2, and regenerates the public podcast +
-    video RSS feeds on the CDN. Each feed regen is best-effort (non-fatal).
+    finish, uploads each medium to R2, then republishes the public podcast +
+    video RSS feeds through ``media_feed_rebuild``. Every step is best-effort
+    (non-fatal): a failed upload or feed rebuild never stops the ones after it.
     """
     import asyncio as _aio
     from pathlib import Path
@@ -1212,58 +1204,31 @@ async def _upload_media_to_r2_bg(site_config: SiteConfig, post_id: str) -> None:
                 "[R2] Short video upload failed for post %s: %s",
                 post_id, _exc, exc_info=True,
             )
-    # Regenerate public podcast RSS feed on R2
+    # Republish both public RSS feeds through the shared rebuild seam
+    # (``media_feed_rebuild``), the one implementation every caller uses. The
+    # feeds are rendered from the DB by the worker's feed routes, not from this
+    # post's files, so they are republished even when the uploads above failed.
+    # The seam logs and swallows its own failures (worker unreachable, R2
+    # unconfigured, upload error). Each call is guarded here as well, so a
+    # podcast-feed failure can never skip the video feed.
     try:
-        import httpx as _hx
+        from poindexter.services.media_feed_rebuild import rebuild_podcast_feed
 
-        from poindexter.services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-        _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
-        # Per-call temp file via tempfile.mkstemp avoids hardcoded
-        # /tmp paths (Bandit B108) and prevents collisions when
-        # multiple publishes run concurrently.
-        _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-podcast-")
-        try:
-            os.close(_fd)  # _write_text_file reopens the path
-            async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
-                _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
-                # Blocking file I/O in async context — push to worker thread
-                # so the event loop isn't stalled while we write the feed file.
-                await asyncio.to_thread(
-                    _write_text_file, _feed_path, _feed.text,
-                )
-                await _r2.upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
-                logger.info("[R2] Podcast RSS feed regenerated on CDN")
-        finally:
-            # Best-effort temp-file cleanup; ignore if it's already gone.
-            with suppress(OSError):
-                os.unlink(_feed_path)
-    except Exception as _e:
-        logger.warning("[R2] Podcast feed regen failed (non-fatal): %s", _e)
-
-    # Regenerate public video RSS feed on R2
+        await rebuild_podcast_feed(site_config)
+    except Exception as _exc:
+        logger.error(
+            "[R2] Podcast feed rebuild failed for post %s (non-fatal): %s",
+            post_id, _exc, exc_info=True,
+        )
     try:
-        import httpx as _hx
+        from poindexter.services.media_feed_rebuild import rebuild_video_feed
 
-        from poindexter.services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-        _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
-        # Per-call temp file via tempfile.mkstemp avoids hardcoded
-        # /tmp paths (Bandit B108).
-        _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-video-")
-        try:
-            os.close(_fd)
-            async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
-                _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
-                await asyncio.to_thread(
-                    _write_text_file, _feed_path, _feed.text,
-                )
-                await _r2.upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
-                logger.info("[R2] Video RSS feed regenerated on CDN")
-        finally:
-            # Best-effort temp-file cleanup; ignore if it's already gone.
-            with suppress(OSError):
-                os.unlink(_feed_path)
-    except Exception as _e:
-        logger.warning("[R2] Video feed regen failed (non-fatal): %s", _e)
+        await rebuild_video_feed(site_config)
+    except Exception as _exc:
+        logger.error(
+            "[R2] Video feed rebuild failed for post %s (non-fatal): %s",
+            post_id, _exc, exc_info=True,
+        )
 
     # YouTube upload removed in the 2026-05-08 services audit cleanup —
     # the stub adapter raised NotImplementedError and there's no real

@@ -125,6 +125,35 @@ async def test_rebuild_is_non_fatal_on_error() -> None:
         await media_feed_rebuild.rebuild_podcast_feed(sc)
 
 
+@pytest.mark.asyncio
+async def test_rebuild_is_non_fatal_when_the_upload_fails(
+    tmp_path, monkeypatch, caplog,
+) -> None:
+    """The upload half of the same contract. An R2 failure is logged and
+    swallowed, and the temp file the feed body was written to is still
+    removed. ``media_distribute`` and ``podcast_distribute`` await the rebuild
+    without a guard of their own, so a raise here would fail their job."""
+    import logging
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    sc = _site_config()
+    client = _mock_httpx_client("<rss>podcast</rss>")
+    r2 = MagicMock()
+    r2.upload_to_r2 = AsyncMock(side_effect=OSError("bucket unreachable"))
+    with patch("httpx.AsyncClient", return_value=client), patch(
+        "poindexter.services.r2_upload_service.R2UploadService", return_value=r2
+    ), caplog.at_level(logging.WARNING, logger="poindexter.services.media_feed_rebuild"):
+        # Must not raise.
+        await media_feed_rebuild.rebuild_podcast_feed(sc)
+
+    r2.upload_to_r2.assert_awaited_once()
+    assert any(
+        "podcast feed upload failed (non-fatal)" in r.message for r in caplog.records
+    )
+    assert list(tmp_path.iterdir()) == []
+
+
 # ---------------------------------------------------------------------------
 # count_feed_items
 # ---------------------------------------------------------------------------

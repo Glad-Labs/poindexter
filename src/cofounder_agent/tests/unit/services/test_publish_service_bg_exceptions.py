@@ -15,6 +15,8 @@ Covers the two fixes from Glad-Labs/poindexter#708:
    - A video upload failure is logged at ERROR; podcast upload still runs.
    - Both failures are reported independently.
    - Failed uploads do not stop both public feeds being republished.
+   - A feed rebuild that raises does not stop the other feed.
+   - The tail runs in order: episodes, short video, podcast feed, video feed.
 """
 
 import asyncio
@@ -22,7 +24,6 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 
 from poindexter.services.publish_service import _spawn_background, _upload_media_to_r2_bg
@@ -37,33 +38,29 @@ _FAST_SC = SiteConfig(initial_config={"media_upload_delay_seconds": "0"})
 
 
 @pytest.fixture(autouse=True)
-def feed_gets(monkeypatch):
-    """Serve the feed re-render that ``_upload_media_to_r2_bg`` ends with.
+def feed_rebuilds(monkeypatch):
+    """Stub the feed republish that ``_upload_media_to_r2_bg`` ends with.
 
-    After the uploads it GETs ``{internal_api_base_url}/api/podcast/feed.xml``
-    and ``/api/video/feed.xml`` to republish both public feeds: the live worker
-    API on :8002 when the suite runs on the operator box. The three upload
-    tests below fetched it before this stub existed (poindexter#1011). Returns
-    the URLs requested, in order.
+    After the uploads it calls ``rebuild_podcast_feed`` and then
+    ``rebuild_video_feed``, the shared seam in ``media_feed_rebuild``.
+    Unstubbed, each one GETs ``{internal_api_base_url}/api/{podcast,video}/feed.xml``:
+    the live worker API on :8002 when the suite runs on the operator box
+    (poindexter#1011). They are stubbed where they are defined, because
+    publish_service imports them when it calls them.
+
+    Returns the two stubs, plus ``calls``, which each stub appends to when it
+    runs. A test can put its own entries in the same list to check ordering.
     """
-    gets: list[str] = []
-
-    class _FeedClient:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_exc):
-            return False
-
-        async def get(self, url, **_kwargs):
-            gets.append(url)
-            return SimpleNamespace(text="<rss/>")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _FeedClient)
-    return gets
+    calls: list[str] = []
+    podcast = AsyncMock(side_effect=lambda _sc: calls.append("podcast_feed"))
+    video = AsyncMock(side_effect=lambda _sc: calls.append("video_feed"))
+    monkeypatch.setattr(
+        "poindexter.services.media_feed_rebuild.rebuild_podcast_feed", podcast,
+    )
+    monkeypatch.setattr(
+        "poindexter.services.media_feed_rebuild.rebuild_video_feed", video,
+    )
+    return SimpleNamespace(podcast=podcast, video=video, calls=calls)
 
 
 async def _raise(exc: Exception):
@@ -261,12 +258,15 @@ async def test_upload_media_bg_both_failures_independent(caplog):
 
 @pytest.mark.asyncio
 async def test_upload_media_bg_republishes_both_feeds_after_failed_uploads(
-    feed_gets, monkeypatch, tmp_path,
+    feed_rebuilds, monkeypatch, tmp_path,
 ):
     """Failed episode uploads do not stop the tail from republishing both
     public feeds. The feeds are rendered from the DB by the worker's feed
-    routes, not from this post's files, so they are fetched and re-uploaded
-    either way."""
+    routes, not from this post's files, so they are rebuilt either way.
+
+    Both rebuilds go through the shared seam with this run's SiteConfig, and
+    the tail uploads no feed object itself: it no longer keeps its own copy
+    of the seam's fetch-and-upload."""
     # The short-video branch looks under ~/.poindexter; keep it off the real one.
     monkeypatch.setenv("HOME", str(tmp_path))
     r2 = _make_r2_mock(
@@ -275,19 +275,77 @@ async def test_upload_media_bg_republishes_both_feeds_after_failed_uploads(
     )
     fake_r2_mod = MagicMock()
     fake_r2_mod.R2UploadService = MagicMock(return_value=r2)
-    sc = SiteConfig(initial_config={
-        "media_upload_delay_seconds": "0",
-        "internal_api_base_url": "http://worker.test",
-    })
+    sc = SiteConfig(initial_config={"media_upload_delay_seconds": "0"})
 
     with patch.dict(sys.modules, {"poindexter.services.r2_upload_service": fake_r2_mod}):
         await _upload_media_to_r2_bg(sc, "post-jkl")
 
-    assert feed_gets == [
-        "http://worker.test/api/podcast/feed.xml",
-        "http://worker.test/api/video/feed.xml",
+    feed_rebuilds.podcast.assert_awaited_once_with(sc)
+    feed_rebuilds.video.assert_awaited_once_with(sc)
+    assert feed_rebuilds.calls == ["podcast_feed", "video_feed"]
+    r2.upload_to_r2.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing", ["podcast", "video"])
+async def test_upload_media_bg_feed_failure_does_not_stop_the_other_feed(
+    feed_rebuilds, failing, caplog, monkeypatch, tmp_path,
+):
+    """A feed rebuild that raises is logged at ERROR and swallowed.
+
+    The seam catches its own operational failures, so this guards the case
+    where it breaks that contract. The other feed is still rebuilt, and the
+    fire-and-forget task ends normally instead of raising into
+    ``_spawn_background``."""
+    import logging
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    getattr(feed_rebuilds, failing).side_effect = RuntimeError(f"{failing} seam broke")
+    fake_r2_mod = MagicMock()
+    fake_r2_mod.R2UploadService = MagicMock(return_value=_make_r2_mock())
+
+    with patch.dict(sys.modules, {"poindexter.services.r2_upload_service": fake_r2_mod}):
+        with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
+            await _upload_media_to_r2_bg(_FAST_SC, "post-mno")
+
+    feed_rebuilds.podcast.assert_awaited_once_with(_FAST_SC)
+    feed_rebuilds.video.assert_awaited_once_with(_FAST_SC)
+    feed_errors = [
+        r.message for r in caplog.records
+        if r.levelname == "ERROR" and "feed rebuild failed" in r.message
     ]
-    assert [c.args[1:] for c in r2.upload_to_r2.await_args_list] == [
-        ("podcast/feed.xml", "application/rss+xml"),
-        ("video/feed.xml", "application/rss+xml"),
+    assert len(feed_errors) == 1, f"Expected one feed ERROR log. Got: {feed_errors}"
+    assert f"[R2] {failing.capitalize()} feed rebuild failed" in feed_errors[0]
+    assert "post-mno" in feed_errors[0]
+    assert f"{failing} seam broke" in feed_errors[0]
+
+
+@pytest.mark.asyncio
+async def test_upload_media_bg_runs_uploads_then_feeds_in_order(
+    feed_rebuilds, monkeypatch, tmp_path,
+):
+    """The tail runs in a fixed order: podcast episode, video episode, short
+    video, podcast feed, video feed."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    short = tmp_path / ".poindexter" / "video" / "post-pqr-short.mp4"
+    short.parent.mkdir(parents=True)
+    short.write_bytes(b"")
+
+    order = feed_rebuilds.calls
+    r2 = _make_r2_mock()
+    r2.upload_podcast_episode.side_effect = lambda _pid: order.append("podcast_episode")
+    r2.upload_video_episode.side_effect = lambda _pid: order.append("video_episode")
+    r2.upload_to_r2.side_effect = lambda _path, key, _ctype: order.append(key)
+    fake_r2_mod = MagicMock()
+    fake_r2_mod.R2UploadService = MagicMock(return_value=r2)
+
+    with patch.dict(sys.modules, {"poindexter.services.r2_upload_service": fake_r2_mod}):
+        await _upload_media_to_r2_bg(_FAST_SC, "post-pqr")
+
+    assert order == [
+        "podcast_episode",
+        "video_episode",
+        "video/post-pqr-short.mp4",
+        "podcast_feed",
+        "video_feed",
     ]

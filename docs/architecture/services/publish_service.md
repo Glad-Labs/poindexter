@@ -54,8 +54,10 @@ All from `app_settings` via `site_config`:
   set to `""` to skip IndexNow entirely.
 - `google_sitemap_ping_url` (default `https://www.google.com/ping`) —
   set to `""` to skip Google sitemap ping.
-- `internal_api_base_url` (default = `DEFAULT_WORKER_API_URL`) — used
-  to fetch the live podcast/video RSS feeds before R2 upload.
+- `internal_api_base_url` (default = `DEFAULT_WORKER_API_URL`) — read
+  by `media_feed_rebuild`, the shared feed-rebuild seam, when the
+  media-upload tail republishes the podcast/video RSS feeds to R2.
+  publish_service does not read it directly.
 - `short_video_post_publish_delay_seconds` (default `180`) — wait
   before generating the short video so the long-form podcast/video
   finish first.
@@ -96,7 +98,9 @@ Bootstrap-only env var:
     `upload_video_episode`)
   - Dev.to (`DevToCrossPostService`)
   - Media distribution — YouTube / Postiz via the `publishing_adapters` surface (`services/jobs/media_distribute.py`)
-  - Internal worker API (`internal_api_base_url`) for RSS regen
+  - Internal worker API (`internal_api_base_url`) for the RSS feed
+    rebuild, reached through `media_feed_rebuild.rebuild_podcast_feed` /
+    `rebuild_video_feed`
   - Newsletter delivery (`send_post_newsletter`)
   - Telegram/Discord via `_notify_openclaw`
 

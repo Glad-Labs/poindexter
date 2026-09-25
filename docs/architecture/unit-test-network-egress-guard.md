@@ -221,10 +221,12 @@ The Postgres majority is the real story: most of these want a stubbed pool, not 
 
 The worker API row was media feed renders. `media_distribute` and `publish_service`
 re-render `/api/podcast/feed.xml` and `/api/video/feed.xml` from `internal_api_base_url`,
-which is `localhost:8002` on the operator box. Stub `rebuild_video_feed` or
-`rebuild_podcast_feed` at `poindexter.services.media_feed_rebuild`.
-`publish_service._upload_media_to_r2_bg` fetches inline, so its tests patch
-`httpx.AsyncClient`. Both files were burned down on 2026-09-25.
+which is `localhost:8002` on the operator box. Both go through the shared rebuild seam, so
+stub `rebuild_video_feed` or `rebuild_podcast_feed` at
+`poindexter.services.media_feed_rebuild`, where they are defined. The callers import them
+when they call them, so a patch on the seam module is the one they pick up. Both files were
+burned down on 2026-09-25. `publish_service._upload_media_to_r2_bg` still fetched inline
+then, and its tests patched `httpx.AsyncClient` until it moved onto the seam the same day.
 
 ### The baseline is a union, not a snapshot
 
