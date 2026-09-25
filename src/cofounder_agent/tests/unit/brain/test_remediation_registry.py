@@ -255,6 +255,26 @@ async def test_guard_fails_closed_when_the_settings_read_raises(monkeypatch):
     assert spy.calls == []
 
 
+@pytest.mark.asyncio
+async def test_the_refusal_check_says_what_the_executor_would_do(monkeypatch):
+    """A dry run never calls the executor, so it asks ``refusal`` instead. The
+    answer must be the executor's own: the same function decides both."""
+    import poindexter.brain.remediation.registry as reg
+
+    spy = _SpyDaemon()
+    monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: spy)
+    ctx = _ctx_with(_pool_with_setting(None))
+    denied = {"container": "poindexter-postgres-local"}
+    refused = await reg.refusal("restart_container", denied, ctx)
+    executed = await reg.execute("restart_container", denied, ctx)
+    assert refused and refused == executed.detail
+    assert await reg.refusal("restart_container", {"container": "poindexter-pyroscope"}, ctx) is None
+    assert await reg.refusal("restart_container", {}, ctx) == "restart_container: no 'container' param"
+    assert await reg.refusal("run_auto_remediate", {}, ctx) is None
+    assert await reg.refusal("rm_minus_rf", {}, ctx) == "unknown action: rm_minus_rf"
+    assert spy.calls == []  # asking never restarts anything
+
+
 def test_catalog_warns_the_model_off_the_denied_containers():
     """Layer one: the catalog description is the ONLY thing the selector sees,
     so naming the forbidden containers there suppresses the pick at the source.

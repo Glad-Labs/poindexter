@@ -877,3 +877,279 @@ async def test_with_the_firefighter_off_a_recurrence_is_a_plain_repeat(monkeypat
     assert sim.restarts == []
     assert second["dispatch_result"].startswith("suppressed:")
     assert not any("LEFT JOIN LATERAL" in q or "SELECT EXISTS" in q for q in queries)
+
+
+# ---------------------------------------------------------------------------
+# The LLM long-tail's look: the repeat where an un-ruled alert first becomes
+# persistent (glad-labs-stack#4022). Before this the dispatcher offered only
+# first rows (repeat_count 1, no age), which the persistence gate always
+# refused: 0 selector calls on prod in 29 days, 643 in the 90-day replay after.
+# ---------------------------------------------------------------------------
+
+_GATES = {"enabled": True, "llm_longtail_enabled": True, "min_repeats": 2, "min_age_minutes": 10}
+
+
+def _state(*, count, first_min_ago, last_min_ago, now):
+    return {"repeat_count": count,
+            "first_seen_at": now - timedelta(minutes=first_min_ago),
+            "last_seen_at": now - timedelta(minutes=last_min_ago)}
+
+
+def test_the_second_row_is_the_persistent_repeat():
+    now = datetime.now(UTC)
+    crossing = ad._persistence_crossing(_GATES, state=_state(count=1, first_min_ago=20, last_min_ago=20, now=now), now=now)
+    assert crossing == {"repeat_count": 2, "age_minutes": pytest.approx(20.0),
+                        "refire_interval_seconds": pytest.approx(1200.0)}
+
+
+def test_a_repeat_after_the_persistent_one_is_not_offered_again():
+    now = datetime.now(UTC)
+    assert ad._persistence_crossing(_GATES, state=_state(count=2, first_min_ago=40, last_min_ago=20, now=now), now=now) is None
+
+
+def test_the_age_gate_opens_on_the_first_repeat_past_it():
+    """min_repeats 5: rows at 0, 4, 8, 12, 16 minutes. The age gate (10 min)
+    opens on the row at 12 (repeat 4), not on the rows either side of it."""
+    gates = {**_GATES, "min_repeats": 5}
+    now = datetime.now(UTC)
+    at_8 = ad._persistence_crossing(gates, state=_state(count=2, first_min_ago=8, last_min_ago=4, now=now), now=now)
+    at_12 = ad._persistence_crossing(gates, state=_state(count=3, first_min_ago=12, last_min_ago=4, now=now), now=now)
+    at_16 = ad._persistence_crossing(gates, state=_state(count=4, first_min_ago=16, last_min_ago=4, now=now), now=now)
+    assert at_8 is None and at_16 is None
+    assert at_12["repeat_count"] == 4 and at_12["refire_interval_seconds"] == pytest.approx(240.0)
+
+
+def test_with_min_repeats_one_the_first_row_had_the_look():
+    """A first row offered with repeat_count 1 already passes min_repeats 1, so
+    no later repeat is a crossing."""
+    now = datetime.now(UTC)
+    gates = {**_GATES, "min_repeats": 1}
+    assert ad._persistence_crossing(gates, state=_state(count=1, first_min_ago=5, last_min_ago=5, now=now), now=now) is None
+
+
+TAPS_FP = "job_failure:scheduler.run_taps"
+_TAPS_PICK = {"action_name": "restart_container", "params": {"container": "poindexter-worker"},
+              "confidence": 0.8, "reason": "the tap job keeps failing", "model": "ollama/granite4.2:3b"}
+
+
+class _LongTailSim(_Sim):
+    """The replay world with no rules, and a scripted LLM selector."""
+
+    def __init__(self, monkeypatch, *, pick=_TAPS_PICK, settings=None, rules=()):
+        super().__init__(monkeypatch, rules=rules, settings=settings)
+        self.pick = pick
+        self.selections = []
+
+        async def _select(*, alert, catalog):
+            self.selections.append(alert["labels"]["alertname"])
+            return self.pick
+
+        monkeypatch.setattr(ad, "_make_select_fn", lambda pool: _select)
+
+    def taps_failed(self):
+        return self.world.fire(alertname="scheduler.run_taps:job_failure", fingerprint=TAPS_FP,
+                               severity="warning", summary="run_taps failed 3 times in a row")
+
+
+@pytest.mark.asyncio
+async def test_the_long_tail_sees_an_unruled_alert_once_on_its_persistent_repeat(monkeypatch):
+    """Shipped default (dry run): the pick is recorded and noted on the row,
+    nothing runs, and paging is exactly what dedup decided."""
+    sim = _LongTailSim(monkeypatch)
+    sim.taps_failed()
+    await sim.cycle()                               # first fire pages; never persistent
+    assert sim.selections == [] and sim.notify.await_count == 1
+    second = sim.taps_failed()
+    await sim.cycle(after_minutes=20)
+    assert sim.selections == ["scheduler.run_taps:job_failure"]
+    assert second["dispatch_result"].startswith("suppressed: repeat 2")
+    assert second["dispatch_result"].endswith(
+        'persistent at repeat 2 (20 min), not auto-remediated (restart_container: '
+        'dry run; would have run it with {"container": "poindexter-worker"})')
+    for _ in range(3):
+        sim.taps_failed()
+        await sim.cycle(after_minutes=20)
+    assert len(sim.selections) == 1                 # one look per run
+    assert sim.restarts == []
+    dry = sim.world.audit_rows("remediation_dry_run")
+    assert [d["details"]["params"] for d in dry] == [{"container": "poindexter-worker"}]
+    assert sim.world.audit_rows("remediation_action") == []
+    assert sim.notify.await_count == 2              # first fire + the run's 30-min summary
+
+
+@pytest.mark.asyncio
+async def test_an_abstain_on_the_persistent_repeat_is_noted_on_the_row(monkeypatch):
+    sim = _LongTailSim(monkeypatch, pick=None)
+    sim.taps_failed()
+    await sim.cycle()
+    second = sim.taps_failed()
+    await sim.cycle(after_minutes=20)
+    assert second["dispatch_result"].endswith(
+        "persistent at repeat 2 (20 min), not auto-remediated (no rule; llm abstained)")
+    assert sim.world.audit == []
+
+
+@pytest.mark.asyncio
+async def test_a_live_llm_action_is_held_and_judged_over_the_alerts_own_cadence(monkeypatch):
+    """Live: the repeat is held. The alert re-fires every 20 min, so the verify
+    waits two of those (40 min), not the flat 120 s, which would have read the
+    quiet minutes after the restart as a fix."""
+    sim = _LongTailSim(monkeypatch, settings={"ops_firefighter_llm_dry_run": "false"})
+    sim.taps_failed()
+    await sim.cycle()
+    second = sim.taps_failed()
+    await sim.cycle(after_minutes=20)
+    assert second["dispatch_result"].startswith("remediating: restart_container (run ")
+    assert second["dispatch_result"].endswith("; persistent at repeat 2 (20 min))")
+    assert sim.restarts == ["poindexter-worker"]
+    (action,) = sim.world.audit_rows("remediation_action")
+    assert action["details"]["source"] == "llm"
+    assert action["details"]["verify_after_seconds"] == pytest.approx(2400, abs=1)  # real-clock ms
+    await sim.cycle(after_minutes=5)                # the old verify would have judged here
+    assert sim.world.audit_rows("remediation_verify") == []
+    sim.taps_failed()
+    await sim.cycle(after_minutes=15)               # still failing: a pending attempt, not an episode
+    await sim.cycle(after_minutes=21)               # verify due
+    assert [v["details"]["result"] for v in sim.world.audit_rows("remediation_verify")] == ["still_firing"]
+    assert len(sim.pages("[FIREFIGHTER] auto-remediation did not resolve scheduler.run_taps:job_failure")) == 1
+    assert sim.world.audit_rows("finding") == []
+    assert sim.restarts == ["poindexter-worker"]
+
+
+@pytest.mark.asyncio
+async def test_a_live_llm_fix_that_holds_resolves_silently_and_proposes_a_rule(monkeypatch):
+    sim = _LongTailSim(monkeypatch, settings={"ops_firefighter_llm_dry_run": "false"})
+    sim.taps_failed()
+    await sim.cycle()
+    sim.taps_failed()
+    await sim.cycle(after_minutes=20)
+    await sim.cycle(after_minutes=41)
+    assert [v["details"]["result"] for v in sim.world.audit_rows("remediation_verify")] == ["resolved"]
+    (finding,) = sim.world.audit_rows("finding")
+    assert finding["details"]["kind"] == "remediation_candidate_rule"
+    assert sim.notify.await_count == 1              # only the first fire
+
+
+@pytest.mark.asyncio
+async def test_a_verified_llm_fix_gives_the_next_episode_its_own_look(monkeypatch):
+    """The recurrence restarts the run: its first row pages (a first sighting
+    is never persistent), and its persistent repeat is offered again."""
+    sim = _LongTailSim(monkeypatch, settings={"ops_firefighter_llm_dry_run": "false"})
+    sim.taps_failed()
+    await sim.cycle()
+    sim.taps_failed()
+    await sim.cycle(after_minutes=20)
+    await sim.cycle(after_minutes=41)               # resolved
+    sim.taps_failed()
+    await sim.cycle(after_minutes=10)               # came back: a new run
+    assert len(sim.pages("came back after an auto-remediation that was verified")) == 1
+    sim.taps_failed()
+    await sim.cycle(after_minutes=20)
+    assert len(sim.selections) == 2
+    assert sim.restarts == ["poindexter-worker"] * 2
+
+
+@pytest.mark.asyncio
+async def test_a_ruled_alert_is_not_restarted_again_on_its_persistent_repeat(monkeypatch):
+    """The rule acted on the first row and its verify is pending. The second
+    row is the persistent repeat, but the long-tail stays out: no second
+    restart, no model call, no note."""
+    rule = {"id": 2, "alertname": "PromtailDown", "match_regex": None,
+            "action_name": "restart_container", "params": {"container": "poindexter-promtail"},
+            "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None,
+            "enabled": True}
+    sim = _LongTailSim(monkeypatch, rules=[rule], settings={"ops_firefighter_llm_dry_run": "false"})
+
+    def promtail_down():
+        return sim.world.fire(alertname="PromtailDown", fingerprint="5b1d2e7c90a4f311",
+                              severity="warning", labels={"alertname": "PromtailDown", "job": "promtail"})
+
+    promtail_down()
+    await sim.cycle()
+    second = promtail_down()
+    await sim.cycle(after_minutes=1)
+    assert sim.restarts == ["poindexter-promtail"]
+    assert sim.selections == []
+    assert second["dispatch_result"].startswith("suppressed: repeat 2")
+    assert "persistent" not in second["dispatch_result"]
+
+
+@pytest.mark.asyncio
+async def test_with_the_long_tail_off_there_is_no_persistent_look(monkeypatch):
+    sim = _LongTailSim(monkeypatch, settings={"ops_firefighter_llm_longtail_enabled": "false"})
+    sim.taps_failed()
+    await sim.cycle()
+    second = sim.taps_failed()
+    await sim.cycle(after_minutes=20)
+    assert sim.selections == []
+    assert "persistent" not in second["dispatch_result"]
+
+
+@pytest.mark.asyncio
+async def test_a_resolved_row_is_never_offered_to_the_long_tail(monkeypatch):
+    """Alertmanager's resolved notification shares the firing row's dedup key,
+    so it can land on the persistent repeat. Nothing is asked about it; the
+    next firing row is a new episode, a first sighting."""
+    sim = _LongTailSim(monkeypatch)
+
+    def ram_thrash(status):
+        return sim.world.fire(alertname="PoindexterHostMemoryThrashing", fingerprint="c0ffee42aa17",
+                              severity="critical", status=status,
+                              labels={"alertname": "PoindexterHostMemoryThrashing", "severity": "critical"})
+
+    ram_thrash("firing")
+    await sim.cycle()
+    ram_thrash("resolved")
+    await sim.cycle(after_minutes=6)
+    again = ram_thrash("firing")
+    await sim.cycle(after_minutes=6)
+    assert sim.selections == []
+    assert again["dispatch_result"].startswith("suppressed: repeat 3")
+
+
+@pytest.mark.asyncio
+async def test_a_persistent_repeat_that_is_the_runs_summary_carries_the_look(monkeypatch):
+    """The median gap between an alert's first two rows on prod is 44 min, so
+    the persistent repeat is often past the 30-min summary threshold. Dedup
+    still sends the summary; the page and the row both say what the model
+    would have done."""
+    sim = _LongTailSim(monkeypatch)
+    sim.taps_failed()
+    await sim.cycle()
+    second = sim.taps_failed()
+    await sim.cycle(after_minutes=44)
+    assert sim.selections == ["scheduler.run_taps:job_failure"]
+    assert second["dispatch_result"].startswith("sent: summary (repeat 2); persistent at repeat 2 (44 min), ")
+    (summary_page,) = sim.pages("[SUMMARY")
+    assert summary_page.endswith(
+        'Not auto-remediated (restart_container: dry run; would have run it with '
+        '{"container": "poindexter-worker"}).')
+
+
+@pytest.mark.asyncio
+async def test_a_live_llm_action_on_a_grafana_alert_is_proved_by_its_resolved_notification(monkeypatch):
+    """Grafana re-sends hourly, so the persistent repeat comes an hour in. For
+    a notifier the evidence is the resolved notification, which arrives when it
+    arrives: the grace stays the notifier default, not two re-fire intervals."""
+    sim = _LongTailSim(monkeypatch, settings={"ops_firefighter_llm_dry_run": "false"},
+                       pick={**_TAPS_PICK, "params": {"container": "poindexter-worker"}})
+    episode_start = sim.world.now() - timedelta(minutes=5)
+
+    def anomaly(status="firing"):
+        return sim.world.fire(alertname="Traffic Anomaly", fingerprint="7f0e11ab2c3d4e5f",
+                              severity="warning", status=status, starts_at=episode_start,
+                              labels={"alertname": "Traffic Anomaly", "severity": "warning"})
+
+    anomaly()
+    await sim.cycle()
+    repeat = anomaly()
+    await sim.cycle(after_minutes=60)               # Grafana's repeat_interval
+    assert repeat["dispatch_result"].startswith("remediating: restart_container")
+    (action,) = sim.world.audit_rows("remediation_action")
+    assert action["details"]["verify_signal"] == "resolved_notification"
+    assert action["details"]["verify_after_seconds"] == 600
+    anomaly("resolved")
+    await sim.cycle(after_minutes=5)
+    await sim.cycle(after_minutes=6)                # verify due
+    (verify,) = sim.world.audit_rows("remediation_verify")
+    assert (verify["details"]["result"], verify["details"]["evidence"]) == ("resolved", "resolved_notification")

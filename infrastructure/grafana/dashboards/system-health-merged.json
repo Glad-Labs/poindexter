@@ -2643,6 +2643,75 @@
       ]
     },
     {
+      "type": "piechart",
+      "title": "LLM long-tail looks by outcome (window)",
+      "description": "Every un-ruled alert is offered to the LLM selector once per dedup run, on the repeat where it first turns persistent (glad-labs-stack#4022; before that the selector was unreachable and this panel would have read 0). Counted from the alert_events row that carries the look. 'dry-run pick' = the model chose an action that cleared every gate but ops_firefighter_llm_dry_run kept it from running. An empty panel means no un-ruled alert repeated in the window, or the long-tail is off.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "id": 745,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 120
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "values": ["value"]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN dispatch_result LIKE 'remediating:%' THEN 'acted (page held)' WHEN dispatch_result LIKE '%dry run; would have run it%' THEN 'dry-run pick' WHEN dispatch_result LIKE '%llm abstained%' THEN 'abstained' WHEN dispatch_result LIKE '%llm selector error%' THEN 'selector unreachable' ELSE 'picked, refused by a gate' END AS outcome, count(*) AS looks FROM alert_events WHERE dispatch_result LIKE '%persistent at repeat%' AND $__timeFilter(received_at) GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "LLM dry-run picks — would the alert have stopped anyway?",
+      "description": "Each remediation_dry_run row: what the LLM would have run, and how the firefighter's verify would have judged the alert if the action had done nothing, with the same evidence and window a live action gets (a probe: a firing row within two of its re-fire intervals; Alertmanager or Grafana: its latest notification). 'still firing' = a live action would have been tested for real, and paged if it failed. 'stopped on its own' = the alert cleared without it; a live run would have been credited with a fix it did not make. 'executor_would_refuse' = the pick names something the executor refuses (the restart denylist). Review before setting ops_firefighter_llm_dry_run=false (docs/operations/self-healing.md).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "id": 746,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 120
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT d.timestamp AS \"time\", d.details->>'alertname' AS alert, d.details->>'action_name' AS action, d.details->'params'->>'container' AS container, round((d.details->>'confidence')::numeric, 2) AS confidence, CASE WHEN d.details->>'alert_fingerprint' IS NULL THEN 'unknown' WHEN now() < d.timestamp + make_interval(secs => (d.details->>'verify_after_seconds')::int) THEN 'window open' WHEN d.details->>'verify_signal' = 'resolved_notification' THEN CASE WHEN (SELECT lower(e.status) FROM alert_events e WHERE e.id > (d.details->>'alert_event_id')::bigint AND e.fingerprint = d.details->>'alert_fingerprint' AND e.received_at <= d.timestamp + make_interval(secs => (d.details->>'verify_after_seconds')::int) AND (lower(e.status) = 'resolved' OR (lower(e.status) = 'firing' AND COALESCE(e.severity, '') = d.details->>'alert_severity')) ORDER BY e.id DESC LIMIT 1) = 'resolved' THEN 'stopped on its own' ELSE 'still firing' END WHEN EXISTS (SELECT 1 FROM alert_events e WHERE e.id > (d.details->>'alert_event_id')::bigint AND e.fingerprint = d.details->>'alert_fingerprint' AND lower(e.status) = 'firing' AND COALESCE(e.severity, '') = d.details->>'alert_severity' AND e.received_at > d.timestamp AND e.received_at <= d.timestamp + make_interval(secs => (d.details->>'verify_after_seconds')::int)) THEN 'still firing' ELSE 'stopped on its own' END AS without_the_action, d.details->>'refused' AS executor_would_refuse, d.details->>'reason' AS model_reason FROM audit_log d WHERE d.event_type = 'remediation_dry_run' AND $__timeFilter(d.timestamp) ORDER BY d.timestamp DESC LIMIT 50",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "id": 730,
       "title": "DB clock skew (seconds)",
       "description": "poindexter-postgres-local clock_timestamp() minus an external UTC reference (HTTP Date header), sampled every 5-min brain cycle by poindexter/brain/clock_skew_probe.py. Healthy is ~0; |skew| > clock_skew_threshold_seconds (default 120s, red line) pages a db_clock_skew finding. Gaps = reference unreachable (status='unknown'). See docs/operations/db-clock-skew.md.",
@@ -2651,7 +2720,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 120
+        "y": 128
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2717,7 +2786,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 128
+        "y": 136
       },
       "collapsed": false,
       "panels": []
@@ -2731,7 +2800,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 129
+        "y": 137
       },
       "datasource": {
         "type": "prometheus",
@@ -2782,7 +2851,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 138
+        "y": 146
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2876,7 +2945,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 147
+        "y": 155
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2916,7 +2985,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 155
+        "y": 163
       }
     },
     {
@@ -2932,7 +3001,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 156
+        "y": 164
       },
       "fieldConfig": {
         "defaults": {
@@ -2989,7 +3058,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 156
+        "y": 164
       },
       "fieldConfig": {
         "defaults": {
@@ -3042,7 +3111,7 @@
         "h": 4,
         "w": 12,
         "x": 12,
-        "y": 156
+        "y": 164
       },
       "fieldConfig": {
         "defaults": {
@@ -3099,7 +3168,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 160
+        "y": 168
       },
       "fieldConfig": {
         "defaults": {

@@ -39,9 +39,9 @@ The loop, when an alert is about to page:
 2. **Match.** `engine.evaluate_for_dispatch` looks up a `remediation_rules` row
    for the alert (exact `alertname` first, then `match_regex` over
    alertname/fingerprint). A matched rule acts deterministically. **No rule →
-   the gated LLM long-tail path** (Plan B, below); only if that abstains or is
-   disabled does the alert page as usual, so the firefighter stays invisible to
-   unconfigured alerts unless the long-tail engages.
+   the alert pages as usual**: a first sighting is never persistent, so the
+   LLM long-tail declines it. The long-tail gets its one look later, on the
+   repeat where the alert turns persistent (Plan B, below).
 3. **Act.** The matched rule names an action in the **action registry** (below).
    The engine runs it, writes a `remediation_action` row to `audit_log`, and — if
    the action ran OK — **holds the page**. The `alert_events` row is marked
@@ -68,10 +68,10 @@ the "still firing?" oracle.
 Two kinds of producer write `alert_events`, and silence after an action means
 opposite things from each:
 
-| Producer                                                                       | How it reports                                                                                                                                                    | Fixed                                                                                   | Not fixed                                                                                                                | Grace when the rule sets none                             |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| A probe: the container health watch, most brain probes, findings               | Re-fires every cycle while the problem lasts.                                                                                                                     | No firing row since the action (`no_refire`).                                           | A firing row at the alert's severity since the action (`refired`), even if a recovery row follows: the fix did not hold. | `ops_firefighter_verify_after_seconds` (120)              |
-| Alertmanager, and Grafana alerting (both post to `/api/webhooks/alertmanager`) | Sends a firing notification once per episode, repeats it only every `repeat_interval` (4 h for Alertmanager, 1 h for Grafana), and a resolved one when it clears. | Its latest notification since the row acted on is `resolved` (`resolved_notification`). | Its latest is `firing`, because the alert came back (`refired`), or it has sent nothing (`no_resolved_notification`).    | `ops_firefighter_alertmanager_verify_after_seconds` (600) |
+| Producer                                                                       | How it reports                                                                                                                                                    | Fixed                                                                                   | Not fixed                                                                                                                | Grace when the rule sets none                                                                                                                                          |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A probe: the container health watch, most brain probes, findings               | Re-fires every cycle while the problem lasts.                                                                                                                     | No firing row since the action (`no_refire`).                                           | A firing row at the alert's severity since the action (`refired`), even if a recovery row follows: the fix did not hold. | `ops_firefighter_verify_after_seconds` (120). An LLM pick waits longer when the alert re-fires slowly: `ops_firefighter_llm_verify_intervals` of its re-fire interval. |
+| Alertmanager, and Grafana alerting (both post to `/api/webhooks/alertmanager`) | Sends a firing notification once per episode, repeats it only every `repeat_interval` (4 h for Alertmanager, 1 h for Grafana), and a resolved one when it clears. | Its latest notification since the row acted on is `resolved` (`resolved_notification`). | Its latest is `firing`, because the alert came back (`refired`), or it has sent nothing (`no_resolved_notification`).    | `ops_firefighter_alertmanager_verify_after_seconds` (600)                                                                                                              |
 
 Only a firing row is ever a re-fire. Alertmanager's resolved notification
 carries the firing row's fingerprint and severity, so it shares the dedup key.
@@ -148,8 +148,12 @@ The rest behaves as before:
   the firing row's dedup key, so past the 30-minute threshold it used to page
   "Repeating alert — fired N times" with nothing saying the alert had resolved.
   That was 50 pages in the 90 days before the change, 8 of them critical.
-- A new episode is offered with `repeat_count` 1, like any first sighting, so it
-  never engages the LLM long-tail's persistence gate.
+- A new episode is offered with `repeat_count` 1, like any first sighting, so the
+  LLM long-tail's persistence gate declines it. The long-tail's look comes on
+  the repeat where the dedup run turns persistent (see
+  [LLM long-tail](#llm-long-tail--the-un-ruled-path-plan-b)). A verified-fix
+  episode restarts the run, so it gets its own look. A source-resolved episode
+  does not, because its run already had one.
 
 The dispatch result records which boundary fired, for example
 `remediating: restart_container (run 1f3a9c2e; new episode after a verified fix)`.
@@ -326,28 +330,56 @@ brain POSTs the alert + the allowlisted catalog to the worker route
 sent**, and the engine re-validates that pick before acting. Local-only by
 policy — never a cloud LLM (`no_paid_apis`).
 
-The path is gated — each gate that fails pages as usual, with **no inference
-call**:
+The path is gated. A gate that fails leaves paging as it was, with **no
+inference call**:
 
 - **Master switch.** `ops_firefighter_llm_longtail_enabled` (default `true`).
   Off → only the deterministic rule path runs, even with the firefighter
   enabled.
-- **Persistence.** A one-off blip pages without ever asking the model. The LLM
-  path engages only once the alert is persistent —
-  `repeat_count >= ops_firefighter_min_repeats` (default `2`) **or** it has been
-  firing longer than `ops_firefighter_min_age_minutes` (default `10`).
+- **Persistence: one look per dedup run.** A one-off blip is never sent to the
+  model. The long-tail acts only on a persistent alert:
+  `repeat_count >= ops_firefighter_min_repeats` (default `2`) **or** firing for
+  `ops_firefighter_min_age_minutes` (default `10`). A run's first row is never
+  persistent, so it pages as usual. The dispatcher offers the alert again on
+  the repeat where it _becomes_ persistent: persistent now, and not at the
+  previous repeat. It reads this from `alert_dedup_state` (`repeat_count`,
+  `first_seen_at`, `last_seen_at`) before counting the repeat, so it needs no
+  extra state. With the defaults that is the run's second row. That row is a
+  repeat the first row already paged for, so paging stays with dedup (it is
+  suppressed, or it is the run's 30-minute summary). If the long-tail acts, the
+  row is held and marked, for example
+  `remediating: restart_container (run 1f3a9c2e; persistent at repeat 2 (44 min))`.
+  Rules are not asked twice. A rule had the episode's first row, so a matching
+  rule keeps the model out of the persistent repeat and does not run again.
 - **Circular-dependency guard.** An alert whose name matches
   `ops_firefighter_llm_exclude_regex` (default
   `(?i)(ollama|gpu|vram|cuda|inference)`) is **never** sent to the model — you
   can't ask the LLM to fix the substrate it runs on. Those stay
   deterministic-rule-only.
 - **Confidence.** A selection below `ops_firefighter_min_confidence` (default
-  `0.6`) pages instead of acting.
+  `0.6`) is not acted on.
 - **Untrusted output.** The model's `action_name` must be one of the catalog
   names it was sent — re-validated on **both** the worker and the brain — so an
   off-list, malformed, low-confidence, or Ollama-unreachable selection degrades
-  to _abstain → page_. Model quality affects the recovery _rate_, never
-  _safety_.
+  to _abstain_. Model quality affects the recovery _rate_, never _safety_.
+- **Dry run.** `ops_firefighter_llm_dry_run` (default `true`). A pick that
+  clears every gate, including the allowlist, the circuit breaker and the rate
+  cap, is recorded but not run. See
+  [Graduating the long-tail](#graduating-the-long-tail-from-dry-run).
+- **The rules-only label and the restart denylist** apply here as they do on a
+  first row (see Safety guardrails).
+
+Every look is visible on the alert's own row. The persistent repeat's
+`dispatch_result` ends with what the model did, for example
+`persistent at repeat 2 (44 min), not auto-remediated (no rule; llm abstained)`.
+The **LLM long-tail looks by outcome** panel on the System Health board counts
+those rows.
+
+**Until 2026-09-25 this path never ran** (glad-labs-stack#4022). The
+dispatcher offered only first rows, with `repeat_count` 1 and no age, and the
+persistence gate refuses every one of those. Over 29 days prod logged 161
+`/api/triage` requests and 0 `/api/remediation/select`. The 2026-07-07 smoke
+test called the selector directly, which skipped that gate.
 
 **Swapping the selector model.** `ops_firefighter_model` takes any local Ollama
 tag (carry the `ollama/` prefix — it routes through `dispatch_complete`). Two
@@ -408,12 +440,114 @@ source split** and **LLM selector hit-rate per model** panels on the System
 Health dashboard track how much the long-tail is doing and whether the model is
 good enough.
 
+**On a probe's alert, the verify waits out the alert's own cadence.** For a
+probe, the verify calls an action resolved when the alert has not re-fired
+since (see [the verify](#the-verify--what-counts-as-a-fix)). That only means
+something once a re-fire was due. The persistent repeat of a run arrives a
+median 44 minutes after its first row on prod, so a producer like that is
+silent for the first 120 s whether the restart worked or not. An LLM action on
+a probe's alert is therefore judged after `ops_firefighter_llm_verify_intervals`
+(default `2`) of the alert's own re-fire intervals: the run's mean gap between
+rows when the action ran. It is never judged sooner than the default grace. An
+Alertmanager or Grafana alert keeps its 600 s grace, because its resolved
+notification is evidence whenever it arrives. A rule keeps its own
+`verify_after_seconds`, because its author knows the producer.
+Replayed over 90 days with a model that always picks a restart, the flat
+120 s window read **1,271 of 1,347** LLM actions as resolved. Each one would
+have filed a false "self-heal worked" finding. Each recurrence then restarted
+its dedup run as a new episode, paged, and got restarted again. With the
+derived window the verify sees the re-fires: 274 resolved and 377 still
+firing, out of 651 actions.
+
 **The learning loop.** When an LLM-chosen action **resolves** (verified silent
 success), the verify scan emits a `remediation_candidate_rule` **finding** —
 surfaced on the Findings dashboard + `findings_list` — so you can promote the
 proven fix to a durable `remediation_rules` row. Once promoted it runs
 deterministically, with no inference call or persistence wait. A still-firing
-attempt, or a rule-source resolve, emits nothing.
+attempt, or a rule-source resolve, emits nothing. A resolve cannot tell a fix
+from an alert that stopped on its own. The dry-run review below shows how often
+the second one happens.
+
+### What reaches the long-tail
+
+Measured by replaying prod's 90 days of `alert_events` (11,351 rows,
+2026-06-28 to 2026-09-25) through the real dispatcher and engine:
+
+- **709 persistent repeats**, one per dedup run of an un-ruled alert that
+  repeated. 66 of them are refused by the exclusion regex (GPU and Ollama
+  alerts). **643 reach the selector**: about 7 a day, 36 on the busiest day,
+  17 in the busiest hour. They span 86 alert names.
+- Nearly all are **pipeline and job findings** that no container restart
+  fixes: `hero_render_fallback`, `run_taps:job_failure`,
+  `critic_model_collision`, `qa_rail_degraded`, `topic_sanity_rejected`,
+  `stale_task_reclaimed` and similar. The two-action catalog
+  (`restart_container`, `run_auto_remediate`) fits very few of them. Here the
+  model is mostly deciding whether to abstain, and a wrong restart is how it
+  would hurt. `poindexter-worker` and `poindexter-prefect-worker` are not on the
+  restart denylist. Restarting either interrupts pipeline work, and a
+  prefect-worker restart mid-flow orphans the running flow run.
+- Alertmanager alerts almost never reach it. AM re-sends a firing alert every
+  4 hours (`repeat_interval`), longer than the 120-minute dedup window, so each
+  re-send starts a new run with one row. When a resolved notification lands on
+  a run's second row, it takes the persistent repeat and nothing is asked
+  about it. Grafana-managed alerts re-send hourly, so their second row does
+  reach the selector (`Traffic Anomaly`, `Pipeline Stalled`,
+  `MonthlySpendHigh` and others).
+- In dry run, and even if the model picked a restart for every one of the 643,
+  **no paging decision changes**: 4,333 pages before and after.
+
+### Graduating the long-tail from dry run
+
+The long-tail ships observing (`ops_firefighter_llm_dry_run=true`). Each pick
+that would have run is a `remediation_dry_run` row in `audit_log`. The row holds
+the action, params, confidence and model, plus what a live action's verify
+would have read: the verify window, the alert row acted on
+(`alert_event_id`, `alert_fingerprint`, `alert_severity`) and the
+`verify_signal`. The breaker, the rate cap and the verify scan never read that
+event type, so a dry run changes nothing. Review a week of picks before
+switching it on. The **LLM dry-run picks** table on the System Health board
+shows each pick with `without_the_action`: how the verify would have judged
+the alert if the action had done nothing, by the same evidence a live action
+gets (see [the verify](#the-verify--what-counts-as-a-fix)). This query lists
+the raw rows:
+
+```sql
+SELECT d.timestamp, d.details->>'alertname' AS alert,
+       d.details->>'action_name' AS action, d.details->'params' AS params,
+       d.details->>'confidence' AS confidence, d.details->>'reason' AS why,
+       d.details->>'refused' AS executor_would_refuse,
+       d.details->>'verify_signal' AS verify_signal,
+       d.details->>'verify_after_seconds' AS window_seconds
+FROM audit_log d
+WHERE d.event_type = 'remediation_dry_run'
+ORDER BY d.timestamp DESC;
+```
+
+What to look for:
+
+1. **Every pick is an action you would take yourself.** Check the container in
+   particular. A restart of `poindexter-worker` or `poindexter-prefect-worker`
+   for a job failure is the failure mode to rule out. Add any container that
+   must never be bounced to `ops_firefighter_restart_denylist`. Narrow
+   `ops_firefighter_action_allowlist` if one action is the problem. A dry run
+   never calls the executor, so it asks the executor's own refusal check
+   instead. `executor_would_refuse` is set when a live run would have been
+   refused, for example because the model picked the database.
+2. **`without_the_action`.** `still firing` means a live action would have been
+   tested for real, and paged if it failed. `stopped on its own` means the
+   alert cleared without it, and a live run would have been credited with a fix
+   it didn't make. A week of mostly `stopped on its own` means the long-tail
+   would mostly collect false credit.
+3. **The rate.** Live picks share `ops_firefighter_max_actions_per_hour` with
+   the rules. A burst of LLM picks can use up the hour and leave a rule
+   refused ("global rate cap").
+4. **Alerts that deserve a rule.** A pick you agree with on an alert that
+   recurs is better as a `remediation_rules` row: it runs on the first row,
+   with no inference call and a verify window you choose.
+
+Then `poindexter settings set ops_firefighter_llm_dry_run false`. The brain
+reads it on the next 30-second cycle, with no restart. Setting it back to
+`true` returns the long-tail to observing on the next cycle.
 
 ### Managing rules
 
@@ -1175,9 +1309,11 @@ full incident write-up.
 | `ops_firefighter_llm_longtail_enabled`                        | `true`                                     | Master switch for the LLM long-tail (un-ruled) path. Off = deterministic rules only.                                                                                                              |
 | `ops_firefighter_model`                                       | `ollama/granite4.2:3b`                     | Local Ollama model the worker uses to pick an action for an un-ruled alert. Apache-2.0 and ~2.24 GB; a thinking model, made safe by the unconditional `think=False` on the call (see below).      |
 | `ops_firefighter_min_repeats`                                 | `2`                                        | LLM path engages after an un-ruled alert repeats this many times…                                                                                                                                 |
-| `ops_firefighter_min_age_minutes`                             | `10`                                       | …or has been firing this long (either signal qualifies).                                                                                                                                          |
+| `ops_firefighter_min_age_minutes`                             | `10`                                       | …or has been firing this long (either signal qualifies). The alert is offered once per dedup run, on the repeat where it first qualifies.                                                         |
 | `ops_firefighter_min_confidence`                              | `0.6`                                      | LLM selections below this confidence page instead of acting.                                                                                                                                      |
 | `ops_firefighter_llm_exclude_regex`                           | `(?i)(ollama\|gpu\|vram\|cuda\|inference)` | Circular-dependency guard — alertnames matching this regex never take the LLM path.                                                                                                               |
+| `ops_firefighter_llm_dry_run`                                 | `true`                                     | The LLM long-tail records each pick (`remediation_dry_run` in `audit_log`) instead of running it. Set `false` to graduate it; see Graduating the long-tail.                                       |
+| `ops_firefighter_llm_verify_intervals`                        | `2`                                        | An LLM action on a probe's alert is verified after this many of the alert's own re-fire intervals, never sooner than `ops_firefighter_verify_after_seconds`.                                      |
 
 ## Deploying the Recovery Agent
 

@@ -121,6 +121,9 @@ CFG_LLM = {
     "min_age_minutes": 10,
     "min_confidence": 0.6,
     "llm_exclude_regex": r"(?i)(ollama|gpu|vram|cuda|inference)",
+    # Live: these tests are about what an acting long-tail does. The dry run
+    # (the shipped default) has its own tests below.
+    "llm_dry_run": False,
 }
 
 
@@ -316,6 +319,187 @@ async def test_llm_selection_still_honors_breaker(monkeypatch):
     assert d.acted is False
     assert "breaker" in d.reason
     assert called["n"] == 0
+
+
+# ---------------------------------------------------------------------------
+# The persistence gate, the LLM verify window, and the dry run
+# (glad-labs-stack#4022).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("repeat_count,age_minutes,expected", [
+    (1, 0.0, False),     # a first sighting
+    (2, 0.0, True),      # min_repeats
+    (1, 10.0, True),     # min_age_minutes
+    (1, 9.9, False),
+])
+def test_is_persistent_is_either_gate(repeat_count, age_minutes, expected):
+    assert E.is_persistent(CFG_LLM, repeat_count=repeat_count, age_minutes=age_minutes) is expected
+
+
+def test_a_zero_min_age_disables_the_age_gate():
+    cfg = {**CFG_LLM, "min_repeats": 5, "min_age_minutes": 0}
+    assert E.is_persistent(cfg, repeat_count=4, age_minutes=600.0) is False
+
+
+_PROBE = {"verify_signal": E.VERIFY_BY_REFIRE}
+_NOTIFIER = {"verify_signal": E.VERIFY_BY_RESOLVED_NOTIFICATION}
+
+
+@pytest.mark.parametrize("target,interval,expected", [
+    (_PROBE, None, 120),          # nothing observed: the default grace
+    (_PROBE, 30.0, 120),          # a fast producer: the default still wins
+    (_PROBE, 2640.0, 5280),       # 44 min apart (the prod median): two of its intervals
+    ({}, 2640.0, 5280),           # no producer fingerprint: a re-fire is still the evidence
+    (_NOTIFIER, 2640.0, 600),     # a resolved notification proves it whenever it comes
+])
+def test_an_llm_action_on_a_probe_waits_out_the_alerts_own_cadence(target, interval, expected):
+    cfg = {**CFG_LLM, "llm_verify_intervals": 2.0, "alertmanager_verify_after_seconds": 600}
+    assert E.llm_verify_after(cfg, target, interval) == expected
+
+
+def _live_gates(monkeypatch):
+    monkeypatch.setattr(R, "match_rule", _acoro(None))
+    monkeypatch.setattr(R, "circuit_breaker_tripped", _acoro(False))
+    monkeypatch.setattr(R, "global_rate_exceeded", _acoro(False))
+
+
+_PICK = {
+    "action_name": "restart_container", "params": {"container": "poindexter-pyroscope"},
+    "confidence": 0.8, "reason": "profiler scrape down", "model": "ollama/granite4.2:3b",
+}
+
+
+@pytest.mark.asyncio
+async def test_the_dry_run_records_the_pick_and_runs_nothing(monkeypatch):
+    """The shipped default: without ``llm_dry_run`` in the config the long-tail
+    only observes. The pick is written as a remediation_dry_run row, which the
+    breaker, the rate cap and the verify scan never read."""
+    _live_gates(monkeypatch)
+    ran = []
+
+    async def _exec(*a, **k):
+        ran.append(a)
+        return ActionResult(status="ok")
+
+    monkeypatch.setattr(E, "execute", _exec)
+    pool = FakePool()
+    cfg = {k: v for k, v in CFG_LLM.items() if k != "llm_dry_run"}
+    d = await E.evaluate_for_dispatch(
+        pool, alert=ALERT, fingerprint="fp", config=cfg, logger=LOG,
+        select_fn=_select_fn(_PICK), repeat_count=2,
+    )
+    assert ran == []
+    assert d.acted is False and d.source == "llm" and d.action_name == "restart_container"
+    assert d.reason == 'dry run; would have run it with {"container": "poindexter-pyroscope"}'
+    (sql, args), = [e for e in pool.executed if "audit_log" in e[0]]
+    assert args[0] == "remediation_dry_run"
+    details = json.loads(args[3])
+    assert details["params"] == {"container": "poindexter-pyroscope"}
+    assert details["confidence"] == 0.8 and details["model"] == "ollama/granite4.2:3b"
+    assert details["refused"] is None
+    assert "remediation_run_id" not in details  # nothing for a verify to find
+
+
+@pytest.mark.asyncio
+async def test_a_dry_run_pick_the_executor_would_refuse_says_so(monkeypatch):
+    """The denylist lives in the executor, which a dry run never calls. Without
+    asking it, a pick of the database would read "would have run it" in the
+    very review that decides whether the long-tail may act."""
+    _live_gates(monkeypatch)
+    pool = FakePool()
+    pick = {**_PICK, "params": {"container": "poindexter-postgres-local"}}
+    d = await E.evaluate_for_dispatch(
+        pool, alert=ALERT, fingerprint="fp", config={**CFG_LLM, "llm_dry_run": True},
+        logger=LOG, select_fn=_select_fn(pick), repeat_count=2,
+    )
+    assert d.acted is False
+    assert d.reason.startswith("dry run; the executor would refuse it: restart_container: "
+                               "poindexter-postgres-local is on the firefighter restart denylist")
+    (sql, args), = [e for e in pool.executed if "audit_log" in e[0]]
+    assert args[0] == "remediation_dry_run"
+    assert "denylist" in json.loads(args[3])["refused"]
+
+
+@pytest.mark.asyncio
+async def test_the_dry_run_still_answers_to_the_gates(monkeypatch):
+    """A dry-run row means "would have run it now": a tripped breaker is a
+    refusal, the same as when live, and records nothing."""
+    monkeypatch.setattr(R, "match_rule", _acoro(None))
+    monkeypatch.setattr(R, "circuit_breaker_tripped", _acoro(True))
+    pool = FakePool()
+    d = await E.evaluate_for_dispatch(
+        pool, alert=ALERT, fingerprint="fp", config={**CFG_LLM, "llm_dry_run": True},
+        logger=LOG, select_fn=_select_fn(_PICK), repeat_count=2,
+    )
+    assert d.acted is False and d.reason == "circuit breaker tripped"
+    assert pool.executed == []
+
+
+@pytest.mark.asyncio
+async def test_the_persistent_repeat_goes_to_the_llm_with_its_cadence(monkeypatch):
+    _live_gates(monkeypatch)
+    monkeypatch.setattr(E, "execute", _acoro(ActionResult(status="ok", detail="restarted", latency_ms=5)))
+    seen = {}
+
+    async def _select(*, alert, catalog):
+        seen["catalog"] = [c["name"] for c in catalog]
+        return _PICK
+
+    pool = FakePool()
+    d = await E.evaluate_persistent_for_dispatch(
+        pool, alert=ALERT, fingerprint="fp", config=CFG_LLM, logger=LOG,
+        select_fn=_select, repeat_count=2, age_minutes=44.0, refire_interval_seconds=2640.0,
+    )
+    assert d.acted is True and d.source == "llm"
+    assert seen["catalog"] == ["restart_container", "run_auto_remediate"]
+    details = json.loads([e for e in pool.executed if "audit_log" in e[0]][0][1][3])
+    assert details["verify_after_seconds"] == 5280
+    assert (details["repeat_count"], details["age_minutes"]) == (2, 44.0)
+
+
+@pytest.mark.asyncio
+async def test_a_ruled_alert_is_not_offered_to_the_llm_on_its_persistent_repeat(monkeypatch):
+    """The rule had the episode's first row. Offering the repeat would either
+    run the rule a second time while its verify is pending, or ask the model
+    about an alert the operator has already written the answer for."""
+    rule = {"id": 1, "action_name": "restart_container", "params": {"container": "poindexter-pyroscope"},
+            "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None}
+    monkeypatch.setattr(R, "match_rule", _acoro(rule))
+    ran, counter = [], {"n": 0}
+
+    async def _exec(*a, **k):
+        ran.append(a)
+        return ActionResult(status="ok")
+
+    monkeypatch.setattr(E, "execute", _exec)
+    pool = FakePool()
+    d = await E.evaluate_persistent_for_dispatch(
+        pool, alert=ALERT, fingerprint="fp", config=CFG_LLM, logger=LOG,
+        select_fn=_counting_select_fn(counter, _PICK), repeat_count=2, age_minutes=5.0,
+    )
+    assert d.acted is False and d.reason.startswith("rule-matched")
+    assert ran == [] and counter["n"] == 0 and pool.executed == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("alert,config,reason", [
+    ({**ALERT, "status": "resolved"}, CFG_LLM, "status resolved; nothing to remediate"),
+    (ALERT, {**CFG_LLM, "enabled": False}, "disabled"),
+    ({"labels": {"alertname": "container_unhealthy", "remediation": "rules_only"}, "annotations": {}},
+     CFG_LLM, "no rule; alert allows rule-driven remediation only"),
+    ({"labels": {"alertname": "gpu_scheduler:gpu_lock_timeout"}, "annotations": {}},
+     CFG_LLM, "no rule; alert excluded from llm path"),
+])
+async def test_the_persistent_repeat_keeps_every_first_row_refusal(monkeypatch, alert, config, reason):
+    monkeypatch.setattr(R, "match_rule", _acoro(None))
+    counter = {"n": 0}
+    d = await E.evaluate_persistent_for_dispatch(
+        FakePool(), alert=alert, fingerprint="fp", config=config, logger=LOG,
+        select_fn=_counting_select_fn(counter, _PICK), repeat_count=2, age_minutes=5.0,
+    )
+    assert d.acted is False and d.reason == reason
+    assert counter["n"] == 0
 
 
 # ---------------------------------------------------------------------------

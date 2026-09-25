@@ -104,6 +104,12 @@ try:
         evaluate_for_dispatch as evaluate_for_dispatch_hook,
     )
     from poindexter.brain.remediation.engine import (
+        evaluate_persistent_for_dispatch as evaluate_persistent_for_dispatch_hook,
+    )
+    from poindexter.brain.remediation.engine import (
+        is_persistent as is_persistent_hook,
+    )
+    from poindexter.brain.remediation.engine import (
         latest_attempt as latest_remediation_attempt_hook,
     )
     from poindexter.brain.remediation.engine import run_verify_scan as run_verify_scan_hook
@@ -125,6 +131,12 @@ except Exception as _ff_import_err:  # noqa: BLE001 — partial/legacy image
 
     async def evaluate_for_dispatch_hook(*a, **k):  # type: ignore[misc]
         return SimpleNamespace(acted=False, action_name=None, run_id=None, reason="engine unavailable")
+
+    async def evaluate_persistent_for_dispatch_hook(*a, **k):  # type: ignore[misc]
+        return SimpleNamespace(acted=False, action_name=None, run_id=None, reason="engine unavailable")
+
+    def is_persistent_hook(*a, **k):  # type: ignore[misc]
+        return False
 
     async def run_verify_scan_hook(*a, **k):  # type: ignore[misc]
         return {"verified": 0, "resolved": 0, "still_firing": 0}
@@ -506,6 +518,47 @@ async def _reset_dedup_state(
             "-- stale state may re-page the operator next cycle",
             fingerprint[:12], e,
         )
+
+
+def _persistence_crossing(
+    ff_cfg: dict[str, Any],
+    *,
+    state: dict[str, Any],
+    now: datetime,
+) -> dict[str, Any] | None:
+    """Is this repeat the one where the alert first becomes persistent?
+
+    The LLM long-tail acts only on a persistent alert (``is_persistent``: enough
+    repeats, or firing long enough). The first row of a run is never
+    persistent, so the long-tail's chance comes on a later, suppressed repeat,
+    and it gets exactly one: the repeat where the gate opens. Stateless, from the
+    dedup row BEFORE this repeat's bump: persistent now (``repeat_count + 1``,
+    ``now - first_seen_at``) and not persistent at the previous repeat
+    (``repeat_count``, ``last_seen_at - first_seen_at``).
+
+    Returns ``{"repeat_count", "age_minutes", "refire_interval_seconds"}`` for
+    the crossing row, else None. The interval is the run's mean gap between
+    rows so far: the cadence an LLM action's verify has to wait out before a
+    silent alert means a fixed one (``engine.llm_verify_after``).
+    """
+    first_seen_at = _coerce_datetime(state.get("first_seen_at")) or now
+    last_seen_at = _coerce_datetime(state.get("last_seen_at")) or first_seen_at
+    previous_count = int(state.get("repeat_count") or 1)
+    previous_age = max(0.0, (last_seen_at - first_seen_at).total_seconds() / 60.0)
+    age = max(0.0, (now - first_seen_at).total_seconds() / 60.0)
+    if not is_persistent_hook(ff_cfg, repeat_count=previous_count + 1, age_minutes=age):
+        return None
+    if is_persistent_hook(ff_cfg, repeat_count=previous_count, age_minutes=previous_age):
+        return None  # persistent since an earlier repeat, which had the look
+    return {
+        "repeat_count": previous_count + 1,
+        "age_minutes": age,
+        "refire_interval_seconds": age * 60.0 / previous_count,
+    }
+
+
+def _persistence_note(persistent: dict[str, Any]) -> str:
+    return f"persistent at repeat {persistent['repeat_count']} ({int(persistent['age_minutes'])} min)"
 
 
 def _first_fire_decision(
@@ -1095,10 +1148,16 @@ async def _offer_to_firefighter(
     ff_cfg: dict[str, Any],
     repeat_count: int,
     summary: dict[str, int],
-    episode: str | None = None,
+    note: str = "",
+    persistent: dict[str, Any] | None = None,
     alert_event: dict[str, Any] | None = None,
 ) -> Any:
     """Offer one row to the firefighter; mark it ``remediating`` when it acts.
+
+    ``persistent`` (the ``_persistence_crossing`` dict) offers the repeat
+    where the alert first became persistent, to the LLM long-tail only (a rule
+    had the episode's first row); without it the row is an episode's first and
+    rules come first. ``note`` says which, on the row and in the log.
 
     Returns the engine's decision, or None when the firefighter is off. When
     ``.acted`` is true the page is HELD and the caller must not notify: the
@@ -1107,28 +1166,37 @@ async def _offer_to_firefighter(
     """
     if not ff_cfg.get("enabled"):
         return None
-    # repeat_count is the persistence signal for the LLM path; the engine gates
-    # on it (a first-sighting blip never reaches the model). select_fn is pure
-    # transport — the engine owns every gate, so we always hand it over and let
-    # the engine decide.
-    ff = await evaluate_for_dispatch_hook(
-        pool, alert=alert, fingerprint=fingerprint,
-        config=ff_cfg, logger=logger,
-        select_fn=_make_select_fn(pool), repeat_count=repeat_count,
-        alert_event=alert_event,
-    )
+    # repeat_count / age_minutes are the persistence signal for the LLM path;
+    # the engine gates on them (a first-sighting blip never reaches the model).
+    # select_fn is pure transport — the engine owns every gate, so we always
+    # hand it over and let the engine decide. An episode's first row is a first
+    # sighting: it has no age.
+    if persistent:
+        ff = await evaluate_persistent_for_dispatch_hook(
+            pool, alert=alert, fingerprint=fingerprint,
+            config=ff_cfg, logger=logger, select_fn=_make_select_fn(pool),
+            repeat_count=persistent["repeat_count"],
+            age_minutes=persistent["age_minutes"],
+            refire_interval_seconds=persistent.get("refire_interval_seconds"),
+            alert_event=alert_event,
+        )
+    else:
+        ff = await evaluate_for_dispatch_hook(
+            pool, alert=alert, fingerprint=fingerprint,
+            config=ff_cfg, logger=logger, select_fn=_make_select_fn(pool),
+            repeat_count=repeat_count, age_minutes=0.0, alert_event=alert_event,
+        )
     if ff.acted:
-        episode_note = _EPISODE_NOTES.get(episode or "", "")
         await pool.execute(
             _MARK_ERROR_SQL, row_id,
             f"remediating: {ff.action_name} (run {str(ff.run_id)[:8]}"
-            f"{'; ' + episode_note if episode_note else ''})",
+            f"{'; ' + note if note else ''})",
         )
         summary.setdefault("remediated", 0)
         summary["remediated"] += 1
         logger.info(
             "[alert_dispatcher] firefighter acted row=%s action=%s%s — page held",
-            row_id, ff.action_name, f" ({episode_note})" if episode_note else "",
+            row_id, ff.action_name, f" ({note})" if note else "",
         )
     return ff
 
@@ -1174,8 +1242,9 @@ async def _dispatch_one(
 
     The firefighter sees the first row of every remediation episode: the
     first row of a dedup run, and a firing row inside a run that starts a
-    new episode (``_detect_new_episode``). When it acts the page is held
-    and the row is marked ``remediating: ...``.
+    new episode (``_detect_new_episode``). The LLM long-tail also sees the
+    repeat where an alert first becomes persistent (``_persistence_crossing``).
+    When it acts the page is held and the row is marked ``remediating: ...``.
 
     When ``dedup_config`` is None the legacy v1 behaviour applies:
     every row dispatches via the resolved notify_fn with no dedup,
@@ -1219,6 +1288,7 @@ async def _dispatch_one(
                 status=str(alert.get("status") or "firing"), row_id=row_id,
             )
             episode = decision.get("episode")
+            persistent = decision.get("persistent")
             ff_cfg = dedup_config.get("firefighter_config") or {}
             ff = None  # the firefighter's decision on this row, once consulted
             # The row as the firefighter's verify reads it back: later rows of
@@ -1228,29 +1298,52 @@ async def _dispatch_one(
                 "id": row_id, "fingerprint": stored_fingerprint, "severity": severity,
                 "starts_at": row.get("starts_at"), "received_at": row.get("received_at"),
             }
-            if episode == EPISODE_SOURCE_RESOLVED and decision["action"] != "dispatch":
-                # The first firing row since the producer reported this alert
-                # resolved. Offer it like a first sighting (repeat_count 1);
-                # paging stays with dedup, see _detect_new_episode.
-                ff = await _offer_to_firefighter(
-                    pool, row_id=row_id, alert=alert,
-                    fingerprint=decision["fingerprint"], ff_cfg=ff_cfg,
-                    repeat_count=1, summary=summary, episode=episode,
-                    alert_event=alert_event,
-                )
+            offer_note = ""
+            if decision["action"] != "dispatch":
+                # Paging stays with dedup on both of these: the run's first row
+                # already paged (or its firefighter held it). Held if it acts.
+                if episode == EPISODE_SOURCE_RESOLVED:
+                    # The first firing row since the producer reported this
+                    # alert resolved. Offer it like a first sighting
+                    # (repeat_count 1), see _detect_new_episode.
+                    offer_note = _EPISODE_NOTES[episode]
+                    ff = await _offer_to_firefighter(
+                        pool, row_id=row_id, alert=alert,
+                        fingerprint=decision["fingerprint"], ff_cfg=ff_cfg,
+                        repeat_count=1, summary=summary, note=offer_note,
+                        alert_event=alert_event,
+                    )
+                elif persistent:
+                    # The repeat where the alert first became persistent: the
+                    # LLM long-tail's one look at it (#4022).
+                    offer_note = _persistence_note(persistent)
+                    ff = await _offer_to_firefighter(
+                        pool, row_id=row_id, alert=alert,
+                        fingerprint=decision["fingerprint"], ff_cfg=ff_cfg,
+                        repeat_count=persistent["repeat_count"],
+                        summary=summary, note=offer_note, persistent=persistent,
+                        alert_event=alert_event,
+                    )
                 if ff is not None and ff.acted:
                     return None  # page HELD; verify scan will resolve or escalate
             not_remediated = _not_remediated_reason(ff)
+            # The row records a firefighter that had an action and declined.
+            # On the persistent repeat it also records a model that was asked
+            # and abstained (or could not answer): that is the long-tail's only
+            # look in the run, and this row is the one place it can be seen.
+            declined = not_remediated or (
+                str(ff.reason or "")
+                if persistent and ff is not None and getattr(ff, "source", None) == "llm"
+                else ""
+            )
+            offer_outcome = (
+                f"; {offer_note or 'new episode'}, not auto-remediated ({declined})"
+                if declined else ""
+            )
             if decision["action"] == "suppress":
-                dispatch_result = decision["dispatch_result"]
-                if not_remediated:
-                    dispatch_result = (
-                        f"{dispatch_result}; {_EPISODE_NOTES.get(episode or '', 'new episode')}, "
-                        f"not auto-remediated ({not_remediated})"
-                    )[:400]
                 await pool.execute(
                     _MARK_ERROR_SQL, row_id,
-                    dispatch_result,
+                    f"{decision['dispatch_result']}{offer_outcome}"[:400],
                 )
                 summary["sent"] += 0
                 summary.setdefault("suppressed", 0)
@@ -1285,7 +1378,7 @@ async def _dispatch_one(
                 )
                 await pool.execute(
                     _MARK_SENT_DETAIL_SQL, row_id,
-                    f"sent: summary (repeat {decision['repeat_count']})",
+                    f"sent: summary (repeat {decision['repeat_count']}){offer_outcome}"[:400],
                 )
                 await _mark_summary_dispatched(
                     pool,
@@ -1310,7 +1403,8 @@ async def _dispatch_one(
                 pool, row_id=row_id, alert=alert,
                 fingerprint=decision["fingerprint"], ff_cfg=ff_cfg,
                 repeat_count=int((decision.get("state") or {}).get("repeat_count") or 0),
-                summary=summary, episode=episode, alert_event=alert_event,
+                summary=summary, note=_EPISODE_NOTES.get(episode or "", ""),
+                alert_event=alert_event,
             )
             if ff is not None and ff.acted:
                 return None  # page HELD; verify scan will resolve or escalate
@@ -1414,9 +1508,11 @@ async def _evaluate_dedup_decision(
     The dict also returns ``fingerprint``, ``now``, ``state`` (the
     dedup-state row as it stood after this call), ``repeat_count``,
     ``dispatch_result`` (a human-readable string for the caller
-    to write to ``alert_events.dispatch_result`` on suppress), and
+    to write to ``alert_events.dispatch_result`` on suppress),
     ``episode`` (``EPISODE_*`` when a firing row inside the window starts a
-    new remediation episode, else None).
+    new remediation episode, else None), and ``persistent`` (the
+    ``_persistence_crossing`` dict on the repeat where the alert first becomes
+    persistent, else None).
     """
     now_fn = now_fn or _default_now
     now = now_fn()
@@ -1492,7 +1588,8 @@ async def _evaluate_dedup_decision(
     # remediation episode (only worth asking while the firefighter is on).
     is_firing = str(status or "firing").strip().lower() == "firing"
     episode = None
-    firefighter_on = bool((config.get("firefighter_config") or {}).get("enabled"))
+    ff_cfg = config.get("firefighter_config") or {}
+    firefighter_on = bool(ff_cfg.get("enabled"))
     if firefighter_on and is_firing:
         episode = await _detect_new_episode(
             pool, fingerprint=fingerprint, run_started_at=first_seen_at,
@@ -1515,6 +1612,17 @@ async def _evaluate_dedup_decision(
             fingerprint=fingerprint, now=now, severity=severity,
             source=source, sample_message=message, episode=episode,
         )
+
+    # The repeat where the alert first becomes persistent is the LLM
+    # long-tail's one look at it (glad-labs-stack#4022). A new episode is a
+    # first sighting instead, and is offered as one by the caller. Read from
+    # the state before the bump below.
+    persistent = None
+    if (
+        firefighter_on and is_firing and episode is None
+        and ff_cfg.get("llm_longtail_enabled", True)
+    ):
+        persistent = _persistence_crossing(ff_cfg, state=state, now=now)
 
     # Increment the counter unconditionally so the summary's "fired N times"
     # line is correct even when the summary itself fires later.
@@ -1546,6 +1654,7 @@ async def _evaluate_dedup_decision(
             "state": state,
             "repeat_count": new_repeat_count,
             "episode": episode,
+            "persistent": persistent,
         }
 
     # Otherwise: pure suppression. Return a dispatch_result line the
@@ -1562,6 +1671,7 @@ async def _evaluate_dedup_decision(
             f"first_seen={first_seen_at.isoformat()}; no AI enrichment (deduped)"
         )[:400],
         "episode": episode,
+        "persistent": persistent,
     }
 
 

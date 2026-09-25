@@ -51,6 +51,19 @@ from poindexter.brain import alert_dispatcher as ad  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _llm_selector_abstains(monkeypatch):
+    """The firefighter is on by default, so a burst's second row is the
+    repeat where the alert turns persistent and the LLM long-tail gets its
+    look (glad-labs-stack#4022). These tests are about dedup and summaries,
+    so the selector abstains here: no network, and the paging they assert is
+    exactly what an abstain leaves in place."""
+    async def _abstain(*, alert, catalog):
+        return None
+
+    monkeypatch.setattr(ad, "_make_select_fn", lambda pool: _abstain)
+
+
 def _make_row(
     *,
     row_id: int,

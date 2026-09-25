@@ -123,6 +123,22 @@ async def test_load_config_llm_longtail_defaults_when_unset():
     assert cfg["min_confidence"] == 0.6
     assert cfg["model"] == "ollama/granite4.2:3b"
     assert cfg["llm_exclude_regex"]  # non-empty circular-dependency guard
+    # A brain that boots before the worker has seeded the row observes, not acts.
+    assert cfg["llm_dry_run"] is True
+    assert cfg["llm_verify_intervals"] == 2.0
+
+
+@pytest.mark.asyncio
+async def test_load_config_parses_the_dry_run_and_the_verify_intervals():
+    pool = FakePool()
+    store = {
+        "ops_firefighter_llm_dry_run": "false",
+        "ops_firefighter_llm_verify_intervals": "3.5",
+    }
+    pool.set_fetchval(lambda sql, args: store.get(args[0]))
+    cfg = await R.load_firefighter_config(pool)
+    assert cfg["llm_dry_run"] is False
+    assert cfg["llm_verify_intervals"] == 3.5
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +217,23 @@ async def test_brain_fallback_matches_settings_defaults(cfg_field, settings_key)
         "settings_defaults.DEFAULTS — a fresh DB would behave differently from "
         "a seeded one."
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cfg_field,settings_key,parse",
+    [
+        ("llm_dry_run", "ops_firefighter_llm_dry_run", lambda v: v.strip().lower() == "true"),
+        ("llm_verify_intervals", "ops_firefighter_llm_verify_intervals", float),
+    ],
+)
+async def test_brain_typed_fallback_matches_settings_defaults(cfg_field, settings_key, parse):
+    """Same drift guard for the typed knobs: the dry-run switch in particular,
+    whose fallback decides whether a brain on an unseeded DB acts or observes."""
+    pool = FakePool()
+    pool.set_fetchval(lambda sql, args: None)  # nothing seeded
+    cfg = await R.load_firefighter_config(pool)
+    assert cfg[cfg_field] == parse(_defaults_value(settings_key))
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ audit_log directly (emit_finding is worker-side and unavailable here).
 from __future__ import annotations
 
 import json
+import math
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from poindexter.brain.remediation.registry import (
     RemediationContext,
     describe_catalog,
     execute,
+    refusal,
 )
 
 # Value of an alert's ``remediation`` label that keeps it off the LLM long-tail
@@ -123,7 +125,7 @@ async def _apply_action(
     config: dict[str, Any], logger: Any, action_name: str, params: dict[str, Any],
     source: str, verify_after: int, max_attempts: int, window_minutes: int,
     rule_id: Any = None, extra_details: dict[str, Any] | None = None,
-    verify_target: dict[str, Any] | None = None,
+    verify_target: dict[str, Any] | None = None, dry_run: bool = False,
 ) -> RemediationDecision:
     """Gate (allowlist -> breaker -> global rate) then execute + audit.
 
@@ -135,8 +137,14 @@ async def _apply_action(
     carries the LLM-only fields (confidence / reason / model), and
     ``verify_target`` what the verify reads (see ``_verify_target``).
 
+    ``dry_run`` stops after the gates: the pick is recorded as a
+    ``remediation_dry_run`` audit row instead of executed, along with the
+    executor's own refusal when it would have refused (the restart denylist).
+    That event type is invisible to the breaker, the rate cap and the verify
+    scan, which count only real ``remediation_action`` rows.
+
     acted=True  -> action ran OK; the dispatcher HOLDS the page for verify.
-    acted=False -> gate rejection or non-ok execution; page now.
+    acted=False -> gate rejection, dry run, or non-ok execution; page now.
     """
     allowlist = config.get("action_allowlist") or []
     if allowlist and action_name not in allowlist:
@@ -159,11 +167,37 @@ async def _apply_action(
             acted=False, action_name=action_name, source=source, reason="global rate cap",
         )
 
-    run_id = str(uuid.uuid4())
+    source_label = f"firefighter:{alertname or 'alert'}"
     ctx = RemediationContext(pool=pool, alert=alert, logger=logger)
+    if dry_run:
+        refused = await refusal(action_name, params, ctx)
+        await _write_audit(
+            pool, event_type="remediation_dry_run", source=source_label, severity="info",
+            details={
+                "fingerprint": fingerprint, "alertname": alertname,
+                "action_name": action_name, "params": params, "source": source,
+                "verify_after_seconds": verify_after, "refused": refused,
+                **(verify_target or {}), **(extra_details or {}),
+            },
+        )
+        logger.info(
+            "[firefighter] dry run alert=%s action=%s params=%s source=%s%s — not executed",
+            alertname, action_name, params, source,
+            f" (the executor would refuse: {refused})" if refused else "",
+        )
+        if refused:
+            reason = f"dry run; the executor would refuse it: {refused}"
+        else:
+            target = f" with {json.dumps(params, sort_keys=True, default=str)}" if params else ""
+            reason = f"dry run; would have run it{target}"
+        return RemediationDecision(
+            acted=False, action_name=action_name, params=params, source=source,
+            reason=reason[:200],
+        )
+
+    run_id = str(uuid.uuid4())
     result = await execute(action_name, params, ctx)
 
-    source_label = f"firefighter:{alertname or 'alert'}"
     details: dict[str, Any] = {
         "remediation_run_id": run_id, "fingerprint": fingerprint, "alertname": alertname,
         "action_name": action_name, "params": params, "source": source,
@@ -207,10 +241,50 @@ async def _apply_action(
     )
 
 
+def is_persistent(config: dict[str, Any], *, repeat_count: int, age_minutes: float) -> bool:
+    """The LLM long-tail's persistence gate: ``repeat_count >= min_repeats`` or
+    ``age_minutes >= min_age_minutes`` (a ``min_age_minutes`` of 0 disables the
+    age half). The dispatcher asks the same question of the previous repeat to
+    find the one row where an alert BECOMES persistent, so both sides share it.
+    """
+    min_repeats = int(config.get("min_repeats", 2) or 0)
+    min_age = int(config.get("min_age_minutes", 0) or 0)
+    return repeat_count >= min_repeats or (min_age > 0 and age_minutes >= min_age)
+
+
+def llm_verify_after(
+    config: dict[str, Any], verify_target: dict[str, Any],
+    refire_interval_seconds: float | None,
+) -> int:
+    """How long an LLM-picked action waits before its verify.
+
+    For a probe the verify calls an action resolved when the alert has not
+    re-fired since. That only means something once a re-fire was due. On prod
+    the persistent repeat arrives a median 44 minutes after a run's first row
+    (90 days to 2026-09-25), so the first 120 s after an action are silent
+    whether or not it worked: replayed with a model that always picks a
+    restart, 1,271 of 1,347 LLM actions judged at the flat
+    ``verify_after_seconds`` read "resolved". So the window is
+    ``llm_verify_intervals`` of the alert's own re-fire interval (0 = the flat
+    window), and never shorter than the default grace. A notifier's resolved
+    notification is evidence whenever it comes, so its grace stays the default
+    (``_default_verify_after``). A rule sets its own window; its author knows
+    the producer.
+    """
+    floor = _default_verify_after(config, verify_target)
+    if verify_target.get("verify_signal") == VERIFY_BY_RESOLVED_NOTIFICATION:
+        return floor
+    if not refire_interval_seconds or refire_interval_seconds <= 0:
+        return floor
+    intervals = float(config.get("llm_verify_intervals", 2) or 0)
+    return max(floor, math.ceil(intervals * refire_interval_seconds))
+
+
 async def _select_and_apply(
     pool: Any, *, alert: dict[str, Any], alertname: str, fingerprint: str,
     config: dict[str, Any], logger: Any, select_fn: Any,
-    repeat_count: int, age_minutes: int, verify_target: dict[str, Any],
+    repeat_count: int, age_minutes: float, verify_target: dict[str, Any],
+    refire_interval_seconds: float | None = None,
 ) -> RemediationDecision:
     """LLM long-tail path (Plan B): a gated, validated selection over the catalog.
 
@@ -225,15 +299,14 @@ async def _select_and_apply(
     Then the selector is asked for ONE catalog action. The pick is re-validated
     here (in-catalog + confidence >= ``min_confidence``) even though the worker
     route already validates — the model's output stays untrusted end-to-end. A
-    valid pick flows through :func:`_apply_action` with ``source="llm"``.
+    valid pick flows through :func:`_apply_action` with ``source="llm"``, as a
+    dry run while ``llm_dry_run`` is on (the default until an operator
+    graduates the long-tail).
     """
     if not config.get("llm_longtail_enabled", True):
         return RemediationDecision(acted=False, reason="no rule; llm long-tail disabled")
 
-    min_repeats = int(config.get("min_repeats", 2) or 0)
-    min_age = int(config.get("min_age_minutes", 0) or 0)
-    persistent = repeat_count >= min_repeats or (min_age > 0 and age_minutes >= min_age)
-    if not persistent:
+    if not is_persistent(config, repeat_count=repeat_count, age_minutes=age_minutes):
         return RemediationDecision(acted=False, reason="no rule; alert not persistent yet")
 
     exclude_regex = config.get("llm_exclude_regex") or ""
@@ -288,14 +361,16 @@ async def _select_and_apply(
     params = selection.get("params")
     if not isinstance(params, dict):
         params = {}
+    dry_run = bool(config.get("llm_dry_run", True))
     logger.info(
-        "[firefighter] llm selected alert=%s action=%s confidence=%.2f — applying",
-        alertname, action_name, confidence,
+        "[firefighter] llm selected alert=%s action=%s confidence=%.2f — %s",
+        alertname, action_name, confidence, "dry run" if dry_run else "applying",
     )
     return await _apply_action(
         pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
         config=config, logger=logger, action_name=action_name, params=params,
-        source="llm", verify_after=_default_verify_after(config, verify_target),
+        source="llm",
+        verify_after=llm_verify_after(config, verify_target, refire_interval_seconds),
         max_attempts=config["max_attempts_per_window"],
         window_minutes=config["window_minutes"],
         extra_details={
@@ -303,21 +378,64 @@ async def _select_and_apply(
             "reason": str(selection.get("reason") or "")[:500],
             "model": str(selection.get("model") or ""),
             "repeat_count": repeat_count,
+            "age_minutes": round(float(age_minutes or 0), 1),
         },
-        verify_target=verify_target,
+        verify_target=verify_target, dry_run=dry_run,
+    )
+
+
+def _not_actionable(alert: dict[str, Any], config: dict[str, Any]) -> RemediationDecision | None:
+    """The refusal both entry points share, or None when the alert may be acted on.
+
+    Only a FIRING alert describes a problem to fix. A resolved row for the
+    same alertname (probes write recovery rows; Alertmanager sends resolved
+    notifications) would otherwise match the same rule and re-run its action
+    against something that just recovered. The dispatcher defaults a missing
+    status to "firing", so absent means firing here too.
+    """
+    if not config.get("enabled"):
+        return RemediationDecision(acted=False, reason="disabled")
+    status = str(alert.get("status") or "firing").strip().lower()
+    if status != "firing":
+        return RemediationDecision(acted=False, reason=f"status {status}; nothing to remediate")
+    return None
+
+
+async def _long_tail(
+    pool: Any, *, alert: dict[str, Any], alertname: str, fingerprint: str,
+    config: dict[str, Any], logger: Any, select_fn: Any,
+    repeat_count: int, age_minutes: float, verify_target: dict[str, Any],
+    refire_interval_seconds: float | None = None,
+) -> RemediationDecision:
+    """The no-rule branch: the gated LLM selector, when one is wired."""
+    if select_fn is None:
+        return RemediationDecision(acted=False, reason="no rule")
+    # A producer whose alert covers targets that must never be bounced blind
+    # (the container health watch fires for GPU renderers mid-job and for a
+    # busy worker) marks it rules-only: an operator-written rule may act on it,
+    # the LLM selector may not.
+    labels = alert.get("labels") or {}
+    if str(labels.get("remediation") or "").strip().lower() == RULES_ONLY:
+        return RemediationDecision(acted=False, reason="no rule; alert allows rule-driven remediation only")
+    return await _select_and_apply(
+        pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
+        config=config, logger=logger, select_fn=select_fn,
+        repeat_count=repeat_count, age_minutes=age_minutes,
+        verify_target=verify_target, refire_interval_seconds=refire_interval_seconds,
     )
 
 
 async def evaluate_for_dispatch(
     pool: Any, *, alert: dict[str, Any], fingerprint: str,
     config: dict[str, Any], logger: Any,
-    select_fn: Any = None, repeat_count: int = 0, age_minutes: int = 0,
+    select_fn: Any = None, repeat_count: int = 0, age_minutes: float = 0,
     alert_event: dict[str, Any] | None = None,
 ) -> RemediationDecision:
     """Decide whether to remediate an about-to-page alert (rules first, LLM tail).
 
-    A matched ``remediation_rules`` row runs deterministically. With no rule and
-    a ``select_fn`` wired (Plan B), the gated LLM long-tail path may pick an
+    The dispatcher calls this on the first row of an episode. A matched
+    ``remediation_rules`` row runs deterministically. With no rule and a
+    ``select_fn`` wired (Plan B), the gated LLM long-tail path may pick an
     action; without a ``select_fn`` the no-rule alert pages as before.
 
     ``alert_event`` is the ``alert_events`` row being dispatched (``id``, the
@@ -330,17 +448,9 @@ async def evaluate_for_dispatch(
     acted=False -> page as usual (no rule, disabled, gate tripped, LLM
                    abstained/low-confidence, or the action failed to run).
     """
-    if not config.get("enabled"):
-        return RemediationDecision(acted=False, reason="disabled")
-
-    # Only a FIRING alert describes a problem to fix. A resolved row for the
-    # same alertname (probes write recovery rows; Alertmanager sends resolved
-    # notifications) would otherwise match the same rule and re-run its action
-    # against something that just recovered. The dispatcher defaults a missing
-    # status to "firing", so absent means firing here too.
-    status = str(alert.get("status") or "firing").strip().lower()
-    if status != "firing":
-        return RemediationDecision(acted=False, reason=f"status {status}; nothing to remediate")
+    refused = _not_actionable(alert, config)
+    if refused is not None:
+        return refused
 
     labels = alert.get("labels") or {}
     alertname = (labels.get("alertname") or "").strip()
@@ -359,19 +469,52 @@ async def evaluate_for_dispatch(
 
     # No deterministic rule. Fall back to the gated LLM long-tail path when a
     # selector is wired; otherwise page as before (unchanged back-compat).
-    if select_fn is None:
-        return RemediationDecision(acted=False, reason="no rule")
-    # A producer whose alert covers targets that must never be bounced blind
-    # (the container health watch fires for GPU renderers mid-job and for a
-    # busy worker) marks it rules-only: an operator-written rule may act on it,
-    # the LLM selector may not.
-    if str(labels.get("remediation") or "").strip().lower() == RULES_ONLY:
-        return RemediationDecision(acted=False, reason="no rule; alert allows rule-driven remediation only")
-    return await _select_and_apply(
+    return await _long_tail(
         pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
         config=config, logger=logger, select_fn=select_fn,
         repeat_count=repeat_count, age_minutes=age_minutes,
         verify_target=verify_target,
+    )
+
+
+async def evaluate_persistent_for_dispatch(
+    pool: Any, *, alert: dict[str, Any], fingerprint: str,
+    config: dict[str, Any], logger: Any, select_fn: Any,
+    repeat_count: int, age_minutes: float,
+    refire_interval_seconds: float | None = None,
+    alert_event: dict[str, Any] | None = None,
+) -> RemediationDecision:
+    """Offer an alert to the LLM long-tail on the repeat where it became persistent.
+
+    The first row of an episode goes through :func:`evaluate_for_dispatch`, and
+    the long-tail's persistence gate always refuses it: it is a first sighting.
+    Persistence arrives on a LATER repeat, which the dispatcher suppresses (the
+    first row already paged), so without this second look the long-tail never
+    ran at all (glad-labs-stack#4022). The dispatcher calls this once, on the
+    row where the alert crosses the gate.
+
+    Rules are not consulted twice. A rule had the episode's first row, and
+    either acted (a verify is pending) or declined (the operator was paged with
+    the reason), so a matching rule here means "not the long-tail's alert" and
+    nothing runs. Everything else — the rules-only label, the exclusion regex,
+    the confidence floor, the allowlist, the circuit breaker, the global rate
+    cap and the restart denylist — applies exactly as on a first row, and the
+    verify reads ``alert_event`` (this row) as it does there.
+    """
+    refused = _not_actionable(alert, config)
+    if refused is not None:
+        return refused
+
+    labels = alert.get("labels") or {}
+    alertname = (labels.get("alertname") or "").strip()
+    if await R.match_rule(pool, alertname=alertname, fingerprint=fingerprint) is not None:
+        return RemediationDecision(acted=False, reason="rule-matched; its rule had the episode's first row")
+    return await _long_tail(
+        pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
+        config=config, logger=logger, select_fn=select_fn,
+        repeat_count=repeat_count, age_minutes=age_minutes,
+        verify_target=_verify_target(alert_event),
+        refire_interval_seconds=refire_interval_seconds,
     )
 
 

@@ -235,7 +235,22 @@ DEFAULTS: dict[str, str] = {
     "ops_firefighter_llm_longtail_enabled": "true",
     # Persistence gate (alternative to min_repeats): an un-ruled alert also
     # qualifies for the LLM path once it has been firing this many minutes.
+    # The dispatcher offers an alert once per dedup run, on the repeat where it
+    # first passes either gate (glad-labs-stack#4022).
     "ops_firefighter_min_age_minutes": "10",
+    # Dry run: the LLM long-tail selects but does not act. Each pick that clears
+    # every gate is written to audit_log as a remediation_dry_run row and noted
+    # on the alert row; nothing is restarted and no page is held. Ships "true"
+    # because the long-tail never ran before #4022 (a 90-day replay offered it
+    # 643 alerts, nearly all pipeline findings no restart fixes). Graduate by
+    # setting "false" once the picks it records have been reviewed.
+    "ops_firefighter_llm_dry_run": "true",
+    # An LLM-picked action is verified after this many of the alert's own
+    # re-fire intervals (the run's mean gap between rows at the persistent
+    # repeat), and never sooner than ops_firefighter_verify_after_seconds. A
+    # flat 120 s verify reads "resolved" before a slow producer can re-fire:
+    # 94% of replayed LLM actions did. Rules set their own verify window.
+    "ops_firefighter_llm_verify_intervals": "2",
     # Circular-dependency guard — the LLM path is SKIPPED for alerts whose name
     # matches this regex, so the model is never asked to fix the substrate it
     # runs on (Ollama / GPU / inference). Those stay deterministic-rule-only.
@@ -6591,8 +6606,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'ops_firefighter_action_allowlist': {'owner': 'rules'},
     'ops_firefighter_alertmanager_verify_after_seconds': {'owner': 'rules', 'value_type': 'integer'},
     'ops_firefighter_enabled': {'value_type': 'boolean'},
+    'ops_firefighter_llm_dry_run': {'owner': 'rules', 'value_type': 'boolean'},
     'ops_firefighter_llm_exclude_regex': {'owner': 'rules', 'value_type': 'string'},
     'ops_firefighter_llm_longtail_enabled': {'owner': 'rules', 'value_type': 'boolean'},
+    'ops_firefighter_llm_verify_intervals': {'owner': 'rules', 'value_type': 'float'},
     'ops_firefighter_max_actions_per_hour': {'owner': 'rules', 'value_type': 'integer'},
     'ops_firefighter_max_attempts_per_window': {'owner': 'rules', 'value_type': 'integer'},
     'ops_firefighter_min_age_minutes': {'owner': 'rules', 'value_type': 'integer'},

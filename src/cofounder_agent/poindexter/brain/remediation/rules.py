@@ -82,6 +82,9 @@ async def load_firefighter_config(pool: Any) -> dict[str, Any]:
     allowlist_raw = await _read_str(pool, "ops_firefighter_action_allowlist", "")
     allowlist = [p.strip() for p in allowlist_raw.split(",") if p.strip()]
     longtail_raw = await _read_str(pool, "ops_firefighter_llm_longtail_enabled", "true")
+    # Fallback "true": a DB without the row (the worker seeds it on boot, the
+    # brain can boot first) must observe, not act.
+    dry_run_raw = await _read_str(pool, "ops_firefighter_llm_dry_run", "true")
     return {
         "enabled": enabled_raw.strip().lower() in _TRUTHY,
         "max_attempts_per_window": await _read_int(pool, "ops_firefighter_max_attempts_per_window", 3),
@@ -112,6 +115,8 @@ async def load_firefighter_config(pool: Any) -> dict[str, Any]:
         "llm_exclude_regex": await _read_str(
             pool, "ops_firefighter_llm_exclude_regex", _DEFAULT_LLM_EXCLUDE_REGEX
         ),
+        "llm_dry_run": dry_run_raw.strip().lower() in _TRUTHY,
+        "llm_verify_intervals": await _read_float(pool, "ops_firefighter_llm_verify_intervals", 2.0),
     }
 
 

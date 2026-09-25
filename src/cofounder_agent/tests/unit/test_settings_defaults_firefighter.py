@@ -47,6 +47,14 @@ def test_firefighter_llm_longtail_engine_gate_defaults():
     assert re.search(excl, "GPUTempHigh")
 
 
+def test_the_llm_long_tail_ships_observing():
+    """glad-labs-stack#4022 made the long-tail reachable for the first time. It
+    ships as a dry run (record the pick, act on nothing), and an LLM action is
+    judged over the alert's own re-fire cadence, not the flat 120 s floor."""
+    assert DEFAULTS["ops_firefighter_llm_dry_run"] == "true"
+    assert float(DEFAULTS["ops_firefighter_llm_verify_intervals"]) >= 1.0
+
+
 @pytest.mark.parametrize("key", ["ops_firefighter_model", "ops_triage_writer_model"])
 def test_ops_model_defaults_are_permissively_licensed(key):
     """These two defaults ship publicly — they are the OSS product's pins.

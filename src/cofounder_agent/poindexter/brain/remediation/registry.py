@@ -98,25 +98,30 @@ async def _restart_denylist(pool: Any) -> frozenset[str]:
     return _NEVER_RESTART | extra
 
 
-async def _restart_container(params: dict[str, Any], ctx: RemediationContext) -> ActionResult:
-    """Docker-restart a named container via brain_daemon.docker_restart_container."""
+async def _restart_container_refusal(params: dict[str, Any], ctx: RemediationContext) -> str | None:
+    """Why ``restart_container`` would refuse these params, or None if it would run."""
     container = str(params.get("container") or "").strip()
     if not container:
-        return ActionResult(status="skipped", detail="restart_container: no 'container' param")
-    denied = await _restart_denylist(ctx.pool)
-    if container in denied:
+        return "restart_container: no 'container' param"
+    if container in await _restart_denylist(ctx.pool):
+        return (
+            f"restart_container: {container} is on the firefighter restart "
+            "denylist (restarting it would destroy the record of this very "
+            "action, and for the database also risks data loss). Paging "
+            "instead; restart it by hand if that is genuinely what is needed."
+        )
+    return None
+
+
+async def _restart_container(params: dict[str, Any], ctx: RemediationContext) -> ActionResult:
+    """Docker-restart a named container via brain_daemon.docker_restart_container."""
+    refused = await _restart_container_refusal(params, ctx)
+    if refused is not None:
         # `skipped` (not `failed`) is still a non-ok status, and the engine pages
         # on anything that is not "ok" — which is the point: refuse the action
         # AND surface the alert to a human, rather than silently doing nothing.
-        return ActionResult(
-            status="skipped",
-            detail=(
-                f"restart_container: {container} is on the firefighter restart "
-                "denylist (restarting it would destroy the record of this very "
-                "action, and for the database also risks data loss). Paging "
-                "instead; restart it by hand if that is genuinely what is needed."
-            ),
-        )
+        return ActionResult(status="skipped", detail=refused)
+    container = str(params.get("container") or "").strip()
     mod = _resolve_brain_daemon()
     if mod is None or not hasattr(mod, "docker_restart_container"):
         return ActionResult(status="failed", detail="brain_daemon.docker_restart_container unavailable")
@@ -149,6 +154,14 @@ async def _run_auto_remediate(params: dict[str, Any], ctx: RemediationContext) -
 ACTION_REGISTRY: dict[str, Executor] = {
     "restart_container": _restart_container,
     "run_auto_remediate": _run_auto_remediate,
+}
+
+# The side-effect-free checks an executor makes before it acts (bad params, the
+# restart denylist), for callers that must know the answer without acting: a
+# dry run records "would be refused" instead of "would have run it". The
+# executor runs the same function, so the two cannot disagree.
+_ACTION_REFUSALS: dict[str, Callable[[dict[str, Any], RemediationContext], Awaitable[str | None]]] = {
+    "restart_container": _restart_container_refusal,
 }
 
 
@@ -205,6 +218,23 @@ def describe_catalog(allowlist: list[str] | None = None) -> list[dict[str, Any]]
             }
         )
     return catalog
+
+
+async def refusal(action_name: str, params: dict[str, Any], ctx: RemediationContext) -> str | None:
+    """Why ``execute`` would refuse this action without running it, or None.
+
+    Never raises: a check that blows up counts as a refusal, the answer that
+    keeps a dry run from promising an action the executor might not take.
+    """
+    if action_name not in ACTION_REGISTRY:
+        return f"unknown action: {action_name}"
+    check = _ACTION_REFUSALS.get(action_name)
+    if check is None:
+        return None
+    try:
+        return await check(params or {}, ctx)
+    except Exception as e:  # noqa: BLE001
+        return f"refusal check raised: {e}"[:400]
 
 
 async def execute(action_name: str, params: dict[str, Any], ctx: RemediationContext) -> ActionResult:
