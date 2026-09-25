@@ -57,7 +57,7 @@ import httpx
 from poindexter.plugins.media_compositor import CompositionRequest, CompositionScene
 from poindexter.schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
 from poindexter.services.media_compositors.ffmpeg_local import KEN_BURNS_CENTER
-from poindexter.services.settings_defaults import default_int
+from poindexter.services.settings_defaults import DEFAULTS, default_int
 from poindexter.services.video_providers import configured_animator
 from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from poindexter.utils.exception_format import describe_exception
@@ -192,6 +192,10 @@ class _ShotState:
     qa: ShotQAResult | None = None  # best score (None ⇒ unscored / couldn't score)
     attempts: int = 0  # regen rounds spent on this shot
     rung: str = "primary"  # fill provenance: primary | substitute | card | dropped
+    # A render of this shot ended in a detail collapse, the incumbent's or a
+    # candidate that lost keep-best. Every later re-roll holds the camera
+    # (``_candidate_shot``): the shot's own motion is the likeliest cause.
+    collapse_seen: bool = False
 
 
 def _build_qa_config(site_config: Any) -> _QAConfig:
@@ -3936,6 +3940,45 @@ def _needs_repair(st: _ShotState, *, qa: _QAConfig) -> bool:
     )
 
 
+def _collapse_reroll_motion(site_config: Any) -> str:
+    """``video_hero_collapse_reroll_motion``, or ``""`` when the operator has
+    emptied it to keep the director's motion on every re-roll."""
+    key = "video_hero_collapse_reroll_motion"
+    if site_config is None:
+        return DEFAULTS[key]
+    try:
+        return str(site_config.get(key, DEFAULTS[key]) or "").strip()
+    except Exception:  # noqa: BLE001  # silent-ok: a settings read must not
+        return DEFAULTS[key]        # decide a render's fate.
+
+
+def _candidate_shot(st: _ShotState, site_config: Any) -> Shot:
+    """The shot a re-roll renders: ``st.shot``, or for a hero whose render has
+    ended in a detail collapse, a copy with the camera held on its subject.
+
+    A collapse is usually the camera leaving its subject because the shot's
+    motion asked it to: two of the three ComfyUI collapses on disk (2026-09-22
+    to 09-25) were sent "slow zoom out" (the third's still prompt shrank its
+    own subject). f555bedc long shot 15 asked for "slow zoom out ... glowing
+    lines connect the desk to the horizon" and pulled back on all five renders
+    of it, the one re-roll included, which collapsed again: a re-roll with the
+    same motion spends ~5 min of GPU asking for the same pull-back. So the
+    candidate's motion becomes ``video_hero_collapse_reroll_motion``. Replayed
+    on that re-roll's own still and seed, only the motion changed, the ending's
+    edge ratio went 0.20 -> 0.99 (docs/architecture/video-composition.md).
+    The still prompt, and so the subject, stays the director's, and
+    ``st.shot`` is left alone: the swap is for this candidate only.
+    """
+    if st.shot.source not in _HERO_SOURCES:
+        return st.shot
+    if not (st.collapse_seen or (st.qa is not None and st.qa.detail_collapse)):
+        return st.shot
+    motion = _collapse_reroll_motion(site_config)
+    if not motion:
+        return st.shot
+    return st.shot.model_copy(update={"motion": motion})
+
+
 async def _repair_pass(
     states: list[_ShotState],
     *,
@@ -3959,6 +4002,10 @@ async def _repair_pass(
     exited and ComfyUI holding the last clip's weights. That is the state in
     which escalation stills died on CUDA OOM (``_ready_card_for_escalation``),
     and a hero re-roll begins with exactly such a still.
+
+    A hero whose render ended in a detail collapse is re-rolled with its
+    camera held (``_candidate_shot``), not with the motion that emptied the
+    frame.
     """
     if not qa.enabled or qa.max_retries <= 0:
         return
@@ -3975,8 +4022,15 @@ async def _repair_pass(
                 # Before every one: a hero's animation re-fills the card that
                 # the previous candidate's clear emptied.
                 await _ready_card_for_escalation(render_kwargs)
+            shot = _candidate_shot(st, site_config)
+            if shot is not st.shot:
+                logger.info(
+                    "[SHOT_QA] shot %d re-roll %d holds the camera (a render of it "
+                    "ended in a detail collapse): motion %r -> %r",
+                    st.shot.idx, st.attempts, st.shot.motion, shot.motion,
+                )
             cand = await _render_one_shot(
-                st.shot, prior_clip=None, attempt=st.attempts, **round_kwargs,
+                shot, prior_clip=None, attempt=st.attempts, **round_kwargs,
             )
             logger.info(
                 "[SHOT_QA] shot %d (%s) re-roll %d/%d: %s", st.shot.idx,
@@ -3993,6 +4047,9 @@ async def _repair_pass(
                 site_config=site_config, pool=pool,
                 topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
             )
+            # Remembered even when this candidate loses keep-best, so the next
+            # re-roll holds the camera either way.
+            st.collapse_seen = st.collapse_seen or cand_qa.detail_collapse
             best = st.qa
             kept = bool(
                 cand_qa.score is not None and best is not None

@@ -354,6 +354,74 @@ animated from (`fallback_still`) when only its final frame failed and its
 opening passed, not to the previous shot running on. This mirrors
 `_animate_hero`'s own fallback for an i2v miss or dead motion.
 
+### A collapse is re-rolled with the camera held (2026-09-25)
+
+The first live re-roll of a collapsed hero asked for the same failure again.
+The collapse rule sent f555bedc long shot 15 to `_repair_pass`, which rendered
+the same `Shot` with a new still and a new seed but the same motion: "slow zoom
+out from the screen to reveal the person's focused expression; glowing lines
+connect the desk to the horizon". ComfyUI embeds each prompt's workflow in its
+mp4, and it shows all five renders of the shot got exactly that text. All five
+pulled the camera back:
+
+| render (UTC)                 | plate   | ratio (final / 1 s) | ending                                      |
+| ---------------------------- | ------- | ------------------- | ------------------------------------------- |
+| hero_00012, 09-24 02:57      | 832x480 | 0.50                | the whole scene shrunk to mid-frame         |
+| hero_00022, 09-24 16:11      | 704x400 | 0.71                | desk pushed left, a line out to a far cloud |
+| hero_00027 (v4), 09-24 20:31 | 704x400 | 0.10                | empty navy frame, cloud cut off at bottom   |
+| hero_00030 (v5), 09-24 23:06 | 704x400 | 0.52                | small desk bottom-left under a small cloud  |
+| hero_00036 (re-roll), 09-25  | 704x400 | 0.21                | desk cut off at the bottom under a cloud    |
+
+(Raw 16 fps ComfyUI clips, `shot_vision_qa._edge_density`.) Two of the three
+ComfyUI collapses on disk had asked for a zoom out. The third (`hero_00004`,
+0.10) had a push-in, but its still prompt shrank its own subject ("a massive
+monolithic block of data shrinking rapidly into a small ... cube").
+
+`ShotQAResult.detail_collapse` now marks a score that came from the collapse
+rule rather than the judge. `_repair_pass` renders such a hero's candidate from
+`shot.model_copy(update={"motion": video_hero_collapse_reroll_motion})`, a
+slow, steady push-in that keeps the main subject centred and fully in frame to
+the last frame. Only the candidate changes: `st.shot` keeps the director's
+motion, keep-best decides as before, and candidates still render into
+`work_dir/repairN`. A collapse on a candidate that lost keep-best also holds
+the camera for the next round. Emptying the setting keeps the shot's own
+motion on every re-roll.
+
+The wording is positive, since a camera move the prompt names is one the model
+is asked for. It asks for a push-in rather than a static camera because prod
+renders at 20 steps / CFG 3.5, where the negative prompt is live, and Wan's
+canonical negative lists 静态 and 静止 (static, still).
+
+**Measured on the live stack**, as a paired replay: the init still the live
+re-roll animated, its 704x400 plate, the production animate path (ComfyUI,
+RIFE, motion check) under `gpu.lock("video")`, and one seed per pair. The
+motion text is the only difference inside a pair. Pair 0 uses the re-roll's own
+seed and reproduced it: ratio 0.199 post-RIFE against 0.21 raw, motion delta
+26.37 against 26.31.
+
+| seed                          | director's motion                   | held camera     |
+| ----------------------------- | ----------------------------------- | --------------- |
+| 2691865440545043204 (re-roll) | 0.199, collapse (30)                | 0.995, judge 92 |
+| 1111111111                    | 0.691, judge 92 (still pulled back) | 0.980, judge 92 |
+| 2222222222                    | 0.267, collapse (30)                | 1.090, judge 92 |
+
+The director's motion pulled back on every seed. Two fell under the collapse
+ratio, and the third shrank the scene to an island mid-frame that the rule
+(0.69) and the judge (92) both passed. The held camera kept the whole scene
+centred on every seed, with no garbled text, and stayed animated: the
+renderer's own motion metric read 8.8-14.0, against the 2.0 dead-motion gate
+and 22-29 for the pull-backs.
+
+The real `_repair_pass` then re-rolled the collapsed clip once, end to end: a
+fresh still, the provider's own seed, the plate the fit chose (832x480). The
+workflow embedded in the output shows ComfyUI received the still prompt
+followed by the held camera. The candidate ended on the full scene (ratio
+1.00, judge 92, motion 6.6) and was kept over the incumbent's 30. The round
+took 9 min under the lock: 2 min 42 s for the fresh still (image-gen cold after
+the hero phase exited it), 6 min for the animation, and seconds for RIFE and
+the judge. The incumbent's still had already passed at 92, so re-using it
+would save the still's share.
+
 ## Per-source plugin contract
 
 Each `source` value resolves to one of:

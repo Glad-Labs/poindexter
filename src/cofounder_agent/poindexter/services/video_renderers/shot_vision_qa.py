@@ -99,6 +99,11 @@ class ShotQAResult:
     # the renderer can tell "the whole clip is off" from "it went wrong at the
     # end" (a hero that only went wrong at the end can fall back to its still).
     opening_score: float | None = None
+    # True when the score is the detail-collapse rule's, not the judge's: the
+    # clip ended on a near-empty frame. Usually the camera left its subject
+    # because the shot's motion asked it to, so the repair pass re-rolls it
+    # with a held camera instead (``shot_list_renderer._candidate_shot``).
+    detail_collapse: bool = False
 
 
 async def _extract_video_frame(video_path: str) -> str | None:
@@ -439,6 +444,7 @@ async def _score_final_frame(
                 f"against {opening_edge:.2f} at the opening (under {ratio:.2f}x)"
             ),
             frame="final",
+            detail_collapse=True,
         )
     result = await _score_views(
         last, prompt=prompt, model=model, pool=pool, shot_idx=shot_idx,

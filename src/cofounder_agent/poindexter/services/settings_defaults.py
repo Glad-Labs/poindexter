@@ -958,6 +958,21 @@ DEFAULTS: dict[str, str] = {
         'slow cinematic push-in with gentle parallax; ambient particles and '
         'light drift softly; smooth continuous motion, stable composition'
     ),
+    # Motion a hero re-roll gets in place of its own once a render of it ended
+    # in a detail collapse (video_shot_qa_detail_collapse_ratio), which is
+    # usually the camera leaving its subject because the shot's motion asked
+    # it to. All five renders of f555bedc long shot 15 were sent "slow zoom
+    # out ... connect the desk to the horizon" and all five pulled back, the
+    # re-roll included.
+    # Worded positively, since a camera move this names is one the model is
+    # asked for, and a slow push-in rather than a static camera, since the Wan
+    # negative prompt (video_comfyui_negative_prompt) steers away from still
+    # frames. Empty keeps the shot's own motion on every re-roll.
+    'video_hero_collapse_reroll_motion': (
+        'slow, steady push-in on the main subject, which stays centred and '
+        'fully in frame to the last frame; the camera holds its angle and '
+        'height; ambient light and particles drift softly; stable composition'
+    ),
     # ------------------------------------------------------------------
     # Generative hero provider seam (2026-08-15 ComfyUI spike). 'wan21' =
     # the deployed 5B diffusers sidecar; 'comfyui' = Wan 2.2 14B via the
@@ -5723,6 +5738,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_hero_height': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_fps': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_motion_default': {'owner': 'video', 'value_type': 'string'},
+    'video_hero_collapse_reroll_motion': {'owner': 'video', 'value_type': 'string'},
     'video_generative_provider': {'owner': 'video', 'value_type': 'string'},
     'video_shot_qa_crop_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_crop_fraction': {'owner': 'video', 'value_type': 'float'},
