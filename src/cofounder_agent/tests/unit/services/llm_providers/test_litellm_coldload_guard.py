@@ -149,3 +149,37 @@ async def test_stream_invokes_guard_for_local_model():
         enabled=True,
         min_gb=8.0,
     )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_complete_hands_the_guard_the_overridden_instance():
+    """Placement is decided from the instance the call RESOLVES to.
+
+    The judge is routed to its GPU-pinned instance by
+    ``model_api_base_overrides``; the guard must see that base, not the
+    default one, or it would reclaim the render GPU for a load on GPU 1.
+    """
+    judge_base = "http://host.docker.internal:11435"
+    provider = LiteLLMProvider()
+    with _guard_patch() as guard, patch(
+        "litellm.acompletion", new_callable=AsyncMock,
+        return_value=_fake_response(),
+    ):
+        await provider.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="ollama/qwen3-vl:30b-a3b-instruct",
+            _provider_config={
+                "api_base": _LOCAL_BASE,
+                "allow_paid_base_url": "false",
+                "model_api_base_overrides": {
+                    "ollama/qwen3-vl:30b-a3b-instruct": judge_base,
+                },
+            },
+        )
+    guard.assert_awaited_once_with(
+        resolved_model="ollama/qwen3-vl:30b-a3b-instruct",
+        api_base=judge_base,
+        enabled=True,
+        min_gb=8.0,
+    )

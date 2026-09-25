@@ -269,3 +269,149 @@ async def test_tags_are_cached_across_calls():
     ps_gets = [u for u in fake.requested if u.endswith("/api/ps")]
     assert len(tags_gets) == 1  # second call served from the size cache
     assert len(ps_gets) == 2  # residency is always probed fresh
+
+
+# --- placement: reclaim the render GPU only for loads that land on it --------
+#
+# 2026-09-25: every cold qwen3-vl judge call (19.6 GB, on the GPU-1-pinned
+# :11435 instance) ran the render-GPU ladder, mid-render: RIFE and chatterbox
+# unloaded, ComfyUI sent /free and once restarted, sidecar restarts queued.
+# These drive the REAL placement resolver in gpu_scheduler with the prod rows.
+
+_JUDGE_BASE = "http://host.docker.internal:11435"
+_JUDGE_TAGS = {"models": [
+    {"name": "qwen3-vl:30b-a3b-instruct", "size": int(19.6 * _GB)},
+    {"name": "gemma-4-31B-it-qat:latest", "size": 18 * _GB},
+]}
+_PROD_PLACEMENT = {
+    "gpu_lock_per_device_enabled": "true",
+    "gpu_lock_scopes": '{"render": [0], "qa_judge": [1], "llm_primary": [0]}',
+    "ollama_base_url": _LOCAL_BASE,
+    "ollama_vision_base_url": _JUDGE_BASE,
+    "pipeline_gpu_index": "0",
+}
+
+
+@pytest.fixture
+def placement(monkeypatch):
+    """Install a SiteConfig for gpu_scheduler's placement resolver."""
+    from poindexter.services import gpu_scheduler as gs
+    from poindexter.services.site_config import SiteConfig
+
+    for key in _PROD_PLACEMENT:
+        monkeypatch.delenv(key.upper(), raising=False)
+
+    def _apply(**overrides):
+        values = {**_PROD_PLACEMENT, **overrides}
+        cfg = SiteConfig(initial_config=values)
+        monkeypatch.setattr(gs, "_sc", lambda: cfg)
+
+    return _apply
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_cold_judge_off_the_render_gpu_skips_the_ladder(placement, caplog):
+    placement()
+    fake = _FakeAsyncClient(tags=_JUDGE_TAGS)
+    gpu_patch, reclaim = _patch_gpu()
+    with _patch_client(fake), gpu_patch, caplog.at_level("INFO", logger=coldload_guard.__name__):
+        fired = await maybe_reclaim_before_coldload(
+            resolved_model="ollama/qwen3-vl:30b-a3b-instruct",
+            api_base=_JUDGE_BASE,
+        )
+    assert fired is False
+    reclaim.assert_not_awaited()
+    # It still noticed the cold load, and says why it stood down.
+    assert fake.requested == [f"{_JUDGE_BASE}/api/ps", f"{_JUDGE_BASE}/api/tags"]
+    assert "which loads on GPU 1; the reclaim ladder frees GPU 0" in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_cold_primary_load_still_runs_the_ladder(placement, caplog):
+    """The 2026-08-25 case: gemma cold-loading on :11434, the render GPU."""
+    placement()
+    fake = _FakeAsyncClient(tags=_JUDGE_TAGS)
+    gpu_patch, reclaim = _patch_gpu()
+    with _patch_client(fake), gpu_patch, caplog.at_level("INFO", logger=coldload_guard.__name__):
+        fired = await maybe_reclaim_before_coldload(
+            resolved_model="ollama/gemma-4-31B-it-qat:latest",
+            api_base=_LOCAL_BASE,
+        )
+    assert fired is True
+    reclaim.assert_awaited_once_with(include_ollama=False)
+    assert "loads on GPU 0, overlapping the render GPU 0" in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("overrides", "api_base"),
+    [
+        # A third instance nobody declared a placement for.
+        ({}, "http://host.docker.internal:11436"),
+        # Scoping off: the shipped two-card map is not a claim about this box.
+        ({"gpu_lock_per_device_enabled": "false"}, _JUDGE_BASE),
+        # No judge instance configured.
+        ({"ollama_vision_base_url": ""}, _JUDGE_BASE),
+        # Judge unpinned: its scope widened onto the render card.
+        ({"gpu_lock_scopes": '{"render": [0], "qa_judge": [0, 1], "llm_primary": [0]}'},
+         _JUDGE_BASE),
+        # A map nobody can read.
+        ({"gpu_lock_scopes": "{not json"}, _JUDGE_BASE),
+    ],
+    ids=["unknown-instance", "scoping-off", "no-vision-url", "judge-unpinned", "malformed-map"],
+)
+async def test_unproven_placement_runs_the_ladder_as_before(
+    placement, caplog, overrides, api_base,
+):
+    placement(**overrides)
+    fake = _FakeAsyncClient(tags=_JUDGE_TAGS)
+    gpu_patch, reclaim = _patch_gpu()
+    with _patch_client(fake), gpu_patch, caplog.at_level("INFO", logger=coldload_guard.__name__):
+        fired = await maybe_reclaim_before_coldload(
+            resolved_model="ollama/qwen3-vl:30b-a3b-instruct",
+            api_base=api_base,
+        )
+    assert fired is True
+    reclaim.assert_awaited_once_with(include_ollama=False)
+    assert "running the media VRAM reclaim ladder" in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_placement_resolver_failure_runs_the_ladder_and_never_raises(placement):
+    placement()
+    fake = _FakeAsyncClient(tags=_JUDGE_TAGS)
+    gpu_patch, reclaim = _patch_gpu()
+    boom = MagicMock(side_effect=RuntimeError("settings unreadable"))
+    with _patch_client(fake), gpu_patch, patch(
+        "poindexter.services.gpu_scheduler.ollama_host_devices", new=boom,
+    ):
+        fired = await maybe_reclaim_before_coldload(
+            resolved_model="ollama/qwen3-vl:30b-a3b-instruct",
+            api_base=_JUDGE_BASE,
+        )
+    assert fired is True
+    reclaim.assert_awaited_once_with(include_ollama=False)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_warm_model_never_resolves_placement(placement):
+    """The steady state stays one /api/ps GET — no settings reads added."""
+    placement()
+    fake = _FakeAsyncClient(
+        ps={"models": [{"name": "qwen3-vl:30b-a3b-instruct"}]}, tags=_JUDGE_TAGS,
+    )
+    resolver = MagicMock()
+    with _patch_client(fake), patch(
+        "poindexter.services.gpu_scheduler.ollama_host_devices", new=resolver,
+    ):
+        fired = await maybe_reclaim_before_coldload(
+            resolved_model="ollama/qwen3-vl:30b-a3b-instruct",
+            api_base=_JUDGE_BASE,
+        )
+    assert fired is False
+    resolver.assert_not_called()

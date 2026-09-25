@@ -427,6 +427,10 @@ DEFAULTS: dict[str, str] = {
     # behind renders. DO NOT narrow a role here without the matching
     # ENFORCED pin — declaring a disjointness the hardware does not have
     # removes mutual exclusion between two workloads on one card.
+    # The LLM cold-load guard reads the same claim: an Ollama instance whose
+    # role (ollama_base_url -> llm_primary, ollama_vision_base_url -> qa_judge)
+    # misses every render card skips the render-GPU reclaim ladder, so a wrong
+    # narrowing also lets a big cold load land beside idle media sidecars.
     'gpu_lock_scopes': '{"render": [0], "qa_judge": [1], "llm_primary": [0]}',
     # Empty = use the hostname. A GPU index is only unique WITHIN a host, so
     # two nodes sharing one Postgres would otherwise serialise on the same key
@@ -3864,6 +3868,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # a clean skip rather than a failure, so an operator who never set this up
     # is never paged about it. Set it and the judge endpoint gains a health
     # probe and a row on the console's Services page. (2026-09-20)
+    # It also names the instance behind the `qa_judge` role in
+    # `gpu_lock_scopes`: with device scoping on, the LLM cold-load guard skips
+    # the render-GPU reclaim ladder for a cold load here when those cards miss
+    # the render card (gpu_scheduler.ollama_host_devices). (2026-09-25)
     'ollama_vision_base_url': '',
     # Seconds the brain's event loop may stall before faulthandler dumps every
     # thread's traceback to stderr (0 disables). Deepest hang backstop: a sync

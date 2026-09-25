@@ -45,8 +45,10 @@ Config (``plugin.llm_provider.litellm`` in app_settings):
   reclaim ladder so idle sidecars (ComfyUI / image-gen / wan / …) release
   the room first. 2026-08-25: an ~18 GB ``structured_extraction_model``
   cold-load beside a 7.4 GB idle ComfyUI CUDA-OOM'd the render GPU and
-  took the desktop's Chrome + Claude Desktop down with it. See
-  ``services/llm_providers/coldload_guard.py``.
+  took the desktop's Chrome + Claude Desktop down with it. A load bound
+  for an instance pinned off the render GPU (the :11435 judge) skips the
+  ladder; the guard derives that from the effective api_base, not the
+  model name. See ``services/llm_providers/coldload_guard.py``.
 - ``cloud_max_tokens`` (default 8192) — completion budget applied to
   CLOUD model calls when the caller didn't pass ``max_tokens``. LiteLLM
   defaults ``anthropic/*`` to 4096, and adaptive-thinking Claude models

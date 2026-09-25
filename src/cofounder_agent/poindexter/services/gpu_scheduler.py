@@ -852,20 +852,25 @@ def resolve_lock_role(owner: str, model: str | None) -> str:
     return ""
 
 
+def _parse_scope_map(raw: str) -> dict[str, list[int]]:
+    """Parse a ``gpu_lock_scopes`` row. Raises on anything malformed."""
+    import json
+
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError("gpu_lock_scopes must be a JSON object")
+    out: dict[str, list[int]] = {}
+    for role, idxs in parsed.items():
+        out[str(role)] = [int(i) for i in idxs]
+    return out
+
+
 def _configured_scopes() -> dict[str, list[int]]:
     raw = _sc_get("gpu_lock_scopes", "").strip()
     if not raw:
         return DEFAULT_GPU_LOCK_SCOPES
     try:
-        import json
-
-        parsed = json.loads(raw)
-        if not isinstance(parsed, dict):
-            raise ValueError("gpu_lock_scopes must be a JSON object")
-        out: dict[str, list[int]] = {}
-        for role, idxs in parsed.items():
-            out[str(role)] = [int(i) for i in idxs]
-        return out
+        return _parse_scope_map(raw)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[GPU] gpu_lock_scopes unparseable (%s) — using defaults", exc
@@ -927,6 +932,129 @@ def _all_device_keys() -> list[int]:
     if not idxs:
         return [GPU_ADVISORY_LOCK_KEY]
     return sorted({device_lock_key(node, i) for i in idxs})
+
+
+# ---------------------------------------------------------------------------
+# Ollama instance placement (2026-09-25)
+# ---------------------------------------------------------------------------
+#
+# The scope map says which CARDS each role occupies, and the lock reads it by
+# role. The cold-load VRAM guard (services.llm_providers.coldload_guard) needs
+# the same claim looked up by the Ollama INSTANCE a call is about to hit, to
+# answer "will this load land on the render GPU?" before it runs the render
+# reclaim ladder. Without an answer it ran the ladder for every big cold load,
+# including the 19.6 GB judge cold-loading on the GPU-1-pinned :11435 instance
+# in the middle of renders: RIFE and chatterbox unloaded, ComfyUI sent /free
+# (and once restarted), wan / image-gen / stable-audio queued for restarts, all
+# to clear a card the judge never touches.
+#
+# Keyed on the instance's base URL, never on a model name. A pin applies to a
+# whole Ollama server (CUDA_VISIBLE_DEVICES on its systemd unit), so a model
+# moved between instances takes its answer with it and no list of model names
+# can go stale. Every "don't know" returns None, and a caller treats None
+# exactly as it did before this section existed.
+
+#: Host names that reach the same host port. ``localize_url`` in the brain
+#: rewrites these to ``host.docker.internal`` for the same reason.
+_LOOPBACK_HOST_ALIASES = ("localhost", "127.0.0.1")
+
+
+def _canonical_base_url(url: str | None) -> str:
+    """Comparable identity of a base URL; ``""`` when blank.
+
+    Case and a trailing slash never name a different instance, and
+    ``localhost`` / ``127.0.0.1`` name the host port a container reaches as
+    ``host.docker.internal``. Nothing else is folded: a false match would
+    borrow another instance's cards.
+    """
+    text = str(url or "").strip().rstrip("/").lower()
+    for alias in _LOOPBACK_HOST_ALIASES:
+        text = text.replace(f"://{alias}:", "://host.docker.internal:")
+    return text
+
+
+def ollama_host_role(api_base: str | None) -> str:
+    """Scope role of the Ollama instance at ``api_base``; ``""`` when unknown.
+
+    ``ollama_base_url`` (the primary) is ``llm_primary`` and
+    ``ollama_vision_base_url`` (the judge-pinned second instance) is
+    ``qa_judge``. Any other URL is unknown. The primary wins a tie: a vision
+    URL that points back at the primary names the same server, which shares
+    the primary's cards (``pinned_api_base_for`` treats an override pointing
+    back at the default endpoint the same way).
+    """
+    host = _canonical_base_url(api_base)
+    if not host:
+        return ""
+    from poindexter.services.bootstrap_defaults import DEFAULT_OLLAMA_URL
+
+    primary = _canonical_base_url(
+        _sc_get("ollama_base_url", "") or DEFAULT_OLLAMA_URL,
+    )
+    if host == primary:
+        return "llm_primary"
+    judge = _canonical_base_url(_sc_get("ollama_vision_base_url", ""))
+    if judge and host == judge:
+        return "qa_judge"
+    return ""
+
+
+def _placement_scopes() -> dict[str, list[int]] | None:
+    """The scope map as a claim about hardware, or ``None`` when it is not one.
+
+    Trusted only while ``gpu_lock_per_device_enabled`` is on. Turning that on
+    is the last step of the scoping rollout, after each narrowed role's pin is
+    verified; before then the SHIPPED map (two cards) describes the operator
+    box, not necessarily this one. Unlike the lock, a malformed row gives
+    ``None`` rather than the defaults: nothing here serialises anything, so a
+    row that cannot be read must not be read as a split.
+    """
+    if not _gpu_lock_scoping_enabled():
+        return None
+    raw = _sc_get("gpu_lock_scopes", "").strip()
+    if not raw:
+        return DEFAULT_GPU_LOCK_SCOPES
+    try:
+        return _parse_scope_map(raw)
+    except Exception:  # noqa: BLE001
+        # silent-ok: the lock reads this same row on every acquire and warns
+        # there (_configured_scopes); None sends the caller down its
+        # pre-placement path, which is the safe one.
+        return None
+
+
+def ollama_host_devices(api_base: str | None) -> frozenset[int] | None:
+    """Cards the Ollama instance at ``api_base`` loads models onto.
+
+    ``None`` means unknown: the URL names no configured instance, its role is
+    missing from ``gpu_lock_scopes``, or the map is not a trusted hardware
+    claim (see :func:`_placement_scopes`). An empty set is the lock's
+    "occupies no GPU".
+    """
+    scopes = _placement_scopes()
+    if scopes is None:
+        return None
+    role = ollama_host_role(api_base)
+    if not role or role not in scopes:
+        return None
+    return frozenset(int(i) for i in scopes[role])
+
+
+def render_devices() -> frozenset[int] | None:
+    """Cards the render reclaim ladder frees, or ``None`` when unknown.
+
+    ``gpu_lock_scopes["render"]`` is where the media sidecars run and
+    ``pipeline_gpu_index`` is the card the ladder itself measures. Both name
+    the render GPU; if they ever disagree the union keeps every card either
+    one claims, which errs toward "a load there might land beside the
+    sidecars", i.e. toward reclaiming.
+    """
+    scopes = _placement_scopes()
+    if scopes is None or "render" not in scopes:
+        return None
+    cards = {int(i) for i in scopes["render"]}
+    cards.add(_cfg_int("pipeline_gpu_index", 0))
+    return frozenset(cards)
 
 
 def _emit_cfg_fetch_finding(
