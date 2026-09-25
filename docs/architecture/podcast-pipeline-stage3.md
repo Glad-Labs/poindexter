@@ -285,6 +285,14 @@ in between — two live bugs proved it on the same episode:
 The general rule: **anything Stage 3 can resolve for itself, Stage 3 should
 resolve** — a Stage-1 snapshot is for content, not for configuration or paths.
 
+The same rule retired Stage 1's own Speaches read of the script (2026-09-25).
+`generate_media_scripts` synthesized `podcast_script` into a `{task}_tts.mp3`
+and froze its path into `task_metadata`, but no loader ever read it:
+`podcast.render` always synthesizes the episode here, and each video lane
+renders its own narration in Stage 2. By then there were 70 such files (392 MB),
+and the read was the slowest step in the stage (334 s of a 581 s run, against a
+600 s node-timeout floor that never counted it).
+
 ### 6c. Two producers, one contract (2026-08-11)
 
 There are **two** podcast producers, and polish added to one silently skips the

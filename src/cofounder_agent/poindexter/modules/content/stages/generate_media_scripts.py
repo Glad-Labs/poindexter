@@ -35,7 +35,6 @@ from poindexter.services.audio_gen_service import generate_audio, is_audio_gen_e
 from poindexter.services.gpu_admission import GpuBusyError
 from poindexter.services.gpu_scheduler import media_wait_budget_s
 from poindexter.services.podcast_service import PODCAST_DIR
-from poindexter.services.tts_service import is_tts_enabled, resolve_tts_format, synthesize_speech
 from poindexter.services.video_service import VIDEO_DIR
 from poindexter.utils.findings import emit_finding
 
@@ -271,25 +270,24 @@ class GenerateMediaScriptsStage:
 
         # Video-only mode (media_regen / backfill_media_scripts): generate
         # ONLY the video narration text — skip the podcast LLM call and every
-        # audio side effect (podcast TTS, intro sting, ambient bed). The
-        # regen callers run against pieces whose podcast is already a
-        # published artifact; regenerating its script would desync the frozen
-        # text from the shipped audio, and synthesizing fresh audio is a side
-        # effect they must not pay for. A first-class flag rather than
-        # patching is_tts_enabled/is_audio_gen_enabled: those patches are
-        # module-global, and a live pipeline run in the same worker process
-        # would silently skip ITS podcast audio while a regen held them.
+        # audio side effect (intro sting, ambient bed). The regen callers run
+        # against pieces whose podcast is already a published artifact;
+        # regenerating its script would desync the frozen text from the
+        # shipped audio, and synthesizing fresh audio is a side effect they
+        # must not pay for. A first-class flag rather than patching
+        # is_audio_gen_enabled: that patch is module-global, and a live
+        # pipeline run in the same worker process would silently skip ITS
+        # audio while a regen held it.
         video_only = bool(context.get("media_scripts_video_only"))
 
         podcast_script = ""
         video_scenes: list[str] = []
         short_summary = ""
         # Declared before the try so a later scene-parse failure can still
-        # preserve audio built upstream (podcast TTS + intro sting run before
-        # the video-scenes call). poindexter#690 — these were direct
-        # context[...] writes (dropped by make_stage_node) + undeclared
-        # PipelineState channels; now flow out via context_updates.
-        podcast_audio_path = ""
+        # preserve audio built upstream (the intro sting runs before the
+        # video-scenes call). poindexter#690 — this was a direct context[...]
+        # write (dropped by make_stage_node) + an undeclared PipelineState
+        # channel; it now flows out via context_updates.
         podcast_intro_audio_path = ""
         # Long-form VIDEO narration script (poindexter#689) — declared before the
         # try so a later scene-parse failure preserves it, same as the audio paths.
@@ -330,29 +328,14 @@ class GenerateMediaScriptsStage:
             # valid downstream; every output goes to the shared durable dirs.
             media_stem = str(context.get("task_id") or "") or uuid.uuid4().hex[:12]
 
-            # TTS narration — synthesize the podcast script to audio via Speaches.
-            # Non-critical: failure logs a warning, pipeline continues.
-            # Enable with app_settings: podcast_tts_enabled=true.
-            if podcast_script and is_tts_enabled(sc):
-                try:
-                    suffix = resolve_tts_format(sc)
-                    PODCAST_DIR.mkdir(parents=True, exist_ok=True)
-                    tts_path = str(PODCAST_DIR / f"{media_stem}_tts.{suffix}")
-                    audio_bytes = await synthesize_speech(
-                        podcast_script,
-                        site_config=sc,
-                        output_path=tts_path,
-                    )
-                    if audio_bytes:
-                        podcast_audio_path = tts_path
-                        logger.info(
-                            "[MEDIA] Podcast TTS audio: %d bytes → %s",
-                            len(audio_bytes), tts_path,
-                        )
-                    elif os.path.exists(tts_path):
-                        os.unlink(tts_path)
-                except Exception as tts_exc:
-                    logger.warning("[MEDIA] podcast TTS failed: %s", tts_exc)
+            # No narration audio is synthesized here. The podcast is read aloud
+            # by Stage 3 (podcast.render, which also appends its CTA outro) and
+            # each video lane renders its own narration in Stage 2
+            # (media.render_narration). A Speaches read of podcast_script used
+            # to sit here: it wrote {task}_tts.mp3, which nothing ever loaded
+            # (70 files, 392 MB by 2026-09-25), and it was the slowest thing in
+            # the stage (334 s of a 581 s run on 2026-09-25, against a 600 s
+            # node-timeout floor that never counted it).
 
             # Audio gen — podcast intro sting via StableAudioOpen.
             # Non-critical, default-off (audio_gen_engine='' by default).
@@ -756,7 +739,6 @@ class GenerateMediaScriptsStage:
                     "video_scenes_count": len(video_scenes),
                     "short_summary_length": len(short_summary),
                     "video_ambient_audio_path": ambient_audio_path,
-                    "podcast_audio_path": podcast_audio_path,
                     "podcast_intro_audio_path": podcast_intro_audio_path,
                     "video_long_script": video_long_script,
                     "stages": stages,
@@ -791,7 +773,6 @@ class GenerateMediaScriptsStage:
                 context_updates={
                     "podcast_script": podcast_script,
                     "podcast_script_length": len(podcast_script),
-                    "podcast_audio_path": podcast_audio_path,
                     "podcast_intro_audio_path": podcast_intro_audio_path,
                     "video_long_script": video_long_script,
                     "stages": stages,
@@ -817,7 +798,6 @@ class GenerateMediaScriptsStage:
                     "podcast_script_length": len(podcast_script),
                     # Preserve audio built before the failure (poindexter#690),
                     # same contract as podcast_script above.
-                    "podcast_audio_path": podcast_audio_path,
                     "podcast_intro_audio_path": podcast_intro_audio_path,
                     "video_long_script": video_long_script,
                     "stages": stages,

@@ -14,8 +14,12 @@ file `.wav` while `tts_service` synthesized `mp3` — a suffix that lied about
 its contents, from two literals that were free to drift apart.
 
 Fixing the two literals to both say 'mp3' would leave two literals. This pins
-the actual invariant: there is one resolver, and both callers use it, so they
+the actual invariant: there is one resolver, and every caller uses it, so they
 *cannot* disagree again.
+
+The stage has since stopped synthesizing speech at all (2026-09-25): the
+podcast is read aloud by podcast.render in Stage 3, through tts_service, so the
+stage no longer makes a format decision to get wrong.
 """
 
 from __future__ import annotations
@@ -59,10 +63,10 @@ def test_format_is_normalised_to_lowercase() -> None:
     assert tts_service.resolve_tts_format(_Cfg("MP3")) == "mp3"
 
 
-def test_media_scripts_stage_uses_the_shared_resolver() -> None:
-    """The stage must not carry its own format literal. This is the drift
-    guard: a re-introduced inline default would make the file suffix disagree
-    with the synthesized bytes again."""
+def test_media_scripts_stage_carries_no_tts_path_of_its_own() -> None:
+    """The stage must not synthesize, and must not carry a format literal.
+    This is the drift guard: a re-introduced inline read would bring back both
+    the unread {task}_tts file and a suffix free to disagree with its bytes."""
     from pathlib import Path
 
     stage = (
@@ -70,9 +74,9 @@ def test_media_scripts_stage_uses_the_shared_resolver() -> None:
         / "poindexter" / "modules" / "content" / "stages" / "generate_media_scripts.py"
     )
     src = stage.read_text(encoding="utf-8")
-    assert "resolve_tts_format" in src, (
-        "generate_media_scripts must resolve the TTS format through "
-        "tts_service.resolve_tts_format, not a local literal"
+    assert "synthesize_speech" not in src and "tts_service" not in src, (
+        "generate_media_scripts synthesizes speech again — podcast.render "
+        "(Stage 3) owns the podcast read, and a Stage-1 copy is read by nothing"
     )
     assert '"wav"' not in src and "'wav'" not in src, (
         "generate_media_scripts still carries a wav literal — wav is the "
