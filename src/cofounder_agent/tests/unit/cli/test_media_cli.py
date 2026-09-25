@@ -169,10 +169,15 @@ def test_open_prefix_resolves_then_opens(monkeypatch, runner, tmp_path):
     """
     import types
     media = _import_media_module()
+    # The CLI maps container paths onto the host's real ~/.poindexter, so
+    # without this the fake mp3 below lands in the operator's live podcast
+    # directory and stays there (it did, until 2026-09-25).
+    monkeypatch.setattr(media, "_HOST_POINDEXTER", tmp_path / ".poindexter")
 
     full = "12345678-1234-1234-1234-123456789012"
     container_path = f"/home/appuser/.poindexter/podcast/{full}.mp3"
     expected_host = media._translate_container_path(container_path)
+    assert expected_host.is_relative_to(tmp_path), expected_host
     expected_host.parent.mkdir(parents=True, exist_ok=True)
     expected_host.write_bytes(b"fake mp3")
 

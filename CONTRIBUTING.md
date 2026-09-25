@@ -110,6 +110,16 @@ trap:
   database.
 - **Don't delete coverage to make a test pass.** Test-collection count must not
   drop when you refactor a test.
+- **Never write into the checkout or the operator's home directory.** To test a
+  repo script against a modified file, copy the script into `tmp_path` along
+  with a minimal tree and run the copy. A script that finds its repo root from
+  its own `__file__` then scans only the temp tree
+  (`tests/unit/scripts/test_comment_reference_lint.py` is the pattern). Editing
+  a tracked file and restoring it in a `finally` is not safe. A pytest killed
+  mid-test (OOM, timeout, Ctrl-C) never runs the `finally`, and anything
+  reading the tree during the run sees the edit. The same applies to code
+  that defaults to a real directory such as `~/.poindexter`: monkeypatch its
+  root at `tmp_path` before the test writes anything.
 
 ## Reporting Bugs
 

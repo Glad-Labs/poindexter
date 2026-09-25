@@ -16,11 +16,21 @@ BASELINE = REPO / "scripts" / "ci" / "comment_reference_baseline.json"
 
 def _run(cwd: Path, script: Path | None = None):
     """Run the lint. ``script`` matters: the lint resolves its scan root from
-    its OWN __file__, not from cwd, so an empty-tree test must execute the
-    COPY inside that tree — running the real one with a different cwd proves
-    nothing."""
+    its OWN __file__, not from cwd, so a test on a throwaway tree must execute
+    the COPY inside that tree — running the real one with a different cwd
+    proves nothing."""
     return subprocess.run([sys.executable, str(script or LINT)], cwd=str(cwd),
                           capture_output=True, text=True)
+
+def _copy_lint(root: Path) -> Path:
+    """Copy the lint and its floor guard into ``root/scripts/ci``; return the
+    copy. Its repo root, scan root and baseline all resolve from its own
+    __file__, so running the copy examines ``root`` and never the checkout."""
+    ci = root / "scripts" / "ci"
+    ci.mkdir(parents=True)
+    for name in ("comment_reference_lint.py", "lib_scan_floor.py"):
+        (ci / name).write_bytes((REPO / "scripts" / "ci" / name).read_bytes())
+    return ci / "comment_reference_lint.py"
 
 def test_repo_is_clean_against_its_baseline():
     r = _run(REPO)
@@ -35,18 +45,33 @@ def test_baseline_is_valid_and_non_empty():
         assert all(isinstance(n, int) and n > 0 for n in refs.values())
 
 def test_detects_a_dead_reference(tmp_path):
-    """A comment citing a file that does not exist must fail the lint."""
-    mod = REPO / "src/cofounder_agent/poindexter/services/settings_categories.py"
-    original = mod.read_text(encoding="utf-8")
-    try:
-        mod.write_text(
-            "# See ``services/this_module_does_not_exist.py`` for details.\n"
-            + original, encoding="utf-8")
-        r = _run(REPO)
-        assert r.returncode == 1, "a dead reference must fail the ratchet"
-        assert "this_module_does_not_exist.py" in r.stdout
-    finally:
-        mod.write_text(original, encoding="utf-8")
+    """A comment citing a file that does not exist must fail the lint.
+
+    The dead reference goes into a throwaway tree, never the checkout. This
+    test used to prepend it to the real ``settings_categories.py`` and put the
+    file back in a ``finally``. A pytest killed mid-test (OOM, timeout, Ctrl-C)
+    never runs the ``finally``, which leaves a tracked source file corrupted,
+    and anything else reading the tree during the run saw the injected line
+    (seen on 2026-09-25 during a full unit run)."""
+    lint = _copy_lint(tmp_path)
+    (lint.parent / BASELINE.name).write_text('{"files": {}}\n', encoding="utf-8")
+    module = tmp_path / "src/cofounder_agent/poindexter/services/settings_categories.py"
+    module.parent.mkdir(parents=True)
+
+    # Control: the same comment citing a file that exists (this module itself)
+    # passes, so the failure below comes from the dead path, not from a tree
+    # too thin to scan. The floor guard also exits 1, so without this control a
+    # tree the lint refused would pass the returncode check.
+    module.write_text("# See ``services/settings_categories.py`` for details.\n",
+                      encoding="utf-8")
+    r = _run(tmp_path, script=lint)
+    assert r.returncode == 0, f"a live reference must pass:\n{r.stdout}\n{r.stderr}"
+
+    module.write_text("# See ``services/this_module_does_not_exist.py`` for details.\n",
+                      encoding="utf-8")
+    r = _run(tmp_path, script=lint)
+    assert r.returncode == 1, "a dead reference must fail the ratchet"
+    assert "this_module_does_not_exist.py" in r.stdout
 
 def test_ignores_placeholders_and_urls(tmp_path):
     """Illustrative stand-ins are not references and must not trip the gate."""
@@ -60,11 +85,7 @@ def test_ignores_placeholders_and_urls(tmp_path):
 
 def test_scan_floor_refuses_an_empty_tree(tmp_path):
     """A lint that scanned nothing has not passed."""
-    (tmp_path / "scripts" / "ci").mkdir(parents=True)
-    for name in ("comment_reference_lint.py", "lib_scan_floor.py"):
-        (tmp_path / "scripts" / "ci" / name).write_bytes(
-            (REPO / "scripts" / "ci" / name).read_bytes())
-    r = _run(tmp_path, script=tmp_path / "scripts" / "ci" / "comment_reference_lint.py")
+    r = _run(tmp_path, script=_copy_lint(tmp_path))
     assert r.returncode != 0, "an empty tree must not report clean"
     out = (r.stdout + r.stderr).lower()   # the floor guard writes to stderr
     assert "refusing" in out or "does not exist" in out, out[:300]
