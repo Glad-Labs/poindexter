@@ -560,28 +560,56 @@ def _hero_evicts_ollama(site_config: Any) -> bool:
     except Exception:  # noqa: BLE001  # silent-ok: default to the documented behaviour
         return True
 
-# (width, height, free_GB_required). Landscape-first; the caller swaps for
-# portrait. Ordered largest-first — the first rung that fits wins.
+# Quality-validated hero plates, (width, height), landscape-first — the caller
+# swaps for portrait. Ordered largest-first: the first plate whose free-VRAM
+# requirement the card clears wins. "full" is 832x480, "floor" is 704x400.
 #
-# The GB figures are a REQUIREMENT (free VRAM before starting), not the peak.
-# Validated against Prometheus `nvidia_gpu_process_memory_mib` over the 7d to
-# 2026-08-28: wan peaked at 25.1-25.3 GB across 8 separate render sessions,
-# all at 832x480 — so the 27.0 rung carries ~1.8 GB of headroom over measured
-# peak. Fitting base + k*pixels through both rungs recovers a ~10 GB model base
-# and ~42.5 GB/Mpx of activations, which reproduces the 27.0 figure exactly.
+# There is deliberately NO plate above 832x480 on this hardware. For wan, the
+# base + k*pixels fit below puts 896x512 at ~29.3 GB required and 960x544 at
+# ~31.7 GB on a 31.8 GB card, so a larger plate could never fire; adding one
+# would be dead code that makes the ceiling look higher than it is.
+_HERO_PLATES: tuple[tuple[int, int], ...] = ((832, 480), (704, 400))
+_HERO_PLATE_ROLES: tuple[str, ...] = ("full", "floor")
+
+# Free VRAM (GB) each plate needs BEFORE the render starts, per animator:
+# ``(full, floor)``. Operator-tunable per install as
+# ``video_hero_{full,floor}_plate_min_free_gb_{wan21,comfyui}``; these are the
+# defaults, and ``settings_defaults.py`` seeds the same values.
 #
-# There is deliberately NO rung above 832x480 on this hardware. The same fit
-# puts 896x512 at ~27.5 GB peak (~29.3 required) and 960x544 at ~29.9 GB peak
-# (~31.7 required) on a 31.8 GB card. A rung above 832x480 could therefore
-# never fire; adding one would be dead code that makes the ceiling look higher
-# than it is. (This comment used to add that speaches "holds ~2.8 GB the ladder
-# never evicts". It holds ~0.5 GB idle; the rest was Whisper + Kokoro on a
-# 300 s idle timer after the render's own caption check, which the pre-hero
-# clear now unloads without restarting the service: 2026-09-23.)
-_HERO_PLATE_LADDER: tuple[tuple[int, int, float], ...] = (
-    (832, 480, 27.0),   # validated: 4-for-4, good output; measured peak 25.2GB
-    (704, 400, 22.0),   # quality floor — modest step, still coherent
-)
+# Per animator because the footprint belongs to the engine, not the plate. One
+# shared table is how wan's calibration came to gate ComfyUI: after the
+# 2026-09 provider flip every hero read 26.1-26.9 GB against wan's 27.0 bar
+# and shipped at 704x400, while ComfyUI renders 832x480 at full speed in far
+# less (below). The animator follows ``video_generative_provider`` exactly as
+# ``_render_generative_clip`` resolves it: ``comfyui``, else wan21.
+#
+# wan21 — the diffusers wan-server, Wan 2.2 TI2V-5B, no offload, so short of
+# its peak it OOMs. Prometheus ``nvidia_gpu_process_memory_mib`` over the 7d to
+# 2026-08-28: it peaked at 25.1-25.3 GB across 8 render sessions at 832x480,
+# so 27.0 carries ~1.8 GB over the measured peak. Fitting base + k*pixels
+# through both plates recovers a ~10 GB model base and ~42.5 GB/Mpx of
+# activations, which reproduces 27.0 and 22.0.
+#
+# comfyui — Wan 2.2 14B fp8 two-expert i2v, prod regime (20 steps, cfg 3.5, no
+# LoRA, 81 frames). Measured 2026-09-25 with nvidia-smi at 1 s per process and
+# 250 ms per device, rendering a real f555bedc hero under ballast to set the
+# gate reading (docs/architecture/video-render-vram-gate.md has the runs). Its
+# peak is NOT its requirement: ComfyUI 0.36 runs comfy-aimdo, which grows into
+# whatever the card has free and pages weights back out under NVML pressure.
+# On an empty card both plates peaked near 24 GiB and left the card ~2.2 GiB
+# free — 704x400 held MORE than 832x480, because its smaller activations left
+# room to keep the text encoder cached. Paging costs almost nothing (each
+# step is ~17 s of compute), so 832x480 still rendered at full speed from a
+# 15.9 GiB reading — but its load transient then took the whole card to
+# 673 MiB free, and this card also drives the desktop. The thresholds are
+# therefore the lowest readings where the render ran at full speed AND the
+# card never dropped below 2 GiB free: 832x480 at 21.9 GiB (368 s vs 392 s
+# on an empty card, lowest 2,053 MiB free), 704x400 at 20.3 GiB (237 s vs
+# 226 s, lowest 2,257 MiB free).
+_HERO_PLATE_MIN_FREE_GB: dict[str, tuple[float, float]] = {
+    "wan21": (27.0, 22.0),
+    "comfyui": (22.0, 20.5),
+}
 
 
 async def _live_free_vram_gb(site_config: Any) -> float | None:
@@ -678,12 +706,62 @@ async def _hero_headroom_gb(site_config: Any) -> float | None:
     return free + await _comfyui_reserved_gb(site_config)
 
 
-def _hero_target_gb(width: int, height: int) -> float:
+def _hero_animator(site_config: Any) -> str:
+    """The animator whose VRAM calibration applies: ``comfyui`` or ``wan21``."""
+    return "comfyui" if _hero_animator_is_comfyui(site_config) else "wan21"
+
+
+def _plate_min_free_gb(site_config: Any, key: str, default: float) -> float:
+    """One plate threshold from app_settings, or ``default``.
+
+    A value that is not a positive number falls back to the calibrated
+    default, loudly: a typo in a threshold must not decide whether a hero
+    animates, and must not do it silently either.
+    """
+    if site_config is None:
+        return default
+    try:
+        raw = site_config.get(key, "")
+    except Exception:  # noqa: BLE001  # silent-ok: a settings read must not decide a render
+        return default
+    if raw in (None, ""):
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = 0.0
+    if math.isfinite(value) and value > 0:
+        return value
+    logger.warning(
+        "[SHOT_LIST] %s=%r is not a positive GB figure — using the "
+        "calibrated %.1fGB", key, raw, default,
+    )
+    return default
+
+
+def _hero_plate_ladder(site_config: Any) -> tuple[tuple[int, int, float], ...]:
+    """``(width, height, min_free_gb)`` for each quality plate, largest first,
+    for the configured animator (see ``_HERO_PLATE_MIN_FREE_GB``)."""
+    animator = _hero_animator(site_config)
+    defaults = _HERO_PLATE_MIN_FREE_GB[animator]
+    return tuple(
+        (w, h, _plate_min_free_gb(
+            site_config, f"video_hero_{role}_plate_min_free_gb_{animator}", default,
+        ))
+        for (w, h), role, default in zip(
+            _HERO_PLATES, _HERO_PLATE_ROLES, defaults, strict=True,
+        )
+    )
+
+
+def _hero_target_gb(
+    width: int, height: int, ladder: tuple[tuple[int, int, float], ...],
+) -> float:
     """VRAM the REQUESTED plate needs: the smallest ladder rung whose area
     covers it, or the top rung when the request exceeds the ladder."""
     area = width * height
-    fits = [needs for lw, lh, needs in _HERO_PLATE_LADDER if lw * lh >= area]
-    return min(fits) if fits else _HERO_PLATE_LADDER[0][2]
+    fits = [needs for lw, lh, needs in ladder if lw * lh >= area]
+    return min(fits) if fits else ladder[0][2]
 
 
 def _hero_reclaim_wait_s(site_config: Any) -> float:
@@ -750,7 +828,7 @@ async def _wait_for_hero_headroom(
     elif headroom is not None:
         logger.info(
             "[SHOT_LIST] hero headroom %.1fGB -> %.1fGB after %d poll(s) / %.0fs "
-            "budget (needs %.0fGB) — choosing a plate from what the card has",
+            "budget (needs %.1fGB) — choosing a plate from what the card has",
             first, headroom, polls, wait_s, target_gb,
         )
     return headroom
@@ -780,6 +858,10 @@ async def _fit_hero_dims_to_free_vram(
         # documented default (adaptive on) applies.
         pass
 
+    # The configured animator's thresholds (per-render read: a provider flip
+    # or a re-measured threshold is a settings change, not a deploy).
+    ladder = _hero_plate_ladder(site_config)
+
     # Configured LARGER than the ladder's top rung? Then the operator's setting
     # is unreachable and every render silently caps below it. Say so once per
     # call rather than letting the cap be invisible: `video_hero_width/height`
@@ -787,11 +869,11 @@ async def _fit_hero_dims_to_free_vram(
     # ladder's top rung is 832x480 the "never step UP" guard below matched on
     # every render — so the configured tier never rendered and nothing said so.
     # Measured on the RTX 5090 (31.8 GB): wan peaks at 25.2 GB for 832x480,
-    # which fits the ladder's 27 GB requirement almost exactly, and the same
+    # which fits wan's 27 GB requirement almost exactly, and the same
     # base+activation fit puts 960x544 at ~29.9 GB peak / ~31.7 GB required —
     # i.e. it needs the card to be entirely empty, so there is deliberately NO
     # rung for it. Adding one would be a rung that can never fire.
-    _top_w, _top_h, _ = _HERO_PLATE_LADDER[0]
+    _top_w, _top_h, _ = ladder[0]
     if width * height > _top_w * _top_h:
         logger.warning(
             "[SHOT_LIST] configured hero plate %dx%d exceeds the ladder's top "
@@ -816,7 +898,7 @@ async def _fit_hero_dims_to_free_vram(
         # card could have animated a minute later. Wait, bounded, for the
         # headroom the REQUESTED plate needs before choosing a rung.
         live = await _wait_for_hero_headroom(
-            site_config, _hero_target_gb(width, height), first=live,
+            site_config, _hero_target_gb(width, height, ladder), first=live,
         )
         if live is None:
             # The probe went unreadable mid-wait — same fail-open rule as an
@@ -825,20 +907,22 @@ async def _fit_hero_dims_to_free_vram(
     if live is not None:
         free_gb = live
         landscape = width >= height
-        for lw, lh, needs_gb in _HERO_PLATE_LADDER:
+        for lw, lh, needs_gb in ladder:
             if free_gb >= needs_gb:
                 new_w, new_h = (lw, lh) if landscape else (lh, lw)
                 if new_w * new_h >= width * height:
                     return width, height
                 logger.info(
                     "[SHOT_LIST] hero plate %dx%d -> %dx%d (%.1fGB free live, "
-                    "needs %.0fGB)", width, height, new_w, new_h,
-                    free_gb, needs_gb,
+                    "%s needs %.1fGB for it)", width, height, new_w, new_h,
+                    free_gb, _hero_animator(site_config), needs_gb,
                 )
                 return new_w, new_h
         logger.warning(
-            "[SHOT_LIST] only %.1fGB usable (live free + the animator's own pool) "
-            "— NOT animating this hero; using its Ken Burns still.", free_gb,
+            "[SHOT_LIST] only %.1fGB usable (live free + the animator's own pool; "
+            "%s needs %.1fGB for its smallest plate) — NOT animating this hero; "
+            "using its Ken Burns still.",
+            free_gb, _hero_animator(site_config), ladder[-1][2],
         )
         return None
 
@@ -851,7 +935,7 @@ async def _fit_hero_dims_to_free_vram(
             sample = await registry.free_gb(0)
             if sample is not None:
                 free_gb = sample if free_gb is None else max(free_gb, sample)
-            if free_gb is not None and free_gb >= _HERO_PLATE_LADDER[0][2]:
+            if free_gb is not None and free_gb >= ladder[0][2]:
                 break  # already ample; no need to wait out the scrape
             if attempt < _FREE_VRAM_SAMPLES - 1:
                 await asyncio.sleep(_FREE_VRAM_SAMPLE_GAP_S)
@@ -875,7 +959,7 @@ async def _fit_hero_dims_to_free_vram(
     free_gb += await _wan_resident_gb(site_config)
 
     landscape = width >= height
-    for lw, lh, needs_gb in _HERO_PLATE_LADDER:
+    for lw, lh, needs_gb in ladder:
         if free_gb >= needs_gb:
             new_w, new_h = (lw, lh) if landscape else (lh, lw)
             # Never step UP past what the operator configured.
@@ -883,14 +967,14 @@ async def _fit_hero_dims_to_free_vram(
                 return width, height
             logger.info(
                 "[SHOT_LIST] hero plate %dx%d -> %dx%d (%.1fGB free, needs "
-                "%.0fGB) — stepping down rather than OOMing into a still",
+                "%.1fGB) — stepping down rather than OOMing into a still",
                 width, height, new_w, new_h, free_gb, needs_gb,
             )
             return new_w, new_h
 
-    _, _, floor_gb = _HERO_PLATE_LADDER[-1]
+    _, _, floor_gb = ladder[-1]
     logger.warning(
-        "[SHOT_LIST] only %.1fGB free (quality floor needs %.0fGB) — NOT "
+        "[SHOT_LIST] only %.1fGB free (quality floor needs %.1fGB) — NOT "
         "animating this hero; using its Ken Burns still. A sub-floor plate "
         "renders unwatchable morphing, which is worse than a clean still.",
         free_gb, floor_gb,
@@ -1083,6 +1167,14 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
 
     Gated on ``video_hero_unload_image_gen`` (default on) so an operator whose
     card comfortably fits both can avoid paying image-gen's cold reload.
+
+    An idle wan-server is deliberately left alone when ComfyUI animates
+    (measured 2026-09-25). Its ~0.5 GB is the CUDA context its own
+    ``/health`` creates — ``torch.cuda.mem_get_info`` for ``device_free_mb``,
+    the gate's live probe — with 0 MB reserved, so the hard unload's
+    reserved-pool floor declines it (``nothing_to_reclaim``). Forcing an exit
+    would blind the probe while the container restarts, and the gate's next
+    5 s poll would create the context again.
     """
     try:
         enabled = (

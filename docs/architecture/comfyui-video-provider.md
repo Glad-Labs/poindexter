@@ -59,26 +59,26 @@ quality class, so it is the provider's default regime.
 
 ## Settings (all `app_settings`)
 
-| Key                                                                           | Default                          | Meaning                                                                                                                                                          |
-| ----------------------------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `video_generative_provider`                                                   | `wan21`                          | Animator: `wan21` or `comfyui`                                                                                                                                   |
-| `video_comfyui_server_url`                                                    | `http://comfyui:8188`            | Sidecar URL                                                                                                                                                      |
-| `video_comfyui_steps` / `video_comfyui_cfg`                                   | `4` / `1.0`                      | Sampler regime (lightx2v 4-step). Quality tier: `20` / `3.5` + LoRA off                                                                                          |
-| `video_comfyui_use_lightning_lora`                                            | `true`                           | Wire the distill LoRAs                                                                                                                                           |
-| `video_comfyui_shift`                                                         | `5.0`                            | ModelSamplingSD3 (official 14B i2v template value)                                                                                                               |
-| `video_comfyui_length_frames` / `video_comfyui_fps`                           | `81` / `16`                      | Model-native ~5s profile (caller fps ignored — compositor conforms/loops)                                                                                        |
-| `video_comfyui_negative_prompt`                                               | canonical Wan negative (Chinese) | Model-native negative                                                                                                                                            |
-| `video_comfyui_{high,low}_model`, `_text_encoder`, `_vae`, `_lora_{high,low}` | repackaged filenames             | Weight swaps are settings-only                                                                                                                                   |
-| `video_comfyui_timeout_s`                                                     | `900`                            | End-to-end render budget (20-step 960×544 measured 644s)                                                                                                         |
-| `video_comfyui_ready_wait_s`                                                  | `90`                             | Cold-boot wait before first submit                                                                                                                               |
-| `video_comfyui_workflow_override_json`                                        | `''`                             | Full graph swap: API-format JSON with `__PROMPT__`/`__WIDTH__`/… placeholders, substituted typed                                                                 |
-| `video_comfyui_s2v_model` / `_audio_encoder`                                  | `wan2.2_s2v_14B_fp8_scaled…` / `wav2vec2_large_english_fp16…` | Speech-path weights (same repackaged repo + its `audio_encoders/`)         |
-| `video_comfyui_s2v_steps` / `_cfg` / `_shift` / `_sampler`                     | `20` / `6.0` / `8.0` / `uni_pc`  | S2V sampler regime (spike-validated: identity + lip shapes hold)          |
-| `video_comfyui_s2v_length_frames`                                             | `77`                             | One S2V chunk at the model's 16 fps (4.8 s)                               |
-| `video_comfyui_s2v_max_chunks`                                                | `6`                              | Longest clip = chunks × 4.8 s (~29 s); longer speech is flagged truncated |
-| `video_comfyui_s2v_timeout_per_chunk_s`                                       | `900`                            | Render budget per chunk (an idle 5090 needs ~420 s)                       |
-| `video_comfyui_s2v_workflow_override_json`                                    | `''`                             | S2V graph swap; same placeholders plus `__AUDIO__`                        |
-| `comfyui_ram_recycle_{enabled,watermark_gb,cooldown_minutes}`                 | `true` / `20` / `60`             | Brain-side host-RAM recycle: queue-idle-verified `docker restart` when the sidecar's PID-1 RSS+swap crosses the watermark ([details](video-render-vram-gate.md)) |
+| Key                                                                           | Default                                                       | Meaning                                                                                                                                                          |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `video_generative_provider`                                                   | `wan21`                                                       | Animator: `wan21` or `comfyui`                                                                                                                                   |
+| `video_comfyui_server_url`                                                    | `http://comfyui:8188`                                         | Sidecar URL                                                                                                                                                      |
+| `video_comfyui_steps` / `video_comfyui_cfg`                                   | `4` / `1.0`                                                   | Sampler regime (lightx2v 4-step). Quality tier: `20` / `3.5` + LoRA off                                                                                          |
+| `video_comfyui_use_lightning_lora`                                            | `true`                                                        | Wire the distill LoRAs                                                                                                                                           |
+| `video_comfyui_shift`                                                         | `5.0`                                                         | ModelSamplingSD3 (official 14B i2v template value)                                                                                                               |
+| `video_comfyui_length_frames` / `video_comfyui_fps`                           | `81` / `16`                                                   | Model-native ~5s profile (caller fps ignored — compositor conforms/loops)                                                                                        |
+| `video_comfyui_negative_prompt`                                               | canonical Wan negative (Chinese)                              | Model-native negative                                                                                                                                            |
+| `video_comfyui_{high,low}_model`, `_text_encoder`, `_vae`, `_lora_{high,low}` | repackaged filenames                                          | Weight swaps are settings-only                                                                                                                                   |
+| `video_comfyui_timeout_s`                                                     | `900`                                                         | End-to-end render budget (20-step 960×544 measured 644s)                                                                                                         |
+| `video_comfyui_ready_wait_s`                                                  | `90`                                                          | Cold-boot wait before first submit                                                                                                                               |
+| `video_comfyui_workflow_override_json`                                        | `''`                                                          | Full graph swap: API-format JSON with `__PROMPT__`/`__WIDTH__`/… placeholders, substituted typed                                                                 |
+| `video_comfyui_s2v_model` / `_audio_encoder`                                  | `wan2.2_s2v_14B_fp8_scaled…` / `wav2vec2_large_english_fp16…` | Speech-path weights (same repackaged repo + its `audio_encoders/`)                                                                                               |
+| `video_comfyui_s2v_steps` / `_cfg` / `_shift` / `_sampler`                    | `20` / `6.0` / `8.0` / `uni_pc`                               | S2V sampler regime (spike-validated: identity + lip shapes hold)                                                                                                 |
+| `video_comfyui_s2v_length_frames`                                             | `77`                                                          | One S2V chunk at the model's 16 fps (4.8 s)                                                                                                                      |
+| `video_comfyui_s2v_max_chunks`                                                | `6`                                                           | Longest clip = chunks × 4.8 s (~29 s); longer speech is flagged truncated                                                                                        |
+| `video_comfyui_s2v_timeout_per_chunk_s`                                       | `900`                                                         | Render budget per chunk (an idle 5090 needs ~420 s)                                                                                                              |
+| `video_comfyui_s2v_workflow_override_json`                                    | `''`                                                          | S2V graph swap; same placeholders plus `__AUDIO__`                                                                                                               |
+| `comfyui_ram_recycle_{enabled,watermark_gb,cooldown_minutes}`                 | `true` / `20` / `60`                                          | Brain-side host-RAM recycle: queue-idle-verified `docker restart` when the sidecar's PID-1 RSS+swap crosses the watermark ([details](video-render-vram-gate.md)) |
 
 ## Operator runbook (enable on a host)
 
@@ -104,6 +104,12 @@ quality class, so it is the provider's default regime.
 VRAM reality on a 32GB card shared with a desktop: 832×480 peaks ~25-29GB,
 960×544 ~28GB, **1280×720×81f does not fit** (spike OOM at 31.9GB) — full
 720p needs block-swap custom nodes (security review first) or an idle card.
+Those peaks describe the card more than the render: ComfyUI 0.36's
+comfy-aimdo fills whatever is free and pages weights back out under pressure.
+Measured at 1 s on 2026-09-25, 832×480 rendered at full speed from 21.9 GiB
+free while leaving the card ≥2 GiB. That sets the hero plate gate's ComfyUI
+thresholds (22.0 / 20.5 GiB, `video_hero_{full,floor}_plate_min_free_gb_comfyui`);
+see [`video-render-vram-gate.md`](video-render-vram-gate.md).
 
 ## Speech-to-video (talking heads)
 
@@ -173,7 +179,7 @@ produces **in place, right after the provider writes it**, with ffmpeg's
 provider's small native geometry, before the compositor scales to 1080p — is
 what keeps it cheap: measured 27 s of CPU for a 9.6 s 960x544 clip (154 → 286
 frames, 32 cores). In the compositor at 1080p the same filter would cost
-minutes per scene, which is why it does *not* live there. Stock clips (24–30
+minutes per scene, which is why it does _not_ live there. Stock clips (24–30
 fps already) never pass through this path.
 
 Settings: `video_clip_interpolation_enabled` (default true),
@@ -183,7 +189,6 @@ in `framerate=fps={fps}` for a cheaper blend, or a RIFE node later),
 `video_clip_interpolation_timeout_s` (600). Best-effort by contract: the
 interpolated file replaces the original only after ffmpeg exits 0 with output
 on disk; any failure keeps the provider's clip and logs why.
-
 
 ### The interpolator: RIFE, with ffmpeg as the fallback
 
@@ -200,7 +205,7 @@ flow model. Notes that matter:
 
 - **It is a sidecar, not a ComfyUI node.** `Dockerfile.comfyui` is deliberately
   core-nodes-only ("custom nodes are ComfyUI's malware surface") and RIFE ships
-  as a custom node pack. A sidecar keeps that boundary *and* serves every clip
+  as a custom node pack. A sidecar keeps that boundary _and_ serves every clip
   the renderer makes, including hero i2v from the `wan21` provider.
 - **Weights and architecture are one pinned, MIT-licensed HF repo**
   (`TensorForger/RIFE-safetensors`, RIFE v4 / ECCV2022-RIFE, © Megvii), 12 MB,
@@ -229,7 +234,7 @@ animated. The S2V model takes its motion register from three places, all
 
 1. **`video_presenter_negative_prompt`** (stack#3840) — the presenter's own
    negative. The shared `video_comfyui_negative_prompt` is the canonical Wan
-   negative for hero i2v clips and *penalises stillness* (静态 / 静止 /
+   negative for hero i2v clips and _penalises stillness_ (静态 / 静止 /
    静止不动的画面): exactly the pressure an illustration needs and exactly the
    wrong one for a person talking to camera, whom it pushes into head-bobbing
    and exaggerated expressions. The presenter default keeps the quality and
@@ -242,17 +247,17 @@ animated. The S2V model takes its motion register from three places, all
    asks for "calm and composed, nearly still, minimal head movement, relaxed
    shoulders, no hand gestures, locked-off camera".
 3. **`video_comfyui_s2v_cfg`** (default 4.0, vs 6.0 on the i2v lane) and
-   **`video_comfyui_s2v_shift`** (8.0) — CFG amplifies prompt adherence *and*
+   **`video_comfyui_s2v_shift`** (8.0) — CFG amplifies prompt adherence _and_
    motion amplitude, so a talking head wants the calm end of the range.
 
 **Measured 2026-09-17** (one portrait, one 9.6 s line, one seed; motion index =
 mean mouth/head-region frame delta, tool `headcmp/motion_index.py`):
 
-| variant | motion index | peak |
-| --- | --- | --- |
-| prior defaults ("natural facial expressions, subtle head movements", cfg 6.0) | 6.57 | 28.2 |
-| + presenter negative prompt only | 6.38 | 30.0 |
-| + calm wording + cfg 4.0 (**today's defaults**) | 5.59 | 24.8 |
+| variant                                                                       | motion index | peak |
+| ----------------------------------------------------------------------------- | ------------ | ---- |
+| prior defaults ("natural facial expressions, subtle head movements", cfg 6.0) | 6.57         | 28.2 |
+| + presenter negative prompt only                                              | 6.38         | 30.0 |
+| + calm wording + cfg 4.0 (**today's defaults**)                               | 5.59         | 24.8 |
 
 The negative prompt alone barely moved it. **Asking for stillness beat
 forbidding motion by roughly 4x** — reach for the positive prompt first when
@@ -272,8 +277,8 @@ inferred:
   frames — **4.8125 s** of video (confirmed on render e4ccafa2: 6 chunks
   produced 461 frames).
 
-So the mouth runs **80/77 = 3.9 % fast**, and the error is *cumulative within a
-clip*: ~0.41 s by the end of a 10.6 s opening, ~0.96 s by the end of a 24.5 s
+So the mouth runs **80/77 = 3.9 % fast**, and the error is _cumulative within a
+clip_: ~0.41 s by the end of a 10.6 s opening, ~0.96 s by the end of a 24.5 s
 closing. That is exactly the asymmetry the operator reported — "the intro
 presenter is pretty good, the final is a little bit off still" — and it is why
 the defect hid for so long: every short clip looked fine.
@@ -282,7 +287,7 @@ the defect hid for so long: every short clip looked fine.
 while the audio window is always `4·latent_t`; the slip is exactly three frames
 per chunk for every length. Since stack#3848 the provider instead **stretches
 the conditioning audio** by that factor (`atempo`, pitch preserved) before
-upload, so chunk *k* covers real speech `[(k−1)·length/fps, k·length/fps]` —
+upload, so chunk _k_ covers real speech `[(k−1)·length/fps, k·length/fps]` —
 precisely the video it renders. The clip's own audio track stays real-time: a
 second `LoadAudio` node feeds `CreateVideo` whenever the two differ, so a
 viewer of the standalone clip hears unmodified speech. Setting:
@@ -326,7 +331,7 @@ node's `execute` before chaining it.
 A presenter shot lip-syncs to a window of the narration track. The director
 plans that window (`narration_offset_s` + `duration_s`) on its **own estimated
 timeline**, but the assembly's narration-fit rescales every scene so the
-visuals span the *actual* voiceover — on 2026-09-17 (render 671c94b3) 13 shots
+visuals span the _actual_ voiceover — on 2026-09-17 (render 671c94b3) 13 shots
 planned at 209 s were stretched 1.36× over a 284 s narration. Cutting the
 speech at the planned offset put the closing face on screen at 4:01–4:39
 speaking the sentences that had played at 3:23–3:50.
@@ -350,7 +355,7 @@ the default for every other source — an abstract hero clip loops invisibly.
 ## Version pin: how to bump ComfyUI safely
 
 `Dockerfile.comfyui` pins a release tag and the comment says to bump
-deliberately, because the pinned version *is* the render behaviour behind the
+deliberately, because the pinned version _is_ the render behaviour behind the
 provider. The 2026-09-18 bump (v0.9.2 → v0.36.0, driven by LTX-2.5 evaluation)
 established the procedure worth repeating:
 
@@ -375,7 +380,7 @@ are different claims, and only step 3 tests the second.
 ## Headroom accounting: the animator's own pool counts
 
 ComfyUI keeps its caching-allocator pool between prompts. After the first
-hero clip the device reads ~15 GB fuller than it is for the *second* clip,
+hero clip the device reads ~15 GB fuller than it is for the _second_ clip,
 because the memory is held by the very process about to render it. Measured
 2026-09-17 15:50 on the fifth presenter render: 25.9 GB free before hero 1,
 11.3 GB after it, and heroes 2 and 3 were downgraded to Ken Burns stills on a
@@ -388,7 +393,7 @@ process that will use it:
 - the presenter (S2V) floor, `video_presenter_min_free_vram_gb` (stack#3825);
 - the hero plate ladder, `_fit_hero_dims_to_free_vram`, when
   `video_generative_provider=comfyui` (stack#3838). With `wan21` as the
-  animator ComfyUI's pool is *not* wan's headroom and only live free counts.
+  animator ComfyUI's pool is _not_ wan's headroom and only live free counts.
 
 The rule generalizes: a sidecar's cached pool is headroom for **that sidecar's
 next request** and dead weight for everyone else's. Do not add it to a gate
@@ -399,5 +404,8 @@ that admits a different process.
 - Replacing wan-server (it stays the default; retire only after comfyui has
   survived real render windows).
 - The image side (z-image vs FLUX/Qwen through ComfyUI) — separate bake-off.
-- Consumer-stack inclusion — 14B fp8 wants ~26GB peak; revisit with GGUF
-  quants or block-swap for the 8-16GB target.
+- Consumer-stack inclusion — 14B fp8 peaks ~26GB on an empty 32GB card, but
+  aimdo pages weights, so the peak is not the floor (the 5090 rendered 832×480
+  at full speed from 15.9 GiB free; the desktop, not the render, set the
+  gate). An 8-16GB card still needs its own measurement; revisit with GGUF
+  quants or block-swap.

@@ -226,17 +226,108 @@ Finding who loaded something is `journalctl -u ollama-primary` around the drop:
 a `starting llama-server` line plus its `[GIN] POST`. Client `::1` means a
 host process; `172.18.0.x` means a container.
 
+### Plate thresholds per animator, measured at 1 s (2026-09-25)
+
+On the 2026-09-24 re-render of f555bedc every hero logged `hero headroom
+26.9GB -> 26.9GB after 24 poll(s) / 120s budget (needs 27GB)` and shipped at
+704x400. The 27.0 GB bar was wan's: diffusers wan peaks at 25.2 GB at
+832x480 and cannot offload, so short of that it OOMs. ComfyUI took over as
+the animator (`video_generative_provider=comfyui`) and inherited the bar
+without ever being measured, except as 30 s Prometheus samples.
+
+**Method.** One real f555bedc hero (shot 4's still and prompt), prod regime
+(Wan 2.2 14B fp8 two-expert i2v, 20 steps, cfg 3.5, no LoRA, 81 frames),
+driven through `ComfyUIProvider` from the prefect-worker. Each run held
+`gpu.lock("video")` and ran the production pre-hero clear first, like a real
+render. `nvidia-smi` sampled per-process memory every 1 s and device memory
+every 250 ms. For the lower readings, a throwaway container held a fixed torch
+allocation on the 5090 (a "ballast"). It existed only while the lock was
+held, and each run ended with a soft `/free` so ComfyUI gave the card back.
+Scratch MP4s only; nothing was approved or published.
+
+| run | plate   | gate reading | render (s/step) | ComfyUI peak / steady | lowest card free | card < 2 GiB free |
+| --- | ------- | ------------ | --------------- | --------------------- | ---------------- | ----------------- |
+| R1  | 832x480 | 26.5 GiB     | 392 s (17.1)    | 24.7 / 18.8 GiB       | 2,296 MiB        | 0 s               |
+| R2  | 704x400 | 26.3 GiB     | 226 s (10.0)    | 23.9 / 21.1-23.0 GiB  | 2,249 MiB        | 0 s               |
+| R3  | 832x480 | 21.9 GiB     | 368 s (17.2)    | 20.5 / 14.4 GiB       | 2,053 MiB        | 0 s               |
+| R4  | 832x480 | 15.9 GiB     | 382 s (17.6)    | 15.7 / 12.3 GiB       | **673 MiB**      | 1.75 s            |
+| R5  | 704x400 | 20.3 GiB     | 237 s (10.0)    | 18.8 / 15.1-16.2 GiB  | 2,257 MiB        | 0 s               |
+
+"Gate reading" is what `_hero_headroom_gb` returned after the clear: live
+device free from wan's `/health` plus ComfyUI's pool, which reads ~0 under
+cudaMallocAsync. "Steady" is ComfyUI's footprint while sampling; "lowest
+card free" is the whole 32,607 MiB card at 250 ms. Before each run ComfyUI
+idled at 0.5-0.7 GiB. The other residents were chatterbox 0.7, RIFE 0.6,
+speaches 0.5, wan-server 0.5, image-gen 0.5 GiB, and ~1 GiB of desktop.
+
+What the runs show:
+
+- **ComfyUI's peak is not its requirement.** ComfyUI 0.36 runs comfy-aimdo
+  (`--reserve-vram 1.5`, NVML pressure). It grows into whatever the card has
+  free and pages weights back out when other processes need the room. On an
+  empty card both plates drove the card to ~2.2 GiB free, and each peak was a
+  three-sample transient of cache on top of the work: in R1 the text encoder
+  was still cached when the first step's activations landed, in R2 the second
+  expert paged in over the first. 704x400 held _more_ than 832x480 in its first
+  phase, because its smaller activations left room for the encoder. A
+  threshold of "peak + margin" would describe the card, not the render.
+- **Paging is nearly free.** At 15.9 GiB, 832x480 still ran at 17.6 s/step
+  against 17.1 on the empty card. Each step is ~17 s of compute, and
+  re-streaming the 14 GB fp8 expert over PCIe takes well under a second.
+- **The desktop is the real limit.** At 15.9 GiB the load transient, with the
+  encoder still cached while the 13.6 GB expert paged in, took the whole card
+  to 673 MiB free for about 1 s before aimdo reacted. The 5090 also drives the
+  display, and that is the zone where Chrome and XWayland crashed on
+  2026-07-26. At 21.9 GiB the worst second still left 2,053 MiB.
+
+So each ComfyUI threshold is the lowest measured reading where the render ran
+at full speed _and_ the card kept 2 GiB free: **832x480 = 22.0 GiB**
+(measured at 21.9) and **704x400 = 20.5 GiB** (measured at 20.3). The ≥2 GiB
+left at the worst second is the margin for everything else on the card. The
+idle contexts are already inside the reading. Against the readings the gate
+actually sees after the clear (26.1-26.9 GiB), 832x480 now clears with 4 GiB
+to spare, and the wait no longer spends its 120 s budget chasing a bar
+ComfyUI does not need. wan keeps 27.0 / 22.0.
+
+Thresholds are **per animator** (`_HERO_PLATE_MIN_FREE_GB`, DB-tunable as
+`video_hero_{full,floor}_plate_min_free_gb_{wan21,comfyui}`), because one
+shared bar is how this happened: the footprint belongs to the engine, not the
+plate. The renderer picks the pair per render from `video_generative_provider`,
+so a provider flip brings its own calibration. Re-measure after a ComfyUI
+model or regime change. The prod regime is the heavy one (cfg 3.5 batches
+cond + uncond; the code-default 4-step LoRA regime runs cfg 1.0), so these
+defaults are conservative for the fast regime. A value that is not a positive
+number falls back to the calibrated default with a warning.
+
+**The idle wan-server stays off the pre-hero clear.** Its ~0.5 GB looked like
+the obvious lever (it alone was bigger than the 0.1 GB miss), but a throwaway
+container of the wan-server image shows what it is. Importing torch,
+`is_available`, device properties and allocator stats: 0 MiB. The instant
+`torch.cuda.mem_get_info(0)` runs: 498 MiB, with 0 MB reserved and 0 MB
+allocated. That call is `/health`'s `device_free_mb`, which is the hero gate's
+live probe. So the hard unload, floor-gated on reserved memory, declines
+(`nothing_to_reclaim`, as the cold-load guard already logs). Forcing an exit
+would blind the gate while the container restarts, and the next 5 s poll
+would create the context again. The recoverable form is a context-free
+`/health`: NVML's free matched wan's `device_free_mb` to within 1 MiB in R1.
+That is a wan-server image change, tracked separately, and at a 22 GiB bar
+the 0.5 GB no longer decides anything.
+
 ### Settings (`settings_defaults.py`)
 
-| Key                                     | Default | Meaning                                                                                                                  |
-| --------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `media_render_reclaim_enabled`          | `true`  | Master switch for the reclaim-then-reprobe attempt.                                                                      |
-| `media_render_reclaim_settle_seconds`   | `8`     | Delay between the reclaim and the re-probe, so Prometheus has re-scraped.                                                |
-| `media_render_reclaim_cooldown_minutes` | `30`    | Pause after a reclaim that left the gate unhealthy. `0` restores the old every-cycle behaviour.                          |
-| `image_gen_hard_unload_min_reserved_mb` | `512`   | Reserved-VRAM floor below which image-gen refuses a hard unload (nothing worth the exit).                                |
-| `video_hero_unload_image_gen`           | `true`  | Hard-unload image-gen immediately before each wan hero load (#907). Off = skip the cold reload on a card that fits both. |
-| `video_hero_unload_settle_seconds`      | `3`     | Pause after that unload so the CUDA context returns to the host before wan asks for it.                                  |
-| `video_reclaim_reclear_max`             | `2`     | Newcomer evictions per headroom wait (hero and presenter). `0` = the single up-front clear.                               |
+| Key                                          | Default | Meaning                                                                                                                  |
+| -------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `media_render_reclaim_enabled`               | `true`  | Master switch for the reclaim-then-reprobe attempt.                                                                      |
+| `media_render_reclaim_settle_seconds`        | `8`     | Delay between the reclaim and the re-probe, so Prometheus has re-scraped.                                                |
+| `media_render_reclaim_cooldown_minutes`      | `30`    | Pause after a reclaim that left the gate unhealthy. `0` restores the old every-cycle behaviour.                          |
+| `image_gen_hard_unload_min_reserved_mb`      | `512`   | Reserved-VRAM floor below which image-gen refuses a hard unload (nothing worth the exit).                                |
+| `video_hero_unload_image_gen`                | `true`  | Hard-unload image-gen immediately before each wan hero load (#907). Off = skip the cold reload on a card that fits both. |
+| `video_hero_unload_settle_seconds`           | `3`     | Pause after that unload so the CUDA context returns to the host before wan asks for it.                                  |
+| `video_reclaim_reclear_max`                  | `2`     | Newcomer evictions per headroom wait (hero and presenter). `0` = the single up-front clear.                              |
+| `video_hero_full_plate_min_free_gb_comfyui`  | `22.0`  | Hero gate reading (GiB) ComfyUI needs for the 832x480 plate. Measured 2026-09-25, see above.                             |
+| `video_hero_floor_plate_min_free_gb_comfyui` | `20.5`  | Same for the 704x400 floor plate; below it the hero ships as its still.                                                  |
+| `video_hero_full_plate_min_free_gb_wan21`    | `27.0`  | wan-server's 832x480 bar (measured peak 25.2 GB, no offload).                                                            |
+| `video_hero_floor_plate_min_free_gb_wan21`   | `22.0`  | wan-server's 704x400 floor.                                                                                              |
 
 ### The un-claim is bounded (poindexter#995, 2026-08-07)
 

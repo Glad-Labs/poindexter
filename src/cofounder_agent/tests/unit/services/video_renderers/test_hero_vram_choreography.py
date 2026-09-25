@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from poindexter.services.site_config import SiteConfig
+from tests.unit._nonempty import nonempty
 
 
 def _sc(**over):
@@ -346,8 +347,8 @@ def test_no_ladder_rung_below_the_quality_floor():
     slop. 704x400 is the smallest plate that renders coherently."""
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    assert min(w for w, _h, _g in slr._HERO_PLATE_LADDER) >= 704
-    assert min(h for _w, h, _g in slr._HERO_PLATE_LADDER) >= 400
+    assert min(w for w, _h in slr._HERO_PLATES) >= 704
+    assert min(h for _w, h in slr._HERO_PLATES) >= 400
 
 
 @pytest.mark.unit
@@ -668,14 +669,15 @@ async def test_configured_plate_at_the_top_rung_is_not_warned(caplog):
 def test_no_ladder_rung_above_832x480_on_this_hardware():
     """Twin of the floor guard, for the ceiling. Measured 2026-08-28: wan peaks
     at 25.2GB for 832x480, and the base+activation fit through both rungs puts
-    896x512 at ~29.3GB required and 960x544 at ~31.7GB on a 31.8GB card — with
-    ~2.8GB permanently held by speaches, which the reclaim ladder never evicts.
-    A rung above 832x480 could never fire, so adding one is dead code that
-    makes the ceiling look higher than it is."""
+    896x512 at ~29.3GB required and 960x544 at ~31.7GB on a 31.8GB card. A
+    rung above 832x480 could never fire, so adding one is dead code that makes
+    the ceiling look higher than it is. (This used to add "~2.8GB permanently
+    held by speaches"; speaches idles at ~0.5GB — the rest was Whisper + Kokoro
+    on their idle timer, 2026-09-23.)"""
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    assert max(w for w, _h, _g in slr._HERO_PLATE_LADDER) <= 832
-    assert max(h for _w, h, _g in slr._HERO_PLATE_LADDER) <= 480
+    assert max(w for w, _h in slr._HERO_PLATES) <= 832
+    assert max(h for _w, h in slr._HERO_PLATES) <= 480
 
 
 # --- the animator's own pool is headroom (2026-09-17) -----------------------
@@ -690,13 +692,17 @@ def test_no_ladder_rung_above_832x480_on_this_hardware():
 async def test_comfyui_animator_counts_its_own_pool_as_headroom(monkeypatch):
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=11.3))
-    monkeypatch.setattr(slr, "_comfyui_reserved_gb", AsyncMock(return_value=15.0))
+    full_gb, floor_gb = slr._HERO_PLATE_MIN_FREE_GB["comfyui"]
+    live = floor_gb - 4.0  # alone, not even the floor plate: a still
+    monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=live))
+    monkeypatch.setattr(
+        slr, "_comfyui_reserved_gb", AsyncMock(return_value=full_gb + 1.0 - live),
+    )
     out = await slr._fit_hero_dims_to_free_vram(
         832, 480, _sc(video_generative_provider="comfyui"),
     )
-    # 26.3 GB usable: below the 27 GB top rung, above the 22 GB floor rung.
-    assert out == (704, 400), out
+    # live free + ComfyUI's own pool clears the full plate's threshold.
+    assert out == (832, 480), out
 
 
 @pytest.mark.unit
@@ -742,6 +748,147 @@ async def test_unknown_live_reading_still_defers_to_prometheus(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Per-animator plate thresholds (2026-09-25). The plate ladder was calibrated
+# on the wan server (27.0 GB for 832x480) and kept gating ComfyUI after the
+# provider flip: on the 2026-09-24 re-render of f555bedc all three heroes read
+# "26.9GB -> 26.9GB after 24 poll(s) / 120s budget (needs 27GB)" and shipped
+# at 704x400 — a 0.1 GB miss on a bar that was never ComfyUI's. Measured at
+# 1 s, ComfyUI renders 832x480 at full speed from a 21.9 GB reading without
+# taking the card below 2.0 GB free (docs/architecture/video-render-vram-gate.md).
+# ---------------------------------------------------------------------------
+
+
+def _comfy(**over):
+    return _sc(video_generative_provider="comfyui", **over)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reading", [26.9, 26.5, 26.3, 26.2, 26.1])
+async def test_the_2026_09_24_comfyui_readings_keep_the_full_plate_without_waiting(
+    monkeypatch, reading,
+):
+    """Every hero reading of the 2026-09-24 renders animates at 832x480, and
+    the gate does not spend its 120 s budget waiting for wan's 27 GB."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    headroom = AsyncMock(return_value=reading)
+    monkeypatch.setattr(slr, "_hero_headroom_gb", headroom)
+    sleep = AsyncMock()
+    monkeypatch.setattr(slr.asyncio, "sleep", sleep)
+
+    out = await slr._fit_hero_dims_to_free_vram(
+        832, 480, _comfy(video_hero_reclaim_wait_s="120"),
+    )
+
+    assert out == (832, 480)
+    assert headroom.await_count == 1
+    sleep.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wan_keeps_its_own_calibration(monkeypatch):
+    """The same 26.9 GB on a wan install still steps down: wan cannot offload,
+    and its measured 832x480 peak is 25.2 GB plus margin."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_hero_headroom_gb", AsyncMock(return_value=26.9))
+    out = await slr._fit_hero_dims_to_free_vram(
+        832, 480, _sc(video_generative_provider="wan21"),
+    )
+    assert out == (704, 400)
+
+
+@pytest.mark.unit
+def test_each_animator_reads_only_its_own_threshold_keys():
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    tuned = {
+        "video_hero_full_plate_min_free_gb_comfyui": "24.5",
+        "video_hero_floor_plate_min_free_gb_comfyui": "19.0",
+        "video_hero_full_plate_min_free_gb_wan21": "30",
+    }
+    assert slr._hero_plate_ladder(_comfy(**tuned)) == (
+        (832, 480, 24.5), (704, 400, 19.0),
+    )
+    # No provider set = the wan21 default; it reads wan21's key and default floor.
+    assert slr._hero_plate_ladder(_sc(**tuned)) == (
+        (832, 480, 30.0), (704, 400, slr._HERO_PLATE_MIN_FREE_GB["wan21"][1]),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_a_tuned_threshold_moves_the_decision(monkeypatch):
+    """DB-tunable means the next re-measurement is a settings change: the same
+    reading lands on a different plate when an operator moves a threshold."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_hero_headroom_gb", AsyncMock(return_value=21.0))
+    stricter_full = _comfy(
+        video_hero_full_plate_min_free_gb_comfyui="25",
+        video_hero_floor_plate_min_free_gb_comfyui="20",
+    )
+    assert await slr._fit_hero_dims_to_free_vram(832, 480, stricter_full) == (704, 400)
+    stricter_both = _comfy(
+        video_hero_full_plate_min_free_gb_comfyui="25",
+        video_hero_floor_plate_min_free_gb_comfyui="21.5",
+    )
+    assert await slr._fit_hero_dims_to_free_vram(832, 480, stricter_both) is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad", ["abc", "0", "-3", "nan", "inf"])
+def test_a_bad_threshold_falls_back_to_the_calibrated_default_loudly(bad, caplog):
+    import logging
+
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    with caplog.at_level(
+        logging.WARNING, logger="poindexter.services.video_renderers.shot_list_renderer",
+    ):
+        ladder = slr._hero_plate_ladder(
+            _comfy(video_hero_full_plate_min_free_gb_comfyui=bad),
+        )
+
+    assert ladder[0][2] == slr._HERO_PLATE_MIN_FREE_GB["comfyui"][0]
+    assert any(
+        "video_hero_full_plate_min_free_gb_comfyui" in rec.getMessage()
+        for rec in caplog.records
+    ), "a typo'd threshold must say it was ignored"
+
+
+@pytest.mark.unit
+def test_code_defaults_match_the_seeded_settings():
+    """The code fallback and the seeded app_settings value are one number:
+    a threshold re-measured in one place and not the other would gate prod on
+    the stale half the moment the row is missing or unreadable."""
+    from poindexter.services.settings_defaults import DEFAULTS
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    for animator, thresholds in nonempty(
+        slr._HERO_PLATE_MIN_FREE_GB.items(), "_HERO_PLATE_MIN_FREE_GB",
+    ):
+        for role, gb in nonempty(
+            zip(slr._HERO_PLATE_ROLES, thresholds, strict=True), f"{animator} thresholds",
+        ):
+            key = f"video_hero_{role}_plate_min_free_gb_{animator}"
+            assert float(DEFAULTS[key]) == gb, key
+
+
+@pytest.mark.unit
+def test_thresholds_keep_the_floor_below_the_full_plate():
+    """A floor that needs more than the full plate could never fire."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    for animator, (full_gb, floor_gb) in nonempty(
+        slr._HERO_PLATE_MIN_FREE_GB.items(), "_HERO_PLATE_MIN_FREE_GB",
+    ):
+        assert 0 < floor_gb < full_gb, animator
+
+
+# ---------------------------------------------------------------------------
 # Hero headroom wait (2026-09-22) — the live path read ONCE, 3 s after the
 # ladder call, while the evictions it triggered landed 65-120 s later
 # (poindexter#992 timeline). Same bounded poll the presenter floor has.
@@ -751,12 +898,13 @@ async def test_unknown_live_reading_still_defers_to_prometheus(monkeypatch):
 def test_hero_target_is_the_smallest_rung_covering_the_request():
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
-    top_w, top_h, top_gb = slr._HERO_PLATE_LADDER[0]
-    floor_w, floor_h, floor_gb = slr._HERO_PLATE_LADDER[-1]
-    assert slr._hero_target_gb(top_w, top_h) == top_gb
-    assert slr._hero_target_gb(floor_w, floor_h) == floor_gb
-    assert slr._hero_target_gb(top_w * 2, top_h * 2) == top_gb  # beyond the ladder: top rung
-    assert slr._hero_target_gb(floor_h, floor_w) == floor_gb  # portrait request, same rung
+    ladder = slr._hero_plate_ladder(_sc())
+    top_w, top_h, top_gb = ladder[0]
+    floor_w, floor_h, floor_gb = ladder[-1]
+    assert slr._hero_target_gb(top_w, top_h, ladder) == top_gb
+    assert slr._hero_target_gb(floor_w, floor_h, ladder) == floor_gb
+    assert slr._hero_target_gb(top_w * 2, top_h * 2, ladder) == top_gb  # beyond the ladder: top rung
+    assert slr._hero_target_gb(floor_h, floor_w, ladder) == floor_gb  # portrait request, same rung
 
 
 @pytest.mark.unit
@@ -863,6 +1011,24 @@ async def test_comfyui_animator_soft_frees_the_previous_heros_weights():
     with patch("poindexter.services.gpu_scheduler.gpu", gpu):
         await slr._clear_image_gen_for_hero(_sc(video_generative_provider="comfyui"))
     gpu._unload_comfyui.assert_awaited_once_with(hard=False)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_comfyui_animator_leaves_the_idle_wan_server_alone():
+    """Decided 2026-09-25 from a measurement, not an oversight: an idle wan's
+    ~0.5 GB is the CUDA context its /health creates (mem_get_info — the hero
+    gate's own live probe), with 0 MB reserved. The hard unload declines it,
+    and a forced exit would blind the probe and come back on the next poll."""
+    from poindexter.services.video_renderers import shot_list_renderer as slr
+
+    gpu = _gpu_with("_unload_image_gen", "_unload_ollama_models", "_unload_comfyui",
+                    "_unload_rife", "_unload_wan")
+    with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        await slr._clear_image_gen_for_hero(_sc(video_generative_provider="comfyui"))
+
+    gpu._unload_wan.assert_not_awaited()
 
 
 @pytest.mark.unit

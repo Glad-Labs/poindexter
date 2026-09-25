@@ -1068,13 +1068,27 @@ DEFAULTS: dict[str, str] = {
     # reclaim rung) were the dominant cause of 44 still-fallbacks in one week.
     # 0 disables; timeout proceeds into the normal still-fallback.
     'video_hero_wan_ready_wait_s': '90',
-    # Step the hero i2v plate down the _HERO_PLATE_LADDER when the card is
-    # short on free VRAM. The dispatcher's pre-flight gate can't see the
-    # DESKTOP allocating afterwards — Chrome + the COSMIC shell held ~3GB
-    # while wan wanted 26.7GB of 32.6GB and the hero OOM'd on its last
-    # 320 MiB. A smaller clip upscaled still reads as motion; an OOM reads
-    # as a still. false = always use video_hero_width/height.
+    # Step the hero i2v plate down (832x480 -> 704x400 -> Ken Burns still)
+    # when the card is short on free VRAM. The dispatcher's pre-flight gate
+    # can't see the DESKTOP allocating afterwards — Chrome + the COSMIC shell
+    # held ~3GB while wan wanted 26.7GB of 32.6GB and the hero OOM'd on its
+    # last 320 MiB. false = always use video_hero_width/height.
     'video_hero_adaptive_plate_enabled': 'true',
+    # Free VRAM (GB, as the hero gate reads it after the pre-hero clear) each
+    # plate needs, PER ANIMATOR — the footprint is the engine's, and one
+    # shared bar is how wan's 27 GB came to downgrade every ComfyUI hero to
+    # 704x400 at 26.1-26.9 GB (2026-09-24). full = 832x480, floor = 704x400;
+    # below floor the hero ships as its still. The renderer picks the pair
+    # matching video_generative_provider. wan21: measured peak 25.2 GB at
+    # 832x480 (no offload, so short of it wan OOMs). comfyui: measured
+    # 2026-09-25 at 1 s on real heroes — comfy-aimdo pages weights instead of
+    # OOMing, so each number is the lowest reading where the render ran at
+    # full speed AND left the card (which also drives the desktop) >= 2 GiB
+    # free, not its peak (docs/architecture/video-render-vram-gate.md).
+    'video_hero_full_plate_min_free_gb_wan21': '27.0',
+    'video_hero_floor_plate_min_free_gb_wan21': '22.0',
+    'video_hero_full_plate_min_free_gb_comfyui': '22.0',
+    'video_hero_floor_plate_min_free_gb_comfyui': '20.5',
     # ProbeHeroFallbackJob — the aggregate watchdog over the per-shot
     # hero_render_fallback findings. Those are info-level by design (a still
     # beats a hole), which made a four-day total hero outage invisible until
@@ -5541,6 +5555,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_wan_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_adaptive_plate_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
+    'video_hero_full_plate_min_free_gb_wan21': {'owner': 'media_render', 'value_type': 'float'},
+    'video_hero_floor_plate_min_free_gb_wan21': {'owner': 'media_render', 'value_type': 'float'},
+    'video_hero_full_plate_min_free_gb_comfyui': {'owner': 'media_render', 'value_type': 'float'},
+    'video_hero_floor_plate_min_free_gb_comfyui': {'owner': 'media_render', 'value_type': 'float'},
     'backfill_video_shot_lists_enabled': {'owner': 'backfill_video_shot_lists', 'value_type': 'boolean'},
     'backfill_video_shot_lists_batch': {'owner': 'backfill_video_shot_lists', 'value_type': 'integer'},
     'backfill_media_scripts_enabled': {'owner': 'backfill_media_scripts', 'value_type': 'boolean'},
