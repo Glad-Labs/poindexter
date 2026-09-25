@@ -143,6 +143,73 @@ class TestVerifierRespectsTheDecline:
         created.assert_awaited_once()
         assert created.await_args.args[1] == "poindexter-image-gen-server"
 
+    async def test_a_decline_with_no_pre_unload_reading_still_leaves_its_finding(self):
+        """The declined path never checks ``before_gb``. When that reading was
+        unreadable the finding used to raise formatting it inside its
+        silent-ok guard, so the restart was queued with no trail at all (648
+        findings for 667 queued restarts over 30 days)."""
+        s = _sched()
+        created = AsyncMock(return_value={"id": "r1"})
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=6.5)), \
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=None)), \
+             patch("poindexter.utils.findings.emit_finding") as finding:
+            await s._verify_reclaim_or_restart(
+                service="image-gen", container="poindexter-image-gen-server",
+                before_gb=None, declined=True,
+            )
+        created.assert_awaited_once()
+        finding.assert_called_once()
+        kw = finding.call_args.kwargs
+        assert kw["extra"]["before_gb"] is None
+        assert kw["extra"]["after_gb"] == 6.5
+        assert kw["extra"]["declined"] is True
+        assert "declined the hard unload" in kw["body"]
+
+    @pytest.mark.parametrize(
+        ("service", "container"),
+        [
+            ("image-gen", "poindexter-image-gen-server"),
+            ("wan", "poindexter-wan-server"),
+            ("stable-audio", "poindexter-stable-audio"),
+            ("comfyui", "poindexter-comfyui"),
+        ],
+    )
+    async def test_the_squat_finding_names_the_sidecar_it_restarted(
+        self, service, container,
+    ):
+        """This verifier serves every hard rung, but its finding said "ComfyUI
+        held its VRAM through /free" for all of them: ~73% of the 667 restarts
+        queued in 30 days were image-gen, wan and stable-audio."""
+        s = _sched()
+        created = AsyncMock(return_value={"id": "r1"})
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=6.2)), \
+             patch("asyncio.sleep", new=AsyncMock()), \
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=None)), \
+             patch("poindexter.utils.findings.emit_finding") as finding:
+            await s._verify_reclaim_or_restart(
+                service=service, container=container,
+                before_gb=6.0, declined=False,
+            )
+        created.assert_awaited_once()
+        kw = finding.call_args.kwargs
+        assert kw["title"].startswith(service)
+        assert container in kw["title"]
+        assert f"A restart of `{container}` is queued" in kw["body"]
+        assert "6.0 GB -> 6.2 GB" in kw["body"]
+        if service != "comfyui":
+            assert "comfyui" not in (kw["title"] + kw["body"]).lower()
+        assert kw["extra"]["service"] == service
+        assert kw["extra"]["container"] == container
+        # The routing contract is unchanged: same kind, same dedup key.
+        assert kw["kind"] == "comfyui_vram_squat"
+        assert kw["dedup_key"] == "comfyui_vram_squat"
+
     async def test_freeing_nothing_while_the_gpu_has_room_is_not_a_squat(self):
         """ComfyUI idles at ~0.5 GB and can never 'free 1 GB'; it was bounced
         eight times on 2026-09-15 while the render GPU had plenty of room."""

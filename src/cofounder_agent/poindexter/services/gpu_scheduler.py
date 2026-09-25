@@ -3365,6 +3365,36 @@ class GPUScheduler:
                 )
                 return
 
+        # What the findings below report, named per service. This verifier
+        # serves every hard rung, yet through 2026-09-25 each finding said
+        # "ComfyUI held its VRAM through /free", while ~73% of the restarts it
+        # queued in 30 days were image-gen, wan and stable-audio. A declined
+        # unload never checks `before_gb`, so it can be unread here; the
+        # finding used to raise formatting it and was dropped (648 findings
+        # for 667 queued restarts).
+        if declined:
+            what_happened = (
+                f"{service} declined the hard unload (it reported nothing to "
+                f"reclaim) while the render GPU had only {after_gb:.1f} GB free, "
+                f"under the {below_free_gb:.1f} GB restart threshold"
+            )
+        else:
+            before_text = "unread" if before_gb is None else f"{before_gb:.1f} GB"
+            what_happened = (
+                f"{service}'s hard unload freed {freed:.1f} GB (render GPU free "
+                f"VRAM {before_text} -> {after_gb:.1f} GB), under the "
+                f"{min_freed:.1f} GB floor"
+            )
+        squat_extra = {
+            "service": service,
+            "container": container,
+            "declined": declined,
+            "freed_gb": round(freed, 2),
+            "before_gb": round(before_gb, 2) if before_gb is not None else None,
+            "after_gb": round(after_gb, 2),
+            "min_freed_gb": min_freed,
+        }
+
         # A render may have started during the settle window.
         if busy_check is not None and await busy_check():
             logger.info(
@@ -3412,27 +3442,26 @@ class GPUScheduler:
                 from poindexter.utils.findings import emit_finding
                 emit_finding(
                     source="services.gpu_scheduler",
+                    # Historical name: this kind routes every sidecar's squat.
                     kind="comfyui_vram_squat",
                     title=(
-                        f"ComfyUI held its VRAM through /free and NO restart "
-                        f"could be queued (only {freed:.1f} GB freed)"
+                        f"{service} still held VRAM after its hard unload and "
+                        f"NO restart could be queued"
                     ),
                     body=(
-                        f"`POST /free` released {freed:.1f} GB, below the "
-                        f"{min_freed:.1f} GB floor, and no DB pool is registered "
-                        f"in this process so the restart request could not be "
-                        f"written to `service_restart_requests`. The render GPU "
-                        f"stays squatted until something restarts "
-                        f"`{container}` by hand."
+                        f"{what_happened}. No DB pool is registered in this "
+                        f"process, so the restart request could not be written "
+                        f"to `service_restart_requests`. The render GPU stays "
+                        f"short until something restarts `{container}` by hand."
                     ),
                     severity="warn",
                     dedup_key="comfyui_vram_squat:unqueued",
-                    extra={"service": service, "freed_gb": round(freed, 2), "min_freed_gb": min_freed},
+                    extra=squat_extra,
                 )
             except Exception:  # noqa: BLE001
                 # silent-ok: already logged at WARNING above; the finding is a
                 # second channel, not the outcome.
-                logger.debug("[GPU] comfyui squat (unqueued) finding failed", exc_info=True)
+                logger.debug("[GPU] %s squat (unqueued) finding failed", service, exc_info=True)
             return
 
         from poindexter.services.service_restart_requests import create_restart_request
@@ -3451,23 +3480,21 @@ class GPUScheduler:
 
             emit_finding(
                 source="services.gpu_scheduler",
+                # Historical name: this kind routes every sidecar's squat.
                 kind="comfyui_vram_squat",
                 title=(
-                    f"ComfyUI held its VRAM through /free — restart queued "
-                    f"(only {freed:.1f} GB freed)"
+                    f"{service} still held VRAM after its hard unload — "
+                    f"restart of {container} queued"
                 ),
                 body=(
-                    f"`POST /free` returned 200 and released {freed:.1f} GB, "
-                    f"below the {min_freed:.1f} GB floor, with an empty queue. "
-                    f"What squats is the caching-allocator pool + CUDA context, "
-                    f"which only a process exit returns (poindexter#1019, and "
-                    f"#999 before it for stable-audio).\n\n"
-                    f"Free VRAM {before_gb:.1f} GB -> {after_gb:.1f} GB. A "
-                    f"restart of `poindexter-comfyui` is queued on "
+                    f"{what_happened}. What squats is the caching-allocator "
+                    f"pool + CUDA context, which only a process exit returns "
+                    f"(poindexter#1019, and #999 before it for stable-audio).\n\n"
+                    f"A restart of `{container}` is queued on "
                     f"`service_restart_requests` for the brain daemon to "
                     f"execute; renders resume once it is back.\n\n"
-                    f"Repeated firings mean something re-loads ComfyUI between "
-                    f"reclaims — check the media pipeline cadence."
+                    f"Repeated firings mean something re-loads {service} "
+                    f"between reclaims — check the media pipeline cadence."
                 ),
                 # info, not warn (stack#3585): the restart IS the designed
                 # remedy for the caching-allocator squat (poindexter#1019) and
@@ -3477,18 +3504,13 @@ class GPUScheduler:
                 # above where the self-heal could not engage.
                 severity="info",
                 dedup_key="comfyui_vram_squat",
-                extra={
-                    "freed_gb": round(freed, 2),
-                    "before_gb": round(before_gb, 2),
-                    "after_gb": round(after_gb, 2),
-                    "min_freed_gb": min_freed,
-                },
+                extra=squat_extra,
             )
         except Exception:  # noqa: BLE001
             # silent-ok: the restart is already queued and logged at WARNING by
             # this point; a findings-emit failure must not undo it. The
             # operator-visible outcome does not depend on this call.
-            logger.debug("[GPU] comfyui squat finding failed", exc_info=True)
+            logger.debug("[GPU] %s squat finding failed", service, exc_info=True)
 
     async def _render_free_vram_gb(self) -> float | None:
         """Free VRAM on the render GPU, or None when unreadable."""
