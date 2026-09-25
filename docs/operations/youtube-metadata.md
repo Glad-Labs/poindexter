@@ -159,8 +159,24 @@ replaces the stored `refresh_token`. It is a superset — uploading keeps
 working. Until you run it, `sync-metadata --apply` fails on the first video
 with the remediation printed in full rather than a raw Google 403.
 
-Plain `setup` (no flag) still requests upload-only, so an operator who never
-edits metadata keeps the narrower grant.
+**Re-consent is additive.** Consent replaces the refresh token, so a
+re-consent that named only a new scope used to drop the old ones: running
+`setup --with-analytics` after a `--with-update` grant would have broken
+`sync-metadata`. When setup reuses the stored client, it now reads the live
+grant from Google and requests it again alongside anything new, and it prints
+each scope with the feature it unlocks. `--reset-scopes` narrows on purpose.
+
+| Flag | Scope added | Unlocks |
+| --- | --- | --- |
+| _(none)_ | `youtube.upload` | uploads, custom thumbnails |
+| `--with-update` | `youtube.force-ssl` | `youtube sync-metadata` (`videos.update`) |
+| `--with-analytics` | `yt-analytics.readonly` | the [`youtube_reach` tap](/docs/integrations/tap_youtube_reporting) (thumbnail impressions + CTR) |
+
+`poindexter integrations youtube scopes` shows what the stored token holds
+right now. It asks Google with one refresh exchange; it does not read code.
+
+A fresh `setup` with nothing stored still requests upload-only, so an operator
+who never edits metadata keeps the narrower grant.
 
 ## Never pin a scope list on the Credentials object
 

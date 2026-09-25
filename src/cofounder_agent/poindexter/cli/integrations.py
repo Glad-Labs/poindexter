@@ -181,9 +181,7 @@ def _build_client_config_dict(client_id: str, client_secret: str) -> dict[str, A
     }
 
 
-def _run_consent_flow(
-    client_id: str, client_secret: str, *, with_update: bool = False
-) -> Any:
+def _run_consent_flow(client_id: str, client_secret: str, *, scopes: list[str]) -> Any:
     """Open the operator's browser, capture the OAuth redirect, return
     ``google.oauth2.credentials.Credentials``.
 
@@ -198,10 +196,12 @@ def _run_consent_flow(
     setup flow treats that read-back as best-effort and proves the
     grant end-to-end via an actual upload (`youtube test`) instead.
 
-    ``with_update=True`` additionally requests ``youtube.force-ssl``, which is
-    what ``videos.update`` requires — an upload-only token is INSERT-ONLY and
-    cannot edit a published video's metadata. Opt-in rather than default so an
-    operator who only ever uploads keeps the narrower grant.
+    ``scopes`` comes from :func:`_scopes_to_request`: the upload minimum, the
+    opt-in extras (``--with-update`` adds ``youtube.force-ssl``, which
+    ``videos.update`` needs; ``--with-analytics`` adds
+    ``yt-analytics.readonly`` for the reach tap), and whatever the stored token
+    already holds. Opt-in rather than default so an operator who only ever
+    uploads keeps the narrower grant.
     """
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-not-found]
@@ -211,19 +211,99 @@ def _run_consent_flow(
             "`poetry install --extras youtube` in src/cofounder_agent."
         ) from exc
 
-    # Pull scopes from the adapter so we don't drift — single source
-    # of truth for "what the operator consented to grant us".
-    from poindexter.services.publish_adapters.youtube import _SCOPES, _SCOPES_WITH_UPDATE
-
     flow = InstalledAppFlow.from_client_config(
         _build_client_config_dict(client_id, client_secret),
-        scopes=_SCOPES_WITH_UPDATE if with_update else _SCOPES,
+        scopes=list(scopes),
     )
     # port=0 lets the OS pick a free port; google-auth-oauthlib hosts
     # a one-shot HTTP server there to catch the redirect with the
     # authorization code.
     credentials = flow.run_local_server(port=0)
     return credentials
+
+
+def _scope_purposes() -> dict[str, str]:
+    """Every scope setup can request, with the feature it unlocks."""
+    from poindexter.services.publish_adapters.youtube import (
+        _ANALYTICS_SCOPE,
+        _SCOPES,
+        _UPDATE_SCOPE,
+    )
+
+    purposes = dict.fromkeys(_SCOPES, "upload videos and set their thumbnails (required)")
+    purposes[_UPDATE_SCOPE] = "edit published videos (`youtube sync-metadata`) — --with-update"
+    purposes[_ANALYTICS_SCOPE] = (
+        "read reach reports: thumbnail impressions + CTR (`youtube_reach` tap) "
+        "— --with-analytics"
+    )
+    return purposes
+
+
+def _granted_scopes(client_id: str, client_secret: str, refresh_token: str) -> list[str] | None:
+    """The scopes a refresh token actually holds, or ``None`` when unreadable.
+
+    Scopes live in the TOKEN, not in code, and Google names them in the answer
+    to a refresh (verified against the live token 2026-08-31). ``None`` covers
+    a missing, revoked or foreign token (a different OAuth client), and no
+    network.
+    """
+    if not (client_id and client_secret and refresh_token):
+        return None
+    import httpx
+
+    from poindexter.services.publish_adapters.youtube import _TOKEN_URI
+
+    try:
+        resp = httpx.post(
+            _TOKEN_URI,
+            data={
+                "grant_type": "refresh_token",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+            },
+            timeout=20.0,
+        )
+    except httpx.HTTPError:
+        return None
+    if resp.status_code != 200:
+        return None
+    try:
+        scope = str(resp.json().get("scope") or "")
+    except ValueError:
+        return None
+    return sorted({s for s in scope.split() if s})
+
+
+def _scopes_to_request(
+    *,
+    with_update: bool,
+    with_analytics: bool,
+    granted: list[str] | None,
+    reset: bool,
+) -> list[str]:
+    """Upload minimum + opt-in extras + (unless ``reset``) what is held today.
+
+    Consent REPLACES the stored refresh token, so a re-consent that named only
+    the new scope would silently drop the old ones: `setup --with-analytics`
+    after a `--with-update` grant would break `sync-metadata`. Carrying the
+    live grant forward makes every re-consent additive; ``--reset-scopes``
+    narrows on purpose.
+    """
+    from poindexter.services.publish_adapters.youtube import (
+        _ANALYTICS_SCOPE,
+        _SCOPES,
+        _UPDATE_SCOPE,
+    )
+
+    wanted = list(_SCOPES)
+    if with_update:
+        wanted.append(_UPDATE_SCOPE)
+    if with_analytics:
+        wanted.append(_ANALYTICS_SCOPE)
+    if granted and not reset:
+        wanted.extend(s for s in granted if s not in wanted)
+    return list(dict.fromkeys(wanted))
 
 
 def _verify_channel(credentials: Any) -> dict[str, str]:
@@ -424,7 +504,24 @@ async def _set_enabled(value: bool) -> None:
         "Also request the youtube.force-ssl scope, which videos.update "
         "requires. Needed for `youtube sync-metadata`; an upload-only token "
         "is INSERT-ONLY and cannot edit a published video. Re-running setup "
-        "with this flag replaces the stored refresh_token."
+        "replaces the stored refresh_token; the scopes it holds are kept "
+        "unless --reset-scopes."
+    ),
+)
+@click.option(
+    "--with-analytics", "with_analytics", is_flag=True,
+    help=(
+        "Also request yt-analytics.readonly, which the `youtube_reach` tap "
+        "needs to read thumbnail impressions and click-through from the "
+        "YouTube Reporting API. Read-only."
+    ),
+)
+@click.option(
+    "--reset-scopes", "reset_scopes", is_flag=True,
+    help=(
+        "Request ONLY the upload scope plus the flags given, dropping anything "
+        "the stored token holds today. Without it, re-consent keeps the "
+        "current grant and adds to it."
     ),
 )
 @click.option(
@@ -439,6 +536,8 @@ def youtube_setup(
     client_id: str | None,
     client_secret: str | None,
     with_update: bool,
+    with_analytics: bool,
+    reset_scopes: bool,
     assume_yes: bool,
 ) -> None:
     """Run the YouTube OAuth consent flow + write secrets.
@@ -489,17 +588,35 @@ def youtube_setup(
         stored=stored,
     )
 
+    # What the stored token holds today, so a re-consent adds to it instead of
+    # replacing it. Only when setup is REUSING the stored client (the
+    # re-consent case, e.g. `setup --with-analytics`): a client named on the
+    # command line may be a different one, whose predecessor's grant says
+    # nothing, and that path must still not touch Postgres.
+    granted: list[str] | None = None
+    if not reset_scopes and stored.get("client_id") == cid:
+        try:
+            granted = _granted_scopes(cid, csecret, stored.get("refresh_token", ""))
+        except Exception as exc:  # noqa: BLE001 — carrying scopes forward is best-effort
+            click.echo(
+                f"  (could not read the current grant: {type(exc).__name__}: {exc})",
+                err=True,
+            )
+    scopes = _scopes_to_request(
+        with_update=with_update, with_analytics=with_analytics,
+        granted=granted, reset=reset_scopes,
+    )
+
     click.echo("Opening browser for YouTube OAuth consent...")
-    if with_update:
-        click.echo(
-            "  Scopes requested: youtube.upload + youtube.force-ssl "
-            "(force-ssl is what videos.update needs)"
-        )
-    else:
-        click.echo(
-            "  Scope requested: youtube.upload "
-            "(minimum required per feedback_oauth_scope_hygiene)"
-        )
+    purposes = _scope_purposes()
+    click.echo("  Scopes requested:")
+    for scope in scopes:
+        kept = " (already granted, kept)" if granted and scope in granted else ""
+        click.echo(f"    {scope}{kept}")
+        click.echo(f"      {purposes.get(scope, 'held by the current token')}")
+    from poindexter.services.publish_adapters.youtube import _UPDATE_SCOPE
+
+    if _UPDATE_SCOPE not in scopes:
         click.echo(
             "  NOTE: upload-only is INSERT-ONLY — `youtube sync-metadata` "
             "will refuse until you re-run with --with-update."
@@ -507,7 +624,7 @@ def youtube_setup(
 
     # Step 2 — run the consent flow.
     try:
-        credentials = _run_consent_flow(cid, csecret, with_update=with_update)
+        credentials = _run_consent_flow(cid, csecret, scopes=scopes)
     except click.ClickException:
         raise
     except Exception as exc:
@@ -612,6 +729,43 @@ def youtube_setup(
         "  poindexter settings set "
         "plugin.publish_adapter.youtube.enabled true"
     )
+
+
+# ---------------------------------------------------------------------------
+# `poindexter integrations youtube scopes`
+# ---------------------------------------------------------------------------
+
+
+@youtube_group.command("scopes")
+def youtube_scopes() -> None:
+    """Show which scopes the stored YouTube token actually holds.
+
+    Scopes live in the token, so this asks Google (one refresh exchange)
+    rather than reading code. Each known scope is listed with the feature it
+    unlocks; `setup --with-update` / `--with-analytics` add the missing ones.
+    """
+    try:
+        secrets = _run(_read_secrets())
+    except Exception as exc:
+        raise click.ClickException(
+            f"Could not read the stored YouTube secrets: {type(exc).__name__}: {exc}"
+        ) from exc
+    granted = _granted_scopes(
+        secrets.get("client_id", ""), secrets.get("client_secret", ""),
+        secrets.get("refresh_token", ""),
+    )
+    if granted is None:
+        raise click.ClickException(
+            "Could not read the grant: no stored token, or Google refused the "
+            "refresh (revoked or expired). Run `poindexter integrations youtube setup`."
+        )
+    for scope, purpose in _scope_purposes().items():
+        mark = "yes" if scope in granted else "NO "
+        click.echo(f"  [{mark}] {scope}")
+        click.echo(f"        {purpose}")
+    for scope in granted:
+        if scope not in _scope_purposes():
+            click.echo(f"  [yes] {scope}  (not requested by Poindexter)")
 
 
 # ---------------------------------------------------------------------------

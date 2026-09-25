@@ -130,20 +130,31 @@ def _make_creds(refresh_token: str = "fresh-rtok") -> MagicMock:
     return creds
 
 
-def _patch_consent(monkeypatch, integrations_module, creds: Any) -> list[tuple[str, str, bool]]:
-    """Record (client_id, client_secret, with_update) per consent call.
+def _patch_consent(
+    monkeypatch, integrations_module, creds: Any, *, granted: list[str] | None = None,
+) -> list[tuple[str, str, bool]]:
+    """Record (client_id, client_secret, requested force-ssl?) per consent call,
+    and the full scope list on ``calls.scopes``.
 
-    ``with_update`` is what selects the wider youtube.force-ssl scope needed by
-    videos.update, so the tests assert on it rather than on the scope list the
-    real flow builds internally.
+    ``_granted_scopes`` is stubbed too — it is a real token exchange with
+    Google — returning ``granted`` (what the stored token "holds").
     """
-    calls: list[tuple[str, str, bool]] = []
 
-    def fake_consent(cid: str, csecret: str, *, with_update: bool = False) -> Any:
-        calls.append((cid, csecret, with_update))
+    class _Calls(list):
+        scopes: list[list[str]]
+
+    calls = _Calls()
+    calls.scopes = []
+
+    def fake_consent(cid: str, csecret: str, *, scopes: list[str]) -> Any:
+        calls.append((cid, csecret, any("force-ssl" in s for s in scopes)))
+        calls.scopes.append(list(scopes))
         return creds
 
     monkeypatch.setattr(integrations_module, "_run_consent_flow", fake_consent)
+    monkeypatch.setattr(
+        integrations_module, "_granted_scopes", lambda *a, **k: granted,
+    )
     return calls
 
 
@@ -830,6 +841,66 @@ class TestSetupUpdateScope:
 
         assert set(_SCOPES).issubset(set(_SCOPES_WITH_UPDATE))
         assert "youtube.force-ssl" in " ".join(_SCOPES_WITH_UPDATE)
+
+
+class TestSetupScopes:
+    """Which scopes a (re-)consent asks for. Consent REPLACES the refresh
+    token, so what is not requested is lost."""
+
+    _UPLOAD = "https://www.googleapis.com/auth/youtube.upload"
+    _UPDATE = "https://www.googleapis.com/auth/youtube.force-ssl"
+    _ANALYTICS = "https://www.googleapis.com/auth/yt-analytics.readonly"
+
+    def _setup(self, runner, integrations_module, stub_db_calls, monkeypatch, args, *, granted):
+        calls = _patch_consent(monkeypatch, integrations_module, _make_creds(), granted=granted)
+        _patch_verify(monkeypatch, integrations_module)
+        stub_db_calls["read_returns"].update(
+            client_id="stored-id", client_secret="stored-secret", refresh_token="old-rtok",
+        )
+        result = runner.invoke(
+            integrations_module.integrations_group, ["youtube", "setup", *args], input="n\n",
+        )
+        assert result.exit_code == 0, result.output
+        return calls.scopes[0], result.output
+
+    def test_with_analytics_adds_the_read_only_scope(
+        self, runner, integrations_module, stub_db_calls, monkeypatch,
+    ):
+        scopes, output = self._setup(
+            runner, integrations_module, stub_db_calls, monkeypatch,
+            ["--with-analytics"], granted=None,
+        )
+        assert scopes == [self._UPLOAD, self._ANALYTICS]
+        assert "youtube_reach" in output  # the operator is told what it is for
+
+    def test_re_consent_keeps_what_the_token_already_holds(
+        self, runner, integrations_module, stub_db_calls, monkeypatch,
+    ):
+        """The trap this closes: `--with-analytics` after a `--with-update`
+        grant would otherwise mint a token without force-ssl and break
+        `sync-metadata`."""
+        scopes, output = self._setup(
+            runner, integrations_module, stub_db_calls, monkeypatch,
+            ["--with-analytics"], granted=[self._UPLOAD, self._UPDATE],
+        )
+        assert set(scopes) == {self._UPLOAD, self._UPDATE, self._ANALYTICS}
+        assert "already granted, kept" in output
+
+    def test_reset_scopes_narrows_on_purpose(
+        self, runner, integrations_module, stub_db_calls, monkeypatch,
+    ):
+        scopes, _ = self._setup(
+            runner, integrations_module, stub_db_calls, monkeypatch,
+            ["--reset-scopes"], granted=[self._UPLOAD, self._UPDATE],
+        )
+        assert scopes == [self._UPLOAD]
+
+    def test_scopes_to_request_is_ordered_and_deduplicated(self, integrations_module):
+        got = integrations_module._scopes_to_request(
+            with_update=True, with_analytics=True,
+            granted=[self._UPDATE, "https://example.test/other"], reset=False,
+        )
+        assert got == [self._UPLOAD, self._UPDATE, self._ANALYTICS, "https://example.test/other"]
 
 
 class TestSetupReusesStoredClient:

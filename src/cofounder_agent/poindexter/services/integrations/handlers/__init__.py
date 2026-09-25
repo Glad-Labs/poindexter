@@ -50,7 +50,8 @@ def load_all() -> None:
     #                      retention_embeddings_collapse, retention_embeddings_orphan_prune,
     #                      retention_summarize_to_table, retention_ttl_prune
     # tap.* surface: tap_builtin_topic_source, tap_corsair_csv,
-    #                tap_external_metrics_writer, tap_singer_subprocess
+    #                tap_external_metrics_writer, tap_singer_subprocess,
+    #                tap_youtube_reporting
     from poindexter.services.integrations.handlers import (  # noqa: F401
         outbound_apprise,
         outbound_vercel_isr,
@@ -65,6 +66,7 @@ def load_all() -> None:
         tap_corsair_csv,
         tap_external_metrics_writer,
         tap_singer_subprocess,
+        tap_youtube_reporting,
     )
 
     # Reference the imported names so static analyzers don't drop them
@@ -77,6 +79,7 @@ def load_all() -> None:
         retention_summarize_to_table, retention_ttl_prune,
         tap_builtin_topic_source, tap_corsair_csv,
         tap_external_metrics_writer, tap_singer_subprocess,
+        tap_youtube_reporting,
     )
 
     logger.info("integrations.handlers.load_all: handler modules imported")

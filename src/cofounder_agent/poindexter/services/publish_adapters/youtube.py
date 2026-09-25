@@ -82,6 +82,12 @@ _SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 _UPDATE_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
 _SCOPES_WITH_UPDATE = [*_SCOPES, _UPDATE_SCOPE]
 
+# Read-only channel analytics, for the ``youtube_reporting`` tap (thumbnail
+# impressions + click-through from the Reporting API). Opt-in for the same
+# reason as the update scope: an install that never measures reach never
+# holds it. ``setup --with-analytics`` requests it.
+_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"
+
 
 def _is_insufficient_scope(exc: Exception) -> bool:
     """True when a Google API error is the missing-update-scope 403.

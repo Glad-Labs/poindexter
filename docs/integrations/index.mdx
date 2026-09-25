@@ -22,7 +22,7 @@ name can be reused across surfaces. Five surfaces are in flight today.
 | --- | --- | --- | --- |
 | `webhook` | `webhook_endpoints` (direction=`inbound`) | `routes/external_webhooks.py` + `routes/alertmanager_webhook_routes.py` | External SaaS sends an event in (Lemon Squeezy, Resend, Alertmanager) via dedicated routes. |
 | `outbound` | `webhook_endpoints` (direction=`outbound`) | `services/integrations/outbound_dispatcher.py` | We send an event out (Discord, Telegram, Vercel ISR purge). |
-| `tap` | `external_taps` | `services/integrations/tap_runner.py` | Pull external data on a schedule (HackerNews, Dev.to, GA4, GSC, Singer subprocesses). |
+| `tap` | `external_taps` | `services/integrations/tap_runner.py` | Pull external data on a schedule (HackerNews, Dev.to, GA4, GSC, YouTube reach, Singer subprocesses). |
 | `retention` | `retention_policies` | `services/integrations/retention_runner.py` | Sweep aging data — TTL-prune, downsample, summarize-to-table. |
 | `publishing` | `publishing_adapters` | `services/jobs/media_distribute.py` | Distribute rendered media (podcast / video) to platforms (YouTube, Postiz). |
 
@@ -58,6 +58,7 @@ name can be reused across surfaces. Five surfaces are in flight today.
     - [`tap.builtin_topic_source`](/docs/integrations/tap_builtin_topic_source) — first-party TopicSources (HackerNews, Dev.to, codebase, web_search, knowledge, dev_diary)
     - [`tap.external_metrics_writer`](/docs/integrations/tap_external_metrics_writer) — write Singer-tap output into `external_metrics`
     - [`tap.singer_subprocess`](/docs/integrations/tap_singer_subprocess) — generic Singer-protocol subprocess runner (GA4, GSC)
+    - [`tap.youtube_reporting`](/docs/integrations/tap_youtube_reporting) — YouTube Reporting API bulk reports (thumbnail impressions + CTR) into `external_metrics`
   </Accordion>
 
   <Accordion title="retention surface">
