@@ -36,11 +36,33 @@ def _pending_llm_row(run_id, fingerprint, acted_at, verify_after=120):
     }
 
 
+def _targeted_row(run_id, acted_at, *, signal, verify_after=600):
+    """A pending remediation_action that recorded what the verify reads: the
+    PyroscopeDown row it acted on (id 41), by the producer's fingerprint."""
+    return {
+        "id": 1, "timestamp": acted_at,
+        "details": json.dumps({
+            "remediation_run_id": run_id, "fingerprint": "a9b4c69fd247b1e8|warning",
+            "alertname": "PyroscopeDown", "action_name": "restart_container",
+            "verify_after_seconds": verify_after, "source": "rule",
+            "verify_signal": signal, "alert_event_id": 41,
+            "alert_fingerprint": "a9b4c69fd247b1e8", "alert_severity": "warning",
+        }),
+    }
+
+
 def _findings(pool):
     """audit_log rows written with event_type='finding' (args[0] of _write_audit)."""
     return [
         json.loads(e[1][3]) for e in pool.executed
         if "audit_log" in e[0] and e[1][0] == "finding"
+    ]
+
+
+def _verify_rows(pool):
+    return [
+        json.loads(e[1][3]) for e in pool.executed
+        if "audit_log" in e[0] and e[1][0] == "remediation_verify"
     ]
 
 
@@ -61,6 +83,8 @@ async def test_resolved_writes_verify_and_does_not_page():
     assert paged == []
     verify_rows = [json.loads(e[1][3]) for e in pool.executed if "audit_log" in e[0]]
     assert any(v.get("result") == "resolved" for v in verify_rows)
+    # recorded before the verify read alert_events: the legacy oracle judged it
+    assert [v["evidence"] for v in _verify_rows(pool)] == ["dedup_state"]
 
 
 @pytest.mark.asyncio
@@ -113,6 +137,8 @@ async def test_still_firing_check_db_error_logs_warning_and_pages(caplog):
 
     assert out["still_firing"] == 1 and out["resolved"] == 0
     assert len(paged) == 1
+    assert paged[0].endswith("(the verify could not read the alert's state)")
+    assert [v["evidence"] for v in _verify_rows(pool)] == ["check_failed"]
     assert any("still-firing check failed" in r.getMessage() for r in caplog.records)
 
 
@@ -169,3 +195,130 @@ async def test_still_firing_llm_source_emits_no_finding():
     out = await E.run_verify_scan(pool, config=CFG, logger=LOG, notify_fn=notify)
     assert out["still_firing"] == 1
     assert _findings(pool) == []
+
+
+# ---------------------------------------------------------------------------
+# The evidence the verify reads from alert_events (glad-labs-stack#4023). An
+# action records the row it acted on; the verify asks alert_events about that
+# alert by the producer's fingerprint, and what counts depends on the producer.
+# ---------------------------------------------------------------------------
+
+
+def _evidence_pool(acted, *, signal, answer):
+    """A pool whose pending action targets row 41, answering the evidence query
+    with ``answer`` and recording what it was asked. ``alert_dedup_state`` is
+    never consulted for a targeted action, so reading it fails the test."""
+    pool = FakePool()
+    pool.set_fetch(lambda sql, args: [_targeted_row("r9", acted, signal=signal)])
+    asked = []
+
+    def _fetchval(sql, args):
+        asked.append((sql, args))
+        return answer
+
+    def _no_dedup_state(sql, args):
+        raise AssertionError("the verify read alert_dedup_state for a targeted action")
+
+    pool.set_fetchval(_fetchval)
+    pool.set_fetchrow(_no_dedup_state)
+    return pool, asked
+
+
+async def _scan(pool):
+    paged = []
+
+    async def notify(msg, critical=False):
+        paged.append(msg)
+
+    out = await E.run_verify_scan(pool, config=CFG, logger=LOG, notify_fn=notify)
+    return out, paged
+
+
+@pytest.mark.asyncio
+async def test_a_probe_that_fired_again_after_the_action_is_still_firing():
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool, asked = _evidence_pool(acted, signal=E.VERIFY_BY_REFIRE, answer=True)
+    out, paged = await _scan(pool)
+    assert out["still_firing"] == 1
+    assert paged == [
+        "[FIREFIGHTER] auto-remediation did not resolve PyroscopeDown: attempted "
+        "restart_container, still firing after 600s (it fired again after the action)"
+    ]
+    assert [v["evidence"] for v in _verify_rows(pool)] == ["refired"]
+    sql, args = asked[0]
+    assert "lower(status) = 'firing'" in sql and "received_at > $4" in sql
+    # after the row acted on, by the producer's fingerprint + the key's severity,
+    # received after the action
+    assert args == (41, "a9b4c69fd247b1e8", "warning", acted)
+
+
+@pytest.mark.asyncio
+async def test_a_probe_that_went_quiet_after_the_action_is_resolved():
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool, _ = _evidence_pool(acted, signal=E.VERIFY_BY_REFIRE, answer=False)
+    out, paged = await _scan(pool)
+    assert out["resolved"] == 1 and paged == []
+    assert [v["evidence"] for v in _verify_rows(pool)] == ["no_refire"]
+
+
+@pytest.mark.asyncio
+async def test_a_resolved_notification_is_the_evidence_of_a_fix():
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool, asked = _evidence_pool(acted, signal=E.VERIFY_BY_RESOLVED_NOTIFICATION, answer="resolved")
+    out, paged = await _scan(pool)
+    assert out["resolved"] == 1 and paged == []
+    assert [v["evidence"] for v in _verify_rows(pool)] == ["resolved_notification"]
+    sql, args = asked[0]
+    assert "ORDER BY id DESC" in sql
+    # the notifier's latest word since the row acted on; no time bound
+    assert args == (41, "a9b4c69fd247b1e8", "warning")
+
+
+@pytest.mark.asyncio
+async def test_no_resolved_notification_by_the_verify_means_still_firing():
+    """glad-labs-stack#4023. Alertmanager re-sends a live alert only every
+    repeat_interval (4 h), so silence after a restart proves nothing. The old
+    oracle read that silence as resolved and a failed restart never paged."""
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool, _ = _evidence_pool(acted, signal=E.VERIFY_BY_RESOLVED_NOTIFICATION, answer=None)
+    out, paged = await _scan(pool)
+    assert out["still_firing"] == 1
+    assert paged == [
+        "[FIREFIGHTER] auto-remediation did not resolve PyroscopeDown: attempted "
+        "restart_container, still firing after 600s (no resolved notification since the action)"
+    ]
+    assert [v["evidence"] for v in _verify_rows(pool)] == ["no_resolved_notification"]
+
+
+@pytest.mark.asyncio
+async def test_a_notifier_whose_latest_word_is_firing_is_still_firing():
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool, _ = _evidence_pool(acted, signal=E.VERIFY_BY_RESOLVED_NOTIFICATION, answer="firing")
+    out, paged = await _scan(pool)
+    assert out["still_firing"] == 1 and len(paged) == 1
+    assert [v["evidence"] for v in _verify_rows(pool)] == ["refired"]
+
+
+@pytest.mark.asyncio
+async def test_an_evidence_read_failure_pages():
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool, _ = _evidence_pool(acted, signal=E.VERIFY_BY_RESOLVED_NOTIFICATION, answer=None)
+
+    def _boom(sql, args):
+        raise RuntimeError("alert_events unavailable")
+
+    pool.set_fetchval(_boom)
+    out, paged = await _scan(pool)
+    assert out["still_firing"] == 1 and len(paged) == 1
+    assert [v["evidence"] for v in _verify_rows(pool)] == ["check_failed"]
+
+
+@pytest.mark.asyncio
+async def test_an_alertmanager_action_is_not_verified_before_its_grace():
+    """600 s, not the general 120: a resolved notification only arrives at the
+    notifier's next group_interval tick."""
+    acted = datetime.now(UTC) - timedelta(seconds=300)
+    pool, asked = _evidence_pool(acted, signal=E.VERIFY_BY_RESOLVED_NOTIFICATION, answer=None)
+    out, paged = await _scan(pool)
+    assert out == {"verified": 0, "resolved": 0, "still_firing": 0}
+    assert asked == [] and paged == []

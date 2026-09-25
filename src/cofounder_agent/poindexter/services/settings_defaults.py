@@ -178,6 +178,12 @@ DEFAULTS: dict[str, str] = {
     "ops_firefighter_window_minutes": "60",
     # Grace period before the verify scan re-checks whether the alert cleared.
     "ops_firefighter_verify_after_seconds": "120",
+    # The same grace for an alert Alertmanager (or Grafana alerting) delivered,
+    # when the rule sets none. Such a notifier only says an alert cleared with
+    # a resolved notification, sent at its next group_interval tick (5 min), so
+    # 120 s would judge every fix of one "still firing". 600 s covers a
+    # relapse too: the rule's for: (5 min for PyroscopeDown) + group_interval.
+    "ops_firefighter_alertmanager_verify_after_seconds": "600",
     # Global backstop across ALL actions, per rolling hour.
     "ops_firefighter_max_actions_per_hour": "10",
     # CSV of enabled action_names; empty = all registered actions allowed.
@@ -6481,6 +6487,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'operator_timezone': {'value_type': 'string'},
     'operator_service_host': {'value_type': 'string'},
     'ops_firefighter_action_allowlist': {'owner': 'rules'},
+    'ops_firefighter_alertmanager_verify_after_seconds': {'owner': 'rules', 'value_type': 'integer'},
     'ops_firefighter_enabled': {'value_type': 'boolean'},
     'ops_firefighter_llm_exclude_regex': {'owner': 'rules', 'value_type': 'string'},
     'ops_firefighter_llm_longtail_enabled': {'owner': 'rules', 'value_type': 'boolean'},

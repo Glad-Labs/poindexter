@@ -87,6 +87,12 @@ async def load_firefighter_config(pool: Any) -> dict[str, Any]:
         "max_attempts_per_window": await _read_int(pool, "ops_firefighter_max_attempts_per_window", 3),
         "window_minutes": await _read_int(pool, "ops_firefighter_window_minutes", 60),
         "verify_after_seconds": await _read_int(pool, "ops_firefighter_verify_after_seconds", 120),
+        # The same grace for an alert that Alertmanager (or Grafana) delivered:
+        # its resolved notification can't arrive before the next group_interval
+        # tick. See engine.verify_signal_for.
+        "alertmanager_verify_after_seconds": await _read_int(
+            pool, "ops_firefighter_alertmanager_verify_after_seconds", 600
+        ),
         "max_actions_per_hour": await _read_int(pool, "ops_firefighter_max_actions_per_hour", 10),
         "action_allowlist": allowlist,
         # --- Plan B: LLM long-tail selector gates ---

@@ -79,7 +79,7 @@ class FirefighterWorld:
         from datetime import timedelta
         delta = timedelta(minutes=minutes)
         for row in self.alert_events:
-            for key in ("received_at", "dispatched_at"):
+            for key in ("received_at", "dispatched_at", "starts_at"):
                 if row.get(key) is not None:
                     row[key] -= delta
         for state in self.dedup_state.values():
@@ -99,8 +99,13 @@ class FirefighterWorld:
         status: str = "firing",
         labels: dict[str, Any] | None = None,
         summary: str = "",
+        starts_at: Any = None,
     ) -> dict[str, Any]:
+        """Write one row. ``starts_at`` as the producer sends it: None for a
+        probe that leaves it out, ``"now"`` for one that stamps ``NOW()`` (the
+        row's own ``received_at``), or when the episode began (Alertmanager)."""
         import json
+        received_at = self.now()
         row = {
             "id": self._next_alert_id,
             "alertname": alertname,
@@ -110,7 +115,8 @@ class FirefighterWorld:
             "labels": json.dumps(labels or {}),
             "annotations": json.dumps({"summary": summary or f"{alertname} {status}"}),
             "fingerprint": fingerprint,
-            "received_at": self.now(),
+            "starts_at": received_at if starts_at == "now" else starts_at,
+            "received_at": received_at,
             "dispatched_at": None,
             "dispatch_result": None,
         }
@@ -133,7 +139,8 @@ class FirefighterWorld:
             pending = [r for r in self.alert_events if r["dispatched_at"] is None]
             return [
                 {k: r[k] for k in ("id", "alertname", "status", "severity", "category",
-                                   "labels", "annotations", "fingerprint")}
+                                   "labels", "annotations", "fingerprint",
+                                   "starts_at", "received_at")}
                 for r in sorted(pending, key=lambda r: r["id"])[:limit]
             ]
         if "FROM remediation_rules" in sql:
@@ -203,6 +210,25 @@ class FirefighterWorld:
                 if not refired:
                     return True
             return False
+        if "SELECT EXISTS" in sql and "received_at > $4" in sql:
+            # engine._REFIRED_SINCE_SQL: a firing row of the key after the action
+            event_id, stored_fp, severity, since = args
+            return any(
+                r["id"] > event_id and r["fingerprint"] == stored_fp
+                and r["status"].lower() == "firing" and (r["severity"] or "") == severity
+                and r["received_at"] > since
+                for r in self.alert_events
+            )
+        if "FROM alert_events" in sql and "ORDER BY id DESC" in sql:
+            # engine._LATEST_NOTIFICATION_SQL: the notifier's latest word since the row
+            event_id, stored_fp, severity = args
+            said = [
+                r for r in self.alert_events
+                if r["id"] > event_id and r["fingerprint"] == stored_fp
+                and (r["status"].lower() == "resolved"
+                     or (r["status"].lower() == "firing" and (r["severity"] or "") == severity))
+            ]
+            return max(said, key=lambda r: r["id"])["status"].lower() if said else None
         if "details->>'action_name' = $2" in sql:
             fingerprint, action_name, window_minutes = args
             cutoff = self.now() - timedelta(minutes=int(window_minutes))

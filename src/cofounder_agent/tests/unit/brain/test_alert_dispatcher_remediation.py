@@ -180,15 +180,21 @@ async def test_poll_wires_select_fn_and_repeat_count(monkeypatch):
     captured = {}
 
     async def _hook(pool, *, alert, fingerprint, config, logger,
-                    select_fn=None, repeat_count=0, age_minutes=0):
+                    select_fn=None, repeat_count=0, age_minutes=0, alert_event=None):
         captured["select_fn"] = select_fn
         captured["repeat_count"] = repeat_count
+        captured["alert_event"] = alert_event
         return RemediationDecision(acted=False, reason="no rule")
 
     monkeypatch.setattr(ad, "evaluate_for_dispatch_hook", _hook, raising=False)
     await ad.poll_and_dispatch(pool, notify_fn=notify)
     assert callable(captured["select_fn"])
     assert isinstance(captured["repeat_count"], int)
+    # the row itself, as the verify reads it back (glad-labs-stack#4023)
+    assert captured["alert_event"] == {
+        "id": 1, "fingerprint": "fp-worker", "severity": "critical",
+        "starts_at": None, "received_at": None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -470,8 +476,9 @@ async def test_a_flapping_container_is_restarted_each_episode_until_the_breaker_
         await sim.cycle(after_minutes=5)
     assert sim.restarts == ["poindexter-speaches"] * 3
     assert len(sim.pages("[FIRING · warning] container_unhealthy")) == 1
-    verified = [v["details"]["result"] for v in sim.world.audit_rows("remediation_verify")]
-    assert verified == ["resolved"] * 3
+    verified = [(v["details"]["result"], v["details"]["evidence"])
+                for v in sim.world.audit_rows("remediation_verify")]
+    assert verified == [("resolved", "no_refire")] * 3
 
 
 @pytest.mark.asyncio
@@ -529,6 +536,10 @@ async def test_a_restart_that_does_not_hold_pages_through_the_verify_and_is_not_
     assert sim.restarts == ["poindexter-speaches"]
     assert len(sim.pages("[FIREFIGHTER] auto-remediation did not resolve container_unhealthy")) == 1
     assert [v["details"]["result"] for v in sim.world.audit_rows("remediation_verify")] == ["still_firing"]
+    # the health watch reports a level: its re-fires are the evidence
+    assert [v["details"]["evidence"] for v in sim.world.audit_rows("remediation_verify")] == ["refired"]
+    action = sim.world.audit_rows("remediation_action")[0]["details"]
+    assert (action["verify_signal"], action["alert_fingerprint"]) == (E.VERIFY_BY_REFIRE, SPEACHES_FP)
 
 
 @pytest.mark.asyncio
@@ -624,33 +635,223 @@ async def test_a_refused_source_resolved_episode_that_lands_on_the_summary_says_
 
 
 @pytest.mark.asyncio
+async def test_a_recovery_after_a_refire_does_not_undo_the_refire(monkeypatch):
+    """A probe that reports a level: speaches came back unhealthy after the
+    restart, then recovered on its own. The restart did not fix it, and the
+    verify says so; the probe's recovery row pages on its own."""
+    sim = _Sim(monkeypatch)
+    sim.wedged()
+    await sim.cycle()
+    sim.world.advance(minutes=11)
+    sim.wedged()                                 # unhealthy again after the restart
+    await sim.cycle()
+    sim.world.advance(minutes=2)
+    sim.healthy_again()
+    await sim.cycle()
+    await sim.cycle(after_minutes=3)             # t+16: verify
+    verifies = sim.world.audit_rows("remediation_verify")
+    assert [(v["details"]["result"], v["details"]["evidence"]) for v in verifies] == [
+        ("still_firing", "refired")]
+    assert sim.pages("[FIREFIGHTER]")[0].endswith("(it fired again after the action)")
+
+
+# ---------------------------------------------------------------------------
+# Alertmanager-sourced rules (glad-labs-stack#4023). Alertmanager reports
+# changes: one firing notification per episode, a resolved one at the next
+# group_interval tick after it clears, a repeat every 4 h while it stays
+# firing. Silence after a restart proves nothing; the resolved notification
+# does. The live rules on prod: PyroscopeDown and PromtailDown, no per-rule
+# grace (so the 600 s Alertmanager default).
+# ---------------------------------------------------------------------------
+
+PYROSCOPE_FP = "a9b4c69fd247b1e8"
+PYROSCOPE_RULE = {
+    "id": 1, "alertname": "PyroscopeDown", "match_regex": None,
+    "action_name": "restart_container", "params": {"container": "poindexter-pyroscope"},
+    "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None,
+    "enabled": True,
+}
+_PYROSCOPE_LABELS = {"job": "pyroscope", "alertname": "PyroscopeDown",
+                     "severity": "warning", "category": "infrastructure"}
+
+
+class _AlertmanagerSim(_Sim):
+    def __init__(self, monkeypatch, *, rule=PYROSCOPE_RULE, settings=None):
+        super().__init__(monkeypatch, rules=(rule,), settings=settings)
+        self.last = None
+
+    def firing(self, *, new_episode=True):
+        """A firing notification. A new episode began group_wait (30 s) before
+        Alertmanager sent it; a repeat carries its episode's starts_at."""
+        if new_episode or self.last is None:
+            starts_at = self.world.now() - timedelta(seconds=37)
+        else:
+            starts_at = self.last["starts_at"]
+        return self._notify("firing", starts_at)
+
+    def resolved(self):
+        return self._notify("resolved", self.last["starts_at"])
+
+    def _notify(self, status, starts_at):
+        self.last = self.world.fire(
+            alertname="PyroscopeDown", fingerprint=PYROSCOPE_FP, severity="warning",
+            status=status, labels=_PYROSCOPE_LABELS, summary="Pyroscope is down",
+            starts_at=starts_at,
+        )
+        return self.last
+
+    def verifies(self):
+        return [(v["details"]["result"], v["details"]["evidence"])
+                for v in self.world.audit_rows("remediation_verify")]
+
+
+@pytest.mark.asyncio
+async def test_an_alertmanager_restart_that_works_is_verified_by_its_resolved_notification(monkeypatch):
+    sim = _AlertmanagerSim(monkeypatch)
+    sim.firing()
+    await sim.cycle()                            # restarted, page held
+    action = sim.world.audit_rows("remediation_action")[0]["details"]
+    assert action["verify_signal"] == E.VERIFY_BY_RESOLVED_NOTIFICATION
+    assert action["verify_after_seconds"] == 600
+    sim.world.advance(minutes=5)
+    resolved = sim.resolved()                    # the next group_interval tick
+    await sim.cycle()
+    assert resolved["dispatch_result"].startswith("suppressed:")
+    assert sim.verifies() == []                  # not due until 10 min
+    await sim.cycle(after_minutes=5.5)
+    assert sim.verifies() == [("resolved", "resolved_notification")]
+    assert sim.notify.await_count == 0
+    assert sim.restarts == ["poindexter-pyroscope"]
+
+
+@pytest.mark.asyncio
+async def test_an_alertmanager_restart_that_does_not_work_pages_when_the_verify_is_due(monkeypatch):
+    """The bug in #4023: at 120 s, with Alertmanager silent until its 4-h
+    repeat, the verify read a failed restart as resolved. The repeat landed
+    outside the dedup window, was restarted again, "resolved" again, and the
+    operator never heard of it."""
+    sim = _AlertmanagerSim(monkeypatch)
+    sim.firing()
+    await sim.cycle()
+    for _ in range(3):
+        await sim.cycle(after_minutes=3)         # t+9: Alertmanager says nothing
+    assert sim.verifies() == [] and sim.notify.await_count == 0
+    await sim.cycle(after_minutes=1.5)           # t+10.5: the verify is due
+    assert sim.verifies() == [("still_firing", "no_resolved_notification")]
+    assert sim.pages("[FIREFIGHTER]") == [
+        "[FIREFIGHTER] auto-remediation did not resolve PyroscopeDown: attempted "
+        "restart_container, still firing after 600s (no resolved notification since the action)"
+    ]
+    # Alertmanager's 4-h repeat: past the dedup window, a new run. It is
+    # restarted again, and when that fails too, it pages again.
+    sim.world.advance(minutes=230)
+    repeat = sim.firing(new_episode=False)
+    await sim.cycle()
+    assert repeat["dispatch_result"].startswith("remediating: restart_container")
+    await sim.cycle(after_minutes=10.5)
+    assert sim.restarts == ["poindexter-pyroscope"] * 2
+    assert len(sim.pages("[FIREFIGHTER]")) == 2
+
+
+@pytest.mark.asyncio
+async def test_an_alertmanager_resolved_notification_is_not_read_as_a_refire(monkeypatch):
+    """The latent half of #4023: the resolved notification shares the firing
+    row's dedup key, so it moves alert_dedup_state.last_seen_at past the
+    action. The old oracle read that as a re-fire and paged a fix that
+    worked. A grace past the group_interval tick is where it bit."""
+    sim = _AlertmanagerSim(monkeypatch, rule={**PYROSCOPE_RULE, "verify_after_seconds": 900})
+    sim.firing()
+    await sim.cycle()
+    sim.world.advance(minutes=5)
+    sim.resolved()
+    await sim.cycle()
+    acted_at = sim.world.audit_rows("remediation_action")[0]["timestamp"]
+    assert sim.world.dedup_state[f"{PYROSCOPE_FP}|warning"]["last_seen_at"] > acted_at
+    await sim.cycle(after_minutes=10.5)          # t+15.5: the rule's 900 s
+    assert sim.verifies() == [("resolved", "resolved_notification")]
+    assert sim.notify.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_an_alertmanager_alert_that_comes_back_inside_the_verify_pages(monkeypatch):
+    """The restart looked like it worked (resolved at the first tick), then
+    pyroscope died again. The verify reads the latest notification, not the
+    first, and the re-fire is not restarted while the attempt is pending."""
+    sim = _AlertmanagerSim(monkeypatch)
+    sim.firing()
+    await sim.cycle()
+    sim.world.advance(minutes=5)
+    sim.resolved()
+    await sim.cycle()
+    sim.world.advance(minutes=4.5)
+    again = sim.firing()                         # a new episode
+    await sim.cycle()
+    assert again["dispatch_result"].startswith("suppressed:")
+    await sim.cycle(after_minutes=1)             # t+10.5: the verify
+    assert sim.verifies() == [("still_firing", "refired")]
+    assert sim.pages("[FIREFIGHTER]")[0].endswith("(it fired again after the action)")
+    assert sim.restarts == ["poindexter-pyroscope"]
+
+
+@pytest.mark.asyncio
+async def test_a_resolved_notification_from_a_backlog_still_counts(monkeypatch):
+    """The brain was down while pyroscope fired and cleared: both
+    notifications arrive in one batch, and the firing one is still acted on.
+    The resolved notification is the latest state, even though it was written
+    before the restart; the legacy oracle saw its dispatch as a re-fire."""
+    sim = _AlertmanagerSim(monkeypatch)
+    sim.firing()
+    sim.world.advance(minutes=5)
+    sim.resolved()
+    await sim.cycle()
+    assert sim.restarts == ["poindexter-pyroscope"]
+    await sim.cycle(after_minutes=10.5)
+    assert sim.verifies() == [("resolved", "resolved_notification")]
+    assert sim.notify.await_count == 0
+
+
+@pytest.mark.asyncio
 async def test_an_alertmanager_resolved_notification_never_opens_an_episode(monkeypatch):
     """Alertmanager's resolved row shares the firing row's dedup key (same
     fingerprint, same severity). It is not a recurrence and restarts nothing;
     the next real firing is the new episode."""
-    rule = {"id": 1, "alertname": "PyroscopeDown", "match_regex": None,
-            "action_name": "restart_container", "params": {"container": "poindexter-pyroscope"},
+    sim = _AlertmanagerSim(monkeypatch)
+    sim.firing()
+    await sim.cycle()
+    sim.world.advance(minutes=5)
+    resolved = sim.resolved()
+    await sim.cycle()
+    assert resolved["dispatch_result"].startswith("suppressed:")
+    await sim.cycle(after_minutes=5.5)           # verify: resolved
+    assert sim.restarts == ["poindexter-pyroscope"]
+    sim.world.advance(minutes=30)
+    again = sim.firing()
+    await sim.cycle()
+    assert sim.restarts == ["poindexter-pyroscope"] * 2
+    assert "new episode after a verified fix" in again["dispatch_result"]
+    assert sim.notify.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_a_probe_that_stamps_starts_at_with_now_is_verified_by_refire(monkeypatch):
+    """Eight brain probes write starts_at = NOW(), equal to received_at. They
+    report a level, so silence after the action is the fix, at the general
+    grace."""
+    fingerprint = "docker-port-forward-restart-skipped-poindexter-grafana"
+    rule = {"id": 50, "alertname": None, "match_regex": f"^{fingerprint}\\|",
+            "action_name": "restart_container", "params": {"container": "poindexter-grafana"},
             "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None,
             "enabled": True}
     sim = _Sim(monkeypatch, rules=[rule])
-
-    def pyroscope(status):
-        return sim.world.fire(alertname="PyroscopeDown", fingerprint="a9b4c69fd247b1e8",
-                              severity="warning", status=status,
-                              labels={"job": "pyroscope", "alertname": "PyroscopeDown",
-                                      "severity": "warning", "category": "infrastructure"})
-
-    pyroscope("firing")
+    sim.world.fire(alertname="docker_port_forward_restart_skipped", fingerprint=fingerprint,
+                   severity="warning", starts_at="now", labels={"container": "poindexter-grafana"})
     await sim.cycle()
-    await sim.cycle(after_minutes=3)             # verify (120 s): resolved
-    resolved = pyroscope("resolved")
-    await sim.cycle(after_minutes=2)
-    assert resolved["dispatch_result"].startswith("suppressed:")
-    assert sim.restarts == ["poindexter-pyroscope"]
-    again = pyroscope("firing")
-    await sim.cycle(after_minutes=35)
-    assert sim.restarts == ["poindexter-pyroscope"] * 2
-    assert "new episode after a verified fix" in again["dispatch_result"]
+    action = sim.world.audit_rows("remediation_action")[0]["details"]
+    assert action["verify_signal"] == E.VERIFY_BY_REFIRE
+    assert action["verify_after_seconds"] == 120
+    await sim.cycle(after_minutes=2.5)
+    assert [(v["details"]["result"], v["details"]["evidence"])
+            for v in sim.world.audit_rows("remediation_verify")] == [("resolved", "no_refire")]
     assert sim.notify.await_count == 0
 
 

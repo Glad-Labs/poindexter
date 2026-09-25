@@ -8,6 +8,9 @@ def test_firefighter_defaults_present_and_typed():
     assert DEFAULTS["ops_firefighter_max_attempts_per_window"] == "3"
     assert DEFAULTS["ops_firefighter_window_minutes"] == "60"
     assert DEFAULTS["ops_firefighter_verify_after_seconds"] == "120"
+    # Alertmanager-delivered alerts wait for a resolved notification, which
+    # lands on the notifier's group_interval tick (5 min): a longer grace.
+    assert DEFAULTS["ops_firefighter_alertmanager_verify_after_seconds"] == "600"
     assert DEFAULTS["ops_firefighter_max_actions_per_hour"] == "10"
     # Empty CSV = "all registered actions allowed" (not NULL — value_not_null rule)
     assert DEFAULTS["ops_firefighter_action_allowlist"] == ""

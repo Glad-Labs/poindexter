@@ -867,7 +867,7 @@ async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
 
 _POLL_SQL = """
 SELECT id, alertname, status, severity, category, labels, annotations,
-       fingerprint
+       fingerprint, starts_at, received_at
 FROM alert_events
 WHERE dispatched_at IS NULL
 ORDER BY id ASC
@@ -945,9 +945,11 @@ async def poll_and_dispatch(
         return summary
 
     # Pending remediations are verified every cycle (independent of new alert
-    # rows), AFTER this cycle's rows are dispatched: the verify reads
+    # rows), AFTER this cycle's rows are dispatched. The verify reads the
+    # alert's rows straight from alert_events, dispatched or not, but an action
+    # that recorded no producer fingerprint falls back to
     # alert_dedup_state.last_seen_at, which a re-fire only advances once its row
-    # is dispatched. Verifying first judged a restart "resolved" while the
+    # is dispatched. Verifying first judged such a restart "resolved" while the
     # re-fire that proves otherwise sat unread in this very batch, and the
     # dispatcher then took that re-fire for a new episode.
     injected_notify_fn = notify_fn
@@ -1094,12 +1096,14 @@ async def _offer_to_firefighter(
     repeat_count: int,
     summary: dict[str, int],
     episode: str | None = None,
+    alert_event: dict[str, Any] | None = None,
 ) -> Any:
     """Offer one row to the firefighter; mark it ``remediating`` when it acts.
 
     Returns the engine's decision, or None when the firefighter is off. When
     ``.acted`` is true the page is HELD and the caller must not notify: the
-    verify scan resolves it silently or pages later.
+    verify scan resolves it silently or pages later. ``alert_event`` is the
+    row itself as the verify needs it (see ``evaluate_for_dispatch``).
     """
     if not ff_cfg.get("enabled"):
         return None
@@ -1111,6 +1115,7 @@ async def _offer_to_firefighter(
         pool, alert=alert, fingerprint=fingerprint,
         config=ff_cfg, logger=logger,
         select_fn=_make_select_fn(pool), repeat_count=repeat_count,
+        alert_event=alert_event,
     )
     if ff.acted:
         episode_note = _EPISODE_NOTES.get(episode or "", "")
@@ -1216,6 +1221,13 @@ async def _dispatch_one(
             episode = decision.get("episode")
             ff_cfg = dedup_config.get("firefighter_config") or {}
             ff = None  # the firefighter's decision on this row, once consulted
+            # The row as the firefighter's verify reads it back: later rows of
+            # the producer's fingerprint at this severity, and how the producer
+            # reports (see engine.verify_signal_for).
+            alert_event = {
+                "id": row_id, "fingerprint": stored_fingerprint, "severity": severity,
+                "starts_at": row.get("starts_at"), "received_at": row.get("received_at"),
+            }
             if episode == EPISODE_SOURCE_RESOLVED and decision["action"] != "dispatch":
                 # The first firing row since the producer reported this alert
                 # resolved. Offer it like a first sighting (repeat_count 1);
@@ -1224,6 +1236,7 @@ async def _dispatch_one(
                     pool, row_id=row_id, alert=alert,
                     fingerprint=decision["fingerprint"], ff_cfg=ff_cfg,
                     repeat_count=1, summary=summary, episode=episode,
+                    alert_event=alert_event,
                 )
                 if ff is not None and ff.acted:
                     return None  # page HELD; verify scan will resolve or escalate
@@ -1297,7 +1310,7 @@ async def _dispatch_one(
                 pool, row_id=row_id, alert=alert,
                 fingerprint=decision["fingerprint"], ff_cfg=ff_cfg,
                 repeat_count=int((decision.get("state") or {}).get("repeat_count") or 0),
-                summary=summary, episode=episode,
+                summary=summary, episode=episode, alert_event=alert_event,
             )
             if ff is not None and ff.acted:
                 return None  # page HELD; verify scan will resolve or escalate

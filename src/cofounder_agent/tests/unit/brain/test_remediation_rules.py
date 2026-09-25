@@ -181,6 +181,8 @@ def _defaults_value(key: str) -> str:
     [
         ("model", "ops_firefighter_model"),
         ("llm_exclude_regex", "ops_firefighter_llm_exclude_regex"),
+        ("verify_after_seconds", "ops_firefighter_verify_after_seconds"),
+        ("alertmanager_verify_after_seconds", "ops_firefighter_alertmanager_verify_after_seconds"),
     ],
 )
 async def test_brain_fallback_matches_settings_defaults(cfg_field, settings_key):
@@ -194,7 +196,7 @@ async def test_brain_fallback_matches_settings_defaults(cfg_field, settings_key)
     pool = FakePool()
     pool.set_fetchval(lambda sql, args: None)  # nothing seeded
     cfg = await R.load_firefighter_config(pool)
-    assert cfg[cfg_field] == _defaults_value(settings_key), (
+    assert str(cfg[cfg_field]) == _defaults_value(settings_key), (
         f"brain fallback for {settings_key!r} has drifted from "
         "settings_defaults.DEFAULTS — a fresh DB would behave differently from "
         "a seeded one."
@@ -225,3 +227,83 @@ async def test_brain_firefighter_model_fallback_is_permissively_licensed():
     pool.set_fetchval(lambda sql, args: None)  # nothing seeded
     cfg = await R.load_firefighter_config(pool)
     assert cfg["model"] in permissive
+
+
+# ---------------------------------------------------------------------------
+# The grace for an alert Alertmanager delivered (glad-labs-stack#4023)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_config_reads_the_alertmanager_grace():
+    pool = FakePool()
+    store = {"ops_firefighter_alertmanager_verify_after_seconds": "720"}
+    pool.set_fetchval(lambda sql, args: store.get(args[0]))
+    cfg = await R.load_firefighter_config(pool)
+    assert cfg["alertmanager_verify_after_seconds"] == 720
+    assert cfg["verify_after_seconds"] == 120  # the general grace is separate
+
+
+def _repo_file(*parts: str):
+    """A file under the repo root, found by walking up from this test (no
+    fixed parents[N]: the depth moved once already, in the namespace move)."""
+    from pathlib import Path
+
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent.joinpath(*parts)
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError("/".join(parts) + " not found above " + __file__)
+
+
+def _seconds(duration: str) -> int:
+    """A Prometheus / Alertmanager duration ("30s", "5m", "1h30m") in seconds."""
+    import re
+
+    units = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    parts = re.findall(r"(\d+)([smhd])", str(duration))
+    assert parts and "".join(n + u for n, u in parts) == str(duration), duration
+    return sum(int(n) * units[u] for n, u in parts)
+
+
+def test_the_alertmanager_grace_covers_a_resolved_notification_and_a_relapse():
+    """The default grace must outlast what the verify waits on.
+
+    The live Alertmanager rules restart for PyroscopeDown and PromtailDown
+    (docs/operations/self-healing.md). After a restart that works, the resolved
+    notification comes at the notifier's next group_interval tick. After one
+    that only looks like it worked (the target comes up and dies again), the
+    alert re-fires once its ``for:`` has elapsed, at the tick after that. So
+    the grace covers ``for:`` + group_interval. Read from the configs, so
+    lengthening either one fails here instead of silently shortening the
+    verify: past the grace, a relapse gets restarted again as a new episode
+    before anyone hears of it.
+    """
+    import yaml
+
+    alertmanager = yaml.safe_load(
+        _repo_file("infrastructure", "prometheus", "alertmanager.yml.tmpl").read_text(encoding="utf-8")
+    )
+    grafana = yaml.safe_load(
+        _repo_file(
+            "infrastructure", "grafana", "provisioning", "alerting", "notification-policies.yml",
+        ).read_text(encoding="utf-8")
+    )
+    # the webhook route (the root) of both notifiers that post to alert_events
+    group_interval = max(
+        [_seconds(alertmanager["route"]["group_interval"])]
+        + [_seconds(p["group_interval"]) for p in grafana["policies"]]
+    )
+    rules_file = _repo_file("infrastructure", "prometheus", "alerts", "observability-sidecars.yml")
+    rules = {
+        r["alert"]: r
+        for group in yaml.safe_load(rules_file.read_text(encoding="utf-8"))["groups"]
+        for r in group["rules"] if "alert" in r
+    }
+    grace = int(_defaults_value("ops_firefighter_alertmanager_verify_after_seconds"))
+    for alertname in ("PyroscopeDown", "PromtailDown"):
+        needed = _seconds(rules[alertname]["for"]) + group_interval
+        assert grace >= needed, (
+            f"ops_firefighter_alertmanager_verify_after_seconds={grace} is shorter than "
+            f"{alertname}'s for: + group_interval ({needed}s)"
+        )

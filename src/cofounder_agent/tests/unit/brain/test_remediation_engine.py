@@ -453,3 +453,122 @@ async def test_latest_attempt_lets_a_db_error_reach_the_caller():
     pool.set_fetchrow(_boom)
     with pytest.raises(RuntimeError):
         await E.latest_attempt(pool, fingerprint="fp")
+
+
+# ---------------------------------------------------------------------------
+# What an action records for its verify (glad-labs-stack#4023): the row it
+# acted on, the producer's fingerprint, the key's severity, and which signal
+# proves a fix. The signal also picks the default grace.
+# ---------------------------------------------------------------------------
+
+_T0 = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "starts_at,received_at,expected",
+    [
+        # a probe that leaves starts_at out (container health watch, findings)
+        (None, _T0, E.VERIFY_BY_REFIRE),
+        # a probe that stamps NOW() in the INSERT: the same transaction
+        # timestamp as received_at (docker_port_forward_probe and seven others)
+        (_T0, _T0, E.VERIFY_BY_REFIRE),
+        # Alertmanager: the episode began before the notification reached us
+        (_T0 - timedelta(seconds=37), _T0, E.VERIFY_BY_RESOLVED_NOTIFICATION),
+        # Grafana with a skewed clock (Brain Daemon Stale, 2026-07-19): later,
+        # but still not the moment the row was written
+        (_T0 + timedelta(hours=4), _T0, E.VERIFY_BY_RESOLVED_NOTIFICATION),
+        # asyncpg hands datetimes; a replayed JSON row hands ISO strings
+        ("2026-09-25T11:59:23+00:00", "2026-09-25T12:00:00+00:00", E.VERIFY_BY_RESOLVED_NOTIFICATION),
+        ("2026-09-25T12:00:00+00:00", "2026-09-25T12:00:00Z", E.VERIFY_BY_REFIRE),
+    ],
+)
+def test_the_verify_signal_follows_how_the_producer_reports(starts_at, received_at, expected):
+    event = {"id": 1, "fingerprint": "fp", "starts_at": starts_at, "received_at": received_at}
+    assert E.verify_signal_for(event) == expected
+
+
+def test_no_row_means_the_refire_signal():
+    assert E.verify_signal_for(None) == E.VERIFY_BY_REFIRE
+
+
+CFG_AM = {**CFG, "alertmanager_verify_after_seconds": 600}
+PYROSCOPE_ALERT = {"labels": {"alertname": "PyroscopeDown", "severity": "warning"}, "annotations": {}}
+PYROSCOPE_ROW = {
+    "id": 41, "fingerprint": "a9b4c69fd247b1e8", "severity": "warning",
+    "starts_at": _T0 - timedelta(seconds=37), "received_at": _T0,
+}
+PYROSCOPE_RULE = {"id": 1, "action_name": "restart_container", "params": {"container": "poindexter-pyroscope"},
+                  "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None}
+
+
+async def _act(monkeypatch, *, rule, alert, alert_event, config=CFG_AM):
+    monkeypatch.setattr(R, "match_rule", _acoro(rule))
+    monkeypatch.setattr(R, "circuit_breaker_tripped", _acoro(False))
+    monkeypatch.setattr(R, "global_rate_exceeded", _acoro(False))
+    monkeypatch.setattr(E, "execute", _acoro(ActionResult(status="ok", detail="restarted", latency_ms=1)))
+    pool = FakePool()
+    d = await E.evaluate_for_dispatch(
+        pool, alert=alert, fingerprint=f"{(alert_event or {}).get('fingerprint') or 'fp'}|warning",
+        config=config, logger=LOG, alert_event=alert_event,
+    )
+    assert d.acted is True
+    return json.loads([e for e in pool.executed if "audit_log" in e[0]][0][1][3])
+
+
+@pytest.mark.asyncio
+async def test_an_alertmanager_action_records_its_row_and_waits_for_the_resolved_notification(monkeypatch):
+    details = await _act(monkeypatch, rule=PYROSCOPE_RULE, alert=PYROSCOPE_ALERT, alert_event=PYROSCOPE_ROW)
+    assert details["verify_signal"] == E.VERIFY_BY_RESOLVED_NOTIFICATION
+    assert details["alert_event_id"] == 41
+    assert details["alert_fingerprint"] == "a9b4c69fd247b1e8"
+    assert details["alert_severity"] == "warning"
+    # no per-rule grace: the Alertmanager default, not the general 120 s
+    assert details["verify_after_seconds"] == 600
+
+
+@pytest.mark.asyncio
+async def test_a_probe_action_keeps_the_general_grace(monkeypatch):
+    row = {"id": 7, "fingerprint": "docker-port-forward-restart-skipped-poindexter-postgres-local",
+           "severity": "warning", "starts_at": _T0, "received_at": _T0}
+    details = await _act(monkeypatch, rule=PYROSCOPE_RULE, alert=PYROSCOPE_ALERT, alert_event=row)
+    assert details["verify_signal"] == E.VERIFY_BY_REFIRE
+    assert details["verify_after_seconds"] == 120
+
+
+@pytest.mark.asyncio
+async def test_a_rule_grace_wins_over_the_alertmanager_default(monkeypatch):
+    rule = {**PYROSCOPE_RULE, "verify_after_seconds": 900}
+    details = await _act(monkeypatch, rule=rule, alert=PYROSCOPE_ALERT, alert_event=PYROSCOPE_ROW)
+    assert details["verify_after_seconds"] == 900
+    assert details["verify_signal"] == E.VERIFY_BY_RESOLVED_NOTIFICATION
+
+
+@pytest.mark.asyncio
+async def test_an_alert_without_a_producer_fingerprint_leaves_the_verify_on_dedup_state(monkeypatch):
+    """Nothing to look it up by in alert_events: no target is recorded, so the
+    verify uses the legacy oracle, with the general grace."""
+    row = {**PYROSCOPE_ROW, "fingerprint": ""}
+    details = await _act(monkeypatch, rule=PYROSCOPE_RULE, alert=PYROSCOPE_ALERT, alert_event=row)
+    assert not {"verify_signal", "alert_event_id", "alert_fingerprint", "alert_severity"} & set(details)
+    assert details["verify_after_seconds"] == 120
+
+
+@pytest.mark.asyncio
+async def test_an_llm_pick_on_an_alertmanager_alert_gets_the_same_verify(monkeypatch):
+    monkeypatch.setattr(R, "match_rule", _acoro(None))
+    monkeypatch.setattr(R, "circuit_breaker_tripped", _acoro(False))
+    monkeypatch.setattr(R, "global_rate_exceeded", _acoro(False))
+    monkeypatch.setattr(E, "execute", _acoro(ActionResult(status="ok", detail="restarted", latency_ms=1)))
+    pool = FakePool()
+    sel = {"action_name": "restart_container", "params": {"container": "poindexter-pyroscope"},
+           "confidence": 0.8, "reason": "profiler down", "model": "ollama/granite4.2:3b"}
+    d = await E.evaluate_for_dispatch(
+        pool, alert=PYROSCOPE_ALERT, fingerprint="a9b4c69fd247b1e8|warning",
+        config={**CFG_LLM, **CFG_AM}, logger=LOG, select_fn=_select_fn(sel), repeat_count=5,
+        alert_event=PYROSCOPE_ROW,
+    )
+    assert d.acted is True and d.source == "llm"
+    details = json.loads([e for e in pool.executed if "audit_log" in e[0]][0][1][3])
+    assert details["verify_signal"] == E.VERIFY_BY_RESOLVED_NOTIFICATION
+    assert details["verify_after_seconds"] == 600
+    assert details["alert_event_id"] == 41

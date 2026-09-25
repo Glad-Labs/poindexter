@@ -46,25 +46,76 @@ The loop, when an alert is about to page:
    The engine runs it, writes a `remediation_action` row to `audit_log`, and — if
    the action ran OK — **holds the page**. The `alert_events` row is marked
    `remediating: <action> (run <id>)` instead of sent.
-4. **Verify.** On a later poll cycle (once the rule's `verify_after_seconds`
-   grace has elapsed), `engine.run_verify_scan` asks _did it work?_ The signal is
-   `alert_dedup_state.last_seen_at`: the dispatcher bumps it every time the alert
-   re-fires (even when suppressed), keyed by the same fingerprint the engine
-   stored. Not advanced past the moment we acted → **resolved, silently**
-   (`remediation_verify` row, `result=resolved`, no page). Advanced → **still
-   firing → page now** (`result=still_firing`), because the fix didn't hold.
-   The verify runs at the end of each dispatch cycle, after that cycle's rows.
-   A re-fire only advances `last_seen_at` once its row is dispatched, and until
-   2026-09-25 the verify ran first. It could then judge a restart resolved
-   while the re-fire that proved otherwise sat unread in the same batch.
+4. **Verify.** On a later poll cycle (once the grace, `verify_after_seconds`,
+   has elapsed), `engine.run_verify_scan` asks _did it work?_ It reads the
+   alert's own rows in `alert_events`, found by the fingerprint the producer
+   stamped on the row the firefighter acted on. What counts as a fix depends on
+   who produced the alert (see [the verify](#the-verify--what-counts-as-a-fix)).
+   Fixed → **resolved, silently** (`remediation_verify` row, `result=resolved`,
+   no page). Not fixed → **still firing → page now** (`result=still_firing`).
+   Either way the row records the `evidence` it went on.
 5. **Escalate.** An action that couldn't even run pages immediately — there's
    nothing to wait for. A tripped circuit breaker or rate cap pages as usual —
    the firefighter steps aside rather than hammering a broken thing.
 
 Everything rides existing tables — no new state store. `remediation_rules` holds
 the rules; `audit_log` (`event_type IN ('remediation_action','remediation_verify')`)
-is both the durable history and the circuit-breaker's memory; `alert_dedup_state`
-is the "still firing?" oracle.
+is both the durable history and the circuit-breaker's memory; `alert_events` is
+the "still firing?" oracle.
+
+### The verify — what counts as a fix
+
+Two kinds of producer write `alert_events`, and silence after an action means
+opposite things from each:
+
+| Producer                                                                       | How it reports                                                                                                                                                    | Fixed                                                                                   | Not fixed                                                                                                                | Grace when the rule sets none                             |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| A probe: the container health watch, most brain probes, findings               | Re-fires every cycle while the problem lasts.                                                                                                                     | No firing row since the action (`no_refire`).                                           | A firing row at the alert's severity since the action (`refired`), even if a recovery row follows: the fix did not hold. | `ops_firefighter_verify_after_seconds` (120)              |
+| Alertmanager, and Grafana alerting (both post to `/api/webhooks/alertmanager`) | Sends a firing notification once per episode, repeats it only every `repeat_interval` (4 h for Alertmanager, 1 h for Grafana), and a resolved one when it clears. | Its latest notification since the row acted on is `resolved` (`resolved_notification`). | Its latest is `firing`, because the alert came back (`refired`), or it has sent nothing (`no_resolved_notification`).    | `ops_firefighter_alertmanager_verify_after_seconds` (600) |
+
+Only a firing row is ever a re-fire. Alertmanager's resolved notification
+carries the firing row's fingerprint and severity, so it shares the dedup key.
+
+The engine tells the two apart by `starts_at` (`engine.verify_signal_for`). A
+notifier reports when the alert's episode began: every notification of one
+episode carries the same `starts_at`, and it is never the moment the row was
+written. A probe either leaves `starts_at` out or stamps `NOW()` in the same
+insert, which makes it equal to `received_at`. On prod that splits the table
+exactly along the webhook (2026-09-25: 1,810 webhook rows, 9,541 probe and
+findings rows, no exceptions). `starts_at` being set is not enough on its own:
+eight brain probes stamp it, among them `docker_port_forward_restart_skipped`,
+which re-fires every five minutes. A probe that one day writes a real episode
+start would be read as a notifier. Its verify would then wait for a resolved
+row and page without one, a loud failure rather than a blind one.
+
+**Why this changed (glad-labs-stack#4023).** Until 2026-09-25 the verify read
+`alert_dedup_state.last_seen_at`, which the dispatcher moves on every row of the
+alert's dedup key. That works for a probe. For Alertmanager it was blind both
+ways. A failed restart of Pyroscope or Promtail read as resolved: nothing
+re-fires inside the 120 s grace, since Alertmanager repeats every 4 h. The 4 h
+repeat then landed outside the 120-minute dedup window, started a new run, and
+was restarted and "resolved" again. That cycle repeated every four hours and
+never paged. The other way round, the resolved notification moves
+`last_seen_at` too, so any grace long enough to see it read a fix that worked as
+still firing. An action recorded without the producer's fingerprint (before the
+change, or an alert whose row has none) is still judged that way, with evidence
+`dedup_state`.
+
+**Sizing the grace for an Alertmanager rule.** A resolved notification lands at
+the notifier's first `group_interval` tick after the alert clears (5 min for
+both notifiers here), so a grace shorter than that pages every fix as still
+firing. A target that comes back up and dies again re-fires once the rule's
+`for:` has elapsed, at the tick after that. Cover `for:` + `group_interval` and
+the verify sees the relapse. A shorter grace isn't silent: the relapse is
+restarted as a new episode and the circuit breaker bounds it, but the operator
+hears later. The 600 s default covers PyroscopeDown (`for: 5m`) and PromtailDown
+(`for: 3m`). `test_the_alertmanager_grace_covers_a_resolved_notification_and_a_relapse`
+reads the notifier configs and those two rules and fails if either outgrows
+it. For a rule on an alert with a longer `for:`, pass `--verify-after`.
+
+The page for a fix that did not hold says which evidence it went on, for
+example
+`[FIREFIGHTER] auto-remediation did not resolve PyroscopeDown: attempted restart_container, still firing after 600s (no resolved notification since the action)`.
 
 ### Episodes — one look per recurrence, not per dedup window
 
@@ -248,7 +299,9 @@ the container on a guess is worse than reporting it.
   worker.
 - **Verify-then-page.** A successful action never silences an unfixed problem: if
   the alert is still firing after the grace window, it pages. Silence is earned
-  only by the alert actually stopping.
+  only by the alert actually stopping. For an alert Alertmanager delivered, that
+  takes its resolved notification. Alertmanager going quiet proves nothing (see
+  [the verify](#the-verify--what-counts-as-a-fix)).
 - **A held page stays held.** A row the firefighter acted on gets no triage
   follow-up either. Triage threads its diagnosis under the page, and a held row
   has no page, so the diagnosis would go out on its own: a message about an
@@ -416,7 +469,10 @@ poindexter firefighter rule rm 3              # or: --alert SomeSidecarDown (thi
 silent dead row, so it's rejected up front. Known actions today: `restart_container`,
 `run_auto_remediate`. Optional per-rule circuit-breaker caps: `--max-attempts`,
 `--window-minutes`, `--verify-after` (each falls back to the global default when
-omitted).
+omitted). The default `--verify-after` depends on who produces the alert: 120 s
+for a probe, 600 s for an alert Alertmanager or Grafana delivered (see
+[sizing the grace](#the-verify--what-counts-as-a-fix)). PyroscopeDown and
+PromtailDown, the two Alertmanager rules on prod, set none and get the 600 s.
 
 **Only wire an action to an alert it can actually fix.** `restart_container`
 targets **containers** — confirm the surface is one (`docker ps`) before pointing
@@ -1088,39 +1144,40 @@ full incident write-up.
 
 ## Settings reference
 
-| Setting                                                       | Default                                    | Meaning                                                                                                                                                                                      |
-| ------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `brain_restart_consecutive_failures`                          | `2`                                        | Consecutive hard-down monitor cycles before `monitor_services` auto-restarts a local service (degraded never restarts).                                                                      |
-| `brain_docker_restart_timeout_seconds`                        | `90`                                       | Subprocess timeout for the brain's `docker restart` heal — must exceed the worker's graceful stop+start (~30-45 s).                                                                          |
-| `compose_drift_host_recover_enabled`                          | `true`                                     | Auto-heal compose drift via the host agent.                                                                                                                                                  |
-| `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                                                                                   |
-| `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                                                                                              |
-| `compose_drift_on_demand_services`                            | `wan-server,image-gen-server`              | CSV of services started on demand — exempt from the missing-container check.                                                                                                                 |
-| `compose_drift_active_profiles`                               | (empty)                                    | Fallback when the brain has no `COMPOSE_PROFILES` env var. CSV of active compose `profiles:`; services behind an unlisted profile are exempt from the missing-container check.               |
-| `compose_drift_auto_recover_enabled`                          | `false`                                    | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                                                                                                  |
-| `mcp_http_probe_recovery_url`                                 | (empty)                                    | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.                                                                                 |
-| `mcp_http_probe_recovery_token`                               | secret                                     | Bearer token matching the agent's `poindexter_recovery_token`.                                                                                                                               |
-| `offsite_backup_watch_enabled`                                | `true`                                     | Backup-freshness probe.                                                                                                                                                                      |
-| `auto_embed_watch_enabled`                                    | `true`                                     | Embedder-freshness probe.                                                                                                                                                                    |
-| `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                                        | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                                                                                            |
-| `docker_port_forward_alert_only_backoff_minutes`              | `60`                                       | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                                                                                            |
-| `docker_port_forward_pg_auth_check_enabled`                   | `true`                                     | Toggles the real-auth SCRAM-corruption tier for `probe_type=postgres` entries, independent of the base probe.                                                                                |
-| `docker_port_forward_pg_auth_timeout_seconds`                 | `5`                                        | Timeout for the real-auth `asyncpg.connect()` attempt (a few round trips, not one — set slightly above the base timeout).                                                                    |
-| `container_health_watch_enabled`                              | `true`                                     | Container health watch: fire `container_unhealthy` while a container stays unhealthy.                                                                                                        |
-| `container_health_alert_after_minutes`                        | `10`                                       | Minutes of consecutive failed healthchecks before a container's first `container_unhealthy` row.                                                                                             |
-| `container_health_alert_after_overrides`                      | `''` (none)                                | Per-container `name=minutes` thresholds for containers whose healthcheck fails while they work.                                                                                              |
-| `ops_firefighter_enabled`                                     | `true`                                     | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                                                                                        |
-| `ops_firefighter_max_attempts_per_window`                     | `3`                                        | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                                                                                                |
-| `ops_firefighter_window_minutes`                              | `60`                                       | Circuit-breaker rolling window (minutes); a matched rule may override.                                                                                                                       |
-| `ops_firefighter_verify_after_seconds`                        | `120`                                      | Grace before the verify scan judges an action resolved vs still-firing; a matched rule may override.                                                                                         |
-| `ops_firefighter_max_actions_per_hour`                        | `10`                                       | Global cap on firefighter actions across all rules per hour.                                                                                                                                 |
-| `ops_firefighter_action_allowlist`                            | (empty)                                    | CSV of allowed `action_name`s; empty = every registered action allowed.                                                                                                                      |
-| `ops_firefighter_llm_longtail_enabled`                        | `true`                                     | Master switch for the LLM long-tail (un-ruled) path. Off = deterministic rules only.                                                                                                         |
-| `ops_firefighter_model`                                       | `ollama/granite4.2:3b`                     | Local Ollama model the worker uses to pick an action for an un-ruled alert. Apache-2.0 and ~2.24 GB; a thinking model, made safe by the unconditional `think=False` on the call (see below). |
-| `ops_firefighter_min_repeats`                                 | `2`                                        | LLM path engages after an un-ruled alert repeats this many times…                                                                                                                            |
-| `ops_firefighter_min_age_minutes`                             | `10`                                       | …or has been firing this long (either signal qualifies).                                                                                                                                     |
-| `ops_firefighter_min_confidence`                              | `0.6`                                      | LLM selections below this confidence page instead of acting.                                                                                                                                 |
-| `ops_firefighter_llm_exclude_regex`                           | `(?i)(ollama\|gpu\|vram\|cuda\|inference)` | Circular-dependency guard — alertnames matching this regex never take the LLM path.                                                                                                          |
+| Setting                                                       | Default                                    | Meaning                                                                                                                                                                                           |
+| ------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `brain_restart_consecutive_failures`                          | `2`                                        | Consecutive hard-down monitor cycles before `monitor_services` auto-restarts a local service (degraded never restarts).                                                                           |
+| `brain_docker_restart_timeout_seconds`                        | `90`                                       | Subprocess timeout for the brain's `docker restart` heal — must exceed the worker's graceful stop+start (~30-45 s).                                                                               |
+| `compose_drift_host_recover_enabled`                          | `true`                                     | Auto-heal compose drift via the host agent.                                                                                                                                                       |
+| `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                                                                                        |
+| `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                                                                                                   |
+| `compose_drift_on_demand_services`                            | `wan-server,image-gen-server`              | CSV of services started on demand — exempt from the missing-container check.                                                                                                                      |
+| `compose_drift_active_profiles`                               | (empty)                                    | Fallback when the brain has no `COMPOSE_PROFILES` env var. CSV of active compose `profiles:`; services behind an unlisted profile are exempt from the missing-container check.                    |
+| `compose_drift_auto_recover_enabled`                          | `false`                                    | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                                                                                                       |
+| `mcp_http_probe_recovery_url`                                 | (empty)                                    | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.                                                                                      |
+| `mcp_http_probe_recovery_token`                               | secret                                     | Bearer token matching the agent's `poindexter_recovery_token`.                                                                                                                                    |
+| `offsite_backup_watch_enabled`                                | `true`                                     | Backup-freshness probe.                                                                                                                                                                           |
+| `auto_embed_watch_enabled`                                    | `true`                                     | Embedder-freshness probe.                                                                                                                                                                         |
+| `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                                        | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                                                                                                 |
+| `docker_port_forward_alert_only_backoff_minutes`              | `60`                                       | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                                                                                                 |
+| `docker_port_forward_pg_auth_check_enabled`                   | `true`                                     | Toggles the real-auth SCRAM-corruption tier for `probe_type=postgres` entries, independent of the base probe.                                                                                     |
+| `docker_port_forward_pg_auth_timeout_seconds`                 | `5`                                        | Timeout for the real-auth `asyncpg.connect()` attempt (a few round trips, not one — set slightly above the base timeout).                                                                         |
+| `container_health_watch_enabled`                              | `true`                                     | Container health watch: fire `container_unhealthy` while a container stays unhealthy.                                                                                                             |
+| `container_health_alert_after_minutes`                        | `10`                                       | Minutes of consecutive failed healthchecks before a container's first `container_unhealthy` row.                                                                                                  |
+| `container_health_alert_after_overrides`                      | `''` (none)                                | Per-container `name=minutes` thresholds for containers whose healthcheck fails while they work.                                                                                                   |
+| `ops_firefighter_enabled`                                     | `true`                                     | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                                                                                             |
+| `ops_firefighter_max_attempts_per_window`                     | `3`                                        | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                                                                                                     |
+| `ops_firefighter_window_minutes`                              | `60`                                       | Circuit-breaker rolling window (minutes); a matched rule may override.                                                                                                                            |
+| `ops_firefighter_verify_after_seconds`                        | `120`                                      | Grace before the verify scan judges an action on a probe's alert resolved vs still-firing; a matched rule may override.                                                                           |
+| `ops_firefighter_alertmanager_verify_after_seconds`           | `600`                                      | The same grace for an alert Alertmanager or Grafana delivered, which only a resolved notification proves fixed. Covers `for:` + `group_interval` for the live rules; a matched rule may override. |
+| `ops_firefighter_max_actions_per_hour`                        | `10`                                       | Global cap on firefighter actions across all rules per hour.                                                                                                                                      |
+| `ops_firefighter_action_allowlist`                            | (empty)                                    | CSV of allowed `action_name`s; empty = every registered action allowed.                                                                                                                           |
+| `ops_firefighter_llm_longtail_enabled`                        | `true`                                     | Master switch for the LLM long-tail (un-ruled) path. Off = deterministic rules only.                                                                                                              |
+| `ops_firefighter_model`                                       | `ollama/granite4.2:3b`                     | Local Ollama model the worker uses to pick an action for an un-ruled alert. Apache-2.0 and ~2.24 GB; a thinking model, made safe by the unconditional `think=False` on the call (see below).      |
+| `ops_firefighter_min_repeats`                                 | `2`                                        | LLM path engages after an un-ruled alert repeats this many times…                                                                                                                                 |
+| `ops_firefighter_min_age_minutes`                             | `10`                                       | …or has been firing this long (either signal qualifies).                                                                                                                                          |
+| `ops_firefighter_min_confidence`                              | `0.6`                                      | LLM selections below this confidence page instead of acting.                                                                                                                                      |
+| `ops_firefighter_llm_exclude_regex`                           | `(?i)(ollama\|gpu\|vram\|cuda\|inference)` | Circular-dependency guard — alertnames matching this regex never take the LLM path.                                                                                                               |
 
 ## Deploying the Recovery Agent
 

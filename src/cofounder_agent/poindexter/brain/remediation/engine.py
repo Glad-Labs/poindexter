@@ -22,6 +22,11 @@ from poindexter.brain.remediation.registry import (
 # path: only an operator-written remediation_rules row may act on it.
 RULES_ONLY = "rules_only"
 
+# How the verify scan tells a fixed alert from a live one, recorded on every
+# remediation_action as ``verify_signal`` (see verify_signal_for).
+VERIFY_BY_REFIRE = "refire"
+VERIFY_BY_RESOLVED_NOTIFICATION = "resolved_notification"
+
 
 @dataclass
 class RemediationDecision:
@@ -46,11 +51,79 @@ async def _write_audit(
     )
 
 
+def verify_signal_for(alert_event: dict[str, Any] | None) -> str:
+    """How the verify can tell whether an action on this alert worked.
+
+    Two kinds of producer write ``alert_events``, and silence means opposite
+    things from each:
+
+    * A probe that reports a level (the container health watch, most brain
+      probes, findings) re-fires every cycle while the problem lasts. After a
+      fix, silence is the evidence: no firing row since the action.
+    * A notifier that reports changes (Prometheus Alertmanager, and Grafana
+      alerting; both post to ``/api/webhooks/alertmanager``) sends a firing
+      notification once, repeats it only every ``repeat_interval`` (4 h and
+      1 h here), and sends a resolved notification when the alert clears.
+      Silence proves nothing. The resolved notification is the evidence.
+
+    The row says which one wrote it. A notifier reports when the alert's
+    episode began: every notification of one episode carries the same
+    ``starts_at``, and it is never the moment the row was written. A probe
+    leaves ``starts_at`` NULL or stamps ``NOW()`` in the same INSERT, which
+    makes it equal to ``received_at`` (one transaction timestamp). On prod this
+    split the table exactly along the webhook (2026-09-25: 1,810 webhook rows,
+    9,541 probe and findings rows, no exception either way). A probe that one
+    day writes a real episode start is read as a notifier, and its verify then
+    waits for a resolved row and pages without one. That failure is loud.
+    """
+    event = alert_event or {}
+    starts_at = _coerce_dt(event.get("starts_at"))
+    if starts_at is None:
+        return VERIFY_BY_REFIRE
+    if starts_at == _coerce_dt(event.get("received_at")):
+        return VERIFY_BY_REFIRE
+    return VERIFY_BY_RESOLVED_NOTIFICATION
+
+
+def _verify_target(alert_event: dict[str, Any] | None) -> dict[str, Any]:
+    """The fields a remediation_action records so the verify can read evidence
+    about the alert: the row acted on, the producer's own fingerprint and the
+    severity of the dedup key, and which signal counts.
+
+    Empty when the row has no producer fingerprint (the legacy hash-of-message
+    path): there is then nothing to look the alert up by in ``alert_events``,
+    and the verify falls back to ``alert_dedup_state``.
+    """
+    event = alert_event or {}
+    stored_fingerprint = str(event.get("fingerprint") or "").strip()
+    if not stored_fingerprint or event.get("id") is None:
+        return {}
+    return {
+        "verify_signal": verify_signal_for(event),
+        "alert_event_id": event["id"],
+        "alert_fingerprint": stored_fingerprint,
+        "alert_severity": str(event.get("severity") or ""),
+    }
+
+
+def _default_verify_after(config: dict[str, Any], target: dict[str, Any]) -> int:
+    """The grace before the verify, for a rule (or LLM pick) that sets none.
+
+    A resolved notification cannot arrive before the notifier's next
+    ``group_interval`` tick (5 min), so the general default (120 s) would judge
+    every fix of an Alertmanager alert still firing.
+    """
+    if target.get("verify_signal") == VERIFY_BY_RESOLVED_NOTIFICATION:
+        return int(config["alertmanager_verify_after_seconds"])
+    return int(config["verify_after_seconds"])
+
+
 async def _apply_action(
     pool: Any, *, alert: dict[str, Any], alertname: str, fingerprint: str,
     config: dict[str, Any], logger: Any, action_name: str, params: dict[str, Any],
     source: str, verify_after: int, max_attempts: int, window_minutes: int,
     rule_id: Any = None, extra_details: dict[str, Any] | None = None,
+    verify_target: dict[str, Any] | None = None,
 ) -> RemediationDecision:
     """Gate (allowlist -> breaker -> global rate) then execute + audit.
 
@@ -59,7 +132,8 @@ async def _apply_action(
     safety machinery and produces identically-shaped ``remediation_action`` /
     ``remediation_verify`` audit rows. ``source`` ("rule"|"llm") is recorded in
     the audit details (the Grafana rule-vs-LLM split reads it); ``extra_details``
-    carries the LLM-only fields (confidence / reason / model).
+    carries the LLM-only fields (confidence / reason / model), and
+    ``verify_target`` what the verify reads (see ``_verify_target``).
 
     acted=True  -> action ran OK; the dispatcher HOLDS the page for verify.
     acted=False -> gate rejection or non-ok execution; page now.
@@ -98,6 +172,8 @@ async def _apply_action(
     }
     if rule_id is not None:
         details["rule_id"] = rule_id
+    if verify_target:
+        details.update(verify_target)
     if extra_details:
         details.update(extra_details)
     await _write_audit(
@@ -134,7 +210,7 @@ async def _apply_action(
 async def _select_and_apply(
     pool: Any, *, alert: dict[str, Any], alertname: str, fingerprint: str,
     config: dict[str, Any], logger: Any, select_fn: Any,
-    repeat_count: int, age_minutes: int,
+    repeat_count: int, age_minutes: int, verify_target: dict[str, Any],
 ) -> RemediationDecision:
     """LLM long-tail path (Plan B): a gated, validated selection over the catalog.
 
@@ -219,7 +295,7 @@ async def _select_and_apply(
     return await _apply_action(
         pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
         config=config, logger=logger, action_name=action_name, params=params,
-        source="llm", verify_after=config["verify_after_seconds"],
+        source="llm", verify_after=_default_verify_after(config, verify_target),
         max_attempts=config["max_attempts_per_window"],
         window_minutes=config["window_minutes"],
         extra_details={
@@ -228,6 +304,7 @@ async def _select_and_apply(
             "model": str(selection.get("model") or ""),
             "repeat_count": repeat_count,
         },
+        verify_target=verify_target,
     )
 
 
@@ -235,12 +312,18 @@ async def evaluate_for_dispatch(
     pool: Any, *, alert: dict[str, Any], fingerprint: str,
     config: dict[str, Any], logger: Any,
     select_fn: Any = None, repeat_count: int = 0, age_minutes: int = 0,
+    alert_event: dict[str, Any] | None = None,
 ) -> RemediationDecision:
     """Decide whether to remediate an about-to-page alert (rules first, LLM tail).
 
     A matched ``remediation_rules`` row runs deterministically. With no rule and
     a ``select_fn`` wired (Plan B), the gated LLM long-tail path may pick an
     action; without a ``select_fn`` the no-rule alert pages as before.
+
+    ``alert_event`` is the ``alert_events`` row being dispatched (``id``, the
+    producer's ``fingerprint``, the dedup key's ``severity``, ``starts_at``,
+    ``received_at``). The verify reads its evidence by it; without one it falls
+    back to ``alert_dedup_state``.
 
     acted=True  -> an action ran OK; the dispatcher must HOLD the page and let
                    the verify scan resolve/escalate it later.
@@ -261,16 +344,17 @@ async def evaluate_for_dispatch(
 
     labels = alert.get("labels") or {}
     alertname = (labels.get("alertname") or "").strip()
+    verify_target = _verify_target(alert_event)
     rule = await R.match_rule(pool, alertname=alertname, fingerprint=fingerprint)
     if rule is not None:
         return await _apply_action(
             pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
             config=config, logger=logger, action_name=rule["action_name"],
             params=rule["params"], source="rule",
-            verify_after=rule["verify_after_seconds"] or config["verify_after_seconds"],
+            verify_after=rule["verify_after_seconds"] or _default_verify_after(config, verify_target),
             max_attempts=rule["max_attempts_per_window"] or config["max_attempts_per_window"],
             window_minutes=rule["window_minutes"] or config["window_minutes"],
-            rule_id=rule["id"],
+            rule_id=rule["id"], verify_target=verify_target,
         )
 
     # No deterministic rule. Fall back to the gated LLM long-tail path when a
@@ -287,6 +371,7 @@ async def evaluate_for_dispatch(
         pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
         config=config, logger=logger, select_fn=select_fn,
         repeat_count=repeat_count, age_minutes=age_minutes,
+        verify_target=verify_target,
     )
 
 
@@ -317,13 +402,19 @@ def _coerce_details(value: Any) -> dict[str, Any]:
 
 
 async def _alert_still_firing(pool: Any, *, fingerprint: str, since: datetime) -> bool:
-    """True iff the alert re-fired after we acted.
+    """Legacy oracle: True iff the dedup key was seen again after we acted.
+
+    Only for an action that recorded no ``alert_fingerprint`` (written before
+    the verify read ``alert_events``, or an alert with no producer
+    fingerprint). It is blind twice over, which is why it is only a fallback:
+    Alertmanager re-sends a live alert only every ``repeat_interval``, so no
+    advance proves nothing; and its resolved notification shares the firing
+    row's dedup key, so an advance can be the alert clearing.
 
     The dispatcher bumps alert_dedup_state.last_seen_at on every (suppressed)
-    repeat, keyed by the SAME fingerprint the engine stored. So last_seen_at
-    advancing past `since` means the problem is still live; no advance means it
-    stopped firing (resolved). No dedup row -> treat as resolved (fail toward
-    silence; the next real fire re-pages through the normal path).
+    repeat, keyed by the SAME fingerprint the engine stored. No dedup row ->
+    treat as resolved (fail toward silence; the next real fire re-pages through
+    the normal path).
 
     A DB read failure is deliberately NOT swallowed here: it propagates to
     run_verify_scan's handler, which logs a warning and treats the alert as
@@ -342,6 +433,92 @@ async def _alert_still_firing(pool: Any, *, fingerprint: str, since: datetime) -
     if last_seen is None:
         return False
     return last_seen > since
+
+
+# A probe re-fired: a firing row of the dedup key (the producer's fingerprint
+# plus the key's severity) received after the action. The bound on the id of
+# the row acted on keeps the scan on the primary key.
+_REFIRED_SINCE_SQL = """
+SELECT EXISTS (
+    SELECT 1
+    FROM alert_events
+    WHERE id > $1
+      AND fingerprint = $2
+      AND lower(status) = 'firing'
+      AND COALESCE(severity, '') = $3
+      AND received_at > $4
+)
+"""
+
+# What a notifier last said about the alert since the row acted on: 'firing'
+# (at the dedup key's severity), 'resolved', or NULL when it has said nothing.
+_LATEST_NOTIFICATION_SQL = """
+SELECT lower(status)
+FROM alert_events
+WHERE id > $1
+  AND fingerprint = $2
+  AND (lower(status) = 'resolved'
+       OR (lower(status) = 'firing' AND COALESCE(severity, '') = $3))
+ORDER BY id DESC
+LIMIT 1
+"""
+
+# Why the verify judged an action the way it did, recorded as ``evidence`` on
+# the remediation_verify row; the ones worth saying in a page get a phrase.
+_EVIDENCE_PAGE_NOTES = {
+    "refired": "it fired again after the action",
+    "no_resolved_notification": "no resolved notification since the action",
+    "check_failed": "the verify could not read the alert's state",
+}
+
+
+async def _judge_attempt(
+    pool: Any, *, details: dict[str, Any], acted_at: datetime,
+) -> tuple[bool, str]:
+    """``(still_firing, evidence)`` for one pending action.
+
+    Reads ``alert_events`` for the alert the action was taken on, by the
+    producer's own fingerprint. Only a FIRING row at the dedup key's severity
+    is a re-fire. A resolved row never is: Alertmanager's resolved notification
+    shares the firing row's dedup key, which is how the legacy oracle could
+    read a recovery as "still firing". What proves a fix depends on the
+    producer (``verify_signal``, see ``verify_signal_for``):
+
+    * ``refire``: a firing row received after the action means the fix did not
+      hold (``refired``), and a recovery row after it does not undo that. None
+      means it held (``no_refire``).
+    * ``resolved_notification``: the notifier's latest word since the row acted
+      on decides. ``resolved`` means fixed (``resolved_notification``).
+      ``firing`` means it came back or never cleared (``refired``). Nothing
+      means it has not reported the alert cleared, so it is still firing
+      (``no_resolved_notification``). A notification between the acted row and
+      the action counts too: each one is a change of state, so one that landed
+      while the brain worked through a backlog is still the latest state.
+
+    An action without an ``alert_fingerprint`` falls back to the legacy
+    ``alert_dedup_state`` oracle (``dedup_state``). A DB error propagates.
+    """
+    stored_fingerprint = str(details.get("alert_fingerprint") or "")
+    event_id = details.get("alert_event_id")
+    if not stored_fingerprint or event_id is None:
+        still = await _alert_still_firing(
+            pool, fingerprint=details.get("fingerprint") or "", since=acted_at,
+        )
+        return still, "dedup_state"
+    severity = str(details.get("alert_severity") or "")
+    if details.get("verify_signal") == VERIFY_BY_RESOLVED_NOTIFICATION:
+        latest = await pool.fetchval(
+            _LATEST_NOTIFICATION_SQL, int(event_id), stored_fingerprint, severity,
+        )
+        if latest == "resolved":
+            return False, "resolved_notification"
+        if latest == "firing":
+            return True, "refired"
+        return True, "no_resolved_notification"
+    refired = await pool.fetchval(
+        _REFIRED_SINCE_SQL, int(event_id), stored_fingerprint, severity, acted_at,
+    )
+    return (True, "refired") if refired else (False, "no_refire")
 
 
 @dataclass
@@ -465,9 +642,10 @@ async def run_verify_scan(
     """Resolve pending remediation actions past their grace period.
 
     Pending = a remediation_action row with no remediation_verify sharing its
-    run_id. For each past its verify_after_seconds: resolved -> silent; still
-    firing -> page + write the verify row (so the breaker counts it next time).
-    Best-effort: never raises into the poll loop.
+    run_id. For each past its verify_after_seconds, ``_judge_attempt`` reads the
+    evidence: resolved -> silent; still firing -> page + write the verify row
+    (so the breaker counts it next time). The verify row records the
+    ``evidence`` either way. Best-effort: never raises into the poll loop.
     """
     summary = {"verified": 0, "resolved": 0, "still_firing": 0}
     try:
@@ -490,19 +668,24 @@ async def run_verify_scan(
         action = details.get("action_name") or "?"
         summary["verified"] += 1
         try:
-            still = await _alert_still_firing(pool, fingerprint=fingerprint, since=acted_at)
+            still, evidence = await _judge_attempt(pool, details=details, acted_at=acted_at)
         except Exception as e:  # noqa: BLE001
             logger.warning("[firefighter] still-firing check failed for run=%s: %s", run_id, e)
-            still = True
+            still, evidence = True, "check_failed"
         if still:
             summary["still_firing"] += 1
             await _write_audit(
                 pool, event_type="remediation_verify", source=alertname, severity="warning",
-                details={"remediation_run_id": run_id, "result": "still_firing", "checked_at": now.isoformat()},
+                details={
+                    "remediation_run_id": run_id, "result": "still_firing",
+                    "evidence": evidence, "checked_at": now.isoformat(),
+                },
             )
+            note = _EVIDENCE_PAGE_NOTES.get(evidence)
             msg = (
                 f"[FIREFIGHTER] auto-remediation did not resolve {alertname}: "
                 f"attempted {action}, still firing after {verify_after}s"
+                f"{f' ({note})' if note else ''}"
             )
             if notify_fn is not None:
                 try:
@@ -513,11 +696,14 @@ async def run_verify_scan(
             summary["resolved"] += 1
             await _write_audit(
                 pool, event_type="remediation_verify", source=alertname, severity="info",
-                details={"remediation_run_id": run_id, "result": "resolved", "checked_at": now.isoformat()},
+                details={
+                    "remediation_run_id": run_id, "result": "resolved",
+                    "evidence": evidence, "checked_at": now.isoformat(),
+                },
             )
             logger.info(
-                "[firefighter] resolved alert=%s action=%s run=%s (silent)",
-                alertname, action, str(run_id)[:8],
+                "[firefighter] resolved alert=%s action=%s run=%s evidence=%s (silent)",
+                alertname, action, str(run_id)[:8], evidence,
             )
             # Learning loop: a RESOLVED llm-source self-heal for an un-ruled
             # alert is a candidate for a durable rule — surface it for the

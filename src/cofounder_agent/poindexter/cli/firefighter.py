@@ -141,7 +141,11 @@ def rule_show(rule_id: int | None, alert: str) -> None:
 )
 @click.option(
     "--verify-after", type=int, default=None,
-    help="Grace seconds before the verify scan (else the global default).",
+    help=(
+        "Grace seconds before the verify scan (else ops_firefighter_verify_after_seconds, "
+        "or ops_firefighter_alertmanager_verify_after_seconds for an alert Alertmanager "
+        "delivered)."
+    ),
 )
 @click.option("--disabled", is_flag=True, help="Create the rule disabled (default: enabled).")
 def rule_add(
