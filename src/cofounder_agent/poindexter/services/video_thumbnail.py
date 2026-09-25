@@ -15,7 +15,9 @@ Three parts, each configurable in ``app_settings`` (``video_thumbnail_*``):
 
 - **Background**: the first source in ``video_thumbnail_background_order``
   that yields an image. ``featured_image`` is the post's featured image
-  (on-brand, text-free, already OCR-gated). ``presenter_portrait`` is the
+  (on-brand, already OCR-gated), unless it carries its own type by design
+  (a composed brand card, a chart, a screenshot: the hook would land on that
+  text, so it is passed over). ``presenter_portrait`` is the
   presenter persona's studio portrait (the image the talking head is animated
   from: composed, mouth closed). ``presenter_frame`` is a frame of the
   presenter's opening scene and ``video_frame`` a frame at a fixed time; both
@@ -26,8 +28,10 @@ Three parts, each configurable in ``app_settings`` (``video_thumbnail_*``):
 - **Hook**: a few words that ADD to the title rather than repeat it, written
   by the director model from the ``video.thumbnail_hook`` prompt. Code checks
   it. It must read at a glance (``video_thumbnail_hook_max_chars``), carry no
-  number the source text does not contain, and not be a fragment of the
-  title. One corrective retry, then no text rather than bad text.
+  number the source text does not contain, not be a fragment of the title,
+  and not open with the same word as too many recent thumbnails (the first
+  13-video backfill opened six with "STOP"). One corrective retry, then no
+  text rather than bad text.
 - **Look**: size, typeface, colours, scrim, text position and brand mark. The
   layout shrinks the type in the page itself until it fits, because text
   measured anywhere but the rendering chromium is measured wrong (the worker
@@ -47,6 +51,12 @@ from html import escape
 from typing import Any
 
 from poindexter.services.brand_hero import BRAND
+from poindexter.services.image_text_scan import (
+    KIND_CHART,
+    KIND_COMPOSED,
+    KIND_SCREENSHOT,
+    infer_image_kind_from_url,
+)
 from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -56,10 +66,16 @@ BACKGROUND_SOURCES = ("featured_image", "presenter_portrait", "presenter_frame",
 #: (``video_thumbnail_person_layout``): face right, text left, instead of type
 #: printed across a face.
 _PERSON_SOURCES = ("presenter_portrait", "presenter_frame")
+#: Image kinds that carry their own type by design. The hook would be set on
+#: top of that type, so such a featured image is not used as a background.
+_TEXT_BEARING_KINDS = frozenset({KIND_COMPOSED, KIND_CHART, KIND_SCREENSHOT})
 _IMAGE_LAYOUTS = ("cover", "right")
 _TEXT_POSITIONS = ("left", "center", "bottom")
 _NUMBER_RE = re.compile(r"\d[\d,.]*")
 _HOOK_ECHO_STARTS = ("here", "sure", "certainly", "thumbnail", "output", "text")
+#: Labels a model puts before its answer ("Thumbnail: …"). Only these are
+#: stripped: a short word before a colon is usually the hook's own subject.
+_HOOK_LABELS = frozenset({"thumbnail", "thumbnail text", "text", "hook", "headline", "output", "answer"})
 
 
 def _sc(site_config: Any, key: str, default: Any) -> Any:
@@ -336,12 +352,20 @@ async def render_thumbnail_jpeg(
 # ---------------------------------------------------------------------------
 
 
+def _opener(text: str) -> str:
+    """The hook's first word, normalised: what a run of thumbnails repeats."""
+    words = str(text or "").split()
+    return words[0].lower().strip(".,:;!?'\"") if words else ""
+
+
 def clean_thumbnail_hook(
     raw: str,
     *,
     title: str,
     source_text: str,
     max_chars: int,
+    recent_hooks: tuple[str, ...] | list[str] = (),
+    max_opener_repeats: int = 0,
 ) -> tuple[str, str]:
     """Reduce a model reply to thumbnail text. Returns ``(hook, "")`` or ``("", reason)``.
 
@@ -349,7 +373,10 @@ def clean_thumbnail_hook(
     ``max_chars`` (it would not read at thumbnail size); a hook that is only
     a fragment of the title (the thumbnail sits next to the title and should
     add to it); a number the title and the video's own text do not contain
-    (an invented statistic in the most visible spot the video has).
+    (an invented statistic in the most visible spot the video has); a hook
+    that opens with the same word as ``max_opener_repeats`` or more of
+    ``recent_hooks`` (a channel page of "STOP …" thumbnails reads as a
+    template). ``max_opener_repeats=0`` switches that last rule off.
     """
     line = ""
     for candidate in (raw or "").splitlines():
@@ -357,8 +384,10 @@ def clean_thumbnail_hook(
         if candidate:
             line = candidate
             break
-    if ":" in line and len(line.split(":", 1)[0]) <= 14 and not line.split(":", 1)[0].strip().isdigit():
-        line = line.split(":", 1)[1]
+    head, sep, tail = line.partition(":")
+    if sep and head.strip().strip("\"'`*").lower() in _HOOK_LABELS:
+        # "Thumbnail: …" is a label; "RAG: …" is the subject and stays.
+        line = tail
     hook = " ".join(line.strip().strip("\"'`*").split()).rstrip(".,;:").strip()
     if not hook:
         return "", "empty reply"
@@ -374,6 +403,14 @@ def clean_thumbnail_hook(
     for number in _NUMBER_RE.findall(hook):
         if number.replace(",", "").rstrip(".") not in haystack:
             return "", f"number {number!r} is not in the video's text"
+    if max_opener_repeats > 0 and recent_hooks:
+        opener = _opener(hook)
+        repeats = sum(1 for h in recent_hooks if _opener(h) == opener)
+        if opener and repeats >= max_opener_repeats:
+            return "", (
+                f"it opens with {opener!r}, like {repeats} of the last "
+                f"{len(recent_hooks)} thumbnails; open with what this video is about"
+            )
     return hook, ""
 
 
@@ -384,6 +421,7 @@ async def generate_thumbnail_hook(
     source_text: str,
     site_config: Any,
     pool: Any,
+    recent_hooks: tuple[str, ...] | list[str] = (),
 ) -> tuple[str, str]:
     """Ask the director model for thumbnail text. Returns ``(hook, note)``.
 
@@ -404,6 +442,7 @@ async def generate_thumbnail_hook(
     temperature = _sc_float(site_config, "video_thumbnail_hook_temperature", 0.7)
     max_tokens = max(16, _sc_int(site_config, "video_thumbnail_hook_max_tokens", 256))
     timeout_s = max(5.0, _sc_float(site_config, "video_thumbnail_hook_timeout_seconds", 90.0))
+    max_opener_repeats = max(0, _sc_int(site_config, "video_thumbnail_hook_opener_max_repeats", 2))
 
     from poindexter.services.llm_providers.dispatcher import dispatch_complete
     from poindexter.services.prompt_manager import get_prompt_manager
@@ -432,6 +471,7 @@ async def generate_thumbnail_hook(
             return "", f"hook call failed: {describe_exception(exc)}"
         hook, reason = clean_thumbnail_hook(
             raw, title=title, source_text=source_text, max_chars=max_chars,
+            recent_hooks=recent_hooks, max_opener_repeats=max_opener_repeats,
         )
         if hook:
             return hook, "retry" if attempt else ""
@@ -572,6 +612,13 @@ async def resolve_background(
         if source == "brand":
             return None, "brand"
         if source == "featured_image" and featured_image_url:
+            kind = infer_image_kind_from_url(featured_image_url)
+            if kind in _TEXT_BEARING_KINDS:
+                logger.info(
+                    "[video_thumbnail] featured image is a %s image with its own type "
+                    "(%s) — trying the next source", kind, featured_image_url,
+                )
+                continue
             path = await _download(featured_image_url, dest_dir)
             if path:
                 return path, source
@@ -644,6 +691,34 @@ async def load_post_context(pool: Any, task_id: str) -> dict[str, str]:
     return ctx
 
 
+async def load_recent_hooks(pool: Any, task_id: str, window: int) -> list[str]:
+    """Hook text of the ``window`` most recent OTHER thumbnails, newest first.
+
+    Feeds the opener-variety rule. In a backfill each thumbnail stored becomes
+    "recent" for the next, so a batch diversifies itself.
+    """
+    if pool is None or window <= 0:
+        return []
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT metadata->>'hook' AS hook FROM media_assets
+                 WHERE type = 'video_thumbnail' AND task_id::text <> $1
+                   AND COALESCE(metadata->>'hook', '') <> ''
+                 ORDER BY created_at DESC LIMIT $2
+                """,
+                str(task_id), int(window),
+            )
+    except Exception as exc:  # noqa: BLE001 — variety is a refinement; the hook still gets its other checks
+        logger.warning(
+            "[video_thumbnail] recent hook lookup failed for %s (%s) — no opener "
+            "variety check this time", task_id, exc,
+        )
+        return []
+    return [str(r["hook"]) for r in rows]
+
+
 async def compose_video_thumbnail(
     *,
     task_id: str,
@@ -668,17 +743,20 @@ async def compose_video_thumbnail(
 
     hook, note = "", "video_thumbnail_hook_enabled is off"
     if _sc_bool(site_config, "video_thumbnail_hook_enabled", True):
+        recent = await load_recent_hooks(
+            pool, task_id, max(0, _sc_int(site_config, "video_thumbnail_hook_opener_window", 12)),
+        )
         hook, note = await generate_thumbnail_hook(
             title=ctx["title"], summary=ctx["summary"],
             source_text=f"{ctx['summary']} {source_text}",
-            site_config=site_config, pool=pool,
+            site_config=site_config, pool=pool, recent_hooks=recent,
         )
         if not hook:
             logger.info("[video_thumbnail] task %s: no hook text (%s)", task_id, note)
 
     order = [
         s.strip() for s in str(
-            _sc(site_config, "video_thumbnail_background_order", "featured_image,presenter_frame,brand")
+            _sc(site_config, "video_thumbnail_background_order", "featured_image,presenter_portrait,brand")
         ).split(",") if s.strip() in BACKGROUND_SOURCES
     ] or ["brand"]
     with tempfile.TemporaryDirectory(prefix="yt-thumb-") as work:

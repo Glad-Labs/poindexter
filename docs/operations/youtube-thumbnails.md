@@ -20,13 +20,13 @@ Code: `services/video_thumbnail.py` (compose + store),
 **Background:** the first source in `video_thumbnail_background_order` that
 yields an image.
 
-| Source               | What it is                                                                                                      |
-| -------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `featured_image`     | The post's featured image. On-brand, text-free, already OCR-gated.                                              |
-| `presenter_portrait` | The niche persona's studio portrait, the still the talking head is animated from. Composed, mouth closed.       |
-| `presenter_frame`    | A frame from the opening presenter scene, `video_thumbnail_presenter_offset_s` in. The caption band is cropped. |
-| `video_frame`        | The frame at `video_thumbnail_frame_at_s`. The caption band is cropped.                                         |
-| `brand`              | The brand ground with no image. Always available, so an order ending in it always produces a thumbnail.         |
+| Source               | What it is                                                                                                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `featured_image`     | The post's featured image. On-brand and already OCR-gated. Passed over when it carries its own type by design (a composed brand card, a chart, a screenshot), because the hook would land on that text. |
+| `presenter_portrait` | The niche persona's studio portrait, the still the talking head is animated from. Composed, mouth closed.                                                                                               |
+| `presenter_frame`    | A frame from the opening presenter scene, `video_thumbnail_presenter_offset_s` in. The caption band is cropped.                                                                                         |
+| `video_frame`        | The frame at `video_thumbnail_frame_at_s`. The caption band is cropped.                                                                                                                                 |
+| `brand`              | The brand ground with no image. Always available, so an order ending in it always produces a thumbnail.                                                                                                 |
 
 A person (`presenter_portrait`, `presenter_frame`) sits on the right with the
 text beside it (`video_thumbnail_person_layout=right`). The first test render
@@ -38,7 +38,12 @@ director model writes it from the `video.thumbnail_hook` section of
 
 - fit in `video_thumbnail_hook_max_chars`, so it reads at thumbnail size;
 - carry no number that the post and the narration do not contain;
-- not be made only of the title's words.
+- not be made only of the title's words;
+- not open with the same word as `video_thumbnail_hook_opener_max_repeats` or
+  more of the last `video_thumbnail_hook_opener_window` thumbnails. The first
+  backfill opened six of thirteen with "STOP", and a channel page of those
+  reads as a template. In a backfill each stored thumbnail counts toward the
+  next, so a batch spreads itself out.
 
 A rejected hook gets one corrective retry that carries the reason (the
 `video.thumbnail_hook_fix` prompt, in the same SKILL file). If the retry is also
@@ -159,6 +164,8 @@ All in `app_settings`, seeded from `settings_defaults.py`.
 | `video_thumbnail_hook_temperature`             | `0.7`                                     | Sampling temperature for the hook call.                                                                                                                                 |
 | `video_thumbnail_hook_max_tokens`              | `256`                                     | Reply budget for the hook call. Raise it only for a model that thinks aloud before answering.                                                                           |
 | `video_thumbnail_hook_timeout_seconds`         | `90`                                      | How long the hook call may run before the thumbnail ships without text.                                                                                                 |
+| `video_thumbnail_hook_opener_window`           | `12`                                      | How many recent thumbnails the opener-variety rule looks at.                                                                                                            |
+| `video_thumbnail_hook_opener_max_repeats`      | `2`                                       | A hook whose first word already opens this many of those is sent back once. `0` = off.                                                                                  |
 | `video_thumbnail_width` / `_height`            | `1280` / `720`                            | Output size in pixels.                                                                                                                                                  |
 | `video_thumbnail_font_family`                  | `JetBrains Mono`                          | Hook typeface. Use a family installed in the worker image, or chromium substitutes one.                                                                                 |
 | `video_thumbnail_font_weight`                  | `800`                                     | Hook weight.                                                                                                                                                            |

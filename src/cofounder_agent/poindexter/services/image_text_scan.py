@@ -249,7 +249,9 @@ def infer_image_kind_from_url(url: str | None) -> str | None:
         return KIND_CHART
     if "/images/screenshots/" in u:
         return KIND_SCREENSHOT
-    if "/images/featured/brand-" in u:
+    # ``poindexter-brand-hero-`` is the same composed hero's name from before
+    # uploads took the ``brand-`` prefix; those rows are still live.
+    if "/images/featured/brand-" in u or "/images/featured/poindexter-brand-hero-" in u:
         return KIND_COMPOSED
     if "pexels.com" in u:
         return KIND_SEARCH

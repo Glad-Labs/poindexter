@@ -121,6 +121,8 @@ class TestInferKindFromUrl:
         ("https://cdn.x/images/charts/ab12.png", "chart"),
         ("https://cdn.x/images/screenshots/qa-rails-1234.png", "screenshot"),
         ("https://cdn.x/images/featured/brand-243f3123-aa.jpg", "composed"),
+        # the same composed hero, uploaded before the brand- prefix existed
+        ("https://cdn.x/images/featured/poindexter-brand-hero-fec475dd.webp", "composed"),
         ("https://cdn.x/images/featured/243f3123-711387d7.webp", "generate"),
         ("https://cdn.x/images/inline/abcdef123456.png", "generate"),
         ("https://images.pexels.com/photos/1/pexels-photo-1.jpeg", "search"),

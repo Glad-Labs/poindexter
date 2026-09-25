@@ -108,6 +108,7 @@ _TITLE = "Skip NCCL: How LoRA Adapter Syncing Makes GRPO Training Work"
     ("Sync LoRA through a bucket", True),
     ('"No NCCL needed."', True),               # quotes and full stop stripped
     ("Thumbnail: 3 jobs, one bucket", True),   # label stripped; 3 is in the source
+    ("RAG: one bucket", True),                 # a subject before a colon is kept
     ("A really long thumbnail line that no one can read on a phone", False),
     ("Skip NCCL", False),                      # only title words
     ("40% faster training", False),            # 40 appears nowhere in the source
@@ -120,6 +121,29 @@ def test_hook_rules(raw, ok):
     )
     assert bool(hook) is ok, (hook, reason)
     assert (reason == "") is ok
+    if raw.startswith("RAG:"):
+        assert hook == "RAG: one bucket"
+
+
+_RECENT = ["STOP THE CRASHES", "Stop silent failures", "REAL CODE, NO COURSES"]
+
+
+@pytest.mark.parametrize(("raw", "max_repeats", "ok"), [
+    ("Stop the freeze", 2, False),        # "stop" already opens 2 of the recent 3
+    ('"STOP, VRAM tips"', 2, False),       # quoting and punctuation do not hide it
+    ("Stop the freeze", 3, True),         # the threshold is a setting
+    ("Stop the freeze", 0, True),         # 0 switches the rule off
+    ("Real code, real kids", 2, True),    # one earlier "real" is under the bar
+    ("VRAM budget, no freezes", 2, True),
+])
+def test_a_run_of_same_opener_thumbnails_is_sent_back(raw, max_repeats, ok):
+    hook, reason = vt.clean_thumbnail_hook(
+        raw, title="Single-GPU VRAM Budgeting", source_text="", max_chars=40,
+        recent_hooks=_RECENT, max_opener_repeats=max_repeats,
+    )
+    assert bool(hook) is ok, (hook, reason)
+    if not ok:
+        assert "opens with 'stop'" in reason and "what this video is about" in reason
 
 
 class _Completion:
@@ -154,6 +178,20 @@ async def test_the_hook_call_takes_its_parameters_from_settings():
         )
     kw = dispatch.await_args.kwargs
     assert hook and (kw["temperature"], kw["max_tokens"], kw["timeout_s"]) == (0.3, 900, 45.0)
+
+
+@pytest.mark.asyncio
+async def test_an_opener_repeat_is_retried_with_its_reason():
+    replies = iter([_Completion("Stop the freeze"), _Completion("VRAM budget, no freezes")])
+    dispatch = AsyncMock(side_effect=lambda *a, **k: next(replies))
+    sc = _SC(video_director_model="ollama/gemma", video_thumbnail_hook_opener_max_repeats="2")
+    with patch("poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch):
+        hook, note = await vt.generate_thumbnail_hook(
+            title="Single-GPU VRAM Budgeting", summary="s", source_text="s",
+            site_config=sc, pool=object(), recent_hooks=_RECENT,
+        )
+    assert (hook, note) == ("VRAM budget, no freezes", "retry")
+    assert "opens with 'stop'" in dispatch.await_args_list[1].args[1][-1]["content"]
 
 
 @pytest.mark.asyncio
@@ -205,6 +243,65 @@ async def test_the_first_source_that_yields_an_image_wins(tmp_path):
         )
     assert (source, path) == ("video_frame", str(tmp_path / "f.png"))
     assert [c.args[0] for c in dl.await_args_list] == ["https://cdn.test/f.webp", "https://cdn.test/p.webp"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", [
+    "https://cdn.test/images/featured/brand-abc.webp",
+    "https://cdn.test/images/featured/poindexter-brand-hero-fec475dd.webp",
+    "https://cdn.test/images/charts/c1.png",
+    "https://cdn.test/images/screenshots/s1.png",
+])
+async def test_a_featured_image_with_its_own_type_is_passed_over(tmp_path, url):
+    """A composed brand card as the background put the hook on top of the
+    card's own words (the first backfill, 2026-09-25)."""
+    with patch.object(vt, "_download", AsyncMock(return_value=str(tmp_path / "p.webp"))) as dl, \
+         patch.object(vt, "_persona_portrait_url", return_value="https://cdn.test/p.webp"):
+        path, source = await vt.resolve_background(
+            order=["featured_image", "presenter_portrait", "brand"], featured_image_url=url,
+            video_path="", shot_list=None, site_config=None, dest_dir=str(tmp_path),
+        )
+    assert source == "presenter_portrait"
+    assert [c.args[0] for c in dl.await_args_list] == ["https://cdn.test/p.webp"]
+
+
+@pytest.mark.asyncio
+async def test_recent_hooks_are_the_other_thumbnails_newest_first():
+    conn = MagicMock()
+    conn.fetch = AsyncMock(return_value=[{"hook": "STOP THE CRASHES"}, {"hook": "Real code"}])
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=conn)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.acquire = MagicMock(return_value=ctx)
+    assert await vt.load_recent_hooks(pool, "t1", 12) == ["STOP THE CRASHES", "Real code"]
+    sql, task_id, window = conn.fetch.await_args.args
+    assert "task_id::text <> $1" in sql and (task_id, window) == ("t1", 12)
+    assert await vt.load_recent_hooks(pool, "t1", 0) == []   # window 0 = rule off, no query
+    assert conn.fetch.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_recent_hook_lookup_only_skips_the_variety_rule():
+    pool = MagicMock()
+    pool.acquire = MagicMock(side_effect=RuntimeError("db gone"))
+    assert await vt.load_recent_hooks(pool, "t1", 12) == []
+
+
+@pytest.mark.asyncio
+async def test_compose_hands_the_recent_hooks_to_the_hook_writer(tmp_path):
+    ctx = {"title": "T", "summary": "s", "featured_image_url": "", "slug": "t"}
+    gen = AsyncMock(return_value=("New words", ""))
+    with patch.object(vt, "load_post_context", AsyncMock(return_value=ctx)), \
+         patch.object(vt, "load_recent_hooks", AsyncMock(return_value=["STOP X"])) as recent, \
+         patch.object(vt, "generate_thumbnail_hook", gen), \
+         patch.object(vt, "render_thumbnail_jpeg", AsyncMock(return_value=b"\xff\xd8j")):
+        await vt.compose_video_thumbnail(
+            task_id="t", pool=object(), site_config=_SC(video_thumbnail_hook_opener_window="5"),
+            out_path=str(tmp_path / "t.jpg"),
+        )
+    assert recent.await_args.args[1:] == ("t", 5)
+    assert gen.await_args.kwargs["recent_hooks"] == ["STOP X"]
 
 
 @pytest.mark.asyncio

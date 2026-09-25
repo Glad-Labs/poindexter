@@ -759,6 +759,11 @@ DEFAULTS: dict[str, str] = {
     # for a model that thinks aloud before answering.
     'video_thumbnail_hook_max_tokens': '256',
     'video_thumbnail_hook_timeout_seconds': '90',
+    # Opener variety: a hook that opens with the same word as _max_repeats or
+    # more of the last _window thumbnails is sent back once (the first 13-video
+    # backfill opened six with "STOP"). max_repeats 0 = off.
+    'video_thumbnail_hook_opener_window': '12',
+    'video_thumbnail_hook_opener_max_repeats': '2',
     'video_thumbnail_width': '1280',
     'video_thumbnail_height': '720',
     # Lead with an installed family (the worker ships JetBrains Mono and
@@ -5607,6 +5612,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_thumbnail_hook_temperature': {'owner': 'video_thumbnail', 'value_type': 'float'},
     'video_thumbnail_hook_max_tokens': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'video_thumbnail_hook_timeout_seconds': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_hook_opener_window': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_hook_opener_max_repeats': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'video_thumbnail_width': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'video_thumbnail_height': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'video_thumbnail_font_family': {'owner': 'video_thumbnail', 'value_type': 'string'},
