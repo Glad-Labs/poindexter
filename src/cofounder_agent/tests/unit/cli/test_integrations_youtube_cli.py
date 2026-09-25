@@ -1083,3 +1083,86 @@ def test_unrecorded_uploads_are_named_even_when_nothing_matched(runner, monkeypa
     )
     assert "orphanVid" in res.output
     assert "no pipeline_distributions row" in res.output
+
+
+# ---------------------------------------------------------------------------
+# thumbnails — backfill onto already-published long videos
+# ---------------------------------------------------------------------------
+#
+# The service's contract (apply uploads exactly what the dry run stored) is
+# covered in tests/unit/services/test_youtube_thumbnail_backfill. What's
+# asserted here is the CLI's side: dry run by default, the flags reach the
+# service, and a refused upload fails the run with its fix on screen.
+
+
+def _stub_thumbnails(monkeypatch, outcomes):
+    import poindexter.cli._dataplane as dp
+    import poindexter.services.di_wiring as di
+    import poindexter.services.youtube_thumbnail_backfill as svc
+
+    calls: list[dict[str, Any]] = []
+
+    async def _backfill(_pool, _sc, **kw):
+        calls.append(kw)
+        return list(outcomes)
+
+    async def _wire(_pool):
+        return object(), None
+
+    def _run_service(factory):
+        import asyncio
+
+        return asyncio.run(factory(object()))
+
+    monkeypatch.setattr(svc, "backfill_youtube_thumbnails", _backfill)
+    monkeypatch.setattr(di, "build_and_wire_subprocess_with_container", _wire)
+    monkeypatch.setattr(dp, "run_service", _run_service)
+    return calls
+
+
+def _thumb(**kw: Any):
+    from poindexter.services.youtube_thumbnail_backfill import ThumbnailOutcome
+
+    base = dict(video_id="vidA", title="A post", action="composed — review, then --apply",
+                path="/videos/t1_thumbnail.jpg", hook="No NCCL", background="featured_image")
+    base.update(kw)
+    return ThumbnailOutcome(**base)  # type: ignore[arg-type]
+
+
+def test_thumbnails_default_is_a_dry_run_that_names_the_files(runner, monkeypatch):
+    calls = _stub_thumbnails(monkeypatch, [_thumb()])
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "thumbnails"])
+    assert res.exit_code == 0, res.output
+    assert calls == [{"selector": None, "apply": False, "recompose": False, "limit": None}]
+    assert "DRY RUN" in res.output and "nothing sent" in res.output
+    assert "/videos/t1_thumbnail.jpg" in res.output and "'No NCCL'" in res.output
+    assert "re-run with --apply" in res.output
+
+
+def test_thumbnails_flags_reach_the_service(runner, monkeypatch):
+    calls = _stub_thumbnails(monkeypatch, [_thumb(action="uploaded")])
+    res = runner.invoke(
+        _integrations_mod.integrations_group,
+        ["youtube", "thumbnails", "--post", "vidA", "--limit", "2", "--apply"],
+    )
+    assert res.exit_code == 0, res.output
+    assert calls == [{"selector": "vidA", "apply": True, "recompose": False, "limit": 2}]
+    assert "APPLIED" in res.output and "re-run with --apply" not in res.output
+
+
+def test_a_refused_thumbnail_upload_fails_the_run_with_its_fix(runner, monkeypatch):
+    _stub_thumbnails(monkeypatch, [
+        _thumb(action="upload failed", error="the channel cannot set custom thumbnails yet — verify it"),
+    ])
+    res = runner.invoke(
+        _integrations_mod.integrations_group, ["youtube", "thumbnails", "--apply"],
+    )
+    assert res.exit_code == 1
+    assert "custom thumbnails yet" in res.output
+
+
+def test_no_published_long_video_is_said_plainly(runner, monkeypatch):
+    _stub_thumbnails(monkeypatch, [])
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "thumbnails"])
+    assert res.exit_code == 0
+    assert "No published long videos matched." in res.output

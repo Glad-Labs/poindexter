@@ -209,6 +209,70 @@ async def _fetch_short_script(pool: Any, task_id: str | None) -> str:
     return raw if isinstance(raw, str) else ""
 
 
+_THUMBNAIL_SQL = (
+    "SELECT storage_path FROM media_assets "
+    "WHERE task_id::text = $1 AND type = 'video_thumbnail' "
+    "ORDER BY created_at DESC LIMIT 1"
+)
+
+
+def _custom_thumbnails_on(site_config: Any) -> bool:
+    if site_config is None:
+        return True
+    raw = str(site_config.get("youtube_custom_thumbnail_enabled", "true") or "true")
+    return raw.strip().lower() in ("true", "1", "yes", "on")
+
+
+async def _fetch_thumbnail_path(pool: Any, task_id: str | None) -> str:
+    """The composed thumbnail for this task's long video, when it is on disk, else ""."""
+    if not task_id:
+        return ""
+    try:
+        path = await pool.fetchval(_THUMBNAIL_SQL, str(task_id))
+    except Exception as exc:  # noqa: BLE001 — a thumbnail is a refinement, never a blocker
+        logger.warning("[MEDIA_DISTRIBUTE] thumbnail lookup failed for %s: %s", task_id, describe_exception(exc))
+        return ""
+    return path if isinstance(path, str) and path and os.path.exists(path) else ""
+
+
+async def _record_thumbnail_outcome(
+    pool: Any, *, task_id: str | None, post_id: Any, video_id: str | None, status: str,
+) -> None:
+    """Stamp the thumbnail row with what YouTube did with it, and page on a failure.
+
+    The stamp is what the backfill command reads to know which published
+    videos already carry their custom thumbnail.
+    """
+    if not task_id or not status or status == "not requested":
+        return
+    import json as _json
+
+    stamp = {"video_id": video_id or "", "status": status[:400], "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    try:
+        await pool.execute(
+            "UPDATE media_assets SET metadata = COALESCE(metadata, '{}'::jsonb) "
+            "|| jsonb_build_object('youtube', $2::jsonb) "
+            "WHERE task_id::text = $1 AND type = 'video_thumbnail'",
+            str(task_id), _json.dumps(stamp),
+        )
+    except Exception as exc:  # noqa: BLE001 — bookkeeping must not undo a good upload
+        logger.warning("[MEDIA_DISTRIBUTE] thumbnail stamp failed for %s: %s", task_id, describe_exception(exc))
+    if status.startswith("failed"):
+        emit_finding(
+            source="media_distribute",
+            kind="youtube_thumbnail_failed",
+            title="YouTube upload landed without its custom thumbnail",
+            body=(
+                f"Video {video_id or '?'} uploaded, but setting its thumbnail "
+                f"failed: {status}. Retry once the cause is fixed with "
+                "`poindexter integrations youtube thumbnails --apply`."
+            ),
+            severity="warning",
+            dedup_key=f"youtube_thumbnail_failed:{post_id}",
+            extra={"post_id": str(post_id), "video_id": video_id or "", "status": status[:400]},
+        )
+
+
 async def _fetch_twin_video_id(pool: Any, task_id: str | None, medium: str) -> str:
     """The LIVE YouTube id of ``medium``'s pair (``video`` ↔ ``video_short``), or ""."""
     other = _PAIR_MEDIA.get(medium)
@@ -395,6 +459,13 @@ async def _dispatch_asset(
         "shorts": shorts,
         "contains_synthetic_media": _contains_synthetic_media(row, site_config),
     }
+    # The composed thumbnail rides with the LONG upload only: custom Shorts
+    # thumbnails are limited to Partner Program channels, and the Shorts feed
+    # autoplays anyway.
+    if not shorts and _custom_thumbnails_on(site_config):
+        thumbnail_path = await _fetch_thumbnail_path(pool, task_id)
+        if thumbnail_path:
+            payload["thumbnail_path"] = thumbnail_path
 
     from poindexter.services.publishing_adapters_db import record_adapter_run
 
@@ -436,6 +507,12 @@ async def _dispatch_asset(
                     platform, row["post_id"], shorts, result.get("post_id"),
                 )
                 await _record(True)
+                if payload.get("thumbnail_path"):
+                    await _record_thumbnail_outcome(
+                        pool, task_id=task_id, post_id=row["post_id"],
+                        video_id=result.get("post_id"),
+                        status=str(result.get("thumbnail") or ""),
+                    )
             else:
                 results.append(
                     _PlatformDispatchResult(platform=platform, success=False)

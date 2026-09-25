@@ -48,6 +48,8 @@ ATOM_META = AtomMeta(
         FieldSpec(name="video_shot_list", type="object", description="long shot-list (dims/duration)", required=False),
         FieldSpec(name="short_shot_list", type="object", description="short shot-list (dims/duration)", required=False),
         FieldSpec(name="database_service", type="object", description="DB service (pool seam)", required=False),
+        FieldSpec(name="long_thumbnail_path", type="str", description="temp path of the composed YouTube thumbnail", required=False),
+        FieldSpec(name="long_thumbnail_meta", type="dict", description="hook + background of that thumbnail (stored on its row)", required=False),
     ),
     outputs=(
         FieldSpec(name="media_assets_recorded", type="list", description="ids of the media_assets rows written"),
@@ -179,6 +181,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     already_recorded = await _existing_asset_types(pool, str(task_id))
 
     recorded: list[str] = []
+    recorded_types: set[str] = set()
     for path_key, shot_key, asset_type, suffix, default_aspect in _TARGETS:
         if asset_type in already_recorded:
             logger.info(
@@ -238,12 +241,36 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         )
         if asset_id:
             recorded.append(asset_id)
+            recorded_types.add(asset_type)
             logger.info(
                 "[media.persist] recorded %s media_asset %s for task %s (%s)",
                 asset_type, asset_id, task_id, durable,
             )
 
+    thumb_id = await _persist_thumbnail(
+        pool, state, str(task_id), VIDEO_DIR, video_recorded_now="video" in recorded_types,
+    )
+    if thumb_id:
+        recorded.append(thumb_id)
     return {"media_assets_recorded": recorded}
+
+
+async def _persist_thumbnail(
+    pool: Any, state: dict[str, Any], task_id: str, video_dir: Any, *, video_recorded_now: bool,
+) -> str | None:
+    """Make the composed thumbnail durable (``services.video_thumbnail.store_thumbnail_asset``)."""
+    from poindexter.services.video_thumbnail import store_thumbnail_asset
+
+    meta = state.get("long_thumbnail_meta")
+    return await store_thumbnail_asset(
+        pool,
+        task_id=task_id,
+        src_path=str(state.get("long_thumbnail_path") or ""),
+        meta=meta if isinstance(meta, dict) else None,
+        post_id=(str(state.get("post_id") or "").strip() or None),
+        video_dir=video_dir,
+        video_recorded_now=video_recorded_now,
+    )
 
 
 __all__ = ["ATOM_META", "run"]

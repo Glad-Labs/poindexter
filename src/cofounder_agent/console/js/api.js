@@ -44,6 +44,7 @@
      findings      GET  /api/findings  (probe-routing triage, #461; read-only)
      media         GET  /api/media-approval/pending  · POST /{post_id}/{medium}/decide (Gate-2)
                    · GET /{post_id}/{medium}/preview (raw asset bytes, for the drawer player)
+                   · GET /{post_id}/video/thumbnail (composed YouTube thumbnail, drawer)
      schedule      GET  /api/scheduling  · PATCH /api/scheduling/shift (reschedule)
      seo           GET  /api/seo  (SEO-refresh queue + outcomes, #1466; read-only)
      gates         GET  /api/gates/pending  (tasks paused at a graph gate, e.g.
@@ -1313,6 +1314,36 @@
         _tok = { value: '', exp: 0 };
         res = await doFetch();
       }
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(
+          `GET ${path} → ${res.status} ${res.statusText}${detail ? ' — ' + detail : ''}`
+        );
+      }
+      return res.blob();
+    },
+
+    // GET /api/media-approval/{post_id}/video/thumbnail — the composed YouTube
+    // thumbnail that uploads with the long video, reviewed beside it (it is
+    // public the moment the video is). 404 = no thumbnail composed (an older
+    // render, or video_thumbnail_enabled off) → null, not an error: the
+    // drawer then shows the video exactly as before. Same OAuth + 401-retry
+    // as mediaPreviewBlob.
+    async mediaThumbnailBlob(postId) {
+      if (!cfg.live) return null;
+      const path = `/api/media-approval/${encodeURIComponent(postId)}/video/thumbnail`;
+      const doFetch = async () => {
+        const tok = await getToken();
+        return fetch((cfg.base || '') + path, {
+          headers: { Authorization: 'Bearer ' + tok },
+        });
+      };
+      let res = await doFetch();
+      if (res.status === 401) {
+        _tok = { value: '', exp: 0 };
+        res = await doFetch();
+      }
+      if (res.status === 404) return null;
       if (!res.ok) {
         const detail = await res.text().catch(() => '');
         throw new Error(

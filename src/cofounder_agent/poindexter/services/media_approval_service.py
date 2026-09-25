@@ -780,3 +780,31 @@ async def get_asset_storage_path(
         medium,
     )
     return row["storage_path"] if row is not None else None
+
+
+async def get_thumbnail_storage_path(db: Any, post_id: str) -> str | None:
+    """The composed YouTube thumbnail for ``post_id``'s long video, or ``None``.
+
+    The ``video_thumbnail`` row is written at render time, when the post may
+    not exist yet, so it is matched by ``post_id`` OR by the post's
+    ``pipeline_task_id``. Reviewed beside the video in the approval drawer:
+    the thumbnail is public the moment the video is, so it is approved with it.
+    """
+    row = await db.fetchrow(
+        """
+        SELECT ma.storage_path
+          FROM media_assets ma
+         WHERE ma.type = 'video_thumbnail'
+           AND COALESCE(ma.storage_path, '') <> ''
+           AND (
+                ma.post_id = $1::uuid
+             OR ma.task_id::text = (
+                    SELECT p.metadata->>'pipeline_task_id' FROM posts p WHERE p.id = $1::uuid
+                )
+           )
+         ORDER BY ma.created_at DESC
+         LIMIT 1
+        """,
+        post_id,
+    )
+    return row["storage_path"] if row is not None else None

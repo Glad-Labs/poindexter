@@ -55,6 +55,11 @@ Seeded ``active=true`` but **dormant**: nothing calls
 ``TemplateRunner.run("media_pipeline", …)`` yet (the Gate-1 → Stage-2 trigger
 lands in Plan 7), so seeding the row is a behavior no-op in prod — the same
 way ``canonical_blog`` was seeded before its cutover (#355).
+
+v7 (2026-09-25) inserts ``render_thumbnail`` (``media.render_thumbnail``)
+between ``render_short_video`` and ``media_qa``: it composes the long video's
+custom YouTube thumbnail, which ``persist_media`` makes durable so the
+operator reviews it with the video and ``media_distribute`` uploads it with it.
 """
 
 from __future__ import annotations
@@ -82,6 +87,7 @@ MEDIA_PIPELINE_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_audio", "atom": "qa.audio"},
         {"id": "render_long_video", "atom": "media.render_long_video"},
         {"id": "render_short_video", "atom": "media.render_short_video"},
+        {"id": "render_thumbnail", "atom": "media.render_thumbnail"},
         {"id": "media_qa", "atom": "media.qa"},
         {"id": "persist_media", "atom": "media.persist"},
     ],
@@ -91,7 +97,8 @@ MEDIA_PIPELINE_GRAPH_DEF: dict[str, Any] = {
         {"from": "transcribe_narration", "to": "qa_audio"},
         {"from": "qa_audio", "to": "render_long_video"},
         {"from": "render_long_video", "to": "render_short_video"},
-        {"from": "render_short_video", "to": "media_qa"},
+        {"from": "render_short_video", "to": "render_thumbnail"},
+        {"from": "render_thumbnail", "to": "media_qa"},
         {"from": "media_qa", "to": "persist_media"},
         {"from": "persist_media", "to": "END"},
     ],

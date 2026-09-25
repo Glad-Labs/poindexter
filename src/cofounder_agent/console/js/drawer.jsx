@@ -137,6 +137,36 @@ function MediaPreviewPlayer({ postId, medium }) {
     };
   }, [postId, medium]);
 
+  // The long video's composed YouTube thumbnail (uploads with it, so it is
+  // reviewed with it). Absent → the player renders exactly as before.
+  const [thumb, setThumb] = useState('');
+  useEffect(() => {
+    let alive = true;
+    let thumbUrl = '';
+    setThumb('');
+    if (
+      medium !== 'video' ||
+      !postId ||
+      !window.PX.api.isLive() ||
+      !window.PX.api.mediaThumbnailBlob
+    )
+      return undefined;
+    window.PX.api
+      .mediaThumbnailBlob(postId)
+      .then((blob) => {
+        if (!alive || !blob) return;
+        thumbUrl = URL.createObjectURL(blob);
+        setThumb(thumbUrl);
+      })
+      .catch(() => {
+        if (alive) setThumb('');
+      });
+    return () => {
+      alive = false;
+      if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+    };
+  }, [postId, medium]);
+
   const note = (text, cls) => (
     <p className={`mono ${cls}`} style={{ fontSize: 11, marginTop: 8 }}>
       {text}
@@ -152,14 +182,34 @@ function MediaPreviewPlayer({ postId, medium }) {
     return note(`Preview unavailable — ${state.error}`, 'c-red');
   if (state.status !== 'ready') return null;
 
-  return medium === 'podcast' ? (
-    <audio controls src={state.url} style={{ width: '100%', marginTop: 8 }} />
-  ) : (
-    <video
-      controls
-      src={state.url}
-      style={{ width: '100%', marginTop: 8, borderRadius: 4, maxHeight: 320 }}
-    />
+  if (medium === 'podcast')
+    return (
+      <audio controls src={state.url} style={{ width: '100%', marginTop: 8 }} />
+    );
+  return (
+    <>
+      {thumb ? (
+        <figure style={{ margin: '8px 0 0' }}>
+          <img
+            src={thumb}
+            alt="YouTube thumbnail for this video"
+            style={{ width: '100%', borderRadius: 4, display: 'block' }}
+          />
+          <figcaption
+            className="mono c-dim"
+            style={{ fontSize: 11, marginTop: 4 }}
+          >
+            YouTube thumbnail — uploads with this video
+          </figcaption>
+        </figure>
+      ) : null}
+      <video
+        controls
+        src={state.url}
+        poster={thumb || undefined}
+        style={{ width: '100%', marginTop: 8, borderRadius: 4, maxHeight: 320 }}
+      />
+    </>
   );
 }
 

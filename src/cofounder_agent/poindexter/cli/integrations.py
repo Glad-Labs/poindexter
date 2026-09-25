@@ -902,6 +902,76 @@ def youtube_test(
     )
 
 
+@youtube_group.command("thumbnails")
+@click.option(
+    "--post", "selector", default=None,
+    help="Limit to one post id, slug, task id or YouTube video id. Default: every published long video.",
+)
+@click.option("--limit", default=None, type=int, help="Cap how many videos are processed.")
+@click.option(
+    "--recompose", is_flag=True,
+    help="Dry run only: replace stored thumbnails with freshly composed ones.",
+)
+@click.option(
+    "--apply", "do_apply", is_flag=True,
+    help=(
+        "Upload each video's STORED thumbnail to YouTube. Without it, thumbnails "
+        "are composed and stored locally for review and nothing is sent — this "
+        "writes to a public channel, so the default is a dry run."
+    ),
+)
+def youtube_thumbnails(
+    selector: str | None, limit: int | None, recompose: bool, do_apply: bool,
+) -> None:
+    """Give already-published long videos their composed custom thumbnail.
+
+    \b
+    1. Dry run (default): compose + store a thumbnail for each published long
+       video that has none, and print where to look at it.
+    2. --apply: upload exactly those stored files (never recomposed, so what
+       ships is what was reviewed).
+
+    Runs in the worker container, which has the renderer and its fonts:
+    `docker exec poindexter-worker python -m poindexter.cli integrations youtube thumbnails`.
+    A 403 means the channel has not unlocked custom thumbnails (YouTube Studio →
+    Settings → Channel → Feature eligibility → phone verification).
+    """
+    from poindexter.cli._dataplane import run_service
+    from poindexter.services.youtube_thumbnail_backfill import backfill_youtube_thumbnails
+
+    async def _go(pool):
+        from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
+
+        sc, _container = await build_and_wire_subprocess_with_container(pool)
+        return await backfill_youtube_thumbnails(
+            pool, sc, selector=selector, apply=do_apply, recompose=recompose, limit=limit,
+        )
+
+    try:
+        outcomes = run_service(_go)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+    if not outcomes:
+        click.echo("No published long videos matched.")
+        return
+    mode = "APPLIED" if do_apply else "DRY RUN — composed and stored locally, nothing sent"
+    click.echo(f"YouTube thumbnails — {mode}\n")
+    for o in outcomes:
+        click.echo(f"{o.video_id:<14}{o.action}  {o.title[:60]}")
+        if o.hook or o.background:
+            click.echo(f"{'':<14}hook {o.hook!r} on {o.background or '?'} background")
+        if o.path:
+            click.echo(f"{'':<14}{o.path}")
+        if o.error:
+            click.secho(f"{'':<14}{o.error}", fg="red")
+    failed = [o for o in outcomes if o.failed]
+    if not do_apply and not failed:
+        click.echo("\nReview the files above, then re-run with --apply to upload them.")
+    if failed:
+        raise SystemExit(1)
+
+
 @youtube_group.command("sync-metadata")
 @click.option(
     "--post", "selector", default=None,

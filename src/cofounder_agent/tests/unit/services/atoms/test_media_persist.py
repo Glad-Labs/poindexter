@@ -294,3 +294,25 @@ async def test_persist_skips_all_flavors_when_both_recorded(
 async def test_persist_requires_task_id():
     with pytest.raises(ValueError):
         await persist_run({"long_video_path": "/tmp/x.mp4"})
+
+
+@pytest.mark.asyncio
+async def test_persist_hands_the_thumbnail_to_the_store_with_its_video_flag(
+    tmp_path, monkeypatch, patched_recorder,
+):
+    """The thumbnail follows its video: the store is told whether the long
+    video was persisted in THIS run, and its asset id joins the recorded list."""
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", tmp_path / "video")
+    long_src = _write_tmp(tmp_path / "long.mp4")
+    store = AsyncMock(return_value="thumb-asset")
+    monkeypatch.setattr("poindexter.services.video_thumbnail.store_thumbnail_asset", store)
+    out = await persist_run({
+        "task_id": "t-thumb", "pool": _FakePool(),
+        "long_video_path": long_src,
+        "long_thumbnail_path": "/tmp/t.jpg", "long_thumbnail_meta": {"hook": "h"},
+    })
+    assert "thumb-asset" in out["media_assets_recorded"]
+    kw = store.await_args.kwargs
+    assert kw["video_recorded_now"] is True and kw["meta"] == {"hook": "h"} and kw["src_path"] == "/tmp/t.jpg"

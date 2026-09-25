@@ -227,3 +227,24 @@ async def test_handler_threads_the_synthetic_media_disclosure(stub_site_config) 
             site_config=stub_site_config, row={"name": "youtube_main"}, pool=None,
         )
         assert fake_adapter.publish.await_args.kwargs["contains_synthetic_media"] is None
+
+
+async def test_handler_passes_the_thumbnail_and_returns_its_outcome(stub_site_config) -> None:
+    """The thumbnail path reaches the adapter, and what YouTube did with it
+    comes back in the dict media_distribute reads, so a refused thumbnail can
+    raise a finding instead of hiding under a successful upload."""
+    handler = registry.lookup("publishing", "youtube")
+    fake_adapter = MagicMock()
+    fake_adapter.publish = AsyncMock(return_value=_publish_result(
+        metadata={"thumbnail": "failed: the channel cannot set custom thumbnails yet"},
+    ))
+    with patch(
+        "poindexter.services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
+        return_value=fake_adapter,
+    ):
+        out = await handler(
+            {"media_path": "/tmp/v.mp4", "title": "Clip", "thumbnail_path": "/tmp/t.jpg"},
+            site_config=stub_site_config, row={"name": "youtube_main"}, pool=None,
+        )
+    assert fake_adapter.publish.await_args.kwargs["thumbnail_path"] == "/tmp/t.jpg"
+    assert out["success"] is True and out["thumbnail"].startswith("failed:")

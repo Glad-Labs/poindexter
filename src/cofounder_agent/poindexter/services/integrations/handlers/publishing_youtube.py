@@ -110,4 +110,8 @@ async def youtube(
         "post_id": result.external_id,
         "url": result.public_url,
         "error": result.error,
+        # "set" / "failed: <why>" / "not requested" — the custom thumbnail
+        # outcome, so media_distribute can surface a failure instead of it
+        # hiding in a log line under a successful upload.
+        "thumbnail": (result.metadata or {}).get("thumbnail"),
     }

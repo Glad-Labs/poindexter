@@ -342,6 +342,7 @@ def test_every_director_template_forbids_words_inside_ai_images(key: str) -> Non
 #   video.director_*  -> generate_video_shot_list._render (**prompt_variables)
 #   video.review_*    -> review_video_shot_list._render (named policy vars only)
 #   video.restock_query -> video_renderers/shot_list_renderer._llm_restock_query
+#   video.thumbnail_hook -> services/video_thumbnail.generate_thumbnail_hook
 #   video.escalation_image_subject -> shot_list_renderer._llm_image_subject
 _CALL_SITE_KWARGS: dict[str, set[str]] = {
     "video.director_v1": {
@@ -363,6 +364,8 @@ _CALL_SITE_KWARGS: dict[str, set[str]] = {
         "short_script",
     },
     "video.restock_query": {"video_context", "intent", "failed_query"},
+    "video.thumbnail_hook": {"title", "summary"},
+    "video.thumbnail_hook_fix": {"reason", "max_chars"},
     "video.escalation_image_subject": {"video_context", "intent"},
 }
 

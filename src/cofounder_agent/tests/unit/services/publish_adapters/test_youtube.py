@@ -951,3 +951,86 @@ class TestSyntheticMediaDisclosure:
         adapter, captured = self._capture(tmp_path, monkeypatch)
         await adapter.publish(media_path=_make_media_file(tmp_path), title="t")
         assert "containsSyntheticMedia" not in captured["body"]["status"]
+
+
+# ---------------------------------------------------------------------------
+# Custom thumbnails (2026-09-25)
+# ---------------------------------------------------------------------------
+
+
+def _uploading_adapter(monkeypatch, *, thumb_raises: Exception | None = None):
+    adapter = _make_adapter(enabled=True, secrets=_FULL_SECRETS)
+    monkeypatch.setattr(adapter, "_build_credentials", staticmethod(lambda secrets: MagicMock()))
+    monkeypatch.setattr(
+        adapter, "_do_resumable_upload_blocking",
+        staticmethod(lambda **kw: {"id": "vid42", "snippet": {}, "status": {"uploadStatus": "uploaded"}}),
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_thumb(**kw):
+        calls.append(kw)
+        if thumb_raises is not None:
+            raise thumb_raises
+
+    monkeypatch.setattr(adapter, "_set_thumbnail_blocking", staticmethod(fake_thumb))
+    return adapter, calls
+
+
+class TestCustomThumbnail:
+    """The outcome of setting the thumbnail rides back on the result, so an
+    unverified channel cannot hide behind every upload reading as a success."""
+
+    @pytest.mark.asyncio
+    async def test_a_set_thumbnail_is_reported(self, tmp_path, monkeypatch):
+        adapter, calls = _uploading_adapter(monkeypatch)
+        thumb = tmp_path / "t.jpg"
+        thumb.write_bytes(b"\xff\xd8jpeg")
+        result = await adapter.publish(
+            media_path=_make_media_file(tmp_path), title="T", thumbnail_path=str(thumb),
+        )
+        assert result.success and result.metadata["thumbnail"] == "set"
+        assert calls[0]["video_id"] == "vid42" and calls[0]["thumbnail_path"] == str(thumb)
+
+    @pytest.mark.asyncio
+    async def test_a_refused_thumbnail_names_the_fix_and_keeps_the_upload(self, tmp_path, monkeypatch):
+        adapter, _ = _uploading_adapter(monkeypatch, thumb_raises=Exception(
+            "<HttpError 403 'The authenticated user doesn't have permissions to upload "
+            "and set custom video thumbnails.'>"
+        ))
+        thumb = tmp_path / "t.jpg"
+        thumb.write_bytes(b"\xff\xd8jpeg")
+        result = await adapter.publish(
+            media_path=_make_media_file(tmp_path), title="T", thumbnail_path=str(thumb),
+        )
+        assert result.success is True
+        assert result.metadata["thumbnail"].startswith("failed:")
+        assert "phone" in result.metadata["thumbnail"]
+
+    @pytest.mark.asyncio
+    async def test_no_thumbnail_requested_is_said_plainly(self, tmp_path, monkeypatch):
+        adapter, calls = _uploading_adapter(monkeypatch)
+        result = await adapter.publish(media_path=_make_media_file(tmp_path), title="T")
+        assert result.metadata["thumbnail"] == "not requested" and calls == []
+
+    @pytest.mark.asyncio
+    async def test_set_thumbnail_on_a_published_video(self, tmp_path, monkeypatch):
+        adapter, calls = _uploading_adapter(monkeypatch)
+        thumb = tmp_path / "t.jpg"
+        thumb.write_bytes(b"\xff\xd8jpeg")
+        assert await adapter.set_thumbnail(video_id="old1", thumbnail_path=str(thumb)) == (True, "set")
+        assert calls[0]["video_id"] == "old1"
+        ok, why = await adapter.set_thumbnail(video_id="old1", thumbnail_path=str(tmp_path / "gone.jpg"))
+        assert ok is False and "missing" in why
+
+    @pytest.mark.asyncio
+    async def test_set_thumbnail_respects_the_adapter_gate(self, tmp_path):
+        adapter = _make_adapter(enabled=False, secrets=_FULL_SECRETS)
+        thumb = tmp_path / "t.jpg"
+        thumb.write_bytes(b"\xff\xd8jpeg")
+        ok, why = await adapter.set_thumbnail(video_id="old1", thumbnail_path=str(thumb))
+        assert ok is False and "disabled" in why
+
+    def test_other_errors_are_passed_through(self):
+        from poindexter.services.publish_adapters.youtube import describe_thumbnail_error
+
+        assert describe_thumbnail_error(Exception("<HttpError 500 'backend'>")).startswith("<HttpError 500")

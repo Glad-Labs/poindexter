@@ -5,6 +5,7 @@ Operator surfaces previously only reachable in-process:
 - ``GET  /api/media-approval/pending``                    → list pending media
 - ``POST /api/media-approval/{post_id}/{medium}/decide``  → approve or reject
 - ``GET  /api/media-approval/{post_id}/{medium}/preview``  → stream the local render
+- ``GET  /api/media-approval/{post_id}/video/thumbnail``   → the composed YouTube thumbnail
 """
 
 from pathlib import Path
@@ -158,3 +159,29 @@ async def preview(
         media_type=_PREVIEW_MIME.get(medium, "application/octet-stream"),
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.get(
+    "/{post_id}/{medium}/thumbnail",
+    summary="Stream the composed YouTube thumbnail so the operator reviews it with the video",
+)
+async def thumbnail(
+    post_id: str,
+    medium: str,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+) -> FileResponse:
+    """The thumbnail that will be uploaded with this post's long video.
+
+    Only the long video carries one (custom Shorts thumbnails are limited to
+    Partner Program channels), so any other medium is a 404. Same OAuth gate
+    as ``preview``: a pending asset never leaves the machine unauthenticated.
+    """
+    if medium != "video":
+        raise HTTPException(status_code=404, detail="Only the long-form video has a custom thumbnail.")
+    from poindexter.services.media_approval_service import get_thumbnail_storage_path
+
+    storage_path = await get_thumbnail_storage_path(db_service.pool, post_id)
+    if not storage_path or not Path(storage_path).is_file():
+        raise HTTPException(status_code=404, detail="No composed thumbnail on disk for this post.")
+    return FileResponse(storage_path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})

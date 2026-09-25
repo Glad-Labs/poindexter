@@ -565,6 +565,11 @@ class PipelineState(TypedDict, total=False):
     # the graph_def path, so a render atom's output would vanish without them.
     long_video_path: str
     short_video_path: str
+    # custom YouTube thumbnail (2026-09-25): media.render_thumbnail composes it
+    # after the renders, media.persist makes it durable. Same last-value-channel
+    # discipline — undeclared keys are dropped on the graph_def path.
+    long_thumbnail_path: str
+    long_thumbnail_meta: dict
     # ASR caption track + transcript (#676 Plan 5): media.transcribe_narration
     # runs one whisper pass over podcast_audio_path BEFORE the renders and
     # produces these. caption_srt_path is read opportunistically by the render

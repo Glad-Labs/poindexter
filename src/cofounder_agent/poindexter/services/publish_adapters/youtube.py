@@ -89,6 +89,25 @@ _SCOPES_WITH_UPDATE = [*_SCOPES, _UPDATE_SCOPE]
 _ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"
 
 
+def describe_thumbnail_error(exc: Exception) -> str:
+    """Name the fix for a failed ``thumbnails.set``.
+
+    A 403 there almost always means the channel has not unlocked custom
+    thumbnails, which YouTube gates behind phone verification. The upload
+    itself succeeds on such a channel, so without this the thumbnail just
+    silently never appears.
+    """
+    text = str(exc)
+    low = text.lower()
+    if "403" in low and ("permission" in low or "forbidden" in low or "custom video thumbnails" in low):
+        return (
+            "the channel cannot set custom thumbnails yet — verify it in YouTube "
+            "Studio (Settings → Channel → Feature eligibility → phone "
+            f"verification). Google said: {text[:300]}"
+        )
+    return text[:400]
+
+
 def _is_insufficient_scope(exc: Exception) -> bool:
     """True when a Google API error is the missing-update-scope 403.
 
@@ -434,20 +453,30 @@ class YouTubePublishAdapter:
 
         duration_ms = int((time.perf_counter() - started) * 1000)
 
-        # Custom thumbnail (best-effort, only on successful upload).
-        if success and thumbnail_path and os.path.exists(thumbnail_path):
-            try:
-                await asyncio.to_thread(
-                    self._set_thumbnail_blocking,
-                    credentials=credentials,
-                    video_id=str(response.get("id") or ""),
-                    thumbnail_path=thumbnail_path,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "[publish.youtube] thumbnail set failed (upload "
-                    "succeeded): %s", exc,
-                )
+        # Custom thumbnail (best-effort, only on successful upload). The
+        # outcome rides back on PublishResult.metadata["thumbnail"] so the
+        # caller can surface a failure: a logged warning alone meant an
+        # unverified channel would never show a single custom thumbnail
+        # while every upload read as a success.
+        thumbnail_status = "not requested"
+        if success and thumbnail_path:
+            if not os.path.exists(thumbnail_path):
+                thumbnail_status = f"failed: thumbnail file missing ({thumbnail_path})"
+            else:
+                try:
+                    await asyncio.to_thread(
+                        self._set_thumbnail_blocking,
+                        credentials=credentials,
+                        video_id=str(response.get("id") or ""),
+                        thumbnail_path=thumbnail_path,
+                    )
+                    thumbnail_status = "set"
+                except Exception as exc:
+                    thumbnail_status = f"failed: {describe_thumbnail_error(exc)}"
+                    logger.warning(
+                        "[publish.youtube] thumbnail set failed (upload "
+                        "succeeded): %s", thumbnail_status,
+                    )
 
         # Cost-guard. YouTube Data API v3 is free under quota; we
         # record the row anyway with cost=0 so the eco dashboard can
@@ -493,6 +522,7 @@ class YouTubePublishAdapter:
                 "channel_id": str(snippet.get("channelId") or ""),
                 "published_at": str(snippet.get("publishedAt") or ""),
                 "scheduled_at": scheduled_at or "",
+                "thumbnail": thumbnail_status,
             },
         )
 
@@ -508,7 +538,8 @@ class YouTubePublishAdapter:
         from googleapiclient.http import MediaFileUpload  # type: ignore[import-not-found]
 
         youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
-        media = MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
+        mimetype = "image/png" if thumbnail_path.lower().endswith(".png") else "image/jpeg"
+        media = MediaFileUpload(thumbnail_path, mimetype=mimetype)
         youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
 
     @staticmethod
@@ -567,6 +598,32 @@ class YouTubePublishAdapter:
         return youtube.videos().update(
             part="snippet", body={"id": video_id, "snippet": snippet},
         ).execute()
+
+    async def set_thumbnail(
+        self, *, video_id: str, thumbnail_path: str, force: bool = False,
+    ) -> tuple[bool, str]:
+        """Set the custom thumbnail of an already-published video.
+
+        Returns ``(ok, detail)``: ``(True, "set")`` or ``(False, why)`` with
+        the fix named when Google refused (see ``describe_thumbnail_error``).
+        ``thumbnails.set`` needs only the upload scope.
+        """
+        if not video_id:
+            return False, "no video id"
+        if not thumbnail_path or not os.path.exists(thumbnail_path):
+            return False, f"thumbnail file missing ({thumbnail_path})"
+        ready, error, secrets = await self._check_gating(force=force)
+        if not ready:
+            return False, str(error or "youtube adapter not ready")
+        credentials = self._build_credentials(secrets)
+        try:
+            await asyncio.to_thread(
+                self._set_thumbnail_blocking,
+                credentials=credentials, video_id=video_id, thumbnail_path=thumbnail_path,
+            )
+        except Exception as exc:  # noqa: BLE001 — the caller reports it per video
+            return False, describe_thumbnail_error(exc)
+        return True, "set"
 
     async def update_metadata(
         self,

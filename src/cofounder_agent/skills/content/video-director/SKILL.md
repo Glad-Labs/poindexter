@@ -23,6 +23,12 @@ metadata:
     - key: video.escalation_image_subject
       output_format: text
       description: "Writes a WORDLESS illustration subject for ONE shot whose stock footage stayed off-topic after re-querying, so the shot can become a generated still that passes the image OCR gate. Given the video's subject (the other shots' intents) and this shot's intent, returns one visual metaphor built from objects, light and shape. Used by services.video_renderers.shot_list_renderer._llm_image_subject."
+    - key: video.thumbnail_hook
+      output_format: text
+      description: "Writes the text for a long-form video's custom YouTube thumbnail: a short headline that adds to the title (result, stakes, named tool, number) rather than repeating it. Checked in code for length, title overlap and invented numbers. Used by services.video_thumbnail.generate_thumbnail_hook."
+    - key: video.thumbnail_hook_fix
+      output_format: text
+      description: "The one corrective retry for video.thumbnail_hook: carries the reason code rejected the first reply ({reason}) and the length limit ({max_chars}). Used by services.video_thumbnail.generate_thumbnail_hook."
     - key: video.review_v1
       output_format: json
       description: 'Director self-critique — revise the long-form shot list (coverage, variety, hero selection, on-brand)'
@@ -314,6 +320,36 @@ intent: a network partition cuts two regions apart
   -> a bridge of light snapping between two floating islands
 
 Output ONLY the subject on a single line.
+```
+
+## video.thumbnail_hook
+
+```text
+Write the text for this video's YouTube thumbnail.
+
+The thumbnail sits beside the title in a feed, and a viewer takes in both in
+about a second. The thumbnail text is a short headline that adds what the
+title leaves out: the result, the stakes, the named tool, the number.
+
+VIDEO TITLE: {title}
+WHAT THE VIDEO COVERS: {summary}
+
+Write text that:
+- a viewer can read at a glance on a phone
+- names something concrete from the video
+- stays true to what the video delivers
+- uses a number only when it appears above
+
+Output ONLY the thumbnail text on a single line.
+```
+
+## video.thumbnail_hook_fix
+
+```text
+FIX: {reason}. Write the thumbnail text again: at most {max_chars} characters,
+in words the title leaves out, with numbers only from the video.
+
+Output ONLY the thumbnail text on a single line.
 ```
 
 ## video.director_short_v1

@@ -118,3 +118,36 @@ class TestPreview:
             )
 
         assert resp.status_code == 401
+
+
+class TestThumbnail:
+    """The composed YouTube thumbnail is public the moment the video is, so
+    the drawer shows it beside the video it uploads with."""
+
+    def test_streams_the_thumbnail_as_jpeg(self, tmp_path):
+        thumb = tmp_path / "t_thumbnail.jpg"
+        thumb.write_bytes(b"\xff\xd8\xff\xe0jpeg")
+        lookup = AsyncMock(return_value=str(thumb))
+        with patch("poindexter.services.media_approval_service.get_thumbnail_storage_path", new=lookup):
+            resp = TestClient(_build_app()).get("/api/media-approval/post-1/video/thumbnail")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/jpeg"
+        assert resp.headers["cache-control"] == "no-store"
+        assert resp.content == thumb.read_bytes()
+        assert lookup.await_args.args[1] == "post-1"
+
+    def test_only_the_long_video_has_one(self):
+        resp = TestClient(_build_app()).get("/api/media-approval/post-1/video_short/thumbnail")
+        assert resp.status_code == 404
+
+    def test_no_thumbnail_on_disk_is_a_404(self, tmp_path):
+        with patch(
+            "poindexter.services.media_approval_service.get_thumbnail_storage_path",
+            new=AsyncMock(return_value=str(tmp_path / "gone.jpg")),
+        ):
+            resp = TestClient(_build_app()).get("/api/media-approval/post-1/video/thumbnail")
+        assert resp.status_code == 404
+
+    def test_requires_auth(self):
+        resp = TestClient(_build_app(authed=False)).get("/api/media-approval/post-1/video/thumbnail")
+        assert resp.status_code in (401, 403)

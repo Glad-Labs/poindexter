@@ -997,3 +997,90 @@ async def test_twin_refresh_failure_never_fails_the_landed_upload(monkeypatch):
     import poindexter.services.youtube_metadata_sync as sync_mod
     monkeypatch.setattr(sync_mod, "sync_youtube_metadata", AsyncMock(side_effect=RuntimeError("scope")))
     assert await md._refresh_twin_after_upload(_pair_pool(twin="LONG1"), _sc(), task_id="t1", medium="video_short") is False
+
+
+# --------------------------------------------------------------------------
+# Custom thumbnails (2026-09-25): the composed thumbnail rides with the LONG
+# upload, and what YouTube did with it is stamped + surfaced
+# --------------------------------------------------------------------------
+
+
+def _thumb_pool(thumb_path):
+    pool = AsyncMock()
+    pool.fetch = AsyncMock(return_value=[
+        {"name": "yt", "platform": "youtube", "handler_name": "youtube", "config": {}, "metadata": {}},
+    ])
+
+    async def _fetchval(sql, *args):
+        return thumb_path if "video_thumbnail" in sql else None
+    pool.fetchval = AsyncMock(side_effect=_fetchval)
+    pool.execute = AsyncMock()
+    return pool
+
+
+def _thumb_row():
+    return {
+        "post_id": "p1", "task_id": "t1", "title": "Clip", "content": "c", "excerpt": "e",
+        "seo_keywords": "", "slug": "s", "storage_path": "/tmp/v.mp4",
+    }
+
+
+async def _dispatch_with(pool, sc, *, shorts, result):
+    dispatch = AsyncMock(return_value=result)
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ), patch.object(md, "emit_finding") as finding:
+        await md._dispatch_asset(pool, sc, _thumb_row(), shorts=shorts)
+    return dispatch.await_args.args[2], finding
+
+
+@pytest.mark.asyncio
+async def test_the_long_upload_carries_the_thumbnail_and_stamps_its_outcome(tmp_path):
+    thumb = tmp_path / "t1_thumbnail.jpg"
+    thumb.write_bytes(b"\xff\xd8jpeg")
+    pool = _thumb_pool(str(thumb))
+    payload, finding = await _dispatch_with(
+        pool, _sc(media_pipeline_trigger_enabled="true"), shorts=False,
+        result={"success": True, "post_id": "VID9", "url": "u", "thumbnail": "set"},
+    )
+    assert payload["thumbnail_path"] == str(thumb)
+    stamp = [c for c in pool.execute.await_args_list if "video_thumbnail" in c.args[0]]
+    assert stamp and json.loads(stamp[0].args[2])["status"] == "set"
+    finding.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_short_never_carries_one(tmp_path):
+    thumb = tmp_path / "t.jpg"
+    thumb.write_bytes(b"\xff\xd8jpeg")
+    payload, _ = await _dispatch_with(
+        _thumb_pool(str(thumb)), _sc(media_pipeline_trigger_enabled="true"), shorts=True,
+        result={"success": True, "post_id": "S1", "url": "u"},
+    )
+    assert "thumbnail_path" not in payload
+
+
+@pytest.mark.asyncio
+async def test_the_setting_switches_it_off(tmp_path):
+    thumb = tmp_path / "t.jpg"
+    thumb.write_bytes(b"\xff\xd8jpeg")
+    payload, _ = await _dispatch_with(
+        _thumb_pool(str(thumb)),
+        _sc(media_pipeline_trigger_enabled="true", youtube_custom_thumbnail_enabled="false"),
+        shorts=False, result={"success": True, "post_id": "VID9", "url": "u"},
+    )
+    assert "thumbnail_path" not in payload
+
+
+@pytest.mark.asyncio
+async def test_a_refused_thumbnail_raises_a_finding(tmp_path):
+    thumb = tmp_path / "t.jpg"
+    thumb.write_bytes(b"\xff\xd8jpeg")
+    _, finding = await _dispatch_with(
+        _thumb_pool(str(thumb)), _sc(media_pipeline_trigger_enabled="true"), shorts=False,
+        result={"success": True, "post_id": "VID9", "url": "u",
+                "thumbnail": "failed: the channel cannot set custom thumbnails yet"},
+    )
+    finding.assert_called_once()
+    assert finding.call_args.kwargs["kind"] == "youtube_thumbnail_failed"
+    assert "--apply" in finding.call_args.kwargs["body"]

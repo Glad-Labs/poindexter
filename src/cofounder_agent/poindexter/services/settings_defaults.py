@@ -723,6 +723,66 @@ DEFAULTS: dict[str, str] = {
     # has a presenter shot and the niche's persona is photoreal; true/false
     # force it for the channel.
     'youtube_contains_synthetic_media': 'auto',
+    # ----- Custom YouTube thumbnails (services/video_thumbnail.py) -----
+    # Composed, not generated: real type over a text-free background, rendered
+    # by headless chromium at render time so it is reviewed with the video and
+    # uploaded with it. Until 2026-09-25 every upload showed a random frame.
+    'video_thumbnail_enabled': 'true',
+    # First source that yields an image wins: featured_image (the post's),
+    # presenter_portrait (the persona's studio portrait), presenter_frame
+    # (the opening presenter scene), video_frame (frame at *_frame_at_s),
+    # brand (brand ground, no image — always available).
+    'video_thumbnail_background_order': 'featured_image,presenter_portrait,brand',
+    'video_thumbnail_hook_enabled': 'true',
+    # Model for the hook text; empty = video_director_model.
+    'video_thumbnail_hook_model': '',
+    # Longest hook that still reads at thumbnail size; longer is rejected
+    # (one corrective retry, then no text).
+    'video_thumbnail_hook_max_chars': '32',
+    'video_thumbnail_hook_temperature': '0.7',
+    # Reply budget for the hook call. The hook is one short line; raise it only
+    # for a model that thinks aloud before answering.
+    'video_thumbnail_hook_max_tokens': '256',
+    'video_thumbnail_hook_timeout_seconds': '90',
+    'video_thumbnail_width': '1280',
+    'video_thumbnail_height': '720',
+    # Lead with an installed family (the worker ships JetBrains Mono and
+    # Liberation only); the fit script measures in the rendering chromium.
+    'video_thumbnail_font_family': 'JetBrains Mono',
+    'video_thumbnail_font_weight': '800',
+    'video_thumbnail_max_font_px': '120',
+    'video_thumbnail_min_font_px': '48',
+    'video_thumbnail_text_color': '#f4f8fb',
+    'video_thumbnail_accent_color': '#00e5ff',
+    # Trailing words of the hook drawn in the accent colour.
+    'video_thumbnail_accent_words': '1',
+    'video_thumbnail_uppercase': 'true',
+    # left | center | bottom (full-bleed backgrounds).
+    'video_thumbnail_text_position': 'left',
+    'video_thumbnail_text_width_pct': '52',
+    # right = a person on the right, text beside it; cover = full-bleed.
+    'video_thumbnail_person_layout': 'right',
+    'video_thumbnail_person_width_pct': '58',
+    # Vertical crop anchor for the person's image (0 = top, 100 = bottom);
+    # raise it for a portrait framed with more headroom.
+    'video_thumbnail_person_focus_y_pct': '22',
+    # Darkening behind the text over full-bleed backgrounds, in the ground
+    # colour (video_thumbnail_background_color), 0-1.
+    'video_thumbnail_scrim_opacity': '0.78',
+    'video_thumbnail_brand_mark_enabled': 'true',
+    # Brand mark text; empty = site_name.
+    'video_thumbnail_brand_mark': '',
+    'video_thumbnail_brand_mark_color': '#7a8a92',
+    'video_thumbnail_background_color': '#070a0f',
+    'video_thumbnail_jpeg_quality': '88',
+    # YouTube's documented thumbnail ceiling for long-form uploads.
+    'video_thumbnail_max_bytes': '2000000',
+    # Share of a video frame cropped off the bottom (the burned-in captions).
+    'video_thumbnail_frame_crop_bottom': '0.22',
+    'video_thumbnail_presenter_offset_s': '1.5',
+    'video_thumbnail_frame_at_s': '5.0',
+    # Upload the composed thumbnail with the long-form video.
+    'youtube_custom_thumbnail_enabled': 'true',
     # Free VRAM the render insists on before starting a chunk; below it the
     # shot falls back rather than OOM-ing the card mid-video.
     # Minimum usable VRAM (free + ComfyUI's reusable pool) before a presenter
@@ -4007,6 +4067,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.social_post_delivery_failed.fallback': 'log_only',
     'findings.social_post_delivery_failed.cooldown_minutes': '360',
     'findings.social_post_delivery_failed.min_severity': 'warn',
+    # A long-form upload that landed without its custom thumbnail
+    # (media_distribute). The video is live either way, so routine ops →
+    # Discord; cooldown 6h because an unverified channel fails every upload
+    # until the operator verifies it (the finding body names the fix).
+    'findings.youtube_thumbnail_failed.delivery': 'discord',
+    'findings.youtube_thumbnail_failed.fallback': 'log_only',
+    'findings.youtube_thumbnail_failed.cooldown_minutes': '360',
+    'findings.youtube_thumbnail_failed.min_severity': 'warn',
     # ----- Media QA findings (podcast + video) -----
     # Every one of these inherited findings.default.delivery='log_only', so the
     # whole media-QA surface emitted into audit_log and told nobody: 74
@@ -5516,6 +5584,40 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_shots_max': {'owner': 'video', 'value_type': 'integer'},
     'youtube_contains_synthetic_media': {'owner': 'video', 'value_type': 'string'},
+    'video_thumbnail_enabled': {'owner': 'video_thumbnail', 'value_type': 'boolean'},
+    'video_thumbnail_background_order': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_thumbnail_hook_enabled': {'owner': 'video_thumbnail', 'value_type': 'boolean'},
+    'video_thumbnail_hook_model': {'owner': 'video_thumbnail', 'value_type': 'model'},
+    'video_thumbnail_hook_max_chars': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_hook_temperature': {'owner': 'video_thumbnail', 'value_type': 'float'},
+    'video_thumbnail_hook_max_tokens': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_hook_timeout_seconds': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_width': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_height': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_font_family': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_thumbnail_font_weight': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_max_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_min_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_text_color': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_thumbnail_accent_color': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_thumbnail_accent_words': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_uppercase': {'owner': 'video_thumbnail', 'value_type': 'boolean'},
+    'video_thumbnail_text_position': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_thumbnail_text_width_pct': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_person_layout': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_thumbnail_person_width_pct': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_person_focus_y_pct': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_scrim_opacity': {'owner': 'video_thumbnail', 'value_type': 'float'},
+    'video_thumbnail_brand_mark_enabled': {'owner': 'video_thumbnail', 'value_type': 'boolean'},
+    'video_thumbnail_brand_mark': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_thumbnail_brand_mark_color': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_thumbnail_background_color': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_thumbnail_jpeg_quality': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_max_bytes': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_thumbnail_frame_crop_bottom': {'owner': 'video_thumbnail', 'value_type': 'float'},
+    'video_thumbnail_presenter_offset_s': {'owner': 'video_thumbnail', 'value_type': 'float'},
+    'video_thumbnail_frame_at_s': {'owner': 'video_thumbnail', 'value_type': 'float'},
+    'youtube_custom_thumbnail_enabled': {'owner': 'media_distribute', 'value_type': 'boolean'},
     'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
     'video_presenter_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
