@@ -9,6 +9,7 @@ nothing must not look like progress.
 from __future__ import annotations
 
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,9 +17,11 @@ import pytest
 from poindexter.modules.content.jobs.backfill_video_shot_lists import (
     BackfillVideoShotListsJob,
 )
+from poindexter.plugins.stage import StageResult
 from poindexter.services.site_config import SiteConfig
 
 _SHOT_LIST = {"shots": [{"idx": 0}, {"idx": 1}], "total_duration_s": 30.0}
+_REVIEWED = {"shots": [{"idx": 0}, {"idx": 1}, {"idx": 2}], "total_duration_s": 30.0}
 
 
 class _FakeConn:
@@ -60,9 +63,10 @@ class _FakePool:
         return _Acq()
 
 
-def _row(task="11111111-2222-3333-4444-555555555555"):
+def _row(task="11111111-2222-3333-4444-555555555555", niche="glad-labs"):
     return {
         "task_id": task,
+        "niche_slug": niche,
         "version_id": 42,
         "title": "A Post",
         "content": "body text",
@@ -76,6 +80,22 @@ def _cfg(**over):
     return {"_site_config": SiteConfig(initial_config=dict(over))}
 
 
+def _patch_review(monkeypatch, **execute):
+    """Stand in for the reviewer. Default: it keeps the draft, as the real
+    stage does whenever its own LLM pass fails."""
+    if not execute:
+        execute = {"return_value": StageResult(
+            ok=True, detail="review fell back to draft", metrics={"reviewed": False},
+        )}
+    reviewer = MagicMock()
+    reviewer.execute = AsyncMock(**execute)
+    monkeypatch.setattr(
+        "poindexter.modules.content.stages.review_video_shot_list.ReviewVideoShotListStage",
+        lambda: reviewer,
+    )
+    return reviewer
+
+
 def _patch_deps(monkeypatch, *, stage_result, platform=object()):
     monkeypatch.setattr(
         "poindexter.services.di_wiring.build_platform_for_subprocess",
@@ -87,6 +107,7 @@ def _patch_deps(monkeypatch, *, stage_result, platform=object()):
         "poindexter.modules.content.stages.generate_video_shot_list.GenerateVideoShotListStage",
         lambda: stage,
     )
+    _patch_review(monkeypatch)
     return stage
 
 
@@ -164,6 +185,7 @@ class TestBackfillVideoShotLists:
             "poindexter.modules.content.stages.generate_video_shot_list.GenerateVideoShotListStage",
             lambda: stage,
         )
+        _patch_review(monkeypatch)
         pool = _FakePool([_row("aaa"), _row("bbb")])
 
         result = await BackfillVideoShotListsJob().run(pool, _cfg())
@@ -240,6 +262,121 @@ class TestBackfillVideoShotLists:
 
         context = stage.execute.await_args[0][0]
         assert context["short_summary_script"] == "short narration"
+
+    async def test_director_gets_each_rows_niche(self, monkeypatch):
+        """The director resolves the house style, the style policy and the
+        presenter from ``context["niche_slug"]``. Without it every backfilled
+        list was planned under the GLOBAL policy: no glad-labs house style,
+        and no presenter, because the photoreal persona needs the niche's
+        ``style_policy=any``. Same shape as stack#3928 / stack#3932. Two
+        niches prove the slug is the row's, not a constant."""
+        monkeypatch.setattr(
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding",
+            lambda **kw: None,
+        )
+        stage = _patch_deps(
+            monkeypatch,
+            stage_result=MagicMock(
+                context_updates={"video_shot_list": _SHOT_LIST}, detail="ok",
+            ),
+        )
+        pool = _FakePool([_row("aaa", niche="glad-labs"), _row("bbb", niche="other")])
+
+        await BackfillVideoShotListsJob().run(pool, _cfg())
+
+        seen = [c.args[0]["niche_slug"] for c in stage.execute.await_args_list]
+        assert seen == ["glad-labs", "other"]
+
+    async def test_niche_less_piece_gets_empty_slug_and_a_warning(
+        self, monkeypatch, caplog,
+    ):
+        """``""`` rather than None, the ``str`` contract the sibling seams
+        keep, and a warning naming what the piece loses."""
+        stage = _patch_deps(
+            monkeypatch, stage_result=MagicMock(context_updates={}, detail="skip"),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            await BackfillVideoShotListsJob().run(_FakePool([_row(niche=None)]), _cfg())
+
+        assert stage.execute.await_args.args[0]["niche_slug"] == ""
+        assert any("has no niche_slug" in r.message for r in caplog.records)
+
+    async def test_review_output_is_what_gets_written(self, monkeypatch):
+        """The canonical_blog graph and media_regen both review every director
+        list. A stranded piece cleared Gate 1 with no plan, so this review is
+        the only look a backfilled plan gets before it renders — and it must
+        judge the draft under the same niche policy the director used."""
+        monkeypatch.setattr(
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding",
+            lambda **kw: None,
+        )
+        _patch_deps(
+            monkeypatch,
+            stage_result=MagicMock(
+                context_updates={
+                    "video_shot_list": _SHOT_LIST, "short_shot_list": _SHOT_LIST,
+                },
+                detail="draft",
+            ),
+        )
+        reviewer = _patch_review(monkeypatch, return_value=StageResult(
+            ok=True,
+            detail="reviewed",
+            context_updates={"video_shot_list": _REVIEWED, "short_shot_list": _REVIEWED},
+            metrics={"reviewed": True},
+        ))
+        pool = _FakePool([_row()])
+
+        result = await BackfillVideoShotListsJob().run(pool, _cfg())
+
+        review_context = reviewer.execute.await_args.args[0]
+        assert review_context["video_shot_list"] == _SHOT_LIST
+        assert review_context["short_shot_list"] == _SHOT_LIST
+        assert review_context["niche_slug"] == "glad-labs"
+        _sql, (_version, long_json, short_json) = pool.writes[0]
+        assert json.loads(long_json) == _REVIEWED
+        assert json.loads(short_json) == _REVIEWED
+        assert result.metrics["reviewed"] == 1
+
+    @pytest.mark.parametrize(
+        "review",
+        [
+            {"side_effect": RuntimeError("reviewer exploded")},
+            {"return_value": StageResult(
+                ok=True,
+                detail="empty",
+                context_updates={
+                    "video_shot_list": {"shots": []}, "short_shot_list": {},
+                },
+                metrics={"reviewed": True},
+            )},
+        ],
+        ids=["review_raises", "review_returns_empty_lists"],
+    )
+    async def test_failed_review_still_writes_the_draft(self, monkeypatch, review):
+        """Non-halting in the graph, non-halting here. A failed second pass
+        must not cost the piece the recovery it just got, and an empty list
+        must never replace the draft: that re-strands the piece with its
+        dispatch marker already cleared."""
+        monkeypatch.setattr(
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding",
+            lambda **kw: None,
+        )
+        _patch_deps(
+            monkeypatch,
+            stage_result=MagicMock(
+                context_updates={"video_shot_list": _SHOT_LIST}, detail="draft",
+            ),
+        )
+        _patch_review(monkeypatch, **review)
+        pool = _FakePool([_row()])
+
+        result = await BackfillVideoShotListsJob().run(pool, _cfg())
+
+        assert result.changes_made == 1
+        assert json.loads(pool.writes[0][1][1]) == _SHOT_LIST
+        assert result.metrics["reviewed"] == 0
 
     async def test_no_pool_fails_loud(self):
         assert (await BackfillVideoShotListsJob().run(None, _cfg())).ok is False

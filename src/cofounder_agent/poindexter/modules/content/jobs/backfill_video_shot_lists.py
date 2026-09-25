@@ -18,14 +18,31 @@ the shot lists back into the piece's latest ``pipeline_versions`` row, and
 clears ``media_pipeline_dispatched_at`` so the media dispatcher picks the piece
 up on its next tick.
 
+The director runs with the piece's ``niche_slug``. The director and its reviewer
+resolve the per-niche media policy from ``context["niche_slug"]``: the house
+style, the style and subject policy, and whether the presenter may appear. A
+context without it quietly falls back to the GLOBAL policy — on prod
+(2026-09-25) that drops the glad-labs house style and, because the global
+``stylized`` policy forbids the photoreal presenter persona, every presenter
+shot. Same niche-blind shape as stack#3928 (Stage-2 dispatch) and stack#3932
+(media regen).
+
+Each regenerated list then gets the director's self-critique
+(``review_video_shot_list``), the second pass the canonical_blog graph and
+``media_regen`` both run over every director list. A stranded piece cleared
+Gate 1 with no plan, so nothing else looks at a backfilled plan before it
+renders. Non-halting, as in the graph: a review that raises or skips for a busy
+GPU leaves the director's draft to be written.
+
 Owned by the content module rather than ``services/jobs/`` because it
 drives the Stage-1 director: from the kernel that import would be a Seam 2
 (kernel→module) violation, from inside the module it is ordinary.
 
-Deliberately small-batch and idempotent-by-effect: the director is a real LLM
-call on the shared GPU, so a big sweep would starve the live pipeline — the
-condition that created the backlog in the first place. A piece that fails
-again is simply left for the next cycle; it is no worse off than before.
+Deliberately small-batch and idempotent-by-effect: the director and its review
+are real LLM calls on the shared GPU, so a big sweep would starve the live
+pipeline — the condition that created the backlog in the first place. A piece
+that fails again is simply left for the next cycle; it is no worse off than
+before.
 """
 
 from __future__ import annotations
@@ -52,6 +69,8 @@ _FINDING_KIND = "video_shot_list_backfilled"
 # marker-filtered query returns a comforting zero.
 _STRANDED_SQL = """
     SELECT pt.task_id,
+           -- The director + reviewer resolve the niche's media policy from it.
+           pt.niche_slug,
            pv.id            AS version_id,
            pv.title         AS title,
            pv.content       AS content,
@@ -163,11 +182,14 @@ class BackfillVideoShotListsJob:
                 ok=True,
                 detail="no stranded pieces",
                 changes_made=0,
-                metrics={"backfilled": 0, "attempted": 0},
+                metrics={"backfilled": 0, "attempted": 0, "reviewed": 0},
             )
 
         from poindexter.modules.content.stages.generate_video_shot_list import (
             GenerateVideoShotListStage,
+        )
+        from poindexter.modules.content.stages.review_video_shot_list import (
+            ReviewVideoShotListStage,
         )
         from poindexter.services.di_wiring import build_platform_for_subprocess
 
@@ -189,14 +211,26 @@ class BackfillVideoShotListsJob:
                 self.pool = p
 
         stage = GenerateVideoShotListStage()
+        reviewer = ReviewVideoShotListStage()
         backfilled = 0
         attempted = 0
+        reviewed_count = 0
 
         for row in rows:
             task_id = str(row["task_id"])
             attempted += 1
+            # "" rather than None, as the sibling seams do: the declared
+            # channel is ``str`` and every consumer reads empty as "no niche".
+            niche_slug = (row["niche_slug"] or "").strip()
+            if not niche_slug:
+                logger.warning(
+                    "[SHOTLIST_BACKFILL] %s has no niche_slug — its shot list "
+                    "will use the global media policy, not a niche house style",
+                    task_id[:8],
+                )
             context: dict[str, Any] = {
                 "task_id": task_id,
+                "niche_slug": niche_slug,
                 "title": row["title"] or "",
                 "content": row["content"] or "",
                 "podcast_script": row["podcast_script"] or "",
@@ -232,6 +266,37 @@ class BackfillVideoShotListsJob:
                 )
                 continue
 
+            # The director's self-critique, as the graph runs it after every
+            # director list. The reviewer reads the draft from the context and
+            # falls back to it on its own failures; a raise here is the same
+            # non-halting miss, so the draft is written either way.
+            context["video_shot_list"] = long_list
+            context["short_shot_list"] = short_list
+            reviewed = False
+            try:
+                review = await reviewer.execute(context, {})
+            except Exception as exc:  # noqa: BLE001 — the draft is still a
+                # recovery; aborting the write over a failed second pass would
+                # leave the piece exactly as stranded as before, for no gain.
+                logger.warning(
+                    "[SHOTLIST_BACKFILL] review raised for %s — writing the "
+                    "director's draft: %s", task_id[:8], describe_exception(exc),
+                )
+            else:
+                r_updates = getattr(review, "context_updates", None) or {}
+                # Lane by lane, and never onto an empty list: the review may
+                # improve a draft, never undo the recovery.
+                if _shots_of(r_updates.get("video_shot_list")):
+                    long_list = r_updates["video_shot_list"]
+                    n_long = _shots_of(long_list)
+                    # The stage's own verdict on the long lane — it hands the
+                    # draft back unchanged when its pass fails.
+                    reviewed = bool(
+                        (getattr(review, "metrics", None) or {}).get("reviewed"),
+                    )
+                if _shots_of(r_updates.get("short_shot_list")):
+                    short_list = r_updates["short_shot_list"]
+
             try:
                 async with pool.acquire() as conn, conn.transaction():
                     await conn.execute(
@@ -248,13 +313,19 @@ class BackfillVideoShotListsJob:
                 continue
 
             backfilled += 1
+            reviewed_count += reviewed
             logger.info(
-                "[SHOTLIST_BACKFILL] %s — %d long shot(s) + %d short, marker "
-                "cleared; media dispatcher will pick it up",
-                task_id[:8], n_long, _shots_of(short_list),
+                "[SHOTLIST_BACKFILL] %s (niche=%s) — %d long shot(s) + %d short, "
+                "%s, marker cleared; media dispatcher will pick it up",
+                task_id[:8], niche_slug or "<none>", n_long, _shots_of(short_list),
+                "reviewed" if reviewed else "unreviewed draft",
             )
 
-        metrics = {"backfilled": backfilled, "attempted": attempted}
+        metrics = {
+            "backfilled": backfilled,
+            "attempted": attempted,
+            "reviewed": reviewed_count,
+        }
 
         if backfilled:
             emit_finding(
@@ -264,7 +335,10 @@ class BackfillVideoShotListsJob:
                 body=(
                     f"Regenerated shot lists for {backfilled} of {attempted} "
                     f"attempted piece(s) and cleared their media dispatch "
-                    f"markers, so the media pipeline will render them.\n\n"
+                    f"markers, so the media pipeline will render them. The "
+                    f"director's self-critique revised {reviewed_count} of "
+                    f"them; any others carry the director's unreviewed draft "
+                    f"(review skipped or failed).\n\n"
                     f"These pieces were published with an empty "
                     f"`video_shot_list` because Stage-1's director was skipped "
                     f"for a busy GPU, which permanently retired them: the media "
