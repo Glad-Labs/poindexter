@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+## [0.148.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.147.0...v0.148.0) (2026-09-25)
+
+
+### Features
+
+* **brain:** watch for containers stuck unhealthy; firefighter rules restart the safe ones ([#4009](https://github.com/Glad-Labs/glad-labs-stack/issues/4009)) ([4d89bbc](https://github.com/Glad-Labs/glad-labs-stack/commit/4d89bbc25b78e064fa17b04d982f8fbaff475438))
+
+
+### Bug Fixes
+
+* **architect:** a composed plan on an existing post may not write a post ([#4011](https://github.com/Glad-Labs/glad-labs-stack/issues/4011)) ([eeecb00](https://github.com/Glad-Labs/glad-labs-stack/commit/eeecb005a9b58a54aca5cf7cc5db5281fb25b4ca))
+* **atoms:** prune pipeline_atoms rows no sync has seen in a grace window ([#3998](https://github.com/Glad-Labs/glad-labs-stack/issues/3998)) ([f9c1008](https://github.com/Glad-Labs/glad-labs-stack/commit/f9c1008fb541a504e4a5a535ef949792981c239a))
+* **captions:** reattach a sentence tail Whisper stranded on the next segment ([#4005](https://github.com/Glad-Labs/glad-labs-stack/issues/4005)) ([2df3067](https://github.com/Glad-Labs/glad-labs-stack/commit/2df3067ed83dbefdbc9436288aa9947e2d2d1db0))
+* **chat:** the plan card an operator approves is the graph that runs ([#4010](https://github.com/Glad-Labs/glad-labs-stack/issues/4010)) ([cc0ab43](https://github.com/Glad-Labs/glad-labs-stack/commit/cc0ab43167bd0004cbfa5d2b0550a77a5b06f362))
+* **deploy:** hold the worker bounce for a busy stack even when no reset ran ([#4001](https://github.com/Glad-Labs/glad-labs-stack/issues/4001)) ([1b04f37](https://github.com/Glad-Labs/glad-labs-stack/commit/1b04f378a6fc56f705c97eee21f807e2577c44cb))
+* **gpu:** stop unloading speaches through its API — it deadlocks the Whisper manager ([#4013](https://github.com/Glad-Labs/glad-labs-stack/issues/4013)) ([6024ffa](https://github.com/Glad-Labs/glad-labs-stack/commit/6024ffa6e75cd3be6e8439b13b87502babdde6f3))
+* **media:** don't re-dispatch a video render that is still heartbeating ([#4000](https://github.com/Glad-Labs/glad-labs-stack/issues/4000)) ([a043b6c](https://github.com/Glad-Labs/glad-labs-stack/commit/a043b6c82a400ee05a79f663b4c798d6cc29c873))
+* **media:** wire the short-lane prompt through the video SKILL pack ([#4004](https://github.com/Glad-Labs/glad-labs-stack/issues/4004)) ([7dd98d0](https://github.com/Glad-Labs/glad-labs-stack/commit/7dd98d0701bd346092f23358932d5b67fd57b0c5))
+* **migrations:** unwrap the 58 double-encoded jsonb values in the baseline seeds ([#4003](https://github.com/Glad-Labs/glad-labs-stack/issues/4003)) ([e4aee94](https://github.com/Glad-Labs/glad-labs-stack/commit/e4aee941a51ea57946aec1ed926d12d8010aac23))
+* **publishing:** record every media_distribute attempt on its adapter row ([#4006](https://github.com/Glad-Labs/glad-labs-stack/issues/4006)) ([c9e8aee](https://github.com/Glad-Labs/glad-labs-stack/commit/c9e8aee298515412c549374a0a32b019ffbc89d2))
+* **qa:** keep qa_gates rows consistent with their rails' master switches ([#3996](https://github.com/Glad-Labs/glad-labs-stack/issues/3996)) ([3342b35](https://github.com/Glad-Labs/glad-labs-stack/commit/3342b35646c0769a29ea7cb5dcdcafe332575952))
+* **qa:** the Ragas judge sends its configured num_ctx ([#4016](https://github.com/Glad-Labs/glad-labs-stack/issues/4016)) ([4860373](https://github.com/Glad-Labs/glad-labs-stack/commit/4860373fefb0230bb2ce5126d737c4ddf2b227af))
+* **qa:** web_factcheck tells "no claims" apart from "search failed" ([#3997](https://github.com/Glad-Labs/glad-labs-stack/issues/3997)) ([03a4d24](https://github.com/Glad-Labs/glad-labs-stack/commit/03a4d240fd8e53418a13894b967d2b153417e59c))
+* **rag:** pin the Hugging Face weights behind the reranker and topic dedup ([#4012](https://github.com/Glad-Labs/glad-labs-stack/issues/4012)) ([2f7e929](https://github.com/Glad-Labs/glad-labs-stack/commit/2f7e9295ec5ac9a4a129305fb50955fca4dd179c))
+* **retention:** declare backlog invariants for downsample and orphan prune ([#4007](https://github.com/Glad-Labs/glad-labs-stack/issues/4007)) ([fcea72f](https://github.com/Glad-Labs/glad-labs-stack/commit/fcea72f910121f0429a4879d0b23fec7aa0eb3b6))
+* **shorts:** catch the four hook openers that announce the article ([#3999](https://github.com/Glad-Labs/glad-labs-stack/issues/3999)) ([d916991](https://github.com/Glad-Labs/glad-labs-stack/commit/d916991472165718e2b7b1eff89a756b9dc024e0))
+* **video:** escalation stills draw a wordless subject on a card cleared for each one ([#4015](https://github.com/Glad-Labs/glad-labs-stack/issues/4015)) ([75cbfd1](https://github.com/Glad-Labs/glad-labs-stack/commit/75cbfd19ff141b98967909f23d77a6affd12ebad))
+* **video:** no slot replays the previous clip; escalation stills get the GPU ([#4002](https://github.com/Glad-Labs/glad-labs-stack/issues/4002)) ([a766d0b](https://github.com/Glad-Labs/glad-labs-stack/commit/a766d0b6ca30bd45b05f81667825704148e7d70a))
+
 ## [0.147.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.146.0...v0.147.0) (2026-09-24)
 
 
