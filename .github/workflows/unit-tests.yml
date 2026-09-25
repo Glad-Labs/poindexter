@@ -515,7 +515,9 @@ jobs:
       # five directories (poindexter#641) and then three more (2026-09-25, one
       # of them hiding a real failure). This fails when any tests/unit/**/test_*.py is
       # named by no step, or only by one that cannot fail the job
-      # (continue-on-error / if: false / --ignore). Stdlib only.
+      # (continue-on-error / if: false on the step or job / --ignore), or whose
+      # script discards pytest's exit status (`|| true`, `set +e`, or `| tee`
+      # without pipefail, which no-`shell:` steps like these lack). Stdlib only.
       - name: Unit-test directory lint (every tests/unit file runs in CI)
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/unit_test_dirs_lint.py

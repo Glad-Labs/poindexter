@@ -21,16 +21,35 @@ The rule: every ``test_*.py`` under ``src/cofounder_agent/tests/unit`` (the
 ``python_files`` pattern in ``pyproject.toml``) must sit at or under a path
 that a pytest command in the workflow names, resolved against that step's
 ``working-directory``. A file counts as NOT run when the only command naming
-it excludes it (``--ignore`` / ``--ignore-glob`` / ``--deselect``), or when
-the only step that runs it is ``continue-on-error`` or ``if: false``.
+it excludes it (``--ignore`` / ``--ignore-glob`` / ``--deselect``), when the
+only step that runs it is ``continue-on-error`` or ``if: false`` (on the step
+or on its job), or when that step's script discards pytest's exit status.
+
+**Discarded exit status.** A step fails only when its script exits non-zero,
+so ``$PYTEST tests/unit/x/ || true`` runs every test and gates none of them.
+The script is judged the way GitHub runs it on Linux: no ``shell:`` is
+``bash -e {0}`` (errexit, NO pipefail), and ``shell: bash`` is
+``bash --noprofile --norc -eo pipefail {0}``. Discarded: anything after
+``||`` that does not exit non-zero (``|| true``, ``|| :``, ``|| echo``), a
+pipe without pipefail (``| tee log`` under the default shell), ``&``,
+``set +e`` with commands after it, a ``&&`` list with commands after it, and
+a ``code=$?`` capture that no later ``exit`` re-raises. Kept: the capture the
+modules step uses (``|| code=$?`` ... ``exit "${code:-0}"``), ``|| exit 1``,
+``|| { echo "::error::..."; exit 1; }``, and pytest as the script's last
+command. Any other ``shell:`` (``sh`` included) is not read, so its pytest
+commands gate nothing. The tests hold this model to a real bash.
 
 **Stdlib only, no PyYAML.** This lint also runs in ``lint-main``, which
 installs no dependencies. The workflow is read by a small scanner that
 understands only what this rule needs: each job's steps and their ``run``,
-``working-directory``, ``continue-on-error`` and ``if`` keys, including block
-scalars (``run: |``). A shape it does not understand fails closed: a pytest
-command it cannot read covers nothing, so the files are reported rather than
-passed.
+``working-directory``, ``shell``, ``continue-on-error`` and ``if`` keys,
+including block scalars (``run: |``), plus the job's ``if`` and
+``continue-on-error`` and ``defaults.run.shell`` on the job and workflow. A
+shape it does not understand fails closed: a pytest command it cannot read
+covers nothing, so the files are reported rather than passed. The same holds
+for the shell reading above: a way to hand pytest's status on that it does
+not recognise (``|| (echo; exit 1)``, ``if ! $PYTEST``) is reported, not
+trusted.
 
 Run: ``python scripts/ci/unit_test_dirs_lint.py``
 Exit 0 = every test file runs in a gating step. Exit 1 = some do not, or the
@@ -75,7 +94,10 @@ class Step(NamedTuple):
     line: int  # 1-based line of the step's ``-``
     run: str
     working_directory: str  # "" = the repository root
-    gating: bool  # False when continue-on-error or if: false
+    gating: bool  # False when continue-on-error or if: false (step or job)
+    # The step's ``shell``, else its job's then the workflow's
+    # ``defaults.run.shell``; "" = unspecified (GitHub's ``bash -e {0}``).
+    shell: str = ""
 
 
 _KEY_RE = re.compile(r"(?P<key>[A-Za-z0-9_-]+):(?:[ \t]+(?P<value>.*?))?[ \t]*$")
@@ -200,6 +222,23 @@ def _first_real(lines: list[str], start: int, end: int) -> int | None:
     return next((i for i in range(start, end) if not _is_skippable(lines[i])), None)
 
 
+def _nested_scalar(lines: list[str], block: tuple[str | None, int, int] | None, *path: str) -> str | None:
+    """The scalar at ``path`` inside a nested mapping block, as
+    ``(value, first, last)`` from :func:`_iter_keys` (``defaults`` → ``run``
+    → ``shell``). ``None`` when any key on the way is absent."""
+    for key in path:
+        if block is None or block[0] is not None:
+            return None
+        _value, first, last = block
+        line = _first_real(lines, first, last)
+        if line is None:
+            return None
+        block = next(
+            ((v, a, b) for k, v, a, b in _iter_keys(lines, first, last, _indent(lines[line])) if k == key), None
+        )
+    return None if block is None else block[0]
+
+
 def _is_off(value: str | None) -> bool:
     """``false`` / ``${{ false }}`` — a literal the workflow can never flip."""
     if value is None:
@@ -228,6 +267,8 @@ def scan_steps(text: str) -> list[Step]:
     first = _first_real(lines, top + 1, end)
     if first is None:
         return []
+    top_keys = {k: (v, a, b) for k, v, a, b in _iter_keys(lines, 0, len(lines), 0)}
+    workflow_shell = _nested_scalar(lines, top_keys.get("defaults"), "run", "shell") or ""
 
     steps: list[Step] = []
     for job, _value, j_first, j_last in _iter_keys(lines, first, end, _indent(lines[first])):
@@ -235,7 +276,11 @@ def scan_steps(text: str) -> list[Step]:
         if key_line is None:
             continue
         job_keys = {k: (v, a, b) for k, v, a, b in _iter_keys(lines, j_first, j_last, _indent(lines[key_line]))}
-        job_gating = not _is_on(job_keys.get("continue-on-error", (None, 0, 0))[0])
+        # A job that is `if: false` never runs, so none of its steps can fail.
+        job_gating = not _is_on(job_keys.get("continue-on-error", (None, 0, 0))[0]) and not _is_off(
+            job_keys.get("if", (None, 0, 0))[0]
+        )
+        job_shell = _nested_scalar(lines, job_keys.get("defaults"), "run", "shell") or workflow_shell
         if "steps" not in job_keys:
             continue
         _, s_first, s_last = job_keys["steps"]
@@ -271,6 +316,7 @@ def scan_steps(text: str) -> list[Step]:
                     run=run,
                     working_directory=(keys.get("working-directory") or "").strip(),
                     gating=job_gating and not _is_on(keys.get("continue-on-error")) and not _is_off(keys.get("if")),
+                    shell=(keys.get("shell") or job_shell).strip(),  # nosec B604 - a workflow shell name, not subprocess
                 )
             )
     return steps
@@ -294,6 +340,52 @@ def shell_commands(script: str) -> list[list[str]]:
     Parentheses are NOT split on: a pytest inside ``$( ... )`` has its exit
     status swallowed, so it is left unrecognised rather than counted.
     """
+    return [command for command, _op in shell_commands_with_ops(script)]
+
+
+def shell_commands_with_ops(script: str) -> list[tuple[list[str], str]]:
+    """:func:`shell_commands`, each paired with the operator that ends it:
+    ``;`` ``&&`` ``||`` ``|`` ``&``, or ``""`` at the end of a line.
+
+    An ``&`` inside a redirection (``2>&1``, ``>&2``, ``&>log``) stays in its
+    word rather than reading as ``&``; ``|&`` is a pipe.
+    """
+    commands: list[tuple[list[str], str]] = []
+    for line in _logical_lines(script):
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        try:
+            words = list(lexer)
+        except ValueError:  # unbalanced quotes: unreadable, so it covers nothing
+            continue
+        current: list[str] = []
+        glue = ""  # "fd": append the next word (2>& + 1); "&": prefix it (& + >log)
+        for k, word in enumerate(words):
+            if word and set(word) <= set(";&|"):
+                if word == "&" and current and current[-1][-1:] in ("<", ">"):
+                    current[-1] += word
+                    glue = "fd"
+                    continue
+                if word == "&" and words[k + 1 : k + 2] and words[k + 1].startswith(">"):
+                    glue = "&"
+                    continue
+                if current:
+                    commands.append((current, "|" if word == "|&" else word))
+                current, glue = [], ""
+            elif glue == "fd" and current:
+                current[-1] += word
+                glue = ""
+            else:
+                current.append("&" + word if glue == "&" else word)
+                glue = ""
+        if current:
+            commands.append((current, ""))
+    return commands
+
+
+def _logical_lines(script: str) -> list[str]:
+    """``script``'s lines with backslash continuations joined and heredoc
+    bodies dropped."""
     logical: list[str] = []
     pending = ""
     heredoc_end: str | None = None
@@ -313,26 +405,7 @@ def shell_commands(script: str) -> list[list[str]]:
         logical.append(line)
     if pending:
         logical.append(pending)
-
-    commands: list[list[str]] = []
-    for line in logical:
-        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|")
-        lexer.whitespace_split = True
-        try:
-            tokens = list(lexer)
-        except ValueError:  # unbalanced quotes: unreadable, so it covers nothing
-            continue
-        current: list[str] = []
-        for token in tokens:
-            if token and set(token) <= set(";&|"):
-                if current:
-                    commands.append(current)
-                current = []
-            else:
-                current.append(token)
-        if current:
-            commands.append(current)
-    return commands
+    return logical
 
 
 def pytest_args(command: list[str]) -> list[str] | None:
@@ -352,6 +425,126 @@ def pytest_args(command: list[str]) -> list[str] | None:
     if _PYTHON_RE.search(head) and tokens[1:3] == ["-m", "pytest"]:
         return tokens[3:]
     return None
+
+
+# ---------------------------------------------------------------------------
+# Shell: does a failing pytest fail its step?
+# ---------------------------------------------------------------------------
+
+# (errexit, pipefail) for each `shell:` this lint reads, as GitHub runs it on
+# Linux. Unspecified is NOT `bash`: it runs `bash -e {0}`, with no pipefail.
+# `sh` (dash on Ubuntu) is deliberately unread: no pipefail, and `cmd &> f`
+# backgrounds `cmd` there, so it would need a second model.
+_SHELLS: dict[str, tuple[bool, bool]] = {
+    "": (True, False),  # bash -e {0}
+    "bash": (True, True),  # bash --noprofile --norc -eo pipefail {0}
+}
+_CAPTURE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=\$\?$")
+
+
+def _after_set(command: list[str], errexit: bool, pipefail: bool) -> tuple[bool, bool]:
+    """Apply one ``set`` builtin: ``-e`` / ``+e`` / ``-euo pipefail`` / ``+o errexit``."""
+    args = iter(command[1:])
+    for arg in args:
+        if arg in ("-", "--") or arg[:1] not in ("-", "+"):
+            break
+        on = arg[0] == "-"
+        if "e" in arg[1:]:
+            errexit = on
+        if "o" in arg[1:]:
+            name = next(args, "")
+            if name == "errexit":
+                errexit = on
+            elif name == "pipefail":
+                pipefail = on
+    return errexit, pipefail
+
+
+def _exits_with(command: list[str], name: str) -> bool:
+    """``exit "$name"`` / ``exit "${name:-0}"``."""
+    ref = re.compile(r"\$\{?" + re.escape(name) + r"(?![A-Za-z0-9_])")
+    return command[:1] == ["exit"] and any(ref.search(arg) for arg in command[1:])
+
+
+def _exits_non_zero(command: list[str]) -> bool:
+    """``exit 1`` (any literal status that is not 0 mod 256)."""
+    return command[:1] == ["exit"] and command[1:2] != [] and command[1].isdigit() and int(command[1]) % 256 != 0
+
+
+def _hands_status_on(command: list[str], later: list[tuple[list[str], str]]) -> bool:
+    """Does ``command``, run straight after a failing pytest, fail the script?
+
+    ``exit`` / ``exit $?`` / ``exit <non-zero>`` / ``false`` do, and so does a
+    ``code=$?`` capture that a later ``exit "$code"`` re-raises (the modules
+    step's exit-5 handling), and a ``{ ...; }`` group that opens with one of
+    those or exits non-zero (``|| { echo "::error::..."; exit 1; }``).
+    Anything else is taken to discard the status.
+    """
+    if not command:
+        return False
+    if command[0] == "{":
+        inner = [command[1:]]
+        for later_command, _op in later:
+            if later_command[-1:] == ["}"]:
+                inner.append(later_command[:-1])
+                break
+            inner.append(later_command)
+        else:
+            return False  # an unterminated group is not read
+        inner = [c for c in inner if c]
+        # Only the group's first command still sees pytest's `$?`.
+        return bool(inner) and (_hands_status_on(inner[0], later) or any(_exits_non_zero(c) for c in inner[1:]))
+    if command == ["false"]:
+        return True
+    if command[0] == "exit":
+        return command[1:] in ([], ["$?"]) or _exits_non_zero(command)
+    capture = _CAPTURE_RE.match(command[0]) if len(command) == 1 else None
+    return capture is not None and any(_exits_with(c, capture.group(1)) for c, _op in later)
+
+
+def discarded_status(commands: list[tuple[list[str], str]], index: int, shell: str = "") -> str:
+    """Why a failing ``commands[index]`` cannot fail its step, or ``""`` when
+    it does.
+
+    Not a shell. It follows the status through what comes after the command
+    (a pipe, a ``&&`` list, ``||``, ``&``, the next line) under the step's
+    errexit / pipefail, and accepts only the shapes that are known to hand the
+    status on (see :func:`_hands_status_on`); anything else is reported.
+    """
+    if shell not in _SHELLS:
+        return f"`shell: {shell}` is not a shell this lint reads"
+    errexit, pipefail = _SHELLS[shell]
+    for command, _op in commands[:index]:
+        if command[:1] == ["set"]:
+            errexit, pipefail = _after_set(command, errexit, pipefail)
+
+    end = index
+    if commands[end][1] == "|" and not pipefail:
+        return "piped without pipefail, so the step sees the pipe's last command"
+    while commands[end][1] == "|" and end + 1 < len(commands):
+        end += 1
+    in_list = False  # a failure inside `a && b` skips to the list's end
+    while commands[end][1] == "&&" and end + 1 < len(commands):
+        in_list = True
+        end += 1
+        while commands[end][1] == "|" and end + 1 < len(commands):
+            end += 1
+    op, rest = commands[end][1], commands[end + 1 :]
+
+    if op == "&":
+        return "run in the background (&), so nothing waits for its status"
+    if op == "||":
+        if rest and _hands_status_on(rest[0][0], rest[1:]):
+            return ""
+        handler = " ".join(rest[0][0]) + (" ..." if rest[0][1] else "") if rest else ""
+        return f"`|| {handler}` runs in its place, and the step sees that command's status"
+    if not rest or (errexit and not in_list):
+        return ""  # the script's last command, or errexit stops the script there
+    if _hands_status_on(rest[0][0], rest[1:]):
+        return ""
+    if in_list:
+        return "a failing `&&` list does not stop the script, and a later command sets the step's status"
+    return "`set +e` lets the script run past it, and a later command sets the step's status"
 
 
 # pytest options whose value is the NEXT argument. An option missing from this
@@ -378,6 +571,12 @@ class Invocation(NamedTuple):
     targets: tuple[Path, ...]  # absolute; each at or under the tests root
     ignores: tuple[Path, ...]  # absolute
     ignore_globs: tuple[str, ...]  # absolute patterns, as pytest applies them
+    discarded: str = ""  # why the step never sees pytest's exit status ("" = it does)
+
+    @property
+    def gating(self) -> bool:
+        """A failure here fails the job."""
+        return self.step.gating and not self.discarded
 
 
 def _norm(path: Path) -> Path:
@@ -399,7 +598,8 @@ def find_invocations(text: str, repo_root: Path, tests_root: Path) -> list[Invoc
     found: list[Invocation] = []
     for step in scan_steps(text):
         cwd = _norm(repo_root / step.working_directory)
-        for command in shell_commands(step.run):
+        commands = shell_commands_with_ops(step.run)
+        for index, (command, _op) in enumerate(commands):
             args = pytest_args(command)
             if args is None:
                 continue
@@ -426,7 +626,12 @@ def find_invocations(text: str, repo_root: Path, tests_root: Path) -> list[Invoc
                     continue
                 targets.extend(p for p in _resolve(token, cwd) if _within(p, tests_root))
             if targets:
-                found.append(Invocation(step, tuple(targets), tuple(ignores), tuple(ignore_globs)))
+                found.append(
+                    Invocation(
+                        step, tuple(targets), tuple(ignores), tuple(ignore_globs),
+                        discarded_status(commands, index, step.shell),
+                    )
+                )
     return found
 
 
@@ -461,16 +666,22 @@ def uncovered(test_files: list[Path], invocations: list[Invocation], tests_root:
     problems: dict[tuple[str, str], list[Path]] = {}
     for path in test_files:
         naming = [inv for inv in invocations if any(_within(path, t) for t in inv.targets)]
-        if any(inv.step.gating and not _excluded(path, inv) for inv in naming):
+        if any(inv.gating and not _excluded(path, inv) for inv in naming):
             continue
         if not naming:
             reason = "no pytest step names it"
-        elif any(inv.step.gating for inv in naming):
-            names = sorted({inv.step.name for inv in naming if inv.step.gating})
+        elif any(inv.gating for inv in naming):
+            names = sorted({inv.step.name for inv in naming if inv.gating})
             reason = f"excluded (--ignore/--deselect) by: {', '.join(names)}"
+        elif any(inv.step.gating for inv in naming):
+            names = sorted({f"{inv.step.name}: {inv.discarded}" for inv in naming if inv.step.gating})
+            reason = f"run, but the step discards pytest's exit status ({'; '.join(names)})"
         else:
             names = sorted({inv.step.name for inv in naming})
-            reason = f"only run by a step that cannot fail the job (continue-on-error or if: false): {', '.join(names)}"
+            reason = (
+                "only run by a step that cannot fail the job "
+                f"(continue-on-error or if: false, on the step or its job): {', '.join(names)}"
+            )
         problems.setdefault((_group(path, tests_root), reason), []).append(path)
     return problems
 
@@ -506,7 +717,7 @@ def main(repo_root: Path = REPO_ROOT) -> int:
 
     problems = uncovered(test_files, invocations, tests_root)
     if not problems:
-        steps = len({inv.step.line for inv in invocations if inv.step.gating})
+        steps = len({inv.step.line for inv in invocations if inv.gating})
         print(
             f"[unit-test-dirs] OK — {len(test_files)} test file(s) under {TESTS_ROOT_REL.as_posix()}, "
             f"every one run by one of {steps} gating pytest step(s) in {WORKFLOW_REL.as_posix()}."
@@ -530,6 +741,13 @@ def main(repo_root: Path = REPO_ROOT) -> int:
     if missing:
         print("\n  Fix: add a step to the test-backend job for each, e.g.\n")
         print("\n\n".join(_snippet(group) for group in missing))
+    if any("discards pytest's exit status" in reason for _group_, reason in problems):
+        print(
+            "\n  Fix for a discarded status: let pytest's exit status end the step. Drop the\n"
+            "  `|| ...` / `set +e` / `&`, give a pipe pipefail (`set -o pipefail` or\n"
+            "  `shell: bash`), or capture it and re-raise it as the modules step does:\n"
+            '  `$PYTEST ... || code=$?` then `exit "${code:-0}"`.'
+        )
     return 1
 
 
