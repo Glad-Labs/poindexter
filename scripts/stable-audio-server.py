@@ -9,11 +9,20 @@ changed without restarting the server. On DB failure the server enters DEGRADED
 state: /generate returns 503, /health reports the reason, and the server keeps
 running for self-healing.
 
+GPU work runs off the event loop (2026-09-25), as image-gen's has since #4021.
+The cold model load used to run on the loop itself (~20 s warm, ~125 s under
+VRAM contention), so /health went unanswered for the whole load and Docker's
+healthcheck failed through it. Renders already ran in a thread, but nothing
+kept two of them apart: a request that arrived mid-render started a second
+diffusion pass beside the first. ``_state.gpu_lock`` now serializes the card.
+Everything that loads, renders with or drops the model holds it, and runs that
+work in a worker thread (see ``_run_on_gpu``).
+
 License: Stability AI Community License.
 Free for commercial use up to $1M annual revenue.
 
 Endpoints:
-    GET  /health     — status, model name, degradation reason
+    GET  /health     — status, model name, degradation reason, inflight, gpu_busy
     POST /generate   — generate audio from text prompt
     POST /unload     — free VRAM (called by GPU scheduler)
     POST /reload     — re-read DB config (after changing app_settings)
@@ -26,6 +35,8 @@ import os
 import sys
 import tempfile
 import time
+from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +46,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from starlette.types import Receive, Scope, Send
 
 OUTPUT_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "generated-audio"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -104,11 +116,17 @@ class _State:
         self.degraded: bool = False
         self.degraded_reason: str | None = None
         self.next_retry_delay: float = DEGRADED_POLL_MIN
-        # Requests currently executing (or streaming their response). The
-        # hard unload must never exit the process while one is in flight —
-        # poindexter#992 cost every hero clip of 2026-08-06/-07 exactly that
-        # way on the wan-server.
+        # Requests in the server: queued on gpu_lock, rendering, or sending
+        # their file back. The hard unload must never exit the process while
+        # there is one — poindexter#992 cost every hero clip of 2026-08-06/-07
+        # exactly that way on the wan-server. A queued request counts: it is
+        # about to use the model.
         self.inflight: int = 0
+        # One load, render or unload on the card at a time. Held around every
+        # load of, render with, and drop of the model. That work runs in
+        # worker threads (_run_on_gpu) so the loop keeps answering /health,
+        # which also means nothing but this lock keeps two renders apart.
+        self.gpu_lock = asyncio.Lock()
 
     def mark_degraded(self, reason: str):
         self.degraded = True
@@ -169,7 +187,12 @@ async def _read_setting(key: str, default: str = "") -> str:
 
 
 async def reload_config() -> None:
-    """Re-read app_settings and validate the model is activatable."""
+    """Re-read app_settings and validate the model is activatable.
+
+    Switching the engine off marks the server degraded at once, so new
+    requests are refused, but the model is dropped only once a render in
+    flight has finished (``_drop_model``).
+    """
     try:
         engine = await _read_setting("audio_gen_engine", "")
     except Exception as e:
@@ -180,7 +203,7 @@ async def reload_config() -> None:
         _state.mark_degraded(
             f"audio_gen_engine={engine!r} — set to 'stable-audio-open-1.0' to activate"
         )
-        _unload_model()
+        await _drop_model()
         return
 
     # DB-first HF auth (#198): the gated-model token lives in app_settings as
@@ -200,10 +223,50 @@ async def reload_config() -> None:
 # Model management
 # ---------------------------------------------------------------------------
 
+async def _run_on_gpu(fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    """Run blocking GPU work (a load, a render, an unload) in a worker thread.
+
+    The caller holds ``_state.gpu_lock``. In a thread, the event loop stays
+    free to answer /health while the card works.
+
+    A thread cannot be interrupted, though. If the awaiting request is
+    cancelled, this still waits for the thread to finish before letting the
+    cancellation through. Otherwise the caller's ``async with _state.gpu_lock``
+    would release the lock while the render ran on, and the next request
+    would start a second one beside it. Starlette does not cancel a handler
+    when its client disconnects today, but the image installs FastAPI
+    unpinned, and a client that times out and retries is exactly the request
+    that would land on the card twice.
+    """
+    work = asyncio.ensure_future(asyncio.to_thread(fn, *args, **kwargs))
+    try:
+        return await asyncio.shield(work)
+    except asyncio.CancelledError:
+        while not work.done():
+            # A repeated cancel changes nothing: the card is busy until the
+            # thread ends.
+            with suppress(asyncio.CancelledError):
+                await asyncio.wait({work})
+        # shield() stops watching the thread once its caller is cancelled, so
+        # a failure after that point is ours to collect, or asyncio logs it
+        # as "Task exception was never retrieved".
+        if not work.cancelled() and (exc := work.exception()) is not None:
+            logger.warning(
+                "[GPU] %s finished after its request was cancelled, raising %s: %s",
+                getattr(fn, "__name__", "gpu call"), type(exc).__name__, exc,
+            )
+        raise
+
+
 def _unload_model():
+    """Drop the model and return its VRAM to the caching allocator.
+
+    Blocking: call it via :func:`_run_on_gpu` under the GPU lock."""
     if _state.model is not None:
         logger.info("[MODEL] Unloading Stable Audio Open model")
-        del _state.model
+        # One assignment, never `del` then re-assign: this runs in a worker
+        # thread, and /health reads _state.model from the event loop. Between
+        # a `del` and the next line the attribute does not exist.
         _state.model = None
         gc.collect()
         if torch.cuda.is_available():
@@ -211,11 +274,22 @@ def _unload_model():
             logger.info("[MODEL] VRAM freed")
 
 
+async def _drop_model() -> None:
+    """Drop the loaded model between renders, never inside one.
+
+    Under the GPU lock: dropping ``_state.model`` mid-render frees nothing
+    (the render holds its own reference), and the next load would then put
+    a second copy on the card beside the first."""
+    async with _state.gpu_lock:
+        if _state.model is not None:
+            await _run_on_gpu(_unload_model)
+
+
 def _hard_exit_if_reserved_pool(*, quiet_skip: bool = False) -> dict[str, Any]:
-    """Floor-gated process exit (poindexter#999). Caller must have already
-    soft-unloaded, so ``memory_allocated`` is ~0 by construction and the gate
-    measures ``memory_reserved`` — the caching-allocator pool that ONLY a
-    process exit returns to the host.
+    """Floor-gated process exit (poindexter#999). Caller must hold the GPU
+    lock and have already soft-unloaded, so ``memory_allocated`` is ~0 by
+    construction and the gate measures ``memory_reserved`` — the
+    caching-allocator pool that ONLY a process exit returns to the host.
 
     This is the whole fix. ``_unload_model`` drops the model objects and calls
     ``empty_cache()``, which returns nothing: measured 2026-08-07, this server
@@ -228,6 +302,8 @@ def _hard_exit_if_reserved_pool(*, quiet_skip: bool = False) -> dict[str, Any]:
     Below the floor: no exit (``quiet_skip`` silences the log for the 10s
     watchdog cadence). At or above: flush + ``os._exit(0)``; Docker's restart
     policy revives the server and it lazy-loads on the next ``/generate``.
+    Unless a request arrived while the caller unloaded: the exit is
+    irreversible, so ``inflight`` is checked once more right before it.
     """
     if not torch.cuda.is_available():
         return {"status": "nothing_to_reclaim", "vram_reserved_mb": 0,
@@ -246,6 +322,15 @@ def _hard_exit_if_reserved_pool(*, quiet_skip: bool = False) -> dict[str, Any]:
             "vram_reserved_mb": reserved_mb,
             "min_reserved_mb": HARD_UNLOAD_MIN_RESERVED_MB,
         }
+    if _state.inflight > 0:
+        # A /generate arrived during the unload and is queued on the GPU lock
+        # the caller holds. Exiting would reset its connection. The model is
+        # already dropped, so it will cold-load, but the process stays up.
+        logger.warning(
+            "[HARD UNLOAD] not exiting — %d generation(s) arrived during the "
+            "unload; model dropped, process kept up", _state.inflight,
+        )
+        return {"status": "busy_generation_in_flight", "inflight": _state.inflight}
     logger.warning(
         "[HARD UNLOAD] exiting process to return the CUDA context to the host "
         "(vram_reserved=%d MB >= %d MB floor); Docker restart policy brings "
@@ -258,7 +343,10 @@ def _hard_exit_if_reserved_pool(*, quiet_skip: bool = False) -> dict[str, Any]:
 
 
 def _load_model() -> bool:
-    """Lazy-load the Stable Audio Open 1.0 model."""
+    """Lazy-load the Stable Audio Open 1.0 model.
+
+    Blocking (~20 s, minutes when the card is contended): call it via
+    :func:`_run_on_gpu` under the GPU lock."""
     if _state.model is not None:
         return True
 
@@ -280,10 +368,13 @@ def _load_model() -> bool:
         # element is the CONFIG DICT, not the sample rate.
         model, model_config = get_pretrained_model("stabilityai/stable-audio-open-1.0")
         model = model.eval().cuda()
-        _state.model = model
         _state.sample_rate = int(model_config["sample_rate"])
         _state.native_sample_size = int(model_config["sample_size"])
         _state._generate_fn = generate_diffusion_cond   # cache the fn ref
+        # Published last: "model is not None" is what /health and the next
+        # request read as loaded, so everything a render needs is set first,
+        # and a load that fails partway leaves nothing half-loaded behind.
+        _state.model = model
         logger.info(
             "[MODEL] Loaded. sample_rate=%dHz native_window=%d samples",
             _state.sample_rate, _state.native_sample_size,
@@ -305,7 +396,8 @@ def _generate_sync(
     output_path: str,
     output_format: str,
 ) -> float | None:
-    """Synchronous inference — runs in a thread via asyncio.to_thread."""
+    """Synchronous inference. Blocking: call it via :func:`_run_on_gpu` under
+    the GPU lock."""
     try:
         import soundfile as sf
         import torch
@@ -367,6 +459,46 @@ def _generate_sync(
         return None
 
 
+def _discard(path: str) -> None:
+    """Delete a rendered file nobody will send (or that has been sent)."""
+    with suppress(OSError):
+        os.unlink(path)
+
+
+def _end_request(*, discard: str | None = None) -> None:
+    """End one /generate: delete its file, stamp ``last_used``, and drop it
+    from the in-flight count. ``last_used`` is stamped on the way OUT so the
+    idle window starts when the caller has its audio, not when inference
+    ended."""
+    if discard is not None:
+        _discard(discard)
+    _state.last_used = time.monotonic()
+    _state.inflight -= 1
+
+
+class _AudioFileResponse(FileResponse):
+    """A rendered file on its way to the caller. ``on_sent`` runs once the
+    body is out, or once sending it has failed.
+
+    That is where a /generate request ends. FastAPI returns from the endpoint
+    BEFORE Starlette sends the body, so a request ended in the endpoint would
+    leave ``inflight`` at 0 while its file was still streaming, and a hard
+    ``/unload`` could exit mid-body. ``on_sent`` also deletes the file:
+    nothing else did, so every render stayed in the container (five of them,
+    40 MB, in the three days after the container was created on 2026-09-22).
+    """
+
+    def __init__(self, path: str, *, on_sent: Callable[[], None], **kwargs: Any) -> None:
+        super().__init__(path, **kwargs)
+        self._on_sent = on_sent
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._on_sent()
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -391,7 +523,12 @@ async def health():
         "model_loaded": _state.model is not None,
         "degraded_reason": _state.degraded_reason,
         "last_used": _state.last_used,
+        # Requests in the server (queued, rendering or sending their file), and
+        # whether a load, render or unload holds the GPU right now. /health
+        # answers mid-load and mid-render since that work left the event loop,
+        # so these tell "busy" from "wedged" without generating audio.
         "inflight": _state.inflight,
+        "gpu_busy": _state.gpu_lock.locked(),
         # The number that mattered and wasn't visible (poindexter#999): this
         # server reported model_loaded=false while holding 10,952 MiB, so
         # "is it holding VRAM?" was unanswerable without nvidia-smi and a PID
@@ -408,32 +545,28 @@ async def health():
 async def generate(req: GenerateRequest):
     """In-flight bracket around the real handler (poindexter#999).
 
-    Wraps rather than inlines so the counter covers the FileResponse stream
-    too: FastAPI returns from the handler before the body is sent, so a
-    counter decremented inside would let a hard unload exit mid-stream and
-    hand the caller a dropped connection on a render that actually succeeded.
-    ``last_used`` is stamped on the way OUT for the same reason — the idle
-    window must start when the response is done, not when inference ended.
+    The count covers the whole request: its wait for the GPU lock (a request
+    queued behind another render is about to use the model, so unloads
+    decline for it too), the load and the render, and sending the file back.
+    Sending outlives this function, because FastAPI returns from the endpoint
+    before the body goes out, so a request that gets that far is ended by its
+    response (``_AudioFileResponse``) and not here. A ``finally`` here, which
+    this used to be, drops the count while the file is still streaming.
     """
     _state.inflight += 1
     try:
         return await _generate_inner(req)
-    finally:
-        _state.last_used = time.monotonic()
-        _state.inflight -= 1
+    except BaseException:
+        # No response will carry this request out, so it ends here.
+        _end_request()
+        raise
 
 
-async def _generate_inner(req: GenerateRequest):
+async def _generate_inner(req: GenerateRequest) -> _AudioFileResponse:
     if _state.degraded:
         raise HTTPException(
             status_code=503,
             detail=f"Stable Audio server degraded: {_state.degraded_reason}",
-        )
-
-    if not _load_model():
-        raise HTTPException(
-            status_code=503,
-            detail=f"Model load failed: {_state.degraded_reason}",
         )
 
     prompt = req.prompt.strip()
@@ -447,37 +580,71 @@ async def _generate_inner(req: GenerateRequest):
             detail=f"format must be one of {sorted(_ALLOWED_FORMATS)}",
         )
 
-    suffix = f".{fmt}"
-    with tempfile.NamedTemporaryFile(
-        dir=OUTPUT_DIR, suffix=suffix, delete=False,
-    ) as tmp:
-        output_path = tmp.name
-
-    rendered = await asyncio.to_thread(
-        _generate_sync, prompt, duration_s, output_path, fmt,
-    )
+    # One request on the card at a time, in arrival order. The load and the
+    # render run under the GPU lock, their CUDA work in worker threads so the
+    # loop keeps answering /health. Sending the file needs no GPU, so it
+    # happens after the lock is released.
+    async with _state.gpu_lock:
+        output_path, rendered = await _render_to_file(prompt, duration_s, fmt)
+        sample_rate = _state.sample_rate
 
     if rendered is None or not os.path.exists(output_path):
-        try:
-            os.unlink(output_path)
-        except OSError:
-            pass
+        _discard(output_path)
         raise HTTPException(
             status_code=500,
             detail="Audio generation failed — check server logs",
         )
 
-    _state.last_used = time.monotonic()
-
-    return FileResponse(
+    return _AudioFileResponse(
         output_path,
         media_type=f"audio/{fmt}",
         headers={
             "X-Duration-S": str(rendered),
-            "X-Sample-Rate": str(_state.sample_rate),
+            "X-Sample-Rate": str(sample_rate),
         },
-        background=None,
+        on_sent=lambda: _end_request(discard=output_path),
     )
+
+
+async def _render_to_file(
+    prompt: str, duration_s: float, fmt: str,
+) -> tuple[str, float | None]:
+    """The GPU half of /generate: load the model if needed, then render into
+    a new file. The caller holds the GPU lock.
+
+    Returns the file's path and the rendered length (None if inference
+    failed; the file is then the caller's to delete).
+    """
+    # Re-check under the lock: a request that queued behind a load that
+    # failed, or behind a /reload that switched the engine off, must not
+    # start a load of its own. The loop-blocking load gave this for free: a
+    # request that arrived mid-load was not even read until the load had
+    # ended, and then saw the degraded flag.
+    if _state.degraded:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Stable Audio server degraded: {_state.degraded_reason}",
+        )
+    if not await _run_on_gpu(_load_model):
+        raise HTTPException(
+            status_code=503,
+            detail=f"Model load failed: {_state.degraded_reason}",
+        )
+
+    with tempfile.NamedTemporaryFile(
+        dir=OUTPUT_DIR, suffix=f".{fmt}", delete=False,
+    ) as tmp:
+        output_path = tmp.name
+    try:
+        rendered = await _run_on_gpu(
+            _generate_sync, prompt, duration_s, output_path, fmt,
+        )
+    except BaseException:
+        # Cancelled, and _run_on_gpu has waited out the render thread: the
+        # file is complete, and nobody will send it.
+        _discard(output_path)
+        raise
+    return output_path, rendered
 
 
 class UnloadRequest(BaseModel):
@@ -508,18 +675,32 @@ async def unload(req: UnloadRequest | None = None) -> dict[str, Any]:
     # 2026-08-06/-07 (poindexter#992). Declining is strictly better: the
     # reclaim wants VRAM to START work, and the work already running is what
     # the VRAM is for.
+    #
+    # This check must not wait for the GPU lock: a render holds it for
+    # minutes, and the scheduler calls /unload with a 10 s timeout. A hard
+    # unload that times out reads as "freed nothing", and the verifier can
+    # answer that with a container restart, mid-render.
     if _state.inflight > 0:
-        logger.warning(
-            "[UNLOAD] declining %s unload — %d generation(s) in flight",
-            "hard" if (req and req.hard) else "soft", _state.inflight,
-        )
-        return {"status": "busy_generation_in_flight",
-                "inflight": _state.inflight}
+        return _decline_unload(req)
 
-    _unload_model()
-    if req is not None and req.hard:
-        return {"status": "unloaded", **_hard_exit_if_reserved_pool()}
+    async with _state.gpu_lock:
+        # Re-check: a /generate that arrived while we waited for the lock is
+        # queued on it and about to use the model.
+        if _state.inflight > 0:
+            return _decline_unload(req)
+        await _run_on_gpu(_unload_model)
+        if req is not None and req.hard:
+            return {"status": "unloaded", **_hard_exit_if_reserved_pool()}
     return {"status": "unloaded"}
+
+
+def _decline_unload(req: UnloadRequest | None) -> dict[str, Any]:
+    logger.warning(
+        "[UNLOAD] declining %s unload — %d generation(s) in flight",
+        "hard" if (req and req.hard) else "soft", _state.inflight,
+    )
+    return {"status": "busy_generation_in_flight",
+            "inflight": _state.inflight}
 
 
 @app.post("/reload")
@@ -535,36 +716,67 @@ async def reload():
 # Background tasks
 # ---------------------------------------------------------------------------
 
+def _idle_unload_due() -> bool:
+    """Whether the idle watchdog should unload now.
+
+    ``inflight`` comes first: ``last_used`` is stamped only when a request
+    ends, so mid-render it can be any age. ``last_used > 0``: a server that
+    has not rendered since it started holds nothing worth an exit.
+    """
+    return (
+        _state.inflight == 0
+        and _state.last_used > 0
+        and (time.monotonic() - _state.last_used) > IDLE_TIMEOUT
+    )
+
+
+async def _idle_unload_tick() -> None:
+    """One idle pass: after IDLE_TIMEOUT with no request, drop the model, then
+    exit if the reserved pool left behind clears the floor.
+
+    The second stage is what actually returns VRAM to the card (poindexter#999):
+    without it this server sat at 10,952 MiB with model_loaded=false because
+    dropping the objects leaves the reserved pool behind — invisible to every
+    reclaim lever and, since nothing else could touch it, a permanent 11 GiB
+    tax on the render GPU. Self-driven so it heals without waiting for a
+    consumer to notice.
+    """
+    # A busy server is skipped at once, not queued behind: the tick must never
+    # wait out a render only to unload the moment it ends.
+    if not _idle_unload_due():
+        return
+    async with _state.gpu_lock:
+        # Re-check under the lock: a request may have arrived, and queued on
+        # it, while we waited.
+        if not _idle_unload_due():
+            return
+        if _state.model is not None:
+            logger.info("[WATCHDOG] Idle timeout — unloading model")
+            await _run_on_gpu(_unload_model)
+        _hard_exit_if_reserved_pool(quiet_skip=True)
+
+
 async def _watchdog():
     """Idle-timeout unload + degraded self-heal."""
     while True:
         await asyncio.sleep(10)
+        try:
+            await _idle_unload_tick()
 
-        # Idle unload. The second stage is what actually returns VRAM to the
-        # card (poindexter#999): without it this server sat at 10,952 MiB with
-        # model_loaded=false because dropping the objects leaves the reserved
-        # pool behind — invisible to every reclaim lever and, since nothing
-        # else could touch it, a permanent 11 GiB tax on the render GPU.
-        # Self-driven so it heals without waiting for a consumer to notice.
-        if (
-            _state.inflight == 0
-            and _state.last_used > 0
-            and (time.monotonic() - _state.last_used) > IDLE_TIMEOUT
-        ):
-            if _state.model is not None:
-                logger.info("[WATCHDOG] Idle timeout — unloading model")
-                _unload_model()
-            _hard_exit_if_reserved_pool(quiet_skip=True)
-
-        # Self-heal from degraded state
-        if _state.degraded:
-            await asyncio.sleep(_state.next_retry_delay)
-            _state.next_retry_delay = min(
-                _state.next_retry_delay * 2, DEGRADED_POLL_MAX
-            )
-            await reload_config()
-        else:
-            _state.next_retry_delay = DEGRADED_POLL_MIN
+            # Self-heal from degraded state
+            if _state.degraded:
+                await asyncio.sleep(_state.next_retry_delay)
+                _state.next_retry_delay = min(
+                    _state.next_retry_delay * 2, DEGRADED_POLL_MAX
+                )
+                await reload_config()
+            else:
+                _state.next_retry_delay = DEGRADED_POLL_MIN
+        except Exception:
+            # One failed pass (a CUDA error mid-unload, say) must not end the
+            # loop: nothing else unloads an idle model or heals a degraded
+            # server.
+            logger.exception("[WATCHDOG] pass failed; retrying next tick")
 
 
 @app.on_event("startup")

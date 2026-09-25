@@ -87,10 +87,10 @@ def _patch_reserved(mb: int):
 
 
 @pytest.fixture(autouse=True)
-def _reset_state():
-    sa._state.inflight = 0
-    yield
-    sa._state.inflight = 0
+def _fresh_state(monkeypatch):
+    # A new _State per test, not a reset one: it owns an asyncio.Lock, and
+    # every test here runs its own event loop.
+    monkeypatch.setattr(sa, "_state", sa._State())
 
 
 @pytest.mark.unit
@@ -249,6 +249,36 @@ def test_idle_watchdog_leaves_an_in_flight_generation_alone():
          patch.object(sa, "_hard_exit_if_reserved_pool") as hard_mock:
         _run_one_watchdog_pass()
     hard_mock.assert_not_called()
+
+
+@pytest.mark.unit
+def test_a_failed_watchdog_pass_does_not_end_the_watchdog():
+    """Nothing else unloads an idle model or heals a degraded server, so an
+    exception in one pass (a CUDA error mid-unload, say) must cost that pass,
+    not the loop — an escaped one ended the task, silently, for good."""
+    passes = []
+
+    async def failing_tick():
+        passes.append(True)
+        raise RuntimeError("CUDA error: unspecified launch failure")
+
+    calls = {"n": 0}
+
+    async def _fake_sleep(_s):
+        calls["n"] += 1
+        if calls["n"] > 2:
+            raise _StopWatchdog
+
+    async def body():
+        with patch.object(sa.asyncio, "sleep", _fake_sleep), \
+             patch.object(sa, "_idle_unload_tick", failing_tick):
+            try:
+                await sa._watchdog()
+            except _StopWatchdog:
+                pass
+
+    asyncio.run(body())
+    assert passes == [True, True]
 
 
 @pytest.mark.unit
