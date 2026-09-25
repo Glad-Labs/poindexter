@@ -413,6 +413,23 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/consumer_contract_lint.py
 
+      # Settings phantom-read ratchet: no NEW literal app_settings key read
+      # in code that no seed source (settings_defaults.py /
+      # 0000_baseline.seeds.sql / brain/seed_app_settings.json) defines. The
+      # inverse of ProbeZeroReaderSettingsJob (a key that exists but is never
+      # read) — this catches a key that is READ but never EXISTS, so it can
+      # never be tuned and silently drifts from the real key forever.
+      # gpu_scheduler.py read electricity_rate_kwh_usd — nothing seeded it, so
+      # every gpu_task_sessions row was priced at the 0.12 code default while
+      # the real, EIA-maintained electricity_rate_kwh read 0.2883
+      # (glad-labs-stack#4065). Secrets are exempt structurally (any key read
+      # exclusively via .get_secret()); everything else unseeded needs a
+      # per-key ALLOWLIST reason or a baseline entry — see the lint's module
+      # docstring. Pure-Python AST scan, no deps beyond stdlib.
+      - name: Settings phantom-read lint (no unseeded literal app_settings reads)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/settings_phantom_read_lint.py
+
       # GPU advisory-lock key is a five-party contract, and the two brain
       # consumers duplicate the int64 BY HAND (the brain runs stdlib+asyncpg
       # and cannot import the worker). A diverged copy never raises — the

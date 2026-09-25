@@ -101,6 +101,12 @@ _OVERRIDES: dict[str, str] = {
     "slow_query_threshold_ms": "observability",
     "operational_metrics_window_hours": "observability",
     "worker_hang_dump_seconds": "infrastructure",  # matches worker_heartbeat -> infrastructure
+    # Seed-gap audit 2026-09-25 (scripts/ci/settings_phantom_read_lint.py):
+    # same reasoning as the 2026-08-26 block above.
+    "known_references_json": "content",  # research_service.py curated-reference override
+    "local_database_pool_min_size": "infrastructure",  # asyncpg pool bound
+    "local_database_pool_max_size": "infrastructure",  # asyncpg pool bound
+    "retention_janitor_interval_hours": "infrastructure",  # background sweep cadence
 }
 
 # (prefix, category). First match wins; the list is sorted longest-prefix-first

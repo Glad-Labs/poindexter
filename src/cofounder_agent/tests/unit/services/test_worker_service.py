@@ -53,9 +53,24 @@ class TestCapabilities:
         from poindexter.services.worker_service import WorkerService
 
         pool = MagicMock()
-        sc = SiteConfig(initial_config={"image_gen_api_url": "http://localhost:9836"})
+        # image_gen_server_url is the real, seeded key (image_service.py);
+        # this test used to seed the never-seeded image_gen_api_url, which
+        # made the assertion pass for the wrong reason — the capability read
+        # the wrong key and was permanently False in production regardless of
+        # config (settings_phantom_read_lint.py).
+        sc = SiteConfig(initial_config={"image_gen_server_url": "http://localhost:9836"})
         ws = WorkerService(pool, site_config=sc)
         assert ws.capabilities["image_gen"] is True
+
+    def test_image_gen_false_when_only_the_stale_key_is_set(self):
+        """image_gen_api_url was never a real key — it must have no effect."""
+        from poindexter.services.site_config import SiteConfig
+        from poindexter.services.worker_service import WorkerService
+
+        pool = MagicMock()
+        sc = SiteConfig(initial_config={"image_gen_api_url": "http://localhost:9836"})
+        ws = WorkerService(pool, site_config=sc)
+        assert ws.capabilities["image_gen"] is False
 
 
 class TestRegister:

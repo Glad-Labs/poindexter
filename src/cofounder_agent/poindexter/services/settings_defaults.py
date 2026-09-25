@@ -2330,6 +2330,25 @@ DEFAULTS: dict[str, str] = {
     'qa_web_factcheck_snippet_chars': '500',
     'qa_web_factcheck_min_term_len': '2',
     'qa_web_factcheck_max_claims': '3',
+    # Legacy app_settings half of the web_factcheck gate (defense in depth
+    # alongside the qa_gates row) — seed-gap audit 2026-09-25, previously
+    # read with no row at all (settings_phantom_read_lint.py).
+    'qa_web_factcheck_enabled': 'true',
+    # QA gate LLM call budget (multi_model_qa.py fallback-critic path).
+    # Seed-gap audit 2026-09-25.
+    'qa_gate_max_tokens': '600',
+    # Per-phase judge context-window overrides — only apply when the judge
+    # endpoint is NOT pinned (see pinned_llm_endpoint_num_ctx elsewhere in
+    # this file); 0 means "leave the model at its default", matching the
+    # previously-unseeded read. Seed-gap audit 2026-09-25.
+    'qa_ragas_judge_num_ctx': '0',
+    'qa_deepeval_judge_num_ctx': '0',
+    # qa.preview screenshot gate (multi_model_qa.py _evaluate_preview) +
+    # the QA vision-review image cap. Seed-gap audit 2026-09-25.
+    'qa_preview_pass_threshold': '70',
+    'qa_preview_viewport_width': '1280',
+    'qa_preview_viewport_height': '1024',
+    'qa_vision_max_images': '3',
     # qa.freshness — stale news-take veto (2026-09-15). A draft anchored to a
     # moment (relative-time phrasing) or sourced from a news feed must reach QA
     # within max_age_days of its newest dated source; older = non-rescuable veto.
@@ -5616,6 +5635,90 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'sentry_debug_logging': 'false',
     'oauth_dcr_enabled': 'false',
 
+    # ----- Seed-gap audit, 2026-09-25 (scripts/ci/settings_phantom_read_lint.py) -----
+    # These keys were read in code (so tunable in principle) but seeded
+    # NOWHERE in any of the three sources the new phantom-read ratchet checks
+    # (this file, 0000_baseline.seeds.sql, brain/seed_app_settings.json) — the
+    # class of bug that let gpu_scheduler.py price every GPU task session off
+    # the 0.12 code default for `electricity_rate_kwh_usd` while the real,
+    # EIA-maintained `electricity_rate_kwh` read 0.2883 (stack#4065; that one
+    # fix lands in its own already-open PR, so it is not repeated here). Every
+    # value below is the exact inline code default at its read site, so
+    # seeding is behavior-neutral by construction — the row's existence is
+    # what changes (discoverable + tunable without reading source).
+    # Canonical embedding model for RAG (publish_service / rag_engine /
+    # ragas_eval all read this same key with the same fallback).
+    'embedding_model': 'nomic-embed-text',
+    # The eight qa_* keys from this same audit (qa_gate_max_tokens,
+    # qa_ragas_judge_num_ctx, qa_deepeval_judge_num_ctx, qa_preview_*,
+    # qa_vision_max_images, qa_web_factcheck_enabled) live with the rest of
+    # the qa_ cluster above (near qa_web_factcheck_max_claims), not here —
+    # test_qa_keys_are_grouped_together wants every qa_ key in one
+    # contiguous-ish block.
+    # research_quality_service.py tunables — every one of these five is
+    # already labelled "tunable via app_settings" in that file's own
+    # docstrings, but no row ever backed the claim.
+    'research_min_snippet_length': '50',
+    'research_min_snippet_words': '10',
+    'research_dedup_similarity_threshold': '0.7',
+    'research_tier1_domains': 'edu,gov,ac.uk,org',
+    'research_tier2_domains': (
+        'medium.com,dev.to,github.com,stackoverflow.com,wikipedia.org,'
+        'arxiv.org,research.google.com,aws.amazon.com,cloud.google.com,'
+        'microsoft.com,apple.com'
+    ),
+    # qa.audio rail thresholds (qa_audio.py) — dotted namespace matches the
+    # `media.*` config convention used elsewhere for media-pipeline knobs.
+    'media.qa.audio.max_silence_s': '3.0',
+    'media.qa.audio.min_mean_volume_db': '-35.0',
+    'media.qa.audio.max_volume_clip_db': '-0.1',
+    'media.qa.audio.words_per_second': '2.5',
+    'media.qa.audio.duration_short_ratio': '0.4',
+    'media.qa.audio.duration_long_ratio': '2.5',
+    # Anthropic + Gemini LLM-provider plugin config. Both providers resolve
+    # these through a layered default (hardcoded -> per-call -> SiteConfig),
+    # where '' means "this layer has no opinion, defer to the layer below" —
+    # so '' is the exact value that reproduces today's unseeded behavior,
+    # not a placeholder. Seeding it only makes the row discoverable.
+    'plugin.llm_provider.anthropic.enabled': '',
+    'plugin.llm_provider.anthropic.request_timeout_s': '',
+    'plugin.llm_provider.anthropic.prompt_caching': '',
+    'plugin.llm_provider.gemini.default_model': '',
+    'plugin.llm_provider.gemini.embed_model': '',
+    'plugin.llm_provider.gemini.request_timeout_s': '',
+    # Local (non-cloud) asyncpg pool bounds (database_service.py).
+    'local_database_pool_min_size': '2',
+    'local_database_pool_max_size': '20',
+    # GPU model -> TDP watts JSON override for the electricity-cost estimator
+    # (update_utility_rates.py); '' keeps the shipped DEFAULT_GPU_TDP_MAP.
+    'gpu_tdp_map': '',
+    # Additional comma-separated terms layered onto the anti-hallucination
+    # whitelist (content_validator.py); '' adds nothing beyond the base set.
+    'hallucination_whitelist_additions': '',
+    # JSON override for the curated "known references" doc corpus
+    # (research_service.py); '' keeps the built-in curated list.
+    'known_references_json': '',
+    # Optional contact URL for the topic-research URL scraper's User-Agent
+    # (url_scraper.py) — distinct from crawler_contact_url (crawler_ua.py's
+    # shared outbound-probe UA), which stays unseeded on purpose so OSS forks
+    # never inherit the source operator's contact URL as a baked default.
+    'site_contact_url': '',
+    # Comma-separated domains content_validator treats as "known-good" link
+    # targets on top of the built-in localhost check.
+    'site_domains': '',
+    # Embedding model for topic semantic-dedup (topic_dedup_semantic.py) —
+    # deliberately its own key from `embedding_model` above (a smaller,
+    # dedup-tuned sentence-transformer, not the RAG embedding model).
+    'topic_dedup_embedding_model': 'all-MiniLM-L6-v2',
+    'topic_discovery_max_pending': '50',
+    # Resend webhook signature timestamp tolerance, in seconds.
+    'resend_webhook_tolerance_seconds': '300',
+    # Retention-janitor sweep cadence, in hours.
+    'retention_janitor_interval_hours': '24.0',
+    # LiveKit voice-agent JWT refresh margin, in minutes (voice bridge is
+    # parked, but this stays correct for when it's re-enabled).
+    'voice_agent_token_refresh_margin_minutes': '5',
+
 }
 
 
@@ -7130,6 +7233,46 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'worker_hang_dump_seconds': {'owner': 'worker_service', 'value_type': 'integer'},
     'sentry_debug_logging': {'owner': 'sentry_integration', 'value_type': 'boolean'},
     'oauth_dcr_enabled': {'owner': 'oauth_routes', 'value_type': 'boolean'},
+
+    # ----- Seed-gap audit, 2026-09-25 (see the matching DEFAULTS section) -----
+    'embedding_model': {'owner': 'rag_engine', 'value_type': 'model'},
+    'qa_gate_max_tokens': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_ragas_judge_num_ctx': {'owner': 'ragas_eval', 'value_type': 'integer'},
+    'qa_deepeval_judge_num_ctx': {'owner': 'deepeval_rails', 'value_type': 'integer'},
+    'qa_preview_pass_threshold': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_preview_viewport_width': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_preview_viewport_height': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_vision_max_images': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_web_factcheck_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'research_min_snippet_length': {'owner': 'research_quality_service', 'value_type': 'integer'},
+    'research_min_snippet_words': {'owner': 'research_quality_service', 'value_type': 'integer'},
+    'research_dedup_similarity_threshold': {'owner': 'research_quality_service', 'value_type': 'float'},
+    'research_tier1_domains': {'owner': 'research_quality_service', 'value_type': 'string'},
+    'research_tier2_domains': {'owner': 'research_quality_service', 'value_type': 'string'},
+    'media.qa.audio.max_silence_s': {'owner': 'qa_audio', 'value_type': 'float'},
+    'media.qa.audio.min_mean_volume_db': {'owner': 'qa_audio', 'value_type': 'float'},
+    'media.qa.audio.max_volume_clip_db': {'owner': 'qa_audio', 'value_type': 'float'},
+    'media.qa.audio.words_per_second': {'owner': 'qa_audio', 'value_type': 'float'},
+    'media.qa.audio.duration_short_ratio': {'owner': 'qa_audio', 'value_type': 'float'},
+    'media.qa.audio.duration_long_ratio': {'owner': 'qa_audio', 'value_type': 'float'},
+    'plugin.llm_provider.anthropic.enabled': {'owner': 'anthropic', 'value_type': 'boolean'},
+    'plugin.llm_provider.anthropic.request_timeout_s': {'owner': 'anthropic', 'value_type': 'integer'},
+    'plugin.llm_provider.anthropic.prompt_caching': {'owner': 'anthropic', 'value_type': 'boolean'},
+    'plugin.llm_provider.gemini.default_model': {'owner': 'gemini', 'value_type': 'model'},
+    'plugin.llm_provider.gemini.embed_model': {'owner': 'gemini', 'value_type': 'model'},
+    'plugin.llm_provider.gemini.request_timeout_s': {'owner': 'gemini', 'value_type': 'integer'},
+    'local_database_pool_min_size': {'owner': 'database_service', 'value_type': 'integer'},
+    'local_database_pool_max_size': {'owner': 'database_service', 'value_type': 'integer'},
+    'gpu_tdp_map': {'owner': 'update_utility_rates', 'value_type': 'string'},
+    'hallucination_whitelist_additions': {'owner': 'content_validator', 'value_type': 'string'},
+    'known_references_json': {'owner': 'research_service', 'value_type': 'string'},
+    'site_contact_url': {'owner': 'url_scraper', 'value_type': 'url'},
+    'site_domains': {'owner': 'content_validator', 'value_type': 'string'},
+    'topic_dedup_embedding_model': {'owner': 'topic_dedup_semantic', 'value_type': 'model'},
+    'topic_discovery_max_pending': {'owner': 'topic_proposal_service', 'value_type': 'integer'},
+    'resend_webhook_tolerance_seconds': {'owner': 'external_webhooks', 'value_type': 'integer'},
+    'retention_janitor_interval_hours': {'owner': 'retention_janitor', 'value_type': 'float'},
+    'voice_agent_token_refresh_margin_minutes': {'owner': 'voice_agent_livekit', 'value_type': 'integer'},
 }
 
 

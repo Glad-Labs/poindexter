@@ -1,0 +1,5 @@
+{
+  "src/cofounder_agent/poindexter/services/gpu_scheduler.py": [
+    "electricity_rate_kwh_usd"
+  ]
+}

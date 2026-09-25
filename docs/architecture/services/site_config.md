@@ -105,6 +105,22 @@ declared `TIER_POLICY` allowlist. All three are held consistent by
 `scripts/ci/settings_seed_value_drift_lint.py` (in the `migrations-smoke`
 check).
 
+A sibling gate, `scripts/ci/settings_phantom_read_lint.py` (in `test-backend`),
+catches the mirror-image bug: a literal `app_settings` key **read** in
+production code that **none** of the three sources above defines — a fresh
+install has no row for it, so the read silently falls back to whatever
+default is baked into the call site, forever, and no gate can see the gap.
+Motivating case: `gpu_scheduler.py` read `electricity_rate_kwh_usd`, which
+nothing seeds, while the real, EIA-maintained `electricity_rate_kwh` sat
+unread (glad-labs-stack#4065). It is the inverse of
+`ProbeZeroReaderSettingsJob` (a key that exists but is never read) — this one
+finds a key that is read but never exists. Secrets are exempt structurally
+(read exclusively via `.get_secret()`); everything else unseeded on purpose
+(a legacy-key fallback, an OSS-privacy redaction, a bootstrap credential)
+needs a reasoned entry in that lint's own `ALLOWLIST`. A ratchet, like the
+value-drift lint above: existing gaps are grandfathered, only a net-new one
+fails CI.
+
 The only env vars `SiteConfig` itself touches:
 
 - `<KEY>` (uppercase) — fallback for any `get()`/`require()` lookup
