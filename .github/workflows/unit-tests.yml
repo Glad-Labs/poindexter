@@ -218,6 +218,15 @@ jobs:
           # uv-lock-version ratchet below actually fires on a lock-only or
           # config-only change — otherwise the guard would sit dark for
           # exactly the edits it exists to catch.
+          # `infrastructure/grafana/**` for the same reason. Those dashboards
+          # and alert rules are what tests/unit/infrastructure/ reads, and the
+          # grafana lint tests in tests/unit/scripts/ read them too. In the
+          # month to 2026-09-25, 7 of 561 merges changed those files and
+          # nothing else this pattern matched, so the pattern without this
+          # clause skips the tests on exactly the PRs they check. A broken
+          # panel would merge green and turn the next backend PR red.
+          # tests/unit/infrastructure/test_ci_runs_when_its_inputs_change.py
+          # fails if this pattern stops matching anything those tests read.
           # NOT `echo "$changed" | grep -q ...`: under `set -o pipefail`, grep -q exits
           # at its FIRST match and a list larger than the pipe buffer leaves echo
           # holding SIGPIPE, so the pipeline reports failure and the branch below
@@ -225,7 +234,7 @@ jobs:
           # PR (stack#3626, 2026-09-10) having run nothing -- the biggest changes
           # are exactly the ones that were skipping. A here-string has no pipe, and
           # -c reads the whole list; the count is printed so a skip is auditable.
-          backend_hits=$(grep -cE '^src/cofounder_agent/|^scripts/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$' <<<"$changed" || true)
+          backend_hits=$(grep -cE '^src/cofounder_agent/|^scripts/|^infrastructure/grafana/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$' <<<"$changed" || true)
           echo "Backend-pattern matches: ${backend_hits} of $(wc -l <<<"$changed") changed paths"
           if [ "${backend_hits}" -gt 0 ]; then
             echo "Backend code or this workflow changed — running full suite."
