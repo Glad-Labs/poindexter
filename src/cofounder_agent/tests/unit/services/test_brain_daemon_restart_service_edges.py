@@ -56,7 +56,16 @@ from poindexter.brain import brain_daemon as bd  # noqa: E402
 
 @pytest.fixture
 def mock_notify():
+    """The page: Telegram + Discord."""
     with patch.object(bd, "notify", new=AsyncMock()) as m:
+        yield m
+
+
+@pytest.fixture
+def mock_notice():
+    """A Discord #ops notice that never pages. A restart that worked goes
+    here ("self-heal before paging", docs/operations/self-healing.md)."""
+    with patch.object(bd, "notify_discord_ops", new=AsyncMock()) as m:
         yield m
 
 
@@ -83,7 +92,7 @@ def _inspect_result(returncode: int, stdout: str = "", stderr: str = ""):
     ],
 )
 async def test_container_aliases_resolve_to_correct_container(
-    mock_notify, service_name, expected_container,
+    mock_notify, mock_notice, service_name, expected_container,
 ):
     """``api`` and ``site`` share the worker container; ``image_gen`` and
     ``image-gen-server`` share the image-gen container. The health probes use
@@ -105,8 +114,10 @@ async def test_container_aliases_resolve_to_correct_container(
     restart_args = run_mock.call_args_list[1].args[0]
     assert expected_container in inspect_args
     assert expected_container in restart_args
-    mock_notify.assert_called_once()
-    assert expected_container in mock_notify.call_args.args[0]
+    # The recovery is a notice naming the container, not a page.
+    mock_notify.assert_not_called()
+    mock_notice.assert_called_once()
+    assert expected_container in mock_notice.call_args.args[0]
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +149,7 @@ async def test_docker_cli_missing_in_container_notifies_with_specific_message(
 
 
 async def test_generic_exception_during_docker_call_notifies_and_does_not_raise(
-    mock_notify,
+    mock_notify, mock_notice,
 ):
     """If subprocess.run blows up with something other than
     FileNotFoundError (e.g. ``TimeoutExpired``, a permission error
@@ -151,7 +162,9 @@ async def test_generic_exception_during_docker_call_notifies_and_does_not_raise(
          patch.object(bd.subprocess, "run", side_effect=boom):
         await bd.restart_service("worker", pool=None)
 
+    # A heal that failed pages, never just a notice.
     mock_notify.assert_called_once()
+    mock_notice.assert_not_called()
     msg = mock_notify.call_args.args[0]
     assert "Restart failed" in msg
     assert "docker socket unavailable" in msg
@@ -241,7 +254,7 @@ async def test_host_openclaw_restart_spawns_gateway_restart_command(
 # ---------------------------------------------------------------------------
 
 
-async def test_inspect_uses_state_status_format(mock_notify):
+async def test_inspect_uses_state_status_format(mock_notify, mock_notice):
     """The inspect pre-check uses ``--format {{.State.Status}}``.
     That's load-bearing: without the format flag, ``docker inspect``
     dumps the full container JSON to stdout (megabytes for a healthy

@@ -131,8 +131,10 @@ class TestTargetedObservabilityWritesLogWarning:
         """When the sweeper cancels a stuck task but the auto_cancelled_at
         stamp write fails, the metric loss must WARN — and must stay
         isolated (not fall through to the wholesale ERROR handler)."""
-        # Stub notify so the end-of-function escalation send is a no-op.
+        # Stub the senders so the end-of-function notice is a no-op (the
+        # cancellation notice goes to notify_discord_ops since 2026-09-25).
         monkeypatch.setattr(bd, "notify", AsyncMock())
+        monkeypatch.setattr(bd, "notify_discord_ops", AsyncMock())
 
         pool = MagicMock()
         pool.fetchval = AsyncMock(return_value="180")

@@ -21,6 +21,61 @@ A _successful_ self-heal is recorded in `audit_log` (and surfaces on the
 Findings / System Health dashboards) but does **not** page — the whole point is
 that the operator doesn't have to care about transient failures.
 
+### Which brain notices page
+
+Paging means Telegram. The brain daemon sends its own notices (the ones
+that bypass the alert dispatcher) through two senders in `brain_daemon.py`:
+
+- `notify` pages: Telegram **and** Discord #ops. It takes no severity, so
+  anything handed to it reaches the phone.
+- `notify_discord_ops` sends a Discord #ops notice and never touches
+  Telegram. It resolves the webhook the same way `notify` does
+  (`app_settings.discord_ops_webhook_url`, then the
+  `DISCORD_OPS_WEBHOOK_URL` env var) and logs a WARNING when a notice
+  reaches no one.
+
+An outage, or a self-heal that failed or could not run, pages. A self-heal
+that worked, a recovery, and an informational or warning heads-up is a
+Discord notice. Alerts and findings that go through the dispatcher are
+routed by severity there instead (`alert_dispatcher._channels_for`; see
+[findings routing](../architecture/findings-routing.md)).
+
+| Notice                                                                                                                       | Sent by                                                                  | Channel |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------- |
+| `ALERT: <svc> is DOWN` / `🚨 <svc> DOWN (Nx)`                                                                                | `monitor_services`, a critical service with no usable response           | page    |
+| `⚠️ Service <svc> DEGRADED` / `✅ Service <svc> recovered from degraded`                                                     | `monitor_services`, the up-but-pressured transition and its end          | Discord |
+| `Auto-restarted <container>`                                                                                                 | `restart_service`, the restart worked                                    | Discord |
+| `Failed to restart …` / `Service <svc> is down. …` (Docker CLI missing, restart error, no container mapping, no host script) | `restart_service`, the heal failed or has no path                        | page    |
+| `🚨 <SERVICE> MAJOR OUTAGE`                                                                                                  | `monitor_external_services`, status page at major / critical             | page    |
+| `✅ <SERVICE> recovered`                                                                                                     | `monitor_external_services`, a paged outage back to operational          | Discord |
+| `🔧 Auto-remediation: cancelled N stuck task(s) …`                                                                           | `auto_remediate`, the stuck-`in_progress` sweep                          | Discord |
+| `🔧 Auto-remediation: pipeline idle …` / `… high failure rate …`                                                             | `auto_remediate`, once per episode                                       | Discord |
+| `🚨 No metered PSU power …`                                                                                                  | PSU watchdog in `log_electricity_cost`, critical                         | page    |
+| `✅ PSU wall-power recovered` / `↗️ PSU partial recovery` / `⚠️ Shelly meter dropped …`                                      | PSU watchdog, info                                                       | Discord |
+| `🔴 Probe '<name>' failed Nx` / `⚠️ Probe '<name>' ERRORED` / a `⚠️ Self-heal …` that failed                                 | `health_probes.run_health_probes` (`notify_fn`)                          | page    |
+| `✅ Probe '<name>' recovered` / a `🔧 Self-heal …` that worked                                                               | `health_probes.run_health_probes` (`info_fn`)                            | Discord |
+| `grafana_api_token has been empty …`                                                                                         | `alert_sync`, after 4, 8, 16 … empty cycles, never more than ~24 h apart | Discord |
+
+Two failure modes this table exists to prevent, both seen on prod in the 30
+days to 2026-09-25:
+
+- **Notices that paged.** Every Discord row above except the degraded and
+  PSU notes used to go through `notify`. The "pipeline idle" line was
+  re-sent every 5-minute cycle while the state held and reached Telegram 41
+  times. Successful self-heals and probe recoveries paged too. `auto_remediate` now announces a lasting state (idle, high
+  failure rate) once, when it starts, and again only after it has ended and
+  come back. The state is held in memory, so a brain restart mid-episode
+  costs one repeat notice.
+- **Notices that went nowhere.** `send_discord(msg)` with no `webhook_url`
+  resolves the public lab-logs channel (`discord_lab_logs_webhook_url`), not
+  #ops, and prod does not configure it. The degraded notices and the PSU
+  info notes went through that path. All 16 degraded notices and their 16
+  recovery notices were dropped, while this doc said they reached Discord.
+  Any PSU note would have been dropped too; they aren't logged, so none
+  were counted. A Discord-only notice must go through
+  `notify_discord_ops`. The one deliberate lab-logs sender is the operator
+  digest.
+
 ## Deterministic firefighter (detect → act → verify → escalate)
 
 The probes below are the _original_ self-heal: each one hard-codes its own
@@ -833,11 +888,13 @@ twice in one night, cancelling an in-flight media render):
   **503** while `{"status": "degraded"}` (DB pool pressure, startup error)
   so load balancers can shed on the status code. `check_json_status`
   parses the body even on HTTP errors: a "degraded" body is **up** — the
-  knowledge graph records `degraded`, a routine **Discord** notice fires on
-  the transition (plus a recovery notice when it clears), and there is **no
-  restart and no Telegram page**. Restarting a busy worker cancels the
-  in-flight work that caused the pressure and creates the 40-90 s outage
-  the alert claims.
+  knowledge graph records `degraded`, a routine **Discord #ops** notice
+  (`notify_discord_ops`) fires on the transition (plus a recovery notice
+  when it clears), and there is **no restart and no Telegram page**. Until
+  2026-09-25 these two notices went to the unset lab-logs webhook and were
+  dropped; see [Which brain notices page](#which-brain-notices-page).
+  Restarting a busy worker cancels the in-flight work that caused the
+  pressure and creates the 40-90 s outage the alert claims.
 - **Hard-down restarts are gated on consecutive failures.** No response at
   all (refused / timeout / DNS / non-health HTTP error) increments a
   per-service counter; the auto-restart fires only at
@@ -848,6 +905,11 @@ twice in one night, cancelling an in-flight media render):
   is unchanged; only the side-effecting heal waits for confirmation. The
   counter is in-memory: a brain restart forgives it, costing at most one
   extra cycle before a genuine heal.
+- **A restart that works is a notice, one that fails is a page.**
+  `restart_service` posts `Auto-restarted <container>` to Discord #ops and
+  does not page, per the principle above. Every failure branch pages
+  Telegram + Discord: the restart returned non-zero, the Docker CLI is
+  missing, the call raised, or the service has no container mapping.
 
 Related knob: `brain_docker_restart_timeout_seconds` (default 90) bounds the
 `docker restart` subprocess. The old hardcoded 30 s was shorter than the

@@ -295,25 +295,35 @@ class TestSyncAlertRulesDisabledOrUnconfigured:
         assert summary["empty_token_skip_count"] == 1
 
     async def test_empty_token_alarm_fires_at_threshold(self):
-        """After N consecutive empty-token cycles the sync MUST page the
+        """After N consecutive empty-token cycles the sync MUST tell the
         operator — the silent-failure pattern this fix closes. Default
         threshold is 4 cycles (~1 h at the standard 15-min cadence).
+
+        It is a Discord #ops notice, not a Telegram page (2026-09-25): a
+        config gap, not an outage. ``notify`` (Telegram + Discord) must not
+        be called.
         """
         asx._empty_token_skips = 0
         asx._empty_token_alarm_at = 4
         notify_calls = []
+        page_calls = []
 
-        async def fake_notify(message, *, pool=None):  # noqa: ARG001
+        async def fake_notice(message, *, pool=None):  # noqa: ARG001
             notify_calls.append(message)
+            return {"telegram_message_id": None, "discord_message_id": "1", "ok": True}
+
+        async def fake_page(message, *, pool=None):  # noqa: ARG001
+            page_calls.append(message)
             return {"telegram_message_id": 1}
 
-        # Patch the lazy-imported notify symbol on the brain_daemon module
-        # the helper imports from. We can't pre-stub the import path
-        # because the helper imports inside the function — patch the
-        # resolved attribute instead.
+        # Patch the lazily imported sender on the brain_daemon module the
+        # helper imports from. We can't pre-stub the import path because
+        # the helper imports inside the function, so patch the resolved
+        # attribute instead.
         import types
         fake_module = types.ModuleType("brain_daemon")
-        fake_module.notify = fake_notify  # type: ignore[attr-defined]
+        fake_module.notify_discord_ops = fake_notice  # type: ignore[attr-defined]
+        fake_module.notify = fake_page  # type: ignore[attr-defined]
         with patch.dict(sys.modules, {"poindexter.brain.brain_daemon": fake_module}):
             _mock_pool(settings={"grafana_api_token": ""})
             with patch("urllib.request.urlopen"):
@@ -330,11 +340,35 @@ class TestSyncAlertRulesDisabledOrUnconfigured:
         assert summaries[0]["empty_token_skip_count"] == 1
         assert summaries[3]["empty_token_skip_count"] == 4
         assert len(notify_calls) == 1, (
-            f"expected one operator page after 4 silent skips, "
+            f"expected one operator notice after 4 silent skips, "
             f"got {len(notify_calls)}"
         )
+        assert page_calls == [], "an empty Grafana token must not page Telegram"
         assert "grafana_api_token" in notify_calls[0]
         assert "60 min" in notify_calls[0] or "4 cycle" in notify_calls[0]
+
+    async def test_empty_token_alarm_backs_off_to_daily_not_every_cycle(self):
+        """The back-off caps the GAP between alarms at ~24 h (96 cycles).
+        It used to cap the threshold itself at 96, so from cycle 96 on every
+        cycle met it and the alarm fired every 15 minutes."""
+        asx._empty_token_skips = 0
+        asx._empty_token_alarm_at = 4
+        fired_at: list[int] = []
+
+        async def record(_pool, skip_count):
+            fired_at.append(skip_count)
+
+        try:
+            with patch.object(asx, "_fire_empty_token_alarm", new=record):
+                for _ in range(330):
+                    await asx.sync_alert_rules(_mock_pool(settings={"grafana_api_token": ""}))
+        finally:
+            asx._empty_token_skips = 0
+            asx._empty_token_alarm_at = 4
+
+        assert fired_at == [4, 8, 16, 32, 64, 128, 224, 320]
+        gaps = [b - a for a, b in zip(fired_at, fired_at[1:], strict=False)]
+        assert max(gaps) == asx._EMPTY_TOKEN_ALARM_MAX
 
     async def test_token_present_resets_skip_counter(self):
         """A successful sync (token present) must reset the counter so a

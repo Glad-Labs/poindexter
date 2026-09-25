@@ -1932,10 +1932,21 @@ async def _alertmanager_healthy() -> bool:
         return False
 
 
-async def run_health_probes(pool, notify_fn=None):
-    """Run all due health probes, store results in brain_knowledge, alert on failures."""
+async def run_health_probes(pool, notify_fn=None, info_fn=None):
+    """Run all due health probes, store results in brain_knowledge, alert on failures.
+
+    ``notify_fn`` pages: a probe failing ``ALERT_AFTER_FAILURES`` times,
+    or a self-heal that did not work. ``info_fn`` carries the two notices
+    that must not page: a probe that recovered, and a self-heal that
+    worked. The brain passes ``brain_daemon.notify`` (Telegram + Discord)
+    and ``brain_daemon.notify_discord_ops`` (Discord #ops only). With no
+    ``info_fn`` those two notices fall back to ``notify_fn``, the behaviour
+    before 2026-09-25, when they reached Telegram because the brain's
+    ``notify`` has no severity.
+    """
     await _sync_config_from_db(pool)
     results = {}
+    info = info_fn or notify_fn
 
     # Whether Prometheus/Alertmanager can actually deliver right now. When it
     # can't, the brain must NOT suppress alerts for PROMETHEUS_COVERED probes
@@ -2025,11 +2036,11 @@ async def run_health_probes(pool, notify_fn=None):
         if ok:
             if (
                 _failure_counts.get(name, 0) >= ALERT_AFTER_FAILURES
-                and notify_fn
+                and info
                 and not suppress
             ):
                 await _maybe_await(
-                    notify_fn(f"✅ Probe '{name}' recovered: {result.get('detail', '')}")
+                    info(f"✅ Probe '{name}' recovered: {result.get('detail', '')}")
                 )
             _failure_counts[name] = 0
         else:
@@ -2065,7 +2076,9 @@ async def run_health_probes(pool, notify_fn=None):
     # --- Self-healing: execute remediation actions for persistent failures ---
     for name, count in _failure_counts.items():
         if count >= ALERT_AFTER_FAILURES and name in REMEDIATIONS:
-            await _try_remediation(name, results.get(name, {}), notify_fn, pool=pool)
+            await _try_remediation(
+                name, results.get(name, {}), notify_fn, pool=pool, info_fn=info_fn,
+            )
 
     if results:
         passed = sum(1 for r in results.values() if r.get("ok"))
@@ -2141,8 +2154,15 @@ def _restart_container(container_name: str) -> tuple[bool, str]:
         return False, f"restart error: {str(e)[:200]}"
 
 
-async def _try_remediation(probe_name: str, result: dict, notify_fn=None, *, pool=None):
-    """Execute a remediation action if cooldown has elapsed."""
+async def _try_remediation(
+    probe_name: str, result: dict, notify_fn=None, *, pool=None, info_fn=None,
+):
+    """Execute a remediation action if cooldown has elapsed.
+
+    A heal that worked is reported through ``info_fn`` (a notice, falling
+    back to ``notify_fn`` when none is given); a heal that failed pages
+    through ``notify_fn``. See ``run_health_probes``.
+    """
     last = _last_remediation.get(probe_name, 0)
     if (time.time() - last) < REMEDIATION_COOLDOWN:
         return  # Too soon since last attempt
@@ -2172,9 +2192,10 @@ async def _try_remediation(probe_name: str, result: dict, notify_fn=None, *, poo
     _last_remediation[probe_name] = time.time()
 
     detail = result.get("detail", "")
-    if notify_fn:
+    send = (info_fn or notify_fn) if ok else notify_fn
+    if send:
         emoji = "🔧" if ok else "⚠️"
-        await _maybe_await(notify_fn(
+        await _maybe_await(send(
             f"{emoji} Self-heal '{probe_name}': {msg}\n"
             f"Trigger: {detail}"
         ))

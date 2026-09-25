@@ -417,6 +417,78 @@ class TestAsyncNotifyFnAwaited:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+class TestNoticesThatMustNotPage:
+    """2026-09-25: a probe's recovery and a self-heal that worked go to
+    ``info_fn``; failures still page through ``notify_fn``. The brain passes
+    ``notify`` (Telegram + Discord) and ``notify_discord_ops`` (Discord #ops
+    only), and ``notify`` has no severity, so before ``info_fn`` every
+    "✅ recovered" reached Telegram. Without an ``info_fn`` both notices
+    fall back to ``notify_fn``, which is the old behaviour."""
+
+    async def _fail_then_recover(self, *, notify_fn, info_fn):
+        results = iter([{"ok": False, "detail": "down"}, {"ok": True, "detail": "back"}])
+
+        async def probe(_pool):
+            return next(results)
+
+        with patch.dict(hp.PROBES, {"fake_probe": probe}, clear=True), \
+                patch.object(hp, "_is_due", return_value=True), \
+                patch.object(hp, "ALERT_AFTER_FAILURES", 1):
+            for _ in range(2):
+                await hp.run_health_probes(
+                    _make_pool(), notify_fn=notify_fn, info_fn=info_fn,
+                )
+
+    async def test_recovery_goes_to_info_fn_and_the_failure_pages(self):
+        pages: list[str] = []
+        notices: list[str] = []
+
+        await self._fail_then_recover(notify_fn=pages.append, info_fn=notices.append)
+
+        assert any("failed" in p for p in pages)
+        assert not any("recovered" in p for p in pages)
+        assert notices == ["✅ Probe 'fake_probe' recovered: back"]
+
+    async def test_without_info_fn_the_recovery_falls_back_to_notify_fn(self):
+        pages: list[str] = []
+
+        await self._fail_then_recover(notify_fn=pages.append, info_fn=None)
+
+        assert any("recovered" in p for p in pages)
+
+    @pytest.mark.parametrize(
+        ("heal_ok", "expected"),
+        [(True, "notice"), (False, "page")],
+    )
+    async def test_self_heal_success_is_a_notice_and_failure_pages(self, heal_ok, expected):
+        pages: list[str] = []
+        notices: list[str] = []
+
+        with patch.object(hp, "_restart_container", return_value=(heal_ok, "restarted grafana")):
+            await hp._try_remediation(
+                "grafana_datasources", {"detail": "datasource broken"},
+                pages.append, pool=_make_pool(), info_fn=notices.append,
+            )
+
+        sent = notices if expected == "notice" else pages
+        other = pages if expected == "notice" else notices
+        assert len(sent) == 1 and "Self-heal 'grafana_datasources'" in sent[0]
+        assert other == []
+
+    async def test_self_heal_success_without_info_fn_falls_back_to_notify_fn(self):
+        pages: list[str] = []
+
+        with patch.object(hp, "_restart_container", return_value=(True, "restarted grafana")):
+            await hp._try_remediation(
+                "grafana_datasources", {"detail": "datasource broken"},
+                pages.append, pool=_make_pool(),
+            )
+
+        assert len(pages) == 1 and pages[0].startswith("🔧 Self-heal")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 class TestGpuTemperatureProbe:
     """#536 — the probe must distinguish 'exporter alive' from 'writing fresh
     data'. A stale newest row (frozen feed) with a normal temp must fail."""

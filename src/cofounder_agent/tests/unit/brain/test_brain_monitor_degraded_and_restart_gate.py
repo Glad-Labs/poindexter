@@ -42,6 +42,8 @@ if str(_REPO_ROOT) not in sys.path:
 
 from poindexter.brain import brain_daemon as bd  # noqa: E402
 
+_OPS_URL = "https://discord.test/ops"
+
 
 def _http_error(code: int, body: bytes, reason: str = "Service Unavailable"):
     return urllib.error.HTTPError(
@@ -101,10 +103,16 @@ def monitor_env(monkeypatch):
     # A settled process is the default; TestBootGrace sets it back.
     monkeypatch.setattr(bd, "_DAEMON_STARTED_AT", time.monotonic() - 10_000)
 
+    # The degraded notice must reach Discord #ops. With no webhook,
+    # send_discord resolves lab-logs (unset on prod), which silently
+    # dropped every degraded notice until 2026-09-25.
+    monkeypatch.setenv("DISCORD_OPS_WEBHOOK_URL", _OPS_URL)
+    monkeypatch.delitem(sys.modules, bd._POOL_REGISTRY_KEY, raising=False)
+
     pool = MagicMock()
     pool.execute = AsyncMock()
     pool.fetch = AsyncMock(return_value=[])
-    pool.fetchrow = AsyncMock(return_value=None)  # no alert_actions row
+    pool.fetchrow = AsyncMock(return_value=None)  # no alert_actions / app_settings row
     pool.fetchval = AsyncMock(return_value=None)  # _setting_int → defaults
 
     mocks = {
@@ -149,6 +157,7 @@ class TestMonitorServicesDegraded:
         assert issues and issues[0]["state"] == "degraded"
         assert monitor_env["discord"].await_count == 1
         assert "DEGRADED" in monitor_env["discord"].await_args_list[0].args[0]
+        assert monitor_env["discord"].await_args_list[0].kwargs["webhook_url"] == _OPS_URL
 
         # Second degraded cycle: still surfaced, but no repeat notice.
         issues2 = await bd.monitor_services(monitor_env["pool"])
@@ -184,6 +193,7 @@ class TestMonitorServicesDegraded:
         assert bd._degraded_since == {}
         assert monitor_env["discord"].await_count == 2
         assert "recovered" in monitor_env["discord"].await_args_list[1].args[0]
+        assert monitor_env["discord"].await_args_list[1].kwargs["webhook_url"] == _OPS_URL
 
 
 @pytest.mark.unit

@@ -68,13 +68,13 @@ HTTP_TIMEOUT_SECONDS = 10
 
 # Fail-loud cadence for the "empty token" skip path. Default cycle interval
 # is 15 min, so 4 = ~1 h of silent skipping before we escalate. The
-# counter doubles after each fire to avoid spamming the operator while
+# threshold doubles after each fire to avoid spamming the operator while
 # the token is genuinely unset. Reset to zero on the first successful
 # sync (token present, regardless of Grafana HTTP outcome) so a temporary
 # misconfig doesn't permanently mute the alarm.
 _empty_token_skips: int = 0
 _empty_token_alarm_at: int = 4
-_EMPTY_TOKEN_ALARM_MAX: int = 96  # ~24h at 15-min cadence — hard ceiling
+_EMPTY_TOKEN_ALARM_MAX: int = 96  # ~24h at 15-min cadence — longest gap between alarms
 
 
 def _rule_uid(name: str) -> str:
@@ -439,10 +439,14 @@ async def sync_alert_rules(pool) -> dict[str, Any]:
         )
         if _empty_token_skips >= _empty_token_alarm_at:
             await _fire_empty_token_alarm(pool, _empty_token_skips)
-            # Exponential back-off so the operator gets one page per
-            # hour, then ~2h, then ~4h, etc. — bounded at ~24h.
+            # Exponential back-off: the next alarm comes 4, 8, 16, ...
+            # cycles later, never more than _EMPTY_TOKEN_ALARM_MAX cycles
+            # (~24 h) apart. The cap bounds the GAP. It used to cap the
+            # threshold itself, so from cycle 96 on every cycle met it and
+            # the alarm fired every 15 min.
             _empty_token_alarm_at = min(
-                _empty_token_alarm_at * 2, _EMPTY_TOKEN_ALARM_MAX,
+                _empty_token_alarm_at * 2,
+                _empty_token_alarm_at + _EMPTY_TOKEN_ALARM_MAX,
             )
         return summary
 
@@ -543,16 +547,18 @@ async def sync_alert_rules(pool) -> dict[str, Any]:
 
 
 async def _fire_empty_token_alarm(pool: Any, skip_count: int) -> None:
-    """Page the operator that the Grafana sync has been silently no-oping.
+    """Tell the operator that the Grafana sync has been silently no-oping.
 
-    Lazy-imports ``brain_daemon.notify`` to avoid the circular import a
-    top-level dep would create (brain_daemon imports alert_sync inside
-    ``_maybe_sync_grafana_alerts``). Both name resolution forms — the
-    package-qualified one used when brain runs as a module and the bare
-    one used when ``python brain_daemon.py`` is the entrypoint — are
-    tried, matching the pattern brain_daemon itself uses for its own
-    optional imports. Failures are swallowed: a missing ``notify`` shouldn't
-    crash the sync cycle.
+    This goes to Discord #ops (``brain_daemon.notify_discord_ops``), not
+    Telegram. It is a config gap that needs attention, not an outage: rules
+    already in Grafana keep evaluating, and only edits since the token went
+    empty are unapplied. The blind branch-drift canary is routed to Discord
+    the same way (#4051).
+
+    Lazy-imports the sender to avoid the circular import a top-level dep
+    would create (brain_daemon imports alert_sync inside
+    ``_maybe_sync_grafana_alerts``). Failures are swallowed: a missing
+    sender shouldn't crash the sync cycle.
     """
     minutes = skip_count * 15  # default cycle cadence = 15 min
     body = (
@@ -563,23 +569,18 @@ async def _fire_empty_token_alarm(pool: Any, skip_count: int) -> None:
         "grafana_api_token to a Grafana service-account token with "
         "alerting write scope."
     )
-    notify_fn = None
     try:
         from poindexter.brain.brain_daemon import (
-            notify as _notify,  # type: ignore[import-not-found]
+            notify_discord_ops,  # type: ignore[import-not-found]
         )
-
-        notify_fn = _notify
     except ImportError:
         logger.warning(
-            "alert_sync: cannot import brain_daemon.notify — "
-            "empty-token alarm logged but not paged (skip_count=%d)",
+            "alert_sync: cannot import brain_daemon.notify_discord_ops — "
+            "empty-token alarm logged but not sent (skip_count=%d)",
             skip_count,
         )
         return
     try:
-        result = notify_fn(body, pool=pool)
-        if hasattr(result, "__await__"):
-            await result
+        await notify_discord_ops(body, pool=pool)
     except Exception as e:  # noqa: BLE001 — never let alarm crash the sync
-        logger.warning("alert_sync: notify_operator failed: %s", e)
+        logger.warning("alert_sync: Grafana-sync alarm send failed: %s", e)

@@ -168,7 +168,13 @@ false "No real PSU data" alert:
    miss self-heals silently. Logic is in
    `poindexter/brain/psu_power.py::psu_watchdog_transition`; the streak is persisted in
    `brain_knowledge (entity='psu_watchdog', attribute='degraded_streak')` and
-   the threshold is tunable via `app_settings`.
+   the threshold is tunable via `app_settings`. Only that page is critical
+   (Telegram + Discord). The recovery and fallback notes
+   (`✅ PSU wall-power recovered`, `↗️ PSU partial recovery`,
+   `⚠️ Shelly meter dropped`) are Discord #ops notices via
+   `brain_daemon.notify_discord_ops`. Before 2026-09-25 they went to the
+   unset lab-logs webhook and were dropped. See
+   [Which brain notices page](self-healing.md#which-brain-notices-page).
 
 Together these fixed a 2026-07-12 incident where the alert fired ~15×/day (each
 a false alarm) while the plug read ~330W the whole time.

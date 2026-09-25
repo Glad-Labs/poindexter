@@ -972,6 +972,13 @@ EXTERNAL_SERVICES = {
 
 # Track previous external status to detect transitions
 _prev_external_status = {}
+# Services whose MAJOR OUTAGE page went out and which have not been seen
+# operational since. The all-clear keys on this, not on the previous poll:
+# status pages step down major -> minor -> none, so the old "recovered only
+# if the last poll said major" test missed the recovery for both major pages
+# in the 30 days to 2026-09-25. In memory, like _prev_external_status, so a
+# brain restart during an outage forgets the page and sends no all-clear.
+_external_outage_paged: set[str] = set()
 
 # --- Internal-service failure classification (2026-08-15) -----------------
 # Both dicts are only touched inside monitor_services, which has a single
@@ -1482,12 +1489,90 @@ async def send_discord(
         return None
 
 
+async def _ops_webhook_url(pool) -> str:
+    """Resolve the Discord #ops webhook: ``app_settings.discord_ops_webhook_url``,
+    else the ``DISCORD_OPS_WEBHOOK_URL`` env var, else ``""``.
+
+    The one resolver behind every ops-channel send (``notify``,
+    ``notify_discord_ops``, ``send_followup``), so the page and the
+    Discord-only notice always mean the same channel. It matters because
+    ``send_discord`` given no ``webhook_url`` resolves the public
+    *lab-logs* channel, which prod does not configure. The monitor's
+    "degraded" / "recovered from degraded" notices and the PSU watchdog's
+    heads-ups called it that way. All 32 degraded / recovered notices in
+    the 30 days to 2026-09-25 were dropped, while the docs said they
+    reached Discord.
+    """
+    default = os.getenv("DISCORD_OPS_WEBHOOK_URL", "")
+    if pool is None:
+        return default
+    return await _read_app_setting(pool, "discord_ops_webhook_url", default=default)
+
+
+async def _send_discord_ops(
+    message: str,
+    *,
+    pool=None,
+    message_reference_id: str | int | None = None,
+) -> str | None:
+    """Post to Discord #ops, falling back to lab-logs only when #ops is unset.
+
+    An empty ``webhook_url`` is what makes ``send_discord`` take that
+    fallback, so ``None`` is passed rather than ``""`` for clarity.
+    """
+    webhook_url = await _ops_webhook_url(pool) or None
+    if message_reference_id is None:
+        return await send_discord(message, webhook_url=webhook_url, pool=pool)
+    return await send_discord(
+        message,
+        webhook_url=webhook_url,
+        pool=pool,
+        message_reference_id=message_reference_id,
+    )
+
+
+async def notify_discord_ops(message: str, *, pool=None) -> dict[str, object]:
+    """Post a notice to Discord #ops only. Use this for anything that
+    must not page.
+
+    ``notify`` sends to Telegram AND Discord and takes no severity, so
+    every brain notice routed through it reached the operator's phone.
+    That included successful self-heals, recoveries, and a "pipeline idle"
+    line repeated every cycle, which sent 41 Telegram messages in the 30
+    days to 2026-09-25. Telegram is for critical/error only; see
+    docs/operations/self-healing.md, "Which brain notices page". So
+    success, recovery, info and warning notices come here instead: same
+    #ops channel, resolved the same way as ``notify``, no Telegram.
+
+    Returns ``notify``'s dict with ``telegram_message_id`` always
+    ``None``, so a call site can move between the two without changing
+    how it reads the result. A notice nobody received is logged at
+    WARNING, because unlike a page there is no second channel to catch it.
+    """
+    pool = await _resolve_pool(pool)
+    dc_id = await _send_discord_ops(message, pool=pool)
+    if not dc_id:
+        logger.warning(
+            "[BRAIN] Discord #ops notice not delivered (webhook unset or "
+            "POST failed): %s", message[:160],
+        )
+    return {
+        "telegram_message_id": None,
+        "discord_message_id": dc_id if isinstance(dc_id, str) else None,
+        "ok": bool(dc_id),
+    }
+
+
 async def notify(message: str, *, pool=None) -> dict[str, object]:
-    """Send to both Telegram (urgent) and Discord #ops (ops log).
+    """Page: send to both Telegram (urgent) and Discord #ops (ops log).
 
     Telegram = alarm bell (phone push notification).
     Discord #ops = system's voice (scrollable ops history).
     Discord #lab-logs = public-facing (daily digest only).
+
+    ``notify`` has no severity: every call pages the phone. A notice
+    that must not page (a self-heal that worked, a recovery, info)
+    goes through :func:`notify_discord_ops` instead.
 
     Returns a dict carrying the per-channel message ids so callers can
     thread follow-ups (Glad-Labs/poindexter#347 step 5)::
@@ -1513,19 +1598,7 @@ async def notify(message: str, *, pool=None) -> dict[str, object]:
     # Operational messages go to #ops; fall back to lab-logs only if
     # ops isn't configured. The ops webhook is read from app_settings
     # on every call (no cached global — see #344 docstring above).
-    ops_url = ""
-    if pool is not None:
-        ops_url = await _read_app_setting(
-            pool,
-            "discord_ops_webhook_url",
-            default=os.getenv("DISCORD_OPS_WEBHOOK_URL", ""),
-        )
-    else:
-        ops_url = os.getenv("DISCORD_OPS_WEBHOOK_URL", "")
-    if ops_url:
-        dc_id = await send_discord(message, webhook_url=ops_url, pool=pool)
-    else:
-        dc_id = await send_discord(message, pool=pool)  # fallback to lab-logs
+    dc_id = await _send_discord_ops(message, pool=pool)
     return {
         "telegram_message_id": tg_id if isinstance(tg_id, int) else None,
         "discord_message_id": dc_id if isinstance(dc_id, str) else None,
@@ -1578,26 +1651,9 @@ async def send_followup(
 
     dc_id: str | None = None
     if parent_discord_message_id is not None:
-        ops_url = ""
-        if pool is not None:
-            ops_url = await _read_app_setting(
-                pool,
-                "discord_ops_webhook_url",
-                default=os.getenv("DISCORD_OPS_WEBHOOK_URL", ""),
-            )
-        if ops_url:
-            dc_id = await send_discord(
-                text,
-                webhook_url=ops_url,
-                pool=pool,
-                message_reference_id=parent_discord_message_id,
-            )
-        else:
-            dc_id = await send_discord(
-                text,
-                pool=pool,
-                message_reference_id=parent_discord_message_id,
-            )
+        dc_id = await _send_discord_ops(
+            text, pool=pool, message_reference_id=parent_discord_message_id,
+        )
     return {
         "telegram_message_id": tg_id if isinstance(tg_id, int) else None,
         "discord_message_id": dc_id if isinstance(dc_id, str) else None,
@@ -1698,7 +1754,11 @@ async def restart_service(name: str, *, pool=None):
                 )
                 if result.returncode == 0:
                     logger.info("[BRAIN] Docker-restarted container %s", container)
-                    await notify(f"Auto-restarted {container}", pool=pool)
+                    # A heal that worked is a notice, not a page ("self-heal
+                    # before paging", docs/operations/self-healing.md). Every
+                    # failure branch below still pages: the service is down
+                    # and the brain could not bring it back.
+                    await notify_discord_ops(f"Auto-restarted {container}", pool=pool)
                 else:
                     logger.warning("[BRAIN] Docker restart failed for %s: %s", container, result.stderr[:100])
                     await notify(f"Failed to restart {container}: {result.stderr[:100]}", pool=pool)
@@ -1875,15 +1935,15 @@ async def monitor_services(pool) -> list:
                 )
                 if name not in _degraded_since:
                     _degraded_since[name] = time.time()
+                    # To #ops. A bare send_discord() resolved the unset
+                    # lab-logs webhook, so until 2026-09-25 every one of
+                    # these notices was dropped (notify_discord_ops logs
+                    # a WARNING when a notice reaches no one).
                     try:
-                        sent = await send_discord(
+                        await notify_discord_ops(
                             f"⚠️ Service {name} DEGRADED (up — auto-restart suppressed)",
                             pool=pool,
                         )
-                        if not sent:
-                            logger.warning(
-                                "[BRAIN] degraded notice for %s did not reach Discord", name,
-                            )
                     except Exception as exc:  # noqa: BLE001 — notice must not kill the loop
                         logger.warning("[BRAIN] degraded notice for %s failed: %s", name, exc)
             else:
@@ -1894,7 +1954,7 @@ async def monitor_services(pool) -> list:
                         "[BRAIN] Service %s recovered from degraded after %.0f min", name, mins,
                     )
                     try:
-                        await send_discord(
+                        await notify_discord_ops(
                             f"✅ Service {name} recovered from degraded after {mins:.0f} min",
                             pool=pool,
                         )
@@ -2035,11 +2095,17 @@ async def monitor_external_services(pool) -> list:
                 logger.warning("[BRAIN] External %s: %s — %s", name, indicator, description)
                 if is_major:
                     await notify(f"🚨 {name.upper()} MAJOR OUTAGE: {description}", pool=pool)
+                    _external_outage_paged.add(name)
         else:
-            # Alert on recovery from major outage only
-            if prev and prev in ("major", "critical", "major_outage") and prev != indicator:
+            # The all-clear for an outage we paged. It's a notice, so it
+            # goes to Discord #ops only, and it fires when the status page
+            # is operational again however many steps it took to get there.
+            if name in _external_outage_paged:
+                _external_outage_paged.discard(name)
                 logger.info("[BRAIN] External %s recovered: %s", name, description)
-                await notify(f"✅ {name.upper()} recovered: {description}", pool=pool)
+                await notify_discord_ops(
+                    f"✅ {name.upper()} recovered: {description}", pool=pool,
+                )
             logger.debug("[BRAIN] External %s: OK", name)
 
     return issues
@@ -2072,10 +2138,47 @@ async def _stamp_auto_cancelled(pool, task_ids: list) -> None:
     )
 
 
+# Pipeline states auto_remediate has announced and that still hold (see
+# _announce_pipeline_state). In memory: a brain restart forgets them, which
+# costs at most one repeat notice per state that is still open.
+_pipeline_states_announced: set[str] = set()
+
+
+async def _announce_pipeline_state(state: str, note: str | None, *, pool) -> None:
+    """Post a pipeline state to Discord #ops once when it starts, and forget
+    it when it ends so the next episode is announced again.
+
+    ``note`` is ``None`` on a cycle where the state does not hold. The
+    states (idle, high failure rate) last for hours, and the old code
+    re-posted them every 5-minute cycle: "pipeline idle" went to Telegram
+    41 times in the 30 days to 2026-09-25. A notice that was not delivered
+    is retried next cycle rather than marked announced.
+    """
+    if note is None:
+        _pipeline_states_announced.discard(state)
+        return
+    if state in _pipeline_states_announced:
+        return
+    result = await notify_discord_ops(f"🔧 Auto-remediation: {note}", pool=pool)
+    if result.get("ok"):
+        _pipeline_states_announced.add(state)
+
+
 async def auto_remediate(pool):
-    """Detect and fix pipeline problems automatically. Runs every cycle."""
+    """Detect and fix pipeline problems automatically. Runs every cycle.
+
+    Its notices go to Discord #ops and never page. A cancelled stuck task
+    is a self-heal that worked; an idle pipeline or a high failure rate is
+    a heads-up, not an outage. The two states are announced once per
+    episode (``_announce_pipeline_state``), not every cycle.
+    """
     try:
         actions_taken = []
+        # What gets posted: every cycle's cancellations (new rows each time),
+        # plus the idle / failure-rate states via _announce_pipeline_state.
+        notices: list[str] = []
+        idle_note: str | None = None
+        failure_note: str | None = None
 
         # 1. Auto-cancel tasks stuck in_progress beyond stale_task_timeout_minutes
         #    (default 180m + brain_auto_cancel_grace_minutes extra safety).
@@ -2115,7 +2218,9 @@ async def auto_remediate(pool):
         if stuck:
             topics = [r["topic"][:40] for r in stuck]
             task_ids = [r["task_id"] for r in stuck]
-            actions_taken.append(f"cancelled {len(stuck)} stuck task(s): {', '.join(topics)}")
+            cancelled = f"cancelled {len(stuck)} stuck task(s): {', '.join(topics)}"
+            actions_taken.append(cancelled)
+            notices.append(cancelled)
             # GH-90 AC #4: warn-level log with task_id + reason, one row per task,
             # so operators can grep/alert on individual IDs instead of a single
             # summary line. Also bump the Prometheus metric so the dashboard
@@ -2168,7 +2273,8 @@ async def auto_remediate(pool):
                     last_task = last_task.replace(tzinfo=UTC)
                 hours_idle = (datetime.now(UTC) - last_task).total_seconds() / 3600
                 if hours_idle > 48:
-                    actions_taken.append(f"pipeline idle {hours_idle:.0f}h — no pending/active tasks")
+                    idle_note = f"pipeline idle {hours_idle:.0f}h — no pending/active tasks"
+                    actions_taken.append(idle_note)
                     # Store in knowledge graph for trend tracking
                     await pool.execute("""
                         INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, tags)
@@ -2188,17 +2294,22 @@ async def auto_remediate(pool):
         if row and row["recent_total"] and row["recent_total"] > 0:
             fail_rate = row["recent_fails"] / row["recent_total"]
             if fail_rate > 0.5 and row["recent_fails"] >= 3:
-                actions_taken.append(
+                failure_note = (
                     f"high failure rate: {row['recent_fails']}/{row['recent_total']} "
                     f"({fail_rate:.0%}) in {_fail_win_h}h"
                 )
+                actions_taken.append(failure_note)
 
         if actions_taken:
             logger.info("[BRAIN] Auto-remediation: %s", "; ".join(actions_taken))
-            # Alert on significant actions
-            for action in actions_taken:
-                if "cancelled" in action or "high failure" in action or "idle" in action:
-                    await notify(f"🔧 Auto-remediation: {action}", pool=pool)
+        # Chosen by kind, not by matching words in the action text: that
+        # text embeds task topics, so a stale approval whose topic said
+        # "idle" or "cancelled" was posted too. Stale-approval
+        # auto-rejects are logged, not posted, as before.
+        for notice in notices:
+            await notify_discord_ops(f"🔧 Auto-remediation: {notice}", pool=pool)
+        await _announce_pipeline_state("pipeline_idle", idle_note, pool=pool)
+        await _announce_pipeline_state("high_failure_rate", failure_note, pool=pool)
 
     except Exception as e:
         logger.error("[BRAIN] Auto-remediation failed: %s", e, exc_info=True)
@@ -2462,9 +2573,11 @@ async def log_electricity_cost(pool):
             )
             for _note in notes:
                 if _note["severity"] == "critical":
-                    await notify(_note["message"], pool=pool)        # Telegram + Discord
+                    await notify(_note["message"], pool=pool)  # Telegram + Discord
                 else:
-                    await send_discord(_note["message"], pool=pool)  # Discord-only heads-up
+                    # Discord #ops heads-up. Until 2026-09-25 this was a bare
+                    # send_discord() that resolved the unset lab-logs webhook.
+                    await notify_discord_ops(_note["message"], pool=pool)
 
             await pool.execute("""
                 INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
@@ -2784,7 +2897,11 @@ async def run_cycle(pool):
 
     # Health probes — exercise services with real inputs (each on its own schedule)
     cycle_stage.set_stage("run_health_probes")
-    probe_results = await run_health_probes(pool, notify_fn=notify)
+    # notify pages (a probe failing, a self-heal that failed); a probe's
+    # recovery and a self-heal that worked are Discord #ops notices.
+    probe_results = await run_health_probes(
+        pool, notify_fn=notify, info_fn=notify_discord_ops,
+    )
     probe_failures = [name for name, r in probe_results.items() if not r.get("ok")]
 
     # Business probes — operator-level monitoring (Glad Labs private, #215)

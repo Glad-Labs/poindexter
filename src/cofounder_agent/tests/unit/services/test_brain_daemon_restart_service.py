@@ -37,8 +37,20 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture
 def mock_notify():
-    """Patch the async notify() so we can assert it was/wasn't called."""
+    """Patch the async notify() (the page: Telegram + Discord) so we can
+    assert it was/wasn't called."""
     with patch.object(bd, "notify", new=AsyncMock()) as m:
+        yield m
+
+
+@pytest.fixture
+def mock_notice():
+    """Patch notify_discord_ops() (a Discord #ops notice that never pages).
+
+    A restart that worked lands here, not on ``notify``: "self-heal before
+    paging" (docs/operations/self-healing.md). Every failure still pages.
+    """
+    with patch.object(bd, "notify_discord_ops", new=AsyncMock()) as m:
         yield m
 
 
@@ -51,7 +63,7 @@ def _inspect_result(returncode: int, stdout: str = "", stderr: str = ""):
     return r
 
 
-async def test_missing_container_skips_restart_and_notify(mock_notify):
+async def test_missing_container_skips_restart_and_notify(mock_notify, mock_notice):
     """Compose --force-recreate gap: container temporarily doesn't exist.
     Brain should log + return without notifying — the next cycle (≤5
     min) will see the recreated container and recover quietly.
@@ -72,13 +84,15 @@ async def test_missing_container_skips_restart_and_notify(mock_notify):
     assert "poindexter-worker" in cmd_args
 
     # Critical: no notification fired. The transient absence shouldn't
-    # page the operator.
+    # page the operator, or post a notice either.
     mock_notify.assert_not_called()
+    mock_notice.assert_not_called()
 
 
-async def test_existing_container_proceeds_with_restart(mock_notify):
+async def test_existing_container_proceeds_with_restart(mock_notify, mock_notice):
     """Real outage path: container exists but unhealthy → restart fires
-    and the notify message confirms the auto-recovery.
+    and a Discord #ops notice confirms the auto-recovery. A heal that
+    worked does not page.
     """
     inspect_hit = _inspect_result(returncode=0, stdout="running\n")
     restart_ok = _inspect_result(returncode=0)
@@ -97,9 +111,10 @@ async def test_existing_container_proceeds_with_restart(mock_notify):
     assert inspect_args[:2] == ["docker", "inspect"]
     assert restart_args[:2] == ["docker", "restart"]
 
-    # Operator notified of the recovery action.
-    mock_notify.assert_called_once()
-    msg = mock_notify.call_args.args[0]
+    # Operator told of the recovery action on Discord only, not paged.
+    mock_notify.assert_not_called()
+    mock_notice.assert_called_once()
+    msg = mock_notice.call_args.args[0]
     assert "Auto-restarted" in msg
     assert "poindexter-worker" in msg
 
@@ -120,7 +135,7 @@ async def test_unknown_service_name_notifies_no_mapping(mock_notify):
     assert "no container mapping" in msg
 
 
-async def test_restart_failure_notifies_operator(mock_notify):
+async def test_restart_failure_notifies_operator(mock_notify, mock_notice):
     """If inspect succeeds (container exists) but restart fails (e.g.
     Docker socket lost permissions mid-operation), the operator should
     still be notified — this is the failure mode the inspect pre-check
@@ -138,13 +153,15 @@ async def test_restart_failure_notifies_operator(mock_notify):
          ):
         await bd.restart_service("worker", pool=None)
 
+    # A heal that failed pages (Telegram + Discord), never just a notice.
     mock_notify.assert_called_once()
+    mock_notice.assert_not_called()
     msg = mock_notify.call_args.args[0]
     assert "Failed to restart" in msg
     assert "permission denied" in msg
 
 
-async def test_docker_cli_missing_notifies_install_hint(mock_notify):
+async def test_docker_cli_missing_notifies_install_hint(mock_notify, mock_notice):
     """Brain container without docker-cli installed: ``subprocess.run``
     raises ``FileNotFoundError`` on the inspect call. The operator
     should get an actionable install-hint notification, not a confusing
@@ -155,6 +172,7 @@ async def test_docker_cli_missing_notifies_install_hint(mock_notify):
         await bd.restart_service("worker", pool=None)
 
     mock_notify.assert_called_once()
+    mock_notice.assert_not_called()
     msg = mock_notify.call_args.args[0]
     assert "Docker CLI not found" in msg
     # The service name (not the container name) appears in the message
@@ -162,7 +180,7 @@ async def test_docker_cli_missing_notifies_install_hint(mock_notify):
     assert "worker" in msg
 
 
-async def test_inspect_timeout_notifies_generic_failure(mock_notify):
+async def test_inspect_timeout_notifies_generic_failure(mock_notify, mock_notice):
     """``subprocess.TimeoutExpired`` (Docker daemon hung) falls through
     to the generic ``except Exception`` arm — operator gets notified so
     the brain doesn't silently swallow the hang.
@@ -173,12 +191,13 @@ async def test_inspect_timeout_notifies_generic_failure(mock_notify):
         await bd.restart_service("worker", pool=None)
 
     mock_notify.assert_called_once()
+    mock_notice.assert_not_called()
     msg = mock_notify.call_args.args[0]
     assert "Restart failed" in msg
     assert "worker" in msg
 
 
-async def test_api_alias_maps_to_worker_container(mock_notify):
+async def test_api_alias_maps_to_worker_container(mock_notify, mock_notice):
     """``api`` is an alias for the worker container — the FastAPI app
     lives in the same process as the worker, so restarting one
     restarts both. This pins the alias so a future
@@ -196,11 +215,12 @@ async def test_api_alias_maps_to_worker_container(mock_notify):
 
     restart_args = run_mock.call_args_list[1].args[0]
     assert restart_args == ["docker", "restart", "poindexter-worker"]
-    mock_notify.assert_called_once()
-    assert "poindexter-worker" in mock_notify.call_args.args[0]
+    mock_notify.assert_not_called()
+    mock_notice.assert_called_once()
+    assert "poindexter-worker" in mock_notice.call_args.args[0]
 
 
-async def test_image_gen_server_alias_maps_to_image_gen_container(mock_notify):
+async def test_image_gen_server_alias_maps_to_image_gen_container(mock_notify, mock_notice):
     """``image-gen-server`` routes to the image-gen container, not the worker.
     Regression guard against a copy-paste mistake collapsing the alias to
     ``poindexter-worker``.
@@ -219,12 +239,13 @@ async def test_image_gen_server_alias_maps_to_image_gen_container(mock_notify):
     restart_args = run_mock.call_args_list[1].args[0]
     assert "poindexter-image-gen-server" in inspect_args
     assert restart_args == ["docker", "restart", "poindexter-image-gen-server"]
-    # Recovery notification names the image-gen container, not the worker.
-    mock_notify.assert_called_once()
-    assert "poindexter-image-gen-server" in mock_notify.call_args.args[0]
+    # Recovery notice names the image-gen container, not the worker.
+    mock_notify.assert_not_called()
+    mock_notice.assert_called_once()
+    assert "poindexter-image-gen-server" in mock_notice.call_args.args[0]
 
 
-async def test_inspect_command_uses_state_status_format(mock_notify):
+async def test_inspect_command_uses_state_status_format(mock_notify, mock_notice):
     """The inspect pre-check uses ``--format {{.State.Status}}`` so the
     output stays cheap (one word, no JSON parse). If this drifts to a
     full ``docker inspect`` the pre-check still works but the output
@@ -256,8 +277,8 @@ async def test_inspect_command_uses_state_status_format(mock_notify):
         == bd.BRAIN_DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
         == 90
     )
-    # Sanity: the format pre-check still drives a real notify on success.
-    mock_notify.assert_called_once()
+    # Sanity: the format pre-check still drives a real notice on success.
+    mock_notice.assert_called_once()
 
 
 async def test_restart_timeout_is_db_tunable(mock_notify):
