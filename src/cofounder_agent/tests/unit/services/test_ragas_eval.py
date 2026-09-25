@@ -386,6 +386,34 @@ class TestDispatcherWrappers:
         assert kwargs["response_format"] == {"type": "json_object"}
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(("value", "sent"), [("16384", 16384), ("0", None), ("", None), ("junk", None)])
+    async def test_judge_sends_the_configured_num_ctx(self, monkeypatch, value, sent):
+        """qa_ragas_judge_num_ctx was seeded but never read: every Ragas call
+        ran at Ollama's 8192 default, truncating long-draft faithfulness
+        (4098 in + 4094 out) and reloading the shared :11435 judge between
+        8192 and the 16384 every other caller sends (2026-09-25)."""
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        from langchain_core.messages import HumanMessage
+
+        from poindexter.services.ragas_eval import _build_dispatcher_ragas_wrappers
+        from poindexter.services.site_config import SiteConfig
+
+        dispatch_mock = AsyncMock(return_value=SimpleNamespace(text="{}"))
+        monkeypatch.setattr(
+            "poindexter.services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+        )
+        sc = SiteConfig(initial_config={"qa_ragas_judge_num_ctx": value})
+        with _inject_fake_modules(_identity_wrapper_modules()):
+            llm, _ = _build_dispatcher_ragas_wrappers(
+                pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
+                site_config=sc,
+            )
+        await llm._agenerate([HumanMessage(content="judge this")])
+        assert dispatch_mock.call_args.kwargs.get("num_ctx") == sent
+
+    @pytest.mark.asyncio
     async def test_aembed_routes_through_dispatch_embed(self, monkeypatch):
         from unittest.mock import AsyncMock
 

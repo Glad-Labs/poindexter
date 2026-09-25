@@ -2,8 +2,10 @@
 
 ISSUE: Glad-Labs/poindexter#1065.
 
-``ragas_enabled`` was turned off on 2026-09-15 (deliberately — ~6K judge
-tokens per call), but only the setting was flipped: the ``ragas_eval`` row in
+``ragas_enabled`` was turned off on 2026-09-15 as a stopgap: Ragas was crashing
+the Prefect flow (poindexter#1053). An earlier version of this docstring said
+it was deliberate to save judge tokens; that was a June episode, not this one.
+Only the setting was flipped, though: the ``ragas_eval`` row in
 ``qa_gates`` stayed ``enabled``. With the switch off the ``qa.ragas`` atom
 returns ``{}``, so the gate can never run. It is harmless while advisory, and a
 landmine the moment anyone graduates it — ``missing_required_gates`` reads an

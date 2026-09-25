@@ -244,6 +244,31 @@ def _build_dispatcher_ragas_wrappers(
 
     json_mode_ok = judge_json_mode_supported(judge_model, site_config)
 
+    # The judge's context window. ``qa_ragas_judge_num_ctx`` was seeded
+    # (16384) but nothing read it, so every Ragas call went out with no
+    # ``num_ctx`` and Ollama served it at its 8192 default. Two costs, both
+    # measured 2026-09-25 on the :11435 judge instance: (1) prompt + answer
+    # are capped at 8192 together, so faithfulness — whose verdict list grows
+    # with the draft — ran out of room on a 12.7k-char post (4098 in + 4094
+    # out, three times) and scored -1.0; (2) the instance holds ONE model at
+    # ONE context size, and the other callers (deepeval judge, shot-vision QA)
+    # send 16384, so each Ragas run reloaded the model at 8192 and the next
+    # caller reloaded it back — five 10-40 s reloads in three minutes.
+    judge_extra: dict[str, Any] = {}
+    try:
+        judge_num_ctx = (
+            int(site_config.get("qa_ragas_judge_num_ctx", 0) or 0)
+            if site_config is not None else 0
+        )
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "[ragas] qa_ragas_judge_num_ctx unreadable (%s) — sending no "
+            "num_ctx; the judge will run at the model default", exc,
+        )
+        judge_num_ctx = 0
+    if judge_num_ctx > 0:
+        judge_extra["num_ctx"] = judge_num_ctx
+
     class _DispatcherChatModel(BaseChatModel):
         judge_model_name: str
         dispatch_pool: Any
@@ -295,6 +320,7 @@ def _build_dispatcher_ragas_wrappers(
                    if json_mode_ok else {}),
                 max_wait_s=qa_rail_wait_budget_s(),
                 priority="background",
+                **judge_extra,
                 ))
             except GpuBusyError as busy:
                 # Record, then re-raise: Ragas still sentinels the metric, but
