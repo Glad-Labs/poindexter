@@ -9,6 +9,10 @@ Covers the probe's decision paths:
 5. Fail-loud: missing gh_token / GitHub 5xx / git error -> ok=False,
    probe.branch_drift_failed audit, no alert_events spam.
 6. Cadence gate: second call within poll interval does no GitHub call.
+7. Credential failures (401, a non-rate-limit 403, a 404 on /commits/main)
+   page the operator; transient ones (5xx, rate limit) stay audit-only.
+   Once-per-episode paging across passes is pinned with a stateful fake DB
+   in test_branch_drift_probe_failure_episodes.py.
 
 All external I/O (asyncpg pool, GitHub via httpx, git via subprocess) is
 mocked through the probe's injection seams.
@@ -429,6 +433,86 @@ async def test_github_5xx_fails_loud():
     assert summary["status"] == "failed"
     # Transient GitHub error stays audit-only — must NOT page (blip noise).
     notify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_github_404_pages_the_operator():
+    """The 2026-09-23 incident: a gh_token that cannot see the private repo
+    gets a 404 (not a 403) from /commits/main. That used to be audit-only, and
+    the canary was blind for two days with nobody told."""
+    bdp._reset_state()
+    pool = _make_pool()
+    routes = {"/commits/main": _FakeResponse(404, {"message": "Not Found"})}
+    notify = MagicMock()
+    summary = await bdp.run_branch_drift_probe(
+        pool,
+        now_fn=_now_fn,
+        http_client_factory=_client_factory(routes),
+        git_runner=_git_runner_ok(),
+        notify_fn=notify,
+    )
+    assert summary["ok"] is False
+    assert summary["status"] == "failed"
+    assert summary["failure_signature"] == "commits/main:404"
+    assert summary["transient"] is False
+    notify.assert_called_once()
+    page = notify.call_args.kwargs
+    assert page["title"] == "Branch-drift canary cannot run against Test-Org/test-repo"
+    assert "The gh_token cannot see Test-Org/test-repo, check its scopes." in page["detail"]
+    assert "Contents (read)" in page["detail"]
+    assert _executes_to(pool, "alert_events") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "headers", "pages"),
+    [
+        (401, {}, True),
+        (403, {}, True),
+        (403, {"x-ratelimit-remaining": "0"}, False),
+        (429, {}, False),
+        (502, {}, False),
+    ],
+    ids=["401", "403-scope", "403-rate-limit", "429", "502"],
+)
+async def test_credential_failures_page_and_transient_ones_do_not(status, headers, pages):
+    bdp._reset_state()
+    pool = _make_pool()
+    response = _FakeResponse(status, {"message": "whatever GitHub said"})
+    response.headers = headers
+    notify = MagicMock()
+    summary = await bdp.run_branch_drift_probe(
+        pool,
+        now_fn=_now_fn,
+        http_client_factory=_client_factory({"/commits/main": response}),
+        git_runner=_git_runner_ok(),
+        notify_fn=notify,
+    )
+    assert summary["status"] == "failed"
+    assert summary["transient"] is (not pages)
+    assert notify.called is pages
+
+
+@pytest.mark.asyncio
+async def test_skipped_cycle_reports_the_last_failure():
+    """A broken canary must not read as healthy on the brain cycles the
+    cadence gate skips (two in three at the default 15-min interval)."""
+    bdp._reset_state()
+    pool = _make_pool()
+    routes = {"/commits/main": _FakeResponse(503, {"message": "unavailable"})}
+    await bdp.run_branch_drift_probe(
+        pool, now_fn=_now_fn, http_client_factory=_client_factory(routes),
+        git_runner=_git_runner_ok(), notify_fn=MagicMock(),
+    )
+    summary = await bdp.run_branch_drift_probe(
+        pool, now_fn=lambda: _FIXED_NOW + timedelta(minutes=5),
+        http_client_factory=_client_factory(routes),
+        git_runner=_git_runner_ok(), notify_fn=MagicMock(),
+    )
+    assert summary["status"] == "skipped"
+    assert summary["ok"] is False
+    assert "last attempt failed" in summary["detail"]
+    assert "returned 503" in summary["detail"]
 
 
 @pytest.mark.asyncio

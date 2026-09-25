@@ -61,3 +61,105 @@ class TestDedupLookupFailureVisible:
         combined = " ".join(r.getMessage() for r in warnings)
         assert "dedup" in combined.lower()
         assert "dedup read exploded" in combined
+
+
+# ---------------------------------------------------------------------------
+# The canary's own failure page (brain/failure_episode.py). The failure is
+# in audit_log either way; what must never be silent is that the operator
+# was NOT told.
+# ---------------------------------------------------------------------------
+
+_EPISODE_LOGGER = "brain.failure_episode"
+
+
+class _NotFound:
+    status_code = 404
+    text = '{"message":"Not Found"}'
+    headers: dict[str, str] = {}
+
+    def json(self):
+        return {"message": "Not Found"}
+
+
+class _GitHub404:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get(self, url, params=None):
+        return _NotFound()
+
+
+def _pool(*, execute_error: Exception | None = None) -> MagicMock:
+    settings = {bdp.REPO_KEY: "Test-Org/test-repo", "gh_token": "test-token"}
+    pool = MagicMock()
+
+    async def _fetchval(query, *args):
+        if "FROM app_settings" in query and "updated_at" not in query:
+            return settings.get(args[0])
+        return None
+
+    async def _fetchrow(query, *args):
+        if "FROM app_settings" in query and args[0] in settings:
+            return {"value": settings[args[0]], "is_secret": False}
+        return None
+
+    async def _execute(query, *args):
+        if execute_error is not None and "brain_knowledge" in query:
+            raise execute_error
+        return "OK"
+
+    pool.fetchval = AsyncMock(side_effect=_fetchval)
+    pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+    pool.execute = AsyncMock(side_effect=_execute)
+    return pool
+
+
+async def _run_404(pool, notify_fn):
+    bdp._reset_state()
+    return await bdp.run_branch_drift_probe(
+        pool,
+        now_fn=lambda: datetime(2026, 9, 24, 0, 0, tzinfo=timezone.utc),
+        notify_fn=notify_fn,
+        http_client_factory=lambda: _GitHub404(),
+        git_runner=lambda _git_dir: ("a" * 40, "main"),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestFailurePageVisibility:
+    async def test_a_page_that_cannot_be_sent_warns(self, caplog):
+        def _down(**_kwargs):
+            raise RuntimeError("notifier down")
+
+        with caplog.at_level(logging.WARNING, logger=_EPISODE_LOGGER):
+            summary = await _run_404(_pool(), _down)
+
+        assert summary["paged"] is False
+        text = " ".join(r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING)
+        assert "NOT told" in text
+        assert "notifier down" in text
+
+    async def test_a_page_that_reached_no_channel_warns(self, caplog):
+        with caplog.at_level(logging.WARNING, logger=_EPISODE_LOGGER):
+            summary = await _run_404(
+                _pool(), lambda **_: {"discord": "discord send failed: timeout"},
+            )
+
+        assert summary["paged"] is False
+        assert "reached no channel" in caplog.text
+
+    async def test_an_episode_that_cannot_be_saved_warns(self, caplog):
+        """Without the row, the next pass cannot tell it already paged."""
+        with caplog.at_level(logging.WARNING, logger=_EPISODE_LOGGER):
+            summary = await _run_404(
+                _pool(execute_error=RuntimeError("brain_knowledge write exploded")),
+                lambda **_: {"discord": "discord"},
+            )
+
+        assert summary["paged"] is True
+        assert "brain_knowledge write exploded" in caplog.text
+        assert "may page again" in caplog.text

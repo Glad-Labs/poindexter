@@ -25,6 +25,27 @@ Alert-only — it NEVER runs git pull/deploy itself (a checkout move can
 clobber WIP or pull breaking changes mid-pipeline). It writes an
 ``alert_events`` row pointing at ``pwsh ./scripts/deploy-worker.ps1``.
 
+When the canary itself cannot run, it says so once per failure episode
+(``brain/failure_episode.py``, shared with the PR staleness probe):
+
+* LOUD failures page when the episode opens. These are the ones only the
+  operator can fix: a ``gh_token`` GitHub rejects (401), may not use (a 403
+  that is not a rate limit) or that cannot see the private repo (a 404 on
+  ``/commits/main``: GitHub answers 404, not 403, for a repo the token has no
+  access to), plus a missing token, an unreadable ``.git`` mount or a
+  missing httpx. They page again when the failure changes, when a replaced
+  ``gh_token`` fails too, when the last page reached no channel, and every
+  ``branch_drift_failure_repage_hours`` as a reminder. One recovery note
+  follows on the first clean pass.
+* QUIET failures (5xx, timeouts, DNS, rate limits) stay audit-only unless
+  they last ``branch_drift_transient_failure_page_hours`` without a break.
+  A canary blind for that long is news whatever the cause.
+
+Until 2026-09-25 every GitHub error was audit-only. From 2026-09-23 23:37 UTC
+the replaced ``gh_token`` could not see the repo, and the canary failed on
+every pass (99 ``probe.branch_drift_failed`` rows on 09-24) with nobody told.
+On 2026-08-17 it had been blind for about three hours on the same 404.
+
 Design parity with brain/pr_staleness_probe.py: DB-configurable through
 app_settings, standalone (stdlib + asyncpg + httpx + the git binary),
 fail-loud per feedback_no_silent_defaults, and injectable seams
@@ -48,6 +69,8 @@ try:  # pragma: no cover — only fails when the dep is uninstalled
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
+from poindexter.brain import failure_episode
+from poindexter.brain.github_errors import TOKEN_FIX, GitHubAPIError, github_message
 from poindexter.brain.operator_notifier import notify_operator
 from poindexter.brain.secret_reader import read_app_setting as _shared_read_app_setting
 
@@ -65,6 +88,8 @@ REPO_KEY = "branch_drift_repo"
 DEDUP_HOURS_KEY = "branch_drift_dedup_hours"
 GIT_DIR_KEY = "branch_drift_git_dir"
 MIN_COMMITS_BEHIND_KEY = "branch_drift_min_commits_behind"
+FAILURE_REPAGE_HOURS_KEY = "branch_drift_failure_repage_hours"
+TRANSIENT_FAILURE_PAGE_HOURS_KEY = "branch_drift_transient_failure_page_hours"
 
 TOKEN_SETTING_KEY = "gh_token"
 
@@ -81,6 +106,12 @@ DEFAULT_DEDUP_HOURS = 6
 # freezes local_head, so its fingerprint IS stable and dedup works as intended.
 DEFAULT_MIN_COMMITS_BEHIND = 3
 DEFAULT_GIT_DIR = "/host-git"
+# Hours between reminders while the canary keeps failing (0 = never remind).
+DEFAULT_FAILURE_REPAGE_HOURS = 24
+# Hours a transient failure must last, unbroken, before the canary pages that
+# it is blind (0 = never). Matches DEFAULT_DEDUP_HOURS: the canary may be
+# blind for as long as it would stay quiet about an unchanged drift anyway.
+DEFAULT_TRANSIENT_FAILURE_PAGE_HOURS = 6
 
 PROBE_INTERVAL_SECONDS = 5 * 60
 
@@ -91,15 +122,23 @@ GIT_TIMEOUT_S = 10
 
 # ---------------------------------------------------------------------------
 # Module-level state — cadence gate across cycles (reset on restart is fine;
-# per-(head,main) dedup is persisted in alert_dedup_state for restart-safety).
+# per-(head,main) dedup is persisted in alert_dedup_state and the failure
+# episode in brain_knowledge, both restart-safe).
 # ---------------------------------------------------------------------------
 
-_state: dict[str, Any] = {"last_real_pass_at": None}
+_state: dict[str, Any] = {
+    "last_real_pass_at": None,
+    # Operator-facing text of the last failed pass, None once a pass succeeds.
+    # Cycles skipped by the cadence gate report it, so a broken canary does not
+    # read as healthy on two brain cycles in three.
+    "failing_detail": None,
+}
 
 
 def _reset_state() -> None:
     """Test hook — clear the cadence-gate memory."""
     _state["last_real_pass_at"] = None
+    _state["failing_detail"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +193,17 @@ async def _read_config(pool: Any) -> dict[str, Any]:
     )
     repo = str(await _read_setting(pool, REPO_KEY, DEFAULT_REPO)).strip() or DEFAULT_REPO
     git_dir = str(await _read_setting(pool, GIT_DIR_KEY, DEFAULT_GIT_DIR)).strip() or DEFAULT_GIT_DIR
+    # 0 is meaningful for both: never remind / never page a transient failure.
+    failure_repage_hours = max(0, _coerce_int(
+        await _read_setting(pool, FAILURE_REPAGE_HOURS_KEY, DEFAULT_FAILURE_REPAGE_HOURS),
+        DEFAULT_FAILURE_REPAGE_HOURS,
+    ))
+    transient_failure_page_hours = max(0, _coerce_int(
+        await _read_setting(
+            pool, TRANSIENT_FAILURE_PAGE_HOURS_KEY, DEFAULT_TRANSIENT_FAILURE_PAGE_HOURS,
+        ),
+        DEFAULT_TRANSIENT_FAILURE_PAGE_HOURS,
+    ))
     return {
         "enabled": enabled,
         "poll_interval_minutes": poll_interval_minutes,
@@ -161,6 +211,8 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "min_commits_behind": max(1, min_commits_behind),
         "repo": repo,
         "git_dir": git_dir,
+        "failure_repage_hours": failure_repage_hours,
+        "transient_failure_page_hours": transient_failure_page_hours,
     }
 
 
@@ -227,9 +279,7 @@ def _default_client_factory(token: str):
 async def _fetch_main_sha(client: Any, repo: str) -> str:
     r = await client.get(f"https://api.github.com/repos/{repo}/commits/main")
     if r.status_code != 200:
-        raise RuntimeError(
-            f"GitHub /commits/main returned {r.status_code}: {(r.text or '')[:200]}"
-        )
+        raise GitHubAPIError.from_response("commits/main", r)
     data = r.json()
     sha = data.get("sha") if isinstance(data, dict) else None
     if not sha:
@@ -242,11 +292,11 @@ async def _compare_commits(client: Any, repo: str, base: str, head: str) -> dict
     pair (404 — typically an unpushed local HEAD). Raise on other errors."""
     r = await client.get(f"https://api.github.com/repos/{repo}/compare/{base}...{head}")
     if r.status_code == 404:
+        # Not a credential failure: /commits/main just answered with the same
+        # token, so the token can see the repo. GitHub cannot resolve the pair.
         return None
     if r.status_code != 200:
-        raise RuntimeError(
-            f"GitHub /compare returned {r.status_code}: {(r.text or '')[:200]}"
-        )
+        raise GitHubAPIError.from_response("compare", r)
     data = r.json()
     return data if isinstance(data, dict) else None
 
@@ -363,9 +413,10 @@ async def _emit_audit_event(pool: Any, event: str, detail: str, *, extra: dict[s
     except Exception as exc:  # noqa: BLE001
         # silent-ok: mirror only. Drift itself is alerted by
         # _emit_drift_alert (its own alert_events row -> alert_dispatcher),
-        # and the probe.branch_drift_failed event is followed immediately by
-        # a notify_fn call — so every load-bearing event here has an
-        # independent path to the operator.
+        # and a probe.branch_drift_failed event rides on the failure episode
+        # (brain_knowledge), which pages the operator whenever the failure is
+        # news — so every load-bearing event here has an independent path to
+        # the operator.
         logger.debug("[BRANCH_DRIFT] audit_log insert failed: %s", exc)
 
 
@@ -406,6 +457,259 @@ async def _emit_drift_alert(pool: Any, *, repo: str, branch: str, local_head: st
 
 
 # ---------------------------------------------------------------------------
+# When the canary itself fails: page once per episode, not once per pass.
+#
+# The episode mechanism is brain/failure_episode.py, shared with the PR
+# staleness probe. What is specific to this canary is which failures are LOUD
+# (page on their own) and which are QUIET (audit-only unless they last
+# branch_drift_transient_failure_page_hours) and what the page says.
+# ---------------------------------------------------------------------------
+
+FAILURE_STATE_ENTITY = "branch_drift_probe"
+_SOURCE = "brain.branch_drift_probe"
+# What the canary needs the gh_token to grant, quoted by every credential page.
+_NEEDS = "Contents (read)"
+
+
+def _failure_key(repo: str) -> failure_episode.EpisodeKey:
+    """Where the open failure episode for ``repo`` lives in brain_knowledge."""
+    return failure_episode.EpisodeKey(
+        entity=FAILURE_STATE_ENTITY,
+        attribute=f"failure_episode:{repo}",
+        label="BRANCH_DRIFT",
+    )
+
+
+def _quiet_page_after(config: dict[str, Any]) -> timedelta | None:
+    hours = int(config["transient_failure_page_hours"])
+    return timedelta(hours=hours) if hours > 0 else None
+
+
+def _describe_github_failure(
+    exc: BaseException, *, repo: str, poll_interval_minutes: int,
+) -> tuple[str, str, bool]:
+    """Map a failed GitHub round-trip to ``(signature, detail, loud)``.
+
+    LOUD means a credential or configuration problem that only the operator
+    can fix: a 401, a 403 that is not a rate limit, a 404 on ``/commits/main``
+    (the token cannot see the repo), and any other 3xx/4xx, which a retry will
+    not change. QUIET means a retry can fix it: 5xx, rate limits, and anything
+    that is not an HTTP answer at all (timeout, DNS, a reset connection).
+
+    ``signature`` is the failure's identity for the episode. It groups by
+    what the operator would do about it, so flapping between 502 and 503 is
+    one failure.
+    """
+    retry = f"The canary retries every {poll_interval_minutes} min."
+    if not isinstance(exc, GitHubAPIError):
+        name = type(exc).__name__
+        # str() of an httpx timeout is the EMPTY string; name the class alone.
+        msg = str(exc).strip()
+        what = f"{name}: {msg[:200]}" if msg else name
+        return name, (
+            f"{what}. The canary's GitHub round-trip for {repo} did not "
+            f"complete, usually a network or GitHub blip. {retry}"
+        ), False
+
+    endpoint, status = exc.endpoint, exc.status_code
+    said = github_message(exc.body)
+    if exc.rate_limited:
+        return f"{endpoint}:rate-limited", (
+            f"GitHub rate-limited the canary on /{endpoint} (HTTP {status}: "
+            f"{said}). {retry} If this persists, another gh_token consumer is "
+            f"spending the budget."
+        ), False
+    if status >= 500:
+        return f"{endpoint}:5xx", (
+            f"GitHub /{endpoint} for {repo} returned {status}, a GitHub-side "
+            f"error. {retry}"
+        ), False
+    if status == 401:
+        return f"{endpoint}:401", (
+            f"GitHub rejected the gh_token (HTTP 401: {said}). It is invalid, "
+            f"expired or revoked. The branch-drift canary needs a token with "
+            f"{_NEEDS} on {repo}. Replace it with {TOKEN_FIX}."
+        ), True
+    if status == 404 and endpoint == "commits/main":
+        return "commits/main:404", (
+            f"The gh_token cannot see {repo}, check its scopes. GitHub answers "
+            f"404, not 403, for a private repo the token has no access to, so "
+            f"unless app_settings.{REPO_KEY} is misspelled, the token is the "
+            f"problem. The branch-drift canary needs {_NEEDS} on {repo}: a "
+            f"fine-grained token with {repo} in its repository access, or the "
+            f"classic `repo` scope. Rotate it with {TOKEN_FIX}."
+        ), True
+    if status == 403:
+        return f"{endpoint}:403", (
+            f"The gh_token may not read {repo} (HTTP 403: {said}), check its "
+            f"scopes. The branch-drift canary needs {_NEEDS} on {repo}. If the "
+            f"organization enforces SAML single sign-on, the token must also be "
+            f"authorized for it. Rotate it with {TOKEN_FIX}."
+        ), True
+    if 300 <= status < 400:
+        return f"{endpoint}:3xx", (
+            f"GitHub redirected /{endpoint} for {repo} (HTTP {status}), so the "
+            f"repo was renamed or transferred. Set app_settings.{REPO_KEY} to "
+            f"its new owner/name."
+        ), True
+    return f"{endpoint}:{status}", (
+        f"GitHub /{endpoint} for {repo} returned HTTP {status}: {said}. A retry "
+        f"will not change that answer. Check app_settings.{REPO_KEY} and the "
+        f"gh_token."
+    ), True
+
+
+def _anticipated(exc: BaseException | None) -> bool:
+    """True for failures whose message says it all (no traceback needed)."""
+    if exc is None or isinstance(exc, RuntimeError):  # incl. GitHubAPIError
+        return True
+    return httpx is not None and isinstance(exc, httpx.HTTPError)
+
+
+def _build_failure_page(
+    *,
+    repo: str,
+    reason: str,
+    detail: str,
+    episode: dict[str, Any],
+    config: dict[str, Any],
+) -> tuple[str, str]:
+    """Render ``(title, body)`` for a failure page."""
+    if reason == failure_episode.PAGE_REMINDER:
+        title = f"Branch-drift canary still cannot run against {repo}"
+    else:
+        title = f"Branch-drift canary cannot run against {repo}"
+    lines = [
+        detail,
+        "",
+        "Until it runs, prod falling behind origin/main goes unnoticed.",
+    ]
+    lines += failure_episode.episode_lines(
+        episode,
+        reason=reason,
+        retry_minutes=int(config["poll_interval_minutes"]),
+        repage_hours=int(config["failure_repage_hours"]),
+        repage_setting_key=FAILURE_REPAGE_HOURS_KEY,
+        credential_key=TOKEN_SETTING_KEY,
+        quiet_page_after=_quiet_page_after(config),
+    )
+    return title, "\n".join(lines)
+
+
+async def _handle_failure(
+    pool: Any,
+    *,
+    signature: str,
+    detail: str,
+    loud: bool,
+    repo: str,
+    now_utc: datetime,
+    config: dict[str, Any],
+    notify_fn: Callable[..., Any],
+    exc: BaseException | None = None,
+) -> dict[str, Any]:
+    """Record a failed pass; page only when the episode says it is news."""
+    logger.warning(
+        "[BRANCH_DRIFT] canary failed (%s, %s): %s",
+        signature, "loud" if loud else "transient", detail,
+        exc_info=not _anticipated(exc),
+    )
+    _state["failing_detail"] = detail
+    outcome = await failure_episode.record_failure(
+        pool,
+        _failure_key(repo),
+        signature=signature,
+        detail=detail,
+        now_utc=now_utc,
+        notify_fn=notify_fn,
+        render=lambda episode, reason: _build_failure_page(
+            repo=repo, reason=reason, detail=detail, episode=episode, config=config,
+        ),
+        source=_SOURCE,
+        dedup_prefix=f"branch_drift_failed:{repo}",
+        loud=loud,
+        quiet_page_after=_quiet_page_after(config),
+        repage_hours=int(config["failure_repage_hours"]),
+        credential_key=TOKEN_SETTING_KEY,
+    )
+    episode = outcome.episode
+    await _emit_audit_event(
+        pool,
+        "probe.branch_drift_failed",
+        detail,
+        extra={
+            "repo": repo,
+            "signature": signature,
+            "transient": not loud,
+            "attempts": episode.get("attempts"),
+            "failing_since": episode.get("since"),
+            "page_reason": outcome.reason,
+            "paged": outcome.paged,
+        },
+        severity="warning",
+    )
+    return {
+        "ok": False,
+        "status": "failed",
+        "behind": None,
+        "alert_emitted": False,
+        "detail": detail,
+        "failure_signature": signature,
+        "transient": not loud,
+        "failed_attempts": episode.get("attempts"),
+        "failing_since": episode.get("since"),
+        "page_reason": outcome.reason,
+        "paged": outcome.paged,
+    }
+
+
+async def _close_failure_episode(
+    pool: Any,
+    *,
+    repo: str,
+    config: dict[str, Any],
+    notify_fn: Callable[..., Any],
+) -> None:
+    """End an open failure episode after a clean round-trip.
+
+    Sends one recovery note, and only when the episode reached the operator.
+    An episode nobody was told about has nothing to take back.
+    """
+    episode = await failure_episode.close_episode(pool, _failure_key(repo))
+    if not episode:
+        return
+    note = (
+        f"The branch-drift canary is checking {repo} again "
+        f"{failure_episode.recovery_summary(episode)}. Drift checks resume "
+        f"every {config['poll_interval_minutes']} min."
+    )
+    logger.info("[BRANCH_DRIFT] recovered: %s", note)
+    await _emit_audit_event(
+        pool,
+        "probe.branch_drift_recovered",
+        note,
+        extra={
+            "repo": repo,
+            "signature": episode.get("signature") or "unknown",
+            "attempts": episode.get("attempts"),
+            "failing_since": episode.get("since"),
+            "was_paged": bool(episode.get("paged_at")),
+        },
+    )
+    if episode.get("paged_at"):
+        failure_episode.send_page(
+            notify_fn,
+            label="BRANCH_DRIFT",
+            title=f"Branch-drift canary running again against {repo}",
+            detail=note,
+            source=_SOURCE,
+            severity="info",
+            dedup_key=f"branch_drift_recovered:{repo}",
+            if_undelivered="the operator still believes the canary is blind",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Top-level probe entry point.
 # ---------------------------------------------------------------------------
 
@@ -429,6 +733,7 @@ async def run_branch_drift_probe(
                 "detail": f"branch-drift probe disabled (app_settings.{ENABLED_KEY}=false)"}
 
     now_utc = now_fn()
+    repo = config["repo"]
 
     # Cadence gate — only do the real round-trip every poll_interval_minutes.
     last = _state["last_real_pass_at"]
@@ -436,39 +741,38 @@ async def run_branch_drift_probe(
         if last.tzinfo is None:
             last = last.replace(tzinfo=UTC)
         if (now_utc - last) < timedelta(minutes=config["poll_interval_minutes"]):
-            return {"ok": True, "status": "skipped", "behind": 0, "alert_emitted": False,
-                    "detail": "within poll interval"}
+            # A skipped cycle inherits the last real pass's failure, so the
+            # brain heartbeat keeps showing a broken canary as broken.
+            failing = _state["failing_detail"]
+            detail = "within poll interval"
+            if failing:
+                detail += f"; last attempt failed: {failing}"
+            return {"ok": failing is None, "status": "skipped", "behind": 0,
+                    "alert_emitted": False, "detail": detail}
 
-    # Every real attempt advances the cadence gate — so a persistent failure
-    # (bad token, broken .git mount) pages at most once per poll interval
-    # rather than every brain cycle (~5 min).
+    # Every real attempt advances the cadence gate, so a persistent failure
+    # is retried once per poll interval rather than every brain cycle (~5 min).
     _state["last_real_pass_at"] = now_utc
 
-    async def _fail(detail: str, *, page: bool = False) -> dict[str, Any]:
-        logger.warning("[BRANCH_DRIFT] %s", detail)
-        await _emit_audit_event(pool, "probe.branch_drift_failed", detail, severity="warning")
-        # Page the operator on CONFIGURATION failures (missing token, broken
-        # .git mount) — a canary that can't run must not fail silently
-        # (feedback_no_silent_defaults). Transient GitHub errors stay
-        # audit-only (page=False) to avoid blip noise.
-        if page:
-            try:
-                notify_fn(
-                    title="Branch-drift canary cannot run",
-                    detail=detail,
-                    source="brain.branch_drift_probe",
-                    severity="warning",
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("[BRANCH_DRIFT] notify_fn failed: %s", exc)
-        return {"ok": False, "status": "failed", "behind": None, "alert_emitted": False, "detail": detail}
+    async def _fail(
+        signature: str, detail: str, *, loud: bool, exc: BaseException | None = None,
+    ) -> dict[str, Any]:
+        # A canary that can't run must not fail silently
+        # (feedback_no_silent_defaults), and must not page every pass either:
+        # the episode decides when the failure is news.
+        return await _handle_failure(
+            pool, signature=signature, detail=detail, loud=loud, repo=repo,
+            now_utc=now_utc, config=config, notify_fn=notify_fn, exc=exc,
+        )
 
     token = await _read_token(pool)
     if not token:
         return await _fail(
-            f"gh_token missing — cannot query private repo {config['repo']}. "
-            f"Set it with `poindexter settings set gh_token <token> --secret`.",
-            page=True,
+            "no-token",
+            f"gh_token is not set, so the branch-drift canary cannot query the "
+            f"private repo {repo}. It needs a token with {_NEEDS} on {repo}. Set "
+            f"it with {TOKEN_FIX}.",
+            loud=True,
         )
 
     # Local HEAD (mounted .git, no network).
@@ -476,21 +780,40 @@ async def run_branch_drift_probe(
         local_head, branch = await asyncio.to_thread(git_runner, config["git_dir"])
     except Exception as exc:  # noqa: BLE001
         return await _fail(
-            f"could not read local HEAD from {config['git_dir']}: {exc}", page=True
+            "git-head",
+            f"could not read the running checkout's HEAD from "
+            f"{config['git_dir']}: {exc}. Check the read-only .git mount on the "
+            f"brain-daemon container "
+            f"(`${{POINDEXTER_DEPLOY_ROOT:-.}}/.git:/host-git:ro`) and "
+            f"app_settings.{GIT_DIR_KEY}.",
+            loud=True,
+            exc=exc,
         )
 
     # origin/main truth + compare (GitHub API).
     if http_client_factory is None and httpx is None:
-        return await _fail("httpx not installed in brain image — cannot query GitHub", page=True)
+        return await _fail(
+            "no-httpx",
+            "httpx is not installed in the brain image, so the canary cannot "
+            "query GitHub. Rebuild the brain image.",
+            loud=True,
+        )
     factory = http_client_factory or _default_client_factory(token)
     try:
         async with factory() as client:
-            main_sha = await _fetch_main_sha(client, config["repo"])
+            main_sha = await _fetch_main_sha(client, repo)
             compare = None
             if local_head != main_sha:
-                compare = await _compare_commits(client, config["repo"], local_head, main_sha)
+                compare = await _compare_commits(client, repo, local_head, main_sha)
     except Exception as exc:  # noqa: BLE001
-        return await _fail(f"GitHub API error for {config['repo']}: {exc}")
+        signature, detail, loud = _describe_github_failure(
+            exc, repo=repo, poll_interval_minutes=int(config["poll_interval_minutes"]),
+        )
+        return await _fail(signature, detail, loud=loud, exc=exc)
+
+    # The canary ran: whatever the verdict, it is not blind any more.
+    _state["failing_detail"] = None
+    await _close_failure_episode(pool, repo=repo, config=config, notify_fn=notify_fn)
 
     verdict = _classify_drift(
         local_head, main_sha, compare, min_behind=config["min_commits_behind"]

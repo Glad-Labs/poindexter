@@ -235,7 +235,9 @@ class TestPersistentFailurePagesOnce:
         assert page["severity"] == "warning"
         assert f"The gh_token cannot see {REPO}, check its scopes." in page["detail"]
         assert "404, not 403" in page["detail"]
-        assert page["dedup_key"] == f"pr_staleness_failed:{REPO}:pulls:404"
+        # <prefix>:<signature>:<pages delivered so far>. The count makes every
+        # page the episode decides on new to the notifier's own cooldown.
+        assert page["dedup_key"] == f"pr_staleness_failed:{REPO}:pulls:404:0"
 
         # The cadence gate now advances on failure too: hourly, not per cycle.
         assert gh.requests == 24
@@ -557,12 +559,6 @@ class TestFailureWording:
         assert "check its scopes" in scope
         assert limit_sig == "pulls:rate-limited"
         assert "rate-limited" in limit
-
-    def test_rate_limit_detection_reads_the_header_or_the_body(self):
-        assert psp._is_rate_limited(_Resp(403, headers={"x-ratelimit-remaining": "0"}))
-        assert psp._is_rate_limited(_Resp(429, text="You have exceeded a secondary rate limit"))
-        assert not psp._is_rate_limited(_Resp(403, headers={"x-ratelimit-remaining": "4999"}))
-        assert not psp._is_rate_limited(_Resp(404, headers={"x-ratelimit-remaining": "0"}))
 
     def test_check_runs_403_asks_for_checks_read(self):
         sig, detail = psp._describe_failure(

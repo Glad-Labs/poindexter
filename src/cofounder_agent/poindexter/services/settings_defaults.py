@@ -379,6 +379,21 @@ DEFAULTS: dict[str, str] = {
     # here (the code default in poindexter/brain/branch_drift_probe.py is the backstop).
     'branch_drift_min_commits_behind': '3',
 
+    # brain branch_drift_probe — when the canary ITSELF cannot run. A
+    # credential failure (gh_token rejected, forbidden, or blind to the private
+    # repo: GitHub answers 404 for that) pages once per failure episode; this
+    # is the reminder interval while it persists. 0 = never remind. Before
+    # this (2026-09-25) every GitHub error was audit-only, and the canary was
+    # blind for two days on a replaced token with nobody told.
+    'branch_drift_failure_repage_hours': '24',
+    # ...and how long a TRANSIENT failure (5xx, timeout, DNS, rate limit) must
+    # last, unbroken, before the canary pages that it is blind. 0 = never page
+    # a transient failure. Matches branch_drift_dedup_hours: the canary may be
+    # blind for as long as it would stay quiet about an unchanged drift anyway.
+    # Both seed here (the code defaults in
+    # poindexter/brain/branch_drift_probe.py are the backstop).
+    'branch_drift_transient_failure_page_hours': '6',
+
     # brain pr_staleness_probe — hours between reminder pages while the probe
     # ITSELF keeps failing the same way (bad gh_token, GitHub unreachable).
     # The episode pages once when it opens, again if the failure changes or a
@@ -6064,6 +6079,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'brain_anomaly_current_window_hours': {'owner': 'detect_anomalies', 'value_type': 'integer'},
     'brain_digest_window_hours': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'branch_drift_min_commits_behind': {'owner': 'branch_drift_probe', 'value_type': 'integer'},
+    'branch_drift_failure_repage_hours': {'owner': 'branch_drift_probe', 'value_type': 'integer'},
+    'branch_drift_transient_failure_page_hours': {'owner': 'branch_drift_probe', 'value_type': 'integer'},
     'pr_staleness_failure_repage_hours': {'owner': 'pr_staleness_probe', 'value_type': 'integer'},
     'cadence_slo_enabled': {'owner': 'health_probes', 'value_type': 'boolean'},
     'cadence_slo_expected_posts_per_day': {'owner': 'health_probes', 'value_type': 'integer'},

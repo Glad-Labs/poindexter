@@ -573,6 +573,29 @@ It is **alert-only**; the remedy it points at is
 `pwsh ./scripts/deploy-worker.ps1`. Tunables (in `app_settings`):
 `branch_drift_probe_enabled`, `branch_drift_poll_interval_minutes`,
 `branch_drift_repo`, `branch_drift_dedup_hours`, `branch_drift_git_dir`.
+
+**When the canary itself cannot run**, it pages once per failure episode
+(`poindexter/brain/failure_episode.py`, shared with the PR staleness probe).
+The episode is kept in `brain_knowledge`, so a brain restart does not page
+again.
+
+- **Credential and configuration failures page when the episode opens.** These
+  are a `gh_token` that GitHub rejects (401), forbids (a 403 that is not a rate
+  limit) or that cannot see the private repo, plus a missing token or `.git`
+  mount. For a repo the token cannot see, GitHub answers 404 on
+  `/commits/main`, not 403. The canary needs **Contents (read)** on the repo.
+  The page repeats only when the failure changes, when a replaced `gh_token`
+  fails too, or when the last page reached no channel. There is also a reminder
+  every `branch_drift_failure_repage_hours` (24, `0` = never).
+- **Transient failures stay audit-only.** These are 5xx, timeouts, DNS failures
+  and rate limits. They page only if they last
+  `branch_drift_transient_failure_page_hours` (6, `0` = never) without a break.
+
+One recovery note follows on the first clean pass. Every failing pass still
+writes a `probe.branch_drift_failed` audit row, and the recovery writes
+`probe.branch_drift_recovered`. Until 2026-09-25 every GitHub error was
+audit-only, so a replaced token that could not see the repo left the canary
+blind from 2026-09-23 23:37 UTC with nobody told.
 Deploying the canary itself requires a brain image rebuild
 (`docker compose build brain-daemon && up -d brain-daemon`), since the
 `.git` mount + the `git` binary are new.
