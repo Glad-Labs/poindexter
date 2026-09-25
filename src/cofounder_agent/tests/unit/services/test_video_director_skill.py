@@ -417,3 +417,132 @@ def test_worked_examples_never_show_two_different_looks(key: str) -> None:
     assert example_prompts, f"{key} has no worked example prompts to check"
     prefixes = {p.split(",")[0].strip() for p in example_prompts}
     assert prefixes == {"{style_prefix}"}, f"{key} examples show {sorted(prefixes)}"
+
+
+# ---------------------------------------------------------------------------
+# A hero's motion ends on its subject (2026-09-25). The compositor plays a
+# hero clip once and holds its LAST frame for the rest of the scene
+# (shot_list_renderer._scenes_for_plan): a ~5 s clip in a scene the narration
+# fit often stretches to ~11 s. Nothing in these templates said so, and they
+# said the opposite ("loops when its shot is longer"), so the director wrote
+# pull-back "reveals": f555bedc long shot 15 asked for "slow zoom out ... to
+# reveal" and pulled back on 8 of 8 renders. Four collapsed under the 0.30
+# detail rule; the rest shrank the scene to an island mid-frame that passed
+# both the rule and the judge at 92. #4045 fixes only re-rolls; the first
+# render follows the director, so the director has to write the ending.
+# ---------------------------------------------------------------------------
+
+from tests.unit._nonempty import nonempty
+
+# Every template that WRITES or REVISES a generative "motion".
+_MOTION_KEYS = (
+    "video.director_v1", "video.director_short_v1",
+    "video.review_v1", "video.review_short_v1",
+)
+
+_HERO_PARAGRAPH = re.compile(r"HOW A HERO PLAYS: the clip runs.*?when the move ends\.")
+
+# Camera moves that leave the subject — the failure, named ONLY here in the
+# test. The templates state the target shape and never demonstrate this one.
+_PULL_BACK = re.compile(
+    r"zoom(?:s|ing)?[\s-]*out|pull(?:s|ing)?[\s-]*(?:back|away)|dolly[\s-]*out|reveal",
+    re.I,
+)
+
+
+def _flat(key: str) -> str:
+    """The section with its line wrapping collapsed, so a phrase that the
+    template wraps across lines still matches."""
+    return " ".join(_section(key).split())
+
+
+@pytest.mark.parametrize("key", _MOTION_KEYS)
+def test_every_motion_template_says_the_last_frame_is_held(key: str) -> None:
+    """The director cannot aim for a frame it does not know is held. Each
+    template that writes or revises a motion states the mechanism (the clip
+    plays once, its last frame stays on screen) and the target (end on the
+    subject, at least as large as it starts, and name that ending)."""
+    flat = _flat(key)
+    for phrase in (
+        "plays once",
+        "its LAST frame stays on screen",
+        "END ON ITS SUBJECT",
+        "at least as large as in the first",
+        "Name the ending in the sentence",
+    ):
+        assert phrase in flat, f"{key} is missing {phrase!r}"
+
+
+def test_the_four_motion_templates_share_one_hero_paragraph() -> None:
+    """One rule, one wording. The keys share a SKILL.md but not a caller, and a
+    template that drifts is the one whose output nobody re-measures. The
+    paragraph is static text on purpose: a placeholder here would have to be
+    passed by both the director and the reviewer call sites, and a missing one
+    turns the stage into a silent "prompt render failed — skipping"."""
+    paragraphs = {key: _HERO_PARAGRAPH.findall(_flat(key)) for key in _MOTION_KEYS}
+    for key, found in paragraphs.items():
+        assert len(found) == 1, f"{key} carries {len(found)} hero paragraphs"
+    assert len({found[0] for found in paragraphs.values()}) == 1, (
+        "the hero paragraph drifted between templates"
+    )
+    assert "{" not in paragraphs["video.review_v1"][0]
+
+
+@pytest.mark.parametrize("key", _MOTION_KEYS)
+def test_no_motion_template_says_a_generative_clip_loops(key: str) -> None:
+    """Since #3990 no clip loops: a short clip plays once and its final frame
+    carries the rest of the scene. A template that still says it loops tells
+    the director the ending is a moment on screen, when it is the longest."""
+    assert not re.search(r"\bloops?\b", _flat(key)), f"{key} still says a clip loops"
+
+
+@pytest.mark.parametrize("key", _MOTION_KEYS)
+def test_motion_guidance_is_worded_positively(key: str) -> None:
+    """House rule: a prompt names the shape it wants, never the one it fears —
+    what a prompt mentions, the model is more likely to write. So no template
+    names a pull-back, and none frames a hero as a "reveal" (the worked
+    example's hero was "the key reveal", and the reviewer upgraded "a key
+    reveal" beat to generative, while the collapses asked to "reveal")."""
+    flat = _flat(key)
+    assert not _PULL_BACK.search(flat), f"{key} names a pull-back: {_PULL_BACK.search(flat)!r}"
+
+
+@pytest.mark.parametrize("key", _MOTION_KEYS)
+def test_motion_guidance_quotes_no_example_motion(key: str) -> None:
+    """A quotable example is copied more readily than a rule is followed
+    (4 of 10 unrelated Shorts opened with the hook prompt's one example
+    sentence). The motion rules describe the shape — the camera move, what
+    moves, where it ends — and quote no motion for the model to reuse."""
+    quoted = re.findall(r'e\.g\.[^"]{0,20}"([^"]+)"', _flat(key))
+    camera_words = re.compile(r"push|pan\b|zoom|drift|dolly|orbit|tilt|crane|track", re.I)
+    assert not [q for q in quoted if camera_words.search(q)], f"{key} quotes {quoted!r}"
+
+
+def test_worked_example_hero_ends_on_its_own_subject() -> None:
+    """The worked example is what the director imitates, so its hero has to
+    show the rule: a move toward the subject that names the ending, on a noun
+    from the example's own still, so it ends on ITS subject."""
+    pm = UnifiedPromptManager()
+    rendered = pm.get_prompt(
+        _KEY,
+        title="T", content="C", podcast_script="P",
+        target_duration_s="60.0", model="m",
+        now_iso="2026-09-25T00:00:00Z", site_name="Glad Labs",
+        demo_catalog="NONE AVAILABLE",
+        **_POLICY_VARS,
+    )
+    shots = json.loads(_extract_json_object(rendered))["shots"]
+    heroes = [s for s in shots if s.get("source") == "generative"]
+    for hero in nonempty(heroes, "generative example shots"):
+        motion = hero["motion"]
+        assert not _PULL_BACK.search(motion), motion
+        assert re.search(r"push-in|pan|drift|orbit", motion), motion
+        assert "ending with" in motion, f"the example names no ending: {motion!r}"
+        # The still's nouns, past the style prefix (everything before the
+        # first comma, per test_worked_examples_never_show_two_different_looks).
+        still = hero["prompt"].split(",", 1)[1].lower()
+        subject_words = set(re.findall(r"[a-z]{5,}", still))
+        subject_words -= {"glowing", "empty", "unpopulated", "scene"}
+        assert subject_words & set(re.findall(r"[a-z]{5,}", motion.lower())), (
+            f"the example motion ends on nothing its still shows: {motion!r}"
+        )

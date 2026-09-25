@@ -422,6 +422,100 @@ the hero phase exited it), 6 min for the animation, and seconds for RIFE and
 the judge. The incumbent's still had already passed at 92, so re-using it
 would save the still's share.
 
+### The director ends a hero's motion on its subject (2026-09-25)
+
+The held camera above changes only a re-roll. A hero's first render follows the
+director's motion, and nothing told the director where a move should end.
+`skills/content/video-director/SKILL.md` never said the last frame is held, and
+hard rule 7 still said a generative clip "loops when its shot is longer", which
+stopped being true when `_scenes_for_plan` began holding every video scene's
+final frame.
+
+That frame is most of what a long-video hero shows. Heroes are planned at a
+median 18 s (8-30 s across 78 heroes in the last 45 days of shot lists), so a
+~5 s clip leaves its final frame on screen for about 13 of those 18 seconds.
+Short heroes run a median 6 s. Across every stored shot list (long lists on
+`posts`, short lists in `pipeline_versions`), 20 of 149 generative motions
+asked the camera to zoom out or pull back: 7 of 40 long, 13 of 109 short.
+
+The four templates that write or revise a motion (`video.director_v1`,
+`video.director_short_v1`, `video.review_v1`, `video.review_short_v1`) now
+carry one identical paragraph, HOW A HERO PLAYS:
+
+- the clip runs about 5 seconds and plays once, and its last frame stays on
+  screen for the rest of the shot, so it is the frame the viewer sees longest;
+- the still in `"prompt"` is the clip's first frame, so everything the viewer
+  should see goes into it;
+- each motion ends on its subject, in frame and at least as large as in the
+  first frame: a slow push-in, a pan, drift or orbit that keeps it in frame, or
+  the subject's own motion under a gentle drift;
+- the sentence names what fills the frame when the move ends.
+
+The reviewers used to preserve every motion. They now keep one that ends on
+its subject and rewrite one that ends anywhere else.
+
+The wording follows three rules on purpose:
+
+- **Positive only.** No template names a pull-back, and none frames a hero as
+  a reveal. The worked example's hero was "the key reveal", and the long
+  reviewer upgraded "a key reveal" beat to generative.
+- **No quotable example motion.** The three `e.g.` motion quotes are gone. A
+  model copies an example more readily than it follows a rule: the Short
+  hook's one example sentence landed on 4 of 10 unrelated articles
+  ([youtube-metadata](../operations/youtube-metadata.md)), and twenty example
+  titles primed the habit they were meant to suppress
+  ([title-variety](title-variety.md)). The one worked example now
+  demonstrates the rule on its own subject.
+- **Static text.** The director and reviewer call sites pass different
+  variables. A placeholder one of them lacks raises `KeyError`, which both
+  catch as "prompt render failed — skipping", so the stage would quietly stop.
+
+The stale "keep duration_s ≤ 5 seconds; longer clips show seams" became the
+fact it stood for: the clip covers about 5 seconds and its last frame the rest.
+Prompt versions moved to `v1.5`, `short_v1.4`, `review_v1.1` and
+`review_short_v1.1`, so a stored list says which rule produced it.
+
+**Measured on two real posts (2026-09-25), both under real GPU contention**
+(production traffic and a concurrent experiment were sharing the same
+`gpu.lock`). Both runs went through the real `GenerateVideoShotListStage` —
+same model (`ollama/gemma-4-31B-it-qat:latest`), same settings, same niche
+policy (house style, presenter format) — with only `skills/content/video-director/SKILL.md`
+swapped. Nothing persisted.
+
+f555bedc ("Skip NCCL"): both arms were live regenerations.
+
+| arm | long motions | long pull-backs            | short motions | short pull-backs                            |
+| --- | ------------ | -------------------------- | ------------- | ------------------------------------------- |
+| old | 2            | 0 (1 shrinks into a point) | 1             | 1 ("zoom out as the cable network expands") |
+| new | 2            | 0                          | 1             | 0                                           |
+
+243f3123 ("Beyond Arrival"): "old" is the shot list this post actually
+SHIPPED WITH (`director_prompt_version=review_v1`, 2026-09-21) — a real
+before, not a re-simulated one; "new" is a fresh live regeneration.
+
+| arm           | long motions | long pull-backs                                   | short motions | short pull-backs |
+| ------------- | ------------ | ------------------------------------------------- | ------------- | ---------------- |
+| old (shipped) | 3            | 1 ("zoom out; the trophy fragments drift upward") | 2             | 0                |
+| new (live)    | 2            | 0                                                 | 2             | 0                |
+
+Combined: **old 2 of 8 pull back (0 name an ending); new 0 of 7 (6 of 7 name
+an ending)** — e.g. "push-in toward the pupil as the reflected data
+shifts... **ending on the center of the iris**", "orbit around the golden
+cube **until it is centered and dominant in the frame**". Against the corpus
+baseline above (20 of 149, 13.4%), two posts is not a large sample, but it
+shows the fix changes real model output in the intended direction on real
+posts — the corpus census is the "before" that matters at scale; these two
+posts are "regenerate a shot list and count before vs after" done literally.
+The classification (pull-back / ends-named) is a small regex script run
+against the stored motion strings, not a hand count — see
+`motion_classify.py` in this session's scratchpad.
+
+`tests/unit/services/test_video_director_skill.py` pins the paragraph in all
+four templates (identical, placeholder-free), and checks that no template says
+a clip loops, names a pull-back or a reveal, or quotes an example motion. It
+also checks that the worked example's hero moves toward its subject and names
+an ending on it.
+
 ## Per-source plugin contract
 
 Each `source` value resolves to one of:

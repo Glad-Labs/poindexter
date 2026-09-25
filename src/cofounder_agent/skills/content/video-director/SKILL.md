@@ -28,7 +28,7 @@ metadata:
       description: "Writes the text for a long-form video's custom YouTube thumbnail: a short headline that adds to the title (result, stakes, named tool, number) rather than repeating it. Checked in code for length, title overlap and invented numbers. Used by services.video_thumbnail.generate_thumbnail_hook."
     - key: video.thumbnail_hook_fix
       output_format: text
-      description: "The one corrective retry for video.thumbnail_hook: carries the reason code rejected the first reply ({reason}) and the length limit ({max_chars}). Used by services.video_thumbnail.generate_thumbnail_hook."
+      description: 'The one corrective retry for video.thumbnail_hook: carries the reason code rejected the first reply ({reason}) and the length limit ({max_chars}). Used by services.video_thumbnail.generate_thumbnail_hook.'
     - key: video.review_v1
       output_format: json
       description: 'Director self-critique — revise the long-form shot list (coverage, variety, hero selection, on-brand)'
@@ -114,16 +114,25 @@ SHOT SOURCES AVAILABLE
   beats that genuinely benefit from motion the renderer can't fake — water,
   wind, drifting particles, a slow push across an abstract scene. It is capped
   per video (excess generative shots auto-downgrade to a Ken-Burns still), so
-  reserve it for true hero moments. Keep duration_s ≤ 5 seconds; longer clips
-  show seams. Requires BOTH fields:
+  reserve it for true hero moments. Requires BOTH fields:
     * "prompt" — the still-image description (subject, scene, style), exactly
       like an image_kenburns prompt.
     * "motion" — one sentence of MOTION DIRECTION for the animator: the
-      camera move plus what physically moves in the scene (e.g. "slow push-in
-      as data particles drift upward; gentle parallax between depth layers").
-      Describe movement only — do not restate the scene. Keep motion smooth
-      and subtle (drift, pulse, flow, ripple, slow push/pan); fast or complex
-      action tears into artifacts.
+      camera move, what physically moves in the scene, and where the move
+      ends. Describe movement only; the still already carries the scene. Keep
+      motion smooth and subtle (drift, pulse, flow, ripple, slow push/pan);
+      fast or complex action tears into artifacts.
+  HOW A HERO PLAYS: the clip runs about 5 seconds and plays once, and for the
+  rest of its shot its LAST frame stays on screen, so the last frame is the
+  one the viewer sees longest. The still in "prompt" is the clip's first
+  frame: put everything the viewer should see into it, and let the motion
+  bring the camera closer or animate what is there. Write each motion to END
+  ON ITS SUBJECT: in the last frame the subject remains in frame and at least
+  as large as in the first. Three kinds of move do that: a slow push-in toward
+  the subject; a slow pan, drift or orbit that keeps the subject in frame; or
+  the subject's own motion (it glows, pulses, turns or flows) under a gentle
+  drift. Name the ending in the sentence: what fills the frame when the move
+  ends.
 
 - "cli_demo": a REAL screen recording of the {site_name} command-line tool
   running against live production. Not generated, not stock — actual footage
@@ -183,13 +192,13 @@ HARD RULES
    idea, so the picture keeps pace with the voice. How many shots that takes
    is yours to judge. Two limits are hard: at most 30 shots, and duration_s
    never above 30.0 (a longer value is rejected outright, so split a long
-   beat into several shots). A generative clip runs about 5 seconds and loops
-   when its shot is longer, so carry longer moments on image_kenburns stills
-   or stock footage.
+   beat into several shots). A generative clip runs about 5 seconds and then
+   holds its last frame for the rest of its shot (HOW A HERO PLAYS), so carry
+   longer moments on image_kenburns stills or stock footage.
 8. AI-source prompts (image_gen / image_kenburns / generative) MUST follow the
    HUMAN-SUBJECT POLICY and STYLE POLICY above. {human_subject_rule}
    Never ask an AI image for WORDS: no logos, brand names, titles, labels, signs or UI text as the subject or the point of the shot — the image OCR gate rejects renders carrying more than a few characters and the shot ships as a plain brand card instead. Illustrate the idea (a screen, a terminal, a device) and let the captions and the brand card carry the words.
-9. Set director_model to "{model}" and director_prompt_version to "v1.4".
+9. Set director_model to "{model}" and director_prompt_version to "v1.5".
 10. Set director_decided_at to the current UTC ISO timestamp: "{now_iso}"
 
 SCHEMA (output this shape):
@@ -217,10 +226,10 @@ SCHEMA (output this shape):
     {{
       "idx": 2,
       "duration_s": 5.0,
-      "intent": "hero beat — the key reveal gets real motion",
+      "intent": "hero beat — the post's central image gets real motion",
       "source": "generative",
       "prompt": "{style_prefix}, a river of glowing cyan data streams winding through a dark navy canyon of server towers, empty unpopulated scene",
-      "motion": "slow push-in along the canyon as the data streams flow forward; faint particles drift upward with gentle parallax",
+      "motion": "slow push-in toward the river of data as its streams flow forward between the towers, ending with the glowing river filling the centre of the frame",
       "narration_offset_s": 11.0
     }},
     {{
@@ -233,7 +242,7 @@ SCHEMA (output this shape):
     }}
   ],
   "director_model": "{model}",
-  "director_prompt_version": "v1.4",
+  "director_prompt_version": "v1.5",
   "director_decided_at": "{now_iso}"
 }}
 
@@ -408,11 +417,22 @@ makes it unreadable on a phone. Do not emit source="cli_demo" in a short.
   metaphors, aesthetic shots. Requires "prompt" + optional "kenburns_zoom".
 - "image_gen": static image-gen still — title cards, poster shots. Requires "prompt".
 - "generative": AI hero shot — animates a stylized image-gen still into motion
-  (image-to-video). Sparingly, for hero beats; capped per video. duration_s
-  ≤ 5s. Requires "prompt" (the still description) AND "motion" (one sentence
-  of motion direction: the camera move + what physically moves, e.g. "slow
-  push-in as particles drift upward" — movement only, never a restated scene;
-  keep it smooth and subtle).
+  (image-to-video). Sparingly, for hero beats; capped per video. Requires
+  "prompt" (the still description) AND "motion" (one sentence of motion
+  direction: the camera move, what physically moves, and where the move ends;
+  movement only, since the still already carries the scene; keep it smooth
+  and subtle).
+  HOW A HERO PLAYS: the clip runs about 5 seconds and plays once, and for the
+  rest of its shot its LAST frame stays on screen, so the last frame is the
+  one the viewer sees longest. The still in "prompt" is the clip's first
+  frame: put everything the viewer should see into it, and let the motion
+  bring the camera closer or animate what is there. Write each motion to END
+  ON ITS SUBJECT: in the last frame the subject remains in frame and at least
+  as large as in the first. Three kinds of move do that: a slow push-in toward
+  the subject; a slow pan, drift or orbit that keeps the subject in frame; or
+  the subject's own motion (it glows, pulses, turns or flows) under a gentle
+  drift. Name the ending in the sentence: what fills the frame when the move
+  ends.
 - "holdover": cross-fade transition (max 1). No prompt/query.
 - "presenter": talking-head clip of the channel's on-camera presenter speaking
   this shot's narration (see PRESENTER below). No "query"/"demo_id";
@@ -456,14 +476,14 @@ HARD RULES (short-form)
    it. It is the cumulative duration of all prior shots.
 7. Punchy pacing: cut on the narration's lines so the picture changes as the
    voice moves; a short drags on long holds. A generative clip runs about 5
-   seconds and loops when its shot is longer. duration_s MUST NOT exceed 30.0
-   (hard schema cap).
+   seconds and then holds its last frame for the rest of its shot (HOW A HERO
+   PLAYS). duration_s MUST NOT exceed 30.0 (hard schema cap).
 8. Never more than 2 consecutive shots from the same source. First and last
    shots MUST NOT be "generative".
 9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above.
    Never ask an AI image for WORDS: no logos, brand names, titles, labels, signs or UI text as the subject or the point of the shot — the image OCR gate rejects renders carrying more than a few characters and the shot ships as a plain brand card instead. Illustrate the idea (a screen, a terminal, a device) and let the captions and the brand card carry the words.
    {human_subject_rule}
-10. Set director_model to "{model}", director_prompt_version to "short_v1.3",
+10. Set director_model to "{model}", director_prompt_version to "short_v1.4",
     director_decided_at to "{now_iso}".
 
 SCHEMA (output this shape):
@@ -491,7 +511,7 @@ SCHEMA (output this shape):
     }}
   ],
   "director_model": "{model}",
-  "director_prompt_version": "short_v1.3",
+  "director_prompt_version": "short_v1.4",
   "director_decided_at": "{now_iso}"
 }}
 
@@ -523,10 +543,21 @@ REVISE it against these criteria, then output the REVISED shot list:
    monotony is the #1 quality killer. A cli_demo shot is real footage of the
    product — preserve it when the beat is about the system working, and do
    not swap it for an AI illustration of the same idea.
-3. HERO SHOTS - pick the 1-3 highest-impact beats (the open's payoff, a key
-   reveal, the close) and upgrade them to source "generative" for real motion. Keep
+3. HERO SHOTS - pick the 1-3 highest-impact beats (the open's payoff, the
+   central idea, the close) and upgrade them to source "generative" for real motion. Keep
    generative OFF the very first and very last shot. Never exceed 3 generative shots.
    Every generative shot carries a "motion" sentence (see FIELD RULES).
+   HOW A HERO PLAYS: the clip runs about 5 seconds and plays once, and for the
+   rest of its shot its LAST frame stays on screen, so the last frame is the
+   one the viewer sees longest. The still in "prompt" is the clip's first
+   frame: put everything the viewer should see into it, and let the motion
+   bring the camera closer or animate what is there. Write each motion to END
+   ON ITS SUBJECT: in the last frame the subject remains in frame and at least
+   as large as in the first. Three kinds of move do that: a slow push-in
+   toward the subject; a slow pan, drift or orbit that keeps the subject in
+   frame; or the subject's own motion (it glows, pulses, turns or flows) under
+   a gentle drift. Name the ending in the sentence: what fills the frame when
+   the move ends.
 4. ON-BRAND - image_gen / image_kenburns / generative prompts keep the dark-techno
    palette (deep navy, cyan, teal, gold accents) and follow the STYLE POLICY
    below EXACTLY. The draft's AI prompts already obey it: when you rewrite a
@@ -546,10 +577,10 @@ CONSTRAINTS (keep the draft valid):
       UI text as the subject — the image OCR gate rejects them and the shot ships
       as a plain brand card.
     * generative ADDITIONALLY carries "motion": one sentence of motion
-      direction (the camera move + what physically moves, e.g. "slow push-in;
-      particles drift upward with gentle parallax"). PRESERVE the existing
-      "motion" when keeping a generative shot; WRITE one when you upgrade a
-      shot to generative.
+      direction (the camera move, what physically moves, and where the move
+      ends). KEEP an existing "motion" that ends on its subject, REWRITE one
+      that ends anywhere else, and WRITE one when you upgrade a shot to
+      generative, all per HOW A HERO PLAYS.
     * cli_demo                     -> "demo_id": the catalogue slug, and
       NEITHER "prompt" NOR "query". The clip is a pre-existing recording, so
       there is nothing to generate; a cli_demo shot carrying a prompt or query
@@ -573,7 +604,7 @@ CONSTRAINTS (keep the draft valid):
   consecutive shots with the same source.
 - Output EXACTLY one JSON object in the same schema as the draft. No prose, no
   code fences. Every JSON key double-quoted — never bare keys.
-- Set director_model to "{model}", director_prompt_version to "review_v1",
+- Set director_model to "{model}", director_prompt_version to "review_v1.1",
   director_decided_at to "{now_iso}".
 
 OUTPUT THE REVISED SHOT LIST JSON NOW:
@@ -599,9 +630,21 @@ REVISE for retention, then output the REVISED list:
    most arresting visual. Open on a real shot (a "holdover" has nothing to fade
    from, and "generative" artifacts show most at the open).
 2. PACE - punchy: kill slow holds and cut on the narration's lines. A
-   generative clip runs about 5 seconds and loops when its shot is longer.
+   generative clip runs about 5 seconds and then holds its last frame for the
+   rest of its shot (HOW A HERO PLAYS).
 3. VARIETY + HERO - vary source; upgrade at most 1-2 mid-clip beats to "generative"
    for motion (never the first or last shot; never more than 2 generative in a short).
+   HOW A HERO PLAYS: the clip runs about 5 seconds and plays once, and for the
+   rest of its shot its LAST frame stays on screen, so the last frame is the
+   one the viewer sees longest. The still in "prompt" is the clip's first
+   frame: put everything the viewer should see into it, and let the motion
+   bring the camera closer or animate what is there. Write each motion to END
+   ON ITS SUBJECT: in the last frame the subject remains in frame and at least
+   as large as in the first. Three kinds of move do that: a slow push-in
+   toward the subject; a slow pan, drift or orbit that keeps the subject in
+   frame; or the subject's own motion (it glows, pulses, turns or flows) under
+   a gentle drift. Name the ending in the sentence: what fills the frame when
+   the move ends.
 4. ON-BRAND + HUMAN/STYLE POLICY - identical to the long director (dark-techno
    palette). {human_subject_rule} The STYLE POLICY below is binding for every
    image_gen / image_kenburns / generative prompt: keep the draft's style
@@ -617,9 +660,10 @@ CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; image_gen /
 image_kenburns / generative use a non-empty on-brand "prompt" (per the human-subject policy; never
 words, logos or brand names as the subject - the image OCR gate rejects them and the shot ships as a
 plain brand card) and NO
-"query"; generative ALSO carries "motion" (one sentence: camera move + what
-physically moves - preserve it when keeping a generative shot, write one when
-upgrading to generative); holdover uses neither. When you change a shot's
+"query"; generative ALSO carries "motion" (one sentence: camera move, what
+physically moves, and where the move ends - keep one that ends on its subject,
+rewrite one that ends anywhere else, write one when upgrading to generative,
+all per HOW A HERO PLAYS); holdover uses neither. When you change a shot's
 source, swap its field to match - a generative/image_gen/image_kenburns shot
 with no "prompt" makes the whole revision INVALID. aspect "9:16"; idx contiguous; sum of duration_s equals
 total_duration_s within 0.5s; duration_s never above 30.0 per shot and at most
@@ -627,7 +671,7 @@ total_duration_s within 0.5s; duration_s never above 30.0 per shot and at most
 (cumulative prior durations); never more than 2 consecutive shots with the
 same source. Output ONE JSON object in the draft's schema (every key
 double-quoted), no prose or fences. Set director_model to "{model}",
-director_prompt_version to "review_short_v1", director_decided_at to "{now_iso}".
+director_prompt_version to "review_short_v1.1", director_decided_at to "{now_iso}".
 
 OUTPUT THE REVISED SHOT LIST JSON NOW:
 ```
