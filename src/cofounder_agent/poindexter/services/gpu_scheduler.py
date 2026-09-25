@@ -3,7 +3,8 @@ GPU Scheduler — serializes access to the shared GPU across the stack's own
 model consumers (Ollama LLM inference, image-gen image gen, wan video render), and
 *optionally* yields to external (non-stack) GPU workloads when sharing the box.
 
-With a single GPU (RTX 5090, 32GB), only one large workload can run at a time.
+A card runs one large workload at a time. The operator box has two (an RTX
+5090 and an RTX 3090), and "Device scoping" below keys the lock per card.
 This module provides an async lock so that:
   - Ollama LLM inference, image-gen image generation, and video render don't fight
     for VRAM
@@ -61,6 +62,7 @@ Usage:
 
 import asyncio
 import itertools
+import math
 import time
 import uuid
 from collections.abc import Callable, Collection
@@ -1116,6 +1118,87 @@ def render_devices() -> frozenset[int] | None:
     return frozenset(cards)
 
 
+def resolve_session_devices(owner: str, model: str | None) -> list[int]:
+    """Cards a GPU session's work ran on, ascending. Its economics row reads these.
+
+    ``gpu_task_sessions`` records each task session's card model, power and
+    utilisation. Once device scoping split the box, "the GPU" stopped being
+    one card: the judge instance runs on GPU 1 while ``pipeline_gpu_index``
+    names GPU 0, so reading the pipeline card for every session recorded
+    3090 work as 5090 work, at the 5090's draw.
+
+    The answer follows the claim the lock follows. With scoping on, the
+    session's role names its cards in ``gpu_lock_scopes``. A caller the lock
+    cannot place (an unknown owner, or a role missing from the map) takes
+    every device key, so it is attributed to every card the map names. ``[]``
+    means the role occupies no GPU, and the row then carries no GPU figures.
+    When the map is not a trusted hardware claim (scoping off, or a row that
+    will not parse; see :func:`_placement_scopes`) the answer is the single
+    card the scheduler has always read, ``pipeline_gpu_index``.
+    """
+    scopes = _placement_scopes()
+    if scopes is None:
+        return [_cfg_int("pipeline_gpu_index", 0)]
+    role = resolve_lock_role(owner, model)
+    if role and role in scopes:
+        return sorted({int(i) for i in scopes[role]})
+    every = sorted({int(i) for indexes in scopes.values() for i in indexes})
+    # A map that names no cards at all sends the lock back to the legacy
+    # whole-GPU key (_all_device_keys), and the pipeline card is what that
+    # key has always stood for here.
+    return every or [_cfg_int("pipeline_gpu_index", 0)]
+
+
+@dataclass(frozen=True)
+class _SessionGpuSample:
+    """The GPU figures one ``gpu_task_sessions`` row records. ``None`` = unknown."""
+
+    gpu_model: str | None = None
+    avg_utilization_pct: float | None = None
+    avg_power_watts: float | None = None
+    peak_power_watts: float | None = None
+
+
+def _values_by_card(series: list[dict[str, Any]] | None) -> dict[int, float]:
+    """``{gpu index: value}`` from an instant vector labelled ``gpu``.
+
+    A series with no readable ``gpu`` label or value is left out, so its card
+    counts as unread and any figure that needed it stays ``None``.
+    """
+    out: dict[int, float] = {}
+    for item in series or []:
+        try:
+            index = int(item["metric"]["gpu"])
+            value = float(item["value"][1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        # A "NaN" or "+Inf" sample parses as a float, and storing it would
+        # carry into the row's kWh and cost.
+        if math.isfinite(value):
+            out[index] = value
+    return out
+
+
+def _names_by_card(series: list[dict[str, Any]] | None) -> dict[int, str]:
+    """``{gpu index: product name}`` from the exporter's ``nvidia_gpu_info``."""
+    out: dict[int, str] = {}
+    for item in series or []:
+        labels = item.get("metric") or {}
+        name = str(labels.get("name") or "").strip()
+        try:
+            index = int(labels["gpu"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if name:
+            out.setdefault(index, name)
+    return out
+
+
+# Set once this process has said the exporter serves no ``nvidia_gpu_info``,
+# so a stale exporter image costs one warning rather than one per release.
+_warned_no_gpu_info = False
+
+
 def _emit_cfg_fetch_finding(
     kind: str, key: str, default: Any, exc: BaseException,
 ) -> None:
@@ -2145,13 +2228,16 @@ class GPUScheduler:
                 logger.debug("gpu_lease_stats capture scheduling failed")
             # internal tracker Phase 3.A3 — record the session so model/phase
             # compute economics are queryable per task. Best-effort; a
-            # write failure never breaks the GPU lock lifecycle.
+            # write failure never breaks the GPU lock lifecycle. Both locks
+            # are already released above, and the cards are resolved inside
+            # this guard, so nothing here can fail the release.
             if task_id:
                 try:
                     await self._record_task_session(
                         task_id=task_id,
                         phase=phase or owner,
                         model=model,
+                        devices=resolve_session_devices(owner, model),
                         started_at=session_start,
                         duration_seconds=duration,
                     )
@@ -2557,15 +2643,24 @@ class GPUScheduler:
         task_id: str,
         phase: str,
         model: str | None,
+        devices: list[int],
         started_at: datetime,
         duration_seconds: float,
     ) -> None:
         """Insert a row into gpu_task_sessions for internal tracker Phase 3.A3.
 
-        Samples current GPU utilisation + power once at release time. A
-        future enhancement can take a rolling average over the window via
-        the nvidia-smi exporter's range queries; one sample is enough to
-        start populating the table with directional signal.
+        ``devices`` are the cards the session's work ran on
+        (:func:`resolve_session_devices`). Every GPU figure on the row comes
+        from those cards: the card model, the power averaged over the hold,
+        its peak, and utilisation (see :meth:`_sample_session_gpus`). So a
+        judge call on GPU 1 is costed at GPU 1's draw rather than at whatever
+        the pipeline card was doing.
+
+        kWh is that average power times the hold, priced at
+        ``electricity_rate_kwh``, the rate ``UpdateUtilityRatesJob`` keeps
+        current and the cost ledger reads. The row used to read
+        ``electricity_rate_kwh_usd``, a key nothing seeds, so every row was
+        priced at the 0.12 code default whatever the real rate was.
         """
         # Lazy DB connection — the scheduler shouldn't carry a pool
         # reference; resolve via brain.bootstrap so it works the same in
@@ -2585,16 +2680,14 @@ class GPUScheduler:
         if not dsn:
             return
 
-        # Sample utilisation / power in parallel with the close path.
-        util_pct = await self._get_gpu_utilization()
-        power_w = await self._get_gpu_power_watts()
-        electricity_rate = _cfg_float(
-            "electricity_rate_kwh_usd", 0.12,
-        )
-        kwh = 0.0
-        cost_usd = 0.0
-        if power_w and duration_seconds > 0:
-            kwh = (power_w / 1000.0) * (duration_seconds / 3600.0)
+        sample = await self._sample_session_gpus(devices, duration_seconds)
+        # Same key and default as cost_guard: the seeded bootstrap rate until
+        # UpdateUtilityRatesJob writes the live one.
+        electricity_rate = _cfg_float("electricity_rate_kwh", 0.16)
+        kwh: float | None = None
+        cost_usd: float | None = None
+        if sample.avg_power_watts is not None and duration_seconds > 0:
+            kwh = (sample.avg_power_watts / 1000.0) * (duration_seconds / 3600.0)
             cost_usd = kwh * electricity_rate
 
         conn = None
@@ -2608,23 +2701,116 @@ class GPUScheduler:
                     avg_power_watts, peak_power_watts, kwh_consumed,
                     electricity_rate_kwh, electricity_cost_usd, model_name
                 )
-                VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $7, $8, $9, $10, $11)
+                VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 """,
                 str(task_id),
                 phase,
                 started_at,
                 float(duration_seconds),
-                "RTX 5090",
-                float(util_pct) if util_pct is not None else None,
-                float(power_w) if power_w is not None else None,
-                float(kwh) if kwh else None,
+                sample.gpu_model,
+                sample.avg_utilization_pct,
+                sample.avg_power_watts,
+                sample.peak_power_watts,
+                kwh,
                 float(electricity_rate),
-                float(cost_usd) if cost_usd else None,
+                cost_usd,
                 model,
             )
         finally:
             if conn is not None:
                 await conn.close()
+
+    async def _sample_session_gpus(
+        self, devices: list[int], duration_seconds: float,
+    ) -> _SessionGpuSample:
+        """Card model, power and utilisation of ``devices`` over the session.
+
+        Averaged over the hold (``avg_over_time`` across the session's own
+        duration) rather than read once at release. The release-time read was
+        off by up to ~9x: a 51-minute render averaged 307.7 W on GPU 0 and was
+        recorded at the 36.8 W the card had dropped to once the lock came back,
+        and a 107 s director call was recorded at a 399.8 W spike over a
+        162.1 W average. A hold shorter than the scrape interval can contain
+        no sample, so each query falls back (PromQL ``or``) to the latest one,
+        which is the value the release-time read returned.
+
+        With several cards, power is the SUM of the cards' averages and
+        utilisation their MEAN. Peak is the sum of each card's maximum, an
+        upper bound, since the cards need not peak together. A card with no
+        reading leaves that figure ``None``: a partial sum would understate it.
+        The card model is the exporter's ``nvidia_gpu_info`` name label
+        (nvidia-smi's own product name), joined with " + " across cards.
+        """
+        global _warned_no_gpu_info
+
+        cards = sorted({int(i) for i in devices})
+        if not cards:
+            return _SessionGpuSample()
+        # PromQL range durations are whole seconds; anything shorter than a
+        # scrape interval falls through to the instant sample either way.
+        window = max(1, math.ceil(duration_seconds))
+        # Regex label matches are anchored, so "1" never matches gpu="10".
+        match = "|".join(str(i) for i in cards)
+
+        def over_session(metric: str, over_time: str, combine: str) -> str:
+            selector = f'{metric}{{gpu=~"{match}"}}'
+            # `by (gpu)` folds any duplicate target into one series per card.
+            return (
+                f"{combine} by (gpu) "
+                f"({over_time}({selector}[{window}s]) or {selector})"
+            )
+
+        power_avg, power_peak, util_avg, info = await asyncio.gather(
+            self._query_prometheus_vector(
+                over_session("nvidia_gpu_power_draw_watts", "avg_over_time", "avg"),
+                metric="nvidia_gpu_power_draw_watts",
+            ),
+            self._query_prometheus_vector(
+                over_session("nvidia_gpu_power_draw_watts", "max_over_time", "max"),
+                metric="nvidia_gpu_power_draw_watts",
+            ),
+            self._query_prometheus_vector(
+                over_session("nvidia_gpu_utilization_percent", "avg_over_time", "avg"),
+                metric="nvidia_gpu_utilization_percent",
+            ),
+            self._query_prometheus_vector(
+                f'nvidia_gpu_info{{gpu=~"{match}"}}', metric="nvidia_gpu_info",
+            ),
+        )
+        avg_w = _values_by_card(power_avg)
+        peak_w = _values_by_card(power_peak)
+        util = _values_by_card(util_avg)
+        names = _names_by_card(info)
+
+        if info is not None and not names and avg_w and not _warned_no_gpu_info:
+            # Prometheus answered and has power for these cards but no identity
+            # series: the exporter image predates nvidia_gpu_info. The row
+            # records gpu_model NULL (unknown) rather than guessing a card.
+            _warned_no_gpu_info = True
+            logger.warning(
+                "[GPU] the exporter serves no nvidia_gpu_info series, so "
+                "gpu_task_sessions.gpu_model is recorded NULL. Rebuild the "
+                "gpu-exporter image (deploy-checkout-sync does this when "
+                "scripts/nvidia-smi-exporter.py changes)."
+            )
+
+        def read_all(values: dict[int, Any]) -> bool:
+            return all(card in values for card in cards)
+
+        return _SessionGpuSample(
+            gpu_model=(
+                " + ".join(names[card] for card in cards) if read_all(names) else None
+            ),
+            avg_utilization_pct=(
+                sum(util[card] for card in cards) / len(cards) if read_all(util) else None
+            ),
+            avg_power_watts=(
+                sum(avg_w[card] for card in cards) if read_all(avg_w) else None
+            ),
+            peak_power_watts=(
+                sum(peak_w[card] for card in cards) if read_all(peak_w) else None
+            ),
+        )
 
     async def _emit_exporter_finding(self, metric: str, detail: str) -> None:
         """Surface an nvidia-smi-exporter unreachability finding so the
@@ -2647,10 +2833,12 @@ class GPUScheduler:
                 body=(
                     f"Prometheus instant query for {metric} failed: {detail} "
                     f"(GET {_prometheus_query_url()}/api/v1/query). The "
-                    "scheduler treats the missing reading as 'idle' and "
-                    "proceeds (poindexter#455 — fail-loud, not silent). "
-                    "Check the poindexter-prometheus container and that the "
-                    "nvidia-smi-host scrape target is up."
+                    "scheduler treats the missing reading as unknown: the "
+                    "gaming check proceeds as if the GPU were idle, and "
+                    "gpu_task_sessions rows record NULL for the figure "
+                    "(poindexter#455 — fail-loud, not silent). Check the "
+                    "poindexter-prometheus container and that the nvidia-smi "
+                    "scrape target (gpu-exporter:9835) is up."
                 ),
                 dedup_key=f"nvidia_exporter_unreachable_{metric}",
             )
@@ -2662,6 +2850,40 @@ class GPUScheduler:
                 "emit_finding unavailable in gpu_scheduler", exc_info=True,
             )
 
+    async def _query_prometheus_vector(
+        self, query: str, *, metric: str | None = None,
+    ) -> list[dict[str, Any]] | None:
+        """Every series an instant query returns, or ``None`` when it failed.
+
+        ``[]`` is a successful query with no series (no recent scrape), which
+        is not an outage and stays quiet. A connectivity or non-200 failure
+        logs a warning and emits the ``nvidia_exporter_unreachable`` finding,
+        keyed on ``metric``: the metric FAMILY, not the expression, so a
+        windowed query whose range changes on every call still folds into one
+        alert per family. ``metric`` defaults to ``query`` for a bare selector.
+        """
+        family = metric or query
+        url = f"{_prometheus_query_url()}/api/v1/query"
+        try:
+            client = self._get_http_client()
+            resp = await client.get(url, params={"query": query}, timeout=5)
+            if resp.status_code != 200:
+                logger.warning(
+                    "[GPU] Prometheus query %s returned HTTP %s — reading unavailable",
+                    family, resp.status_code,
+                )
+                await self._emit_exporter_finding(family, f"HTTP {resp.status_code}")
+                return None
+            payload = resp.json()
+            return list((payload.get("data") or {}).get("result") or [])
+        except Exception as exc:
+            logger.warning(
+                "[GPU] Prometheus unreachable for %s: %s: %s",
+                family, type(exc).__name__, exc,
+            )
+            await self._emit_exporter_finding(family, f"{type(exc).__name__}: {exc}")
+            return None
+
     async def _query_prometheus_scalar(self, metric: str) -> float | None:
         """Return the latest scalar value of ``metric`` from Prometheus, or None.
 
@@ -2671,51 +2893,32 @@ class GPUScheduler:
         (Prometheus is up but has no recent scrape of the metric) returns None
         quietly — a transient scrape gap is not a pageable outage.
         """
-        url = f"{_prometheus_query_url()}/api/v1/query"
-        try:
-            client = self._get_http_client()
-            resp = await client.get(url, params={"query": metric}, timeout=5)
-            if resp.status_code != 200:
-                logger.warning(
-                    "[GPU] Prometheus query %s returned HTTP %s — reading unavailable",
-                    metric, resp.status_code,
-                )
-                await self._emit_exporter_finding(metric, f"HTTP {resp.status_code}")
-                return None
-            payload = resp.json()
-            result = (payload.get("data") or {}).get("result") or []
-            if not result:
+        result = await self._query_prometheus_vector(metric)
+        if not result:
+            if result is not None:
                 logger.debug(
                     "[GPU] Prometheus has no series for %s yet (no recent scrape)",
                     metric,
                 )
-                return None
+            return None
+        try:
             # Instant-vector sample: value = [<unix_ts>, "<scalar as string>"].
             return float(result[0]["value"][1])
-        except Exception as exc:
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
             logger.warning(
-                "[GPU] Prometheus unreachable for %s: %s: %s",
+                "[GPU] Prometheus returned an unreadable sample for %s: %s: %s",
                 metric, type(exc).__name__, exc,
             )
             await self._emit_exporter_finding(metric, f"{type(exc).__name__}: {exc}")
             return None
 
-    async def _get_gpu_power_watts(self) -> float | None:
-        """Current power draw (watts) of the pipeline GPU, via Prometheus.
-
-        Targets the pipeline/display GPU explicitly (``pipeline_gpu_index``,
-        default 0) rather than an unlabelled metric. The exporter emits one
-        ``nvidia_gpu_*`` series per GPU, so once a second card is in the box an
-        unlabelled query resolves to a nondeterministic ``result[0]`` — it could
-        read the idle 3090 instead of the 5090 the pipeline actually runs on.
-        """
-        idx = _cfg_int("pipeline_gpu_index", 0)
-        return await self._query_prometheus_scalar(
-            f'nvidia_gpu_power_draw_watts{{gpu="{idx}"}}'
-        )
-
     async def _get_gpu_utilization(self) -> float | None:
-        """Current utilization (%) of the pipeline GPU, via Prometheus."""
+        """Current utilization (%) of the pipeline GPU, via Prometheus.
+
+        The external-workload (gaming) check's reading, taken from
+        ``pipeline_gpu_index``, the card that heuristic has always watched.
+        Per-session figures come from :meth:`_sample_session_gpus` instead.
+        """
         idx = _cfg_int("pipeline_gpu_index", 0)
         return await self._query_prometheus_scalar(
             f'nvidia_gpu_utilization_percent{{gpu="{idx}"}}'

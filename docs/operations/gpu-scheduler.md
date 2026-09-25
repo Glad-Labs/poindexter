@@ -215,18 +215,85 @@ Pre-existing lock tunables (`gpu_lock_acquire_timeout_seconds`,
 `gpu_lock_release_timeout_seconds`, `gpu_serialize_llm_dispatch`, the
 gaming-detection knobs) are unchanged.
 
+## Per-task GPU economics (`gpu_task_sessions`)
+
+Every `gpu.lock(...)` that carries a `task_id` writes one `gpu_task_sessions`
+row when it releases: phase, model, hold duration, and what the hold cost on
+the GPU. The write is best-effort. Both locks are already released when it
+runs, and a failure emits the info `gpu_task_session_write_failed` finding
+instead of reaching the caller.
+
+**Which cards.** `resolve_session_devices(owner, model)` follows the same
+claim the lock follows, so a session is costed on the cards it held:
+
+| Device scoping                           | Session                                     | Cards sampled                                               |
+| ---------------------------------------- | ------------------------------------------- | ----------------------------------------------------------- |
+| off, or `gpu_lock_scopes` will not parse | any                                         | `pipeline_gpu_index` (the pre-scoping behaviour)            |
+| on                                       | role found in `gpu_lock_scopes`             | that role's cards (the qwen3-vl judge → `qa_judge` → GPU 1) |
+| on                                       | unknown owner, or role missing from the map | every card in the map, which is what the lock takes         |
+| on                                       | role mapped to `[]`                         | none: the row carries no GPU figures                        |
+
+**What the row records.**
+
+| Column                                         | Source                                                                                                                                                     |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gpu_model`                                    | the exporter's `nvidia_gpu_info{gpu,uuid,name}` name label (nvidia-smi's product name); two cards read `NVIDIA GeForce RTX 5090 + NVIDIA GeForce RTX 3090` |
+| `avg_power_watts`                              | `avg_over_time(nvidia_gpu_power_draw_watts[<hold>s])` per card, summed across cards                                                                        |
+| `peak_power_watts`                             | `max_over_time(...)` per card, summed (exact for one card; an upper bound across several, since cards need not peak together)                              |
+| `avg_utilization_pct`                          | `avg_over_time(nvidia_gpu_utilization_percent[<hold>s])`, mean across cards                                                                                |
+| `kwh_consumed`                                 | average power × hold                                                                                                                                       |
+| `electricity_rate_kwh`, `electricity_cost_usd` | `app_settings.electricity_rate_kwh`, which `UpdateUtilityRatesJob` keeps current and the cost ledger reads, × kWh                                          |
+
+A hold shorter than the 30 s scrape interval can contain no sample, so each
+query falls back to the latest sample (PromQL `or`). That is the value the old
+release-time read returned. A card with no reading leaves its figure NULL
+rather than a partial sum, and an exporter image that predates
+`nvidia_gpu_info` leaves `gpu_model` NULL with one WARNING per process. These
+are card figures only. For whole-box energy, use the Shelly wall meter on the
+Hardware & Power board.
+
+**Rows written before 2026-09-25 are not comparable.** They carry the literal
+`RTX 5090` for every session, GPU 0's draw read once at release, and a price
+of `0.12` (the code default for `electricity_rate_kwh_usd`, a key nothing
+seeds). Measured on the operator box that day, the release-time read was off
+by up to ~9×: a 51-minute render averaged 307.7 W and was recorded at 36.8 W,
+and 34 qwen3-vl `caption_image` sessions that ran on the RTX 3090 were
+recorded as 5090 work. New rows name the card by its full nvidia-smi name, so
+the old literal separates the two populations:
+
+```sql
+SELECT phase, gpu_model, count(*),
+       round(sum(kwh_consumed), 3)         AS kwh,
+       round(sum(electricity_cost_usd), 4) AS usd
+  FROM gpu_task_sessions
+ WHERE started_at > now() - interval '7 days'
+   AND gpu_model IS DISTINCT FROM 'RTX 5090'
+ GROUP BY 1, 2
+ ORDER BY kwh DESC NULLS LAST;
+```
+
 ## Per-process VRAM metric
 
 The eviction credit needs `nvidia_gpu_process_memory_mib{gpu,pid,process}`
 from the nvidia-smi exporter (`scripts/nvidia-smi-exporter.py`, container
-`poindexter-gpu-exporter`). After merging an exporter change, rebuild it:
+`poindexter-gpu-exporter`), and the economics row above needs its
+`nvidia_gpu_info` series. The exporter is baked into its image. When
+`scripts/nvidia-smi-exporter.py` or `scripts/Dockerfile.gpu-exporter` changes,
+`deploy-checkout-sync` rebuilds and force-recreates it. To do it by hand, run
+from the deploy checkout (`start-stack.sh` supplies the bootstrap secrets the
+compose file needs):
 
 ```bash
-docker compose -f docker-compose.local.yml up -d --build gpu-exporter
+bash scripts/start-stack.sh build gpu-exporter
 ```
 
-Until the rebuilt exporter serves the metric, the credit reads 0.0 and
-admission simply never grants on eviction — conservative, not broken.
+```bash
+bash scripts/start-stack.sh up -d --no-deps --force-recreate gpu-exporter
+```
+
+`up -d` alone keeps the old container after a same-tag rebuild. Until the
+rebuilt exporter serves the metric, the credit reads 0.0 and admission simply
+never grants on eviction — conservative, not broken.
 
 ## Multi-instance Ollama and never-unload pins (poindexter#997)
 

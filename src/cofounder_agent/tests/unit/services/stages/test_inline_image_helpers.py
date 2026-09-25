@@ -343,11 +343,17 @@ async def test_gpu_task_session_recorded_with_task_id():
     """
     from datetime import datetime, timezone
 
-    from poindexter.services.gpu_scheduler import GPUScheduler
+    from poindexter.services.gpu_scheduler import GPUScheduler, _SessionGpuSample
 
     scheduler = GPUScheduler()
-    scheduler._get_gpu_utilization = AsyncMock(return_value=42.0)
-    scheduler._get_gpu_power_watts = AsyncMock(return_value=300.0)
+    scheduler._sample_session_gpus = AsyncMock(
+        return_value=_SessionGpuSample(
+            gpu_model="NVIDIA GeForce RTX 5090",
+            avg_utilization_pct=42.0,
+            avg_power_watts=300.0,
+            peak_power_watts=310.0,
+        ),
+    )
 
     # asyncpg.connect → execute path: capture the args.
     fake_conn = AsyncMock()
@@ -361,6 +367,7 @@ async def test_gpu_task_session_recorded_with_task_id():
             task_id="task-pin-007",
             phase="inline_image",
             model="sdxl_lightning",
+            devices=[0],
             started_at=datetime.now(timezone.utc),
             duration_seconds=2.5,
         )

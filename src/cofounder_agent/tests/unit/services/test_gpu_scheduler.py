@@ -320,7 +320,13 @@ class TestGpuMetricsFromPrometheus:
         )
 
     @pytest.mark.asyncio
-    async def test_power_draw_parsed_from_prometheus(self):
+    async def test_session_power_reads_the_real_power_metric(self):
+        """Per-session power (``gpu_task_sessions``) is sampled over the hold by
+        ``_sample_session_gpus``; its contract lives in
+        test_gpu_task_session_economics.py. This pins the metric NAME through
+        the real HTTP path: nvidia_gpu_power_draw_watts, NOT the
+        nvidia_gpu_power_usage_watts an earlier version read, which never
+        existed."""
         from unittest.mock import patch
 
         from poindexter.services.gpu_scheduler import GPUScheduler
@@ -328,15 +334,10 @@ class TestGpuMetricsFromPrometheus:
         scheduler = GPUScheduler()
         client = self._mock_client(value="284.5")
         with patch("httpx.AsyncClient", return_value=client):
-            result = await scheduler._get_gpu_power_watts()
-        assert result == 284.5
-        # Correct metric name (nvidia_gpu_power_draw_watts, NOT the old
-        # nvidia_gpu_power_usage_watts which never existed), scoped to the
-        # pipeline GPU (pipeline_gpu_index default 0).
-        assert (
-            client.get.call_args.kwargs["params"]["query"]
-            == 'nvidia_gpu_power_draw_watts{gpu="0"}'
-        )
+            await scheduler._sample_session_gpus([0], 30.0)
+        queries = [c.kwargs["params"]["query"] for c in client.get.call_args_list]
+        assert any("nvidia_gpu_power_draw_watts{" in q for q in queries)
+        assert not any("power_usage" in q for q in queries)
 
     @pytest.mark.asyncio
     async def test_empty_result_returns_none_without_finding(self):

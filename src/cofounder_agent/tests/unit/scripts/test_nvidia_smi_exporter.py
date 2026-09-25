@@ -43,9 +43,16 @@ def _load_exporter():
 
 EXPORTER = _load_exporter()
 
-# index, util, mem-util, mem-used, mem-total, temp, power, power-limit, fan, gclk, mclk
-GPU0 = "0, 2, 0, 3198, 32607, 31, 43.57, 600.00, 0, 630, 13801"
-GPU1 = "1, 0, 0, 111, 24576, 28, 17.28, 390.00, 0, 210, 405"
+# index, util, mem-util, mem-used, mem-total, temp, power, power-limit, fan, gclk,
+# mclk, uuid, name
+GPU0 = (
+    "0, 2, 0, 3198, 32607, 31, 43.57, 600.00, 0, 630, 13801, "
+    "GPU-00000000-0000-0000-0000-000000000000, NVIDIA GeForce RTX 5090"
+)
+GPU1 = (
+    "1, 0, 0, 111, 24576, 28, 17.28, 390.00, 0, 210, 405, "
+    "GPU-11111111-1111-1111-1111-111111111111, NVIDIA GeForce RTX 3090"
+)
 
 
 def _series(text: str) -> dict[str, str]:
@@ -135,6 +142,70 @@ def test_gpu_count_declares_help_and_type_once():
     text = EXPORTER._format_gpu_rows(f"{GPU0}\n{GPU1}")
     assert text.count("# TYPE nvidia_gpu_count gauge") == 1
     assert text.count("# HELP nvidia_gpu_count") == 1
+
+
+# ---------------------------------------------------------------------------
+# Card identity — nvidia_gpu_info. The per-GPU series carry only an index, so
+# a consumer that needs to name the card (gpu_task_sessions.gpu_model) used to
+# hardcode one. This series says which card each index is.
+# ---------------------------------------------------------------------------
+def test_query_asks_nvidia_smi_for_identity_fields_last():
+    # The parser reads uuid and name off the END of the row, so the query must
+    # put them there, and the row width must count them.
+    fields = EXPORTER._GPU_QUERY.split(",")
+    assert fields[0] == "index"
+    assert fields[-2:] == ["uuid", "name"]
+    assert len(fields) == EXPORTER._GPU_ROW_FIELDS
+
+
+def test_info_series_names_each_card_by_index():
+    series = _series(EXPORTER._format_gpu_rows(f"{GPU0}\n{GPU1}"))
+    assert series[
+        'nvidia_gpu_info{gpu="0",uuid="GPU-00000000-0000-0000-0000-000000000000",'
+        'name="NVIDIA GeForce RTX 5090"}'
+    ] == "1"
+    assert series[
+        'nvidia_gpu_info{gpu="1",uuid="GPU-11111111-1111-1111-1111-111111111111",'
+        'name="NVIDIA GeForce RTX 3090"}'
+    ] == "1"
+
+
+def test_info_series_declares_help_and_type_once():
+    text = EXPORTER._format_gpu_rows(f"{GPU0}\n{GPU1}")
+    assert text.count("# HELP nvidia_gpu_info") == 1
+    assert text.count("# TYPE nvidia_gpu_info gauge") == 1
+
+
+def test_comma_in_product_name_does_not_shift_the_columns():
+    # The name is free text and sits last, so the row is split with a
+    # maxsplit: a comma inside it stays in the name instead of making the row
+    # one field too long (skipped) or sliding every column after it.
+    row = (
+        "0, 2, 0, 3198, 32607, 31, 43.57, 600.00, 0, 630, 13801, "
+        "GPU-00000000-0000-0000-0000-000000000000, Vendor Card, Rev B"
+    )
+    series = _series(EXPORTER._format_gpu_rows(row))
+    assert series['nvidia_gpu_power_draw_watts{gpu="0"}'] == "43.57"
+    assert any('name="Vendor Card, Rev B"' in key for key in series)
+
+
+def test_quote_in_product_name_is_escaped():
+    row = (
+        "0, 2, 0, 3198, 32607, 31, 43.57, 600.00, 0, 630, 13801, "
+        'GPU-00000000-0000-0000-0000-000000000000, Card "X"'
+    )
+    text = EXPORTER._format_gpu_rows(row)
+    assert 'name="Card \\"X\\""' in text
+
+
+def test_row_without_identity_fields_is_skipped_not_misread():
+    # The pre-identity row shape (11 fields) must not be read with its last
+    # two metrics mistaken for a uuid and a name.
+    legacy = "0, 2, 0, 3198, 32607, 31, 43.57, 600.00, 0, 630, 13801"
+    series = _series(EXPORTER._format_gpu_rows(f"{legacy}\n{GPU1}"))
+    assert series["nvidia_gpu_count"] == "1"
+    assert 'nvidia_gpu_power_draw_watts{gpu="0"}' not in series
+    assert not [k for k in series if k.startswith('nvidia_gpu_info{gpu="0"')]
 
 
 # ---------------------------------------------------------------------------

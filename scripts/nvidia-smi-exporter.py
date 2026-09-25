@@ -85,8 +85,9 @@ def _trip_watchdog(reason: str) -> None:
         sys.exit(1)
 
 
-# nvidia-smi --query-gpu order, AFTER the leading `index` field. Each CSV row is
-# therefore `index` + these 10 metric fields.
+# nvidia-smi --query-gpu order, AFTER the leading `index` field and BEFORE the
+# trailing identity fields. Each CSV row is therefore `index` + these 10 metric
+# fields + `uuid` + `name`.
 _GPU_METRIC_SPECS = [
     ("nvidia_gpu_utilization_percent", "GPU utilization percentage"),
     ("nvidia_gpu_memory_utilization_percent", "GPU memory utilization percentage"),
@@ -99,7 +100,22 @@ _GPU_METRIC_SPECS = [
     ("nvidia_gpu_clock_graphics_mhz", "GPU graphics clock in MHz"),
     ("nvidia_gpu_clock_memory_mhz", "GPU memory clock in MHz"),
 ]
-_GPU_ROW_FIELDS = len(_GPU_METRIC_SPECS) + 1  # + leading index
+# nvidia-smi field names for the columns above, in the same order.
+_GPU_METRIC_QUERY_FIELDS = (
+    "utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,"
+    "power.draw,power.limit,fan.speed,clocks.current.graphics,clocks.current.memory"
+)
+# Which card each index is, exported as nvidia_gpu_info so a consumer can name
+# the card behind gpu="N" instead of assuming one (gpu_task_sessions records
+# it per session). `name` is LAST because it is free text: the row is split
+# with a maxsplit, so a comma inside a product name cannot shift a column.
+_GPU_IDENTITY_QUERY_FIELDS = "uuid,name"
+_GPU_ROW_FIELDS = len(_GPU_METRIC_SPECS) + 3  # + leading index, trailing uuid + name
+_GPU_QUERY = f"index,{_GPU_METRIC_QUERY_FIELDS},{_GPU_IDENTITY_QUERY_FIELDS}"
+_GPU_INFO_HEADER = (
+    "# HELP nvidia_gpu_info Identity of each GPU (nvidia-smi name and uuid); always 1\n"
+    "# TYPE nvidia_gpu_info gauge\n"
+)
 
 # Cardinality canary. NVIDIA device nodes are injected into a container at
 # CREATE time, so a card added (or re-enumerated) after `docker create` is
@@ -110,6 +126,17 @@ _COUNT_HEADER = (
     "# HELP nvidia_gpu_count Number of GPUs nvidia-smi enumerated this scrape\n"
     "# TYPE nvidia_gpu_count gauge\n"
 )
+
+
+def _escape_label_value(value: str) -> str:
+    """Escape a Prometheus label value (backslash, quote, newline)."""
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", " ")
+        .strip()
+    )
 
 
 def _format_gpu_rows(stdout: str) -> str:
@@ -124,13 +151,17 @@ def _format_gpu_rows(stdout: str) -> str:
 
     The pre-multi-GPU version unpacked a single 10-tuple and crashed with
     "too many values to unpack" the instant a second GPU appeared.
+
+    Each row also yields one ``nvidia_gpu_info{gpu,uuid,name} 1`` series: the
+    per-GPU series carry only the index, and an index says nothing about
+    which card it is.
     """
     rows = []
     for line in stdout.strip().splitlines():
         line = line.strip()
         if not line:
             continue
-        values = [v.strip() for v in line.split(",")]
+        values = [v.strip() for v in line.split(",", _GPU_ROW_FIELDS - 1)]
         if len(values) != _GPU_ROW_FIELDS:
             logger.warning(
                 "nvidia-smi row has %d fields, expected %d — skipping: %r",
@@ -153,6 +184,15 @@ def _format_gpu_rows(stdout: str) -> str:
             gpu_index = values[0]
             lines.append(f'{metric}{{gpu="{gpu_index}"}} {values[field_idx + 1]}')
 
+    lines.append(_GPU_INFO_HEADER.rstrip("\n"))
+    for values in rows:
+        gpu_uuid, name = values[-2], values[-1]
+        lines.append(
+            f'nvidia_gpu_info{{gpu="{values[0]}",'
+            f'uuid="{_escape_label_value(gpu_uuid)}",'
+            f'name="{_escape_label_value(name)}"}} 1'
+        )
+
     return "\n".join(lines) + "\n"
 
 
@@ -162,7 +202,7 @@ def get_gpu_metrics():
     start = time.monotonic()
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,clocks.current.graphics,clocks.current.memory",
+            ["nvidia-smi", f"--query-gpu={_GPU_QUERY}",
              "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=_NVIDIA_SMI_TIMEOUT_SEC,
             **_SUBPROCESS_KWARGS,
@@ -948,17 +988,6 @@ def _read_openlinkhub_url_from_bootstrap() -> str:
         return ""
 
 
-def _olh_escape(value: str) -> str:
-    """Escape a Prometheus label value (backslash, quote, newline)."""
-    return (
-        str(value)
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", " ")
-        .strip()
-    )
-
-
 def _olh_is_pump(channel: dict) -> bool:
     """True when a channel is a pump/reservoir rather than a fan.
 
@@ -977,13 +1006,13 @@ def _olh_channel_labels(product: str, serial: str, channel_id, channel: dict) ->
     if label.lower() == "set label":
         label = ""
     parts = [
-        f'device="{_olh_escape(product)}"',
-        f'serial="{_olh_escape(serial)}"',
-        f'channel="{_olh_escape(channel_id)}"',
-        f'name="{_olh_escape(channel.get("name", ""))}"',
+        f'device="{_escape_label_value(product)}"',
+        f'serial="{_escape_label_value(serial)}"',
+        f'channel="{_escape_label_value(channel_id)}"',
+        f'name="{_escape_label_value(channel.get("name", ""))}"',
     ]
     if label:
-        parts.append(f'label="{_olh_escape(label)}"')
+        parts.append(f'label="{_escape_label_value(label)}"')
     return ",".join(parts)
 
 
@@ -1075,7 +1104,7 @@ def _format_openlinkhub_rows(payload: dict) -> str:
             # Peripherals (mice, headsets, keyboards) carry no telemetry.
             continue
         product = str(device.get("Product") or detail.get("product") or "unknown")
-        dev_labels = f'device="{_olh_escape(product)}",serial="{_olh_escape(serial)}"'
+        dev_labels = f'device="{_escape_label_value(product)}",serial="{_escape_label_value(serial)}"'
 
         if isinstance(detail.get("IsCritical"), bool):
             critical.append(
