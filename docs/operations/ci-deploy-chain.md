@@ -361,14 +361,52 @@ pins`, `Lint shell + PowerShell scripts`, `poetry check --lock
   | `playwright-e2e.yml`         | `0 6 * * 1`   | 192             |
   | `security.yml`               | `17 6 * * 1`  | 192             |
 
-  Not assessed (no finding) when httpx is missing, no `gh_token` is
-  configured, the workflow 404s, the API errors, or the workflow has no
-  scheduled runs at all — mirroring `data_freshness_probe`'s zero-rows
-  rule, so an operator who never enabled a cron is never alarmed about
-  it. Self-throttled to
-  `scheduled_workflow_watch_interval_minutes` (default 60) rather than
-  riding the brain's 5-minute cycle, since each target costs two
-  GitHub API calls.
+  A workflow with no scheduled runs at all is not assessed and raises
+  nothing — mirroring `data_freshness_probe`'s zero-rows rule, so an
+  operator who never enabled a cron is never alarmed about it.
+  Self-throttled to `scheduled_workflow_watch_interval_minutes`
+  (default 60) rather than riding the brain's 5-minute cycle, since each
+  target costs two GitHub API calls. A throttled cycle reports the last real
+  pass's verdict, so a failing or blind watchdog reads as failing on every
+  brain cycle, not one in twelve.
+
+  **When the watchdog itself cannot read the runs**, it pages once per
+  failure episode per repo (`poindexter/brain/failure_episode.py`, shared
+  with the branch-drift canary and the PR staleness probe), and the pass
+  reports `ok=False`. So does any pass that assessed nothing.
+  - **Loud failures page when the episode opens.** These are a `gh_token`
+    that GitHub rejects (401), forbids (a 403 that is not a rate limit) or
+    that cannot see the private repo, a missing token or httpx, a redirect
+    (the repo moved), and a watched workflow that does not exist. The
+    watchdog needs **Actions (read)** on the repo, which on a fine-grained
+    token is its own permission, separate from the Contents (read) the
+    branch-drift canary needs. The page repeats only when the failure
+    changes, when a replaced `gh_token` fails too, or when the last page
+    reached no channel, plus a reminder every
+    `scheduled_workflow_watch_failure_repage_hours` (24, `0` = never).
+  - **A 404 is read against the rest of the repo.** GitHub answers 404 both
+    for a private repo the token cannot see and for a workflow file name
+    that does not exist. When every watched workflow in the repo 404s, the
+    page blames the token (and names a misspelled repo as the alternative).
+    When some 404 while others answer, the token can see the repo, so the
+    page names the missing workflow files. With only one workflow watched
+    in a repo it names both causes. A pass where some 404 and nothing
+    answers proves neither, so it is treated as transient.
+  - **Transient failures stay in the log and audit_log.** These are 5xx,
+    timeouts, DNS failures and rate limits. They page only if they last
+    `scheduled_workflow_watch_transient_failure_page_hours` (6, `0` =
+    never) without a break.
+
+  One recovery note follows on the first clean pass after a page, and a
+  workflow that went stale meanwhile is reported on that same pass. Every
+  failing pass writes a `probe.scheduled_workflow_watch_failed` audit row,
+  and the recovery writes `probe.scheduled_workflow_watch_recovered`. Until
+  2026-09-25 each of these failures only left the target "not assessed"
+  and the pass reported ok. From 2026-09-23 23:13 UTC the replaced
+  `gh_token` could not see the repo, all nine workflows 404'd on every
+  pass, and every brain cycle reported the watchdog ok. The last one to
+  report a problem was at 22:51 UTC, while `playwright-e2e` was still
+  visibly stale.
 
 - **`grafana-panels-lint` is `paths:`-gated** to
   `infrastructure/grafana/**` + the lint script + migrations — the

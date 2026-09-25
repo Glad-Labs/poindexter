@@ -44,6 +44,8 @@ def _pool(*, prev_state=None, watches=_WATCH_JSON, enabled="true", last_checked=
         }.get(key)
 
     pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+    # failure_episode reads the episode row and gh_token.updated_at here.
+    pool.fetchval = AsyncMock(return_value=None)
     pool.execute = AsyncMock()
     return pool
 
@@ -81,9 +83,11 @@ def _client(pages):
 
 
 def _findings(pool):
+    """The ``finding`` rows only; the watchdog's own probe.* audit rows are
+    pinned in test_scheduled_workflow_watch_failure_episodes.py."""
     out = []
     for c in pool.execute.call_args_list:
-        if c.args and "audit_log" in c.args[0]:
+        if c.args and "audit_log" in c.args[0] and "'finding'" in c.args[0]:
             out.append(json.loads(c.args[1]))
     return out
 
@@ -91,6 +95,24 @@ def _findings(pool):
 @pytest.fixture(autouse=True)
 def _token(monkeypatch):
     monkeypatch.setattr(swf, "_shared_read_app_setting", AsyncMock(return_value="t0ken"))
+
+
+@pytest.fixture(autouse=True)
+def pages(monkeypatch):
+    """Stand in for ``notify_operator``, which these tests reach by default.
+
+    The real one writes to ``~/.poindexter/alerts.log`` and to any Discord
+    webhook in the environment, so no test here may reach it.
+    """
+    sent: list[dict] = []
+
+    def _record(**kwargs):
+        sent.append(kwargs)
+        return {"discord": "discord", "alerts_log": "alerts.log (test)"}
+
+    monkeypatch.setattr(swf, "notify_operator", _record)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    return sent
 
 
 def _iso(hours_ago):
@@ -197,17 +219,19 @@ class TestEdgeTriggering:
 @pytest.mark.unit
 class TestNotAssessed:
     @pytest.mark.asyncio
-    async def test_zero_scheduled_runs_is_not_an_alert(self, monkeypatch):
+    async def test_zero_scheduled_runs_is_not_an_alert(self, monkeypatch, pages):
         """An operator who never enabled the cron gets no alarms."""
         mod, _ = _client({False: (0, None), True: (0, None)})
         monkeypatch.setattr(swf, "httpx", mod)
         pool = _pool()
         summary = await swf.run_scheduled_workflow_watch(pool)
         assert _findings(pool) == []
+        assert pages == []
         assert summary["workflows"]["acme/widgets:benchmarks.yml"]["state"] == "not_assessed"
+        assert "failures" not in summary or summary["failures"] == {}
 
     @pytest.mark.asyncio
-    async def test_api_error_does_not_invent_a_verdict(self, monkeypatch):
+    async def test_api_error_does_not_invent_a_verdict(self, monkeypatch, pages):
         class _Boom:
             async def __aenter__(self):
                 return self
@@ -225,11 +249,17 @@ class TestNotAssessed:
         summary = await swf.run_scheduled_workflow_watch(pool)
         assert _findings(pool) == []
         assert summary["workflows"]["acme/widgets:benchmarks.yml"]["state"] == "not_assessed"
+        # No verdict, and no claim of health either: a transient failure is
+        # not paged on its own, but the pass is not ok.
+        assert summary["ok"] is False
+        assert summary["failures"]["acme/widgets"]["transient"] is True
+        assert pages == []
 
     @pytest.mark.asyncio
-    async def test_missing_token_does_not_alarm(self, monkeypatch):
+    async def test_missing_token_pages_and_never_calls_github(self, monkeypatch, pages):
+        """The operator configured watches, so no token means a blind
+        watchdog. Until 2026-09-25 this reported ok with an INFO line."""
         monkeypatch.setattr(swf, "_shared_read_app_setting", AsyncMock(return_value=""))
-        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         mod, calls = _client({False: (40, _iso(1)), True: (30, _iso(50))})
         monkeypatch.setattr(swf, "httpx", mod)
         pool = _pool()
@@ -237,6 +267,9 @@ class TestNotAssessed:
         assert _findings(pool) == []
         assert calls == [], "must not call GitHub without a token"
         assert "token" in summary["detail"]
+        assert summary["ok"] is False
+        assert len(pages) == 1
+        assert "gh_token is not set" in pages[0]["detail"]
 
     @pytest.mark.asyncio
     async def test_disabled_is_a_noop(self, monkeypatch):
@@ -287,6 +320,9 @@ class TestEveryPassIsAudible:
             f"claimed health with nothing assessed: {summary['detail']!r}"
         )
         assert "assessed" in summary["detail"], summary["detail"]
+        # The flag the brain heartbeat reads must agree with the words: a pass
+        # that assessed nothing is not ok.
+        assert summary["ok"] is False
 
         line = next(r.getMessage() for r in caplog.records if "pass complete" in r.getMessage())
         assert "healthy" not in line, line
@@ -334,6 +370,8 @@ class TestEveryPassIsAudible:
 
         assert "all 1 assessed" in summary["detail"], summary["detail"]
         assert "1 not assessed" in summary["detail"], summary["detail"]
+        # A cron that never fired is not a failure to read it: the pass is ok.
+        assert summary["ok"] is True
 
 
 @pytest.mark.unit
@@ -353,6 +391,15 @@ class TestConfigValidation:
         parsed = swf._parse_watches(_WATCH_JSON)
         assert len(parsed) == 1
         assert parsed[0]["repo"] == "acme/widgets"
+
+    def test_a_duplicate_entry_is_dropped(self):
+        """Watched twice, it would be checked twice and counted twice."""
+        parsed = swf._parse_watches(json.dumps(_WATCH + [
+            {"repo": "acme/widgets", "workflow": "benchmarks.yml", "max_age_hours": 12},
+        ]))
+        assert [(w["repo"], w["workflow"], w["max_age_hours"]) for w in parsed] == [
+            ("acme/widgets", "benchmarks.yml", 30.0),
+        ]
 
     def test_non_json_is_dropped_not_raised(self):
         assert swf._parse_watches("{not json") == []

@@ -4818,6 +4818,20 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # Each target costs two GitHub API calls, and nothing here moves minute to
     # minute — so this does not ride the brain's 5-minute cycle.
     'scheduled_workflow_watch_interval_minutes': '60',
+    # When the watchdog ITSELF cannot read workflow runs. A credential failure
+    # (gh_token rejected, forbidden, or blind to the private repo: GitHub
+    # answers 404 for that) or a watched workflow that does not exist pages
+    # once per failure episode; this is the reminder interval while it
+    # persists. 0 = never remind. Before this (2026-09-25) such a failure only
+    # left the target "not assessed" and the pass reported ok, so from
+    # 2026-09-23 23:13 UTC every watched workflow went unchecked, unreported.
+    'scheduled_workflow_watch_failure_repage_hours': '24',
+    # ...and how long a TRANSIENT failure (5xx, timeout, DNS, rate limit) must
+    # last, unbroken, before the watchdog pages that it is blind. 0 = never
+    # page a transient failure. The same as the branch-drift canary. Both seed
+    # here (the code defaults in poindexter/brain/scheduled_workflow_watch.py
+    # are the backstop).
+    'scheduled_workflow_watch_transient_failure_page_hours': '6',
 
     # ----- DB wall-clock skew probe (2026-07-08 investigation) -----
     # poindexter/brain/clock_skew_probe.py compares postgres clock_timestamp() to an
@@ -6905,6 +6919,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'scheduled_publisher_poll_seconds': {'owner': 'scheduled_publisher', 'value_type': 'integer'},
     'scheduled_workflow_watch_enabled': {'owner': 'scheduled_workflow_watch', 'value_type': 'boolean'},
     'scheduled_workflow_watch_interval_minutes': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
+    'scheduled_workflow_watch_failure_repage_hours': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
+    'scheduled_workflow_watch_transient_failure_page_hours': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
     'scheduled_workflows': {'owner': 'scheduled_workflow_watch', 'value_type': 'json'},
     'scheduler_alert_on_job_failure': {'owner': 'scheduler', 'value_type': 'boolean'},
     'scheduler_alert_on_job_overlap': {'owner': 'scheduler', 'value_type': 'boolean'},
