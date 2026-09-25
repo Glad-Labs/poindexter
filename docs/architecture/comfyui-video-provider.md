@@ -219,6 +219,16 @@ flow model. Notes that matter:
   7.8 ms for 3 model calls per source pair instead of 1.
 - **It never squats the render card.** 12 MB, unloads after 5 minutes idle,
   and honours `/unload` (soft and hard) like every other sidecar.
+- **One clip at a time; a second request gets 409, not a queue.** The
+  renderer calls it from inside the render's exclusive `gpu.lock('video')` and
+  answers any non-200 with the ffmpeg fallback, so a second request only
+  arrives when the first one's caller gave up (the 600 s
+  `video_clip_interpolation_timeout_s`, against 2-7 s interpolations in prod)
+  or someone else is calling. Queueing behind that would hold the video lock
+  on stuck work. A request counts as busy until its clip has been sent, so
+  `/unload` and the idle unload decline until then, and its work dir goes
+  with it. Until 2026-09-25 nothing removed them: the live container held 67,
+  126 MB, three days after it was created.
 
 `video_clip_interpolation_engine`: `auto` (RIFE when it answers, else ffmpeg),
 `rife` (RIFE or leave the native rate — an operator who would rather ship 16 fps

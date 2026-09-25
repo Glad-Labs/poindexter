@@ -21,6 +21,14 @@ holds nothing between calls by default: it unloads after
 ``RIFE_IDLE_TIMEOUT`` seconds idle and honours the reclaim ladder's ``/unload``
 (soft and hard) like every other sidecar. It must never be the reason a render
 cannot find VRAM.
+
+**Request lifecycle (2026-09-25), the stable-audio pattern (#4034).** One
+interpolation at a time: a request is admitted and counted as busy in one step,
+and any other that arrives meanwhile is refused with 409 (see ``interpolate``
+for why that beats queueing). It stays busy until its clip has been sent, and
+its work dir goes with it. ``_state.gpu_lock`` keeps its load and interpolation
+apart from the idle unload and ``/unload``, and that blocking work runs in
+worker threads (``_run_on_gpu``) so the loop keeps answering ``/health``.
 """
 from __future__ import annotations
 
@@ -29,12 +37,15 @@ import gc
 import json
 import logging
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import time
-from contextlib import asynccontextmanager
+from collections.abc import Callable
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import numpy as np
 import torch
@@ -43,6 +54,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from safetensors.torch import load_file
+from starlette.types import Receive, Scope, Send
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
@@ -52,6 +64,8 @@ logger = logging.getLogger("rife")
 PORT = int(os.getenv("RIFE_PORT", "9842"))
 IDLE_TIMEOUT = float(os.getenv("RIFE_IDLE_TIMEOUT", "300"))
 WEIGHTS = os.getenv("RIFE_WEIGHTS", "/app/flownet.safetensors")
+# Where the image puts interpolation_model.py (Dockerfile.rife).
+MODEL_CODE_DIR = "/app"
 # Below this reserved pool a hard unload would reclaim nothing, so the process
 # stays up — the image-gen lesson (~24 consecutive no-op exits before its gate).
 HARD_UNLOAD_MIN_RESERVED_MB = int(os.getenv("RIFE_HARD_UNLOAD_MIN_RESERVED_MB", "512"))
@@ -78,8 +92,16 @@ class _State:
     def __init__(self) -> None:
         self.model: Any = None
         self.last_used: float = 0.0
+        # True from the moment /interpolate admits a request until its clip
+        # has been sent, or sending it has failed. Only one request is
+        # admitted at a time; /unload and the idle unload decline while one is.
         self.busy: bool = False
         self.load_error: str = ""
+        # One load, interpolation or unload on the card at a time. That work
+        # runs in worker threads (_run_on_gpu) so the loop keeps answering
+        # /health, which also means nothing but this lock stops an unload
+        # from dropping the model while a request loads or uses it.
+        self.gpu_lock = asyncio.Lock()
 
 
 _state = _State()
@@ -89,20 +111,55 @@ def _device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+async def _run_on_gpu(fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    """Run blocking GPU work (a load, an interpolation, an unload) in a worker
+    thread. The caller holds ``_state.gpu_lock``.
+
+    A thread cannot be interrupted, though. If the awaiting request is
+    cancelled, this still waits for the thread to finish before letting the
+    cancellation through. Otherwise the caller's ``async with _state.gpu_lock``
+    would release the lock, and the request would end, while the thread still
+    ran on the card.
+    """
+    work = asyncio.ensure_future(asyncio.to_thread(fn, *args, **kwargs))
+    try:
+        return await asyncio.shield(work)
+    except asyncio.CancelledError:
+        while not work.done():
+            # A repeated cancel changes nothing: the card is busy until the
+            # thread ends.
+            with suppress(asyncio.CancelledError):
+                await asyncio.wait({work})
+        # shield() stops watching the thread once its caller is cancelled, so
+        # a failure after that point is ours to collect, or asyncio logs it
+        # as "Task exception was never retrieved".
+        if not work.cancelled() and (exc := work.exception()) is not None:
+            logger.warning(
+                "%s finished after its request was cancelled, raising %s: %s",
+                getattr(fn, "__name__", "gpu call"), type(exc).__name__, exc,
+            )
+        raise
+
+
 def _load_model() -> bool:
+    """Load IFNet if it is not loaded. Blocking: call it via :func:`_run_on_gpu`
+    under the GPU lock."""
     if _state.model is not None:
         return True
     try:
-        import sys
-
-        sys.path.insert(0, "/app")
+        # Once: this runs on every load, and a load follows every idle unload.
+        if MODEL_CODE_DIR not in sys.path:
+            sys.path.insert(0, MODEL_CODE_DIR)
         from interpolation_model import IFNet  # type: ignore[import-not-found]
 
         model = IFNet()
         model.load_state_dict(load_file(WEIGHTS))
         model.to(_device()).eval()
-        _state.model = model
+        # Published last, in one assignment: "model is not None" is what the
+        # next request and /health read as loaded, so a load that fails
+        # partway (weights that do not fit the net, say) publishes nothing.
         _state.load_error = ""
+        _state.model = model
         logger.info("RIFE loaded on %s", _device())
         return True
     except Exception as exc:  # noqa: BLE001 — reported through /health
@@ -112,6 +169,11 @@ def _load_model() -> bool:
 
 
 def _unload_model() -> None:
+    """Drop the model and return its VRAM to the caching allocator. Blocking:
+    call it via :func:`_run_on_gpu` under the GPU lock.
+
+    One assignment, never ``del`` then re-assign: /health reads
+    ``_state.model`` from the loop while this runs in a thread."""
     _state.model = None
     gc.collect()
     if torch.cuda.is_available():
@@ -155,7 +217,9 @@ def _read_frames(path: str, w: int, h: int) -> np.ndarray:
 
 
 def _to_tensor(frame: np.ndarray, dev: str) -> torch.Tensor:
-    t = torch.from_numpy(np.ascontiguousarray(frame)).to(dev).permute(2, 0, 1).float() / 255.0
+    # A copy: frames are views into ffmpeg's read-only output buffer, and
+    # torch.from_numpy warns about "undefined behavior" on a read-only array.
+    t = torch.from_numpy(np.array(frame)).to(dev).permute(2, 0, 1).float() / 255.0
     return t.unsqueeze(0)
 
 
@@ -183,7 +247,8 @@ def _to_bytes(t: torch.Tensor) -> bytes:
 
 
 def _interpolate_sync(src: str, dest: str, target_fps: float) -> dict[str, Any]:
-    """Raise the clip to ``target_fps``; returns a small stats dict."""
+    """Raise the clip to ``target_fps``; returns a small stats dict. Blocking:
+    call it via :func:`_run_on_gpu` under the GPU lock."""
     w, h, src_fps, _ = _probe(src)
     if target_fps <= src_fps + 1e-6:
         raise ValueError(f"source is already {src_fps:g} fps; target {target_fps:g} is not an increase")
@@ -240,6 +305,15 @@ def _interpolate_sync(src: str, dest: str, target_fps: float) -> dict[str, Any]:
                 enc.stdin.write(_to_bytes(t))
             prev = cur
         enc.stdin.close()
+    except BaseException:
+        # The encoder is still reading its stdin, so the wait below would sit
+        # out its whole timeout (30 min) before this failure could surface,
+        # and the request would hold the card, refusing every other clip,
+        # until then.
+        enc.kill()
+        with suppress(OSError):
+            enc.stdin.close()
+        raise
     finally:
         enc.wait(timeout=1800)
     if enc.returncode != 0 or not os.path.exists(dest) or os.path.getsize(dest) == 0:
@@ -251,6 +325,42 @@ def _interpolate_sync(src: str, dest: str, target_fps: float) -> dict[str, Any]:
     }
 
 
+def _end_request(workdir: str | None) -> None:
+    """End one /interpolate: remove its work dir (the uploaded clip and the
+    interpolated one), stamp ``last_used`` and free the slot. Stamped on the
+    way OUT, so the idle timer measures time since the caller had its clip."""
+    if workdir is not None:
+        try:
+            shutil.rmtree(workdir)
+        except OSError as exc:
+            logger.warning("could not remove work dir %s: %s", workdir, exc)
+    _state.last_used = time.monotonic()
+    _state.busy = False
+
+
+class _ClipFileResponse(FileResponse):
+    """The interpolated clip on its way to the caller. ``on_sent`` runs once
+    the body is out, or once sending it has failed.
+
+    That is where a request ends. FastAPI returns from the endpoint BEFORE
+    Starlette sends the body, so a request ended in the endpoint was no longer
+    busy while its clip streamed, and a hard ``/unload`` could exit mid-body.
+    ``on_sent`` also removes the work dir: nothing did, and the live container
+    held 67 of them, 126 MB of clips, three days after it was created
+    (measured 2026-09-25).
+    """
+
+    def __init__(self, path: str, *, on_sent: Callable[[], None], **kwargs: Any) -> None:
+        super().__init__(path, **kwargs)
+        self._on_sent = on_sent
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._on_sent()
+
+
 class UnloadRequest(BaseModel):
     hard: bool = False
 
@@ -260,7 +370,11 @@ async def health() -> dict[str, Any]:
     return {
         "ok": True,
         "model_loaded": _state.model is not None,
+        # A request is in the server (loading, interpolating or sending its
+        # clip back), and whether a load, interpolation or unload holds the
+        # card right now.
         "busy": _state.busy,
+        "gpu_busy": _state.gpu_lock.locked(),
         "device": _device(),
         "last_used": _state.last_used,
         "vram_reserved_mb": _reserved_mb(),
@@ -270,35 +384,69 @@ async def health() -> dict[str, Any]:
 
 @app.post("/interpolate")
 async def interpolate(
-    file: UploadFile = File(...),
-    target_fps: float = Form(30.0),
-) -> FileResponse:
+    file: Annotated[UploadFile, File()],
+    target_fps: Annotated[float, Form()] = 30.0,
+) -> _ClipFileResponse:
+    """One interpolation at a time; a request that arrives during another is
+    refused with 409 rather than queued.
+
+    409 is what the one caller relies on. The renderer
+    (``shot_list_renderer._rife_interpolate``) treats any non-200 as "use
+    ffmpeg's minterpolate for this clip" and moves on, and it calls from inside
+    the render's exclusive ``gpu.lock('video')``, so its clips never overlap
+    here. A second request therefore means the first one's caller gave up (at
+    ``video_clip_interpolation_timeout_s``, 600 s, against 2-7 s interpolations
+    in prod) or someone else is calling. Queued, a clip would wait on work
+    already known to be stuck or slow, for as long as that takes, with the
+    render holding the video lock, and fall back to ffmpeg anyway once its own
+    budget ran out. Refused, it costs one ffmpeg-interpolated clip.
+
+    The check and the claim happen with no await between them, so two
+    requests cannot both pass. The claim used to come after ``await
+    file.read()``, which yields for any upload Starlette has spooled to disk
+    (over 1 MB; the live container's largest was 1.77 MB), so a second
+    request could pass the check in that gap and interpolate beside the first.
+    From the claim on, the request ends in ``_ClipFileResponse`` once its clip
+    is sent, or below if no response gets that far.
+    """
     if _state.busy:
         raise HTTPException(status_code=409, detail="another interpolation is in flight")
-    if not _load_model():
-        raise HTTPException(status_code=503, detail=f"model unavailable: {_state.load_error}")
-    tmp = tempfile.mkdtemp(prefix="rife_")
-    src = os.path.join(tmp, "in" + (Path(file.filename or "in.mp4").suffix or ".mp4"))
-    dest = os.path.join(tmp, "out.mp4")
+    _state.busy = True
+    workdir: str | None = None
+    try:
+        workdir = tempfile.mkdtemp(prefix="rife_")
+        return await _interpolate_inner(workdir, file, float(target_fps))
+    except BaseException:
+        _end_request(workdir)
+        raise
+
+
+async def _interpolate_inner(workdir: str, file: UploadFile, target_fps: float) -> _ClipFileResponse:
+    """The body of /interpolate, run in the request's own work dir."""
+    src = os.path.join(workdir, "in" + (Path(file.filename or "in.mp4").suffix or ".mp4"))
+    dest = os.path.join(workdir, "out.mp4")
     with open(src, "wb") as fh:
         fh.write(await file.read())
-    _state.busy = True
-    try:
-        stats = await asyncio.to_thread(_interpolate_sync, src, dest, float(target_fps))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001 — the caller falls back to ffmpeg
-        logger.warning("interpolation failed: %s: %s", type(exc).__name__, exc)
-        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
-    finally:
-        _state.busy = False
-        # Stamped on the way OUT so the idle timer measures time since the
-        # work finished, not since it started.
-        _state.last_used = time.monotonic()
+
+    # The load and the interpolation hold the card, their CUDA work in worker
+    # threads. Only an unload can hold the lock ahead of this request (another
+    # interpolation was refused above), and it is brief. Sending the clip
+    # needs no GPU, so it happens after the lock is released.
+    async with _state.gpu_lock:
+        if not await _run_on_gpu(_load_model):
+            raise HTTPException(status_code=503, detail=f"model unavailable: {_state.load_error}")
+        try:
+            stats = await _run_on_gpu(_interpolate_sync, src, dest, target_fps)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 — the caller falls back to ffmpeg
+            logger.warning("interpolation failed: %s: %s", type(exc).__name__, exc)
+            raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
     logger.info("interpolated %s", stats)
-    return FileResponse(
+    return _ClipFileResponse(
         dest, media_type="video/mp4", filename="interpolated.mp4",
         headers={"X-Rife-Stats": json.dumps(stats)},
+        on_sent=lambda: _end_request(workdir),
     )
 
 
@@ -310,15 +458,37 @@ async def unload(req: UnloadRequest | None = None) -> dict[str, Any]:
     whenever the render GPU looks short, and work in flight is part of that
     picture — obeying would destroy the clip the reclaim exists to make room
     for (the wan-server lesson, poindexter#962).
+
+    The decline does not wait for the GPU lock, which an interpolation holds
+    for its whole run: the scheduler gives this call 15 s. Past the lock, the
+    request is checked again, and once more right before a hard exit.
     """
     if _state.busy:
-        return {"status": "busy", "detail": "interpolation in flight; not unloading"}
+        return _decline_unload()
     hard = bool(req.hard) if req else False
-    _unload_model()
-    reserved = _reserved_mb()
-    if hard and reserved >= HARD_UNLOAD_MIN_RESERVED_MB:
-        logger.warning("[HARD UNLOAD] exiting to return the CUDA context (%d MB reserved)", reserved)
-        os._exit(0)
+    async with _state.gpu_lock:
+        # Re-check: a request admitted while we waited for the lock is about
+        # to load the model and use it.
+        if _state.busy:
+            return _decline_unload()
+        await _run_on_gpu(_unload_model)
+        reserved = _reserved_mb()
+        if hard and reserved >= HARD_UNLOAD_MIN_RESERVED_MB:
+            if _state.busy:
+                # Admitted during the unload and queued on this lock: the exit
+                # is irreversible and would reset its connection. The model is
+                # already dropped, so it loads again; the process stays up.
+                logger.warning(
+                    "[HARD UNLOAD] not exiting: an interpolation arrived during "
+                    "the unload; model dropped, process kept up",
+                )
+                return _decline_unload(
+                    "interpolation arrived during the unload; model dropped, process kept up",
+                )
+            logger.warning("[HARD UNLOAD] exiting to return the CUDA context (%d MB reserved)", reserved)
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(0)
     return {
         "status": "unloaded" if not hard else "nothing_to_reclaim",
         "vram_reserved_mb": reserved,
@@ -326,17 +496,44 @@ async def unload(req: UnloadRequest | None = None) -> dict[str, Any]:
     }
 
 
+def _decline_unload(detail: str = "interpolation in flight; not unloading") -> dict[str, Any]:
+    return {"status": "busy", "detail": detail}
+
+
+def _idle_unload_due() -> bool:
+    """Whether the idle loop should drop the model now. ``busy`` counts
+    because ``last_used`` is stamped when a request ends, so mid-request it can
+    be any age."""
+    return (
+        _state.model is not None
+        and not _state.busy
+        and _state.last_used > 0
+        and time.monotonic() - _state.last_used > IDLE_TIMEOUT
+    )
+
+
+async def _idle_unload_tick() -> None:
+    """One idle pass. A busy server is skipped at once, not queued behind;
+    past the lock the condition is checked again, since a request may have
+    been admitted while the tick waited for it."""
+    if not _idle_unload_due():
+        return
+    async with _state.gpu_lock:
+        if not _idle_unload_due():
+            return
+        logger.info("idle %.0fs — unloading", IDLE_TIMEOUT)
+        await _run_on_gpu(_unload_model)
+
+
 async def _idle_loop() -> None:
     while True:
         await asyncio.sleep(30)
-        if (
-            _state.model is not None
-            and not _state.busy
-            and _state.last_used > 0
-            and time.monotonic() - _state.last_used > IDLE_TIMEOUT
-        ):
-            logger.info("idle %.0fs — unloading", IDLE_TIMEOUT)
-            _unload_model()
+        try:
+            await _idle_unload_tick()
+        except Exception:  # noqa: BLE001 — logged; the next tick retries
+            # One failed pass (a CUDA error mid-unload, say) must not end the
+            # loop: nothing else unloads an idle model.
+            logger.exception("idle unload failed; retrying next tick")
 
 
 if __name__ == "__main__":
