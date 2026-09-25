@@ -9,6 +9,12 @@
 # service runs scripts/backup-offsite/run.sh with the restic binary added
 # below. This image is the always-on first line of defense for both tiers.
 #
+# A fourth BACKUP_TIER=volumes mode (Glad-Labs/poindexter#890) tars the
+# non-Postgres named volumes the compose service mounts read-only under
+# /volumes/<label> — the observability data (Grafana, Loki, Tempo,
+# Pyroscope, Langfuse ClickHouse, pgAdmin) that only pg_dump-shaped tiers
+# 1/2 never touched. Needs `tar` below; everything else already fit.
+#
 # Image is intentionally tiny: alpine + postgresql-client + bash + curl.
 # No python, no app code — keeps the image surface small and the failure
 # modes obvious. The brain handles alert dispatch downstream via the
@@ -23,6 +29,7 @@ RUN apk add --no-cache \
     coreutils \
     findutils \
     restic \
+    tar \
     tzdata
 
 WORKDIR /app

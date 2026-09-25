@@ -2657,6 +2657,71 @@ services:
       start_period: 30m
 
   # ===========================================
+  # Volume backup (Glad-Labs/poindexter#890). Tiers 1/2 above are Postgres-
+  # only; nothing protected the observability data living in Docker named
+  # volumes — Grafana dashboards, Loki logs, Prometheus TSDB, Tempo traces,
+  # Pyroscope profiles, Langfuse's ClickHouse trace store, pgAdmin's saved
+  # connections. A one-off manual sweep (2026-05-07) left stale tarballs
+  # sitting next to the genuinely-current pg_dump dirs, which read as a
+  # working tier on a directory listing — only the timestamps (and, for
+  # three of them, a literal 0 bytes) gave it away.
+  #
+  # Same image as tiers 1/2 (BACKUP_TIER=volumes selects the mode in
+  # scripts/backup/run.sh), but this tier needs no docker socket: every
+  # volume it protects is mounted here BY NAME, read-only, at a fixed path
+  # under /volumes/<label>. The script just walks whatever it's handed, so
+  # protecting another volume later is a compose-only change — add a mount
+  # line, no script edit. Postgres data volumes are deliberately never
+  # mounted here: a tar of a live data directory is a torn snapshot that may
+  # not replay (that's what tiers 1/2 are for). GlitchTip's error history
+  # lives in its OWN Postgres (glitchtip-db-data) for the same reason it's
+  # excluded here — it needs a pg_dump, not a tar, and isn't one yet
+  # (tracked as a known remaining gap in poindexter#890, not silently
+  # claimed as covered).
+  backup-volumes:
+    image: poindexter-backup:latest
+    container_name: poindexter-backup-volumes
+    restart: unless-stopped
+    environment:
+      BACKUP_TIER: volumes
+      PG_HOST: postgres-local
+      PG_PORT: "5432"
+      PG_USER: ${LOCAL_POSTGRES_USER:-poindexter}
+      PG_DATABASE: ${LOCAL_POSTGRES_DB:-poindexter_brain}
+      PGPASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
+      TZ: ${TZ:-UTC}
+    volumes:
+      # Output — same bind-mounted host directory as tiers 1/2, so it moves
+      # with POINDEXTER_BACKUP_DIR/POINDEXTER_BACKUP_ROOT for free.
+      - ${POINDEXTER_BACKUP_DIR:-${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}/auto}:/backups
+      # Sources — read-only, by volume NAME (not container). Referencing a
+      # volume that doesn't exist on this install (e.g. a consumer-stack
+      # checkout, which omits the whole observability tier) just creates an
+      # empty one; the script's file-count check correctly logs that as
+      # "genuinely empty", not a failure.
+      - langfuse-clickhouse-data:/volumes/langfuse-clickhouse:ro
+      - loki-data:/volumes/loki:ro
+      - prometheus-data:/volumes/prometheus:ro
+      - tempo-data:/volumes/tempo:ro
+      - pyroscope-data:/volumes/pyroscope:ro
+      - pgadmin-data:/volumes/pgadmin:ro
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+    healthcheck:
+      # Liveness only — at least one fresh archive in the last 26h, mirroring
+      # backup-daily's threshold/slack. Does not check that every volume got
+      # one; the container_health_watch brain probe pages on this going
+      # unhealthy the same way it does for every other poindexter-* service.
+      test:
+        - "CMD-SHELL"
+        - "find /backups/volumes -name '*.tar.gz' -mmin -1560 | grep -q ."
+      interval: 30m
+      timeout: 10s
+      retries: 3
+      start_period: 30m
+
+  # ===========================================
   # Tier 2 — off-machine backup (poindexter#386). Same image as the Tier 1
   # backup services (restic baked in), but runs scripts/backup-offsite/run.sh:
   # restic backup of the daily dump dir → an S3-compatible bucket, weekly

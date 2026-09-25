@@ -98,6 +98,85 @@ docker exec -i poindexter-postgres-local pg_restore \
     < ~/.poindexter/backups/auto/hourly/poindexter_brain_20260505T160500Z.dump
 ```
 
+## Volume backup — observability data (poindexter#890)
+
+Tiers 1/2 above only ever touched Postgres. Nothing backed up the Docker
+**named volumes** behind the observability stack — Grafana dashboards, Loki
+logs, Prometheus's TSDB, Tempo traces, Pyroscope profiles, Langfuse's
+ClickHouse trace store, pgAdmin's saved connections. A one-off manual sweep
+(2026-05-07) left stale tarballs sitting next to the genuinely-current
+`hourly`/`daily` dirs, which made a directory listing read as a working tier —
+only the timestamps (and, for three of them, a literal 0 bytes even from that
+run) gave it away.
+
+`backup-volumes` closes that gap with a third compose service, same image:
+
+| Service          | Cadence | Retention           | Path                                  |
+| ---------------- | ------- | ------------------- | ------------------------------------- |
+| `backup-volumes` | 24h     | 7 archives / volume | `~/.poindexter/backups/auto/volumes/` |
+
+It needs no Docker socket. Every volume it protects is mounted **by name,
+read-only**, at a fixed path under `/volumes/<label>` in
+`docker-compose.local.yml`; the runner (`scripts/backup/run.sh`,
+`BACKUP_TIER=volumes`) just walks whatever it's handed and `tar czf`s each one
+into its own timestamped archive. Protecting another volume later is a
+compose-only change — add a mount line, no script edit.
+
+Postgres data volumes are deliberately never mounted here — a tar of a live
+data directory is a torn snapshot that may not replay (that's what tiers 1/2
+are for).
+
+**The failure mode this exists to catch, and how it's caught:** a size
+threshold cannot tell "this volume is genuinely empty" from "the mount failed
+and the archive captured nothing" — both produce a valid, tiny gzip, which is
+exactly how the three 0-byte tarballs above sat undetected for months. The
+runner counts real files at the source _before_ tarring and compares against
+what actually landed in the archive:
+
+| Outcome                                       | Verdict                                                                                                             |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 0 files at source, 0 in archive               | OK — genuinely empty volume                                                                                         |
+| N>0 files at source, 0 in archive             | **FAIL** — archived nothing, alerts                                                                                 |
+| tar exits 1 ("file changed while being read") | not a failure by itself — expected for live observability data; the file-count check above is what actually decides |
+| tar exits ≥2                                  | **FAIL** — fatal (permission, disk, ...)                                                                            |
+
+A failure on one volume doesn't stop the others in the same tick. Any failure
+feeds the same generic `tick()`/`emit_alert()` path hourly/daily already use —
+`backup_volumes_failed`, `critical` — so no new alert wiring exists for this
+tier. Staleness (the service stopped running at all) is covered by a
+container healthcheck exactly like the pg tiers', which means it's also
+covered for free by the brain's existing `container_health_watch` probe (no
+new probe code either).
+
+### Settings (`app_settings`)
+
+| Setting                    | Default | Notes                                    |
+| -------------------------- | ------- | ---------------------------------------- |
+| `backup_volumes_enabled`   | `true`  | Skip ticks without stopping the loop     |
+| `backup_volumes_interval`  | `24h`   | `<N>{s\|m\|h\|d}`                        |
+| `backup_volumes_retention` | `7`     | Kept **per volume label**, independently |
+
+### Known remaining gap
+
+GlitchTip's error history lives in its own Postgres (`glitchtip-db-data`), not
+a plain data blob — the same torn-snapshot reasoning that excludes
+`postgres-local-data` from this tier applies to it too. It needs a `pg_dump`
+against GlitchTip's own database, which no tier currently does. Called out
+here rather than silently claimed as covered.
+
+### Restore
+
+```bash
+# pick an archive for the volume you need
+ls ~/.poindexter/backups/auto/volumes/ | grep ^grafana_
+
+# restore into a stopped container's volume
+docker run --rm \
+    -v <target-volume>:/dest \
+    -v ~/.poindexter/backups/auto/volumes:/src:ro \
+    alpine sh -c 'cd /dest && tar xzf /src/grafana_20260925T120000Z.tar.gz'
+```
+
 ## Tier 2 — off-machine (optional, recommended)
 
 Same-drive backups don't survive drive failure, theft, or ransomware.
