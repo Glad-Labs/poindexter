@@ -494,8 +494,19 @@ class TestRun:
         async def fake_build(_pool):
             return rendered
 
+        async def healthy(_url):
+            return True
+
         monkeypatch.setattr(
             "poindexter.services.jobs.render_prometheus_rules.build_current", fake_build
+        )
+        # A no-change pass asks Prometheus whether its last reload succeeded.
+        # Unstubbed, that query went to the live `prometheus:9090`, and on the
+        # CI runner that is the production server. Whenever its last reload
+        # had failed, this test would have sent POST /-/reload to it.
+        monkeypatch.setattr(
+            "poindexter.services.jobs.render_prometheus_rules._prometheus_reload_healthy",
+            healthy,
         )
 
         result = await RenderPrometheusRulesJob().run(

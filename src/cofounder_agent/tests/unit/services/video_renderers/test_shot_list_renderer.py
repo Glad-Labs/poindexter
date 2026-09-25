@@ -103,19 +103,25 @@ def _neutralize_unload_settles():
 
 
 @pytest.fixture(autouse=True)
-def _neutralize_wan_unload():
-    """Every _render_pass now fires a best-effort wan hard-unload before its
-    still phase (`_clear_wan_for_stills`, poindexter#966 between-lanes half).
-    Left unpatched, each render-path test would attempt a REAL HTTP POST to
-    the wan-server URL — absorbed by the best-effort except, so tests stay
-    green but non-hermetic (the known silent-test-network-hazard shape, and
-    non-deterministic on the real-network CI runner). Tests asserting the
-    unload re-patch locally; the innermost patch wins."""
-    from unittest.mock import AsyncMock as _AsyncMock
+def _neutralize_reclaim_rungs(monkeypatch):
+    """Every GPU reclaim rung the render pass can fire is an AsyncMock here.
 
-    with patch("poindexter.services.gpu_scheduler.gpu._unload_wan", _AsyncMock()), \
-         patch("poindexter.services.gpu_scheduler.gpu._unload_comfyui", _AsyncMock()):
-        yield
+    A render pass hard-unloads wan and frees ComfyUI before its stills
+    (`_clear_wan_for_stills`, poindexter#966) and hard-unloads image-gen before
+    a hero clip (`_clear_image_gen_for_hero`). Each is a REAL POST to a sidecar
+    addressed by its compose service name, absorbed by a best-effort except, so
+    an unpatched test stays green while it reaches the network.
+
+    This fixture used to name two rungs, wan and ComfyUI. The image-gen rung it
+    missed sent ~11 `POST /unload {"hard": true}` per CI job to the PRODUCTION
+    image-gen server, because the self-hosted runner sits on the live compose
+    network. That ran until 2026-09-25 and made image-gen exit at least 9 times
+    in 30 days. The rung list is now derived from the scheduler
+    (tests/unit/_gpu_isolation.py). Tests asserting an unload re-patch it
+    locally; the innermost patch wins."""
+    from tests.unit._gpu_isolation import make_reclaim_rungs_inert
+
+    make_reclaim_rungs_inert(monkeypatch)
 
 
 @pytest.fixture(autouse=True)

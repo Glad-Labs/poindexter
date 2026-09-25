@@ -46,6 +46,14 @@ def _ctx() -> dict[str, Any]:
     # bare MagicMock would return a MagicMock and break the numeric short-cap
     # comparison (#867). Mirror the real semantics for every get_int key.
     sc.get_int.side_effect = lambda _key, default=0: default
+    # Same trap, and it cost more than a failed comparison. `is_tts_enabled`
+    # reads `get_bool("podcast_tts_enabled", False)`, a bare MagicMock returns
+    # a truthy MagicMock, and so every test that did not patch TTS synthesized
+    # its podcast script for real. On the self-hosted CI runner `speaches:8000`
+    # is the PRODUCTION TTS server, and it answered ten syntheses per CI job
+    # until 2026-09-25. Unset keys now read as unset; the tests about TTS patch
+    # `is_tts_enabled` and `synthesize_speech` themselves.
+    sc.get_bool.side_effect = lambda key, default=False: _cfg.get(key, default)
     db = SimpleNamespace(pool=MagicMock())
     return {
         "title": "A Real Title",

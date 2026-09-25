@@ -6,6 +6,8 @@ the `[IMAGE-N: …]` form the rest of the pipeline parses.
 """
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from poindexter.modules.content.atoms._writer_markers import (
@@ -13,6 +15,21 @@ from poindexter.modules.content.atoms._writer_markers import (
     number_inline_markers,
     split_chart_target,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_writer_unload(monkeypatch):
+    """``content.plan_image_markers`` ends with the writer-to-image-gen VRAM
+    guard, ``maybe_unload_writer_before_image_gen``. The guard asks Ollama what
+    is loaded (``/api/ps``) and evicts it (``keep_alive: 0``). The atom tests
+    below ran it for real against ``host.docker.internal:11434``. On the
+    self-hosted CI runner that is the PRODUCTION Ollama, so each run evicted
+    whatever model the pipeline had loaded (2026-09-25). The other atom test
+    files already stub this seam; this one did not."""
+    monkeypatch.setattr(
+        "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+        AsyncMock(return_value=[]),
+    )
 
 
 def test_extract_hero_pulls_subject_and_strips_line():

@@ -16,6 +16,25 @@ from poindexter.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUSchedule
 # ``with patch(...)`` block, which wins for that scope.
 
 
+@pytest.fixture(autouse=True)
+def _no_live_render_vram_read(monkeypatch):
+    """A hard rung reads the render GPU's free VRAM before and after its unload.
+
+    ``_render_free_vram_gb`` queries Prometheus, and the rung tests below inject
+    their own HTTP client but never replaced that read. So the wan and ComfyUI
+    hard-rung tests queried the live Prometheus on every run. On the CI runner
+    that is the production server, and the restart decision those tests walk
+    through depended on how busy the real GPU was at that moment.
+
+    ``None`` is the documented "unreadable" reading, and every hard rung then
+    declines a restart. A test that needs a number patches
+    ``_render_free_vram_gb`` on its own instance, which wins.
+    """
+    monkeypatch.setattr(
+        GPUScheduler, "_render_free_vram_gb", AsyncMock(return_value=None),
+    )
+
+
 class TestGPUScheduler:
     """Core GPU scheduler behavior."""
 
@@ -640,16 +659,17 @@ class TestUnloadComfyui:
 
 def _mock_all_rungs(scheduler):
     """AsyncMock every reclaim rung — a partially-stubbed scheduler runs
-    REAL sidecar HTTP from a unit test (the partial-probe-stub trap)."""
+    REAL sidecar HTTP from a unit test (the partial-probe-stub trap).
+
+    The rung list is derived from the scheduler rather than typed out here, so
+    a rung added to the ladder cannot be the one left real
+    (tests/unit/_gpu_isolation.py)."""
     from unittest.mock import AsyncMock
 
-    scheduler._unload_ollama_models = AsyncMock()
-    scheduler._unload_image_gen = AsyncMock()
-    scheduler._unload_chatterbox = AsyncMock()
-    scheduler._unload_wan = AsyncMock()
-    scheduler._unload_stable_audio = AsyncMock()
-    scheduler._unload_comfyui = AsyncMock()
-    scheduler._unload_rife = AsyncMock()
+    from tests.unit._gpu_isolation import reclaim_rung_names
+
+    for name in reclaim_rung_names():
+        setattr(scheduler, name, AsyncMock())
 
 
 class TestReclaimRenderVram:

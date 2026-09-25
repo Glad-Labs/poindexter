@@ -7,65 +7,52 @@
 # Generated 2026-08-13 from a full-suite socket probe. Burn these down by
 # stubbing the seam the test reaches through, then lower the count.
 #
-# ENVIRONMENT-DEPENDENT — this is a UNION, not a snapshot. Host and CI reach
-# different services, so they take different code paths and produce different
-# offenders.
+# A LISTED FILE IS STILL REFUSED PRODUCTION ENDPOINTS. Every compose service
+# name (image-gen-server, speaches, prometheus, host.docker.internal, ...) and
+# every GPU service's host port is refused for every unit test, listed or not,
+# @pytest.mark.allow_network or not. The self-hosted CI runners sit on the
+# production compose network, and this file used to grandfather tests that
+# hard-unloaded the live image-gen server ~11 times per CI job (2026-09-25).
+# The refusal set is derived in tests/unit/_egress_guard.py; the story is in
+# docs/architecture/unit-test-network-egress-guard.md.
 #
-# THE HOST UNDER-REPORTS, and the mechanism matters when you trust a local run:
-# the guard hooks socket.connect, but a connection whose hostname fails DNS
-# never REACHES connect. `http://host.docker.internal:11434` fails resolution
-# on the host (silent) and resolves to the docker bridge in CI (fires). To
-# measure host-side under CI-like conditions, point the name at a literal IP:
-#   OLLAMA_BASE_URL=http://127.0.0.1:11434 pytest tests/unit ...
-# That reproduced the whole CI-only failure set for
-# test_llm_providers_dispatcher.py locally. 7 files here egress ONLY in CI (image-gen 9836, wan 9840,
-# chatterbox 9839, ollama 11434 on the docker bridge) and never on the host.
-# A baseline regenerated from one environment alone will be wrong in the other:
-# regenerate from BOTH and take the per-file max.
+# The host and CI used to disagree here, and for production names they no
+# longer do. A compose name fails DNS on the host and resolved to the live
+# container in CI, so a test could pass locally and reach production in CI.
+# Seven files on this list egressed ONLY in CI that way. The guard now refuses
+# those names at resolution in both places, so a host run sees them too.
+#
+# What can still differ is ordinary egress: the host has live services on
+# loopback (Postgres on 5433 via bootstrap.toml, the worker API on 8002) and
+# the CI runner does not. A baseline regenerated from one environment alone can
+# still be wrong in the other: regenerate from BOTH and take the per-file max.
 #
 # The report sink is TRUNCATED at session start (conftest pytest_sessionstart),
 # so consecutive report runs no longer accumulate. Before that, a second run
 # showed the union of both — a test you had just fixed still appeared in the
 # summary. Measured the confusing way round: a fixed file reported 52 stale
-# pairs and 0 real ones.
+# pairs and 0 real ones. It is truncated once per pytest SESSION, so copy it
+# aside after each CI step if you harvest several steps in a row.
 #
 # REGENERATE with one report-mode run, which is the only way to see ALL of it:
 #   EGRESS_GUARD_MODE=report pytest tests/unit/ ...   # then grep '[egress-guard] EGRESS'
 # Enforcing shows only the first failing CI step; report mode lets all ~13
 # steps finish. The 2026-08-13 harvest returned 222 (test, target) pairs.
 #
+# 2026-09-25: 21 files burned down. 8 reached production sidecars and were
+# fixed; 13 had no egress left anywhere.
+#
 # format: <count> <path>
 
 2 tests/unit/cli/test_cli_utf8_output.py
 7 tests/unit/cli/test_tasks_edit_cli.py
-1 tests/unit/modules/content/test_image_atom_contracts.py
 1 tests/unit/modules/content/test_writer_core_silent_failures.py
-3 tests/unit/modules/content/test_writer_markers.py
-1 tests/unit/services/flows/test_content_generation_flow.py
-1 tests/unit/services/flows/test_content_generation_trace.py
-1 tests/unit/services/jobs/test_backfill_post_performance_gsc_job.py
-4 tests/unit/services/jobs/test_dispatch_media_pipeline.py
 2 tests/unit/services/jobs/test_media_distribute.py
-9 tests/unit/services/stages/test_generate_media_scripts.py
-2 tests/unit/services/stages/test_platform_dispatch_seam.py
-1 tests/unit/services/test_alt_text.py
-3 tests/unit/services/test_brain_health_probes.py
 4 tests/unit/services/test_content_router_service.py
-8 tests/unit/services/test_gpu_scheduler.py
-2 tests/unit/services/test_gpu_scheduler_silent_failures.py
-2 tests/unit/services/test_image_captioner.py
-5 tests/unit/services/test_image_service.py
-3 tests/unit/services/test_image_service_activity.py
 1 tests/unit/services/test_ollama_client_resilience.py
 3 tests/unit/services/test_publish_service_bg_exceptions.py
-2 tests/unit/services/test_qa_rail_gpu_budgets.py
-1 tests/unit/services/test_render_prometheus_rules_job.py
 1 tests/unit/services/test_template_runner_postgres_checkpointer.py
 1 tests/unit/services/topic_sources/test_dev_diary_source.py
-6 tests/unit/services/video_renderers/test_hero_vram_choreography.py
-3 tests/unit/services/video_renderers/test_shot_list_progress.py
-12 tests/unit/services/video_renderers/test_shot_list_renderer.py
 5 tests/unit/test_operator_notifier.py
 2 tests/unit/test_recovery_agent.py
 4 tests/unit/test_voice_brain_host.py
-1 tests/unit/utils/test_uuid_prefix.py

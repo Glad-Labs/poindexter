@@ -68,6 +68,22 @@ def _reset_module_state():
     hp._last_remediation.clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_live_alertmanager(monkeypatch):
+    """``run_health_probes`` asks Alertmanager whether it can deliver
+    (``GET alertmanager:9093/-/healthy``) once per cycle. Unstubbed, every test
+    that runs a cycle made that request, and on the self-hosted CI runner the
+    name resolves to the PRODUCTION Alertmanager. The egress guard now refuses
+    compose service names for every unit test.
+
+    False, meaning unreachable, is what these tests always got on a developer
+    host, where the name does not resolve. It is also the probe's conservative
+    branch: covered probes are not suppressed. The tests that turn on
+    Alertmanager's state re-patch it, and the innermost patch wins.
+    """
+    monkeypatch.setattr(hp, "_alertmanager_healthy", AsyncMock(return_value=False))
+
+
 @pytest.mark.unit
 class TestIsDue:
     def test_returns_true_when_never_run(self):

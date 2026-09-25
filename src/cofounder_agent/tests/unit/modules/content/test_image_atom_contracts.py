@@ -12,10 +12,24 @@ rebuild consumer.
 from __future__ import annotations
 
 import inspect
+from unittest.mock import AsyncMock
 
 import pytest
 
 from poindexter.services.site_config import SiteConfig
+
+
+@pytest.fixture(autouse=True)
+def _no_writer_unload(monkeypatch):
+    """``content.plan_image_markers`` ends with the writer-to-image-gen VRAM
+    guard, which lists Ollama's loaded models and evicts them. Unstubbed, the
+    contract-shape test ran that against ``host.docker.internal:11434``. On the
+    self-hosted CI runner that is the PRODUCTION Ollama, so the test evicted
+    the pipeline's loaded model on every run (2026-09-25)."""
+    monkeypatch.setattr(
+        "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+        AsyncMock(return_value=[]),
+    )
 
 
 @pytest.mark.unit

@@ -13,6 +13,19 @@ from poindexter.services.video_renderers import shot_list_renderer as slr
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def _neutralize_reclaim_rungs(monkeypatch):
+    """``_render_pass`` hard-unloads wan and frees ComfyUI before its stills
+    (``_clear_wan_for_stills``). Unstubbed, each test here sent
+    ``POST /unload {"hard": true}`` to the wan server plus ``/queue`` and
+    ``/free`` to ComfyUI. On the self-hosted CI runner those are the PRODUCTION
+    containers (2026-09-25). Every reclaim rung is an AsyncMock instead; the
+    list is derived, see tests/unit/_gpu_isolation.py."""
+    from tests.unit._gpu_isolation import make_reclaim_rungs_inert
+
+    make_reclaim_rungs_inert(monkeypatch)
+
+
 def _shots3():
     """Three Shot objects — bypasses the VideoShotList cross-shot 'no >2
     consecutive same source' rule (not what these tests exercise;

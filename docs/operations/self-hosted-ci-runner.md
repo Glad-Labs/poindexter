@@ -392,3 +392,28 @@ arbitrary code on this machine. The public mirror `Glad-Labs/poindexter` has no
 guarded to `github.repository == 'Glad-Labs/glad-labs-stack'`). **Do not**
 hardcode `self-hosted` in any workflow, and do not register these runners
 against `poindexter`.
+
+### The runners can see production, so tests must not
+
+The runners have no Docker socket, but they do sit on the production compose
+network (`glad-labs-website_default`). They need it: the integration step takes the
+pipeline's GPU advisory lock on `postgres-local:5432`, and the real-model
+integration tests run against the host Ollama through `host.docker.internal`. The
+cost is that every compose service name resolves, inside a job, to the **live**
+container. A unit test that addresses `image-gen-server:9836`, `speaches:8000` or
+`host.docker.internal:9840` is talking to production.
+
+That happened. Until 2026-09-25, every `test-backend` job sent about 11
+`POST /unload {"hard": true}` to the live image-gen server and 10 TTS syntheses to
+speaches, and it evicted whatever model the host Ollama had loaded. In 30 days image-gen
+exited at least 9 times on a CI unload, each followed by a cold reload.
+
+The unit-test egress guard now refuses every compose service name and every GPU
+service's host port for every unit test. A baseline entry does not cover them, and
+neither does `@pytest.mark.allow_network`. Reference:
+[`docs/architecture/unit-test-network-egress-guard.md`](../architecture/unit-test-network-egress-guard.md).
+To check whether a job reached a sidecar, look for the runner's IP in the sidecar's
+access log:
+`docker network inspect glad-labs-website_default` maps IPs to containers, and
+`docker logs poindexter-image-gen-server | grep "POST /unload"` shows the source
+IP of each unload.

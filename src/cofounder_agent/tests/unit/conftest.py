@@ -1052,6 +1052,13 @@ def repo_root() -> Path:
 # WHY LOOPBACK COUNTS. 127.0.0.1 is the whole problem here; the services under
 # test run locally. A guard that allowed loopback would allow the exact
 # coupling this exists to stop.
+#
+# WHY SOME TARGETS OUTRANK THE BASELINE. The CI runners are containers on the
+# PRODUCTION compose network, so a compose service name is the live sidecar. A
+# baselined render test hard-unloaded the real image-gen server ~11 times per
+# CI job until 2026-09-25, and made it exit at least 9 times in 30 days. Those
+# names, and the GPU services' host ports, are refused for every test: see
+# "Production endpoints" in tests/unit/_egress_guard.py.
 
 # The exception + baseline loader live in tests/unit/_egress_guard.py, NOT here:
 # pytest imports a conftest under its own module name, so `from
@@ -1061,13 +1068,17 @@ def repo_root() -> Path:
 from tests.unit._egress_guard import (  # noqa: E402
     EGRESS_REPORT_PREFIX,
     UnitTestNetworkEgress,
+    display_host,
     guard_is_enforcing,
     load_egress_baseline,
+    load_production_endpoints,
+    production_refusal_message,
     record_egress,
     report_sink,
 )
 
 _EGRESS_ALLOWED = load_egress_baseline()
+_PRODUCTION = load_production_endpoints()
 
 
 @pytest.fixture(autouse=True)
@@ -1078,36 +1089,59 @@ def _no_network_egress(request, monkeypatch):
     exercising a real local server it started itself):
 
         @pytest.mark.allow_network
+
+    Neither the baseline nor the marker covers a PRODUCTION endpoint (a compose
+    service name, or a GPU service's host port). Those are refused for every
+    test, at name resolution as well as at connect.
     """
     import socket
 
     node_path = request.node.nodeid.split("::")[0]
-    enforcing = guard_is_enforcing()
     # Report mode deliberately IGNORES the baseline and the marker: a harvest
     # wants every offender, including the ones already known, or a regenerated
     # baseline would silently drop everything currently on it.
-    if enforcing and (
+    grandfathered = guard_is_enforcing() and bool(
         request.node.get_closest_marker("allow_network") or node_path in _EGRESS_ALLOWED
-    ):
-        yield
-        return
+    )
 
     real_connect = socket.socket.connect
     real_connect_ex = socket.socket.connect_ex
     real_create = socket.create_connection
+    real_getaddrinfo = socket.getaddrinfo
+    real_gethostbyname = socket.gethostbyname
+    real_gethostbyname_ex = socket.gethostbyname_ex
+
+    def _refuse_production(host, port, *, at_resolution: bool):
+        if not guard_is_enforcing():
+            # Report mode records a production target and then fails it the
+            # way the host does (an unresolvable name, a refused port) with an
+            # ordinary exception the code under test already handles. It never
+            # lets it through: a harvest run on the CI runner would otherwise
+            # do exactly the damage this refusal exists to stop.
+            record_egress(request.node.nodeid, host, port)
+            shown = display_host(host)
+            if at_resolution:
+                raise socket.gaierror(socket.EAI_NONAME, f"{shown}: production endpoint refused")
+            raise ConnectionRefusedError(f"{shown}:{port}: production endpoint refused")
+        raise UnitTestNetworkEgress(production_refusal_message(request.node.nodeid, host, port))
 
     def _refuse(addr):
         # AF_UNIX / odd address shapes are local IPC, not egress — let them by.
         if not (isinstance(addr, tuple) and len(addr) >= 2):
             return
+        host, port = addr[0], addr[1]
+        if _PRODUCTION.is_host(host) or _PRODUCTION.is_port(port):
+            _refuse_production(host, port, at_resolution=False)
+        if grandfathered:
+            return
         if not guard_is_enforcing():
             # Report mode: record and let the connection proceed, so a whole CI
             # run surfaces its egress in one pass instead of one step at a time.
-            record_egress(request.node.nodeid, addr[0], addr[1])
+            record_egress(request.node.nodeid, host, port)
             return
         raise UnitTestNetworkEgress(
             f"{request.node.nodeid} opened a network connection to "
-            f"{addr[0]}:{addr[1]}.\n"
+            f"{host}:{port}.\n"
             "Unit tests must not touch the network — on this box that reaches "
             "the REAL Postgres / image-gen / wan server, so the test grades "
             "live state instead of the code (poindexter#1011).\n"
@@ -1117,6 +1151,12 @@ def _no_network_egress(request, monkeypatch):
             "If the socket is genuinely intended, mark the test "
             "@pytest.mark.allow_network."
         )
+
+    def _resolve_guard(host, port=None):
+        # A compose name fails DNS on the host and resolves to the live
+        # container in CI, so refusing it HERE is what makes the two agree.
+        if _PRODUCTION.is_host(host):
+            _refuse_production(host, port, at_resolution=True)
 
     def _connect(self, addr, *a, **k):
         _refuse(addr)
@@ -1130,9 +1170,24 @@ def _no_network_egress(request, monkeypatch):
         _refuse(addr)
         return real_create(addr, *a, **k)
 
+    def _getaddrinfo(host, port, *a, **k):
+        _resolve_guard(host, port)
+        return real_getaddrinfo(host, port, *a, **k)
+
+    def _gethostbyname(host):
+        _resolve_guard(host)
+        return real_gethostbyname(host)
+
+    def _gethostbyname_ex(host):
+        _resolve_guard(host)
+        return real_gethostbyname_ex(host)
+
     monkeypatch.setattr(socket.socket, "connect", _connect, raising=False)
     monkeypatch.setattr(socket.socket, "connect_ex", _connect_ex, raising=False)
     monkeypatch.setattr(socket, "create_connection", _create_connection, raising=False)
+    monkeypatch.setattr(socket, "getaddrinfo", _getaddrinfo, raising=False)
+    monkeypatch.setattr(socket, "gethostbyname", _gethostbyname, raising=False)
+    monkeypatch.setattr(socket, "gethostbyname_ex", _gethostbyname_ex, raising=False)
     yield
 
 def pytest_sessionstart(session):  # noqa: ARG001
