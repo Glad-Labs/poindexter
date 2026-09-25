@@ -730,11 +730,36 @@ async def test_a_rule_grace_wins_over_the_alertmanager_default(monkeypatch):
 @pytest.mark.asyncio
 async def test_an_alert_without_a_producer_fingerprint_leaves_the_verify_on_dedup_state(monkeypatch):
     """Nothing to look it up by in alert_events: no target is recorded, so the
-    verify uses the legacy oracle, with the general grace."""
+    verify uses the legacy oracle, with the general grace. Its page is still
+    owed, so the route is recorded all the same."""
     row = {**PYROSCOPE_ROW, "fingerprint": ""}
     details = await _act(monkeypatch, rule=PYROSCOPE_RULE, alert=PYROSCOPE_ALERT, alert_event=row)
-    assert not {"verify_signal", "alert_event_id", "alert_fingerprint", "alert_severity"} & set(details)
+    assert not {"verify_signal", "alert_event_id", "alert_fingerprint"} & set(details)
     assert details["verify_after_seconds"] == 120
+    assert (details["alertname"], details["alert_severity"]) == ("PyroscopeDown", "warning")
+
+
+@pytest.mark.parametrize(
+    "labels,route",
+    [
+        # an Alertmanager alert: severity and category, no directive
+        ({"alertname": "PromtailDown", "severity": "critical", "category": "infrastructure"},
+         ("critical", "infrastructure", "")),
+        # a finding whose kind's delivery policy pages a warning on Telegram
+        ({"alertname": "deploy_sync_stale", "severity": "warning", "force_channel": "telegram"},
+         ("warning", "", "telegram")),
+        # no severity label: recorded empty, a route like any other
+        ({"alertname": "Mystery"}, ("", "", "")),
+    ],
+)
+@pytest.mark.asyncio
+async def test_an_action_records_how_the_alerts_own_page_was_routed(monkeypatch, labels, route):
+    """The dispatcher routes a page by these labels. The action keeps them so
+    the verify can page a fix that did not hold the same way."""
+    details = await _act(monkeypatch, rule=PYROSCOPE_RULE, alert={"labels": labels, "annotations": {}},
+                         alert_event=None)
+    assert details["alertname"] == labels["alertname"]
+    assert (details["alert_severity"], details["alert_category"], details["alert_force_channel"]) == route
 
 
 @pytest.mark.asyncio

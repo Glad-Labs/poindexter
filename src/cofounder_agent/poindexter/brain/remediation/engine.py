@@ -108,6 +108,27 @@ def _verify_target(alert_event: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _page_route(alert: dict[str, Any]) -> dict[str, str]:
+    """How the dispatcher routed the alert's own page, recorded on every
+    remediation_action so a fix that does not hold pages the same channels
+    (``_page_failed_fix``).
+
+    The inputs the dispatcher reads from the labels: the severity (warning to
+    Discord, critical and error to Telegram as well), the category (the
+    force-Telegram list matches it as well as the alertname), and
+    ``force_channel`` (a finding's per-kind delivery policy). Recorded whether
+    or not the row has a producer fingerprint: a page is owed either way.
+    ``alert_severity`` is the value ``_verify_target`` records too; the
+    dispatcher keys dedup on the same label.
+    """
+    labels = alert.get("labels") or {}
+    return {
+        "alert_severity": str(labels.get("severity") or "").strip(),
+        "alert_category": str(labels.get("category") or "").strip(),
+        "alert_force_channel": str(labels.get("force_channel") or "").strip(),
+    }
+
+
 def _default_verify_after(config: dict[str, Any], target: dict[str, Any]) -> int:
     """The grace before the verify, for a rule (or LLM pick) that sets none.
 
@@ -135,7 +156,9 @@ async def _apply_action(
     ``remediation_verify`` audit rows. ``source`` ("rule"|"llm") is recorded in
     the audit details (the Grafana rule-vs-LLM split reads it); ``extra_details``
     carries the LLM-only fields (confidence / reason / model), and
-    ``verify_target`` what the verify reads (see ``_verify_target``).
+    ``verify_target`` what the verify reads (see ``_verify_target``). The action
+    also records how the alert's page was routed (``_page_route``), which the
+    verify pages a failed fix by.
 
     ``dry_run`` stops after the gates: the pick is recorded as a
     ``remediation_dry_run`` audit row instead of executed, along with the
@@ -206,6 +229,7 @@ async def _apply_action(
     }
     if rule_id is not None:
         details["rule_id"] = rule_id
+    details.update(_page_route(alert))
     if verify_target:
         details.update(verify_target)
     if extra_details:
@@ -779,8 +803,53 @@ async def _write_candidate_rule_finding(
     )
 
 
+def _recorded_route(details: dict[str, Any]) -> dict[str, str] | None:
+    """The route ``_page_route`` recorded on an action, in the keywords
+    ``route_fn`` takes; None for an action recorded before routes were (no
+    ``alert_severity``).
+
+    An empty severity is a route, not a missing one: the alert had no severity
+    label, and its own page went to Discord alone.
+    """
+    if "alert_severity" not in details:
+        return None
+    return {
+        "severity": str(details.get("alert_severity") or ""),
+        "alertname": str(details.get("alertname") or ""),
+        "category": str(details.get("alert_category") or ""),
+        "force_channel": str(details.get("alert_force_channel") or ""),
+    }
+
+
+async def _page_failed_fix(
+    message: str, *, details: dict[str, Any], notify_fn: Any, route_fn: Any,
+) -> None:
+    """Page a fix that did not hold, on the channels the alert's own page would
+    have reached.
+
+    The firefighter held that page, so this one is the first the operator hears
+    of the alert. ``route_fn`` is the dispatcher's severity router: a warning
+    goes to Discord, critical and error reach Telegram as well, and the
+    force-Telegram list and a finding's ``force_channel`` apply as they did to
+    the alert.
+
+    Without a recorded route (an action written before routes were) or without
+    a router, nothing says where the page belongs. It goes to ``notify_fn``
+    with ``critical=True``: loud, which in the brain is both channels, where
+    every verify page went before routing. Guessing warning could keep a
+    critical alert off Telegram; guessing critical costs at most one Telegram
+    message about a warning.
+    """
+    route = _recorded_route(details)
+    if route is not None and route_fn is not None:
+        await route_fn(message, **route)
+    elif notify_fn is not None:
+        await notify_fn(message, critical=True)
+
+
 async def run_verify_scan(
     pool: Any, *, config: dict[str, Any], logger: Any, notify_fn: Any = None,
+    route_fn: Any = None,
 ) -> dict[str, int]:
     """Resolve pending remediation actions past their grace period.
 
@@ -789,6 +858,11 @@ async def run_verify_scan(
     evidence: resolved -> silent; still firing -> page + write the verify row
     (so the breaker counts it next time). The verify row records the
     ``evidence`` either way. Best-effort: never raises into the poll loop.
+
+    The page goes through ``route_fn(message, *, severity, alertname, category,
+    force_channel)`` with the route the action recorded, so it reaches the
+    channels the alert's own page would have; ``notify_fn(message, *,
+    critical)`` is the fallback (see ``_page_failed_fix``).
     """
     summary = {"verified": 0, "resolved": 0, "still_firing": 0}
     try:
@@ -830,11 +904,10 @@ async def run_verify_scan(
                 f"attempted {action}, still firing after {verify_after}s"
                 f"{f' ({note})' if note else ''}"
             )
-            if notify_fn is not None:
-                try:
-                    await notify_fn(msg, critical=False)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("[firefighter] verify page failed for run=%s: %s", run_id, e)
+            try:
+                await _page_failed_fix(msg, details=details, notify_fn=notify_fn, route_fn=route_fn)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[firefighter] verify page failed for run=%s: %s", run_id, e)
         else:
             summary["resolved"] += 1
             await _write_audit(

@@ -52,8 +52,10 @@ The loop, when an alert is about to page:
    stamped on the row the firefighter acted on. What counts as a fix depends on
    who produced the alert (see [the verify](#the-verify--what-counts-as-a-fix)).
    Fixed → **resolved, silently** (`remediation_verify` row, `result=resolved`,
-   no page). Not fixed → **still firing → page now** (`result=still_firing`).
-   Either way the row records the `evidence` it went on.
+   no page). Not fixed → **still firing → page now** (`result=still_firing`),
+   on the channels the alert's own page would have reached (see
+   [Safety guardrails](#safety-guardrails)). Either way the row records the
+   `evidence` it went on.
 5. **Escalate.** An action that couldn't even run pages immediately — there's
    nothing to wait for. A tripped circuit breaker or rate cap pages as usual —
    the firefighter steps aside rather than hammering a broken thing.
@@ -116,6 +118,8 @@ it. For a rule on an alert with a longer `for:`, pass `--verify-after`.
 The page for a fix that did not hold says which evidence it went on, for
 example
 `[FIREFIGHTER] auto-remediation did not resolve PyroscopeDown: attempted restart_container, still firing after 600s (no resolved notification since the action)`.
+PyroscopeDown is a warning, so that page goes to Discord only (see
+[Safety guardrails](#safety-guardrails)).
 
 ### Episodes — one look per recurrence, not per dedup window
 
@@ -306,6 +310,36 @@ the container on a guess is worse than reporting it.
   only by the alert actually stopping. For an alert Alertmanager delivered, that
   takes its resolved notification. Alertmanager going quiet proves nothing (see
   [the verify](#the-verify--what-counts-as-a-fix)).
+- **A failed fix pages where the alert would have.** The firefighter held the
+  alert's own page, so the verify's page is the first the operator hears of it.
+  It goes through the dispatcher's severity router (`_routed_notify`, the same
+  one every alert page uses): a warning reaches Discord only, critical and error
+  reach Telegram as well, and the force-Telegram list
+  (`alert_force_telegram_event_types`) and a finding's `force_channel` apply as
+  they did to the alert. A warning finding whose kind is delivered on Telegram
+  (`findings.<kind>.delivery=telegram`) still pages its failed fix there. Every
+  `remediation_action` records what the router needs: `alertname`,
+  `alert_severity`, `alert_category` and `alert_force_channel`, from the labels
+  the dispatcher routed the alert by, whether or not the row has a producer
+  fingerprint.
+
+  Until 2026-09-25 the verify called the notifier directly with
+  `critical=False`, and the brain's notifier ignores that flag and sends to both
+  channels. Every failed fix reached Telegram whatever its severity: both
+  PyroscopeDown (warning) pages in that day's drill did.
+
+  **An action with no recorded severity pages loud.** Two kinds of action lack
+  one: any recorded before glad-labs-stack#4030, and, until 2026-09-25, one for
+  an alert whose row had no producer fingerprint. Nothing says where their page
+  belongs, so it goes to both channels, as every verify page did before. That
+  page is the operator's only word of an alert whose page was held, and the two
+  ways to be wrong are not equal: guessing warning could keep a critical alert
+  off Telegram, guessing critical costs at most one Telegram message about a
+  warning. On prod the fallback had nothing left to catch when it shipped: one
+  such action ever (the 2026-07-04 drill), verified that day. An alert that
+  had _no severity label_ is a different case. It records an empty severity,
+  and its failed fix goes to Discord only, as its own page did.
+
 - **A held page stays held.** A row the firefighter acted on gets no triage
   follow-up either. Triage threads its diagnosis under the page, and a held row
   has no page, so the diagnosis would go out on its own: a message about an

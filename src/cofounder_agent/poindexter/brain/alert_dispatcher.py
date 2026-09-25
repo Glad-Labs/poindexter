@@ -1018,8 +1018,17 @@ async def poll_and_dispatch(
             )
             ff_config = await _load_firefighter_config(pool)
             if ff_config.get("enabled"):
+                # A fix that did not hold pages like the alert it was for:
+                # through the severity router, not the plain notifier.
+                route_fn = None
+                if verify_notify_fn is not None:
+                    route_fn = _verify_page_router(
+                        pool, notify_fn=verify_notify_fn,
+                        notify_fn_injected=injected_notify_fn is not None,
+                    )
                 vsummary = await run_verify_scan_hook(
-                    pool, config=ff_config, logger=logger, notify_fn=verify_notify_fn,
+                    pool, config=ff_config, logger=logger,
+                    notify_fn=verify_notify_fn, route_fn=route_fn,
                 )
                 for k in ("verified", "resolved", "still_firing"):
                     if vsummary.get(k):
@@ -1812,6 +1821,40 @@ async def _routed_notify(
         "discord_message_id": dc_id if isinstance(dc_id, str) else str(dc_id),
         "ok": True,
     }
+
+
+def _verify_page_router(
+    pool: Any, *, notify_fn: NotifyFn, notify_fn_injected: bool,
+) -> Callable[..., Awaitable[dict[str, Any] | None]]:
+    """The firefighter verify's router: a fix that did not hold pages through
+    the same severity matrix as the alert's own page (``_routed_notify``).
+
+    The verify calls it with the route the action recorded
+    (``engine._page_route``). It used to call the resolved notifier directly,
+    and the brain fallback (``_adapter``) drops ``critical``, so every failed
+    fix reached Telegram whatever its severity: both PyroscopeDown (warning)
+    pages in the 2026-09-25 drill did. The force-Telegram list is read when a
+    page goes out, because the verify also runs on cycles with no alert rows,
+    which read no dedup config.
+    """
+
+    async def route(
+        message: str, *, severity: str, alertname: str,
+        category: str = "", force_channel: str = "",
+    ) -> dict[str, Any] | None:
+        return await _routed_notify(
+            pool=pool,
+            notify_fn=notify_fn,
+            message=message,
+            severity=severity,
+            alertname=alertname,
+            category=category,
+            force_telegram_set=await _read_force_telegram_event_types(pool),
+            notify_fn_injected=notify_fn_injected,
+            force_channel=force_channel,
+        )
+
+    return route
 
 
 def _resolve_brain_daemon_module() -> Any | None:

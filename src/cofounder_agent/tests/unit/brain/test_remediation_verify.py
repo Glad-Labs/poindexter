@@ -322,3 +322,133 @@ async def test_an_alertmanager_action_is_not_verified_before_its_grace():
     out, paged = await _scan(pool)
     assert out == {"verified": 0, "resolved": 0, "still_firing": 0}
     assert asked == [] and paged == []
+
+
+# ---------------------------------------------------------------------------
+# Where the page for a failed fix goes. The firefighter held the alert's own
+# page, so this one must reach the same channels: through the dispatcher's
+# severity router (route_fn), with the route the action recorded. Before
+# 2026-09-25 it went to the plain notifier, which in the brain reaches
+# Telegram whatever the severity.
+# ---------------------------------------------------------------------------
+
+_FAILED_FIX_PAGE = (
+    "[FIREFIGHTER] auto-remediation did not resolve PyroscopeDown: attempted "
+    "restart_container, still firing after 600s (it fired again after the action)"
+)
+
+
+def _routed_row(acted_at, **route):
+    """A pending action on PyroscopeDown that recorded its page route."""
+    row = _targeted_row("r10", acted_at, signal=E.VERIFY_BY_REFIRE)
+    row["details"] = json.dumps({**json.loads(row["details"]), **route})
+    return row
+
+
+def _still_firing_pool(row):
+    pool = FakePool()
+    pool.set_fetch(lambda sql, args: [row])
+    pool.set_fetchval(lambda sql, args: True)                  # it fired again
+    pool.set_fetchrow(lambda sql, args: {"last_seen_at": datetime.now(UTC)})  # the legacy oracle agrees
+    return pool
+
+
+async def _scan_routed(pool, *, with_router=True):
+    routed, notified = [], []
+
+    async def route(message, *, severity, alertname, category, force_channel):
+        routed.append((message, {"severity": severity, "alertname": alertname,
+                                 "category": category, "force_channel": force_channel}))
+
+    async def notify(message, *, critical):
+        notified.append((message, critical))
+
+    out = await E.run_verify_scan(pool, config=CFG, logger=LOG, notify_fn=notify,
+                                  route_fn=route if with_router else None)
+    return out, routed, notified
+
+
+@pytest.mark.asyncio
+async def test_a_failed_fix_is_paged_through_the_router_with_the_route_the_action_recorded():
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool = _still_firing_pool(_routed_row(acted, alert_category="infrastructure", alert_force_channel=""))
+    out, routed, notified = await _scan_routed(pool)
+    assert out["still_firing"] == 1
+    assert routed == [(_FAILED_FIX_PAGE, {"severity": "warning", "alertname": "PyroscopeDown",
+                                          "category": "infrastructure", "force_channel": ""})]
+    assert notified == []
+
+
+@pytest.mark.asyncio
+async def test_a_findings_delivery_policy_travels_with_the_route():
+    """A finding whose kind is delivered on Telegram paged a warning there; its
+    failed fix goes there too, not to Discord on the severity alone."""
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool = _still_firing_pool(_routed_row(acted, alert_category="", alert_force_channel="telegram"))
+    _, routed, _ = await _scan_routed(pool)
+    assert routed[0][1]["force_channel"] == "telegram"
+
+
+@pytest.mark.asyncio
+async def test_an_action_from_before_routes_were_recorded_routes_on_its_severity():
+    """Recorded between #4030 and this change: severity and alertname, no
+    category or directive. It routes on what it has."""
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool = _still_firing_pool(_targeted_row("r11", acted, signal=E.VERIFY_BY_REFIRE))
+    _, routed, notified = await _scan_routed(pool)
+    assert [r[1] for r in routed] == [{"severity": "warning", "alertname": "PyroscopeDown",
+                                       "category": "", "force_channel": ""}]
+    assert notified == []
+
+
+@pytest.mark.asyncio
+async def test_an_action_with_no_recorded_severity_pages_loud():
+    """Nothing says where the page belongs, and it is the operator's only word
+    of an alert whose page was held. critical=True: both channels, as every
+    verify page went before routing, rather than a guess that could keep a
+    critical alert off Telegram."""
+    acted = datetime.now(UTC) - timedelta(seconds=200)
+    pool = _still_firing_pool(_pending_row("r12", "fp12", acted))
+    out, routed, notified = await _scan_routed(pool)
+    assert out["still_firing"] == 1
+    assert routed == []
+    assert [critical for _, critical in notified] == [True]
+    assert "did not resolve WorkerDown" in notified[0][0]
+
+
+@pytest.mark.asyncio
+async def test_an_alert_that_had_no_severity_is_routed_like_its_own_page():
+    """An empty severity was recorded, so it is a route: the dispatcher sent
+    the alert's page to Discord alone, and the failed fix follows it."""
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool = _still_firing_pool(_routed_row(acted, alert_severity="", alert_category="", alert_force_channel=""))
+    _, routed, notified = await _scan_routed(pool)
+    assert [r[1]["severity"] for r in routed] == [""]
+    assert notified == []
+
+
+@pytest.mark.asyncio
+async def test_without_a_router_a_failed_fix_pages_loud():
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool = _still_firing_pool(_routed_row(acted, alert_category="", alert_force_channel=""))
+    _, routed, notified = await _scan_routed(pool, with_router=False)
+    assert routed == []
+    assert notified == [(_FAILED_FIX_PAGE, True)]
+
+
+@pytest.mark.asyncio
+async def test_a_page_the_router_cannot_deliver_is_logged_and_the_verdict_stands(caplog):
+    """Discord refused a warning's page, and the router raised (the dispatcher's
+    NotifyFailed is a RuntimeError). The verify still records still_firing, so
+    the breaker counts the attempt."""
+    acted = datetime.now(UTC) - timedelta(seconds=700)
+    pool = _still_firing_pool(_routed_row(acted, alert_category="", alert_force_channel=""))
+
+    async def route(message, **route):
+        raise RuntimeError("discord-only routing failed")
+
+    with caplog.at_level(logging.WARNING):
+        out = await E.run_verify_scan(pool, config=CFG, logger=LOG, route_fn=route)
+    assert out["still_firing"] == 1
+    assert [v["result"] for v in _verify_rows(pool)] == ["still_firing"]
+    assert any("verify page failed" in r.getMessage() for r in caplog.records)

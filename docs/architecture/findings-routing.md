@@ -63,6 +63,11 @@ Four `app_settings` keys shape each kind, all optional:
 An unlisted kind must stay loud — a default that quiets kinds nobody opted in for is exactly
 the silent-drop this subsystem exists to prevent.
 
+**`delivery` also governs the firefighter's page.** When the firefighter acts on a finding
+and the fix does not hold, the verify's page follows the same route as the finding's own
+page, `force_channel` included: a `telegram` kind's warning pages its failed fix on Telegram
+too. See [self-healing, Safety guardrails](../operations/self-healing.md#safety-guardrails).
+
 ## Two different throttles, and why both exist
 
 This is the part worth understanding, because they fail in opposite directions.

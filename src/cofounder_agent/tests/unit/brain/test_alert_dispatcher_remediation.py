@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import sys
+import types
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
@@ -415,11 +417,45 @@ _HEALTH_LABELS = {"probe": "container_health_watch", "container": "poindexter-sp
                   "remediation": "rules_only"}
 
 
+class _BrainSenders:
+    """The brain's two senders, as the dispatcher's production path reaches
+    them: ``notify`` pages Telegram and Discord, ``send_discord`` Discord alone."""
+
+    def __init__(self):
+        self.sent = []
+
+    async def notify(self, message, *, pool=None):
+        self.sent.append(("telegram+discord", message))
+        return {"ok": True, "telegram_message_id": 1, "discord_message_id": "1"}
+
+    async def send_discord(self, message, webhook_url=None, *, pool=None, message_reference_id=None):
+        self.sent.append(("discord", message))
+        return "1"
+
+    def channels(self, needle):
+        return [channels for channels, message in self.sent if needle in message]
+
+
+def _install_brain_senders(monkeypatch):
+    """Page the way the brain does: the worker's notify_operator does not
+    import there, so the dispatcher falls back to brain_daemon's senders."""
+    senders = _BrainSenders()
+    brain_daemon = types.ModuleType("poindexter.brain.brain_daemon")
+    brain_daemon.notify = senders.notify
+    brain_daemon.send_discord = senders.send_discord
+    monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", brain_daemon)
+    monkeypatch.setitem(sys.modules, "poindexter.services.integrations.operator_notify", None)
+    return senders
+
+
 class _Sim:
-    def __init__(self, monkeypatch, *, rules=(SPEACHES_RULE,), settings=None):
+    def __init__(self, monkeypatch, *, rules=(SPEACHES_RULE,), settings=None, brain_senders=False):
         self.world = FirefighterWorld(app_settings={**PROD_SETTINGS, **(settings or {})},
                                       rules=list(rules))
         self.notify = AsyncMock(return_value={"ok": True})
+        # With brain_senders the sim injects no notify_fn: pages take the
+        # production path, and self.senders records which channels they reach.
+        self.senders = _install_brain_senders(monkeypatch) if brain_senders else None
         self.restarts = []
 
         async def _execute(action_name, params, ctx):
@@ -440,7 +476,8 @@ class _Sim:
 
     async def cycle(self, *, after_minutes=0.0):
         self.world.advance(minutes=after_minutes)
-        return await ad.poll_and_dispatch(self.world, notify_fn=self.notify)
+        notify_fn = None if self.senders is not None else self.notify
+        return await ad.poll_and_dispatch(self.world, notify_fn=notify_fn)
 
     def pages(self, needle):
         return [c.args[0] for c in self.notify.await_args_list if needle in c.args[0]]
@@ -673,11 +710,26 @@ PYROSCOPE_RULE = {
 }
 _PYROSCOPE_LABELS = {"job": "pyroscope", "alertname": "PyroscopeDown",
                      "severity": "warning", "category": "infrastructure"}
+PYROSCOPE = {"alertname": "PyroscopeDown", "fingerprint": PYROSCOPE_FP, "severity": "warning",
+             "labels": _PYROSCOPE_LABELS, "summary": "Pyroscope is down"}
+# Rule 2 on prod. PromtailDown is critical (observability-sidecars.yml).
+PROMTAIL_RULE = {
+    "id": 2, "alertname": "PromtailDown", "match_regex": None,
+    "action_name": "restart_container", "params": {"container": "poindexter-promtail"},
+    "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None,
+    "enabled": True,
+}
+PROMTAIL = {"alertname": "PromtailDown", "fingerprint": "5b1d2e7c90a4f311", "severity": "critical",
+            "labels": {"job": "promtail", "alertname": "PromtailDown",
+                       "severity": "critical", "category": "infrastructure"},
+            "summary": "Promtail is down"}
 
 
 class _AlertmanagerSim(_Sim):
-    def __init__(self, monkeypatch, *, rule=PYROSCOPE_RULE, settings=None):
-        super().__init__(monkeypatch, rules=(rule,), settings=settings)
+    def __init__(self, monkeypatch, *, rule=PYROSCOPE_RULE, alert=PYROSCOPE, settings=None,
+                 brain_senders=False):
+        super().__init__(monkeypatch, rules=(rule,), settings=settings, brain_senders=brain_senders)
+        self.alert = alert
         self.last = None
 
     def firing(self, *, new_episode=True):
@@ -693,11 +745,7 @@ class _AlertmanagerSim(_Sim):
         return self._notify("resolved", self.last["starts_at"])
 
     def _notify(self, status, starts_at):
-        self.last = self.world.fire(
-            alertname="PyroscopeDown", fingerprint=PYROSCOPE_FP, severity="warning",
-            status=status, labels=_PYROSCOPE_LABELS, summary="Pyroscope is down",
-            starts_at=starts_at,
-        )
+        self.last = self.world.fire(status=status, starts_at=starts_at, **self.alert)
         return self.last
 
     def verifies(self):
@@ -935,8 +983,8 @@ _TAPS_PICK = {"action_name": "restart_container", "params": {"container": "poind
 class _LongTailSim(_Sim):
     """The replay world with no rules, and a scripted LLM selector."""
 
-    def __init__(self, monkeypatch, *, pick=_TAPS_PICK, settings=None, rules=()):
-        super().__init__(monkeypatch, rules=rules, settings=settings)
+    def __init__(self, monkeypatch, *, pick=_TAPS_PICK, settings=None, rules=(), brain_senders=False):
+        super().__init__(monkeypatch, rules=rules, settings=settings, brain_senders=brain_senders)
         self.pick = pick
         self.selections = []
 
@@ -1153,3 +1201,114 @@ async def test_a_live_llm_action_on_a_grafana_alert_is_proved_by_its_resolved_no
     await sim.cycle(after_minutes=6)                # verify due
     (verify,) = sim.world.audit_rows("remediation_verify")
     assert (verify["details"]["result"], verify["details"]["evidence"]) == ("resolved", "resolved_notification")
+
+
+# ---------------------------------------------------------------------------
+# Where a failed fix pages. The firefighter held the alert's own page, so the
+# verify's page is the operator's first word of the alert, and it goes where
+# that page would have: Telegram and Discord for critical, Discord alone for a
+# warning. Before 2026-09-25 it went to the plain notifier, which in the brain
+# sends to both, so every failed fix reached Telegram (both PyroscopeDown pages
+# in that day's drill did). brain_senders runs the production notify path.
+# ---------------------------------------------------------------------------
+
+_FAILED_FIX = "[FIREFIGHTER] auto-remediation did not resolve"
+
+
+@pytest.mark.parametrize(
+    "rule,alert,channels",
+    [(PYROSCOPE_RULE, PYROSCOPE, "discord"), (PROMTAIL_RULE, PROMTAIL, "telegram+discord")],
+    ids=["PyroscopeDown-warning", "PromtailDown-critical"],
+)
+@pytest.mark.asyncio
+async def test_a_failed_alertmanager_fix_pages_the_channels_of_its_severity(monkeypatch, rule, alert, channels):
+    sim = _AlertmanagerSim(monkeypatch, rule=rule, alert=alert, brain_senders=True)
+    sim.firing()
+    await sim.cycle()                            # restarted, page held
+    assert sim.senders.sent == []
+    await sim.cycle(after_minutes=10.5)          # no resolved notification by the verify
+    assert sim.verifies() == [("still_firing", "no_resolved_notification")]
+    assert sim.senders.channels(f"{_FAILED_FIX} {alert['alertname']}:") == [channels]
+    assert len(sim.senders.sent) == 1            # the operator's only word of it
+
+
+@pytest.mark.asyncio
+async def test_a_wedged_sidecar_whose_restart_did_not_hold_pages_discord_only(monkeypatch):
+    """container_unhealthy is a warning: the health watch leaves severity and
+    category out of its labels, and the dispatcher fills them from the row."""
+    sim = _Sim(monkeypatch, brain_senders=True)
+    sim.wedged()
+    await sim.cycle()
+    for _ in range(3):                           # still unhealthy after the restart
+        sim.wedged()
+        await sim.cycle(after_minutes=5)
+    await sim.cycle(after_minutes=1)             # t+16: verify
+    assert [v["details"]["result"] for v in sim.world.audit_rows("remediation_verify")] == ["still_firing"]
+    action = sim.world.audit_rows("remediation_action")[0]["details"]
+    assert (action["alert_severity"], action["alert_category"], action["alert_force_channel"]) == (
+        "warning", "infrastructure", "")
+    assert sim.senders.channels(_FAILED_FIX) == ["discord"]
+    assert len(sim.senders.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_fix_of_a_finding_follows_its_kinds_delivery_policy(monkeypatch):
+    """findings.<kind>.delivery=telegram pages a warning finding on Telegram
+    (deploy_sync_stale, db_clock_skew and wan_ip_changed do on prod). Its
+    failed fix goes there too, not to Discord on the severity alone."""
+    sim = _LongTailSim(monkeypatch, settings={"ops_firefighter_llm_dry_run": "false"}, brain_senders=True)
+
+    def stale():
+        return sim.world.fire(alertname="deploy_sync_probe:deploy_sync_stale", fingerprint="deploy-sync-stale",
+                              severity="warning", labels={"force_channel": "telegram"},
+                              summary="the deploy clone is 3 commits behind origin/main")
+
+    stale()
+    await sim.cycle()                               # first fire pages, on its policy's channels
+    stale()
+    await sim.cycle(after_minutes=20)               # persistent repeat: the LLM restarts, page held
+    stale()
+    await sim.cycle(after_minutes=20)               # still failing
+    await sim.cycle(after_minutes=21)               # verify due
+    assert [v["details"]["result"] for v in sim.world.audit_rows("remediation_verify")] == ["still_firing"]
+    assert sim.senders.sent[0][0] == "telegram+discord"
+    assert sim.senders.channels(_FAILED_FIX) == ["telegram+discord"]
+
+
+@pytest.mark.asyncio
+async def test_an_action_recorded_without_a_route_still_pages_loud(monkeypatch):
+    """The shape written before routes were (the 2026-07-04 drill row): no
+    alert_severity, nothing to say where the page belongs. It is the operator's
+    only word of an alert whose page was held, so it goes to both channels, as
+    every verify page did before. Even for a warning."""
+    sim = _Sim(monkeypatch, brain_senders=True)
+    sim.wedged()
+    await sim.cycle()                            # restarted, page held
+    action = sim.world.audit_rows("remediation_action")[0]["details"]
+    for key in ("alert_severity", "alert_category", "alert_force_channel",
+                "verify_signal", "alert_event_id", "alert_fingerprint"):
+        del action[key]
+    for _ in range(3):
+        sim.wedged()
+        await sim.cycle(after_minutes=5)
+    await sim.cycle(after_minutes=1)             # t+16: verify, on the legacy oracle
+    assert [(v["details"]["result"], v["details"]["evidence"])
+            for v in sim.world.audit_rows("remediation_verify")] == [("still_firing", "dedup_state")]
+    assert sim.senders.channels(_FAILED_FIX) == ["telegram+discord"]
+
+
+@pytest.mark.parametrize(
+    "rule,alert,critical",
+    [(PYROSCOPE_RULE, PYROSCOPE, False), (PROMTAIL_RULE, PROMTAIL, True)],
+    ids=["PyroscopeDown-warning", "PromtailDown-critical"],
+)
+@pytest.mark.asyncio
+async def test_an_injected_notifier_hears_a_failed_fix_at_its_alerts_routing(monkeypatch, rule, alert, critical):
+    """A test that injects notify_fn reads the route off ``critical``, as the
+    dedup tests do: True is Telegram and Discord, False Discord alone."""
+    sim = _AlertmanagerSim(monkeypatch, rule=rule, alert=alert)
+    sim.firing()
+    await sim.cycle()
+    await sim.cycle(after_minutes=10.5)
+    (page,) = [c for c in sim.notify.await_args_list if c.args[0].startswith(_FAILED_FIX)]
+    assert page.kwargs == {"critical": critical}
