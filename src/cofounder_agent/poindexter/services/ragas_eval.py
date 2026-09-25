@@ -244,16 +244,15 @@ def _build_dispatcher_ragas_wrappers(
 
     json_mode_ok = judge_json_mode_supported(judge_model, site_config)
 
-    # The judge's context window. ``qa_ragas_judge_num_ctx`` was seeded
-    # (16384) but nothing read it, so every Ragas call went out with no
-    # ``num_ctx`` and Ollama served it at its 8192 default. Two costs, both
-    # measured 2026-09-25 on the :11435 judge instance: (1) prompt + answer
-    # are capped at 8192 together, so faithfulness — whose verdict list grows
-    # with the draft — ran out of room on a 12.7k-char post (4098 in + 4094
-    # out, three times) and scored -1.0; (2) the instance holds ONE model at
-    # ONE context size, and the other callers (deepeval judge, shot-vision QA)
-    # send 16384, so each Ragas run reloaded the model at 8192 and the next
-    # caller reloaded it back — five 10-40 s reloads in three minutes.
+    # The judge's context window, sent explicitly from qa_ragas_judge_num_ctx.
+    # In a real flow the dispatcher already backfills the per-phase num_ctx
+    # from the app container, so this mainly covers callers with no container
+    # (scripts, smoke runs), which otherwise fall back to 8192. Keep it EQUAL
+    # to every other caller of the :11435 judge instance: Ollama holds one
+    # model at one context size and reloads it (10-40 s on the 3090) whenever
+    # a caller asks for a different one. Long drafts can still overflow 16384
+    # in faithfulness (statement extraction alone ran ~10k output tokens on a
+    # 23k-char draft, 2026-09-25) and score -1.0.
     judge_extra: dict[str, Any] = {}
     try:
         judge_num_ctx = (
