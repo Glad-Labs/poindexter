@@ -64,6 +64,10 @@ named nobody (it can only see one container, and the console labels it
 reported, as `unknown` with its backend pid — "held by someone who won't say
 who" is a different fact from "free", and collapsing the two was the bug.
 
+Admission's ETA gate kept the same process-local view after the console
+moved to Postgres (stack#3974). It reads the Postgres holders too now; see
+[Which holder admission weighs](#which-holder-admission-weighs).
+
 ## Queue admission (P1 — opt-in per caller)
 
 `gpu.lock()` accepts two contract kwargs:
@@ -81,12 +85,9 @@ async with gpu.lock("ollama", model=..., phase=...,
   VRAM fit on the pipeline GPU. A hopeless request raises `GpuBusyError`
   **immediately** — an honest skip instead of a doomed wait — and emits an
   info `gpu_admission_rejected` finding (dedup-keyed
-  `owner:phase:reason`). The budget also caps the actual lock wait.
-  Admission can only see a holder in its **own process**. A holder in
-  another container (a `media_render` in `poindexter-worker`, seen from
-  `poindexter-prefect-worker`) is met at the pg-advisory step instead, where
-  the budget caps the wait and it ends in `GpuLockTimeoutError` plus a
-  `gpu_lock_timeout` finding, not an up-front `GpuBusyError`. Only an
+  `owner:phase:reason`). The budget also caps the actual lock wait. The
+  holder can be in any container; see
+  [Which holder admission weighs](#which-holder-admission-weighs). Only an
   `ollama` owner's model is sized for the fit check: a render owner's label
   (an image model, an audio engine) has no Ollama arch to read, so its fit
   gate is skipped without asking Ollama.
@@ -94,6 +95,64 @@ async with gpu.lock("ollama", model=..., phase=...,
   `background`, FIFO within a class; a parked waiter is promoted one class
   per `gpu_sched_aging_seconds` waited, so background work can be delayed
   but never starved.
+
+### Which holder admission weighs
+
+The ETA gate needs a holder to estimate against, and the pipeline's GPU work
+is split across containers. Content flows run in `poindexter-prefect-worker`.
+Media renders (`video/media_render`, p90 ≈ 2530 s on prod) run in
+`poindexter-worker`. Until 2026-09-25 admission read only its own process
+(`_current_owner`), so a budgeted caller in prefect-worker saw no holder
+behind a render in the other container. It was granted, spent its whole
+budget at the pg-advisory step, and ended in `GpuLockTimeoutError` plus a
+warn `gpu_lock_timeout` finding instead of an up-front `GpuBusyError`.
+
+The holder is now resolved in this order:
+
+1. **This process's own session**, when it holds a card the caller is about
+   to take (the caller's `resolve_lock_keys`). This costs nothing beyond the
+   stats read admission always did.
+2. **Otherwise, Postgres.** `list_pg_holders()` lists every session holding
+   the base key. `pg_holder_blocks` keeps only the sessions that would
+   actually block this caller, using the per-key lock modes the query
+   returns (`exclusive_keys`):
+
+   | Caller                                                    | Blocked by                                                                                                  |
+   | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+   | unscoped (`[7777777777]`, takes the base key exclusively) | any holder of the base key, in either mode                                                                  |
+   | scoped (base key shared + its device keys exclusive)      | a holder of the base key in exclusive mode (an unscoped process), or a holder of one of its own device keys |
+
+   So a GPU-1 judge is never refused because of a GPU-0 render: the render
+   holds the base key shared and only GPU 0's device key. A scoped _waiter_
+   holds the base key shared while it queues for its device key, so it shows
+   up in `list_pg_holders`, but it is not mistaken for the holder. The caller
+   has to outlast every blocker, so admission weighs the one with the longest
+   estimated remaining time (`p90 − held_for_s`). All their stats come back in
+   one `read_stats_many` query.
+
+**Cost.** One `pg_locks` query, plus one stats query when something blocks.
+It runs on the budgeted path only (`max_wait_s` set and `gpu_sched_enabled`
+on), and only when no in-process holder answered.
+
+**Fail-open, with one deliberate difference from the in-process path.** A
+failed or empty lookup means no holder: the ETA gate is skipped and the caller
+waits at the lock, bounded by its budget, as before. A cross-process blocker
+with **no `gpu_lease_stats` profile** is also treated as no holder, rather
+than given `gpu_sched_eta_fallback_seconds`. In this process a holder is
+always a scheduler session, so "no stats" just means a phase too new to have
+a p90. In Postgres it can be anything that takes the key. The brain's probes
+(`brain_probe/content_gen`, `brain_probe/ollama_embedding`) hold it for
+seconds and are never profiled, and the 120 s fallback would refuse a 45 s QA
+rail behind a five-second probe. Untagged sessions (no `poindexter-gpu:` tag)
+are skipped the same way.
+
+The `gpu_admission_rejected` finding names the holder it weighed. `extra`
+carries `holder_owner`, `holder_phase`, `holder_source` (`in_process` or
+`postgres`) and `holder_elapsed_s`, and the body reads e.g.
+`behind video/media_render (another process, held 300s)`. To see it working
+in prod, look for rejects with `extra->>'holder_source' = 'postgres'` during a
+media render. `gpu_lock_timeout` rows with `timeout_s` 45 or 120 from
+prefect-worker callers should fall as they appear.
 
 Fit math: `estimate ≤ free − headroom` grants; adding the per-card
 eviction credit (`nvidia_gpu_process_memory_mib` — the resident Ollama

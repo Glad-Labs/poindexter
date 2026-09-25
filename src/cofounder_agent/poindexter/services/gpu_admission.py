@@ -17,6 +17,11 @@ Design contract (spec §3, ``docs/superpowers/specs/
   ``gpu_lease_stats`` p90 minus elapsed (floored at 0), falling back to
   ``eta_fallback_s`` when the key has no stats yet. An ETA over the caller's
   budget is an honest immediate ``reject`` instead of a doomed 900s wait.
+  Which holder that is gets resolved by ``gpu_scheduler``: this process's own
+  session when it holds a card the caller needs, otherwise a session in
+  another process that Postgres shows blocking the caller's lock keys. A
+  cross-process holder with no stats is passed as no holder at all, because
+  "never profiled" there is not evidence of a long hold.
 - Fit gate: ``estimate ≤ free − headroom`` grants outright;
   ``estimate ≤ free + evictable − headroom`` grants after evicting the
   resident Ollama models; anything larger rejects (``no_fit``).
@@ -100,6 +105,11 @@ class AdmissionInputs:
     holder_key: tuple[str, str] | None = None  # (owner, phase) of current holder
     holder_elapsed_s: float | None = None
     holder_stats: LeaseStats | None = None
+    # Where the holder was found: "in_process" (this process's own session) or
+    # "postgres" (a session in another container, read from pg_locks).
+    # Provenance for the reject finding only — decide() never reads it, so the
+    # two sources cannot be judged differently by accident.
+    holder_source: str | None = None
     eta_fallback_s: float = 120.0
     free_gpu0_gb: float | None = None
     # None = UNKNOWN (telemetry stale/absent), 0.0 = known "nothing evictable".
@@ -138,6 +148,21 @@ class AdmissionDecision:
     needs_sidecar_reclaim: bool = False
 
 
+def holder_remaining_s(
+    stats: LeaseStats | None, elapsed_s: float | None, fallback_s: float
+) -> float:
+    """How long a holder has left: its ``p90 − elapsed``, floored at 0.
+
+    An unknown profile (no stats, or no p90 yet) returns ``fallback_s``. The
+    ETA gate below and the scheduler's choice among several cross-process
+    holders both use this, so "which holder is the long one" and "is that
+    wait hopeless" are answered by one formula.
+    """
+    if stats is not None and stats.p90_ms is not None:
+        return max(stats.p90_ms / 1000.0 - (elapsed_s or 0.0), 0.0)
+    return fallback_s
+
+
 def decide(i: AdmissionInputs) -> AdmissionDecision:
     """PURE fold of the admission inputs into a decision. No I/O ever."""
     # Legacy path — no wait budget declared, admission does not apply.
@@ -147,12 +172,9 @@ def decide(i: AdmissionInputs) -> AdmissionDecision:
     # --- ETA gate (only when someone currently holds the lock) ---
     eta: float | None = None
     if i.holder_key is not None:
-        if i.holder_stats is not None and i.holder_stats.p90_ms is not None:
-            elapsed = i.holder_elapsed_s or 0.0
-            eta = max(i.holder_stats.p90_ms / 1000.0 - elapsed, 0.0)
-        else:
-            # Unknown holder profile — assume the conservative fallback.
-            eta = i.eta_fallback_s
+        # Unknown holder profile falls back to the conservative
+        # eta_fallback_s inside holder_remaining_s.
+        eta = holder_remaining_s(i.holder_stats, i.holder_elapsed_s, i.eta_fallback_s)
         if eta > i.max_wait_s:
             return AdmissionDecision(
                 action="reject", reason="eta_exceeds_budget", eta_seconds=eta

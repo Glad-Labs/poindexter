@@ -10,6 +10,7 @@ from poindexter.services.gpu_lease_stats import (
     LeaseStats,
     fold_sample,
     read_stats,
+    read_stats_many,
     record_release,
 )
 
@@ -170,3 +171,71 @@ class TestDbSeam:
         assert out is not None
         assert out.samples == 7 and out.p90_ms == 200.0
         assert out.q_state == {"warmup": [1.0]}
+
+
+class TestReadStatsMany:
+    """One round-trip for every holder admission weighs (cross-process ETA)."""
+
+    async def test_no_keys_never_connects(self, monkeypatch):
+        import poindexter.services.gpu_lease_stats as m
+
+        async def _must_not_connect():
+            raise AssertionError("connected for an empty key list")
+
+        monkeypatch.setattr(m, "_connect", _must_not_connect)
+        assert await read_stats_many([]) == {}
+
+    async def test_one_query_for_many_keys_deduped(self, monkeypatch):
+        import poindexter.services.gpu_lease_stats as m
+
+        calls: list[tuple] = []
+
+        class _Conn:
+            async def fetch(self, _sql, owners, phases):
+                calls.append((owners, phases))
+                return [
+                    {
+                        "owner": "video",
+                        "phase": "media_render",
+                        "samples": 259,
+                        "ewma_ms": 900_000.0,
+                        "p50_ms": 570_000.0,
+                        "p90_ms": 2_530_000.0,
+                        "q_state": json.dumps({"warmup": [1.0]}),
+                    }
+                ]
+
+            async def close(self):
+                return None
+
+        async def _fake_connect():
+            return _Conn()
+
+        monkeypatch.setattr(m, "_connect", _fake_connect)
+        out = await read_stats_many(
+            [("video", "media_render"), ("video", "media_render"), ("brain_probe", "x")]
+        )
+
+        # Duplicates collapse, and the two arrays stay aligned pairwise.
+        assert calls == [(["video", "brain_probe"], ["media_render", "x"])]
+        # A key with no row is absent, not a zeroed LeaseStats.
+        assert set(out) == {("video", "media_render")}
+        assert out[("video", "media_render")].p90_ms == 2_530_000.0
+
+    async def test_failure_returns_empty(self, monkeypatch):
+        import poindexter.services.gpu_lease_stats as m
+
+        async def _boom():
+            raise OSError("db down")
+
+        monkeypatch.setattr(m, "_connect", _boom)
+        assert await read_stats_many([("video", "media_render")]) == {}
+
+    async def test_unavailable_db_returns_empty(self, monkeypatch):
+        import poindexter.services.gpu_lease_stats as m
+
+        async def _none():
+            return None
+
+        monkeypatch.setattr(m, "_connect", _none)
+        assert await read_stats_many([("video", "media_render")]) == {}

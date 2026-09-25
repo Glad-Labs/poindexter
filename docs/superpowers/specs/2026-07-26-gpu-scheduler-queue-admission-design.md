@@ -143,6 +143,13 @@ default 120). ETAs are estimates; the contract is "reject when it is _clearly_
 hopeless", not precision scheduling — an ETA that proves wrong only means the
 waiter waited like today.
 
+> **Amendment (2026-09-25):** as built in P1, "the current holder" was the
+> holder in the calling process only, which cannot see a render in another
+> container. Admission now falls back to the Postgres holders that block the
+> caller's own lock keys, and an unprofiled cross-process holder counts as no
+> holder rather than the fallback ETA. See `docs/operations/gpu-scheduler.md`,
+> "Which holder admission weighs".
+
 ## 3. Per-card admission (fits where it will actually run)
 
 At admission for local-Ollama work (which lands on GPU0 — the primary

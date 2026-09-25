@@ -22,7 +22,9 @@ gates the lock lifecycle.
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -297,3 +299,52 @@ async def read_stats(owner: str, phase: str) -> LeaseStats | None:
         # conservative fallback ETA — never an error path.
         logger.debug("[gpu_lease_stats] read_stats failed", exc_info=True)
         return None
+
+
+_SELECT_MANY_SQL = """
+    SELECT s.owner, s.phase, s.samples, s.ewma_ms, s.p50_ms, s.p90_ms, s.q_state
+      FROM gpu_lease_stats s
+      JOIN unnest($1::text[], $2::text[]) AS k(owner, phase)
+        ON s.owner = k.owner AND s.phase = k.phase
+"""
+
+
+async def read_stats_many(
+    keys: Iterable[tuple[str, str]],
+) -> dict[tuple[str, str], LeaseStats]:
+    """Rolling stats for several keys in ONE round-trip.
+
+    For admission's cross-process holder lookup, which can see more than one
+    session blocking a caller (two scoped renders, one per card, block an
+    unscoped caller). One query keeps that path at a single stats round-trip
+    however many holders there are, where ``read_stats`` per holder would
+    open a connection each.
+
+    A key with no row is simply absent from the result. Any failure returns
+    ``{}``: the caller treats every key as unprofiled.
+    """
+    wanted = list(dict.fromkeys((str(owner), str(phase or "")) for owner, phase in keys))
+    if not wanted:
+        return {}
+    try:
+        conn = await _connect()
+        if conn is None:
+            return {}
+        try:
+            rows = await asyncio.wait_for(
+                conn.fetch(
+                    _SELECT_MANY_SQL,
+                    [owner for owner, _ in wanted],
+                    [phase for _, phase in wanted],
+                ),
+                timeout=5.0,
+            )
+        finally:
+            await conn.close()
+        return {(r["owner"], r["phase"]): _row_to_stats(r) for r in rows}
+    except Exception:
+        # silent-ok: admission reads unprofiled holders as no holder, so a
+        # failed read degrades to "grant" (fail-open) and the caller waits
+        # at the lock as it did before this lookup existed.
+        logger.debug("[gpu_lease_stats] read_stats_many failed", exc_info=True)
+        return {}

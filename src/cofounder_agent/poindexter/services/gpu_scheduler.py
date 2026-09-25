@@ -621,6 +621,13 @@ def parse_holder_tag_fields(application_name: str) -> dict[str, Any]:
 # takes it exclusively, a device-scoped one takes it shared (see
 # _acquire_pg_advisory_lock). So one filter on the base key enumerates every
 # holder without having to know the unbounded set of device keys.
+#
+# `exclusive_keys` names the keys held in ExclusiveLock mode, which is what
+# admission needs to decide whether a holder blocks a caller
+# (pg_holder_blocks). `exclusive` alone cannot answer that: a scoped holder
+# (shared base + exclusive device key) and an unscoped one (exclusive base)
+# both read `exclusive=true`, and only the unscoped one blocks a scoped caller
+# on another card.
 _PG_HOLDERS_SQL = """
 WITH holders AS (
     SELECT DISTINCT l.pid
@@ -635,6 +642,8 @@ SELECT a.pid                                          AS backend_pid,
                                                        AS held_for_s,
        array_agg(DISTINCT ((l.classid::bigint << 32) | l.objid::bigint))
                                                        AS keys,
+       array_agg(DISTINCT ((l.classid::bigint << 32) | l.objid::bigint))
+           FILTER (WHERE l.mode = 'ExclusiveLock')     AS exclusive_keys,
        bool_or(l.mode = 'ExclusiveLock')               AS exclusive
   FROM holders h
   JOIN pg_stat_activity a ON a.pid = h.pid
@@ -651,11 +660,11 @@ async def list_pg_holders(dsn: str | None = None) -> list[dict[str, Any]]:
     """Who holds the GPU right now, ACROSS processes — Postgres as the truth.
 
     ``_current_owner`` answers only for the calling process, so every consumer
-    outside the holding process (the console route, an operator error message)
-    read it as "nobody" while a render in another container held the card.
-    Postgres already knows: the advisory lock sits on a connection this module
-    stamps with ``_holder_tag``, so the holder is self-describing and any
-    process can read it back.
+    outside the holding process (the console route, an operator error message,
+    admission's ETA gate) read it as "nobody" while a render in another
+    container held the card. Postgres already knows: the advisory lock sits on
+    a connection this module stamps with ``_holder_tag``, so the holder is
+    self-describing and any process can read it back.
 
     Fail-soft and honest-empty: every failure path returns ``[]``, and an
     empty list means "no holder found", never "the query broke" — callers that
@@ -724,10 +733,60 @@ async def list_pg_holders(dsn: str | None = None) -> list[dict[str, Any]]:
                 "application_name": fields["application_name"],
                 "held_for_s": max(0.0, float(held)) if held is not None else None,
                 "keys": [int(k) for k in (r["keys"] or [])],
+                # NULL when every key is held shared (the FILTER matched no row).
+                "exclusive_keys": [int(k) for k in (r["exclusive_keys"] or [])],
                 "exclusive": bool(r["exclusive"]),
             }
         )
     return holders
+
+
+def pg_holder_blocks(holder: dict[str, Any], want_keys: Collection[int]) -> bool:
+    """Would ``holder`` (a ``list_pg_holders`` row) block a caller taking ``want_keys``?
+
+    Mirrors the lock modes ``_acquire_pg_advisory_lock`` takes. An unscoped
+    caller (``want_keys == [GPU_ADVISORY_LOCK_KEY]``) takes the base key
+    EXCLUSIVELY, so any holder of it blocks, in either mode. A scoped caller
+    takes the base key SHARED plus its device keys exclusively, so it is
+    blocked only by an exclusive holder of the base key, or by any holder of
+    one of its own device keys.
+
+    That is what keeps a GPU-1 judge from being refused behind a GPU-0
+    render: the render shares the base key and holds only GPU 0's device
+    key, which the judge never asks for. It also skips a scoped WAITER, which
+    holds the base key shared while it queues for its device key and so looks
+    like a holder in ``list_pg_holders``, since it holds nothing a scoped
+    caller conflicts with.
+
+    ``want_keys`` empty means the caller takes no lock and nobody blocks it.
+    A row missing ``exclusive_keys`` counts as holding everything shared:
+    admission then under-counts blockers, which fails toward "grant".
+    """
+    want = {int(k) for k in want_keys}
+    if not want:
+        return False
+    held = {int(k) for k in (holder.get("keys") or [])}
+    if want == {GPU_ADVISORY_LOCK_KEY}:
+        return GPU_ADVISORY_LOCK_KEY in held
+    exclusive = {int(k) for k in (holder.get("exclusive_keys") or [])}
+    return GPU_ADVISORY_LOCK_KEY in exclusive or bool(held & want)
+
+
+def _holder_stats_key(holder: dict[str, Any]) -> tuple[str, str] | None:
+    """The ``gpu_lease_stats`` key a Postgres holder's tag maps to, or None.
+
+    ``lock()`` records releases under ``(owner, phase or owner)``, so a tag
+    whose phase is missing (or the ``?`` placeholder ``_holder_tag`` writes
+    for one) maps to the owner. An untagged session has no key: nothing
+    profiles it, so admission cannot estimate its remaining time.
+    """
+    owner = holder.get("owner")
+    if not owner or owner == "?":
+        return None
+    phase = holder.get("phase")
+    if not phase or phase == "?":
+        phase = owner
+    return (str(owner), str(phase))
 
 
 async def _describe_pg_holder(dsn: str, keys: list[int]) -> str:
@@ -1766,7 +1825,10 @@ class GPUScheduler:
         2026-07-26-gpu-scheduler-queue-admission-design.md):
           - ``max_wait_s`` opts this call into ADMISSION: before any wait, the
             pure calculator (``services.gpu_admission.decide``) estimates the
-            holder's remaining time from its ``gpu_lease_stats`` p90 and
+            holder's remaining time from its ``gpu_lease_stats`` p90 — the
+            holder being this process's own session on a card the caller
+            needs, else whichever session in another process Postgres shows
+            blocking this caller's keys — and
             checks VRAM fit; a hopeless wait raises :class:`GpuBusyError`
             IMMEDIATELY (honest skip) instead of burning the budget, and the
             budget also caps the actual lock wait. ``None`` (the default) is
@@ -1802,6 +1864,16 @@ class GPUScheduler:
             yield
             return
 
+        # Which physical cards does this caller contend for? Derived from the
+        # owner/model args every call site already passes (#3457 Phase 2).
+        # Returns the single whole-GPU key when scoping is off or unresolvable
+        # — today's exact behaviour — and [] when the caller occupies no GPU at
+        # all (managed API / serverless / CPU). Resolved before admission,
+        # which judges a holder by whether it blocks THESE keys, and before the
+        # wait below, whose waiter mirror needs the same answer: a caller that
+        # takes no key contends for nothing and must not appear in a GPU queue.
+        want_keys = resolve_lock_keys(owner, model)
+
         # Admission (poindexter#914 P1) — BEFORE any wait, including the
         # gaming check. Doubly gated: the caller must declare a budget AND
         # the operator must have flipped gpu_sched_enabled. A reject raises
@@ -1812,7 +1884,8 @@ class GPUScheduler:
         reclaim_sidecars_before_yield = False
         if max_wait_s is not None and _cfg_bool("gpu_sched_enabled", False):
             decision = await self._admission_check(
-                owner=owner, model=model, phase=phase, max_wait_s=max_wait_s
+                owner=owner, model=model, phase=phase, max_wait_s=max_wait_s,
+                lock_keys=want_keys,
             )
             evict_before_yield = decision.action == "grant_after_unload"
             # The fit only closed once the media sidecars were counted, so
@@ -1824,15 +1897,6 @@ class GPUScheduler:
 
         # Wait for gaming to stop before acquiring lock
         await self._wait_for_gaming_clear()
-
-        # Which physical cards does this caller contend for? Derived from the
-        # owner/model args every call site already passes (#3457 Phase 2).
-        # Returns the single whole-GPU key when scoping is off or unresolvable
-        # — today's exact behaviour — and [] when the caller occupies no GPU at
-        # all (managed API / serverless / CPU). Resolved HERE, above the wait,
-        # because the waiter mirror needs the same answer: a caller that takes
-        # no key contends for nothing and must not appear in a GPU queue.
-        want_keys = resolve_lock_keys(owner, model)
 
         waited = self._any_gate_locked()
         if waited:
@@ -2133,12 +2197,16 @@ class GPUScheduler:
         return self._registry
 
     async def _admission_check(self, *, owner: str, model: str | None,
-                               phase: str | None, max_wait_s: float):
+                               phase: str | None, max_wait_s: float,
+                               lock_keys: list[int] | None = None):
         """Assemble live telemetry, run the pure calculator, act on a reject.
 
         Every read here is individually fail-open (None / 0.0) so admission
         can only ever be as strict as its data is real — a Prometheus blip or
         missing stats row degrades to "grant", never to a false reject.
+        ``lock_keys`` are the advisory keys this caller is about to take; the
+        holder admission weighs is one that blocks them (see
+        ``_resolve_admission_holder``).
         Returns the AdmissionDecision; raises GpuBusyError on reject.
         """
         from poindexter.services import gpu_admission
@@ -2152,15 +2220,21 @@ class GPUScheduler:
             # (z_image_turbo from operator_image: 14 in 7 days).
             model=model if owner == "ollama" else None,
             max_wait_s=max_wait_s,
+            lock_keys=lock_keys,
         )
         decision = gpu_admission.decide(inputs)
         if decision.action == "reject":
+            holder_owner, holder_phase = inputs.holder_key or (None, None)
             self._emit_admission_rejected_finding(
                 owner=owner,
                 phase=phase or owner,
                 reason=decision.reason or "unknown",
                 eta_seconds=decision.eta_seconds,
                 max_wait_s=max_wait_s,
+                holder_owner=holder_owner,
+                holder_phase=holder_phase,
+                holder_source=inputs.holder_source,
+                holder_elapsed_s=inputs.holder_elapsed_s,
             )
             logger.info(
                 "GPU admission rejected",
@@ -2169,6 +2243,9 @@ class GPUScheduler:
                 reason=decision.reason,
                 eta_seconds=decision.eta_seconds,
                 max_wait_s=max_wait_s,
+                holder_owner=holder_owner,
+                holder_phase=holder_phase,
+                holder_source=inputs.holder_source,
             )
             raise gpu_admission.GpuBusyError(
                 decision.reason or "unknown", decision.eta_seconds
@@ -2213,23 +2290,135 @@ class GPUScheduler:
             return _cfg_float("gpu0_headroom_gb", 6.0)
         return _cfg_float(f"gpu{index}_headroom_gb", 4.5)
 
-    async def _assemble_admission_inputs(self, *, model: str | None,
-                                         max_wait_s: float):
-        from poindexter.services.gpu_admission import AdmissionInputs, CardVram
+    def _overlapping_in_process_holder(self, lock_keys: list[int] | None) -> bool:
+        """True when a session in THIS process holds a card the caller needs.
 
-        holder_key = holder_elapsed = holder_stats = None
-        if self._any_gate_locked() and self._current_owner is not None:
-            h_owner = self._current_owner
+        ``_current_owner`` is set only once a session holds both its gates and
+        its pg lock, so a gate-holder still parked at the pg step is not a
+        holder here. It is waiting too, and the session it waits behind is
+        found in Postgres instead.
+
+        ``lock_keys=None`` means the caller did not say which keys it will
+        take. Any in-process holder then counts, which was admission's whole
+        view before it learned about keys.
+        """
+        if self._current_owner is None:
+            return False
+        if lock_keys is None:
+            return self._any_gate_locked()
+        return bool(set(lock_keys) & set(self._held_keys))
+
+    async def _resolve_admission_holder(
+        self, lock_keys: list[int] | None, eta_fallback_s: float,
+    ) -> tuple[tuple[str, str], float | None, Any, str] | None:
+        """The holder admission estimates against: ``(key, elapsed_s, stats, source)``.
+
+        This process's own session comes first because it costs no extra I/O
+        beyond the stats read admission always did. Failing that, the session
+        is looked up in Postgres. The pipeline's GPU work is split across
+        containers (content flows in ``poindexter-prefect-worker``, media
+        renders in ``poindexter-worker``), and a budgeted caller that could
+        see only its own process met a 40-minute render at the pg-advisory
+        step. It burned its whole budget there and ended in
+        ``GpuLockTimeoutError`` plus a warn finding, instead of the up-front
+        ``GpuBusyError`` admission exists to give.
+
+        ``None`` means no holder blocks this caller as far as admission can
+        tell, and the ETA gate is skipped.
+        """
+        h_owner = self._current_owner
+        if h_owner is not None and self._overlapping_in_process_holder(lock_keys):
             h_phase = self._current_phase or h_owner
-            holder_key = (h_owner, h_phase)
-            holder_elapsed = time.monotonic() - self._acquired_at
+            elapsed = time.monotonic() - self._acquired_at
             try:
                 from poindexter.services import gpu_lease_stats as _lease_stats
 
-                holder_stats = await _lease_stats.read_stats(h_owner, h_phase)
+                stats = await _lease_stats.read_stats(h_owner, h_phase)
             except Exception:
                 # silent-ok: stats degrade to the fallback ETA inside decide().
-                holder_stats = None
+                stats = None
+            return (h_owner, h_phase), elapsed, stats, "in_process"
+        if not lock_keys:
+            # None: the caller did not name its keys, so overlap cannot be
+            # judged. []: it takes no lock, so nothing can block it.
+            return None
+        try:
+            return await self._cross_process_admission_holder(
+                lock_keys, eta_fallback_s
+            )
+        except Exception:
+            # Both reads below are fail-soft on their own (an unreachable DB
+            # comes back as "no holders" / "no stats"), so reaching this is a
+            # code defect rather than an outage — worth a warning. Admission
+            # still fails OPEN: no holder, so the caller waits at the lock
+            # exactly as it did before this lookup existed.
+            logger.warning(
+                "[GPU] cross-process holder lookup for admission failed — "
+                "granting without an ETA", exc_info=True,
+            )
+            return None
+
+    async def _cross_process_admission_holder(
+        self, lock_keys: list[int], eta_fallback_s: float,
+    ) -> tuple[tuple[str, str], float | None, Any, str] | None:
+        """The session in another process this caller would wait longest behind.
+
+        One ``list_pg_holders`` round-trip, filtered by ``pg_holder_blocks`` to
+        the sessions that actually conflict with ``lock_keys``. Under device
+        scoping that means a GPU-1 judge is never refused because of a GPU-0
+        render. Then one ``read_stats_many`` round-trip covers every blocker.
+        The caller has to outlast all of them, so the one with the longest
+        estimated remaining time is the holder admission weighs.
+
+        A blocker with no stats is left out, not given
+        ``gpu_sched_eta_fallback_seconds``. In this process a holder is always
+        a scheduler session, so "no stats" means a phase too new to have a
+        p90. In Postgres it can be anything that takes the key. The brain's
+        probes take it for seconds at a time and are never profiled, so the
+        120 s fallback would refuse a 45 s QA rail behind a five-second probe.
+        No evidence of a long hold means no reject. The caller waits at the
+        lock, bounded by its budget, as it did before this lookup existed.
+        """
+        from poindexter.services import gpu_lease_stats as _lease_stats
+        from poindexter.services.gpu_admission import holder_remaining_s
+
+        blockers: list[tuple[tuple[str, str], float]] = []
+        for holder in await list_pg_holders():
+            if not pg_holder_blocks(holder, lock_keys):
+                continue
+            key = _holder_stats_key(holder)
+            elapsed = holder.get("held_for_s")
+            if key is None or elapsed is None:
+                # Untagged, or no timing: nothing to estimate from.
+                continue
+            blockers.append((key, float(elapsed)))
+        if not blockers:
+            return None
+
+        stats = await _lease_stats.read_stats_many([key for key, _ in blockers])
+        best: tuple[float, tuple[str, str], float, Any] | None = None
+        for key, elapsed in blockers:
+            profile = stats.get(key)
+            if profile is None or profile.p90_ms is None:
+                continue
+            remaining = holder_remaining_s(profile, elapsed, eta_fallback_s)
+            if best is None or remaining > best[0]:
+                best = (remaining, key, elapsed, profile)
+        if best is None:
+            return None
+        _, key, elapsed, profile = best
+        return key, elapsed, profile, "postgres"
+
+    async def _assemble_admission_inputs(self, *, model: str | None,
+                                         max_wait_s: float,
+                                         lock_keys: list[int] | None = None):
+        from poindexter.services.gpu_admission import AdmissionInputs, CardVram
+
+        eta_fallback_s = _cfg_float("gpu_sched_eta_fallback_seconds", 120.0)
+        holder_key = holder_elapsed = holder_stats = holder_source = None
+        holder = await self._resolve_admission_holder(lock_keys, eta_fallback_s)
+        if holder is not None:
+            holder_key, holder_elapsed, holder_stats, holder_source = holder
 
         # Multi-card telemetry (poindexter#1016): one CardVram per card
         # ollama-primary can place on. Per-card None keeps the #914 contract
@@ -2289,7 +2478,8 @@ class GPUScheduler:
             holder_key=holder_key,
             holder_elapsed_s=holder_elapsed,
             holder_stats=holder_stats,
-            eta_fallback_s=_cfg_float("gpu_sched_eta_fallback_seconds", 120.0),
+            holder_source=holder_source,
+            eta_fallback_s=eta_fallback_s,
             cards=tuple(cards),
             model_estimate_gb=estimate_gb,
         )
@@ -2297,12 +2487,21 @@ class GPUScheduler:
     def _emit_admission_rejected_finding(
         self, *, owner: str, phase: str, reason: str,
         eta_seconds: float | None, max_wait_s: float,
+        holder_owner: str | None = None,
+        holder_phase: str | None = None,
+        holder_source: str | None = None,
+        holder_elapsed_s: float | None = None,
     ) -> None:
         """Emit an info ``gpu_admission_rejected`` finding. Never raises.
 
         Info, not warn: a reject is the mechanism WORKING (an honest skip
         instead of a doomed wait). Dedup folds repeats per (owner, phase,
         reason) so a busy render window produces one row, not one per rail.
+
+        The ``holder_*`` fields name the session the ETA was computed against
+        and where it was found (``in_process`` or ``postgres``). Without them a
+        reject reads as "the GPU was busy" with no way to tell a render in
+        another container from a slow writer in this one.
         """
         try:
             from poindexter.utils.findings import emit_finding
@@ -2312,6 +2511,15 @@ class GPUScheduler:
                 if eta_seconds is not None
                 else f"budget {max_wait_s:.0f}s"
             )
+            holder_txt = ""
+            if holder_owner:
+                where = (
+                    "another process" if holder_source == "postgres" else "this process"
+                )
+                held_txt = (
+                    f", held {holder_elapsed_s:.0f}s" if holder_elapsed_s is not None else ""
+                )
+                holder_txt = f" behind {holder_owner}/{holder_phase} ({where}{held_txt})"
             emit_finding(
                 source="gpu_scheduler",
                 kind="gpu_admission_rejected",
@@ -2319,9 +2527,9 @@ class GPUScheduler:
                 title=f"GPU admission rejected ({owner}, {phase}): {reason}",
                 body=(
                     f"gpu.lock({owner!r}, phase={phase!r}) was admission-rejected "
-                    f"({reason}; {eta_txt}) and raised GpuBusyError before "
-                    "waiting. The caller skips honestly this cycle instead of "
-                    "burning its budget behind the current holder "
+                    f"({reason}; {eta_txt}){holder_txt} and raised GpuBusyError "
+                    "before waiting. The caller skips honestly this cycle instead "
+                    "of burning its budget behind the current holder "
                     "(poindexter#914 P1)."
                 ),
                 dedup_key=f"gpu-admission:{owner}:{phase}:{reason}",
@@ -2331,6 +2539,10 @@ class GPUScheduler:
                     "reason": reason,
                     "eta_seconds": eta_seconds,
                     "max_wait_s": max_wait_s,
+                    "holder_owner": holder_owner,
+                    "holder_phase": holder_phase,
+                    "holder_source": holder_source,
+                    "holder_elapsed_s": holder_elapsed_s,
                 },
             )
         except Exception:

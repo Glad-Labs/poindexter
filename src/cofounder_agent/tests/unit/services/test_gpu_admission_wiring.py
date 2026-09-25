@@ -14,7 +14,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from poindexter.services.gpu_admission import AdmissionDecision, GpuBusyError
+from poindexter.services.gpu_admission import (
+    AdmissionDecision,
+    AdmissionInputs,
+    GpuBusyError,
+)
 from poindexter.services.gpu_scheduler import GPUScheduler
 
 
@@ -74,7 +78,11 @@ async def test_no_budget_never_consults_decide_even_with_flag_on():
 @pytest.mark.asyncio
 async def test_reject_raises_pre_wait_and_emits_finding():
     gpu = _quiet(GPUScheduler())
-    gpu._assemble_admission_inputs = AsyncMock()  # inputs irrelevant — decide stubbed
+    # Inputs are irrelevant to the verdict (decide is stubbed), but the reject
+    # path reads the holder provenance off them, so they must be real.
+    gpu._assemble_admission_inputs = AsyncMock(
+        return_value=AdmissionInputs(max_wait_s=60.0)
+    )
     gpu._emit_admission_rejected_finding = MagicMock()
     with patch(
         "poindexter.services.gpu_admission.decide",
