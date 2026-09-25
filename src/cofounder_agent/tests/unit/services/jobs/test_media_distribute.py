@@ -29,6 +29,21 @@ def _sc(**overrides):
     return SiteConfig(initial_config=base)
 
 
+@pytest.fixture(autouse=True)
+def _no_live_video_feed_render(monkeypatch):
+    """Stub the feed rebuild a long-form delivery triggers.
+
+    ``run()`` calls ``rebuild_video_feed`` after it dispatches a long-form
+    video, and that GETs ``{internal_api_base_url}/api/video/feed.xml``: the
+    live worker API on :8002 when the suite runs on the operator box. Three
+    tests here fetched it before this stub existed (poindexter#1011). Tests
+    that assert on the rebuild still patch it themselves; their patch wins.
+    """
+    monkeypatch.setattr(
+        "poindexter.services.media_feed_rebuild.rebuild_video_feed", AsyncMock(),
+    )
+
+
 class _FakeTxn:
     """``conn.transaction()`` async-context stand-in (no-op begin/commit)."""
 

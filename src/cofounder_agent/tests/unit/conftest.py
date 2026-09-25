@@ -52,6 +52,24 @@ from tests.unit._log_isolation import root_log_level_restored
 # priced against anyway; setdefault so an operator override still wins.
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
+# Langfuse span export is OFF for the unit tier. An ``@observe`` call
+# (poindexter.services.langfuse_shim) builds a Langfuse client from the
+# LANGFUSE_* env vars, and with a key present it starts an OTLP
+# BatchSpanProcessor aimed at ``{LANGFUSE_HOST}/api/public/otel/v1/traces``:
+# the live Langfuse on :3010 when the suite runs on the operator box. The
+# processor exports on its own timer, so a 2026-09-25 harvest blamed whichever
+# test was running (five different files), and an export during a baselined
+# test, or in the flush at interpreter exit after the egress guard is unpatched,
+# reached the real server. The SDK checks this switch in ``Langfuse.__init__``,
+# so no processor or exporter is built however a client is made. SiteConfig
+# falls back to the env var, so ``langfuse_tracing_enabled`` reads false for a
+# test SiteConfig without that row, and configure_langfuse_callback registers
+# no litellm exporter. Assigned, not setdefault: the worker containers set it
+# "true" beside real keys, so an inherited value would re-arm export exactly
+# where the credentials work. A test that exercises an exporter flips it with
+# monkeypatch and injects its own.
+os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
+
 # ---------------------------------------------------------------------------
 # Repo-root discovery (poindexter#722)
 # ---------------------------------------------------------------------------
@@ -419,6 +437,19 @@ _ENV_KEYS_TO_ISOLATE = (
     "SITE_DOMAIN",
     "ENVIRONMENT",
     "R2_PUBLIC_URL",
+    # configure_langfuse_callback and configure_cloud_api_keys copy credentials
+    # into os.environ, and their tests' ``monkeypatch.delenv(..., raising=False)``
+    # records nothing for a var that was absent, so the values outlived the
+    # test. The Langfuse trio is what armed the span exporter the default at
+    # the top of this file now disables. The switch itself is listed so a test
+    # that writes it directly cannot re-enable export for the tests after it.
+    "LANGFUSE_HOST",
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY",
+    "LANGFUSE_TRACING_ENABLED",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
 )
 
 

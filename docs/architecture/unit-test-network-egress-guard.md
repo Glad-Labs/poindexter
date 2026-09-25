@@ -117,6 +117,56 @@ in-flight jobs. The in-process guard knows which test is running and names it; a
 harvest of the whole suite with a `sitecustomize` hook found no subprocess reaching a
 sidecar (2026-09-25).
 
+## Background exporters: Langfuse tracing is off for the unit tier
+
+The guard judges a connection by the test that is running when it happens. A span processor
+breaks that assumption, because it exports from its own thread on a timer. The test it names
+is whichever one happened to be running. An export during a baselined test goes through. The
+flush at interpreter exit runs after every patch has been undone.
+
+On the operator box that sent unit-test spans to the live Langfuse web on `localhost:3010`. A
+2026-09-25 harvest that pointed `localhost:3010` at a recorder saw exports blamed on five
+files, and the list changed from run to run: `test_dispatch_phase_coverage.py`,
+`test_source_featured_image_transient_retry.py`, `test_ollama_client_resilience.py`,
+`test_inline_image_helpers.py` and `test_chatterbox_server_unload.py`. None of them built the
+exporter. One `tests/unit/services` run, traced from the exporter's constructor, found one
+exporter and 36 connection attempts from the SDK's batch thread:
+
+1. `test_litellm_langfuse_callback.py` calls the real `configure_langfuse_callback`, which
+   copies `LANGFUSE_HOST=http://localhost:3010` and a test key pair into `os.environ`. The
+   test's `monkeypatch.delenv(..., raising=False)` records nothing for a variable that was
+   absent, and the conftest's restore list did not name them, so they outlived the test.
+2. The next `@observe` call in the same xdist worker had the Langfuse SDK build a client from
+   them. In the traced run that was `plan_images`, in `test_image_decision_agent.py`. With a
+   key present, the client starts an OTLP `BatchSpanProcessor` aimed at
+   `http://localhost:3010/api/public/otel/v1/traces`.
+
+The fix is at the source. `tests/unit/conftest.py` sets `LANGFUSE_TRACING_ENABLED=false`
+before any import. `Langfuse.__init__` combines its own tracing flag with that variable, so no
+tracer provider, span processor or exporter is built, whichever path constructs the client:
+`@observe`, the prompt manager, the experiment service or the eval harness. `SiteConfig` falls
+back to the upper-cased environment variable for a key with no row, so the app-level
+`langfuse_tracing_enabled` reads false as well, and `configure_langfuse_callback` registers
+no litellm OTEL exporter. The leaked variables are also restored after every test now
+(`_ENV_KEYS_TO_ISOLATE`), along with the cloud API keys that `configure_cloud_api_keys`
+writes the same way.
+
+Two choices here are deliberate:
+
+- **Assigned, not `setdefault`.** The other unit-tier defaults let an inherited value win.
+  This one does not. The worker containers set `LANGFUSE_TRACING_ENABLED: "true"` beside real
+  keys, and a unit run inside one (it has been done, in `poindexter-worker` on 2026-07-29)
+  would otherwise export with credentials that work.
+- **Not `OTEL_SDK_DISABLED`.** That switches off the OpenTelemetry SDK itself, so tests that
+  assert on spans through an `InMemorySpanExporter` (`test_pipeline_node_spans.py`,
+  `test_brain_health_probes.py`) would record nothing.
+
+A test that exercises an exporter sets the variable to `true` with `monkeypatch` and passes
+its own `span_exporter=` and `tracer_provider=`. The second keeps the SDK from installing a
+process-global provider. `TestLangfuseExportIsOffForTheUnitTier` in
+`tests/unit/test_network_egress_guard.py` does exactly that as its control, and pins that the
+switch still reaches the SDK and `configure_langfuse_callback`.
+
 ## Two properties that look like style and are not
 
 ### 1. The exception derives from `BaseException`
@@ -168,6 +218,13 @@ What the probe found, by target:
 | `api.telegram.org`, `raw.githubusercontent.com` |     2 |
 
 The Postgres majority is the real story: most of these want a stubbed pool, not a live DB.
+
+The worker API row was media feed renders. `media_distribute` and `publish_service`
+re-render `/api/podcast/feed.xml` and `/api/video/feed.xml` from `internal_api_base_url`,
+which is `localhost:8002` on the operator box. Stub `rebuild_video_feed` or
+`rebuild_podcast_feed` at `poindexter.services.media_feed_rebuild`.
+`publish_service._upload_media_to_r2_bg` fetches inline, so its tests patch
+`httpx.AsyncClient`. Both files were burned down on 2026-09-25.
 
 ### The baseline is a union, not a snapshot
 

@@ -8,7 +8,9 @@ looked green for weeks).
 
 from __future__ import annotations
 
+import os
 import socket
+import uuid
 from pathlib import Path
 
 import pytest
@@ -242,6 +244,126 @@ class TestReportModeNeverReachesProduction:
         with pytest.raises(ConnectionRefusedError):
             socket.create_connection(("127.0.0.1", 9836), timeout=1)
         assert "127.0.0.1:9836" in report_mode.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Background exporters: Langfuse span export is off for the unit tier
+# ---------------------------------------------------------------------------
+#
+# The guard judges a connect by the test running when it happens. A span
+# processor exports from its own thread on a timer, so its sends were blamed on
+# whichever test was running, went through whenever that test was baselined,
+# and the flush at interpreter exit ran after every patch was undone. On the
+# operator box that put test spans on the live Langfuse at :3010 (2026-09-25).
+# conftest.py switches Langfuse tracing off before any import instead; these
+# pin that the switch still reaches every path that could start an exporter.
+
+
+@pytest.fixture
+def span_processors_built(monkeypatch):
+    """Names of the background span processors constructed during the test.
+
+    ``BatchSpanProcessor`` is the part that exports on its own timer. Langfuse's
+    processor subclasses it and litellm's OTEL callback builds one, so recording
+    its constructor sees both, whatever exporter class sits behind them."""
+    export = pytest.importorskip("opentelemetry.sdk.trace.export")
+    built: list[str] = []
+    real_init = export.BatchSpanProcessor.__init__
+
+    def _recording_init(self, *args, **kwargs):
+        built.append(type(self).__name__)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(export.BatchSpanProcessor, "__init__", _recording_init)
+    return built
+
+
+def _discard_langfuse_client(client, public_key: str) -> None:
+    """Stop the client's threads and forget it.
+
+    The SDK caches one resource manager per public key for the life of the
+    process, and ``get_client()`` hands that cached one to any later ``@observe``
+    call. ``shutdown()`` stops its threads but leaves it cached, so drop it from
+    the SDK's (private) registry as well."""
+    from langfuse._client.resource_manager import LangfuseResourceManager
+
+    client.shutdown()
+    LangfuseResourceManager._instances.pop(public_key, None)
+
+
+class TestLangfuseExportIsOffForTheUnitTier:
+    def test_conftest_switches_langfuse_tracing_off(self):
+        assert os.environ.get("LANGFUSE_TRACING_ENABLED") == "false", (
+            "tests/unit/conftest.py must set LANGFUSE_TRACING_ENABLED=false before "
+            "any import; without it a leaked Langfuse key starts a span exporter"
+        )
+
+    def test_credentials_in_the_environment_start_no_exporter(
+        self, span_processors_built, monkeypatch,
+    ):
+        """The leak's exact shape: a key pair and a host in os.environ, and a
+        client built from them, as ``get_client()`` builds one for ``@observe``."""
+        langfuse = pytest.importorskip("langfuse")
+        key = f"pk-lf-egress-guard-{uuid.uuid4().hex}"
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", key)
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-egress-guard")
+        monkeypatch.setenv("LANGFUSE_HOST", "http://127.0.0.1:9")
+        client = langfuse.Langfuse()
+        try:
+            assert span_processors_built == []
+        finally:
+            _discard_langfuse_client(client, key)
+
+    def test_a_test_that_wants_spans_injects_its_own_exporter(
+        self, span_processors_built, monkeypatch,
+    ):
+        """The escape hatch, and the proof that the recorder above watches the
+        seam the SDK really uses. Switched on, the same kind of client starts
+        exactly one processor, and its spans land in the injected exporter
+        instead of the network."""
+        langfuse = pytest.importorskip("langfuse")
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+            InMemorySpanExporter,
+        )
+
+        monkeypatch.setenv("LANGFUSE_TRACING_ENABLED", "true")
+        key = f"pk-lf-egress-guard-{uuid.uuid4().hex}"
+        exporter = InMemorySpanExporter()
+        # A private provider, so the SDK never installs a process-global one.
+        provider = TracerProvider()
+        client = langfuse.Langfuse(
+            public_key=key,
+            secret_key="sk-lf-egress-guard",
+            base_url="http://127.0.0.1:9",
+            tracer_provider=provider,
+            span_exporter=exporter,
+        )
+        try:
+            assert len(span_processors_built) == 1
+            client.start_observation(name="egress-guard-probe").end()
+            client.flush()
+            assert [span.name for span in exporter.get_finished_spans()] == [
+                "egress-guard-probe",
+            ]
+        finally:
+            _discard_langfuse_client(client, key)
+            provider.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_configure_langfuse_callback_stands_down(self):
+        """SiteConfig falls back to the env var for a key with no row, so the
+        app-level ``langfuse_tracing_enabled`` reads false and the real
+        callback wiring registers no litellm OTEL exporter. Were the switch
+        not reaching it, the call would go on to read the key rows and raise
+        LangfuseConfigError for the missing ones."""
+        from poindexter.services.llm_providers.litellm_provider import (
+            configure_langfuse_callback,
+        )
+        from poindexter.services.site_config import SiteConfig
+
+        site_config = SiteConfig(initial_config={"langfuse_host": "http://127.0.0.1:9"})
+        assert await configure_langfuse_callback(site_config) is False
 
 
 class TestProductionEndpointsAreDerived:
