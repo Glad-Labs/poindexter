@@ -4916,9 +4916,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # captions.
     'container_health_watch_enabled': 'true',
     'container_health_alert_after_minutes': '10',
-    # name=minutes overrides. image-gen-server serves /health on the event loop
-    # its inference blocks, so it reads unhealthy for 8-22 min while it works.
-    'container_health_alert_after_overrides': 'poindexter-image-gen-server=30',
+    # name=minutes overrides, for a container whose healthcheck fails while it
+    # works. Empty: image-gen-server held 30 until 2026-09-25, when its GPU
+    # work left the event loop (stack#4021) and /health answered mid-render.
+    'container_health_alert_after_overrides': '',
 
     # ----- Outlet guard (poindexter/brain/outlet_guard_probe.py, 2026-09-06) -----
     # The Shelly plug that meters the PC's wall power (bootstrap

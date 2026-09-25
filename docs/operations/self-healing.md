@@ -722,11 +722,15 @@ because this alert covers the containers where a blind bounce kills work in
 progress.
 
 **Per-container thresholds.** `container_health_alert_after_overrides` takes
-`name=minutes,...` and defaults to `poindexter-image-gen-server=30`.
-image-gen-server runs inference and model loads on its event loop, so `/health`
-cannot answer while it works. In the same 15 days it read unhealthy 13 times,
-for 8 to 22 minutes each. The override keeps that from paging until its health
-endpoint is served off the event loop.
+`name=minutes,...` and is empty by default. It shipped as
+`poindexter-image-gen-server=30`: image-gen ran inference and model loads on its
+event loop, so `/health` could not answer while it worked, and in the same 15
+days it read unhealthy 13 times, for 8 to 22 minutes each. On 2026-09-25 its
+GPU work moved to worker threads behind a lock (glad-labs-stack#4021), its
+healthcheck stayed green through a live cold load and back-to-back renders, and
+the override was retired. Reach for an override only for a container whose
+healthcheck fails while it works. The better fix is the one image-gen got:
+serve `/health` off the work.
 
 **One restart per episode, not one per dedup window.** A sidecar that wedges
 again after a verified restart is restarted again. The dispatcher treats the
@@ -1104,7 +1108,7 @@ full incident write-up.
 | `docker_port_forward_pg_auth_timeout_seconds`                 | `5`                                        | Timeout for the real-auth `asyncpg.connect()` attempt (a few round trips, not one — set slightly above the base timeout).                                                                    |
 | `container_health_watch_enabled`                              | `true`                                     | Container health watch: fire `container_unhealthy` while a container stays unhealthy.                                                                                                        |
 | `container_health_alert_after_minutes`                        | `10`                                       | Minutes of consecutive failed healthchecks before a container's first `container_unhealthy` row.                                                                                             |
-| `container_health_alert_after_overrides`                      | `poindexter-image-gen-server=30`           | Per-container `name=minutes` thresholds for containers whose healthcheck fails while they work.                                                                                              |
+| `container_health_alert_after_overrides`                      | `''` (none)                                | Per-container `name=minutes` thresholds for containers whose healthcheck fails while they work.                                                                                              |
 | `ops_firefighter_enabled`                                     | `true`                                     | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                                                                                        |
 | `ops_firefighter_max_attempts_per_window`                     | `3`                                        | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                                                                                                |
 | `ops_firefighter_window_minutes`                              | `60`                                       | Circuit-breaker rolling window (minutes); a matched rule may override.                                                                                                                       |

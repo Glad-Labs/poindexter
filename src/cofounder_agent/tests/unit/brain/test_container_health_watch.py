@@ -140,14 +140,37 @@ async def test_recovery_resolves_the_episode_and_says_whether_it_was_restarted()
 
 
 async def test_overrides_give_a_container_its_own_threshold():
-    pool = _pool()  # default override: image-gen-server=30
+    pool = _pool({chw.OVERRIDES_KEY: "poindexter-comfyui=30"})
     await _run(pool, [
-        _c("poindexter-image-gen-server", "unhealthy", streak=44),  # 22 min: busy, not wedged
-        _c("poindexter-speaches", "unhealthy", streak=24),          # 12 min
+        _c("poindexter-comfyui", "unhealthy", streak=44),   # 22 min, under its 30
+        _c("poindexter-speaches", "unhealthy", streak=24),  # 12 min, past the default 10
     ])
     assert [r["fingerprint"] for r in _rows(pool)] == ["container_health_watch:poindexter-speaches"]
-    await _run(pool, [_c("poindexter-image-gen-server", "unhealthy", streak=62)])  # 31 min
-    assert _rows(pool)[-1]["fingerprint"] == "container_health_watch:poindexter-image-gen-server"
+    await _run(pool, [_c("poindexter-comfyui", "unhealthy", streak=62)])  # 31 min
+    assert _rows(pool)[-1]["fingerprint"] == "container_health_watch:poindexter-comfyui"
+
+
+async def test_image_gen_is_judged_by_the_default_threshold():
+    """image-gen shipped with a 30-minute default override: its /health was
+    served on the event loop its inference blocked, so it read unhealthy for
+    8-22 minutes during ordinary work. The GPU work moved to worker threads
+    (glad-labs-stack#4021), so 12 minutes unhealthy is now a real wedge."""
+    assert chw.DEFAULT_OVERRIDES == ""
+    pool = _pool()
+    await _run(pool, [_c("poindexter-image-gen-server", "unhealthy", streak=24)])  # 12 min
+    assert [r["fingerprint"] for r in _rows(pool)] == [
+        "container_health_watch:poindexter-image-gen-server",
+    ]
+
+
+async def test_code_defaults_match_the_seeded_defaults():
+    """The probe falls back to its code default when a row is blank, and
+    settings_defaults seeds the rows. Two copies of one default drift apart
+    silently: the override outlived its reason in both places at once."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    assert DEFAULTS[chw.OVERRIDES_KEY] == chw.DEFAULT_OVERRIDES
+    assert DEFAULTS[chw.AFTER_MINUTES_KEY] == str(chw.DEFAULT_AFTER_MINUTES)
 
 
 async def test_threshold_and_overrides_come_from_settings():

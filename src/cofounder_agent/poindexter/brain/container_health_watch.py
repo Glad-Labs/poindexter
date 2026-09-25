@@ -44,11 +44,15 @@ restarts a container nobody wrote a rule for. This alert covers GPU renderers
 mid-job and a busy worker, where a blind bounce kills in-flight work.
 
 Per-container thresholds: ``container_health_alert_after_overrides``
-(``name=minutes,...``). image-gen-server runs inference and model loads on its
-event loop, so ``/health`` cannot answer while it works; over the 15 days of
-Prometheus history before this shipped it read unhealthy 13 times, for 8 to 22
-minutes each. Its default override (30) keeps that from paging until its
-``/health`` is served off the event loop.
+(``name=minutes,...``), empty by default. It shipped as
+``poindexter-image-gen-server=30``: image-gen ran inference and model loads on
+its event loop, so ``/health`` could not answer while it worked, and in the 15
+days of Prometheus history before this probe it read unhealthy 13 times, for 8
+to 22 minutes each. Its GPU work moved to worker threads on 2026-09-25
+(glad-labs-stack#4021) and its healthcheck stayed green through a live cold
+load and back-to-back renders, so it is judged like every other container now.
+An override is for a container whose healthcheck fails while it works; the fix
+for one is to serve its ``/health`` off the work, as image-gen now does.
 """
 
 from __future__ import annotations
@@ -78,7 +82,7 @@ AFTER_MINUTES_KEY = "container_health_alert_after_minutes"
 OVERRIDES_KEY = "container_health_alert_after_overrides"
 
 DEFAULT_AFTER_MINUTES = 10
-DEFAULT_OVERRIDES = "poindexter-image-gen-server=30"
+DEFAULT_OVERRIDES = ""
 _DEFAULT_INTERVAL_S = 30.0
 
 # Open episodes: container name -> the StartedAt it had when the episode
