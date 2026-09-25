@@ -40,6 +40,17 @@ reported ``ocr_gate_passed=false`` in a field no caller read. 67 of 693 renders
     "no image-gen image" and fall back / emit a downgrade finding, so the
     rejection lands on a path that is already wired to be seen.
 
+GPU work runs off the event loop (2026-09-25). Model loads, diffusion passes
+and unloads run in worker threads, so /health and the other cheap endpoints
+answer while the card is busy. They used to run on the loop itself: the
+Docker healthcheck failed through every long render and cold load (13
+not-healthy spells of 8-22 minutes in the 15 days before), the brain's
+container health watch needed a 30-minute override to not page on ordinary
+work, and every other /health probe saw a dead server mid-render. The blocked
+loop was also the only thing that kept two renders apart. ``state.gpu_lock``
+does that now, and everything that loads, renders with or drops the pipeline
+holds it (see ``_run_on_gpu``).
+
 Endpoints:
     GET  /health              — status, model, degradation reason, gate config
     POST /generate            — generate image from prompt (OCR-gated, see above)
@@ -62,6 +73,7 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -676,14 +688,20 @@ class ServerState:
         self.pipeline: Any | None = None
         self.config: ModelConfig | None = None
         self.last_used: float = 0.0
-        # Generation requests currently in flight. The hard unload self-exits
-        # the process, so it MUST NOT fire while a render is running — see the
-        # decline in /unload (poindexter#1024).
+        # Generation requests in the server, rendering or queued on gpu_lock.
+        # The hard unload self-exits the process, so it MUST NOT fire while
+        # there is one — see the decline in /unload (poindexter#1024). A
+        # queued request counts: it is about to use the pipeline.
         self.inflight: int = 0
         self.degraded: bool = False
         self.degraded_reason: str | None = None
         self.ocr_gate: OcrGateConfig = DEFAULT_OCR_GATE_CONFIG
         self.ocr_reader: Any | None = None
+        # One render on the card at a time. Held around every load of, render
+        # with, and drop of the pipeline. Inference used to run on the event
+        # loop, which kept requests apart as a side effect; it runs in worker
+        # threads now, and two renders at once would OOM the card.
+        self.gpu_lock = asyncio.Lock()
 
     def mark_degraded(self, reason: str):
         self.degraded = True
@@ -730,7 +748,9 @@ async def reload_config() -> None:
     config + pipeline — the model didn't change, only the DB went away.
     Clearing them on a 30-second Postgres restart caused a 2-minute model reload delay after recovery (the Postgres-restart cascade).
     Bad config (unknown model, setting removed) still unloads because we
-    have definitive information the current config is wrong.
+    have definitive information the current config is wrong. The swap waits
+    for a render in flight to finish (``_swap_config``); ``mark_degraded``
+    does not wait, so new requests are refused at once.
     """
     try:
         friendly = await read_model_setting()
@@ -747,8 +767,7 @@ async def reload_config() -> None:
             f"setting {MODEL_SETTING_KEY!r} not set in app_settings — "
             f"image generation disabled until configured"
         )
-        state.config = None
-        unload_pipeline()
+        await _swap_config(None)
         return
 
     config = REGISTRY.get(friendly)
@@ -756,8 +775,7 @@ async def reload_config() -> None:
         state.mark_degraded(
             f"unknown image model {friendly!r} — known: {sorted(REGISTRY.keys())}"
         )
-        state.config = None
-        unload_pipeline()
+        await _swap_config(None)
         return
 
     if state.config is not None and state.config.friendly_name == config.friendly_name:
@@ -768,9 +786,25 @@ async def reload_config() -> None:
     logger.info("Config: %s -> %s",
                 state.config.friendly_name if state.config else "<none>",
                 config.friendly_name)
-    state.config = config
-    unload_pipeline()
+    await _swap_config(config)
     state.mark_healthy()
+
+
+async def _swap_config(config: ModelConfig | None) -> None:
+    """Point the server at ``config`` (or at nothing) and drop the loaded pipeline.
+
+    Under the GPU lock, so a model switch lands between renders, never inside
+    one. Dropping the pipeline mid-render does not free it (the render still
+    holds it), so the next request would load the new model beside the old
+    weights. And a request queued behind the switch must find the new config
+    and an empty pipeline together, never one without the other: the new
+    config's call convention on the old weights fails (Z-Image rejects a
+    negative_prompt).
+    """
+    async with state.gpu_lock:
+        # Unload first so its log line names the model actually leaving.
+        await _run_on_gpu(unload_pipeline)
+        state.config = config
 
 
 # ============================================================================
@@ -856,11 +890,16 @@ def load_pipeline(config: ModelConfig):
 
 
 def unload_pipeline() -> None:
+    """Drop the pipeline and return its VRAM to the caching allocator.
+
+    Blocking: call it via :func:`_run_on_gpu` under the GPU lock."""
     if state.pipeline is None:
         return
     name = state.config.display_name if state.config else "?"
     logger.info("Unloading %s to free VRAM", name)
-    del state.pipeline
+    # One assignment, never `del` then re-assign: this runs in a worker
+    # thread, and /health reads state.pipeline from the event loop. Between
+    # a `del` and the next line the attribute does not exist.
     state.pipeline = None
     torch.cuda.empty_cache()
     gc.collect()
@@ -869,7 +908,10 @@ def unload_pipeline() -> None:
 
 
 def ensure_pipeline_loaded():
-    """Lazy-load configured pipeline. Raises if no config or load fails."""
+    """Lazy-load configured pipeline. Raises if no config or load fails.
+
+    Blocking (minutes on a cold load): call it via :func:`_run_on_gpu` under
+    the GPU lock."""
     if state.pipeline is not None:
         return state.pipeline
     if state.config is None:
@@ -879,13 +921,78 @@ def ensure_pipeline_loaded():
     return state.pipeline
 
 
+async def _run_on_gpu(fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    """Run blocking GPU work (a load, a render, an unload) in a worker thread.
+
+    The caller holds ``state.gpu_lock``. In a thread, the event loop stays
+    free to answer /health while the card works.
+
+    A thread cannot be interrupted, though. If the awaiting request is
+    cancelled, this still waits for the thread to finish before letting the
+    cancellation through. Otherwise the caller's ``async with state.gpu_lock``
+    would release the lock while the render ran on, and the next request
+    would start a second one beside it. Starlette does not cancel a handler
+    when its client disconnects today, but the image installs FastAPI
+    unpinned, and a client that times out and retries is exactly the request
+    that would land on the card twice.
+    """
+    work = asyncio.ensure_future(asyncio.to_thread(fn, *args, **kwargs))
+    try:
+        return await asyncio.shield(work)
+    except asyncio.CancelledError:
+        while not work.done():
+            # A repeated cancel changes nothing: the card is busy until the
+            # thread ends.
+            with suppress(asyncio.CancelledError):
+                await asyncio.wait({work})
+        # shield() stops watching the thread once its caller is cancelled, so
+        # a failure after that point is ours to collect, or asyncio logs it
+        # as "Task exception was never retrieved".
+        if not work.cancelled() and (exc := work.exception()) is not None:
+            logger.warning(
+                "[GPU] %s finished after its request was cancelled, raising %s: %s",
+                getattr(fn, "__name__", "gpu call"), type(exc).__name__, exc,
+            )
+        raise
+
+
+def _render_to_file(pipe: Any, gen_kwargs: dict[str, Any], seed: int, path: Path) -> None:
+    """One diffusion pass, saved as a PNG at ``path``.
+
+    Blocking: call it via :func:`_run_on_gpu` under the GPU lock. The seeded
+    CUDA generator is built here, on the render thread, with the rest of the
+    CUDA work."""
+    generator = torch.Generator(device="cuda").manual_seed(seed)
+    result = pipe(**gen_kwargs, generator=generator)
+    result.images[0].save(str(path))
+
+
+def _idle_unload_due() -> bool:
+    """Whether the idle unloader should drop the pipeline now.
+
+    ``inflight`` comes first. A render can outlast IDLE_TIMEOUT (a cold load
+    plus three OCR attempts can), and ``last_used`` is not re-stamped while it
+    runs. The in-loop tick could only run between a render's awaits; off the
+    loop it can land in the middle of one.
+    """
+    return (
+        state.inflight == 0
+        and state.pipeline is not None
+        and (time.time() - state.last_used) > IDLE_TIMEOUT
+    )
+
+
 async def _idle_unloader_tick() -> None:
     """One idle-unloader pass: unload the pipeline after IDLE_TIMEOUT of no
     generates, then refresh the OCR-gate settings (piggybacked on the same
     60s cadence). Factored out of the startup loop so the loop can wrap it
     in a blanket except — and so tests can drive a single pass directly."""
-    if state.pipeline is not None and (time.time() - state.last_used) > IDLE_TIMEOUT:
-        unload_pipeline()
+    if _idle_unload_due():
+        async with state.gpu_lock:
+            # Re-check under the lock: a request may have arrived, and queued
+            # on it, while we waited.
+            if _idle_unload_due():
+                await _run_on_gpu(unload_pipeline)
     await reload_ocr_gate_config()
 
 
@@ -1074,6 +1181,12 @@ async def health():
         # exposing both lets a probe tell "configured" from "working" without
         # having to generate an image to find out.
         "ocr_reader_loaded": state.ocr_reader is not None,
+        # Requests in the server (rendering or queued), and whether a load,
+        # render or unload holds the GPU right now. /health answers mid-render
+        # since the GPU work left the event loop, so these tell "busy" from
+        # "wedged" without generating an image.
+        "inflight": state.inflight,
+        "gpu_busy": state.gpu_lock.locked(),
     }
 
 
@@ -1092,7 +1205,9 @@ async def generate(req: GenerateRequest):
 
     Split from the body (mirroring wan-server) so the counter covers response
     construction too, not just inference — a hard unload landing between the
-    last GPU op and the response would still lose the render.
+    last GPU op and the response would still lose the render. It also covers
+    the wait for the GPU lock: a request queued behind another render is
+    about to use the pipeline, so unloads decline for it too.
     """
     state.inflight += 1
     try:
@@ -1104,16 +1219,22 @@ async def generate(req: GenerateRequest):
         state.inflight -= 1
 
 
-async def _generate_inner(req: GenerateRequest):
-    if state.degraded:
-        raise HTTPException(
-            status_code=503,
-            detail=f"image-gen server degraded: {state.degraded_reason}",
-        )
+async def _render_attempts(
+    req: GenerateRequest,
+) -> tuple[ModelConfig, OcrGateConfig, list[GenAttempt], float]:
+    """The GPU half of /generate: load the pipeline if needed, then render and
+    OCR-score up to the gate's attempt budget. The caller holds the GPU lock.
 
-    state.last_used = time.time()
+    ``pipe`` is local to this frame on purpose: it dies when this returns,
+    still under the lock, so no reference outlives it. A model switch queued
+    behind this render then really frees the old weights before the next
+    request loads the new ones.
+
+    Returns the config and gate the attempts ran under, the attempts, and
+    the time rendering started.
+    """
     try:
-        pipe = ensure_pipeline_loaded()
+        pipe = await _run_on_gpu(ensure_pipeline_loaded)
     except Exception as e:
         state.mark_degraded(f"pipeline load failed: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -1171,7 +1292,6 @@ async def _generate_inner(req: GenerateRequest):
         # positive-prompt "textless" clause alone doesn't move z_image_turbo's
         # leakage rate, see module docstring).
         seed = base_seed if attempt_num == 1 else int(torch.randint(0, 2**32, (1,)).item())
-        generator = torch.Generator(device="cuda").manual_seed(seed)
         attempt_filename = f"img_{uuid.uuid4().hex[:8]}.png"
         attempt_path = OUTPUT_DIR / attempt_filename
         try:
@@ -1181,14 +1301,12 @@ async def _generate_inner(req: GenerateRequest):
                 height=req.height,
                 num_inference_steps=steps,
                 guidance_scale=guidance_scale,
-                generator=generator,
             )
             # Guidance-distilled models (Z-Image) run at CFG 0, where a negative
             # prompt has no effect and the pipeline doesn't accept the kwarg.
             if config.supports_negative_prompt:
                 gen_kwargs["negative_prompt"] = req.negative_prompt
-            result = pipe(**gen_kwargs)
-            result.images[0].save(str(attempt_path))
+            await _run_on_gpu(_render_to_file, pipe, gen_kwargs, seed, attempt_path)
         except torch.cuda.OutOfMemoryError as e:
             torch.cuda.empty_cache()
             if not attempts:
@@ -1249,6 +1367,24 @@ async def _generate_inner(req: GenerateRequest):
             break
         if not gate.enabled or text_chars <= gate.max_chars:
             break
+
+    return config, gate, attempts, start
+
+
+async def _generate_inner(req: GenerateRequest):
+    if state.degraded:
+        raise HTTPException(
+            status_code=503,
+            detail=f"image-gen server degraded: {state.degraded_reason}",
+        )
+
+    state.last_used = time.time()
+    # One request on the card at a time, in arrival order. The load and every
+    # attempt run under the GPU lock, their CUDA work in worker threads so the
+    # loop keeps answering /health. Choosing the kept attempt, the audit row
+    # and the response need no GPU, so they run after the lock is released.
+    async with state.gpu_lock:
+        config, gate, attempts, start = await _render_attempts(req)
 
     best = pick_best_attempt(attempts)
     for a in attempts:
@@ -1465,56 +1601,86 @@ async def unload(req: UnloadRequest | None = None):
     # had the reserved-MB floor but no in-flight guard, so a concurrent
     # dispatcher tick could kill it mid-generation. Callers already tolerate a
     # declined unload — they treat it like the reserved-floor skip.
+    #
+    # This check must not wait for the GPU lock: a render holds it for
+    # minutes, and the scheduler calls /unload with a 10 s timeout. A hard
+    # unload that times out reads as "freed nothing", and the verifier can
+    # answer that with a container restart, mid-render.
     if state.inflight > 0:
-        logger.warning(
-            "[UNLOAD] declining %s unload — %d generation(s) in flight; "
-            "unloading now would destroy the in-flight image AND its response",
-            "hard" if (req and req.hard) else "soft", state.inflight,
-        )
-        return {
-            "status": "busy_generation_in_flight",
-            "inflight": state.inflight,
-        }
+        return _decline_unload(req)
 
-    if req and req.hard:
-        unload_pipeline()
-        # NOT memory_allocated: unload_pipeline() just dropped every live
-        # tensor, so allocated is 0 here by construction and can never tell
-        # us whether exiting is worthwhile (it logged a misleading
-        # "vram_used=0 MB" on every one of those 24 pointless exits). The
-        # multi-GB block a process exit actually returns to the host is the
-        # caching allocator's RESERVED pool, so that is what we measure.
-        reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
-        min_reserved_mb = await read_hard_unload_min_reserved_mb()
-        if reserved_mb < min_reserved_mb:
-            logger.info(
-                "[HARD UNLOAD] skipped — %d MB reserved is below the %d MB "
-                "threshold, so exiting would reclaim nothing and would open a "
-                "cold-start window that downgrades article images",
+    async with state.gpu_lock:
+        # Re-check: a /generate that arrived while we waited for the lock is
+        # queued on it and about to use the pipeline.
+        if state.inflight > 0:
+            return _decline_unload(req)
+
+        if req and req.hard:
+            await _run_on_gpu(unload_pipeline)
+            # NOT memory_allocated: unload_pipeline() just dropped every live
+            # tensor, so allocated is 0 here by construction and can never
+            # tell us whether exiting is worthwhile (it logged a misleading
+            # "vram_used=0 MB" on every one of those 24 pointless exits). The
+            # multi-GB block a process exit actually returns to the host is
+            # the caching allocator's RESERVED pool, so that is what we
+            # measure.
+            reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
+            min_reserved_mb = await read_hard_unload_min_reserved_mb()
+            if reserved_mb < min_reserved_mb:
+                logger.info(
+                    "[HARD UNLOAD] skipped — %d MB reserved is below the %d MB "
+                    "threshold, so exiting would reclaim nothing and would open "
+                    "a cold-start window that downgrades article images",
+                    reserved_mb, min_reserved_mb,
+                )
+                return {
+                    "status": "nothing_to_reclaim",
+                    "vram_reserved_mb": reserved_mb,
+                    "min_reserved_mb": min_reserved_mb,
+                }
+            if state.inflight > 0:
+                # A /generate arrived during the unload or the floor read and
+                # is queued on the lock held here. Exiting would reset its
+                # connection. The pipeline is already dropped, so it will
+                # cold-load, but the process stays up for it.
+                logger.warning(
+                    "[HARD UNLOAD] not exiting — %d generation(s) arrived "
+                    "during the unload; pipeline dropped, process kept up",
+                    state.inflight,
+                )
+                return {
+                    "status": "busy_generation_in_flight",
+                    "inflight": state.inflight,
+                }
+            logger.warning(
+                "[HARD UNLOAD] exiting process to return the CUDA context to "
+                "the host (vram_reserved=%d MB >= %d MB threshold); Docker "
+                "restart policy brings it back",
                 reserved_mb, min_reserved_mb,
             )
-            return {
-                "status": "nothing_to_reclaim",
-                "vram_reserved_mb": reserved_mb,
-                "min_reserved_mb": min_reserved_mb,
-            }
-        logger.warning(
-            "[HARD UNLOAD] exiting process to return the CUDA context to the "
-            "host (vram_reserved=%d MB >= %d MB threshold); Docker restart "
-            "policy brings it back",
-            reserved_mb, min_reserved_mb,
-        )
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(0)
-        return {"status": "exiting"}  # unreachable outside tests
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(0)
+            return {"status": "exiting"}  # unreachable outside tests
 
-    if state.pipeline is None:
-        return {"status": "already_unloaded"}
-    unload_pipeline()
+        if state.pipeline is None:
+            return {"status": "already_unloaded"}
+        await _run_on_gpu(unload_pipeline)
+        return {
+            "status": "unloaded",
+            "vram_used_mb": torch.cuda.memory_allocated(0) // 1024 // 1024,
+        }
+
+
+def _decline_unload(req: UnloadRequest | None) -> dict[str, Any]:
+    logger.warning(
+        "[UNLOAD] declining %s unload — %d generation(s) in flight; "
+        "unloading now would destroy the in-flight image AND its response",
+        "hard" if (req and req.hard) else "soft", state.inflight,
+    )
     return {
-        "status": "unloaded",
-        "vram_used_mb": torch.cuda.memory_allocated(0) // 1024 // 1024,
+        "status": "busy_generation_in_flight",
+        "inflight": state.inflight,
     }
 
 
