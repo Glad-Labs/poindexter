@@ -129,3 +129,71 @@ class TestResetPathUnchanged:
         assert proc.returncode == 0, proc.stdout + proc.stderr
         assert len(_restarts(rig)) == 2
         assert _status(rig)["result"] == "deployed"
+
+
+# poindexter#964: media_render_running() goes blind the moment ANY video
+# asset exists for a task — a dual-lane piece (long-form then short) is
+# killable between lanes. A fake that routes on the SQL text lets a test
+# say "the asset-existence check reads idle, but the render's own heartbeat
+# says otherwise" — the exact gap that let a worker restart land mid-render
+# on 2026-09-25 17:50:22 (task cc260343, its long asset already persisted).
+_FAKE_DOCKER_SQL_ROUTED = """#!/usr/bin/env bash
+echo "docker $*" >> "$EVENTS_FILE"
+case "${1:-} ${2:-}" in
+  "container inspect")
+    [[ "$*" == *"-f"* ]] && echo "${FAKE_STARTED_AT:-2020-01-01T00:00:00.000000000Z}"
+    exit 0 ;;
+esac
+if [[ "${1:-}" == exec ]]; then
+  for a in "$@"; do
+    if [[ "$a" == *"live_activity"* ]]; then echo "${FAKE_LIVE_ACTIVITY_COUNT:-0}"; exit 0; fi
+  done
+  echo "${FAKE_BUSY_COUNT:-0}"
+fi
+exit 0
+"""
+
+
+def _sql_routed_rig(tmp_path):
+    rig = _build_rig(tmp_path)
+    for name, body in (
+        ("docker", _FAKE_DOCKER_SQL_ROUTED),
+        ("curl", "#!/usr/bin/env bash\necho '[]'\n"),
+    ):
+        f = rig["bin"] / name
+        f.write_text(body, encoding="utf-8")
+        f.chmod(0o755)
+    return rig
+
+
+class TestBetweenLanesGap:
+    def test_a_live_activity_heartbeat_alone_defers_the_bounce(self, tmp_path):
+        """The asset-existence check (media_render_running) reads idle — the
+        long-form asset already landed — but the render's own heartbeat is
+        fresh. That alone must still hold the bounce."""
+        rig = _sql_routed_rig(tmp_path)
+        _advance_origin(rig)
+        _hand_fast_forward(rig)
+        proc = _run(rig, FAKE_BUSY_COUNT="0", FAKE_LIVE_ACTIVITY_COUNT="1")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert _restarts(rig) == [], "a fresh live_activity heartbeat must defer the bounce"
+        assert _status(rig)["result"] == "deferred-active-flow"
+
+    def test_neither_signal_busy_lets_the_bounce_proceed(self, tmp_path):
+        rig = _sql_routed_rig(tmp_path)
+        _advance_origin(rig)
+        _hand_fast_forward(rig)
+        proc = _run(rig, FAKE_BUSY_COUNT="0", FAKE_LIVE_ACTIVITY_COUNT="0")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert sorted(_restarts(rig)) == [
+            "docker restart poindexter-pipeline-bot", "docker restart poindexter-worker",
+        ]
+
+    def test_the_query_scopes_to_running_media_rows_only(self):
+        """A finished row, or a non-media kind, must not read as busy."""
+        sql = open(
+            _repo_root() / "scripts" / "linux" / "deploy-checkout-sync.sh", encoding="utf-8"
+        ).read()
+        assert "kind = 'media'" in sql
+        assert "finished_at IS NULL" in sql
+        assert "updated_at > NOW() - INTERVAL" in sql

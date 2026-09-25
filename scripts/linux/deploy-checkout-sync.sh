@@ -288,7 +288,34 @@ media_render_running() {
   [ "${n:-0}" -gt 0 ]
 }
 
-stack_busy() { flow_running || gpu_work_running || media_render_running; }
+# poindexter#964: the media GRAPH holds a GPU advisory lock only per-lane
+# render, and media_render_running() above goes blind the moment ANY video
+# asset lands for the task — a dual-lane piece (long-form then short) is
+# killable at the boundary between lanes, once the long asset exists but the
+# short is still rendering. Reproduced 2026-09-25 17:50:22: poindexter-worker
+# was restarted while task cc260343 was 16 minutes into its SECOND lane (the
+# long-form asset had already persisted, so media_render_running() read
+# "not running"); that render happened to survive the restart, but the gap
+# is real and was already diagnosed — unfixed — in this issue's own history.
+#
+# live_activity's heartbeat (kind='media') spans BOTH lanes of a piece, so a
+# FRESH row here is the one signal the asset-existence check above can't see.
+# Heartbeat freshness, not claim age — mirrors the liveness check
+# media_reconciliation now uses for the identical shape (poindexter#1069).
+MEDIA_LIVE_HEARTBEAT_MAX_MIN="${SYNC_MEDIA_LIVE_HEARTBEAT_MAX_MIN:-3}"
+
+media_live_activity_running() {
+  local n
+  n="$(docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -tA \
+        -c "SELECT count(*) FROM live_activity
+             WHERE kind = 'media'
+               AND finished_at IS NULL
+               AND updated_at > NOW() - INTERVAL '${MEDIA_LIVE_HEARTBEAT_MAX_MIN} minutes'" 2>/dev/null \
+      | tr -d '[:space:]')" || return 1
+  [ "${n:-0}" -gt 0 ]
+}
+
+stack_busy() { flow_running || gpu_work_running || media_render_running || media_live_activity_running; }
 
 # Wait up to MAX_WAIT_SEC for a gap in flows / GPU work / media renders; still
 # busy after that -> write deferred-active-flow and exit 0 (the next timer tick
