@@ -198,6 +198,16 @@ def _tint(color: str, pct: float) -> str:
     return f"color-mix(in srgb, {color} {max(0.0, min(100.0, pct)):.1f}%, transparent)"
 
 
+def _word_markup(word: str) -> str:
+    """One hook word. A hyphenated compound is kept whole.
+
+    Chromium breaks a line after a hyphen, so "BEAT THE ZERO-CLICK ERA" set
+    "ZERO-" alone on a line (first backfill, 2026-09-25). Kept whole, the word
+    moves to the next line; the fit script shrinks the type if it cannot fit.
+    """
+    return f'<span class="nw">{escape(word)}</span>' if "-" in word else escape(word)
+
+
 def _hook_markup(hook: str, style: ThumbnailStyle) -> str:
     text = hook.upper() if style.uppercase else hook
     words = text.split()
@@ -205,9 +215,9 @@ def _hook_markup(hook: str, style: ThumbnailStyle) -> str:
         return ""
     n = min(style.accent_words, len(words) - 1) if len(words) > 1 else 0
     plain, accent = words[: len(words) - n], words[len(words) - n:]
-    html = escape(" ".join(plain))
+    html = " ".join(_word_markup(w) for w in plain)
     if accent:
-        html += f' <span class="accent">{escape(" ".join(accent))}</span>'
+        html += f' <span class="accent">{" ".join(_word_markup(w) for w in accent)}</span>'
     return html
 
 
@@ -278,6 +288,7 @@ body {{ background:{style.background_color}; position:relative; overflow:hidden;
   overflow-wrap:normal; word-break:keep-all;
   text-shadow:0 4px 18px {_tint(ground, 55)}; }}
 .hook .accent {{ color:{style.accent_color}; }}
+.hook .nw {{ white-space:nowrap; }}
 .mark {{ position:absolute; left:{pad}px; top:{round(pad * 0.7)}px; color:{style.brand_mark_color};
   font-size:{max(16, round(h * 0.03))}px; letter-spacing:0.14em; text-transform:uppercase;
   font-weight:700; text-shadow:0 2px 8px {_tint(ground, 60)}; }}

@@ -78,6 +78,21 @@ def test_html_escapes_the_hook_and_accents_the_last_word():
     assert 'data-fit' in html and "class=\"grid\"" in html  # no image → brand ground
 
 
+def test_a_hyphenated_word_is_never_split_at_its_hyphen():
+    """"BEAT THE ZERO-CLICK ERA" rendered "ZERO-" alone on a line."""
+    html = vt.render_thumbnail_html(
+        hook="Beat the zero-click era", background_uri=None, style=vt.ThumbnailStyle(),
+    )
+    assert '<span class="nw">ZERO-CLICK</span>' in html and ".hook .nw" in html
+    accent = vt.render_thumbnail_html(
+        hook="Real code, no drag-and-drop", background_uri=None, style=vt.ThumbnailStyle(),
+    )
+    assert '<span class="accent"><span class="nw">DRAG-AND-DROP</span></span>' in accent
+    assert "<b>" not in vt.render_thumbnail_html(
+        hook="<b>x</b>-y z", background_uri=None, style=vt.ThumbnailStyle(),
+    )  # still escaped inside the span
+
+
 def test_a_person_sits_right_with_the_text_beside_it():
     style = vt.ThumbnailStyle(person_width_pct=60)
     right = vt.render_thumbnail_html(hook="x y", background_uri="data:image/png;base64,AA", style=style, image_layout="right")
