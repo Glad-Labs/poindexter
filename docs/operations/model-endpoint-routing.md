@@ -87,6 +87,29 @@ requires a second endpoint.
   re-warming would fight the other caller. Set the key to `0` to go back to
   per-phase sizes. Before this rule the reference judge logged 48 loads in one
   day (2026-09-24), alternating 16384 / 32768 / 8192.
+- **A routed model's cold load skips the render-GPU reclaim, but only when its
+  card is declared.** Before a local model of at least `coldload_reclaim_min_gb`
+  (default 8) cold-loads, the cold-load guard clears idle media sidecars
+  (ComfyUI, image-gen, wan, chatterbox, stable-audio, RIFE) off the render GPU,
+  so the load cannot run out of memory beside them. A model whose instance sits
+  on another card gains nothing from that, so the guard stands down for it.
+  Being routed is not enough, though: the placement has to be declared. Three
+  settings together make that declaration:
+  - `ollama_vision_base_url` must name the instance, which gives it the
+    `qa_judge` role.
+  - `gpu_lock_per_device_enabled` must be `true`.
+  - `gpu_lock_scopes` must put `qa_judge` on cards that share nothing with
+    `render` or `pipeline_gpu_index`.
+
+  With any of those missing, the guard assumes the render GPU and runs the
+  ladder.
+  Compare the lock rule above, where the override alone is enough. The
+  difference is deliberate. Skipping the lock wrongly costs visible contention.
+  Skipping the reclaim wrongly causes the render-GPU out-of-memory crash the
+  guard exists to prevent (2026-08-25). When the guard stands down, its
+  `[COLDLOAD_GUARD]` line names both cards and ends in `skipping it`. Before
+  2026-09-25 it had no such rule, and every cold load of the reference judge
+  ran the ladder in the middle of renders.
 
 ## Recipe: a second Ollama pinned to a specific GPU
 
@@ -179,3 +202,12 @@ process.
 4. Confirm it stays at one context: `curl <override-base>/api/ps` shows
    `context_length` equal to `pinned_llm_endpoint_num_ctx`, and the serve
    log's load count (gotcha 7) does not grow between recycles.
+5. If you declared its card (see the cold-load bullet above), unload it with
+   `curl <override-base>/api/generate -d '{"model":"<name>","keep_alive":0}'`
+   and dispatch it again. The calling process's log (worker or
+   prefect-worker) should show the guard's `skipping it` line with no
+   `[GPU] … unloaded` lines after it, and there should be no new
+   `service_restart_requests` rows. The media sidecars' own logs should show
+   no `POST /unload` in that window. A big cold model on the default instance
+   still runs the ladder, and its `[COLDLOAD_GUARD]` line says why
+   (`loads on GPU 0, overlapping the render GPU 0`).
