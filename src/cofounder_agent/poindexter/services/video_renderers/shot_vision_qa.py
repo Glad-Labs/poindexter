@@ -44,6 +44,38 @@ _STOCK_FRAMES_DEFAULT = 3
 _BLANK_MEAN_LUMA = 10.0
 _BLANK_LUMA_STDDEV = 6.0
 
+# The final frame of an AI clip (2026-09-25). The compositor holds a clip's
+# last frame for the rest of its scene (a ~5 s hero in an ~11 s scene holds it
+# ~6 s), so the frame on screen longest is the one a 1 s sample never sees. On
+# f555bedc a hero panned until its subject sat cut off at the bottom of an
+# empty frame, and another grew a large pseudo-text banner mid-animation; both
+# were held for seconds. Stills have no final frame, and stock has its own
+# judge that samples across the played part. Presenters are left out on
+# purpose: they cannot be re-rolled, so a failing verdict would drop the face
+# and its lip-synced line for the previous shot, which is worse than a short
+# hold (51 talking-head clips all ended with 0.87-1.23 of their opening's
+# detail).
+_FINAL_FRAME_SOURCES = frozenset({"generative", "wan21"})
+# Same lesson as _STOCK_FIT_CAPS: the garbled banner scored 65 (over the 60
+# threshold) while the judge's own reason named "garbled text", so the label
+# caps the number. Read from the FULL frame only: the 2x crop magnifies small
+# marks on an object into what the judge then calls large lettering.
+_GARBLED_TEXT_CAP_DEFAULT = 45.0
+_TEXT_LABELS = frozenset({"none", "readable", "garbled"})
+# Detail collapse, the empty-frame case the judge passes (the cloud frame came
+# back 87 and 92). Final-frame edge density over the 1 s frame's, measured on
+# 145 hero clips (30 ComfyUI Wan 2.2, 115 wan21): the ComfyUI endings that
+# collapsed to a near-empty frame read 0.10-0.17, the wan21 endings that went
+# black, grey, blown out or faded 0.08-0.24, and the lowest acceptable
+# ending 0.38.
+# 51 talking heads read 0.87-1.23. See docs/architecture/video-composition.md.
+_COLLAPSE_RATIO_DEFAULT = 0.30
+_COLLAPSE_SCORE_DEFAULT = 30.0
+# Below this the 1 s frame has no detail to lose (a deliberately minimal
+# shot), and a ratio of two near-zero numbers means nothing.
+_COLLAPSE_MIN_OPENING_EDGE = 1.0
+_EDGE_SAMPLE_WIDTH = 640
+
 
 @dataclass
 class ShotQAResult:
@@ -58,6 +90,15 @@ class ShotQAResult:
     reason: str = ""
     # Stock-footage judge only: "fits" | "loose" | "off" (empty elsewhere).
     fit: str = ""
+    # AI-shot judge only: "none" | "readable" | "garbled" (empty elsewhere).
+    text: str = ""
+    # Which frame decided the score: "opening" (≈1 s in, or the still itself)
+    # or "final" (the clip's last frame, the one the compositor holds).
+    frame: str = ""
+    # The opening frame's own verdict, kept when the final frame decides, so
+    # the renderer can tell "the whole clip is off" from "it went wrong at the
+    # end" (a hero that only went wrong at the end can fall back to its still).
+    opening_score: float | None = None
 
 
 async def _extract_video_frame(video_path: str) -> str | None:
@@ -70,6 +111,10 @@ async def _extract_video_frame(video_path: str) -> str | None:
     out = os.path.join(
         tempfile.gettempdir(), f"shotqa_{os.path.basename(video_path)}.png",
     )
+    # The name is keyed on the basename, and every render names its clips
+    # shot_NN.mp4: a failed extract must not leave the previous render's frame
+    # in place to be judged (the final-frame pass compares against this one).
+    _remove_quietly(out)
     # -ss before -i seeks fast; grab one frame ~1s in (covers the open of
     # short clips without needing to probe the duration first).
     cmd = ["ffmpeg", "-y", "-ss", "1", "-i", video_path, "-frames:v", "1", out]
@@ -86,6 +131,40 @@ async def _extract_video_frame(video_path: str) -> str | None:
         )
         return None
     if os.path.exists(out) and os.path.getsize(out) > 0:
+        return out
+    return None
+
+
+async def _final_frame(video_path: str) -> str | None:
+    """The clip's very last frame as a PNG, or ``None``.
+
+    This is the frame the compositor holds when the clip is shorter than its
+    scene (``shot_list_renderer._scenes_for_plan``), extracted the same way
+    ``_last_frame_still`` extracts it for the continuation scene: ``-sseof``
+    lands near the end and ``-update 1`` rewrites one file per decoded frame,
+    so what is left on disk is the last one.
+    """
+    out = os.path.join(
+        tempfile.gettempdir(), f"shotqa_final_{os.path.basename(video_path)}.png",
+    )
+    _remove_quietly(out)
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error", "-sseof", "-0.5", "-i", video_path,
+        "-update", "1", out,
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[SHOT_QA] final-frame extract raised for %s: %s", video_path, exc,
+        )
+        return None
+    if proc.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 0:
         return out
     return None
 
@@ -165,10 +244,13 @@ def _parse_score(text: str) -> ShotQAResult:
     raw = parsed.get("score")
     if not isinstance(raw, (int, float)):
         return ShotQAResult(score=None, reason="vision response missing numeric score")
+    text = str(parsed.get("text", "") or "").strip().lower()
     return ShotQAResult(
         score=float(raw),
         reason=str(parsed.get("reason", ""))[:200],
         fit=str(parsed.get("fit", "") or "").strip().lower(),
+        # An unknown label is no label: it must never cap a score.
+        text=text if text in _TEXT_LABELS else "",
     )
 
 
@@ -228,8 +310,51 @@ async def score_shot_frame(
         source=shot.source,
     )
 
-    full = await _score_image(
+    opening = await _score_views(
         image_path, prompt=prompt, model=model, pool=pool, shot_idx=shot.idx,
+        site_config=site_config,
+    )
+    opening.frame, opening.opening_score = "opening", opening.score
+    if opening.score is None or not _judges_final_frame(frame_path, shot, site_config):
+        # No final frame to judge (a still), or an infra miss that a second
+        # frame would only repeat.
+        return opening
+    final = await _score_final_frame(
+        frame_path, opening_image=image_path, prompt=prompt, model=model,
+        pool=pool, shot_idx=shot.idx, site_config=site_config,
+    )
+    # Worst frame wins, as with the two views of one frame: the viewer sees
+    # both, and the final one for longest.
+    if final.score is None or final.score >= opening.score:
+        return opening
+    final.opening_score = opening.score
+    return final
+
+
+def _judges_final_frame(frame_path: str, shot: Shot, site_config: Any) -> bool:
+    """True for an AI video clip, whose last frame the compositor may hold."""
+    return (
+        shot.source in _FINAL_FRAME_SOURCES
+        and frame_path.lower().endswith(_VIDEO_EXTS)
+        and _sc_bool(site_config, "video_shot_qa_final_frame_enabled", True)
+    )
+
+
+async def _score_views(
+    image_path: str,
+    *,
+    prompt: str,
+    model: str,
+    pool: Any,
+    shot_idx: int,
+    site_config: Any,
+) -> ShotQAResult:
+    """Judge one frame twice, whole and as a 2x centre crop; worst view wins."""
+    full = _cap_garbled_text(
+        await _score_image(
+            image_path, prompt=prompt, model=model, pool=pool, shot_idx=shot_idx,
+        ),
+        site_config,
     )
     if not _sc_bool(site_config, "video_shot_qa_crop_enabled", True):
         return full
@@ -243,7 +368,7 @@ async def score_shot_frame(
         return full  # fail-soft: the full-frame verdict still stands
 
     close = await _score_image(
-        crop_path, prompt=prompt, model=model, pool=pool, shot_idx=shot.idx,
+        crop_path, prompt=prompt, model=model, pool=pool, shot_idx=shot_idx,
     )
     _remove_quietly(crop_path)
     if close.score is None:
@@ -253,7 +378,128 @@ async def score_shot_frame(
     # cannot resolve, the full frame sees composition the crop cuts away.
     # Measured false-positive rate of the crop pass on 7 known-clean frames:
     # zero — every one scored 95.0 sd 0.0 cropped, same as uncropped.
-    return close if close.score < full.score else full
+    worst = close if close.score < full.score else full
+    # The text label is the full frame's in either case. The crop's own label
+    # is not a viewer's view: it calls a row of small marks on an object
+    # "large lettering" once they fill a 2x crop.
+    worst.text = full.text
+    return worst
+
+
+def _cap_garbled_text(result: ShotQAResult, site_config: Any) -> ShotQAResult:
+    """Cap a full-frame score the judge labelled ``garbled`` under the threshold.
+
+    The number alone does not carry it: the garbled banner came back 65 on
+    every full-frame call, over the 60 threshold, with "garbled text" in the
+    reason each time. See ``_GARBLED_TEXT_CAP_DEFAULT``.
+    """
+    if result.score is None or result.text != "garbled":
+        return result
+    cap = _sc_float(site_config, "video_shot_qa_garbled_text_cap", _GARBLED_TEXT_CAP_DEFAULT)
+    if result.score <= cap:
+        return result
+    return ShotQAResult(
+        score=cap, reason=f"garbled text: {result.reason}"[:200], text=result.text,
+    )
+
+
+async def _score_final_frame(
+    clip_path: str,
+    *,
+    opening_image: str,
+    prompt: str,
+    model: str,
+    pool: Any,
+    shot_idx: int,
+    site_config: Any,
+) -> ShotQAResult:
+    """Judge the clip's last frame: detail collapse first (no model call), then
+    the same two views as the opening frame."""
+    last = await _final_frame(clip_path)
+    if not last:
+        return ShotQAResult(score=None, reason="no final frame")
+    ratio = _sc_float(
+        site_config, "video_shot_qa_detail_collapse_ratio", _COLLAPSE_RATIO_DEFAULT,
+    )
+    collapse = _detail_collapse(
+        opening_image, last, ratio=ratio,
+        min_opening=_sc_float(
+            site_config, "video_shot_qa_detail_collapse_min_opening_edge",
+            _COLLAPSE_MIN_OPENING_EDGE,
+        ),
+    )
+    if collapse is not None:
+        opening_edge, final_edge = collapse
+        return ShotQAResult(
+            score=_sc_float(
+                site_config, "video_shot_qa_detail_collapse_score", _COLLAPSE_SCORE_DEFAULT,
+            ),
+            reason=(
+                f"final frame lost its detail: edge density {final_edge:.2f} "
+                f"against {opening_edge:.2f} at the opening (under {ratio:.2f}x)"
+            ),
+            frame="final",
+        )
+    result = await _score_views(
+        last, prompt=prompt, model=model, pool=pool, shot_idx=shot_idx,
+        site_config=site_config,
+    )
+    if result.score is not None:
+        result.reason = f"final frame: {result.reason}"[:200]
+    result.frame = "final"
+    return result
+
+
+def _edge_density(image_path: str) -> float | None:
+    """Mean edge strength of the central 80% of a frame, grayscale, at a fixed
+    width so clips of different sizes measure alike. ``None`` if unreadable."""
+    try:
+        from PIL import Image, ImageFilter, ImageStat
+
+        with Image.open(image_path) as img:
+            gray = img.convert("L")
+            w, h = gray.size
+            centre = gray.crop((w // 10, h // 10, w - w // 10, h - h // 10))
+            cw, ch = centre.size
+            if cw <= 0 or ch <= 0:
+                return None
+            sized = centre.resize(
+                (_EDGE_SAMPLE_WIDTH, max(3, round(ch * _EDGE_SAMPLE_WIDTH / cw))),
+                Image.Resampling.LANCZOS,
+            )
+            edges = sized.filter(ImageFilter.FIND_EDGES)
+            # FIND_EDGES leaves its 1 px border at the raw pixel values, so a
+            # flat frame would read ~1% of its brightness as "edges" (a blank
+            # white frame measured 2.4). Only the convolved interior counts.
+            ew, eh = edges.size
+            inner = edges.crop((1, 1, ew - 1, eh - 1))
+            return float(ImageStat.Stat(inner).mean[0])
+    except Exception:  # noqa: BLE001  # silent-ok: an unreadable frame is not proof of collapse
+        return None
+
+
+def _detail_collapse(
+    opening_path: str,
+    final_path: str,
+    *,
+    ratio: float,
+    min_opening: float = _COLLAPSE_MIN_OPENING_EDGE,
+) -> tuple[float, float] | None:
+    """``(opening, final)`` edge densities when the final frame kept less than
+    ``ratio`` of the opening's detail, else ``None``.
+
+    The judge scores an empty frame as a fine, calm composition: the cloud
+    that panned out of shot came back 87 and 92. Edge density sees it at once
+    (1.08 against 10.66 at 1 s), and a clip that is sparse by design is sparse
+    in both frames, so the ratio does not punish it.
+    """
+    opening = _edge_density(opening_path)
+    final = _edge_density(final_path)
+    if opening is None or final is None or opening <= 0 or opening < min_opening:
+        return None
+    if final / opening < ratio:
+        return opening, final
+    return None
 
 
 async def _probe_seconds(path: str) -> float | None:

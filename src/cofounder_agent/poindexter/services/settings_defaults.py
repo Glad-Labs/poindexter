@@ -859,6 +859,31 @@ DEFAULTS: dict[str, str] = {
     # across the part that plays; the worst frame decides (2026-09-24: a single
     # frame ~1 s in let a mostly black glitch clip through).
     'video_shot_qa_stock_frames': '3',
+    # Hero clips (generative / wan21) are also judged on their FINAL frame,
+    # the one the compositor holds for the rest of the scene; the worst frame
+    # decides (2026-09-25: a hero ended on an empty frame, another grew a
+    # garbled text banner, and both were held for seconds after passing at
+    # 1 s). Presenters are not: they cannot be re-rolled, so a failing verdict
+    # could only drop them. 'false' restores judging the ~1 s frame only.
+    'video_shot_qa_final_frame_enabled': 'true',
+    # Score ceiling when the judge labels a frame's large lettering "garbled".
+    # The label is reliable where the number is not: the garbled banner scored
+    # 65, over the 60 threshold, with "garbled text" in its own reason. Keep it
+    # under video_shot_qa_threshold or the label stops sending shots to repair.
+    'video_shot_qa_garbled_text_cap': '45',
+    # Detail collapse: the final frame's edge density under this fraction of
+    # the 1 s frame's means the clip ended empty, black, blown out or faded
+    # (the judge passes those). Measured on 145 hero clips: every such ending
+    # read 0.08-0.24, the lowest acceptable ending 0.38. 0 disables the rule.
+    'video_shot_qa_detail_collapse_ratio': '0.30',
+    # The score a collapsed final frame gets (no model call). Under
+    # video_shot_qa_threshold so the shot is re-rolled.
+    'video_shot_qa_detail_collapse_score': '30',
+    # The collapse rule skips a clip whose 1 s frame has less edge density
+    # than this: a deliberately minimal shot has no detail to lose, and a
+    # ratio of two near-zero numbers means nothing. The lowest opening among
+    # the 30 ComfyUI heroes measured 1.3 (one light in a dark void).
+    'video_shot_qa_detail_collapse_min_opening_edge': '1.0',
     # Compose-network service DNS, NOT host.docker.internal: the sidecar
     # publishes on 127.0.0.1 only (unauthenticated API stays off the LAN),
     # and a loopback publish is unreachable via the host-gateway route —
@@ -5506,6 +5531,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_shot_qa_crop_fraction': {'owner': 'video', 'value_type': 'float'},
     'video_shot_qa_crop_zoom': {'owner': 'video', 'value_type': 'float'},
     'video_shot_qa_stock_frames': {'owner': 'video', 'value_type': 'integer'},
+    'video_shot_qa_final_frame_enabled': {'owner': 'video', 'value_type': 'boolean'},
+    'video_shot_qa_garbled_text_cap': {'owner': 'video', 'value_type': 'integer'},
+    'video_shot_qa_detail_collapse_ratio': {'owner': 'video', 'value_type': 'float'},
+    'video_shot_qa_detail_collapse_score': {'owner': 'video', 'value_type': 'integer'},
+    'video_shot_qa_detail_collapse_min_opening_edge': {'owner': 'video', 'value_type': 'float'},
     'video_comfyui_server_url': {'owner': 'video', 'value_type': 'string'},
     'video_comfyui_steps': {'owner': 'video', 'value_type': 'integer'},
     'video_comfyui_cfg': {'owner': 'video', 'value_type': 'float'},

@@ -118,6 +118,27 @@ def _neutralize_wan_unload():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _neutralize_card_clear(monkeypatch):
+    """The repair pass clears the card before every image-gen-family re-roll
+    (``_ready_card_for_escalation``: ComfyUI /free, Ollama evict, chatterbox /
+    RIFE unload, image-gen /health). Unpatched, a render-check test that fails
+    a shot would evict the REAL Ollama models on the operator box, where the
+    CI runners live. Tests asserting the clear re-patch locally.
+
+    ``monkeypatch``, not ``patch()``: the escalation tests re-patch this same
+    name with ``monkeypatch``, which the conftest's autouse fixtures set up
+    BEFORE this one, so it tears down AFTER. It then restored the value it had
+    recorded (this fixture's mock) over the real function, and every later
+    test in the process got the mock: in CI, the choreography test calling
+    ``_ready_card_for_escalation`` directly. One monkeypatch undoes in order."""
+    from unittest.mock import AsyncMock as _AsyncMock
+
+    from poindexter.services.video_renderers import shot_list_renderer as _slr
+
+    monkeypatch.setattr(_slr, "_ready_card_for_escalation", _AsyncMock())
+
+
 def _build_shot_list(shots: list[Shot]) -> VideoShotList:
     """Convenience: wrap shots in a valid VideoShotList."""
     total = sum(s.duration_s for s in shots)

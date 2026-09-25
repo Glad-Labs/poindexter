@@ -255,6 +255,104 @@ finalize held each slot over with the previous shot: three 11 s repeats.
   attempt, image-gen's OCR gate rejected all of them, and both shots shipped as
   the previous shot running on for ~20 s.
 
+### Hero clips are judged on the frame the viewer sees longest (2026-09-25)
+
+A hero clip is ~5 s against a scene of ~11 s, and `_scenes_for_plan` continues
+it on its final frame for the rest of the scene. Shot QA judged one frame ~1 s
+in (`_extract_video_frame`), so the frame on screen longest was never seen. On
+the f555bedc re-renders, one hero panned until its cloud sat cut off at the
+bottom of an almost empty navy frame (held ~4 s), and another grew a large
+pseudo-text banner mid-animation (held ~6 s). Both had passed at 92. The
+banner came from the video model: its init still had passed image-gen's OCR
+gate.
+
+`shot_vision_qa.score_shot_frame` now judges a hero clip (`generative`,
+`wan21`) twice, at 1 s and on its final frame (the frame `_last_frame_still`
+holds), and the worse frame wins, the same rule as the full-frame and crop
+views of one frame. Two mechanisms feed the verdict, because the judge's
+number misses both failures:
+
+- **A text label, capped.** `qa.video_shot_quality` asks for
+  `text: none | readable | garbled` about LARGE lettering (a headline, banner,
+  sign or caption). Small marks on screens, panels, devices and objects are
+  scenery. `garbled` on the full frame caps the score at
+  `video_shot_qa_garbled_text_cap` (45), under the repair threshold. The number
+  alone did not do it: the banner scored 65 while the judge's own reason said
+  "garbled text". Only the full frame's label counts. The 2x crop turns a row
+  of small marks on the subject into what the judge then calls large lettering
+  (a cube in f555bedc hero 10: `none` at full frame, `garbled` cropped, on
+  every run). The crop's score still counts as a view.
+- **Detail collapse, no model call.** The judge scores an empty frame as a
+  calm composition (the cloud frame: 87, 92). The final frame's edge density
+  (central 80%, grayscale, `FIND_EDGES` at 640 px wide, 1 px filter border
+  excluded) under `video_shot_qa_detail_collapse_ratio` (0.30) of the 1 s
+  frame's scores `video_shot_qa_detail_collapse_score` (30). An opening under
+  `video_shot_qa_detail_collapse_min_opening_edge` (1.0) has no detail to lose
+  (a deliberately minimal shot), so the rule stays out of it.
+
+The ratio was calibrated on 145 hero clips still on disk: the 30 ComfyUI
+Wan 2.2 outputs from 2026-09-22 to 09-24 (every one labelled by eye from its
+1 s and final frames) and 115 wan21 clips from August (the 14 under 0.63
+labelled by eye).
+
+| ending                                                   | ratio (final / 1 s) |
+| -------------------------------------------------------- | ------------------- |
+| ComfyUI, collapsed to a near-empty frame (3 of 30)       | 0.10, 0.10, 0.17    |
+| ComfyUI, lowest acceptable ending (a clean single shape) | 0.39                |
+| ComfyUI, the garbled banner (the text label's case)      | 0.48                |
+| wan21, went black / grey / blown out / faded (5)         | 0.08 - 0.24         |
+| wan21, lowest acceptable ending (a cube mid-dissolve)    | 0.38                |
+| talking heads (51)                                       | 0.87 - 1.23         |
+
+At 0.30 the rule flags no clean clip in either set: 0 of the 26 clean ComfyUI
+clips, and all five wan21 clips it flags ended black, grey, blown out or
+faded. No talking head comes near it. One miss is known: a wan21 clip whose
+one object dissolved out of an already sparse frame (0.31). Smeared or
+washed-out endings (wan21, 0.42 and up) are the judge's to catch, not this
+rule's.
+
+The judge side was calibrated on the 27 ComfyUI heroes whose shot could be
+recovered (21 from the surviving shot lists, 6 from the judge's own prompts in
+Langfuse). Each clip's 1 s and final frames were judged, full frame and crop,
+twice, by the production judge (`qwen3-vl:30b-a3b-instruct`), and the
+production decision was replayed per clip:
+
+| per clip-run (two runs per clip)                                    | bad endings caught | clean clips flagged |
+| ------------------------------------------------------------------- | ------------------ | ------------------- |
+| old prompt judging the final frame too (no label, no collapse rule) | 3 of 8             | 0 of 2 controls     |
+| this change                                                         | 8 of 8             | 0 of 45             |
+
+The old prompt passed two of the three collapsed endings at 92 in both views,
+and scored the banner 35 on one run and 65 on the other. The new label read
+`garbled` on the banner's full frame both times and `none` on all 104 other
+full hero frames. Clean hero frames scored 85-95. The 16 stills and the 15
+presenter clips from the same renders all scored 92-95 with no `garbled`
+label (a clock face read `readable`).
+
+Presenters are not judged on their final frame. They cannot be re-rolled, so a
+failing verdict could only swap the face and its lip-synced line for the
+previous shot, which is worse than a short hold. `video_shot_qa_final_frame_enabled`
+turns the whole final-frame pass off.
+
+**The repair path this feeds had never run for a hero.** Over the 30 days to
+2026-09-25, 125 generative shots were accepted and none was re-rolled, since
+the judge scored nearly every one 92. Three defects were waiting for the first
+re-roll:
+
+- Every candidate rendered to the incumbent's file names (`shot_NN.png`,
+  `shot_NN.mp4`, `shot_NN_pexels.mp4`), so a losing candidate overwrote the
+  clip that beat it while keep-best kept the old score. Candidates now render
+  into `work_dir/repairN` (the stock re-query into `requery`, escalation
+  stills into `escalate`).
+- The repair pass runs after the hero and presenter phases, the card state
+  that OOM'd escalation stills. It now clears the card
+  (`_ready_card_for_escalation`) before every image-gen-family candidate.
+- The re-roll's ComfyUI render ran without the heartbeat callback.
+
+A hero still below threshold after its re-rolls falls back to the still it was
+animated from (`fallback_still`) when only its final frame failed and its
+opening passed, not to the previous shot running on. This mirrors
+`_animate_hero`'s own fallback for an i2v miss or dead motion.
 
 ## Per-source plugin contract
 

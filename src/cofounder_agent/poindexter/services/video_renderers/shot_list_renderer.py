@@ -139,6 +139,9 @@ class ShotRenderResult:
     clip_path: str | None = None
     duration_s: float = 0.0
     error: str | None = None
+    # Hero shots only: the image-gen init still the clip was animated from.
+    # A clip judged bad only at its end can fall back to it (``_finalize_pass``).
+    still_path: str | None = None
 
 
 @dataclass
@@ -2981,6 +2984,10 @@ async def _render_one_shot(
             site_config=site_config,
             orientation=orientation,
             post_id=post_id,
+            # The repair pass re-rolls a hero through here, and a ComfyUI
+            # render runs minutes: without the heartbeat the task reads as
+            # stalled for the whole re-roll.
+            heartbeat_cb=heartbeat_cb,
         )
 
     return ShotRenderResult(
@@ -3438,6 +3445,7 @@ async def _animate_hero(
             success=True,
             clip_path=clip_path,
             duration_s=shot.duration_s,
+            still_path=still_path,
         )
     _emit_hero_fallback_finding(shot=shot, post_id=post_id, reason=clip_error)
     return ShotRenderResult(
@@ -3942,19 +3950,36 @@ async def _repair_pass(
     way) instead of once per failure. A shot leaves the batch the moment its
     best score clears threshold or it exhausts ``max_retries``. Keep-best:
     a candidate replaces the incumbent only when it scores strictly higher.
+
+    Candidates render into their own subdirectory, never over the incumbent's
+    files, and the card is cleared before every image-gen-family candidate:
+    this pass runs after the hero and presenter phases, which leave image-gen
+    exited and ComfyUI holding the last clip's weights. That is the state in
+    which escalation stills died on CUDA OOM (``_ready_card_for_escalation``),
+    and a hero re-roll begins with exactly such a still.
     """
     if not qa.enabled or qa.max_retries <= 0:
         return
-    for _ in range(qa.max_retries):
+    for round_no in range(1, qa.max_retries + 1):
         pending = [st for st in states if _needs_repair(st, qa=qa)]
         if not pending:
             break
+        round_kwargs = _candidate_render_kwargs(render_kwargs, f"repair{round_no}")
         # Re-render the batch (image model resident — no vision call between).
         cands: list[tuple[_ShotState, ShotRenderResult]] = []
         for st in pending:
             st.attempts += 1
+            if st.shot.source in _IMAGE_GEN_FAMILY:
+                # Before every one: a hero's animation re-fills the card that
+                # the previous candidate's clear emptied.
+                await _ready_card_for_escalation(render_kwargs)
             cand = await _render_one_shot(
-                st.shot, prior_clip=None, attempt=st.attempts, **render_kwargs,
+                st.shot, prior_clip=None, attempt=st.attempts, **round_kwargs,
+            )
+            logger.info(
+                "[SHOT_QA] shot %d (%s) re-roll %d/%d: %s", st.shot.idx,
+                st.shot.source, st.attempts, qa.max_retries,
+                cand.clip_path if cand.success else (cand.error or "no clip"),
             )
             cands.append((st, cand))
         # Re-score the batch (vision model resident), keep-best per shot.
@@ -3967,15 +3992,45 @@ async def _repair_pass(
                 topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
             )
             best = st.qa
-            if (cand_qa.score is not None and best is not None
-                    and best.score is not None and cand_qa.score > best.score):
+            kept = bool(
+                cand_qa.score is not None and best is not None
+                and best.score is not None and cand_qa.score > best.score
+            )
+            # Both outcomes, as the escalation logs them: a re-roll that ran
+            # and lost reads the same as one that never ran otherwise.
+            logger.info(
+                "[SHOT_QA] shot %d re-roll %d scored %s vs incumbent %s — %s",
+                st.shot.idx, st.attempts,
+                "unscorable" if cand_qa.score is None else f"{cand_qa.score:.0f}",
+                "?" if best is None or best.score is None else f"{best.score:.0f}",
+                "kept" if kept else f"discarded ({cand_qa.reason})",
+            )
+            if kept:
                 st.result, st.qa = cand, cand_qa
 
 
-async def _ready_card_for_escalation(render_kwargs: dict[str, Any]) -> None:
-    """Give image-gen the card before an escalation still renders.
+def _candidate_render_kwargs(render_kwargs: dict[str, Any], tag: str) -> dict[str, Any]:
+    """``render_kwargs`` rendering into ``work_dir/<tag>`` instead of ``work_dir``.
 
-    Escalation runs after the hero and presenter phases, when ComfyUI still
+    Every source names its file after the shot index alone (``shot_04.png``,
+    ``shot_04.mp4``, ``shot_04_pexels.mp4``), so a candidate rendered in the
+    same directory overwrote the incumbent it was competing with. Keep-best
+    then kept the incumbent's SCORE while its file held the candidate, and a
+    hero re-roll replaced the init still a clip judged bad at its end falls
+    back to.
+    """
+    work_dir = render_kwargs.get("work_dir")
+    if not work_dir:
+        return dict(render_kwargs)
+    sub = Path(work_dir) / tag
+    sub.mkdir(parents=True, exist_ok=True)
+    return {**render_kwargs, "work_dir": sub}
+
+
+async def _ready_card_for_escalation(render_kwargs: dict[str, Any]) -> None:
+    """Give image-gen the card before an escalation or repair still renders.
+
+    Both run after the hero and presenter phases, when ComfyUI still
     holds the last clip's weights and something else may have loaded since. On
     f555bedc (2026-09-24) three of four escalation stills died on image-gen
     503 "CUDA out of memory" with 78 MiB free, and each of those shots fell back
@@ -4106,8 +4161,12 @@ async def _escalate_offtopic_stock(
         )
         if new_query and new_query.lower() != (st.shot.query or "").lower():
             requeried = st.shot.model_copy(update={"query": new_query})
+            # Its own directory: the re-query downloads to the incumbent's
+            # file name (shot_NN_pexels.mp4), and a candidate that loses must
+            # not have replaced the clip it lost to.
             cand = await _render_one_shot(
-                requeried, prior_clip=None, attempt=0, **render_kwargs,
+                requeried, prior_clip=None, attempt=0,
+                **_candidate_render_kwargs(render_kwargs, "requery"),
             )
             if cand.success and cand.clip_path:
                 cand_qa = await score_shot_frame(
@@ -4192,8 +4251,9 @@ async def _escalate_offtopic_stock(
         # a card cleared for the previous shot is full again by now
         # (2026-09-24: shots 12 and 14 hit CUDA OOM with ~25 GB of it resident).
         await _ready_card_for_escalation(render_kwargs)
+        escalate_kwargs = _candidate_render_kwargs(render_kwargs, "escalate")
         cand = await _render_one_shot(
-            ai_shot, prior_clip=None, attempt=0, **render_kwargs,
+            ai_shot, prior_clip=None, attempt=0, **escalate_kwargs,
         )
         if not (cand.success and cand.clip_path):
             # One retry after clearing again: whatever took the card between
@@ -4205,7 +4265,7 @@ async def _escalate_offtopic_stock(
             )
             await _ready_card_for_escalation(render_kwargs)
             cand = await _render_one_shot(
-                ai_shot, prior_clip=None, attempt=1, **render_kwargs,
+                ai_shot, prior_clip=None, attempt=1, **escalate_kwargs,
             )
         if not (cand.success and cand.clip_path):
             # Image-gen can be cold or evicted at this point in the render
@@ -4317,6 +4377,28 @@ def _emit_hero_fallback_finding(*, shot: Shot, post_id: str, reason: str = "") -
     )
 
 
+def _hero_still_fallback(st: _ShotState, *, qa: _QAConfig) -> str | None:
+    """The init still a below-threshold hero clip can fall back to, or ``None``.
+
+    Only when the clip's FINAL frame decided the score and its opening frame
+    passed: the still is where the animation started, so an opening that
+    passed vouches for it, while a clip that was wrong from the start (off
+    topic, a bad still) keeps the holdover path. Mirrors ``_animate_hero``,
+    which already ships the still when the i2v render misses or its motion is
+    dead (spec §3.3: a hero falls back to its own still, not the prior clip).
+    """
+    if st.shot.source not in _HERO_SOURCES or st.qa is None:
+        return None
+    still = st.result.still_path
+    if not still or still == st.result.clip_path or not os.path.exists(still):
+        return None
+    if st.qa.frame != "final" or st.qa.opening_score is None:
+        return None
+    if st.qa.opening_score < qa.threshold:
+        return None
+    return still
+
+
 async def _finalize_pass(
     states: list[_ShotState],
     *,
@@ -4330,7 +4412,9 @@ async def _finalize_pass(
     Outcomes are preserved verbatim from the old per-shot loop:
     ``accepted`` / ``regenerated`` / ``fallback_holdover`` / ``kept_below``
     (or ``None`` when QA is off, the frame couldn't be scored, or the shot
-    reused a prior clip). Holdover / pexels-miss shots are re-pointed to the
+    reused a prior clip), plus ``fallback_still``: a hero clip that went wrong
+    only at its end ships the still it was animated from (see
+    ``_hero_still_fallback``). Holdover / pexels-miss shots are re-pointed to the
     post-QA ``final_prior`` so a below-threshold frame never propagates into a
     following holdover (the old loop got this for free by being sequential).
     """
@@ -4369,7 +4453,28 @@ async def _finalize_pass(
             unscored.append(st)
         elif st.qa.score < qa.threshold:
             qa_score = st.qa.score
-            if final_prior:
+            still = _hero_still_fallback(st, qa=qa)
+            if still:
+                # The clip went wrong only at its end (the frame the compositor
+                # holds) and its opening passed, so the init still it was
+                # animated from is sound: a Ken Burns still of the right
+                # subject, not the previous shot running on over this one.
+                _emit_fallback_finding(
+                    shot=shot, score=st.qa.score, threshold=qa.threshold,
+                    post_id=post_id,
+                    title=f"shot {shot.idx} ({shot.source}) fell back to its still",
+                    body=(f"shot {shot.idx} scored {st.qa.score:.0f} < "
+                          f"{qa.threshold:.0f} after {st.attempts} regen(s) — "
+                          f"{st.qa.reason}. Its opening frame scored "
+                          f"{st.qa.opening_score:.0f}, so the shot uses the still "
+                          f"it was animated from (Ken Burns) instead."),
+                )
+                result = ShotRenderResult(
+                    idx=shot.idx, source=shot.source, success=True,
+                    clip_path=still, duration_s=shot.duration_s,
+                )
+                qa_outcome = "fallback_still"
+            elif final_prior:
                 _emit_fallback_finding(
                     shot=shot, score=st.qa.score, threshold=qa.threshold,
                     post_id=post_id,

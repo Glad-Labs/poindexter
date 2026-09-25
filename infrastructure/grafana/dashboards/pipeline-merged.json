@@ -3560,7 +3560,7 @@
       "id": 76,
       "title": "Shot vision-QA outcomes (window)",
       "type": "table",
-      "description": "Per-shot vision-QA render-check outcomes (video-quality Piece 2). accepted = passed first try; regenerated = re-rolled then passed; fallback_holdover = below threshold, held over the prior clip; kept_below = below threshold at idx 0, kept best. Sourced from video_shot_rendered audit rows enriched by shot_list_renderer; shot_quality_fallback findings also land on /d/findings.",
+      "description": "Per-shot vision-QA render-check outcomes (video-quality Piece 2). accepted = passed first try; regenerated = re-rolled then passed; fallback_holdover = below threshold, held over the prior clip; fallback_still = a hero clip that failed only on its final frame (the one the compositor holds), shipped as the still it was animated from; kept_below = below threshold at idx 0, kept best. Sourced from video_shot_rendered audit rows enriched by shot_list_renderer; shot_quality_fallback findings also land on /d/findings.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"

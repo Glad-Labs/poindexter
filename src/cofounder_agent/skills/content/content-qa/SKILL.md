@@ -58,7 +58,7 @@ metadata:
       description: 'Vision-QA: full-page screenshot review. A vision-capable Ollama model rates the rendered preview 0-100 on layout, image rendering, and visual professionalism. Used by MultiModelQA.review_preview_screenshot. Migrated from inline string 2026-05-28.'
     - key: qa.video_shot_quality
       output_format: json
-      description: 'Vision-QA: per-shot rendered-frame scoring (video-quality Piece 2 render-check loop). A vision-capable Ollama model rates one rendered video shot 0-100 on match-to-intent, on-brand palette, and usability. Used by services.video_renderers.shot_vision_qa.score_shot_frame.'
+      description: 'Vision-QA: per-shot rendered-frame scoring (video-quality Piece 2 render-check loop). A vision-capable Ollama model rates one frame of an AI shot 0-100 on topic and looks, and labels its large lettering none / readable / garbled; the label caps a garbled frame under the repair threshold. Hero clips are judged on their 1 s frame and on the final frame the compositor holds. Used by services.video_renderers.shot_vision_qa.score_shot_frame.'
     - key: qa.video_stock_fit
       output_format: json
       description: 'Vision-QA for STOCK footage: does one frame of a Pexels clip fit the video topic and the narration spoken over it? Returns a fit label (fits / loose / off) and a 0-100 score; the label caps the score under the escalation threshold for loose and off. Used by services.video_renderers.shot_vision_qa.score_shot_frame for source=pexels.'
@@ -519,28 +519,32 @@ SHOT INTENT (why this shot exists): {intent}
 SHOT SUBJECT (what it should show): {visual}
 SHOT SOURCE: {source}
 
-Two questions, in this order:
+Three questions, in this order:
 
-1. ON TOPIC - does this shot serve its intent? Would a viewer understand why it
+1. TEXT - is there LARGE lettering in this frame: a headline, a banner, a
+   title, or a sign or caption big enough to be one of the first things a
+   viewer notices? Small marks on screens, panels, buildings, devices or
+   objects - the main subject included - are scenery whatever they say, and
+   are never text here. Give one label:
+   - "none": no large lettering
+   - "readable": large lettering, and every word of it is a real word
+   - "garbled": large lettering that is not real words - letter-like shapes,
+     nonsense spellings, smeared or melted glyphs
+   Read large lettering letter by letter. Never assume it is correct and
+   never invent what it says.
+
+2. ON TOPIC - does this shot serve its intent? Would a viewer understand why it
    is on screen at this moment? A shot that is well made but about something
    else is the worst outcome here.
 
-2. LOOKS GOOD - is this an attractive, well-made frame? Judge composition,
+3. LOOKS GOOD - is this an attractive, well-made frame? Judge composition,
    lighting, clarity and finish, the way you would judge a stock clip you were
    deciding whether to licence.
-   People, faces, hands and text are all WELCOME and are never defects in
-   themselves. Judge whether they are rendered WELL:
-   - a person who looks real and natural is a good shot; melted features,
-     extra fingers or warped anatomy are not
-   - text that reads as real words is a good shot; text smeared into
-     letter-like shapes is not. Judge only text the shot MEANS for a viewer to
-     read - a screen of logs, a caption, a label. Incidental lettering that
-     would be unreadable in real life too (a number plate at speed, a distant
-     sign, a blurred logo) is scenery, not a fault. Read text that matters
-     letter by letter; if it is too small or blurred to read, answer
-     "unverifiable" - never assume it is correct, never invent what it says
-   - the house look is dark-techno (deep navy, cyan, teal, gold) and stylized
-     rather than photoreal for AI-rendered shots; real stock footage is exempt
+   People, faces and hands are WELCOME and are never defects in themselves.
+   Judge whether they are rendered WELL: a person who looks real and natural
+   is a good shot; melted features, extra fingers or warped anatomy are not.
+   The house look is dark-techno (deep navy, cyan, teal, gold) and stylized
+   rather than photoreal for AI-rendered shots; real stock footage is exempt.
 
 Name a fault only when you can point at it in this image. A shot with nothing
 wrong scores high - do not hunt for faults to justify a lower number.
@@ -553,7 +557,7 @@ Score bands:
 - 0-29   off topic, or so mangled it reads as slop
 
 Output EXACTLY one JSON object, no prose, no code fences:
-{{"defects": ["<short phrase>", ...], "score": <integer 0-100>, "reason": "<one short sentence>"}}
+{{"text": "none|readable|garbled", "defects": ["<short phrase>", ...], "score": <integer 0-100>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.video_stock_fit
