@@ -1898,6 +1898,23 @@ class TestRagasEvalGate:
         assert "context_precision=0.70" in result.feedback
 
     @pytest.mark.asyncio
+    async def test_a_skipped_faithfulness_is_noted_not_averaged(self):
+        """Long drafts skip faithfulness (ragas_faithfulness_max_draft_chars):
+        the metric is ABSENT, the score averages the two that ran, and the
+        feedback says why faithfulness is missing."""
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
+        with patch(
+            "poindexter.services.ragas_eval.evaluate_sample",
+            new=AsyncMock(return_value={"answer_relevancy": 0.8, "context_precision": 0.6}),
+        ), patch(
+            "poindexter.services.ragas_eval.is_enabled", return_value=True,
+        ):
+            result = await qa._check_ragas_eval("body", "topic", "ctx1\n\nctx2")
+        assert result.score == 70.0
+        assert "faithfulness skipped" in result.feedback
+        assert "faithfulness=" not in result.feedback
+
+    @pytest.mark.asyncio
     async def test_drops_sentinel_failures(self):
         """Per-metric -1.0 sentinel = ragas couldn't compute that one.
         Averaging in -1.0 would slam the score; instead we drop the

@@ -462,6 +462,20 @@ async def _build_ragas_models(
 # ---------------------------------------------------------------------------
 
 
+# Faithfulness scales with the DRAFT, not the corpus: Ragas first splits the
+# draft into statements (~0.45 output tokens per draft character), then judges
+# every statement against the context. Both steps must fit the judge's window
+# (qa_ragas_judge_num_ctx, 16384 on the operator stack). Measured 2026-09-25:
+# drafts of 4.6k-13.2k chars scored; a 23.4k-char draft filled the window on
+# every long call (prompt + answer = 16384 exactly) and scored -1.0 on all
+# three QA passes, burning ~5 min of judge time per pass. Scaling the 12.7k
+# smoke run puts the verdict step's overflow near 15-16k chars, so the default
+# cut sits at 14k. deepeval_faithfulness still scores faithfulness on these
+# drafts. 0 = never skip.
+_FAITHFULNESS_MAX_DRAFT_CHARS_DEFAULT = 14000
+_ALL_METRICS = ("faithfulness", "answer_relevancy", "context_precision")
+
+
 def _int_setting(site_config: Any, key: str, default: int) -> int:
     """Integer app_setting via the DI'd SiteConfig; missing/unparseable →
     code default (these are run-config dials, not gates)."""
@@ -594,6 +608,8 @@ def _emit_ragas_score_audit(
     scores: dict[str, float],
     topic: str,
     task_id: str | None,
+    *,
+    skipped: tuple[str, ...] = (),
 ) -> None:
     """Fire-and-forget audit_log write powering the Grafana ragas panel.
 
@@ -626,11 +642,16 @@ def _emit_ragas_score_audit(
             "ragas_eval",
             {
                 "score": round(float(avg), 4),
-                "faithfulness": round(float(scores.get("faithfulness", -1.0)), 4),
-                "answer_relevancy": round(float(scores.get("answer_relevancy", -1.0)), 4),
-                "context_precision": round(float(scores.get("context_precision", -1.0)), 4),
+                # A deliberately skipped metric is null (a blank cell on the
+                # QA Rails table), never -1.0, which reads as a failure.
+                **{
+                    name: (None if name in skipped
+                           else round(float(scores.get(name, -1.0)), 4))
+                    for name in _ALL_METRICS
+                },
                 "topic": (topic or "")[:200],
                 "metric_count": len(valid),
+                **({"skipped_metrics": list(skipped)} if skipped else {}),
             },
             task_id=task_id,
             severity="info",
@@ -678,6 +699,22 @@ async def evaluate_sample(
             "context_precision": -1.0,
         }
 
+    max_chars = _int_setting(
+        site_config, "ragas_faithfulness_max_draft_chars",
+        _FAITHFULNESS_MAX_DRAFT_CHARS_DEFAULT,
+    )
+    skipped: tuple[str, ...] = ()
+    if max_chars > 0 and len(generated_content) > max_chars:
+        skipped = ("faithfulness",)
+        logger.info(
+            "[ragas] faithfulness skipped — draft is %d chars, over "
+            "ragas_faithfulness_max_draft_chars=%d (it would overflow the "
+            "judge window and score -1.0; deepeval_faithfulness covers it)",
+            len(generated_content), max_chars,
+        )
+    metric_names = tuple(m for m in _ALL_METRICS if m not in skipped)
+    sentinels = dict.fromkeys(metric_names, -1.0)
+
     contexts = retrieved_contexts or [""]
 
     try:
@@ -722,9 +759,14 @@ async def evaluate_sample(
             of its own and the flow's loop is never re-entered; the bridges
             above hand every pool-bound call back to it.
             """
+            by_name = {
+                "faithfulness": faithfulness,
+                "answer_relevancy": answer_relevancy,
+                "context_precision": context_precision,
+            }
             return evaluate(
                 ds,
-                metrics=[faithfulness, answer_relevancy, context_precision],
+                metrics=[by_name[name] for name in metric_names],
                 llm=llm,
                 embeddings=embeddings,
                 raise_exceptions=False,
@@ -748,18 +790,12 @@ async def evaluate_sample(
                 getattr(busy, "reason", "?"), len(gpu_busy_seen),
             )
             _surface_gpu_busy_skip("ragas", busy, task_id=task_id)
-            return {
-                "faithfulness": -1.0,
-                "answer_relevancy": -1.0,
-                "context_precision": -1.0,
-            }
+            return dict(sentinels)
         scores_raw = result.scores[0] if result.scores else {}  # type: ignore[union-attr]
-        scores = {
-            "faithfulness": _coerce_metric(scores_raw.get("faithfulness")),
-            "answer_relevancy": _coerce_metric(scores_raw.get("answer_relevancy")),
-            "context_precision": _coerce_metric(scores_raw.get("context_precision")),
-        }
-        _emit_ragas_score_audit(scores, topic, task_id)
+        # A skipped metric is ABSENT from the result — never a -1.0 sentinel,
+        # which callers read as a failed metric and page on.
+        scores = {name: _coerce_metric(scores_raw.get(name)) for name in metric_names}
+        _emit_ragas_score_audit(scores, topic, task_id, skipped=skipped)
         return scores
     except ImportError:
         # A broken ragas import chain (e.g. ragas 0.4.x importing
@@ -786,18 +822,10 @@ async def evaluate_sample(
             f"{busy.eta_seconds:.0f}" if busy.eta_seconds is not None else "?",
         )
         _surface_gpu_busy_skip("ragas", busy, task_id=task_id)
-        return {
-            "faithfulness": -1.0,
-            "answer_relevancy": -1.0,
-            "context_precision": -1.0,
-        }
+        return dict(sentinels)
     except Exception as e:
         logger.warning("[ragas] evaluate_sample failed: %s", e, exc_info=True)
-        return {
-            "faithfulness": -1.0,
-            "answer_relevancy": -1.0,
-            "context_precision": -1.0,
-        }
+        return dict(sentinels)
 
 
 def is_enabled(site_config: Any) -> bool:

@@ -2343,6 +2343,10 @@ class MultiModelQA:
         breakdown = ", ".join(
             f"{k}={v:.2f}" for k, v in sorted(valid.items())
         )
+        if "faithfulness" not in scores:
+            # Deliberately skipped on a long draft (it would overflow the
+            # judge window) — say so, so the absence doesn't read as a gap.
+            breakdown += "; faithfulness skipped (draft over ragas_faithfulness_max_draft_chars)"
         return ReviewerResult(
             reviewer="ragas_eval",
             approved=avg >= 0.6,  # Ragas threshold; configurable downstream

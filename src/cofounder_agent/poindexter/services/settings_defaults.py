@@ -2556,6 +2556,11 @@ DEFAULTS: dict[str, str] = {
     'guardrails_enabled': 'false',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'ragas_enabled': 'true',
+    # Skip Ragas faithfulness on drafts longer than this (chars): faithfulness
+    # scales with the draft and overflows the judge window above ~15k chars,
+    # scoring -1.0 after ~5 min of judge time. deepeval_faithfulness still
+    # covers those drafts. 0 = never skip. See ragas_eval.py.
+    'ragas_faithfulness_max_draft_chars': '14000',
     # poindexter#1035: Ragas's per-job timeout (library default 180 s) — a
     # metric job is several sequential judge calls at 60–107 s each on the
     # thinking judge, so 180 s collapsed faithfulness/context_precision to the
@@ -5852,6 +5857,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'non_thinking_model_substrings': {'category': 'llm', 'description': 'JSON array of model-name needles that VETO a thinking_model_substrings match: an instruction-tuned sibling of a thinking family (qwen3-vl:30b-a3b-instruct) must not get the reasoning budget or lose JSON mode. Set [] to disable the veto.', 'value_type': 'json', 'owner': 'thinking_models'},
     'guardrails_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'ragas_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'ragas_faithfulness_max_draft_chars': {'owner': 'ragas_eval', 'value_type': 'integer'},
     'ragas_job_timeout_seconds': {'owner': 'ragas_eval', 'value_type': 'integer'},
     'ragas_max_workers': {'owner': 'ragas_eval', 'value_type': 'integer'},
 

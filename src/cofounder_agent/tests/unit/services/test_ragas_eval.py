@@ -12,6 +12,7 @@ the guard still earns its keep.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from contextlib import contextmanager
@@ -1015,3 +1016,111 @@ class TestGpuBusyIsReportedAsContentionNotBreakage:
             )
         assert skip.call_count == 0
         assert result["faithfulness"] == 0.9
+
+
+# ---------------------------------------------------------------------------
+# Long drafts skip faithfulness (2026-09-25)
+# ---------------------------------------------------------------------------
+
+
+class TestLongDraftSkipsFaithfulness:
+    """Faithfulness scales with the draft: on a 23.4k-char draft every long
+    judge call filled the 16384 window (prompt + answer = 16384 exactly) and
+    faithfulness scored -1.0 on all three QA passes, ~5 min of judge time
+    each. Drafts over ``ragas_faithfulness_max_draft_chars`` skip it; the
+    skip must read as a skip, never as a failed metric."""
+
+    def _run(self, content: str, settings: dict[str, str] | None = None):
+        from types import SimpleNamespace
+
+        from poindexter.services.site_config import SiteConfig
+
+        captured: dict[str, Any] = {"audit": []}
+
+        def fake_evaluate(ds, **kwargs):
+            captured["metrics"] = list(kwargs["metrics"])
+            result = MagicMock()
+            result.scores = [{"faithfulness": 0.9, "answer_relevancy": 0.8, "context_precision": 0.7}]
+            return result
+
+        fake_ragas = MagicMock()
+        fake_ragas.evaluate = fake_evaluate
+        fake_ragas.RunConfig = lambda **kw: kw
+        fake_datasets = MagicMock()
+        fake_datasets.Dataset.from_dict = lambda d: d
+        metrics_mod = SimpleNamespace(
+            faithfulness="F", answer_relevancy="AR", context_precision="CP",
+        )
+        sc = SiteConfig(initial_config=settings or {})
+        with patch(
+            "poindexter.services.ragas_eval._build_ragas_models",
+            return_value=(MagicMock(), MagicMock()),
+        ), patch(
+            "poindexter.services.ragas_eval._emit_ragas_score_audit",
+            lambda scores, topic, task_id, **kw: captured["audit"].append((scores, kw)),
+        ), _inject_fake_modules({
+            "datasets": fake_datasets, "ragas": fake_ragas, "ragas.metrics": metrics_mod,
+        }):
+            result = asyncio.run(evaluate_sample(
+                topic="Topic", generated_content=content, site_config=sc,
+            ))
+        return result, captured
+
+    def test_a_long_draft_does_not_run_faithfulness(self):
+        result, cap = self._run("x" * 14001)
+        assert cap["metrics"] == ["AR", "CP"]
+        assert set(result) == {"answer_relevancy", "context_precision"}
+        assert cap["audit"][0][1] == {"skipped": ("faithfulness",)}
+
+    def test_a_draft_at_the_limit_runs_all_three(self):
+        result, cap = self._run("x" * 14000)
+        assert cap["metrics"] == ["F", "AR", "CP"]
+        assert set(result) == {"faithfulness", "answer_relevancy", "context_precision"}
+        assert cap["audit"][0][1] == {"skipped": ()}
+
+    def test_the_limit_is_a_setting_and_zero_never_skips(self):
+        _, cap = self._run("x" * 600, {"ragas_faithfulness_max_draft_chars": "500"})
+        assert cap["metrics"] == ["AR", "CP"]
+        _, cap = self._run("x" * 99999, {"ragas_faithfulness_max_draft_chars": "0"})
+        assert cap["metrics"] == ["F", "AR", "CP"]
+
+    def test_a_failure_on_a_long_draft_does_not_report_faithfulness_failing(self):
+        """The sentinel set follows the metrics that actually ran, so a skipped
+        metric can never be paged as degraded."""
+        from poindexter.services.site_config import SiteConfig
+
+        with patch(
+            "poindexter.services.ragas_eval._build_ragas_models",
+            side_effect=RuntimeError("judge down"),
+        ), _inject_fake_modules({
+            "datasets": MagicMock(), "ragas": MagicMock(), "ragas.metrics": MagicMock(),
+        }):
+            result = asyncio.run(evaluate_sample(
+                topic="T", generated_content="x" * 20000, site_config=SiteConfig(),
+            ))
+        assert result == {"answer_relevancy": -1.0, "context_precision": -1.0}
+
+    def test_the_audit_writes_a_skip_as_null_and_does_not_page(self):
+        from poindexter.services import ragas_eval
+
+        with patch("poindexter.services.audit_log.audit_log_bg") as bg, patch.object(
+            ragas_eval, "_emit_degraded_metrics_finding",
+        ) as degraded:
+            ragas_eval._emit_ragas_score_audit(
+                {"answer_relevancy": 0.8, "context_precision": 0.6}, "T", "task-1",
+                skipped=("faithfulness",),
+            )
+        degraded.assert_not_called()
+        details = bg.call_args.args[2]
+        assert details["faithfulness"] is None
+        assert details["skipped_metrics"] == ["faithfulness"]
+        assert details["metric_count"] == 2
+        assert details["score"] == 0.7
+
+    def test_the_default_matches_settings_defaults(self):
+        from poindexter.services import ragas_eval
+        from poindexter.services.settings_defaults import DEFAULTS
+
+        assert int(DEFAULTS["ragas_faithfulness_max_draft_chars"]) == (
+            ragas_eval._FAITHFULNESS_MAX_DRAFT_CHARS_DEFAULT
+        )
