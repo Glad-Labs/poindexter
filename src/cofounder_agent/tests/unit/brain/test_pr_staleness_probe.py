@@ -154,19 +154,17 @@ def _make_pr(
     }
 
 
-def _make_check_runs(*, all_green: bool) -> dict[str, Any]:
-    """Build a GitHub check-runs payload with one green or failing run."""
-    if all_green:
-        return {
-            "total_count": 1,
-            "check_runs": [
-                {"status": "completed", "conclusion": "success", "name": "ci"},
-            ],
-        }
+def _make_workflow_runs(*, all_green: bool) -> dict[str, Any]:
+    """Build a GitHub Actions ``/actions/runs`` payload with one green or failing run."""
+    conclusion = "success" if all_green else "failure"
     return {
         "total_count": 1,
-        "check_runs": [
-            {"status": "completed", "conclusion": "failure", "name": "ci"},
+        "workflow_runs": [
+            {
+                "id": 1, "workflow_id": 10, "name": "ci",
+                "created_at": "2026-05-06T10:00:00Z",
+                "status": "completed", "conclusion": conclusion,
+            },
         ],
     }
 
@@ -186,9 +184,9 @@ class _FakeResponse:
 class _FakeAsyncClient:
     """httpx.AsyncClient stand-in routing GETs by URL substring."""
 
-    def __init__(self, *, prs: list[dict[str, Any]], check_runs_by_sha: dict[str, dict[str, Any]]):
+    def __init__(self, *, prs: list[dict[str, Any]], runs_by_sha: dict[str, dict[str, Any]]):
         self._prs = prs
-        self._check_runs_by_sha = check_runs_by_sha
+        self._runs_by_sha = runs_by_sha
         self.calls: list[str] = []
 
     async def __aenter__(self):
@@ -201,12 +199,12 @@ class _FakeAsyncClient:
         self.calls.append(url)
         if "/pulls" in url:
             return _FakeResponse(200, self._prs)
-        if "/check-runs" in url:
-            # url shape: /repos/{repo}/commits/{sha}/check-runs
-            sha = url.split("/commits/")[-1].split("/check-runs")[0]
+        if "/actions/runs" in url:
+            # /repos/{repo}/actions/runs?head_sha={sha}
+            sha = (params or {}).get("head_sha")
             return _FakeResponse(
                 200,
-                self._check_runs_by_sha.get(sha, {"check_runs": []}),
+                self._runs_by_sha.get(sha, {"workflow_runs": []}),
             )
         return _FakeResponse(404, {}, text="not found")
 
@@ -214,13 +212,13 @@ class _FakeAsyncClient:
 def _factory_for(
     *,
     prs: list[dict[str, Any]],
-    check_runs_by_sha: dict[str, dict[str, Any]] | None = None,
+    runs_by_sha: dict[str, dict[str, Any]] | None = None,
 ):
     """Build an http_client_factory that returns one canned client."""
-    crs = check_runs_by_sha or {}
+    crs = runs_by_sha or {}
 
     def _factory():
-        return _FakeAsyncClient(prs=prs, check_runs_by_sha=crs)
+        return _FakeAsyncClient(prs=prs, runs_by_sha=crs)
 
     return _factory
 
@@ -288,7 +286,7 @@ class TestYoungPRSkipped:
         # 5h old — below the 24h default.
         factory = _factory_for(
             prs=[_make_pr(number=101, age_hours=5)],
-            check_runs_by_sha={},  # never queried
+            runs_by_sha={},  # never queried
         )
 
         summary = await psp.run_pr_staleness_probe(
@@ -318,8 +316,8 @@ class TestCIRedSkipped:
         pool = _make_pool()
         factory = _factory_for(
             prs=[_make_pr(number=202, age_hours=30, sha="failingsha")],
-            check_runs_by_sha={
-                "failingsha": _make_check_runs(all_green=False),
+            runs_by_sha={
+                "failingsha": _make_workflow_runs(all_green=False),
             },
         )
 
@@ -360,8 +358,8 @@ class TestStalePRAlerts:
                     deletions=12,
                 ),
             ],
-            check_runs_by_sha={
-                "green309": _make_check_runs(all_green=True),
+            runs_by_sha={
+                "green309": _make_workflow_runs(all_green=True),
             },
         )
 
@@ -421,8 +419,8 @@ class TestDedupSuppression:
                     sha="green309",
                 ),
             ],
-            check_runs_by_sha={
-                "green309": _make_check_runs(all_green=True),
+            runs_by_sha={
+                "green309": _make_workflow_runs(all_green=True),
             },
         )
 
@@ -471,3 +469,80 @@ class TestDisabledFlag:
         assert summary["alert_emitted"] is False
         assert called == []
         assert _executed_alert_events(pool) == []
+
+
+# ---------------------------------------------------------------------------
+# CI green is read from GitHub Actions runs, not check runs
+# ---------------------------------------------------------------------------
+
+
+def _run(workflow_id: int, conclusion: str | None, *, status: str = "completed",
+         created_at: str = "2026-05-06T10:00:00Z", run_id: int = 1) -> dict[str, Any]:
+    return {
+        "id": run_id, "workflow_id": workflow_id, "name": f"wf-{workflow_id}",
+        "created_at": created_at, "status": status, "conclusion": conclusion,
+    }
+
+
+@pytest.mark.unit
+class TestCIGreenFromActionsRuns:
+    """Why Actions: a fine-grained token has no Checks permission, so the
+    check-runs endpoint is unreadable on a private repo. Why skipped counts as
+    green: every glad-labs-stack PR carries skipped path-filtered jobs, and
+    treating them as failures kept the probe from flagging any PR from August
+    2026 (#4041 merged CLEAN with 14 successful + 8 skipped check runs)."""
+
+    def test_skipped_and_neutral_workflows_do_not_make_a_pr_red(self):
+        runs = [_run(1, "success"), _run(2, "skipped", run_id=2), _run(3, "neutral", run_id=3)]
+        assert psp._ci_all_green(runs) is True
+
+    def test_only_skipped_runs_are_not_a_confirmed_pass(self):
+        assert psp._ci_all_green([_run(1, "skipped"), _run(2, "skipped", run_id=2)]) is False
+
+    def test_no_runs_are_not_green(self):
+        assert psp._ci_all_green([]) is False
+
+    @pytest.mark.parametrize("status", ["queued", "in_progress", "waiting", "pending"])
+    def test_an_unfinished_run_is_not_green(self, status):
+        runs = [_run(1, "success"), _run(2, None, status=status, run_id=2)]
+        assert psp._ci_all_green(runs) is False
+
+    @pytest.mark.parametrize(
+        "conclusion",
+        ["failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"],
+    )
+    def test_a_bad_conclusion_is_not_green(self, conclusion):
+        runs = [_run(1, "success"), _run(2, conclusion, run_id=2)]
+        assert psp._ci_all_green(runs) is False
+
+    def test_each_workflow_is_judged_by_its_latest_run(self):
+        cancelled_then_green = [
+            _run(1, "cancelled", created_at="2026-05-06T10:00:00Z", run_id=1),
+            _run(1, "success", created_at="2026-05-06T10:05:00Z", run_id=2),
+        ]
+        green_then_failed = [
+            _run(1, "success", created_at="2026-05-06T10:00:00Z", run_id=1),
+            _run(1, "failure", created_at="2026-05-06T10:05:00Z", run_id=2),
+        ]
+        assert psp._ci_all_green(cancelled_then_green) is True
+        assert psp._ci_all_green(green_then_failed) is False
+
+    @pytest.mark.asyncio
+    async def test_a_pr_with_skipped_workflows_now_raises_the_stale_alert(self):
+        pool = _make_pool()
+        client = _FakeAsyncClient(
+            prs=[_make_pr(number=4041, age_hours=30, sha="clean4041")],
+            runs_by_sha={"clean4041": {"workflow_runs": [
+                _run(1, "success"), _run(2, "skipped", run_id=2),
+            ]}},
+        )
+
+        summary = await psp.run_pr_staleness_probe(
+            pool, now_fn=_now_fn, http_client_factory=lambda: client,
+        )
+
+        assert summary["status"] == "alert_emitted"
+        assert summary["pr_numbers"] == [4041]
+        assert summary["skipped_ci_not_green"] == 0
+        assert any("/actions/runs" in url for url in client.calls)
+        assert not any("check-runs" in url for url in client.calls)

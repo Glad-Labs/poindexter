@@ -142,12 +142,12 @@ class _Resp:
 
 
 class _FakeGitHub:
-    """Scriptable GitHub: set ``pulls`` / ``check_runs`` to a response or an
+    """Scriptable GitHub: set ``pulls`` / ``actions_runs`` to a response or an
     exception between passes; ``requests`` counts every round-trip."""
 
     def __init__(self) -> None:
         self.pulls: Any = _Resp(200, [])
-        self.check_runs: Any = _Resp(200, {"check_runs": []})
+        self.actions_runs: Any = _Resp(200, {"workflow_runs": []})
         self.requests = 0
 
     def factory(self) -> _FakeGitHub:
@@ -161,7 +161,7 @@ class _FakeGitHub:
 
     async def get(self, url: str, params: dict[str, Any] | None = None) -> _Resp:
         self.requests += 1
-        answer = self.check_runs if "/check-runs" in url else self.pulls
+        answer = self.actions_runs if "/actions/runs" in url else self.pulls
         if isinstance(answer, BaseException):
             raise answer
         return answer
@@ -529,7 +529,9 @@ class TestFailureWording:
         assert sig == "pulls:404"
         assert detail.startswith(f"The gh_token cannot see {REPO}, check its scopes.")
         assert "Pull requests (read)" in detail
-        assert "Checks (read)" in detail
+        assert "Actions (read)" in detail
+        # Fine-grained tokens have no Checks permission; never ask for one.
+        assert "Checks" not in detail
         assert "poindexter settings set gh_token <token> --secret" in detail
 
     def test_404_without_a_token_says_it_is_unset(self):
@@ -560,12 +562,14 @@ class TestFailureWording:
         assert limit_sig == "pulls:rate-limited"
         assert "rate-limited" in limit
 
-    def test_check_runs_403_asks_for_checks_read(self):
+    @pytest.mark.parametrize("status", [403, 404])
+    def test_unreadable_actions_runs_asks_for_actions_read(self, status):
         sig, detail = psp._describe_failure(
-            _api_error("check-runs", 403, "{}", ref="abc1234def"), repo=REPO, has_token=True,
+            _api_error("actions/runs", status, "{}", ref="abc1234def"), repo=REPO, has_token=True,
         )
-        assert sig == "check-runs:403"
-        assert "Checks (read)" in detail
+        assert sig == f"actions/runs:{status}"
+        assert "Actions (read)" in detail
+        assert "Checks" not in detail
 
     def test_a_silent_timeout_is_named_by_its_class(self):
         """str(httpx.ConnectTimeout) is empty; the page must not read 'ConnectTimeout: '."""
@@ -576,15 +580,15 @@ class TestFailureWording:
         assert detail.startswith("ConnectTimeout — ")
 
     @pytest.mark.asyncio
-    async def test_check_runs_403_reaches_the_page(self):
+    async def test_unreadable_actions_runs_reaches_the_page(self):
         db, gh, clock, notify = _FakeDB(), _FakeGitHub(), _Clock(), _Notifier()
         gh.pulls = _Resp(200, [_old_green_pr()])
-        gh.check_runs = _Resp(403, text=json.dumps({"message": "Resource not accessible"}))
+        gh.actions_runs = _Resp(403, text=json.dumps({"message": "Resource not accessible by personal access token"}))
 
         summary = await _run(db, gh, clock, notify)
 
-        assert summary["failure_signature"] == "check-runs:403"
-        assert "cannot read their check runs" in notify.calls[0]["detail"]
+        assert summary["failure_signature"] == "actions/runs:403"
+        assert "cannot read its GitHub Actions runs" in notify.calls[0]["detail"]
 
     @pytest.mark.parametrize("has_token", [True, False])
     @pytest.mark.parametrize(

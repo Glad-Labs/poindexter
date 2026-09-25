@@ -19,9 +19,10 @@ Lifecycle per cycle (mirrors brain/glitchtip_triage_probe.py):
 4. For each open PR:
    * Compute age = now - created_at in hours. Skip if age <
      ``pr_staleness_min_hours`` (default 24).
-   * Fetch ``GET /repos/{repo}/commits/{sha}/check-runs`` to confirm
-     CI is all-green. Skip if any check-run is non-success or still
-     in progress.
+   * Fetch ``GET /repos/{repo}/actions/runs?head_sha={sha}`` to confirm
+     CI is all-green: the latest run of every workflow completed as
+     success, skipped or neutral, and at least one succeeded. (Actions,
+     not check-runs: a fine-grained token has no Checks permission.)
    * If CI green AND age >= threshold AND not deduped (per-PR
      fingerprint inside the dedup window) → collect.
 5. If any collected → write ONE coalesced ``alert_events`` row at
@@ -136,7 +137,7 @@ HTTP_READ_TIMEOUT_S = 15.0
 
 # Hard cap on PRs scanned per cycle. The ?per_page=50 call covers any
 # realistic open-PR backlog; without a cap a misconfigured repo with
-# thousands of stale PRs would fan out into thousands of check-runs
+# thousands of stale PRs would fan out into thousands of Actions-runs
 # requests.
 MAX_PRS_PER_CYCLE = 50
 
@@ -511,34 +512,28 @@ def _describe_failure(exc: BaseException, *, repo: str, has_token: bool) -> tupl
                 f"gh_token is not set, and GitHub answers 404 to an anonymous "
                 f"request for {repo} — the repo is private, or the name in "
                 f"app_settings.{REPO_KEY} is wrong. Set a token that can read "
-                f"its pull requests and checks with {_TOKEN_FIX}."
+                f"its pull requests and Actions runs with {_TOKEN_FIX}."
             )
         return "pulls:404", (
             f"The gh_token cannot see {repo}, check its scopes. GitHub answers "
             f"404, not 403, for a private repo the token has no access to, so "
             f"unless app_settings.{REPO_KEY} is misspelled, the token is the "
             f"problem. It needs {repo} in its repository access with Pull "
-            f"requests (read) and Checks (read), or the classic `repo` scope. "
-            f"Rotate it with {_TOKEN_FIX}."
+            f"requests (read) and Actions (read). Rotate it with {_TOKEN_FIX}."
         )
     if exc.endpoint == "pulls" and status == 403:
         return "pulls:403", (
             f"The gh_token may not list pull requests on {repo} (HTTP 403: "
             f"{said}), check its scopes: it needs Pull requests (read) and "
-            f"Checks (read). Rotate it with {_TOKEN_FIX}."
+            f"Actions (read). Rotate it with {_TOKEN_FIX}."
         )
-    if exc.endpoint == "check-runs" and status == 403:
-        return "check-runs:403", (
-            f"The gh_token can list pull requests on {repo} but cannot read "
-            f"their check runs (HTTP 403: {said}) — grant it Checks (read), or "
-            f"rotate it with {_TOKEN_FIX}."
-        )
-    if exc.endpoint == "check-runs" and status == 404:
-        return "check-runs:404", (
-            f"GitHub /check-runs returned 404 for commit {exc.ref[:9]} on "
-            f"{repo} — the commit is gone (force-pushed or deleted head) or "
-            f"the gh_token cannot read checks there. Nothing is surfaced for "
-            f"any PR this pass."
+    if exc.endpoint == "actions/runs" and status in (403, 404):
+        return f"actions/runs:{status}", (
+            f"The gh_token can list pull requests on {repo} but cannot read its "
+            f"GitHub Actions runs (HTTP {status}: {said}), which is how this "
+            f"probe tells whether a PR's CI is green — grant it Actions (read), "
+            f"or rotate it with {_TOKEN_FIX}. Nothing is surfaced for any PR "
+            f"until it can."
         )
     return f"{exc.endpoint}:{status}", (
         f"GitHub /{exc.endpoint} for {repo} returned HTTP {status}: {said}"
@@ -564,46 +559,72 @@ async def _fetch_open_prs(
     return data
 
 
-async def _fetch_check_runs(
+async def _fetch_workflow_runs(
     client: httpx.AsyncClient,
     repo: str,
     sha: str,
 ) -> list[dict[str, Any]]:
-    """Return the check-run list for one commit SHA."""
+    """Return the GitHub Actions runs for one head commit SHA.
+
+    CI is read from Actions, not ``/commits/{sha}/check-runs``: a
+    fine-grained token has no Checks permission at all (it is GitHub-App
+    only), so check runs on a private repo are unreadable to the token
+    this probe is given. ``Actions (read)`` covers this endpoint.
+    """
     r = await client.get(
-        f"https://api.github.com/repos/{repo}/commits/{sha}/check-runs",
-        params={"per_page": 100},
+        f"https://api.github.com/repos/{repo}/actions/runs",
+        params={"head_sha": sha, "per_page": 100},
     )
     if r.status_code != 200:
-        raise GitHubAPIError.from_response("check-runs", r, ref=sha)
+        raise GitHubAPIError.from_response("actions/runs", r, ref=sha)
     data = r.json()
     if not isinstance(data, dict):
         raise RuntimeError(
-            f"GitHub /check-runs returned non-dict payload: {type(data).__name__}"
+            f"GitHub /actions/runs returned non-dict payload: {type(data).__name__}"
         )
-    runs = data.get("check_runs")
+    runs = data.get("workflow_runs")
     if not isinstance(runs, list):
         return []
     return runs
 
 
-def _ci_all_green(check_runs: list[dict[str, Any]]) -> bool:
-    """Return True iff every check-run is completed AND conclusion=success.
+# A skipped workflow (every job's ``if:`` false) or a neutral one is not a
+# failure. Counting them as failures is what blinded this probe: every
+# glad-labs-stack PR carries skipped path-filtered jobs, so from August
+# 2026 no PR ever read as green (#4041 merged CLEAN with 14 successful and
+# 8 skipped check runs, and would have been "CI not green" here).
+_GREEN_CONCLUSIONS = frozenset({"success", "skipped", "neutral"})
 
-    Empty list also counts as "not green" — a PR with zero check-runs
-    isn't a confirmed pass and we'd rather under-alert than nag the
-    operator about an unreviewable PR.
+
+def _ci_all_green(workflow_runs: list[dict[str, Any]]) -> bool:
+    """True iff the head commit's latest run of every workflow finished green.
+
+    Judged per workflow on its most recent run, so a run cancelled by a
+    concurrency group and superseded by a successful one doesn't hold a PR
+    back. At least one run must have SUCCEEDED: a commit with no runs, or
+    only skipped ones, isn't a confirmed pass, and we'd rather under-alert
+    than nag the operator about an unreviewable PR.
     """
-    if not check_runs:
+    latest: dict[Any, dict[str, Any]] = {}
+    for run in workflow_runs:
+        key = run.get("workflow_id") or run.get("name")
+        stamp = (str(run.get("created_at") or ""), _coerce_int(run.get("id"), 0))
+        held = latest.get(key)
+        if held is None or stamp > (
+            str(held.get("created_at") or ""), _coerce_int(held.get("id"), 0),
+        ):
+            latest[key] = run
+    if not latest:
         return False
-    for run in check_runs:
-        status = (run.get("status") or "").strip().lower()
-        if status != "completed":
+    saw_success = False
+    for run in latest.values():
+        if (run.get("status") or "").strip().lower() != "completed":
             return False
         conclusion = (run.get("conclusion") or "").strip().lower()
-        if conclusion != "success":
+        if conclusion not in _GREEN_CONCLUSIONS:
             return False
-    return True
+        saw_success = saw_success or conclusion == "success"
+    return saw_success
 
 
 def _parse_iso8601_utc(raw: Any) -> datetime | None:
@@ -954,7 +975,7 @@ async def run_pr_staleness_probe(
                     skipped_ci_not_green += 1
                     continue
 
-                runs = await _fetch_check_runs(client, repo, str(sha))
+                runs = await _fetch_workflow_runs(client, repo, str(sha))
                 if not _ci_all_green(runs):
                     skipped_ci_not_green += 1
                     continue
