@@ -205,23 +205,28 @@ def close_resolved(issues: list[dict], firing: set[str], days: int, log) -> set[
 async def _noisy_alerts() -> list[dict]:
     # NOISE_THRESHOLD / WINDOW are module constants, not user input — safe to inline.
     #
-    # Gate on n_paged (dispatch_result NOT a suppression), not raw row count.
-    # alert_dispatcher's #420 dedup already collapses repeats into
+    # Gate on n_paged (rows that actually reached the operator), not raw row
+    # count. alert_dispatcher's #420 dedup already collapses repeats into
     # `dispatch_result='suppressed: ...'` rows that never reach the operator —
     # counting those as "firing" flags perfectly-deduped alerts as broken (a
     # 203-row/4-paged alert tripped the old `COUNT(*) > 5` every day). #2395
     # documented this exact false-positive class for an earlier issue batch;
     # this closes the root cause instead of re-triaging each batch by hand.
+    # `remediating: ...` rows are pages the firefighter HELD while it fixed the
+    # alert; the operator hears of them only if the fix fails, and that verify
+    # page is not an alert_events row.
     rows = await c.fetch_all(
         f"""
         SELECT alertname,
                COUNT(*) AS n_total,
-               COUNT(*) FILTER (WHERE dispatch_result NOT LIKE 'suppressed%') AS n_paged,
+               COUNT(*) FILTER (WHERE dispatch_result NOT LIKE 'suppressed%'
+                                  AND dispatch_result NOT LIKE 'remediating%') AS n_paged,
                MAX(dispatch_result) AS dispatch_result
         FROM alert_events
         WHERE received_at > NOW() - INTERVAL '{WINDOW}'
         GROUP BY alertname
-        HAVING COUNT(*) FILTER (WHERE dispatch_result NOT LIKE 'suppressed%') > {NOISE_THRESHOLD}
+        HAVING COUNT(*) FILTER (WHERE dispatch_result NOT LIKE 'suppressed%'
+                                  AND dispatch_result NOT LIKE 'remediating%') > {NOISE_THRESHOLD}
         ORDER BY n_paged DESC LIMIT 20
         """  # noqa: S608 — interpolated values are module constants  # nosec B608 - WINDOW/NOISE_THRESHOLD are hardcoded module constants (line 18-19), never external input; ruff's noqa:S608 isn't recognized by standalone bandit
     )

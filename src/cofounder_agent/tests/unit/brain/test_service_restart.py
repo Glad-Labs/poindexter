@@ -351,7 +351,9 @@ async def test_guard_raising_skips_rather_than_bouncing_or_stranding(monkeypatch
     assert "guard raised" in pool.pool_executed[0][1][1]
 
 
-def test_parse_process_memory_mib_reads_the_exporter_text():
+# async only because the module-level pytestmark marks every test asyncio;
+# a sync test under it draws a PytestWarning on every run.
+async def test_parse_process_memory_mib_reads_the_exporter_text():
     body = (
         "# HELP nvidia_gpu_process_memory_mib Per-process GPU memory (compute apps)\n"
         "# TYPE nvidia_gpu_process_memory_mib gauge\n"

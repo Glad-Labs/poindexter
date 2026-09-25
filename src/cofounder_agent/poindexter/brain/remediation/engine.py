@@ -344,6 +344,68 @@ async def _alert_still_firing(pool: Any, *, fingerprint: str, since: datetime) -
     return last_seen > since
 
 
+@dataclass
+class RemediationAttempt:
+    """The latest ``remediation_action`` for a fingerprint, with its outcome.
+
+    ``verify_result`` is None while the verify scan has not judged the action
+    yet; otherwise it is the terminal ``remediation_verify`` result
+    (``resolved`` / ``still_firing`` / ``action_failed``).
+    """
+
+    run_id: str
+    action_name: str
+    acted_at: datetime
+    verify_result: str | None
+    verified_at: datetime | None
+
+
+_LATEST_ATTEMPT_SQL = """
+SELECT a.timestamp AS acted_at,
+       a.details->>'remediation_run_id' AS run_id,
+       a.details->>'action_name' AS action_name,
+       v.timestamp AS verified_at,
+       v.details->>'result' AS verify_result
+FROM audit_log a
+LEFT JOIN LATERAL (
+    SELECT vv.timestamp, vv.details
+    FROM audit_log vv
+    WHERE vv.event_type = 'remediation_verify'
+      AND vv.details->>'remediation_run_id' = a.details->>'remediation_run_id'
+    ORDER BY vv.id DESC
+    LIMIT 1
+) v ON TRUE
+WHERE a.event_type = 'remediation_action'
+  AND a.details->>'fingerprint' = $1
+ORDER BY a.id DESC
+LIMIT 1
+"""
+
+
+async def latest_attempt(pool: Any, *, fingerprint: str) -> RemediationAttempt | None:
+    """The fingerprint's most recent remediation attempt, or None if it has none.
+
+    The dispatcher reads this to find where one episode of an alert ends and the
+    next begins inside a dedup window (a verified fix ends an episode). A DB
+    error propagates: the caller decides what an unknown history means.
+    """
+    row = await pool.fetchrow(_LATEST_ATTEMPT_SQL, fingerprint)
+    if not row:
+        return None
+    rd = dict(row)
+    acted_at = _coerce_dt(rd.get("acted_at"))
+    if acted_at is None:
+        return None
+    verify_result = rd.get("verify_result")
+    return RemediationAttempt(
+        run_id=str(rd.get("run_id") or ""),
+        action_name=str(rd.get("action_name") or ""),
+        acted_at=acted_at,
+        verify_result=str(verify_result) if verify_result else None,
+        verified_at=_coerce_dt(rd.get("verified_at")),
+    )
+
+
 _VERIFY_PENDING_SQL = """
 SELECT a.id, a.timestamp, a.details
 FROM audit_log a

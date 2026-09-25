@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -390,3 +391,65 @@ async def test_a_rules_only_alert_still_runs_its_rule(monkeypatch):
     assert d.acted is True and d.params == {"container": "poindexter-speaches"}
     details = json.loads([e for e in pool.executed if "audit_log" in e[0]][0][1][3])
     assert details["verify_after_seconds"] == 900
+
+
+# ---------------------------------------------------------------------------
+# latest_attempt — the remediation history the dispatcher reads to find where
+# one episode of an alert ends and the next begins.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_latest_attempt_is_none_for_a_fingerprint_never_remediated():
+    pool = FakePool()
+    seen = {}
+
+    def _row(sql, args):
+        seen["sql"], seen["args"] = sql, args
+        return None
+
+    pool.set_fetchrow(_row)
+    assert await E.latest_attempt(pool, fingerprint="container_health_watch:poindexter-speaches|warning") is None
+    assert seen["args"] == ("container_health_watch:poindexter-speaches|warning",)
+    assert "remediation_action" in seen["sql"] and "remediation_verify" in seen["sql"]
+
+
+@pytest.mark.asyncio
+async def test_latest_attempt_reports_a_pending_action_as_unverified():
+    acted = datetime.now(UTC) - timedelta(minutes=3)
+    pool = FakePool()
+    pool.set_fetchrow(lambda sql, args: {
+        "acted_at": acted, "run_id": "run-1", "action_name": "restart_container",
+        "verified_at": None, "verify_result": None,
+    })
+    attempt = await E.latest_attempt(pool, fingerprint="fp")
+    assert attempt is not None
+    assert attempt.verify_result is None and attempt.verified_at is None
+    assert attempt.acted_at == acted and attempt.action_name == "restart_container"
+
+
+@pytest.mark.asyncio
+async def test_latest_attempt_carries_the_verify_outcome_and_normalises_timestamps():
+    pool = FakePool()
+    pool.set_fetchrow(lambda sql, args: {
+        "acted_at": "2026-09-25T10:00:00Z", "run_id": "run-2", "action_name": "restart_container",
+        "verified_at": "2026-09-25T10:15:00+00:00", "verify_result": "resolved",
+    })
+    attempt = await E.latest_attempt(pool, fingerprint="fp")
+    assert attempt.verify_result == "resolved"
+    assert attempt.acted_at == datetime(2026, 9, 25, 10, 0, tzinfo=UTC)
+    assert attempt.verified_at == datetime(2026, 9, 25, 10, 15, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_latest_attempt_lets_a_db_error_reach_the_caller():
+    """The dispatcher decides what an unreadable history means (no new
+    episode); swallowing it here would read as "never remediated"."""
+    pool = FakePool()
+
+    def _boom(sql, args):
+        raise RuntimeError("audit_log unavailable")
+
+    pool.set_fetchrow(_boom)
+    with pytest.raises(RuntimeError):
+        await E.latest_attempt(pool, fingerprint="fp")

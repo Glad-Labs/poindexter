@@ -30,7 +30,9 @@ interval) opens an episode and gets a firing ``container_unhealthy`` row in
 - A container in its start period (``starting``, e.g. just restarted) neither
   fires nor ends the episode.
 - ``healthy`` again ends the episode with a resolved row, which says whether
-  the container was restarted in between (its ``StartedAt`` moved).
+  the container was restarted in between (its ``StartedAt`` moved). The
+  dispatcher reads it too: the next firing row after it is a new episode that
+  the firefighter may restart again, even inside the dedup window.
 
 The restart is not done here. It belongs to the firefighter
 (``poindexter/brain/remediation/``): one ``remediation_rules`` row per container

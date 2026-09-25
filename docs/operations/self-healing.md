@@ -33,7 +33,9 @@ without a bespoke probe. It lives in `poindexter/brain/remediation/` (`registry.
 
 The loop, when an alert is about to page:
 
-1. **Detect.** The dispatcher holds an `alert_events` row it's about to send.
+1. **Detect.** The dispatcher holds an `alert_events` row it's about to send:
+   the first row of a dedup run, or the first row of a new episode inside one
+   (see [Episodes](#episodes--one-look-per-recurrence-not-per-dedup-window)).
 2. **Match.** `engine.evaluate_for_dispatch` looks up a `remediation_rules` row
    for the alert (exact `alertname` first, then `match_regex` over
    alertname/fingerprint). A matched rule acts deterministically. **No rule →
@@ -51,6 +53,10 @@ The loop, when an alert is about to page:
    stored. Not advanced past the moment we acted → **resolved, silently**
    (`remediation_verify` row, `result=resolved`, no page). Advanced → **still
    firing → page now** (`result=still_firing`), because the fix didn't hold.
+   The verify runs at the end of each dispatch cycle, after that cycle's rows.
+   A re-fire only advances `last_seen_at` once its row is dispatched, and until
+   2026-09-25 the verify ran first. It could then judge a restart resolved
+   while the re-fire that proved otherwise sat unread in the same batch.
 5. **Escalate.** An action that couldn't even run pages immediately — there's
    nothing to wait for. A tripped circuit breaker or rate cap pages as usual —
    the firefighter steps aside rather than hammering a broken thing.
@@ -59,6 +65,61 @@ Everything rides existing tables — no new state store. `remediation_rules` hol
 the rules; `audit_log` (`event_type IN ('remediation_action','remediation_verify')`)
 is both the durable history and the circuit-breaker's memory; `alert_dedup_state`
 is the "still firing?" oracle.
+
+### Episodes — one look per recurrence, not per dedup window
+
+The dispatcher's dedup run collapses every repeat of a fingerprint for paging.
+A run lasts until the alert has been quiet for
+`alert_repeat_suppress_window_minutes` (120 on prod). A probe that re-fires every
+cycle keeps pushing `last_seen_at` forward, so its run lasts as long as the
+problem, plus two hours. Until 2026-09-25 the firefighter saw only the first row
+of a run. An alert that came back inside the window after a successful fix was
+just a suppressed repeat. It was never remediated, and it paged only through
+the run's one AI summary, or not at all if that summary had already gone out.
+
+Now the firefighter sees the first row of every **episode**. A firing row inside
+a run starts a new episode when the previous one demonstrably ended since the
+fingerprint's last remediation attempt (`_detect_new_episode` in
+`alert_dispatcher.py`):
+
+| Boundary            | When                                                                                                                                                                                                           | Paging                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Verified fix**    | The fingerprint's latest `remediation_action` has a `remediation_verify` with `result=resolved`, written during this run.                                                                                      | The dedup run restarts at this row. The firefighter acts and the page is held. Or it declines, and the row pages like a first fire. The page says the alert came back after a verified fix, and why it was not remediated this time.                                                                                                                                                   |
+| **Source resolved** | The producer wrote a `status='resolved'` row for the alert (same stored fingerprint) after the last attempt, or after the run began if there was none. This row is the first firing row of its key since then. | Offered to the firefighter like a first sighting. If it acts, the page is held. If it declines, dedup decides as before (suppressed, or the run's summary), and the row records why. In a run that began with a firing row, the operator has already been paged: every way into this case goes through a failed verify, a failed action, or a first fire the firefighter did not hold. |
+
+The rest behaves as before:
+
+- A **pending** attempt (acted, not yet verified) is never a boundary. A
+  re-fire then means the fix did not hold, and the verify pages.
+- Repeats inside an episode stay suppressed and are not offered again.
+- A `resolved` row never opens an episode. Since 2026-09-25 it also never
+  escalates to the run's AI summary. Alertmanager's resolved notification shares
+  the firing row's dedup key, so past the 30-minute threshold it used to page
+  "Repeating alert — fired N times" with nothing saying the alert had resolved.
+  That was 50 pages in the 90 days before the change, 8 of them critical.
+- A new episode is offered with `repeat_count` 1, like any first sighting, so it
+  never engages the LLM long-tail's persistence gate.
+
+The dispatch result records which boundary fired, for example
+`remediating: restart_container (run 1f3a9c2e; new episode after a verified fix)`.
+
+**The circuit breaker is the bound.** Every attempt counts toward the
+per-`(fingerprint, action)` breaker, whether it came from a first fire or a new
+episode. A container that keeps wedging is restarted once per episode until
+`max_attempts_per_window` attempts fall inside `window_minutes`. The next
+episode then pages with
+`Not auto-remediated (restart_container: circuit breaker tripped)`, and its
+repeats stay quiet. The breaker is a rate, not a latch. Once the oldest attempt ages out of the window, the next episode is
+remediated again.
+
+**Size the window to the flapping you want to hear about.** With the defaults
+(3 per 60 minutes), only a container that comes back within about 20 minutes of
+each restart trips the breaker. One that wedges every 45 minutes is restarted
+every time and never pages. That is the self-heal doing its job, but it also
+hides a recurring fault. If a third restart in six hours should page, remove
+the rule and add it back with `--max-attempts 2 --window-minutes 360` (there is
+no in-place edit). Whether a twice-a-day wedge deserves a page, or is the known
+behaviour the rule exists to absorb, is a per-rule call.
 
 ### The action registry
 
@@ -115,7 +176,7 @@ ladder, which queues a restart when a sidecar answers `nothing_to_reclaim`
 while the render GPU is short — a blind inference, since the worker has no
 per-process view of the card. On 2026-09-17 that produced 35 restarts in three
 hours, every one of an idle sidecar holding ~0.5 GB, because the card was full
-of someone *else's* work (the director LLM cold-loading 18.5 GB, ComfyUI at
+of someone _else's_ work (the director LLM cold-loading 18.5 GB, ComfyUI at
 27 GB mid-S2V); restarting image-gen mid-still-phase is how illustrations turn
 into stock substitutes. Brain is the one process that sees both docker and the
 gpu-exporter's per-pid metric, so before bouncing it resolves the container's
@@ -147,7 +208,9 @@ the container on a guess is worse than reporting it.
   `ops_firefighter_max_attempts_per_window` / `ops_firefighter_window_minutes`)
   the firefighter stops acting and pages — a genuinely broken thing can't spin a
   restart loop. Counted from the `remediation_action` audit rows, so it survives a
-  brain restart.
+  brain restart. It is also the only bound on re-remediating an alert that keeps
+  coming back (see Episodes above), so size a rule's window to the recurrence you
+  want paged.
 - **Global rate cap.** `ops_firefighter_max_actions_per_hour` (default `10`)
   across all actions — a backstop when many alerts fire at once.
 - **Allowlist.** `ops_firefighter_action_allowlist` (CSV, default empty = every
@@ -186,6 +249,16 @@ the container on a guess is worse than reporting it.
 - **Verify-then-page.** A successful action never silences an unfixed problem: if
   the alert is still firing after the grace window, it pages. Silence is earned
   only by the alert actually stopping.
+- **A held page stays held.** A row the firefighter acted on gets no triage
+  follow-up either. Triage threads its diagnosis under the page, and a held row
+  has no page, so the diagnosis would go out on its own: a message about an
+  alert that is being fixed. (Latent since Plan B; triage is currently off,
+  `ops_triage_enabled=false`.) If the fix does not hold, the verify pages.
+- **A page it let through says why.** When a rule (or the LLM) had an action for
+  the alert but the firefighter did not hold the page, the page ends with the
+  reason, for example
+  `Not auto-remediated (restart_container: circuit breaker tripped).` A page for
+  an alert with no rule carries no note.
 
 ### LLM long-tail — the un-ruled path (Plan B)
 
@@ -605,13 +678,13 @@ answering is caught late or not at all.
 reads each `poindexter-*` container's health, reusing the restart-loop probe's
 single `docker inspect`:
 
-| Container state | What the probe does |
-| --- | --- |
+| Container state                                                                                                           | What the probe does                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `unhealthy` for at least `container_health_alert_after_minutes` (default 10, measured as failing streak × check interval) | Opens an episode and writes a firing `container_unhealthy` row: fingerprint `container_health_watch:<name>`, severity `warning`, the last log lines, label `remediation=rules_only`. |
-| still `unhealthy`, episode open | Fires again every cycle, with no threshold. The dispatcher collapses the repeats into one page, and the firefighter's verify step reads them. |
-| `starting` (start period, e.g. just restarted) | Nothing. The episode stays open. |
-| `healthy` after an episode | Writes a resolved row that says whether the container was restarted in between (its `StartedAt` moved). |
-| no healthcheck | Ignored. |
+| still `unhealthy`, episode open                                                                                           | Fires again every cycle, with no threshold. The dispatcher collapses the repeats into one page, and the firefighter's verify step reads them.                                        |
+| `starting` (start period, e.g. just restarted)                                                                            | Nothing. The episode stays open.                                                                                                                                                     |
+| `healthy` after an episode                                                                                                | Writes a resolved row that says whether the container was restarted in between (its `StartedAt` moved).                                                                              |
+| no healthcheck                                                                                                            | Ignored.                                                                                                                                                                             |
 
 **The probe restarts nothing; a firefighter rule does.** Some containers are
 safe to bounce, such as a stateless sidecar. Others are not: a GPU renderer
@@ -655,12 +728,18 @@ cannot answer while it works. In the same 15 days it read unhealthy 13 times,
 for 8 to 22 minutes each. The override keeps that from paging until its health
 endpoint is served off the event loop.
 
-**Known limit: one restart per dedup window.** The dispatcher consults the
-firefighter only for a page it is about to send, and repeats of a fingerprint
-inside `alert_repeat_suppress_window_minutes` (120) are suppressed rather than
-re-evaluated. A sidecar that wedges again within two hours of an earlier episode
-is therefore not restarted a second time. It pages instead, through the verify
-step's "did not resolve" or the dispatcher's summary. The same holds for every
+**One restart per episode, not one per dedup window.** A sidecar that wedges
+again after a verified restart is restarted again. The dispatcher treats the
+recurrence as a new episode even inside `alert_repeat_suppress_window_minutes`
+(see [Episodes](#episodes--one-look-per-recurrence-not-per-dedup-window)). The
+same happens after a restart that did not hold, once this probe's resolved row
+shows the container recovered, by hand or on its own. Each restart counts toward
+the rule's circuit breaker, so a container that keeps wedging ends in a page.
+With the default breaker (3 per 60 minutes) that only happens if it comes back
+within about 20 minutes of each restart. Size the window to the recurrence you
+want to hear about. Before 2026-09-25 the second wedge was only a suppressed
+repeat. The probe's re-firing kept the dedup window open, so the container
+stayed wedged until someone noticed. The same limit applied to every other
 firefighter rule.
 
 ## Docker port-forward recovery — restart vs alert-only
@@ -1013,7 +1092,7 @@ full incident write-up.
 | `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                                                                                   |
 | `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                                                                                              |
 | `compose_drift_on_demand_services`                            | `wan-server,image-gen-server`              | CSV of services started on demand — exempt from the missing-container check.                                                                                                                 |
-| `compose_drift_active_profiles`                               | (empty)                                    | Fallback when the brain has no `COMPOSE_PROFILES` env var. CSV of active compose `profiles:`; services behind an unlisted profile are exempt from the missing-container check. |
+| `compose_drift_active_profiles`                               | (empty)                                    | Fallback when the brain has no `COMPOSE_PROFILES` env var. CSV of active compose `profiles:`; services behind an unlisted profile are exempt from the missing-container check.               |
 | `compose_drift_auto_recover_enabled`                          | `false`                                    | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                                                                                                  |
 | `mcp_http_probe_recovery_url`                                 | (empty)                                    | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.                                                                                 |
 | `mcp_http_probe_recovery_token`                               | secret                                     | Bearer token matching the agent's `poindexter_recovery_token`.                                                                                                                               |
@@ -1023,9 +1102,9 @@ full incident write-up.
 | `docker_port_forward_alert_only_backoff_minutes`              | `60`                                       | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                                                                                            |
 | `docker_port_forward_pg_auth_check_enabled`                   | `true`                                     | Toggles the real-auth SCRAM-corruption tier for `probe_type=postgres` entries, independent of the base probe.                                                                                |
 | `docker_port_forward_pg_auth_timeout_seconds`                 | `5`                                        | Timeout for the real-auth `asyncpg.connect()` attempt (a few round trips, not one — set slightly above the base timeout).                                                                    |
-| `container_health_watch_enabled`                              | `true`                                     | Container health watch: fire `container_unhealthy` while a container stays unhealthy.                                                                                                     |
-| `container_health_alert_after_minutes`                        | `10`                                       | Minutes of consecutive failed healthchecks before a container's first `container_unhealthy` row.                                                                                          |
-| `container_health_alert_after_overrides`                      | `poindexter-image-gen-server=30`           | Per-container `name=minutes` thresholds for containers whose healthcheck fails while they work.                                                                                            |
+| `container_health_watch_enabled`                              | `true`                                     | Container health watch: fire `container_unhealthy` while a container stays unhealthy.                                                                                                        |
+| `container_health_alert_after_minutes`                        | `10`                                       | Minutes of consecutive failed healthchecks before a container's first `container_unhealthy` row.                                                                                             |
+| `container_health_alert_after_overrides`                      | `poindexter-image-gen-server=30`           | Per-container `name=minutes` thresholds for containers whose healthcheck fails while they work.                                                                                              |
 | `ops_firefighter_enabled`                                     | `true`                                     | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                                                                                        |
 | `ops_firefighter_max_attempts_per_window`                     | `3`                                        | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                                                                                                |
 | `ops_firefighter_window_minutes`                              | `60`                                       | Circuit-breaker rolling window (minutes); a matched rule may override.                                                                                                                       |

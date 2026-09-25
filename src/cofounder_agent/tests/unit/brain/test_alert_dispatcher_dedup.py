@@ -976,3 +976,63 @@ class TestTriageSkippedForSuppressedRows:
             "triage must run only for genuinely dispatched rows, not "
             f"suppressed repeats; got {triaged_rows}"
         )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestResolvedRowsNeverSummarize:
+    """A resolved row ends a burst; it must not escalate to the AI summary.
+
+    Alertmanager's resolved notification shares the firing row's dedup key
+    (same fingerprint, same severity label). Past the summary threshold it used
+    to page "[SUMMARY] ... Repeating alert -- fired N times" with nothing saying
+    the alert had resolved: 50 such pages in 90 days on prod, 8 critical.
+    """
+
+    _CONFIG = {"suppress_window_minutes": 120, "summarize_threshold_minutes": 30}
+
+    async def _decide(self, pool, *, status, at):
+        return await ad._evaluate_dedup_decision(
+            pool, message="ignored", severity="warning", alertname="PyroscopeDown",
+            category="infrastructure", config=self._CONFIG, now_fn=lambda: at,
+            stored_fingerprint="a9b4c69fd247b1e8", status=status,
+        )
+
+    async def test_a_resolved_row_past_the_threshold_is_suppressed(self):
+        pool = _StatePool()
+        base = datetime(2026, 9, 25, 10, 0, tzinfo=timezone.utc)
+        first = await self._decide(pool, status="firing", at=base)
+        assert first["action"] == "dispatch"
+        resolved = await self._decide(pool, status="resolved", at=base + timedelta(minutes=45))
+        assert resolved["action"] == "suppress"
+        state = pool.dedup_state["a9b4c69fd247b1e8|warning"]
+        assert state["summary_dispatched_at"] is None  # still owed to a real repeat
+
+    async def test_the_next_firing_row_still_gets_the_summary(self):
+        pool = _StatePool()
+        base = datetime(2026, 9, 25, 10, 0, tzinfo=timezone.utc)
+        await self._decide(pool, status="firing", at=base)
+        await self._decide(pool, status="resolved", at=base + timedelta(minutes=45))
+        again = await self._decide(pool, status="firing", at=base + timedelta(minutes=50))
+        assert again["action"] == "summary"
+        assert again["repeat_count"] == 3
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestSummaryDiagnosisHonoursTheTriageSwitch:
+    """With ``ops_triage_enabled=false`` the worker 503s every /api/triage
+    call, so the summary path must not make one (161 wasted round-trips in 29
+    days on prod before this) and falls back to its degraded text."""
+
+    async def test_no_post_when_triage_is_off(self, monkeypatch):
+        posts = []
+        monkeypatch.setattr(ad, "_post_triage_sync", lambda *a: posts.append(a) or (200, b"{}"))
+        pool = _StatePool(app_settings={"ops_triage_enabled": "false",
+                                        "api_base_url": "http://worker:8002"})
+        diagnosis = await ad._request_summary_diagnosis(
+            pool, row=_make_row(row_id=1), base_message="m", repeat_count=4,
+            duration_min=35, correlated=[], config={},
+        )
+        assert diagnosis == ""
+        assert posts == []

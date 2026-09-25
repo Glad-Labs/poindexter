@@ -103,6 +103,9 @@ try:
     from poindexter.brain.remediation.engine import (
         evaluate_for_dispatch as evaluate_for_dispatch_hook,
     )
+    from poindexter.brain.remediation.engine import (
+        latest_attempt as latest_remediation_attempt_hook,
+    )
     from poindexter.brain.remediation.engine import run_verify_scan as run_verify_scan_hook
     from poindexter.brain.remediation.rules import (
         load_firefighter_config as _load_firefighter_config,
@@ -125,6 +128,9 @@ except Exception as _ff_import_err:  # noqa: BLE001 — partial/legacy image
 
     async def run_verify_scan_hook(*a, **k):  # type: ignore[misc]
         return {"verified": 0, "resolved": 0, "still_firing": 0}
+
+    async def latest_remediation_attempt_hook(*a, **k):  # type: ignore[misc]
+        return None
 
     async def _load_firefighter_config(pool):  # type: ignore[misc]
         return {"enabled": False}
@@ -178,6 +184,18 @@ _triage_semaphore = asyncio.Semaphore(_TRIAGE_MAX_CONCURRENT)
 _DEFAULT_SUPPRESS_WINDOW_MINUTES = 30
 _DEFAULT_SUMMARIZE_THRESHOLD_MINUTES = 30
 _DEFAULT_DEDUP_RETENTION_HOURS = 168
+
+# Remediation episodes. A dedup run collapses every repeat of a fingerprint
+# for paging, but one run can span several episodes of the underlying problem
+# (speaches wedges, is restarted, wedges again 45 minutes later). The
+# firefighter gets one look per episode, not one per run. See
+# _detect_new_episode for the two boundaries.
+EPISODE_VERIFIED_FIX = "verified_fix"
+EPISODE_SOURCE_RESOLVED = "source_resolved"
+_EPISODE_NOTES: dict[str, str] = {
+    EPISODE_VERIFIED_FIX: "new episode after a verified fix",
+    EPISODE_SOURCE_RESOLVED: "new episode after the source resolved",
+}
 
 # Severities that page Telegram. Anything else is Discord-only per
 # feedback_telegram_vs_discord. We treat unknown severities as warning
@@ -455,6 +473,170 @@ async def _bump_dedup_state(
             "line could be wrong",
             fingerprint[:12], e,
         )
+
+
+async def _reset_dedup_state(
+    pool: Any,
+    *,
+    fingerprint: str,
+    now: datetime,
+    severity: str,
+    source: str,
+    sample_message: str,
+) -> None:
+    """Start a fresh dedup run for this fingerprint at ``now``."""
+    try:
+        await pool.execute(
+            """
+            UPDATE alert_dedup_state
+            SET first_seen_at = $2,
+                last_seen_at  = $2,
+                repeat_count  = 1,
+                summary_dispatched_at = NULL,
+                severity      = $3,
+                source        = $4,
+                sample_message = $5
+            WHERE fingerprint = $1
+            """,
+            fingerprint, now, severity, source, sample_message,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[alert_dispatcher] dedup-state reset failed for %s (%s) "
+            "-- stale state may re-page the operator next cycle",
+            fingerprint[:12], e,
+        )
+
+
+def _first_fire_decision(
+    *,
+    fingerprint: str,
+    now: datetime,
+    severity: str,
+    source: str,
+    sample_message: str,
+    episode: str | None = None,
+) -> dict[str, Any]:
+    """The ``dispatch`` decision for the first row of a dedup run."""
+    return {
+        "action": "dispatch",
+        "fingerprint": fingerprint,
+        "now": now,
+        "state": {
+            "first_seen_at": now,
+            "last_seen_at": now,
+            "repeat_count": 1,
+            "summary_dispatched_at": None,
+            "severity": severity,
+            "source": source,
+            "sample_message": sample_message,
+        },
+        "repeat_count": 1,
+        "episode": episode,
+    }
+
+
+# The row being dispatched is the first firing row of its key since the
+# producer reported the alert resolved. $1 stored fingerprint, $2 alertname
+# (keeps the scan on idx_alert_events_alertname), $3 the moment the last
+# remediation attempt or the dedup run began, $4 this row's id, $5 severity.
+_FIRST_FIRING_SINCE_SOURCE_RESOLVED_SQL = """
+SELECT EXISTS (
+    SELECT 1
+    FROM alert_events r
+    WHERE r.alertname = $2
+      AND r.fingerprint = $1
+      AND lower(r.status) = 'resolved'
+      AND r.received_at > $3
+      AND r.id < $4
+      AND NOT EXISTS (
+          SELECT 1
+          FROM alert_events f
+          WHERE f.alertname = $2
+            AND f.fingerprint = $1
+            AND lower(f.status) = 'firing'
+            AND COALESCE(f.severity, '') = $5
+            AND f.id > r.id
+            AND f.id < $4
+      )
+)
+"""
+
+
+async def _detect_new_episode(
+    pool: Any,
+    *,
+    fingerprint: str,
+    run_started_at: datetime,
+    stored_fingerprint: str,
+    severity: str,
+    alertname: str,
+    row_id: Any,
+) -> str | None:
+    """Does this firing row, inside a dedup run, start a new episode?
+
+    The firefighter is consulted on the first row of a dedup run. Without an
+    episode boundary a later recurrence inside the run is only a suppressed
+    repeat, and because the producer keeps re-firing while the problem lasts,
+    the run never goes quiet long enough to end. So a container that wedged
+    again after a successful restart stayed wedged. Two boundaries:
+
+    * ``EPISODE_VERIFIED_FIX`` — the fingerprint's latest remediation was
+      verified ``resolved`` during this run. The previous episode ended
+      silently and the operator has heard nothing, so the caller starts a new
+      dedup run at this row: the firefighter acts and holds the page, or
+      declines and the row pages like any first fire.
+    * ``EPISODE_SOURCE_RESOLVED`` — the producer wrote a ``resolved`` row for
+      this alert after the last attempt (or after the run began, when this run
+      has none), and this is the first firing row of this key since. In a run
+      that began with a firing row, every way to reach this has paged the
+      operator already (a failed verify, a failed action, a first fire nothing
+      held), so paging stays with dedup: the firefighter may act, and a
+      decline leaves the row suppressed.
+
+    A pending attempt (not verified yet) is never a boundary; the verify scan
+    owns that episode and pages if it keeps firing. The circuit breaker counts
+    every attempt either way, so a flapping alert still ends in a page.
+
+    Fails toward no boundary (plain dedup, exactly as before) on a read error.
+    """
+    try:
+        attempt = await latest_remediation_attempt_hook(pool, fingerprint=fingerprint)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[alert_dispatcher] remediation history read failed for %s (%s) "
+            "-- treating the row as a plain repeat, no new episode",
+            fingerprint[:12], e,
+        )
+        return None
+    since = run_started_at
+    if attempt is not None:
+        if attempt.verify_result is None:
+            return None
+        verified_at = _coerce_datetime(attempt.verified_at)
+        if (
+            attempt.verify_result == "resolved"
+            and verified_at is not None
+            and verified_at >= run_started_at
+        ):
+            return EPISODE_VERIFIED_FIX
+        since = max(run_started_at, _coerce_datetime(attempt.acted_at) or run_started_at)
+    if not stored_fingerprint or row_id is None:
+        # The producer's resolved rows are found by its fingerprint.
+        return None
+    try:
+        first_since_resolved = await pool.fetchval(
+            _FIRST_FIRING_SINCE_SOURCE_RESOLVED_SQL,
+            stored_fingerprint, alertname, since, row_id, severity or "",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[alert_dispatcher] resolved-row lookup failed for %s (%s) "
+            "-- treating the row as a plain repeat, no new episode",
+            fingerprint[:12], e,
+        )
+        return None
+    return EPISODE_SOURCE_RESOLVED if first_since_resolved else None
 
 
 async def _mark_summary_dispatched(
@@ -762,24 +944,36 @@ async def poll_and_dispatch(
             logger.warning("[alert_dispatcher] poll failed: %s", msg)
         return summary
 
-    # Verify pending remediations every cycle (independent of new alert rows).
-    # Use a SEPARATE local — do NOT reassign notify_fn, or the notify_fn_injected
-    # check below would wrongly flip to True on the production path and break the
-    # #420 severity routing.
-    verify_notify_fn = notify_fn if notify_fn is not None else await _resolve_notify_fn(pool=pool)
-    try:
-        ff_config = await _load_firefighter_config(pool)
-        if ff_config.get("enabled"):
-            vsummary = await run_verify_scan_hook(
-                pool, config=ff_config, logger=logger, notify_fn=verify_notify_fn,
+    # Pending remediations are verified every cycle (independent of new alert
+    # rows), AFTER this cycle's rows are dispatched: the verify reads
+    # alert_dedup_state.last_seen_at, which a re-fire only advances once its row
+    # is dispatched. Verifying first judged a restart "resolved" while the
+    # re-fire that proves otherwise sat unread in this very batch, and the
+    # dispatcher then took that re-fire for a new episode.
+    injected_notify_fn = notify_fn
+
+    async def _verify_pending_remediations() -> None:
+        # A SEPARATE notify local — never reassign notify_fn, or the
+        # notify_fn_injected check below would flip to True on the production
+        # path and break the #420 severity routing.
+        try:
+            verify_notify_fn = (
+                injected_notify_fn if injected_notify_fn is not None
+                else await _resolve_notify_fn(pool=pool)
             )
-            for k in ("verified", "resolved", "still_firing"):
-                if vsummary.get(k):
-                    summary[k] = summary.get(k, 0) + vsummary[k]
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[alert_dispatcher] verify scan failed: %s", e)
+            ff_config = await _load_firefighter_config(pool)
+            if ff_config.get("enabled"):
+                vsummary = await run_verify_scan_hook(
+                    pool, config=ff_config, logger=logger, notify_fn=verify_notify_fn,
+                )
+                for k in ("verified", "resolved", "still_firing"):
+                    if vsummary.get(k):
+                        summary[k] = summary.get(k, 0) + vsummary[k]
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[alert_dispatcher] verify scan failed: %s", e)
 
     if not rows:
+        await _verify_pending_remediations()
         return summary
 
     summary["polled"] = len(rows)
@@ -808,6 +1002,7 @@ async def poll_and_dispatch(
             "[alert_dispatcher] no notify channel reachable — marked "
             "%d rows as errored", summary["errors"],
         )
+        await _verify_pending_remediations()
         return summary
 
     # _triage_tasks accumulates parallel triage tasks scheduled this
@@ -836,11 +1031,12 @@ async def poll_and_dispatch(
 
     for row in rows:
         suppressed_before = summary.get("suppressed", 0)
+        remediated_before = summary.get("remediated", 0)
         notify_result = await _dispatch_one(
             pool, row, notify_fn, summary,
             dedup_config=dedup_config,
         )
-        # Skip triage for SUPPRESSED (deduped) repeats only. A suppressed
+        # Skip triage for SUPPRESSED (deduped) repeats. A suppressed
         # repeat was already diagnosed on its first fire, so re-triaging it
         # wastes an LLM call — and because a suppressed row carries no parent
         # message ids, ``send_followup``'s degraded path posts the duplicate
@@ -851,11 +1047,16 @@ async def poll_and_dispatch(
         # the other half of the failure (#347). ``summary["suppressed"]``
         # rises only on the suppress branch, so it's the precise signal.
         row_was_suppressed = summary.get("suppressed", 0) > suppressed_before
+        # A HELD page (the firefighter acted) is not triaged either: with no
+        # parent message to thread under, the diagnosis goes out standalone —
+        # a page for an alert the firefighter is silently fixing. The verify
+        # scan pages on its own if the fix does not hold.
+        row_was_held = summary.get("remediated", 0) > remediated_before
         # Schedule the parallel triage task — never awaited inline so the
         # operator's page never waits on the LLM (the spec's hard NO).
         # When notify itself failed the parent ids are absent and the
         # follow-up falls back to a standalone diagnosis send (still useful).
-        if triage_enabled and not row_was_suppressed:
+        if triage_enabled and not row_was_suppressed and not row_was_held:
             try:
                 task = asyncio.create_task(
                     _triage_one_guarded(pool, row, notify_result or {}),
@@ -868,16 +1069,73 @@ async def poll_and_dispatch(
                     row.get("id"), e,
                 )
 
+    await _verify_pending_remediations()
+
     suppressed = summary.get("suppressed", 0)
     summaries = summary.get("summaries", 0)
-    if summary["sent"] or summary["errors"] or suppressed or summaries:
+    remediated = summary.get("remediated", 0)
+    if summary["sent"] or summary["errors"] or suppressed or summaries or remediated:
         logger.info(
             "[alert_dispatcher] cycle: polled=%d sent=%d errors=%d "
-            "suppressed=%d summaries=%d triage_scheduled=%d",
+            "suppressed=%d summaries=%d remediated=%d triage_scheduled=%d",
             summary["polled"], summary["sent"], summary["errors"],
-            suppressed, summaries, len(_triage_tasks),
+            suppressed, summaries, remediated, len(_triage_tasks),
         )
     return summary
+
+
+async def _offer_to_firefighter(
+    pool: Any,
+    *,
+    row_id: Any,
+    alert: dict[str, Any],
+    fingerprint: str,
+    ff_cfg: dict[str, Any],
+    repeat_count: int,
+    summary: dict[str, int],
+    episode: str | None = None,
+) -> Any:
+    """Offer one row to the firefighter; mark it ``remediating`` when it acts.
+
+    Returns the engine's decision, or None when the firefighter is off. When
+    ``.acted`` is true the page is HELD and the caller must not notify: the
+    verify scan resolves it silently or pages later.
+    """
+    if not ff_cfg.get("enabled"):
+        return None
+    # repeat_count is the persistence signal for the LLM path; the engine gates
+    # on it (a first-sighting blip never reaches the model). select_fn is pure
+    # transport — the engine owns every gate, so we always hand it over and let
+    # the engine decide.
+    ff = await evaluate_for_dispatch_hook(
+        pool, alert=alert, fingerprint=fingerprint,
+        config=ff_cfg, logger=logger,
+        select_fn=_make_select_fn(pool), repeat_count=repeat_count,
+    )
+    if ff.acted:
+        episode_note = _EPISODE_NOTES.get(episode or "", "")
+        await pool.execute(
+            _MARK_ERROR_SQL, row_id,
+            f"remediating: {ff.action_name} (run {str(ff.run_id)[:8]}"
+            f"{'; ' + episode_note if episode_note else ''})",
+        )
+        summary.setdefault("remediated", 0)
+        summary["remediated"] += 1
+        logger.info(
+            "[alert_dispatcher] firefighter acted row=%s action=%s%s — page held",
+            row_id, ff.action_name, f" ({episode_note})" if episode_note else "",
+        )
+    return ff
+
+
+def _not_remediated_reason(ff: Any) -> str:
+    """``"<action>: <why>"`` when the firefighter had an action for this row
+    and it did not hold the page (circuit breaker, rate cap, allowlist, a
+    failed or refused action). Empty when nothing matched: most alerts have no
+    rule, and saying so on every page would only be noise."""
+    if ff is None or ff.acted or not getattr(ff, "action_name", None):
+        return ""
+    return f"{ff.action_name}: {ff.reason}"
 
 
 async def _dispatch_one(
@@ -908,6 +1166,11 @@ async def _dispatch_one(
       been dispatched yet for this run. The summary is dispatched in
       place of the raw alert — the operator sees ONE coalesced alert,
       not the Nth dumb repeat.
+
+    The firefighter sees the first row of every remediation episode: the
+    first row of a dedup run, and a firing row inside a run that starts a
+    new episode (``_detect_new_episode``). When it acts the page is held
+    and the row is marked ``remediating: ...``.
 
     When ``dedup_config`` is None the legacy v1 behaviour applies:
     every row dispatches via the resolved notify_fn with no dedup,
@@ -948,11 +1211,33 @@ async def _dispatch_one(
                 severity=severity, alertname=alertname, category=category,
                 config=dedup_config, now_fn=now_fn,
                 stored_fingerprint=stored_fingerprint,
+                status=str(alert.get("status") or "firing"), row_id=row_id,
             )
+            episode = decision.get("episode")
+            ff_cfg = dedup_config.get("firefighter_config") or {}
+            ff = None  # the firefighter's decision on this row, once consulted
+            if episode == EPISODE_SOURCE_RESOLVED and decision["action"] != "dispatch":
+                # The first firing row since the producer reported this alert
+                # resolved. Offer it like a first sighting (repeat_count 1);
+                # paging stays with dedup, see _detect_new_episode.
+                ff = await _offer_to_firefighter(
+                    pool, row_id=row_id, alert=alert,
+                    fingerprint=decision["fingerprint"], ff_cfg=ff_cfg,
+                    repeat_count=1, summary=summary, episode=episode,
+                )
+                if ff is not None and ff.acted:
+                    return None  # page HELD; verify scan will resolve or escalate
+            not_remediated = _not_remediated_reason(ff)
             if decision["action"] == "suppress":
+                dispatch_result = decision["dispatch_result"]
+                if not_remediated:
+                    dispatch_result = (
+                        f"{dispatch_result}; {_EPISODE_NOTES.get(episode or '', 'new episode')}, "
+                        f"not auto-remediated ({not_remediated})"
+                    )[:400]
                 await pool.execute(
                     _MARK_ERROR_SQL, row_id,
-                    decision["dispatch_result"],
+                    dispatch_result,
                 )
                 summary["sent"] += 0
                 summary.setdefault("suppressed", 0)
@@ -970,6 +1255,8 @@ async def _dispatch_one(
                     state=decision["state"],
                     config=dedup_config, now=decision["now"],
                 )
+                if not_remediated:
+                    summary_text = f"{summary_text}\n\nNot auto-remediated ({not_remediated})."
                 routed = await _routed_notify(
                     pool=pool,
                     notify_fn=notify_fn,
@@ -1006,30 +1293,28 @@ async def _dispatch_one(
 
             # --- Firefighter: try deterministic remediation, then the gated
             #     LLM long-tail, before paging. ---
-            ff_cfg = dedup_config.get("firefighter_config") or {}
-            if ff_cfg.get("enabled"):
-                # repeat_count is the persistence signal for the LLM path; the
-                # engine gates on it (a first-sighting blip never reaches the
-                # model). select_fn is pure transport — the engine owns every
-                # gate, so we always hand it over and let the engine decide.
-                repeat_count = int((decision.get("state") or {}).get("repeat_count") or 0)
-                ff = await evaluate_for_dispatch_hook(
-                    pool, alert=alert, fingerprint=decision["fingerprint"],
-                    config=ff_cfg, logger=logger,
-                    select_fn=_make_select_fn(pool), repeat_count=repeat_count,
+            ff = await _offer_to_firefighter(
+                pool, row_id=row_id, alert=alert,
+                fingerprint=decision["fingerprint"], ff_cfg=ff_cfg,
+                repeat_count=int((decision.get("state") or {}).get("repeat_count") or 0),
+                summary=summary, episode=episode,
+            )
+            if ff is not None and ff.acted:
+                return None  # page HELD; verify scan will resolve or escalate
+            # Paging after all: say why the firefighter let it through when it
+            # had an action for it, and that this alert already came back once
+            # after a verified fix (the operator never heard of that episode).
+            page_notes = []
+            if episode == EPISODE_VERIFIED_FIX:
+                page_notes.append(
+                    "It came back after an auto-remediation that was verified "
+                    "to have fixed it."
                 )
-                if ff.acted:
-                    await pool.execute(
-                        _MARK_ERROR_SQL, row_id,
-                        f"remediating: {ff.action_name} (run {str(ff.run_id)[:8]})",
-                    )
-                    summary.setdefault("remediated", 0)
-                    summary["remediated"] += 1
-                    logger.info(
-                        "[alert_dispatcher] firefighter acted row=%s action=%s — page held",
-                        row_id, ff.action_name,
-                    )
-                    return None  # page HELD; verify scan will resolve or escalate
+            not_remediated = _not_remediated_reason(ff)
+            if not_remediated:
+                page_notes.append(f"Not auto-remediated ({not_remediated}).")
+            if page_notes:
+                message = f"{message}\n\n{' '.join(page_notes)}"
 
         # Severity-routed dispatch path (also the legacy fall-through).
         if dedup_config is not None:
@@ -1093,14 +1378,17 @@ async def _evaluate_dedup_decision(
     config: dict[str, Any],
     now_fn: Callable[[], datetime] | None = None,
     stored_fingerprint: str = "",
+    status: str = "firing",
+    row_id: Any = None,
 ) -> dict[str, Any]:
     """Decide whether to dispatch, suppress, or escalate to AI summary.
 
     Returns a dict with one of three ``action`` values:
 
     * ``"dispatch"`` — first fire (or first fire after the suppression
-      window expired). Caller dispatches the raw alert and the helper
-      has already INSERTed the dedup-state row.
+      window expired, or the first row of a new remediation episode after a
+      verified fix — see ``_detect_new_episode``). Caller dispatches the raw
+      alert and the helper has already written the dedup-state row.
     * ``"suppress"`` — repeat inside the suppression window AND the
       threshold for AI summary has not yet been crossed (or the
       summary has already been dispatched once for this run). Caller
@@ -1112,8 +1400,10 @@ async def _evaluate_dedup_decision(
 
     The dict also returns ``fingerprint``, ``now``, ``state`` (the
     dedup-state row as it stood after this call), ``repeat_count``,
-    and ``dispatch_result`` (a human-readable string for the caller
-    to write to ``alert_events.dispatch_result`` on suppress).
+    ``dispatch_result`` (a human-readable string for the caller
+    to write to ``alert_events.dispatch_result`` on suppress), and
+    ``episode`` (``EPISODE_*`` when a firing row inside the window starts a
+    new remediation episode, else None).
     """
     now_fn = now_fn or _default_now
     now = now_fn()
@@ -1162,21 +1452,10 @@ async def _evaluate_dedup_decision(
             sample_message=message,
             now=now,
         )
-        return {
-            "action": "dispatch",
-            "fingerprint": fingerprint,
-            "now": now,
-            "state": {
-                "first_seen_at": now,
-                "last_seen_at": now,
-                "repeat_count": 1,
-                "summary_dispatched_at": None,
-                "severity": severity,
-                "source": source,
-                "sample_message": message,
-            },
-            "repeat_count": 1,
-        }
+        return _first_fire_decision(
+            fingerprint=fingerprint, now=now, severity=severity,
+            source=source, sample_message=message,
+        )
 
     last_seen_at = _coerce_datetime(state.get("last_seen_at")) or now
     first_seen_at = _coerce_datetime(state.get("first_seen_at")) or now
@@ -1187,46 +1466,45 @@ async def _evaluate_dedup_decision(
     # Outside the suppression window? Treat as a fresh first fire --
     # reset the baseline and dispatch.
     if age_since_last_seen >= suppress_window_min:
-        try:
-            await pool.execute(
-                """
-                UPDATE alert_dedup_state
-                SET first_seen_at = $2,
-                    last_seen_at  = $2,
-                    repeat_count  = 1,
-                    summary_dispatched_at = NULL,
-                    severity      = $3,
-                    source        = $4,
-                    sample_message = $5
-                WHERE fingerprint = $1
-                """,
-                fingerprint, now, severity, source, message,
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning(
-                "[alert_dispatcher] dedup-state reset failed for %s (%s) "
-                "-- stale state may re-page the operator next cycle",
-                fingerprint[:12], e,
-            )
-        return {
-            "action": "dispatch",
-            "fingerprint": fingerprint,
-            "now": now,
-            "state": {
-                "first_seen_at": now,
-                "last_seen_at": now,
-                "repeat_count": 1,
-                "summary_dispatched_at": None,
-                "severity": severity,
-                "source": source,
-                "sample_message": message,
-            },
-            "repeat_count": 1,
-        }
+        await _reset_dedup_state(
+            pool, fingerprint=fingerprint, now=now, severity=severity,
+            source=source, sample_message=message,
+        )
+        return _first_fire_decision(
+            fingerprint=fingerprint, now=now, severity=severity,
+            source=source, sample_message=message,
+        )
 
-    # Inside the suppression window. Increment the counter unconditionally
-    # so the summary's "fired N times" line is correct even when the
-    # summary itself fires later.
+    # Inside the suppression window. A firing row here may still start a new
+    # remediation episode (only worth asking while the firefighter is on).
+    is_firing = str(status or "firing").strip().lower() == "firing"
+    episode = None
+    firefighter_on = bool((config.get("firefighter_config") or {}).get("enabled"))
+    if firefighter_on and is_firing:
+        episode = await _detect_new_episode(
+            pool, fingerprint=fingerprint, run_started_at=first_seen_at,
+            stored_fingerprint=stored_fingerprint, severity=severity,
+            alertname=alertname, row_id=row_id,
+        )
+    if episode == EPISODE_VERIFIED_FIX:
+        # The previous episode was fixed and verified. This recurrence is a
+        # first fire again: restart the run so the firefighter sees it and a
+        # decline pages instead of hiding behind the old run.
+        await _reset_dedup_state(
+            pool, fingerprint=fingerprint, now=now, severity=severity,
+            source=source, sample_message=message,
+        )
+        logger.info(
+            "[alert_dispatcher] fingerprint=%s recurred after a verified fix "
+            "-- new episode, dedup run restarted", fingerprint[:12],
+        )
+        return _first_fire_decision(
+            fingerprint=fingerprint, now=now, severity=severity,
+            source=source, sample_message=message, episode=episode,
+        )
+
+    # Increment the counter unconditionally so the summary's "fired N times"
+    # line is correct even when the summary itself fires later.
     await _bump_dedup_state(pool, fingerprint=fingerprint, now=now)
     new_repeat_count = int(state.get("repeat_count") or 1) + 1
     state["repeat_count"] = new_repeat_count
@@ -1236,10 +1514,17 @@ async def _evaluate_dedup_decision(
     # is what gates the AI summary, NOT the per-repeat interval. Once
     # the threshold is crossed AND no summary has been dispatched yet
     # for this run, we synthesize the summary in place of the raw fire.
+    # Only a FIRING row continues a burst. A resolved row (Alertmanager's
+    # resolved notification shares the firing key; a probe's recovery rows
+    # form their own run) used to cross the threshold too and page
+    # "Repeating alert -- fired N times" with nothing saying it had resolved:
+    # 50 such summaries in the 90 days to 2026-09-25, 8 of them critical.
+    # It stays suppressed; if the alert fires again, that row summarizes.
     if (
         threshold_min > 0
         and age_since_first_seen >= threshold_min
         and summary_dispatched_at is None
+        and is_firing
     ):
         return {
             "action": "summary",
@@ -1247,6 +1532,7 @@ async def _evaluate_dedup_decision(
             "now": now,
             "state": state,
             "repeat_count": new_repeat_count,
+            "episode": episode,
         }
 
     # Otherwise: pure suppression. Return a dispatch_result line the
@@ -1262,6 +1548,7 @@ async def _evaluate_dedup_decision(
             f"suppressed: repeat {new_repeat_count}, "
             f"first_seen={first_seen_at.isoformat()}; no AI enrichment (deduped)"
         )[:400],
+        "episode": episode,
     }
 
 
@@ -1553,7 +1840,11 @@ async def _request_summary_diagnosis(
     * Worker returns 402/503 -- log + skip (no retry, config issues).
     * Worker returns 5xx / network failure on every retry -- log + skip.
     * Worker returns 200 with empty diagnosis -- ``""`` flows through.
+    * ``ops_triage_enabled`` is off -- skip the call; the worker would 503
+      it (on prod: 161 wasted round-trips in the 29 days to 2026-09-25).
     """
+    if not await _read_triage_enabled(pool):
+        return ""
     base_url = await _read_api_base_url(pool)
     if not base_url:
         logger.debug(
@@ -1996,14 +2287,15 @@ async def _send_triage_followup(
                 "cannot send triage follow-up"
             )
             return
-    if not hasattr(brain_daemon_mod, "send_followup"):
+    send_followup = getattr(brain_daemon_mod, "send_followup", None)
+    if send_followup is None:
         logger.warning(
             "[alert_dispatcher] brain_daemon.send_followup missing — "
             "the brain image needs the #347 step 5 patch applied"
         )
         return
     try:
-        await brain_daemon_mod.send_followup(
+        await send_followup(
             diagnosis,
             parent_telegram_message_id=notify_result.get("telegram_message_id"),
             parent_discord_message_id=notify_result.get("discord_message_id"),

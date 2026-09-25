@@ -71,8 +71,17 @@ def test_noisy_alerts_query_gates_on_paged_not_raw_row_count():
     # suppressed/deduped alert must not trip the noise threshold just because
     # alert_dispatcher recorded a row for every suppressed repeat.
     sql = inspect.getsource(at._noisy_alerts)
-    assert "FILTER (WHERE dispatch_result NOT LIKE 'suppressed%')" in sql
     assert "HAVING COUNT(*) FILTER" in sql
+    # Both the n_paged count and the HAVING gate exclude suppressed repeats...
+    assert sql.count("dispatch_result NOT LIKE 'suppressed%'") == 2
+
+
+def test_noisy_alerts_query_does_not_count_held_pages_as_paged():
+    # A `remediating: ...` row is a page the firefighter HELD while it fixed
+    # the alert. A container the firefighter restarts every episode would
+    # otherwise read as a noisy, operator-paging alert.
+    sql = inspect.getsource(at._noisy_alerts)
+    assert sql.count("dispatch_result NOT LIKE 'remediating%'") == 2
 
 
 def test_parse_classification_valid_json():
