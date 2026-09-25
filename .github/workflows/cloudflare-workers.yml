@@ -1,0 +1,208 @@
+# Install / test / typecheck gate for the Cloudflare Workers under
+# infrastructure/cloudflare/*/ — each is its own npm project (own package.json
+# + package-lock.json, NOT a root-workspace member), deployed by hand with
+# `wrangler deploy`.
+#
+# WHY THIS EXISTS
+# ---------------
+# Nothing in CI installed these projects, so a broken lockfile merged green.
+# 2026-09-25: dependabot group bumps (#3901 / #3904) rewrote three Worker
+# lockfiles (affiliate-redirect, ls-webhook-relay, sentry-relay) to vitest 5
+# without its required peer `vite`. `npm ci` then crashed — npm 10:
+# `Cannot read properties of null (reading 'edgesOut')`; npm 11: `EUSAGE …
+# Missing: vite@8.3.1 from lock file` — and the next `wrangler deploy` or test
+# run would have been the first to notice. Fixed in #4046. The
+# `dependency-review` ops session auto-merges GREEN dependabot PRs, so without
+# a check that installs, the same shape recurs silently.
+#
+# WHY THE PATH FILTER IS INTERNAL (no `on: paths:`)
+# -------------------------------------------------
+# The single `cloudflare-workers` gate job at the bottom is meant to be a
+# branch-protection required check. A workflow-level `paths:` filter makes a
+# non-matching PR never report the check, and a required check that never
+# reports blocks the PR forever. So the workflow always triggers; the
+# `changes` job classifies the diff, the per-Worker matrix is skipped by a
+# job-level `if:` when nothing under infrastructure/cloudflare/ changed, and
+# the gate job reports success on `skipped` (same always-run + internal-skip
+# pattern as mcp-server-tests.yml / unit-tests.yml).
+#
+# The gate job exists because a matrix job skipped by `if:` reports ONE check
+# under its unexpanded name, never the per-Worker `worker (<name>)` contexts —
+# so the per-Worker names can't be required. The gate is the one stable name.
+#
+# THE WORKER LIST IS DERIVED, NOT HAND-LISTED
+# -------------------------------------------
+# The matrix is every infrastructure/cloudflare/*/ with a package.json, so a
+# sixth Worker is covered the day it lands. Finding zero fails the run: a
+# check that examined nothing has not passed (a rename of the directory would
+# otherwise turn this gate permanently green).
+name: cloudflare-workers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel older in-progress runs of the same ref/PR — saves Actions minutes
+# when multiple commits land back-to-back on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least-privilege GITHUB_TOKEN — read-only checkout is all this needs.
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: classify Worker changes
+    # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
+    # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
+    # variable is unset on the public mirror and on forks, so this is hosted
+    # there by construction. Seam-safe: no services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.classify.outputs.run }}
+      workers: ${{ steps.classify.outputs.workers }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+        with:
+          # >=2 so `git diff` against the parent works on push; PRs use the
+          # virtual merge commit's HEAD^1 (current main's tip).
+          fetch-depth: 2
+
+      - name: Classify changed paths + enumerate Workers
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          # Derive the Worker set from the tree. Plain bash (no jq / PyYAML):
+          # the self-hosted runner image is minimal.
+          workers=()
+          for pj in infrastructure/cloudflare/*/package.json; do
+            [ -f "$pj" ] || continue
+            workers+=("$(basename "$(dirname "$pj")")")
+          done
+          if [ "${#workers[@]}" -eq 0 ]; then
+            echo "::error::No infrastructure/cloudflare/*/package.json found — the Worker gate would check nothing. Did the directory move? Update this workflow."
+            exit 1
+          fi
+          json="[$(printf '"%s",' "${workers[@]}")"
+          json="${json%,}]"
+          echo "Workers (${#workers[@]}): $json"
+          echo "workers=$json" >> "$GITHUB_OUTPUT"
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — checking every Worker."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # PR events check out a virtual merge commit (HEAD^1 = main's tip);
+          # push events diff against the parent (also HEAD^1).
+          if git cat-file -e "HEAD^1" 2>/dev/null; then
+            base="$(git rev-parse HEAD^1)"
+          else
+            base="${PR_BASE:-}"
+          fi
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "No usable base sha — checking every Worker (fail open)."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            if ! git fetch --no-tags --depth=1 origin "$base" 2>/dev/null; then
+              echo "Could not fetch base sha $base — checking every Worker (fail open)."
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          changed="$(git diff --name-only "$base" HEAD)"
+          # Here-string, not `echo "$changed" | grep -q`: under pipefail that
+          # pair reports "no match" on large PRs (SIGPIPE, stack#3626) — i.e.
+          # it would skip exactly the big dependabot group bumps this gates.
+          hits=$(grep -cE '^infrastructure/cloudflare/|^\.github/workflows/cloudflare-workers\.yml$' <<<"$changed" || true)
+          echo "Worker-relevant paths: ${hits} of $(wc -l <<<"$changed")"
+          if [ "$hits" -gt 0 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No change under infrastructure/cloudflare/ — Worker checks skipped."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  worker:
+    name: worker (${{ matrix.worker }})
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    # CI_RUNNER seam — see the `changes` job. Native actions only.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    strategy:
+      # One broken lockfile must not hide the state of the other Workers.
+      fail-fast: false
+      matrix:
+        worker: ${{ fromJSON(needs.changes.outputs.workers) }}
+    defaults:
+      run:
+        # Each Worker is a standalone npm project. Running from the repo root
+        # would pick up the root workspace's package.json instead.
+        working-directory: infrastructure/cloudflare/${{ matrix.worker }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24" # root package.json engines: node >=24.0.0
+          cache: "npm"
+          cache-dependency-path: infrastructure/cloudflare/${{ matrix.worker }}/package-lock.json
+
+      # The check that was missing: a lockfile npm can't install from fails here.
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+
+      - name: npm test (when the Worker has a test script)
+        run: |
+          if node -e 'process.exit(require("./package.json").scripts?.test ? 0 : 1)'; then
+            npm test
+          else
+            echo "::notice::${{ matrix.worker }} has no test script — install + typecheck only."
+          fi
+
+      # typescript is not a devDependency of any Worker (wrangler bundles via
+      # esbuild, which strips types without checking them), so fetch a pinned
+      # tsc for the check. Exact pin: a floating `typescript` would let a new
+      # compiler release redden every Worker at once with no diff to blame.
+      - name: Typecheck (tsc --noEmit)
+        run: npx --yes -p typescript@7.0.2 tsc --noEmit -p .
+
+  # The one stable context to require in branch protection (see header).
+  cloudflare-workers:
+    name: cloudflare-workers
+    needs: [changes, worker]
+    if: always()
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - name: Summarize Worker results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          WORKER: ${{ needs.worker.result }}
+        run: |
+          echo "changes=$CHANGES worker=$WORKER"
+          if [ "$CHANGES" != "success" ]; then
+            echo "::error::Worker classification failed ($CHANGES)."
+            exit 1
+          fi
+          case "$WORKER" in
+            success) echo "Every Worker installed, tested and typechecked." ;;
+            skipped) echo "No Worker changes — nothing to check." ;;
+            *) echo "::error::At least one Worker failed ($WORKER) — see the worker (<name>) jobs."; exit 1 ;;
+          esac
