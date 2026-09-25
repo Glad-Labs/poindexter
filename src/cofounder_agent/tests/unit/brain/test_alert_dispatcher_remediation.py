@@ -881,6 +881,30 @@ async def test_an_alertmanager_resolved_notification_never_opens_an_episode(monk
 
 
 @pytest.mark.asyncio
+async def test_an_alertmanager_alert_back_inside_a_run_its_resolution_started_is_remediated(monkeypatch):
+    """glad-labs-stack#4024. The restart did not hold, and the verify paged.
+    Pyroscope stayed down past the 120-min window (Alertmanager repeats a
+    firing alert only every 4 h), then recovered, so its resolved notification
+    started a new dedup run. It went down again 20 min later. That firing row
+    used to be a suppressed repeat of a run that had never fired: no restart,
+    no page. Now it is a first fire, so the firefighter acts on it again."""
+    sim = _AlertmanagerSim(monkeypatch)
+    sim.firing()
+    await sim.cycle()                             # restart 1, page held
+    await sim.cycle(after_minutes=11)             # no resolved notification in 600 s
+    assert [r for r, _ in sim.verifies()] == ["still_firing"]
+    sim.world.advance(minutes=140)
+    resolved = sim.resolved()                     # 151 min after the last firing row
+    await sim.cycle()
+    assert resolved["dispatch_result"] == "sent"  # starts a run; the operator hears it
+    sim.world.advance(minutes=20)
+    back = sim.firing()
+    await sim.cycle()
+    assert sim.restarts == ["poindexter-pyroscope"] * 2
+    assert back["dispatch_result"].startswith("remediating: restart_container (run ")
+
+
+@pytest.mark.asyncio
 async def test_a_probe_that_stamps_starts_at_with_now_is_verified_by_refire(monkeypatch):
     """Eight brain probes write starts_at = NOW(), equal to received_at. They
     report a level, so silence after the action is the fix, at the general
@@ -924,7 +948,10 @@ async def test_with_the_firefighter_off_a_recurrence_is_a_plain_repeat(monkeypat
     await sim.cycle(after_minutes=20)
     assert sim.restarts == []
     assert second["dispatch_result"].startswith("suppressed:")
-    assert not any("LEFT JOIN LATERAL" in q or "SELECT EXISTS" in q for q in queries)
+    # No remediation history is read (the episode queries). Dedup's own
+    # run-status check (_RUN_HAS_FIRED_SQL) runs either way.
+    assert not any("LEFT JOIN LATERAL" in q or "alert_events r" in q for q in queries)
+    assert any(q == ad._RUN_HAS_FIRED_SQL for q in queries)
 
 
 # ---------------------------------------------------------------------------

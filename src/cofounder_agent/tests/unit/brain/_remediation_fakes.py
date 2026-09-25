@@ -194,6 +194,16 @@ class FirefighterWorld:
         from datetime import timedelta
         if "FROM app_settings" in sql:
             return self.app_settings.get(args[0])
+        if "SELECT EXISTS" in sql and "dispatched_at >= $4" in sql:
+            # alert_dispatcher._RUN_HAS_FIRED_SQL: a firing row of the key that
+            # the current dedup run has already dispatched
+            alertname, stored_fp, severity, run_started_at = args
+            return any(
+                r["alertname"] == alertname and r["fingerprint"] == stored_fp
+                and r["status"].lower() == "firing" and (r["severity"] or "") == severity
+                and r["dispatched_at"] is not None and r["dispatched_at"] >= run_started_at
+                for r in self.alert_events
+            )
         if "SELECT EXISTS" in sql and "alert_events r" in sql:
             stored_fp, alertname, since, row_id, severity = args
             mine = [r for r in self.alert_events

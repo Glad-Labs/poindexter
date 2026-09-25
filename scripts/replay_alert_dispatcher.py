@@ -170,6 +170,14 @@ async def replay(
             return await super().fetch(sql, *args)
 
         async def fetchval(self, sql: str, *args: Any) -> Any:
+            if "SELECT EXISTS" in sql and "dispatched_at >= $4" in sql:
+                # alert_dispatcher._RUN_HAS_FIRED_SQL, from the key index
+                alertname, stored_fp, severity, run_started_at = args
+                return any(
+                    r["status"].lower() == "firing" and (r["severity"] or "") == severity
+                    and r["dispatched_at"] is not None and r["dispatched_at"] >= run_started_at
+                    for r in self.by_key.get((alertname, stored_fp), [])
+                )
             if "SELECT EXISTS" in sql and "alert_events r" in sql:
                 stored_fp, alertname, since, row_id, severity = args
                 mine = self.by_key.get((alertname, stored_fp), [])

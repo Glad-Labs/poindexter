@@ -641,11 +641,12 @@ async def _detect_new_episode(
       declines and the row pages like any first fire.
     * ``EPISODE_SOURCE_RESOLVED`` — the producer wrote a ``resolved`` row for
       this alert after the last attempt (or after the run began, when this run
-      has none), and this is the first firing row of this key since. In a run
-      that began with a firing row, every way to reach this has paged the
-      operator already (a failed verify, a failed action, a first fire nothing
-      held), so paging stays with dedup: the firefighter may act, and a
-      decline leaves the row suppressed.
+      has none), and this is the first firing row of this key since. Every way
+      to reach this has paged the operator in this run already (a failed
+      verify, a failed action, a first fire nothing held; a run a resolved row
+      started restarts at its first firing row, see ``_run_has_fired``), so
+      paging stays with dedup: the firefighter may act, and a decline leaves
+      the row suppressed.
 
     A pending attempt (not verified yet) is never a boundary; the verify scan
     owns that episode and pages if it keeps firing. The circuit breaker counts
@@ -690,6 +691,65 @@ async def _detect_new_episode(
         )
         return None
     return EPISODE_SOURCE_RESOLVED if first_since_resolved else None
+
+
+# Has the current dedup run dispatched a firing row of this key yet? $1
+# alertname (keeps the scan on idx_alert_events_alertname), $2 stored
+# fingerprint, $3 severity, $4 the run's first_seen_at. A row of this run was
+# dispatched at or after the run began; a row of an earlier run, before it.
+_RUN_HAS_FIRED_SQL = """
+SELECT EXISTS (
+    SELECT 1
+    FROM alert_events
+    WHERE alertname = $1
+      AND fingerprint = $2
+      AND lower(status) = 'firing'
+      AND COALESCE(severity, '') = $3
+      AND dispatched_at >= $4
+)
+"""
+
+
+async def _run_has_fired(
+    pool: Any,
+    *,
+    fingerprint: str,
+    alertname: str,
+    stored_fingerprint: str,
+    severity: str,
+    run_started_at: datetime,
+) -> bool:
+    """Has this dedup run dispatched a firing row of its key yet?
+
+    A notifier's resolved row carries the firing row's fingerprint and
+    severity, so it shares the dedup key. When it lands after the window has
+    closed on the last firing notification (Alertmanager repeats a still-firing
+    alert only every 4 h), it STARTS a run: it pages ``[RESOLVED ...]`` and
+    holds the window open for two hours. A firing notification inside that
+    window was then a suppressed repeat of a run that had never fired. The
+    operator was told the alert resolved and heard nothing when it came back:
+    35 recurrences in the 90 days to 2026-09-25 (glad-labs-stack#4024).
+
+    False sends the caller down the first-fire path. Without a producer
+    fingerprint there is nothing to look the run's rows up by; a hash-keyed
+    row puts its status in the hashed message, so its resolved and firing rows
+    never share a run anyway. A read error counts as fired: plain dedup, as
+    before.
+    """
+    if not stored_fingerprint:
+        return True
+    try:
+        fired = await pool.fetchval(
+            _RUN_HAS_FIRED_SQL, alertname, stored_fingerprint, severity or "", run_started_at,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[alert_dispatcher] run-status lookup failed for %s (%s) "
+            "-- treating the row as a plain repeat",
+            fingerprint[:12], e,
+        )
+        return True
+    return fired is not False
 
 
 async def _mark_summary_dispatched(
@@ -1593,9 +1653,31 @@ async def _evaluate_dedup_decision(
             source=source, sample_message=message,
         )
 
-    # Inside the suppression window. A firing row here may still start a new
-    # remediation episode (only worth asking while the firefighter is on).
     is_firing = str(status or "firing").strip().lower() == "firing"
+
+    # Inside the suppression window. A run a resolved notification started has
+    # never fired: its first firing row is the alert coming back, so it starts
+    # a run of its own and pages (glad-labs-stack#4024).
+    if is_firing and not await _run_has_fired(
+        pool, fingerprint=fingerprint, alertname=alertname,
+        stored_fingerprint=stored_fingerprint, severity=severity,
+        run_started_at=first_seen_at,
+    ):
+        await _reset_dedup_state(
+            pool, fingerprint=fingerprint, now=now, severity=severity,
+            source=source, sample_message=message,
+        )
+        logger.info(
+            "[alert_dispatcher] fingerprint=%s fired inside a run a resolved "
+            "row started -- dedup run restarted", fingerprint[:12],
+        )
+        return _first_fire_decision(
+            fingerprint=fingerprint, now=now, severity=severity,
+            source=source, sample_message=message,
+        )
+
+    # A firing row here may still start a new remediation episode (only worth
+    # asking while the firefighter is on).
     episode = None
     ff_cfg = config.get("firefighter_config") or {}
     firefighter_on = bool(ff_cfg.get("enabled"))

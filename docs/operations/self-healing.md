@@ -192,12 +192,12 @@ a run starts a new episode when the previous one demonstrably ended since the
 fingerprint's last remediation attempt (`_detect_new_episode` in
 `alert_dispatcher.py`):
 
-| Boundary            | When                                                                                                                                                                                                           | Paging                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Verified fix**    | The fingerprint's latest `remediation_action` has a `remediation_verify` with `result=resolved`, written during this run.                                                                                      | The dedup run restarts at this row. The firefighter acts and the page is held. Or it declines, and the row pages like a first fire. The page says the alert came back after a verified fix, and why it was not remediated this time.                                                                                                                                                   |
-| **Source resolved** | The producer wrote a `status='resolved'` row for the alert (same stored fingerprint) after the last attempt, or after the run began if there was none. This row is the first firing row of its key since then. | Offered to the firefighter like a first sighting. If it acts, the page is held. If it declines, dedup decides as before (suppressed, or the run's summary), and the row records why. In a run that began with a firing row, the operator has already been paged: every way into this case goes through a failed verify, a failed action, or a first fire the firefighter did not hold. |
+| Boundary            | When                                                                                                                                                                                                           | Paging                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Verified fix**    | The fingerprint's latest `remediation_action` has a `remediation_verify` with `result=resolved`, written during this run.                                                                                      | The dedup run restarts at this row. The firefighter acts and the page is held. Or it declines, and the row pages like a first fire. The page says the alert came back after a verified fix, and why it was not remediated this time.                                                                                                                                                                                                        |
+| **Source resolved** | The producer wrote a `status='resolved'` row for the alert (same stored fingerprint) after the last attempt, or after the run began if there was none. This row is the first firing row of its key since then. | Offered to the firefighter like a first sighting. If it acts, the page is held. If it declines, dedup decides as before (suppressed, or the run's summary), and the row records why. The operator has already been paged in this run: every way into this case goes through a failed verify, a failed action, or a first fire the firefighter did not hold (a run that a resolved row started restarts at its first firing row, see below). |
 
-The rest behaves as before:
+Around the two boundaries:
 
 - A **pending** attempt (acted, not yet verified) is never a boundary. A
   re-fire then means the fix did not hold, and the verify pages.
@@ -207,6 +207,16 @@ The rest behaves as before:
   the firing row's dedup key, so past the 30-minute threshold it used to page
   "Repeating alert — fired N times" with nothing saying the alert had resolved.
   That was 50 pages in the 90 days before the change, 8 of them critical.
+- A run that a `resolved` row **started** restarts at its first firing row.
+  Alertmanager re-sends a still-firing alert only every 4 h, so its resolved
+  notification can land after the window closed on the last firing one. It then
+  starts a run and pages `[RESOLVED …]`. The next firing notification used to be
+  a suppressed repeat of that run: the operator was told the alert resolved and
+  heard nothing when it came back (glad-labs-stack#4024). Since 2026-09-25 it is
+  a first fire: it pages, and the firefighter sees it. Replaying the 90 days of
+  prod `alert_events`, 26 recurrences page as `[FIRING …]`. Of those, 17 had been
+  silent and 9 had been folded into a "Repeating alert" summary. The net change
+  is 22 more pages, all from Alertmanager or Grafana alerts.
 - A new episode is offered with `repeat_count` 1, like any first sighting, so the
   LLM long-tail's persistence gate declines it. The long-tail's look comes on
   the repeat where the dedup run turns persistent (see

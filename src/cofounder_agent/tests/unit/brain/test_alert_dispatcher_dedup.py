@@ -1049,3 +1049,145 @@ class TestSummaryDiagnosisHonoursTheTriageSwitch:
         )
         assert diagnosis == ""
         assert posts == []
+
+
+# ---------------------------------------------------------------------------
+# glad-labs-stack#4024 — a run that a resolved notification started.
+# ---------------------------------------------------------------------------
+
+from tests.unit.brain._remediation_fakes import FirefighterWorld  # noqa: E402
+
+_AM_FP = "a9b4c69fd247b1e8"
+_AM_LABELS = {"job": "pyroscope", "alertname": "PyroscopeDown",
+              "severity": "warning", "category": "infrastructure"}
+
+
+class _DedupWorld:
+    """The real dispatcher over FirefighterWorld with prod's dedup settings and
+    the firefighter off, so what is measured is dedup alone."""
+
+    def __init__(self):
+        self.world = FirefighterWorld(app_settings={
+            "alert_repeat_suppress_window_minutes": "120",
+            "alert_repeat_summarize_threshold_minutes": "30",
+            "ops_triage_enabled": "false",
+            "ops_firefighter_enabled": "false",
+        })
+        self.notify = AsyncMock(return_value={"ok": True})
+
+    def notification(self, status):
+        """What the Alertmanager webhook writes: firing and resolved rows share
+        the fingerprint AND the severity label, so they share a dedup key."""
+        return self.world.fire(alertname="PyroscopeDown", fingerprint=_AM_FP,
+                               severity="warning", status=status, labels=_AM_LABELS)
+
+    async def cycle(self, *, after_minutes=0.0):
+        self.world.advance(minutes=after_minutes)
+        await ad.poll_and_dispatch(self.world, notify_fn=self.notify)
+
+    def pages(self):
+        return [c.args[0].split("\n", 1)[0] for c in self.notify.await_args_list]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRunStartedByAResolvedRow:
+    """Alertmanager re-sends a still-firing alert only every 4 h, so its
+    resolved notification can land after the 120-min window closed on the last
+    firing one. It then STARTS a dedup run (and pages "[RESOLVED ...]"). The
+    next firing notification used to be a suppressed repeat of that run: the
+    operator was told the alert resolved, and heard nothing when it came back
+    (35 times on prod in the 90 days to 2026-09-25)."""
+
+    async def test_the_alert_coming_back_pages_after_a_resolved_row_started_the_run(self):
+        w = _DedupWorld()
+        w.notification("firing")
+        await w.cycle()
+        w.notification("resolved")
+        await w.cycle(after_minutes=150)          # the window closed on the firing row
+        back = w.notification("firing")
+        await w.cycle(after_minutes=20)
+        assert back["dispatch_result"] == "sent"
+        assert [p.split(" — ")[0] for p in w.pages()] == [
+            "[FIRING · warning] PyroscopeDown",
+            "[RESOLVED · warning] PyroscopeDown",
+            "[FIRING · warning] PyroscopeDown",
+        ]
+
+    async def test_after_that_the_run_dedups_and_summarizes_as_usual(self):
+        w = _DedupWorld()
+        w.notification("firing")
+        await w.cycle()
+        w.notification("resolved")
+        await w.cycle(after_minutes=150)
+        w.notification("firing")
+        await w.cycle(after_minutes=20)           # the run restarts here
+        repeat = w.notification("firing")
+        await w.cycle(after_minutes=5)
+        assert repeat["dispatch_result"].startswith("suppressed:")
+        burst = w.notification("firing")
+        await w.cycle(after_minutes=30)           # 35 min into the restarted run
+        assert burst["dispatch_result"].startswith("sent: summary")
+
+    async def test_a_flapping_alert_still_pages_once(self):
+        """A run that began with a firing row is unchanged: its re-fires after
+        a resolved row stay suppressed (the anti-flap dedup)."""
+        w = _DedupWorld()
+        w.notification("firing")
+        await w.cycle()
+        for _ in range(3):                       # 24 min: under the summary threshold
+            w.notification("resolved")
+            await w.cycle(after_minutes=4)
+            refire = w.notification("firing")
+            await w.cycle(after_minutes=4)
+            assert refire["dispatch_result"].startswith("suppressed:")
+        assert len(w.pages()) == 1
+
+    async def test_a_probe_recovery_run_does_not_reset_the_firing_run(self):
+        """A probe that writes its recovery at another severity (the container
+        health watch: firing warning, resolved info) keeps two runs. The info
+        run has no firing rows, but it never sees one either."""
+        w = _DedupWorld()
+
+        def row(status, severity):
+            return w.world.fire(alertname="container_unhealthy",
+                                fingerprint="container_health_watch:poindexter-speaches",
+                                severity=severity, status=status)
+
+        row("firing", "warning")
+        await w.cycle()
+        row("resolved", "info")
+        await w.cycle(after_minutes=10)
+        again = row("firing", "warning")
+        await w.cycle(after_minutes=10)
+        assert again["dispatch_result"].startswith("suppressed:")
+
+    async def test_an_unreadable_run_status_leaves_plain_dedup(self, caplog):
+        w = _DedupWorld()
+        real_fetchval = w.world.fetchval
+
+        async def fetchval(sql, *args):
+            if sql == ad._RUN_HAS_FIRED_SQL:
+                raise RuntimeError("alert_events unavailable")
+            return await real_fetchval(sql, *args)
+
+        w.world.fetchval = fetchval
+        w.notification("firing")
+        await w.cycle()
+        w.notification("resolved")
+        await w.cycle(after_minutes=150)
+        back = w.notification("firing")
+        import logging
+        with caplog.at_level(logging.WARNING, logger="brain.alert_dispatcher"):
+            await w.cycle(after_minutes=20)
+        assert back["dispatch_result"].startswith("suppressed:")
+        assert any("run-status lookup failed" in r.getMessage() for r in caplog.records)
+
+    async def test_no_producer_fingerprint_means_no_lookup(self):
+        pool = AsyncMock()
+        fired = await ad._run_has_fired(
+            pool, fingerprint="hash", alertname="X", stored_fingerprint="",
+            severity="warning", run_started_at=datetime.now(timezone.utc),
+        )
+        assert fired is True
+        pool.fetchval.assert_not_called()
