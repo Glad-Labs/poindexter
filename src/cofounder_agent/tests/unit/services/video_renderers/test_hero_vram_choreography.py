@@ -530,7 +530,8 @@ def test_reclaim_precedes_the_plate_probe_in_animate_hero():
 # happens milliseconds after a reclaim frees ~25GB, so the scrape reported
 # 29342 MiB used on a card nvidia-smi showed at 16955 — and every hero was
 # skipped as "no room" on a card that had just been cleared for it. wan runs
-# ON the card and answers from torch.cuda.mem_get_info.
+# ON the card and answers from NVML's device counter (torch.cuda.mem_get_info
+# until 2026-09-25, which held a CUDA context on every idle poll).
 # ---------------------------------------------------------------------------
 
 
@@ -550,9 +551,11 @@ async def test_live_reading_is_preferred_over_stale_prometheus():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_falls_back_to_prometheus_when_live_is_unavailable():
+async def test_falls_back_to_prometheus_when_live_is_unavailable(caplog):
     """An older wan build (no device_free_mb) or an unreachable server must
-    not disable the gate — the scrape path still applies."""
+    not disable the gate — the scrape path still applies. And it must say so:
+    under ComfyUI the dispatch gate no longer defers on a wan-server outage
+    (2026-09-25), so this degraded path is the only place it shows."""
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
     reg = MagicMock()
@@ -560,10 +563,18 @@ async def test_falls_back_to_prometheus_when_live_is_unavailable():
     with patch("poindexter.services.gpu_registry.GPURegistry", lambda **kw: reg), \
          patch.object(slr, "_live_free_vram_gb", AsyncMock(return_value=None)), \
          patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)), \
-         patch.object(slr.asyncio, "sleep", AsyncMock()):
-        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
+         patch.object(slr.asyncio, "sleep", AsyncMock()), \
+         caplog.at_level("WARNING", logger=slr.logger.name):
+        assert await slr._fit_hero_dims_to_free_vram(
+            832, 480, _sc(video_generative_provider="comfyui"),
+        ) == (832, 480)
 
     reg.free_gb.assert_awaited()
+    warned = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any(
+        "live VRAM probe (wan-server /health) unreadable" in m and "comfyui" in m
+        for m in warned
+    ), warned
 
 
 @pytest.mark.unit
@@ -1016,10 +1027,12 @@ async def test_comfyui_animator_soft_frees_the_previous_heros_weights():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_comfyui_animator_leaves_the_idle_wan_server_alone():
-    """Decided 2026-09-25 from a measurement, not an oversight: an idle wan's
-    ~0.5 GB is the CUDA context its /health creates (mem_get_info — the hero
-    gate's own live probe), with 0 MB reserved. The hard unload declines it,
-    and a forced exit would blind the probe and come back on the next poll."""
+    """Decided 2026-09-25 from a measurement, not an oversight. An idle wan's
+    ~0.5 GB was the CUDA context its /health created (mem_get_info, the hero
+    gate's own live probe) with 0 MB reserved, so the hard unload declined it.
+    /health now reads NVML and an idle wan holds nothing, so there is still
+    nothing to reclaim; a forced exit would only blind the probe while the
+    container restarts."""
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
     gpu = _gpu_with("_unload_image_gen", "_unload_ollama_models", "_unload_comfyui",

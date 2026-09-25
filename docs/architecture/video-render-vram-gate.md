@@ -13,7 +13,7 @@ Root-cause investigation (2026-07-12): the scheduler's pre-render eviction only 
 
 ## The gate
 
-`services/media_infra_health.py::check_media_infra_health` — already the Stage‑2 dispatch health gate for wan-server / image-gen / DNS — gains a **render‑GPU free‑VRAM preflight**:
+`services/media_infra_health.py::check_media_infra_health` — already the Stage‑2 dispatch health gate for the hero animator (wan-server, or ComfyUI since 2026-09-25, see [Animator probe](#animator-probe-2026-09-25)) / image-gen / DNS — gains a **render‑GPU free‑VRAM preflight**:
 
 1. `services/render_vram.py::render_gpu_free_vram_gb(site_config)` reads live free VRAM on `pipeline_gpu_index` from Prometheus: `nvidia_gpu_memory_total_mib{gpu="<idx>"} − nvidia_gpu_memory_used_mib{gpu="<idx>"}` (base URL `gpu_metrics_prometheus_url`, default `http://prometheus:9090` — the same seam the GPU scheduler already uses). Returns `None` when unreadable.
 2. If free VRAM `< media_render_min_free_vram_gb` **or** unreadable, the pass is `unhealthy` (with `vram_insufficient=True`).
@@ -43,6 +43,35 @@ engine URL resolves. A TTS failure never sets `vram_insufficient` — a VRAM
 reclaim can't fix a stopped sidecar. Because `media_reconciliation` requires a
 healthy pass before resetting a cap-wedged task's re-dispatch counter, attempts
 burned during a TTS outage now also self-heal on recovery, same as wan outages.
+
+### Animator probe (2026-09-25)
+
+Until 2026-09-25 the pass probed wan-server's `/health` whatever
+`video_generative_provider` said. Under `comfyui`, which prod runs, wan renders
+nothing: it is only the renderer's live VRAM probe. So a wan outage deferred
+every media dispatch for a server the render would never call, while ComfyUI,
+which renders every hero clip and every presenter shot, was never probed. A
+ComfyUI outage let the render go ahead and ship each hero as its still and each
+presenter shot as a brand card.
+
+The pass now probes the animator the render will actually call. It resolves
+the setting through `video_providers.configured_animator`, the same function
+the renderer builds its provider from, so the two cannot disagree:
+
+| `video_generative_provider`                                 | Probe                                                                                      | Down means                                                               |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| `wan21` (the default, and any value no provider implements) | wan-server `GET /health`                                                                   | defer, as before                                                         |
+| `comfyui`                                                   | ComfyUI `GET /system_stats` (the route its provider's ready-wait and its healthcheck poll) | defer; the detail names `docker compose --profile comfyui up -d comfyui` |
+
+Under `comfyui` a wan-server outage no longer defers anything. The hero plate
+gate then sizes plates from Prometheus, which lags the card by up to ~40 s, and
+logs a warning per hero saying so (`live VRAM probe (wan-server /health)
+unreadable`). Still not gated: presenter shots render through ComfyUI whatever
+the setting says, so an install that animates heroes with `wan21` and also
+runs presenters does not defer on a ComfyUI outage. Probing ComfyUI there
+would block dispatch on every install that doesn't run it (it is
+profile-gated), so doing it right means gating on the persona configuration.
+That is a separate change.
 
 ## Settings (`settings_defaults.py`, DB-tunable)
 
@@ -301,19 +330,48 @@ cond + uncond; the code-default 4-step LoRA regime runs cfg 1.0), so these
 defaults are conservative for the fast regime. A value that is not a positive
 number falls back to the calibrated default with a warning.
 
-**The idle wan-server stays off the pre-hero clear.** Its ~0.5 GB looked like
-the obvious lever (it alone was bigger than the 0.1 GB miss), but a throwaway
-container of the wan-server image shows what it is. Importing torch,
-`is_available`, device properties and allocator stats: 0 MiB. The instant
-`torch.cuda.mem_get_info(0)` runs: 498 MiB, with 0 MB reserved and 0 MB
-allocated. That call is `/health`'s `device_free_mb`, which is the hero gate's
-live probe. So the hard unload, floor-gated on reserved memory, declines
-(`nothing_to_reclaim`, as the cold-load guard already logs). Forcing an exit
-would blind the gate while the container restarts, and the next 5 s poll
-would create the context again. The recoverable form is a context-free
-`/health`: NVML's free matched wan's `device_free_mb` to within 1 MiB in R1.
-That is a wan-server image change, tracked separately, and at a 22 GiB bar
-the 0.5 GB no longer decides anything.
+**The idle wan-server stays off the pre-hero clear, and now holds nothing.**
+Its ~0.5 GB looked like the obvious lever (it alone was bigger than the 0.1 GB
+miss), but a throwaway container of the wan-server image showed what it was.
+Importing torch, `is_available`, device properties and allocator stats: 0 MiB.
+The instant `torch.cuda.mem_get_info(0)` ran: 498 MiB, with 0 MB reserved and
+0 MB allocated. That call was `/health`'s `device_free_mb`, which the hero gate
+polls every 5 s and the Docker healthcheck every 30 s, so the context never
+left. The hard unload is floor-gated on reserved memory, so it declined
+(`nothing_to_reclaim`, as the cold-load guard logs), and the brain's restart
+executor skipped the same process as "0.49 GB, below the 1.0 GB squat floor".
+A forced exit would only have blinded the gate until the next poll created the
+context again.
+
+**`/health` reads NVML since the same day.** `device_free_mb` now comes from
+`nvmlDeviceGetMemoryInfo` (`nvidia-ml-py`, installed in its own image layer so
+the cached dependency layer is reused unchanged). The NVML handle is matched
+to CUDA device 0 by UUID, so CUDA and NVML device ordering cannot disagree.
+NVML reads the driver's counter without a context: in the throwaway container
+the NVML calls held 0 MiB, and NVML free and `mem_get_info` free were both
+21,673 MiB at the same instant. `/health` names the read in
+`device_free_source`. If NVML is unusable (an image without the binding, or no
+`utility` driver capability), it falls back to `mem_get_info`, logs one
+warning and reports `"cuda"`, which is the old behaviour, context included.
+`vram_used_mb` is still this process's torch allocations, which the renderer
+adds back. `vram_total_mb` still comes from `get_device_properties` (32,088
+MiB, CUDA's usable total; NVML's 32,607 includes the driver's reserve).
+
+Verified live after the rebuild, per PID from the host's nvidia-smi every 2 s:
+
+| state                                                                                  | wan process                         | `/health`                                     | nvidia-smi free |
+| -------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------- | --------------- |
+| old image, idle                                                                        | 498 MiB                             | `idle`, 26,785 (no source field)              | 26,786 MiB      |
+| new image, idle through 3 healthchecks (47 samples)                                    | 0 MiB                               | `idle`, 27,292, `nvml`                        | 27,293 MiB      |
+| after the first `/generate` (256x256, 5 frames, 2 steps, under `gpu.lock("video")`)    | 23,081 MB resident (62 s cold load) | `ready`, 2,091, `nvml`, `vram_used_mb` 23,090 | 2,092 MiB       |
+| after `POST /unload {"hard": true}` (exited at 9,610 MB reserved; Docker restarted it) | 0 MiB                               | `idle`, 27,292, `nvml`                        | 27,293 MiB      |
+
+The render returned a 5-frame h264 clip in 2.2 s. The renderer's own
+`_live_free_vram_gb` read 26.65 GB before it and 24.59 GB after (free plus
+wan's own pool, as designed). An idle wan now leaves its ~0.5 GB to the gate
+reading instead of squatting on it. The pre-hero clear still leaves wan alone,
+because there is nothing left to reclaim and a forced exit would only blind
+the gate while the container restarts.
 
 ### Settings (`settings_defaults.py`)
 

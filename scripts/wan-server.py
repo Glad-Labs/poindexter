@@ -35,7 +35,9 @@ The worker's GPU scheduler evicts Ollama's writer model before a render
 (``gpu.lock("video")``, poindexter#1766) so the card has room.
 
 Endpoints:
-    GET  /health    — status, model, VRAM, degradation reason
+    GET  /health    — status, model, VRAM, degradation reason. Device free
+                      VRAM comes from NVML, so polling it never creates a
+                      CUDA context (see ``_device_free_mb``).
     POST /generate  — generate video clip from prompt (+ optional init image)
     POST /unload    — free VRAM (called by GPU scheduler)
 
@@ -140,6 +142,11 @@ class ServerState:
         # for VRAM and produce torch CUDA OOMs. Serialize at the
         # server level rather than relying on every caller to.
         self.gpu_lock = asyncio.Lock()
+        # NVML view of the render card for /health: ``(pynvml, handle)``,
+        # resolved on first use. ``nvml_error`` records why NVML is unusable;
+        # once set, /health reads through torch for the rest of this process.
+        self.nvml: tuple[Any, Any] | None = None
+        self.nvml_error: str | None = None
 
 
 state = ServerState()
@@ -411,6 +418,86 @@ async def _idle_unload_tick() -> None:
 
 
 # ============================================================================
+# DEVICE FREE VRAM — read through NVML so /health never creates a CUDA context
+# ============================================================================
+
+
+def _cuda_device_uuid(index: int = 0) -> str:
+    """NVML-style UUID (``GPU-…``) of CUDA device ``index``.
+
+    ``get_device_properties`` answers without a CUDA context (0 MiB, measured
+    2026-09-25). Matching NVML's handle by UUID instead of by index keeps the
+    mapping right if CUDA and NVML ever enumerate differently
+    (``CUDA_DEVICE_ORDER``, ``CUDA_VISIBLE_DEVICES``, more than one card in
+    the container). torch prints the UUID without NVML's ``GPU-`` prefix.
+    """
+    raw = str(torch.cuda.get_device_properties(index).uuid)
+    return raw if raw.startswith(("GPU-", "MIG-")) else f"GPU-{raw}"
+
+
+def _resolve_nvml_device() -> tuple[Any, Any]:
+    """``(pynvml, handle)`` for CUDA device 0. Raises if NVML is unusable."""
+    # nvidia-ml-py. Images built before 2026-09-25 do not have it, and
+    # libnvidia-ml.so.1 only exists in the container when the NVIDIA runtime
+    # grants the `utility` driver capability.
+    import pynvml
+
+    pynvml.nvmlInit()
+    return pynvml, pynvml.nvmlDeviceGetHandleByUUID(_cuda_device_uuid(0))
+
+
+def _nvml_free_mb() -> int | None:
+    """Device free VRAM (MiB) from NVML, or ``None`` when NVML is unusable.
+
+    The first failure disables NVML for the rest of this process and logs
+    once. Retrying would log on every 5 s gate poll; the next process (every
+    hard unload starts one) tries again.
+    """
+    if state.nvml_error is not None:
+        return None
+    try:
+        if state.nvml is None:
+            state.nvml = _resolve_nvml_device()
+        nvml, handle = state.nvml
+        return int(nvml.nvmlDeviceGetMemoryInfo(handle).free) // 1024 // 1024
+    except Exception as exc:  # noqa: BLE001 — any NVML failure means "use torch"
+        state.nvml = None
+        state.nvml_error = f"{type(exc).__name__}: {exc}"
+        logger.warning(
+            "NVML unusable (%s). /health will read device free VRAM through "
+            "torch.cuda.mem_get_info, which creates a CUDA context (~0.5 GB on "
+            "the render GPU) that stays for the life of this process.",
+            state.nvml_error,
+        )
+        return None
+
+
+def _device_free_mb() -> tuple[int, str]:
+    """Device-level free VRAM (MiB), and which API measured it.
+
+    ``torch.cuda.mem_get_info`` is exact but answers from inside a CUDA
+    context, so the first call creates one. Measured 2026-09-25 in a
+    throwaway container of this image: importing torch, ``is_available``,
+    device properties and the allocator stats held 0 MiB; the instant
+    ``mem_get_info`` ran the process held 498 MiB, with 0 MB reserved and
+    0 MB allocated. /health is the hero plate gate's live probe (polled every
+    5 s), the Docker healthcheck (every 30 s) and a media-dispatch probe, so
+    an idle server kept that context for good. The hard unload could not
+    reclaim it either: its floor measures ``memory_reserved``, which does not
+    include a context, so it answered ``nothing_to_reclaim``.
+
+    NVML reads the same driver counter without a context. In the same
+    container, NVML free and ``mem_get_info`` free were both 21673 MiB at
+    the same instant. Returns ``(free_mb, "nvml")``, or ``(free_mb, "cuda")``
+    when NVML is unusable and the read went through torch as before.
+    """
+    free = _nvml_free_mb()
+    if free is not None:
+        return free, "nvml"
+    return torch.cuda.mem_get_info(0)[0] // 1024 // 1024, "cuda"
+
+
+# ============================================================================
 # IMAGE + DIMENSION HELPERS
 # ============================================================================
 
@@ -505,10 +592,16 @@ async def on_startup() -> None:
             "Started DEGRADED: CUDA not available. /generate will 503.",
         )
     else:
+        # Resolve NVML now so a missing binding shows up in the boot log, not
+        # at the first /health. Neither call creates a CUDA context.
+        free_mb = _nvml_free_mb()
         logger.info(
             "Wan server starting; GPU=%s, model=%s. Pipeline lazy-loads on "
-            "first /generate.",
+            "first /generate. /health reads device free VRAM via %s.",
             torch.cuda.get_device_name(0), MODEL_ID,
+            f"NVML ({free_mb} MiB free now, no CUDA context)"
+            if free_mb is not None
+            else "torch.cuda.mem_get_info (NVML unusable, see the warning above)",
         )
 
     async def idle_unloader() -> None:
@@ -534,6 +627,9 @@ async def on_startup() -> None:
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
+    # Nothing here may create a CUDA context on an idle server (2026-09-25):
+    # is_available, the device name/properties and the allocator stats are
+    # context-free, and device free VRAM comes from NVML.
     gpu_ok = torch.cuda.is_available()
     if state.degraded:
         status = "degraded"
@@ -541,6 +637,7 @@ async def health() -> dict[str, Any]:
         status = "ready"
     else:
         status = "idle"
+    free_mb, free_source = _device_free_mb() if gpu_ok else (0, None)
     return {
         "status": status,
         "degraded": state.degraded,
@@ -564,9 +661,11 @@ async def health() -> dict[str, Any]:
         # exporter + 30s scrape): it reported 29342 MiB used on a card
         # nvidia-smi showed at 16955, so every hero was skipped as "no room"
         # right after a reclaim had freed 25GB (poindexter#992 tail).
-        "device_free_mb": (
-            torch.cuda.mem_get_info(0)[0] // 1024 // 1024 if gpu_ok else 0
-        ),
+        "device_free_mb": free_mb,
+        # "nvml": read without a CUDA context. "cuda": NVML was unusable, so
+        # the read went through torch.cuda.mem_get_info and this process now
+        # holds a CUDA context (~0.5 GB on the render GPU).
+        "device_free_source": free_source,
         "gpu_available": gpu_ok,
         "idle_timeout_s": IDLE_TIMEOUT_S,
     }

@@ -41,6 +41,15 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     sentencepiece \
     ftfy
 
+# NVML bindings for /health's device free VRAM (2026-09-25). torch's
+# mem_get_info answers from inside a CUDA context, so every /health poll kept
+# a ~0.5 GB context on the render GPU of an otherwise idle server; NVML reads
+# the same counter without one. libnvidia-ml.so.1 itself is injected by the
+# NVIDIA runtime (the base image grants the `utility` driver capability).
+# Its own layer on purpose: adding it to the list above would change that
+# RUN line and re-resolve every unpinned package in it on the next build.
+RUN pip install --no-cache-dir nvidia-ml-py
+
 COPY wan-server.py /app/server.py
 
 # Non-root user — GPU access is via cgroup, doesn't need root.

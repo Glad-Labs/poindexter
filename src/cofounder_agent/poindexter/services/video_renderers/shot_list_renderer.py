@@ -58,6 +58,7 @@ from poindexter.plugins.media_compositor import CompositionRequest, CompositionS
 from poindexter.schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
 from poindexter.services.media_compositors.ffmpeg_local import KEN_BURNS_CENTER
 from poindexter.services.settings_defaults import default_int
+from poindexter.services.video_providers import configured_animator
 from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
@@ -625,8 +626,12 @@ async def _live_free_vram_gb(site_config: Any) -> float | None:
     showed 16955, so the plate gate skipped every hero as "no room" on a card
     that had just been cleared for it.
 
-    wan runs ON the card and answers from ``torch.cuda.mem_get_info``, so its
-    ``/health`` is exact and instant. None means "ask Prometheus instead".
+    wan runs ON the card and answers from NVML's device counter, so its
+    ``/health`` is exact and instant, and polling it creates no CUDA context
+    (since 2026-09-25; ``device_free_source`` says ``"cuda"`` on an image
+    whose NVML is unusable, where the read goes through
+    ``torch.cuda.mem_get_info`` as before). None means "ask Prometheus
+    instead".
     """
     try:
         import httpx
@@ -676,16 +681,12 @@ async def _wan_resident_gb(site_config: Any) -> float:
 
 
 def _hero_animator_is_comfyui(site_config: Any) -> bool:
-    """True when ``video_generative_provider`` routes hero clips to ComfyUI."""
-    if site_config is None:
-        return False
-    try:
-        choice = str(site_config.get("video_generative_provider", "wan21") or "wan21")
-    except Exception:  # noqa: BLE001
-        # silent-ok: a settings read must not decide the geometry; the
-        # deployed default animator (wan21) has no reusable pool.
-        return False
-    return choice.strip().lower() == "comfyui"
+    """True when ``video_generative_provider`` routes hero clips to ComfyUI.
+
+    An unreadable setting resolves to the default animator (wan21), which
+    has no reusable pool.
+    """
+    return configured_animator(site_config) == "comfyui"
 
 
 async def _hero_headroom_gb(site_config: Any) -> float | None:
@@ -929,6 +930,14 @@ async def _fit_hero_dims_to_free_vram(
         )
         return None
 
+    # Say so when the live probe is gone. Under ComfyUI the dispatch gate no
+    # longer defers on a wan-server outage (wan is only this probe there), so
+    # this degraded sizing path must not be silent.
+    logger.warning(
+        "[SHOT_LIST] live VRAM probe (wan-server /health) unreadable; sizing "
+        "the %s hero plate from Prometheus, which lags up to ~40 s behind the "
+        "card", _hero_animator(site_config),
+    )
     try:
         from poindexter.services.gpu_registry import GPURegistry
 
@@ -1171,13 +1180,14 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
     Gated on ``video_hero_unload_image_gen`` (default on) so an operator whose
     card comfortably fits both can avoid paying image-gen's cold reload.
 
-    An idle wan-server is deliberately left alone when ComfyUI animates
-    (measured 2026-09-25). Its ~0.5 GB is the CUDA context its own
-    ``/health`` creates — ``torch.cuda.mem_get_info`` for ``device_free_mb``,
-    the gate's live probe — with 0 MB reserved, so the hard unload's
-    reserved-pool floor declines it (``nothing_to_reclaim``). Forcing an exit
-    would blind the probe while the container restarts, and the gate's next
-    5 s poll would create the context again.
+    An idle wan-server is deliberately left alone when ComfyUI animates.
+    Until 2026-09-25 it held ~0.5 GB, the CUDA context its own ``/health``
+    created by reading ``device_free_mb`` through ``torch.cuda.mem_get_info``,
+    with 0 MB reserved, so the hard unload's reserved-pool floor declined it
+    (``nothing_to_reclaim``). ``/health`` now reads NVML and an idle wan-server
+    holds 0 MiB (measured per PID), so there is nothing to reclaim. A forced
+    exit would still only blind the gate's live probe while the container
+    restarts.
     """
     try:
         enabled = (
@@ -1678,18 +1688,10 @@ async def _render_generative_clip(
     # picks the animator per install via ``video_generative_provider`` —
     # ``wan21`` (deployed 5B sidecar, the default) or ``comfyui`` (Wan 2.2
     # 14B via the ComfyUI sidecar). Read per clip, so flipping is a settings
-    # change, not a deploy.
-    provider_choice = "wan21"
-    if provider_override:
-        provider_choice = provider_override
-    elif site_config is not None:
-        try:
-            provider_choice = str(
-                site_config.get("video_generative_provider", "wan21") or "wan21",
-            ).strip().lower()
-        except Exception:  # noqa: BLE001  # silent-ok: a settings read must
-            # not decide a render's fate; the deployed default provider stands.
-            provider_choice = "wan21"
+    # change, not a deploy. ``configured_animator`` is also what the Stage-2
+    # dispatch gate reads to pick its animator probe, so the gate and the
+    # render cannot disagree about which server a hero clip needs.
+    provider_choice = provider_override or configured_animator(site_config)
     provider: Any
     if provider_choice == "comfyui":
         from poindexter.services.video_providers.comfyui import ComfyUIProvider

@@ -19,9 +19,21 @@ Two consumers share this probe:
 
 Probes (all app_settings-tunable, per DB-first config):
 
-- **wan-server** ``GET {wan_server_url}/health`` — URL resolution mirrors
-  ``Wan21Provider`` (``wan_server_url`` → the plugin namespace → default
-  ``:9840``).
+- **The hero animator** (2026-09-25), the server the render's hero clips will
+  call, as ``video_generative_provider`` selects it through
+  ``video_providers.configured_animator`` (the renderer's own reading):
+
+  - ``wan21`` (default): wan-server ``GET {wan_server_url}/health``. URL
+    resolution mirrors ``Wan21Provider`` (``wan_server_url`` → the plugin
+    namespace → default ``:9840``).
+  - ``comfyui``: ``GET {video_comfyui_server_url}/system_stats``, the endpoint
+    ``ComfyUIProvider``'s ready-wait and the container healthcheck poll.
+    wan-server is NOT probed then: under ComfyUI it renders nothing and is
+    only the renderer's live VRAM probe, which falls back to Prometheus (and
+    logs it) when wan is down. Probing wan unconditionally deferred every
+    render during a wan outage the render would never have noticed, while a
+    ComfyUI outage (every hero a still, every presenter a brand card) went
+    unprobed.
 - **image-gen** ``GET {image_gen_server_url}/health`` (default ``:9836``).
 - **DNS canary** — resolve ``media_infra_dns_canary_host`` (default: derive
   the host from ``storage_public_url``; skip when neither is set). Catches
@@ -92,6 +104,41 @@ def _resolve_wan_health_url(site_config: Any) -> str:
     from poindexter.services.video_providers.wan2_1 import _resolve_server_url
 
     return _resolve_server_url({}, site_config).rstrip("/") + "/health"
+
+
+def _resolve_comfyui_health_url(site_config: Any) -> str:
+    """ComfyUI readiness endpoint — ``ComfyUIProvider``'s own URL resolution
+    (``video_comfyui_server_url`` → default ``http://comfyui:8188``) and the
+    ``/system_stats`` route its ready-wait polls."""
+    from poindexter.services.video_providers.comfyui import _resolve_server_url
+
+    return _resolve_server_url({}, site_config).rstrip("/") + "/system_stats"
+
+
+def _resolve_animator_probe(site_config: Any) -> tuple[str, str]:
+    """``(name, health_url)`` for the server the render's hero clips will call.
+
+    Follows ``video_generative_provider`` through ``configured_animator``, the
+    same reading the renderer builds its provider from, so the gate can never
+    watch a different animator than the render uses.
+    """
+    from poindexter.services.video_providers import configured_animator
+
+    if configured_animator(site_config) == "comfyui":
+        return "comfyui", _resolve_comfyui_health_url(site_config)
+    return "wan-server", _resolve_wan_health_url(site_config)
+
+
+# Operator-facing tails for a failed animator probe, keyed by probe name.
+# ComfyUI is profile-gated like chatterbox, so a stack stop that is followed
+# by a plain `compose up -d` leaves it down; name the command.
+_ANIMATOR_REMEDIATION = {
+    "comfyui": (
+        " — every hero clip would ship as its still and every presenter shot "
+        "as a brand card; is the comfyui profile up? "
+        "`docker compose --profile comfyui up -d comfyui`"
+    ),
+}
 
 
 def _resolve_image_gen_health_url(site_config: Any) -> str:
@@ -200,7 +247,7 @@ async def check_media_infra_health(
     *,
     http_client_factory: Any = None,
 ) -> MediaInfraHealth:
-    """Probe wan-server + image-gen ``/health`` and the DNS canary.
+    """Probe the configured hero animator, image-gen ``/health`` and the DNS canary.
 
     Healthy only when every configured probe passes. ``site_config=None``
     (bootstrap/test paths with no DI seam) and the disabled master switch
@@ -232,7 +279,7 @@ async def check_media_infra_health(
 
     failures: list[str] = []
     probes = (
-        ("wan-server", _resolve_wan_health_url(site_config)),
+        _resolve_animator_probe(site_config),
         ("image-gen", _resolve_image_gen_health_url(site_config)),
     )
     async with http_client_factory(
@@ -241,7 +288,7 @@ async def check_media_infra_health(
         for name, url in probes:
             failure = await _probe_http(client, name, url)
             if failure:
-                failures.append(failure)
+                failures.append(failure + _ANIMATOR_REMEDIATION.get(name, ""))
         if tts_probe is not None:
             engine, tts_url = tts_probe
             failure = await _probe_http(client, f"tts-{engine}", tts_url)

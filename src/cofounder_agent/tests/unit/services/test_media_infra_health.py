@@ -1,7 +1,8 @@
 """Unit tests for ``services/media_infra_health.py``.
 
 The probe pass gates Stage-2 media dispatch + the reconciliation cap-reset
-self-heal (2026-07-03): wan-server ``/health`` + image-gen ``/health`` + a DNS
+self-heal (2026-07-03): the configured hero animator (wan-server ``/health``,
+or ComfyUI ``/system_stats`` since 2026-09-25) + image-gen ``/health`` + a DNS
 canary. All network is mocked — the http_client_factory seam takes a fake
 client, and the DNS canary is patched at ``socket.getaddrinfo``.
 """
@@ -34,10 +35,14 @@ def _sc(**overrides):
 
 
 def _client_factory(
-    status_by_url: dict[str, int], *, raise_for: frozenset[str] | set[str] = frozenset(),
+    status_by_url: dict[str, int],
+    *,
+    raise_for: frozenset[str] | set[str] = frozenset(),
+    seen: list[str] | None = None,
 ):
     """Fake ``httpx.AsyncClient`` factory: GET returns the mapped status, or
-    raises ConnectionError for URLs in ``raise_for``."""
+    raises ConnectionError for URLs in ``raise_for``. ``seen`` collects every
+    URL requested, for tests that pin what is NOT probed."""
 
     class _FakeClient:
         def __init__(self, **_kw):
@@ -50,6 +55,8 @@ def _client_factory(
             return False
 
         async def get(self, url):
+            if seen is not None:
+                seen.append(url)
             if url in raise_for:
                 raise ConnectionError(f"refused: {url}")
             resp = MagicMock()
@@ -232,6 +239,117 @@ class TestCheckMediaInfraHealth:
             out = await mih.check_media_infra_health(sc, http_client_factory=factory)
         assert out.healthy is True
         assert seen == ["media.gladlabs.io"]
+
+
+_COMFYUI_HEALTH = "http://comfy.test:8188/system_stats"
+
+
+@pytest.mark.unit
+class TestAnimatorProbe:
+    """The gate probes the animator the render's hero clips will call
+    (2026-09-25). Under ComfyUI, wan-server renders nothing: it is only the
+    renderer's live VRAM probe, which falls back to Prometheus without it.
+    Probing wan unconditionally deferred every render during a wan outage the
+    render would never have noticed, and never probed ComfyUI, whose outage
+    turns every hero into a still and every presenter into a brand card."""
+
+    @pytest.mark.asyncio
+    async def test_comfyui_animator_probes_comfyui_and_not_wan(self):
+        seen: list[str] = []
+        factory = _client_factory(
+            {_COMFYUI_HEALTH: 200, _IMAGE_GEN_HEALTH: 200},
+            raise_for={_WAN_HEALTH},
+            seen=seen,
+        )
+        out = await mih.check_media_infra_health(
+            _sc(
+                video_generative_provider="comfyui",
+                video_comfyui_server_url="http://comfy.test:8188",
+            ),
+            http_client_factory=factory,
+        )
+        assert out.healthy is True, out.detail
+        assert _COMFYUI_HEALTH in seen
+        assert _WAN_HEALTH not in seen
+
+    @pytest.mark.asyncio
+    async def test_comfyui_down_defers_and_names_the_restart(self):
+        factory = _client_factory(
+            {_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200},
+            raise_for={_COMFYUI_HEALTH},
+        )
+        out = await mih.check_media_infra_health(
+            _sc(
+                video_generative_provider="comfyui",
+                video_comfyui_server_url="http://comfy.test:8188/",
+            ),
+            http_client_factory=factory,
+        )
+        assert out.healthy is False
+        assert "comfyui http://comfy.test:8188/system_stats unreachable" in out.detail
+        assert "--profile comfyui" in out.detail
+        assert out.vram_insufficient is False  # a reclaim can't start a sidecar
+
+    @pytest.mark.asyncio
+    async def test_comfyui_http_error_defers(self):
+        factory = _client_factory({_COMFYUI_HEALTH: 500, _IMAGE_GEN_HEALTH: 200})
+        out = await mih.check_media_infra_health(
+            _sc(
+                video_generative_provider="comfyui",
+                video_comfyui_server_url="http://comfy.test:8188",
+            ),
+            http_client_factory=factory,
+        )
+        assert out.healthy is False
+        assert "returned HTTP 500" in out.detail
+
+    @pytest.mark.asyncio
+    async def test_wan_animator_probes_wan_and_not_comfyui(self):
+        """The default install: wan renders the heroes, so a wan outage still
+        defers, and ComfyUI (profile-gated, absent on most installs) is never
+        asked about."""
+        seen: list[str] = []
+        factory = _client_factory(
+            {_WAN_HEALTH: 503, _IMAGE_GEN_HEALTH: 200},
+            raise_for={_COMFYUI_HEALTH},
+            seen=seen,
+        )
+        out = await mih.check_media_infra_health(
+            _sc(video_comfyui_server_url="http://comfy.test:8188"),
+            http_client_factory=factory,
+        )
+        assert out.healthy is False
+        assert "wan-server" in out.detail
+        assert _COMFYUI_HEALTH not in seen
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("comfyui", "comfyui"),
+            (" ComfyUI ", "comfyui"),
+            ("wan21", "wan-server"),
+            ("", "wan-server"),
+            # No such provider: the renderer builds Wan21Provider for it, so
+            # the gate must watch wan too.
+            ("ltx", "wan-server"),
+        ],
+    )
+    def test_gate_and_renderer_resolve_the_same_animator(self, value, expected):
+        """Derived, not hand-listed: the probe follows the same reading the
+        renderer uses to pick the provider."""
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+
+        sc = _sc(video_generative_provider=value)
+        name, _url = mih._resolve_animator_probe(sc)
+        assert name == expected
+        assert (name == "comfyui") is slr._hero_animator_is_comfyui(sc)
+
+    def test_comfyui_health_url_default(self):
+        sc = SiteConfig(initial_config={})
+        assert (
+            mih._resolve_comfyui_health_url(sc)
+            == "http://comfyui:8188/system_stats"
+        )
 
 
 _CHATTERBOX_HEALTH = "http://chatterbox:8000/health"
