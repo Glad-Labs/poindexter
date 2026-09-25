@@ -2144,7 +2144,14 @@ class GPUScheduler:
         from poindexter.services import gpu_admission
 
         inputs = await self._assemble_admission_inputs(
-            model=model, max_wait_s=max_wait_s
+            # Only an Ollama-served model has an /api/show arch to size. A
+            # render owner's label (an image model, an audio engine) never
+            # does, so sizing it could only come back None and skip the fit
+            # gate anyway, after POSTing Ollama /api/show for a name it has
+            # never heard of and logging the 404 as a warning on every acquire
+            # (z_image_turbo from operator_image: 14 in 7 days).
+            model=model if owner == "ollama" else None,
+            max_wait_s=max_wait_s,
         )
         decision = gpu_admission.decide(inputs)
         if decision.action == "reject":

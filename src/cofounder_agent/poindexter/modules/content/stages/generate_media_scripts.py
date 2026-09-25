@@ -22,6 +22,7 @@ Two separate LLM calls for reliability (legacy trade-off).
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import uuid
@@ -115,6 +116,16 @@ DEFAULT_LLM_CALL_BUDGET_SECONDS = 120
 DEFAULT_LLM_CALLS = 2
 DEFAULT_AUDIO_COLD_LOAD_ALLOWANCE_SECONDS = 150
 DEFAULT_STAGE_OVERHEAD_SECONDS = 30
+# The ambient bed waits for the render-GPU lock before it renders (see
+# execute), bounded by the media budget the stage's LLM calls already use —
+# gpu_sched_media_max_wait_s, 120 s by default. That wait sits directly in
+# front of the render this floor protects, so it is a term of its own: on
+# 2026-09-25 the stage finished in 581 s against the 600 s floor with no wait
+# at all, and one full wait on top would have tipped it over. It is also the
+# common contention outcome rather than a corner case: admission can only see
+# a holder in its own process, so a media render in poindexter-worker is not
+# refused up front, it is waited on for the whole budget.
+DEFAULT_RENDER_LOCK_WAIT_SECONDS = 120
 
 
 def _get_int(site_config: Any, key: str, default: int) -> int:
@@ -128,26 +139,60 @@ def _get_int(site_config: Any, key: str, default: int) -> int:
         return default
 
 
+def _render_lock_wait_seconds(site_config: Any) -> int:
+    """The ambient bed's wait for the render-GPU lock, in whole seconds.
+
+    Reads ``gpu_sched_media_max_wait_s``, the key ``media_wait_budget_s()``
+    hands the lock, so the floor moves with the budget. A value ``<= 0`` is the
+    legacy unbounded wait (up to ``gpu_lock_acquire_timeout_seconds``), which
+    no floor can contain, so it adds nothing: every LLM lock in this stage is
+    in the same position under the legacy contract.
+    """
+    if site_config is None:
+        return DEFAULT_RENDER_LOCK_WAIT_SECONDS
+    try:
+        raw = float(site_config.get(
+            "gpu_sched_media_max_wait_s", DEFAULT_RENDER_LOCK_WAIT_SECONDS,
+        ))
+        return math.ceil(raw) if raw > 0 else 0
+    except (TypeError, ValueError, OverflowError):
+        return DEFAULT_RENDER_LOCK_WAIT_SECONDS
+
+
 def resolve_stage_timeout_seconds(site_config: Any) -> int:
-    """``llm_calls x llm_budget + audio_render_timeout + cold_load + overhead``.
+    """``llm_calls x llm_budget + audio_render_timeout + cold_load + render_lock_wait + overhead``.
 
     Used as a one-directional FLOOR on the node timeout (raise above it freely,
     never below), so the wrapper cannot kill the ambient render it asked for.
-    Every term is a setting; the defaults sum to 600 s.
+    Every term is a setting; the defaults sum to 720 s.
     """
     llm_budget = _get_int(site_config, "media_scripts_llm_call_budget_seconds", DEFAULT_LLM_CALL_BUDGET_SECONDS)
     llm_calls = _get_int(site_config, "media_scripts_llm_calls", DEFAULT_LLM_CALLS)
     audio_render = _get_int(site_config, "audio_render_timeout_seconds", 180)
     cold_load = _get_int(site_config, "audio_gen_cold_load_allowance_seconds", DEFAULT_AUDIO_COLD_LOAD_ALLOWANCE_SECONDS)
+    render_lock_wait = _render_lock_wait_seconds(site_config)
     overhead = _get_int(site_config, "media_scripts_stage_overhead_seconds", DEFAULT_STAGE_OVERHEAD_SECONDS)
-    return max(1, llm_calls) * max(1, llm_budget) + max(0, audio_render) + max(0, cold_load) + max(0, overhead)
+    return (
+        max(1, llm_calls) * max(1, llm_budget)
+        + max(0, audio_render)
+        + max(0, cold_load)
+        + render_lock_wait
+        + max(0, overhead)
+    )
+
+
+def _audio_engine_label(site_config: Any) -> str | None:
+    """The active audio engine's name, recorded as the GPU session's model."""
+    if site_config is None:
+        return None
+    return str(site_config.get("audio_gen_engine", "") or "").strip() or None
 
 
 class GenerateMediaScriptsStage:
     name = "generate_media_scripts"
     description = "Generate podcast script, video scenes, and short summary"
     # Static fallback only — resolve_timeout_seconds() below raises the node
-    # timeout to what the stage's own budgets need (600 s with defaults).
+    # timeout to what the stage's own budgets need (720 s with defaults).
     timeout_seconds = 300
     halts_on_failure = False  # Legacy marked this "non-critical".
     # Surfaced onto the virtual atom's contract (poindexter#983) so the
@@ -349,19 +394,45 @@ class GenerateMediaScriptsStage:
                         )
                     except (TypeError, ValueError):
                         sting_duration = 9.0
-                    intro_result = await generate_audio(
-                        prompt_template,
-                        "intro",
-                        site_config=sc,
-                        output_dir=str(PODCAST_DIR),
-                        output_stem=f"{media_stem}_intro",
-                        duration_s=sting_duration,
-                    )
+                    # Stable Audio renders on the render GPU and has held up
+                    # to ~11 GB there (poindexter#999), so it takes the render
+                    # lock like every other render. Owner "video" resolves to
+                    # the render scope, which serialises it against wan /
+                    # ComfyUI / image-gen and the llm_primary model on that
+                    # card, and evicts Ollama before the render starts. An
+                    # owner resolve_lock_role does not know would fail closed
+                    # to EVERY card (the GPU-1 judge included) and evict
+                    # nothing. Bounded like the LLM calls above: the sting is
+                    # optional, so a busy GPU skips it instead of queueing.
+                    async with gpu.lock(
+                        "video", model=_audio_engine_label(sc),
+                        task_id=context.get("task_id"), phase="podcast_intro_sting",
+                        max_wait_s=media_wait_budget_s(), priority="background",
+                    ):
+                        intro_result = await generate_audio(
+                            prompt_template,
+                            "intro",
+                            site_config=sc,
+                            output_dir=str(PODCAST_DIR),
+                            output_stem=f"{media_stem}_intro",
+                            duration_s=sting_duration,
+                        )
                     if intro_result is not None:
                         path = intro_result.file_path or ""
                         if path:
                             podcast_intro_audio_path = path
                             logger.info("[MEDIA] Podcast intro sting: %s", path)
+                except GpuBusyError as busy:
+                    # Ahead of the broad handler: a contention skip is not the
+                    # sting failing. At render time the episode falls back to
+                    # the curated podcast_sting_file_path, or ships without one.
+                    logger.info(
+                        "[MEDIA] podcast intro sting skipped — GPU busy (%s)", busy.reason,
+                    )
+                    surface_media_gpu_busy_skip(
+                        "media_scripts_intro_sting", busy,
+                        task_id=context.get("task_id"),
+                    )
                 except Exception as sfx_exc:
                     logger.warning("[MEDIA] audio_gen intro sting failed: %s", sfx_exc)
 
@@ -624,25 +695,45 @@ class GenerateMediaScriptsStage:
                         "audio_gen_ambient_prompt_template", _AMBIENT_PROMPT_FALLBACK,
                     ) or _AMBIENT_PROMPT_FALLBACK
                     ambient_prompt = template.replace("{mood}", mood)
-                    ambient_result = await generate_audio(
-                        ambient_prompt,
-                        "ambient",
-                        site_config=sc,
-                        # Durable + deterministic (poindexter#1021): this path
-                        # is frozen into task_metadata and read by the render
-                        # graph in another container, possibly days later.
-                        output_dir=str(VIDEO_DIR),
-                        output_stem=f"{media_stem}_ambient",
-                        # Model max (~47s): the compositor loops the bed under
-                        # the whole video, so the longest clip = fewest audible
-                        # loop seams (provider default 5s is sting-sized).
-                        duration_s=47.0,
-                    )
+                    # Same render lock as the intro sting above. Its bounded
+                    # wait is a term of resolve_stage_timeout_seconds: it sits
+                    # in front of the render that floor exists to protect.
+                    async with gpu.lock(
+                        "video", model=_audio_engine_label(sc),
+                        task_id=context.get("task_id"), phase="video_ambient_bed",
+                        max_wait_s=media_wait_budget_s(), priority="background",
+                    ):
+                        ambient_result = await generate_audio(
+                            ambient_prompt,
+                            "ambient",
+                            site_config=sc,
+                            # Durable + deterministic (poindexter#1021): this
+                            # path is frozen into task_metadata and read by the
+                            # render graph in another container, possibly days
+                            # later.
+                            output_dir=str(VIDEO_DIR),
+                            output_stem=f"{media_stem}_ambient",
+                            # Model max (~47s): the compositor loops the bed
+                            # under the whole video, so the longest clip =
+                            # fewest audible loop seams (provider default 5s
+                            # is sting-sized).
+                            duration_s=47.0,
+                        )
                     if ambient_result is not None:
                         path = ambient_result.file_path or ""
                         if path:
                             ambient_audio_path = path
                             logger.info("[MEDIA] Video ambient bed: %s", path)
+                except GpuBusyError as busy:
+                    # Ahead of the broad handler: the video renders without a
+                    # music bed, and every script above is already built.
+                    logger.info(
+                        "[MEDIA] video ambient bed skipped — GPU busy (%s)", busy.reason,
+                    )
+                    surface_media_gpu_busy_skip(
+                        "media_scripts_ambient_bed", busy,
+                        task_id=context.get("task_id"),
+                    )
                 except Exception as sfx_exc:
                     logger.warning("[MEDIA] audio_gen ambient bed failed: %s", sfx_exc)
 

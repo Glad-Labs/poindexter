@@ -3131,7 +3131,8 @@ DEFAULTS: dict[str, str] = {
     # literal in services/audio_gen_providers/stable_audio_open.py.
     'audio_render_timeout_seconds': '180',
     # generate_media_scripts node-timeout floor (llm_calls x llm_budget +
-    # audio_render_timeout_seconds + cold-load allowance + overhead = 600 s).
+    # audio_render_timeout_seconds + cold-load allowance + the ambient bed's
+    # render-lock wait (gpu_sched_media_max_wait_s) + overhead = 720 s).
     # The static 300 s killed the ambient bed's stable-audio cold load
     # (~125 s) and the stage errored at exactly 300 s five times in 30 days.
     'media_scripts_llm_call_budget_seconds': '120',

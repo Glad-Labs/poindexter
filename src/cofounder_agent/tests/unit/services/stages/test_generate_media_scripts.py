@@ -23,11 +23,32 @@ from poindexter.modules.content.stages.generate_media_scripts import (
     _resolve_media_title,
     _trim_to_word_budget,
 )
+from poindexter.services.gpu_admission import GpuBusyError
 
 
 @contextlib.asynccontextmanager
 async def _fake_lock(*_a: Any, **_kw: Any):
     yield
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_gpu_lock():
+    """No test in this file may reach the REAL cross-process GPU lock.
+
+    ``gpu.lock`` takes a Postgres ``pg_advisory_lock`` whenever a DSN resolves.
+    On the operator PC bootstrap.toml resolves one, the live pipeline holds the
+    lock, and a test that reaches it queues for up to
+    ``gpu_lock_acquire_timeout_seconds`` before the stage's fail-soft handlers
+    turn the timeout into a degraded result. CI has no DSN, so the flake only
+    ever shows up locally (#2252). Most tests below also swap the whole ``gpu``
+    object; this covers any that do not, including the stable-audio renders.
+
+    Patched on the SOURCE singleton: the stage imports ``gpu`` function-locally,
+    so a call-site patch would be ignored. ``test_audio_renders_never_reach_the_
+    real_gpu_lock`` is the tripwire for this fixture.
+    """
+    with patch("poindexter.services.gpu_scheduler.gpu.lock", _fake_lock):
+        yield
 
 
 def _ctx() -> dict[str, Any]:
@@ -1204,3 +1225,297 @@ async def test_video_only_never_generates_ambient_bed():
     generate_audio_mock.assert_not_called()
     assert result.context_updates["video_ambient_audio_path"] == ""
     assert result.context_updates["podcast_audio_path"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Render-GPU lock around the Stable Audio renders
+#
+# Both stable-audio renders (podcast intro sting, video ambient bed) ran
+# outside any gpu.lock while every LLM call in this stage held one, so a render
+# could land on the render GPU beside a wan / ComfyUI / image-gen render or the
+# resident llm_primary model. The sidecar has held ~11 GB there
+# (poindexter#999).
+# ---------------------------------------------------------------------------
+
+_MOD = "poindexter.modules.content.stages.generate_media_scripts"
+_AUDIO_PHASES = ("podcast_intro_sting", "video_ambient_bed")
+# Two scene lines, then a short long enough to clear video_short_min_words (25)
+# — the ambient bed only renders when the scene call produced scenes.
+_SCENES_WITH_SHORT = (
+    "1. a cinematic wide shot of mountains at dawn\n"
+    "2. a close view of a server rack glowing blue\n\n"
+    "SHORT:\n" + ("word " * 30).strip()
+)
+
+
+class _LockRecorder:
+    """``gpu.lock`` stand-in that records every acquire and what is held.
+
+    ``busy`` names phases whose acquire raises ``GpuBusyError``, the way a
+    budgeted lock does when admission refuses the wait.
+    """
+
+    def __init__(self, busy: tuple[str, ...] = ()) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.held: list[dict[str, Any]] = []
+        self._busy = set(busy)
+
+    @contextlib.asynccontextmanager
+    async def lock(self, owner, model=None, task_id=None, phase=None,
+                   max_wait_s=None, priority="pipeline"):
+        call = {
+            "owner": owner, "model": model, "task_id": task_id,
+            "phase": phase, "max_wait_s": max_wait_s, "priority": priority,
+        }
+        self.calls.append(call)
+        if phase in self._busy:
+            raise GpuBusyError("eta_exceeds_budget", 2300.0)
+        self.held.append(call)
+        try:
+            yield
+        finally:
+            self.held.remove(call)
+
+    def audio_calls(self) -> list[dict[str, Any]]:
+        return [c for c in self.calls if c["phase"] in _AUDIO_PHASES]
+
+
+async def _run_with_audio(
+    generate_audio: Any,
+    *,
+    rec: _LockRecorder | None = None,
+    audio_enabled: bool = True,
+    curated_sting: str | None = None,
+) -> tuple[Any, MagicMock, MagicMock]:
+    """Run the stage with scenes produced and audio gen on (or off).
+
+    ``rec=None`` leaves ``gpu.lock`` to the module's autouse fixture — the
+    tripwire needs exactly that.
+    """
+    ctx = _ctx()
+    ctx["site_config"]._cfg["audio_gen_engine"] = "stable-audio-open-1.0"
+    if curated_sting:
+        ctx["site_config"]._cfg["podcast_sting_file_path"] = curated_sting
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(
+        return_value=SimpleNamespace(text=_SCENES_WITH_SHORT),
+    )
+    with contextlib.ExitStack() as stack:
+        if rec is not None:
+            stack.enter_context(
+                patch("poindexter.services.gpu_scheduler.gpu.lock", rec.lock),
+            )
+        stack.enter_context(patch(
+            "poindexter.services.podcast_service._build_script_with_llm",
+            new=AsyncMock(return_value="P" * 600),
+        ))
+        stack.enter_context(
+            patch(f"{_MOD}.is_audio_gen_enabled", return_value=audio_enabled),
+        )
+        stack.enter_context(patch(f"{_MOD}.generate_audio", new=generate_audio))
+        skip = stack.enter_context(patch(f"{_MOD}.surface_media_gpu_busy_skip"))
+        log = stack.enter_context(patch(f"{_MOD}.logger"))
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+    return result, skip, log
+
+
+def _rendered_kinds(generate_audio: AsyncMock) -> list[str]:
+    # generate_audio(prompt, kind, *, site_config, ...)
+    return [c.args[1] for c in generate_audio.await_args_list]
+
+
+def _warnings(log: MagicMock) -> list[str]:
+    return [str(c.args[0]) for c in log.warning.call_args_list]
+
+
+@pytest.mark.asyncio
+async def test_both_stable_audio_renders_run_inside_the_render_gpu_lock():
+    """Each render holds its OWN render lock while it runs, and no other.
+
+    "No other" matters because the lock is reentrant: a render nested inside
+    one of the stage's ollama locks would get a pass-through no-op, taking no
+    render key and evicting nothing.
+    """
+    from poindexter.services.gpu_scheduler import media_wait_budget_s
+
+    rec = _LockRecorder()
+    held_while_rendering: dict[str, list[str]] = {}
+
+    async def _generate_audio(prompt, kind, *, site_config, **kw):
+        held_while_rendering[kind] = [c["phase"] for c in rec.held]
+        return SimpleNamespace(file_path=f"/tmp/{kind}.wav")
+
+    result, skip, _log = await _run_with_audio(_generate_audio, rec=rec)
+
+    assert result.ok
+    assert held_while_rendering == {
+        "intro": ["podcast_intro_sting"],
+        "ambient": ["video_ambient_bed"],
+    }
+    audio = rec.audio_calls()
+    assert [c["phase"] for c in audio] == list(_AUDIO_PHASES)
+    for call in audio:
+        assert call["owner"] == "video"
+        assert call["model"] == "stable-audio-open-1.0"
+        assert call["task_id"] == "t-mediascripts"
+        assert call["priority"] == "background"
+        assert call["max_wait_s"] == media_wait_budget_s()
+    skip.assert_not_called()
+    assert result.context_updates["podcast_intro_audio_path"] == "/tmp/intro.wav"
+    assert result.context_updates["video_ambient_audio_path"] == "/tmp/ambient.wav"
+
+
+@pytest.mark.asyncio
+async def test_render_lock_owner_takes_only_the_render_card_and_evicts_ollama():
+    """Derived from the scheduler, not restated: whatever owner the stage
+    passes must resolve to the render scope and clear Ollama on acquire.
+
+    An owner resolve_lock_role does not know fails CLOSED to every device key,
+    so a 47 s music bed would block the GPU-1 judge too, and it would evict
+    nothing, leaving the resident llm_primary model beside the render.
+    """
+    import json
+
+    from poindexter.services import gpu_scheduler as gs
+    from poindexter.services.site_config import SiteConfig
+
+    rec = _LockRecorder()
+    await _run_with_audio(
+        AsyncMock(return_value=SimpleNamespace(file_path="/tmp/a.wav")), rec=rec,
+    )
+    audio = rec.audio_calls()
+    assert len(audio) == 2
+
+    scoped = SiteConfig(initial_config={
+        "gpu_lock_per_device_enabled": "true",
+        "gpu_lock_node_id": "node-a",
+        "gpu_lock_scopes": json.dumps(
+            {"render": [0], "qa_judge": [1], "llm_primary": [0]},
+        ),
+    })
+    with patch("poindexter.services.gpu_scheduler._sc", return_value=scoped):
+        every_card = gs._all_device_keys()
+        for call in audio:
+            assert gs.resolve_lock_role(call["owner"], call["model"]) == "render"
+            keys = gs.resolve_lock_keys(call["owner"], call["model"])
+            assert keys == [gs.device_lock_key("node-a", 0)]
+            assert keys != every_card
+
+    for call in audio:
+        sched = gs.GPUScheduler()
+        sched._acquire_pg_advisory_lock = AsyncMock()
+        sched._release_pg_advisory_lock = AsyncMock()
+        sched._wait_for_gaming_clear = AsyncMock()
+        sched._unload_ollama_models = AsyncMock()
+        async with sched.lock(call["owner"], model=call["model"], phase=call["phase"]):
+            pass
+        sched._unload_ollama_models.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ambient_bed_gpu_busy_is_a_skip_not_a_failure():
+    rec = _LockRecorder(busy=("video_ambient_bed",))
+    gen = AsyncMock(return_value=SimpleNamespace(file_path="/tmp/intro.wav"))
+
+    result, skip, log = await _run_with_audio(gen, rec=rec)
+
+    assert result.ok
+    # Never rendered without the lock.
+    assert _rendered_kinds(gen) == ["intro"]
+    skip.assert_called_once()
+    label, busy = skip.call_args.args
+    assert label == "media_scripts_ambient_bed"
+    assert isinstance(busy, GpuBusyError)
+    assert skip.call_args.kwargs["task_id"] == "t-mediascripts"
+    assert not [w for w in _warnings(log) if "ambient" in w]
+    assert any(
+        "video ambient bed skipped" in str(c.args[0]) for c in log.info.call_args_list
+    )
+    # Every script built before the skip ships; only the bed is missing.
+    updates = result.context_updates
+    assert updates["video_ambient_audio_path"] == ""
+    assert updates["podcast_script"] == "P" * 600
+    assert updates["video_scenes"]
+    assert updates["short_summary_script"]
+    assert updates["stages"]["4b_media_scripts"] is True
+
+
+@pytest.mark.asyncio
+async def test_intro_sting_gpu_busy_is_a_skip_and_the_stage_carries_on():
+    rec = _LockRecorder(busy=("podcast_intro_sting",))
+    gen = AsyncMock(return_value=SimpleNamespace(file_path="/tmp/ambient.wav"))
+
+    result, skip, log = await _run_with_audio(gen, rec=rec)
+
+    assert result.ok
+    assert _rendered_kinds(gen) == ["ambient"]
+    skip.assert_called_once()
+    assert skip.call_args.args[0] == "media_scripts_intro_sting"
+    assert not [w for w in _warnings(log) if "sting" in w]
+    updates = result.context_updates
+    assert updates["podcast_intro_audio_path"] == ""
+    # The calls after the sting still ran.
+    assert updates["video_long_script"]
+    assert updates["video_scenes"]
+    assert updates["video_ambient_audio_path"] == "/tmp/ambient.wav"
+
+
+@pytest.mark.asyncio
+async def test_no_render_lock_when_audio_gen_is_off():
+    """Taking the render lock evicts Ollama, so nothing may take it for a
+    render that is not going to happen."""
+    rec = _LockRecorder()
+    gen = AsyncMock()
+
+    result, _skip, _log = await _run_with_audio(gen, rec=rec, audio_enabled=False)
+
+    assert result.ok
+    gen.assert_not_awaited()
+    assert [c for c in rec.calls if c["owner"] == "video"] == []
+
+
+@pytest.mark.asyncio
+async def test_curated_sting_takes_no_render_lock_for_the_intro(tmp_path):
+    """The prod configuration: the pinned theme is used verbatim, so only the
+    ambient bed renders and only the ambient bed takes the lock."""
+    theme = tmp_path / "theme.wav"
+    theme.write_bytes(b"RIFFfake")
+    rec = _LockRecorder()
+    gen = AsyncMock(return_value=SimpleNamespace(file_path="/tmp/ambient.wav"))
+
+    result, _skip, _log = await _run_with_audio(gen, rec=rec, curated_sting=str(theme))
+
+    assert result.ok
+    assert _rendered_kinds(gen) == ["ambient"]
+    assert [c["phase"] for c in rec.audio_calls()] == ["video_ambient_bed"]
+    assert result.context_updates["podcast_intro_audio_path"] == str(theme)
+
+
+@pytest.mark.asyncio
+async def test_audio_renders_never_reach_the_real_gpu_lock(monkeypatch):
+    """Tripwire for ``_neutralize_gpu_lock``.
+
+    Sabotage the REAL lock's cross-process acquire so that reaching it is
+    fatal, then run the stage with nothing but the autouse fixture between it
+    and the scheduler. With the fixture in force both renders happen. If it
+    regresses, the first lock the stage takes raises, the stage bails out
+    through its broad handler, and neither render happens: a deterministic CI
+    failure instead of a 900 s wait on the operator PC.
+    """
+    from poindexter.services import gpu_scheduler
+
+    async def _sabotaged_acquire(self, *_args, **_kwargs):
+        raise gpu_scheduler.GpuLockTimeoutError(
+            "simulated contended GPU lock — generate_media_scripts reached the "
+            "REAL pg_advisory_lock instead of the test no-op"
+        )
+
+    monkeypatch.setattr(
+        gpu_scheduler.GPUScheduler, "_acquire_pg_advisory_lock", _sabotaged_acquire,
+    )
+    gen = AsyncMock(return_value=SimpleNamespace(file_path="/tmp/x.wav"))
+
+    result, _skip, _log = await _run_with_audio(gen)
+
+    assert result.ok
+    assert _rendered_kinds(gen) == ["intro", "ambient"]

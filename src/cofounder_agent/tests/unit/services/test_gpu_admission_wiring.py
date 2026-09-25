@@ -267,6 +267,14 @@ _MIGRATED_CALLERS = {
     # inline_image_batch 240.0s, media_render 383.5s). These call gpu.lock()
     # directly rather than via dispatch_complete, so the budget is passed at
     # the lock, not the dispatch.
+    #
+    # The same file's two Stable Audio renders (podcast intro sting, video
+    # ambient bed) joined on 2026-09-25, under gpu.lock("video") and the same
+    # budget. Both are optional: a skipped sting falls back at render time to
+    # the curated podcast_sting_file_path, or the episode ships without one
+    # (prod pins a curated sting and never renders one), and a skipped bed
+    # renders the video without background music. Neither costs a script, so
+    # each skips in place and the stage carries on.
     "modules/content/stages/generate_media_scripts.py":
         "non-critical stage — partial work preserved + finding",
     "modules/content/stages/generate_video_shot_list.py":
@@ -470,3 +478,37 @@ async def test_estimate_includes_a_kv_term_at_the_assumed_context():
     assert inputs.model_estimate_gb > weights_only + 0.5, (
         "admission estimate must charge for the KV cache, not just weights"
     )
+
+
+# ---------------------------------------------------------------------------
+# Only an Ollama owner's model is sized. A render owner's label (an image
+# model, an audio engine) has no /api/show arch, so sizing it could only come
+# back None; on the way it POSTed Ollama /api/show for a name Ollama has never
+# heard of and logged the 404 as a warning, on every acquire.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_render_owner_admission_never_asks_ollama_to_size_its_label():
+    gpu = _quiet(GPUScheduler())
+    gpu._registry = _FakeRegistry(free={0: 30.0}, evictable={0: 0.0})
+    read_arch = AsyncMock(return_value=None)
+    with patch(
+        "poindexter.services.llm_providers.dispatcher._read_arch_for_budget", read_arch,
+    ), patch(
+        "poindexter.services.gpu_scheduler._cfg_bool",
+        _cfg_bool_map(gpu_sched_enabled=True),
+    ):
+        for owner, label in (
+            ("video", "stable-audio-open-1.0"),
+            ("image_gen", "z_image_turbo"),
+        ):
+            async with gpu.lock(owner, model=label, phase="p", max_wait_s=120.0):
+                pass
+        read_arch.assert_not_awaited()
+
+        # An Ollama owner is still sized: that estimate is the fit gate.
+        async with gpu.lock("ollama", model="phi4:14b", phase="p", max_wait_s=120.0):
+            pass
+
+    read_arch.assert_awaited_once_with("phi4:14b")

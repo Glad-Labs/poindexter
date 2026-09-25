@@ -82,6 +82,14 @@ async with gpu.lock("ollama", model=..., phase=...,
   **immediately** — an honest skip instead of a doomed wait — and emits an
   info `gpu_admission_rejected` finding (dedup-keyed
   `owner:phase:reason`). The budget also caps the actual lock wait.
+  Admission can only see a holder in its **own process**. A holder in
+  another container (a `media_render` in `poindexter-worker`, seen from
+  `poindexter-prefect-worker`) is met at the pg-advisory step instead, where
+  the budget caps the wait and it ends in `GpuLockTimeoutError` plus a
+  `gpu_lock_timeout` finding, not an up-front `GpuBusyError`. Only an
+  `ollama` owner's model is sized for the fit check: a render owner's label
+  (an image model, an audio engine) has no Ollama arch to read, so its fit
+  gate is skipped without asking Ollama.
 - `priority` — in-process wake order: `pipeline` > `operator` >
   `background`, FIFO within a class; a parked waiter is promoted one class
   per `gpu_sched_aging_seconds` waited, so background work can be delayed
@@ -107,11 +115,11 @@ caller. Migration is P2 — one group per PR, sized off the soak numbers.
 
 ### P2 caller migration
 
-| Group               | Callers                                                                                                           | Budget key (default)                         | What a refusal costs                                                                                |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| 1 — QA rails        | `ragas_eval`, `deepeval_rails`                                                                                    | `gpu_sched_qa_rail_max_wait_s` (45s)         | Sentinel scores + a `qa_rail_gpu_busy_skip` finding. Never blocks publish, never fabricates a pass. |
-| 2 — media stages    | `generate_media_scripts`, `generate_video_shot_list`, `review_video_shot_list`                                    | `gpu_sched_media_max_wait_s` (120s)          | The post ships without that artefact + a `media_gpu_busy_skip` finding.                             |
-| 3 — operator images | `services/image_service.py` (`poindexter tasks regen-image` / `add-image`, `POST /api/tasks/{id}/generate-image`) | `gpu_sched_operator_image_max_wait_s` (150s) | **Nothing is skipped** — a human gets an immediate 503 naming the holder ETA, and retries.          |
+| Group               | Callers                                                                                                                                                    | Budget key (default)                         | What a refusal costs                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 1 — QA rails        | `ragas_eval`, `deepeval_rails`                                                                                                                             | `gpu_sched_qa_rail_max_wait_s` (45s)         | Sentinel scores + a `qa_rail_gpu_busy_skip` finding. Never blocks publish, never fabricates a pass. |
+| 2 — media stages    | `generate_media_scripts` (its LLM calls, and its two Stable Audio renders under `gpu.lock("video")`), `generate_video_shot_list`, `review_video_shot_list` | `gpu_sched_media_max_wait_s` (120s)          | The post ships without that artefact + a `media_gpu_busy_skip` finding.                             |
+| 3 — operator images | `services/image_service.py` (`poindexter tasks regen-image` / `add-image`, `POST /api/tasks/{id}/generate-image`)                                          | `gpu_sched_operator_image_max_wait_s` (150s) | **Nothing is skipped** — a human gets an immediate 503 naming the holder ETA, and retries.          |
 
 Group 3 is the odd one out and worth understanding before touching it.
 Groups 1-2 are fail-soft callers whose work is genuinely optional, so a
