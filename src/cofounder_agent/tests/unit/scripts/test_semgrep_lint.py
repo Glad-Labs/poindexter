@@ -20,6 +20,12 @@ from pathlib import Path
 import pytest
 
 LINT_PATH = Path(__file__).resolve().parents[5] / "scripts" / "ci" / "semgrep_lint.py"
+# The vendored rulesets the lint scans, named here as well as in the lint. They
+# are an input of these tests outside src/ and scripts/, so the detect-changes
+# trigger in unit-tests.yml must match them, and
+# tests/unit/infrastructure/test_ci_runs_when_its_inputs_change.py only sees
+# paths a test names.
+VENDORED_RULES = Path(__file__).resolve().parents[5] / "infrastructure" / "semgrep"
 
 
 def _load():
@@ -100,6 +106,16 @@ def test_no_vendored_rules_raises_rather_than_scanning_with_none(mod, tmp_path) 
     mod.RULES_DIR.mkdir()
     with pytest.raises(RuntimeError, match="no vendored rulesets"):
         mod._rules_args()
+
+
+@pytest.mark.unit
+def test_the_lint_scans_the_rules_this_file_names(mod) -> None:
+    """If the lint moves its rules, VENDORED_RULES must follow.
+
+    Otherwise the CI trigger keeps watching a directory these tests no longer
+    read, and a change to the new one skips them.
+    """
+    assert Path(mod.RULES_DIR).resolve() == VENDORED_RULES.resolve()
 
 
 @pytest.mark.unit

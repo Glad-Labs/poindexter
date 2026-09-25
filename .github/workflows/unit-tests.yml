@@ -206,10 +206,10 @@ jobs:
           echo "$changed" | sed 's/^/  /'
 
           # `src/cofounder_agent/**` covers all Python code, tests,
-          # pyproject.toml, and poetry.lock — the whole testable surface.
-          # `poindexter/brain/**` is tested by tests/unit/brain/ — poindexter/brain/-only PRs
-          # were silently skipping pytest because the pattern below only
-          # matched src/cofounder_agent (Glad-Labs/glad-labs-stack#1293).
+          # pyproject.toml, and poetry.lock — the whole testable surface. That
+          # includes the brain since it moved under poindexter/ (2026-09-10);
+          # before that, brain-only PRs skipped pytest
+          # (Glad-Labs/glad-labs-stack#1293).
           # `scripts/**` is tested by tests/unit/scripts/ — same gap.
           # `.github/workflows/unit-tests.yml` self-includes so workflow
           # edits get smoke-tested by actually running.
@@ -218,15 +218,33 @@ jobs:
           # uv-lock-version ratchet below actually fires on a lock-only or
           # config-only change — otherwise the guard would sit dark for
           # exactly the edits it exists to catch.
-          # `infrastructure/grafana/**` for the same reason. Those dashboards
-          # and alert rules are what tests/unit/infrastructure/ reads, and the
-          # grafana lint tests in tests/unit/scripts/ read them too. In the
-          # month to 2026-09-25, 7 of 561 merges changed those files and
-          # nothing else this pattern matched, so the pattern without this
-          # clause skips the tests on exactly the PRs they check. A broken
-          # panel would merge green and turn the next backend PR red.
+          # `infrastructure/{grafana,prometheus,semgrep,systemd}/**` for the
+          # same reason: unit tests read them. Grafana dashboards and alert
+          # rules (tests/unit/infrastructure/, the grafana lint tests); the
+          # Prometheus scrape config and static alert rules (the exporter
+          # keep-list, prometheus_rule_builder and remediation-rule tests); the
+          # vendored semgrep rulesets (test_semgrep_lint); and the systemd
+          # units, which every pytest process reads, because
+          # tests/unit/_egress_guard.py derives the Ollama ports it refuses
+          # from them. Without a clause, a PR that changes only those files
+          # skips the tests that check them, so a bad edit merges green and
+          # turns the next backend PR red. Of the 635 merges from 2026-08-25
+          # to 2026-09-25, 7 changed grafana files and nothing else this
+          # pattern matched. The other three trees change rarely (5 such
+          # merges in the 90 days to 2026-09-25), so their clauses cost little.
           # tests/unit/infrastructure/test_ci_runs_when_its_inputs_change.py
-          # fails if this pattern stops matching anything those tests read.
+          # derives every infrastructure/ path the tests name. It fails when
+          # this pattern misses one, and when it matches a tree no test reads.
+          # NOT `infrastructure/cloudflare/`, deliberately. No pytest reads it;
+          # cloudflare-workers.yml runs each Worker's npm ci, tests and tsc
+          # instead. In the same month 13 merges changed files there and
+          # nothing else this pattern matched, 9 of them only package.json /
+          # package-lock.json (dependabot bumps). Matching them would buy a
+          # 9-14 minute pytest run that checks nothing they changed. If a unit
+          # test comes to read Worker source, match the files it reads (for
+          # example `^infrastructure/cloudflare/[^/]+/src/`), never the
+          # lockfiles. loki/, tempo/, promtail/ and pgadmin/ are out because
+          # no test reads them either.
           # NOT `echo "$changed" | grep -q ...`: under `set -o pipefail`, grep -q exits
           # at its FIRST match and a list larger than the pipe buffer leaves echo
           # holding SIGPIPE, so the pipeline reports failure and the branch below
@@ -234,7 +252,7 @@ jobs:
           # PR (stack#3626, 2026-09-10) having run nothing -- the biggest changes
           # are exactly the ones that were skipping. A here-string has no pipe, and
           # -c reads the whole list; the count is printed so a skip is auditable.
-          backend_hits=$(grep -cE '^src/cofounder_agent/|^scripts/|^infrastructure/grafana/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$' <<<"$changed" || true)
+          backend_hits=$(grep -cE '^src/cofounder_agent/|^scripts/|^infrastructure/(grafana|prometheus|semgrep|systemd)/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$' <<<"$changed" || true)
           echo "Backend-pattern matches: ${backend_hits} of $(wc -l <<<"$changed") changed paths"
           if [ "${backend_hits}" -gt 0 ]; then
             echo "Backend code or this workflow changed — running full suite."
