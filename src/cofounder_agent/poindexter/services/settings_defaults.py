@@ -4522,6 +4522,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.vision_scorer_unavailable.fallback': 'log_only',
     'findings.vision_scorer_unavailable.cooldown_minutes': '360',
     'findings.vision_scorer_unavailable.min_severity': 'warn',
+    # A GPU-pinned endpoint (the :11435 judge) is resident at a context other
+    # than pinned_llm_endpoint_num_ctx, so the next rail call reloads it. Seen by
+    # WarmPinnedLlmEndpointsJob in /api/ps; the cause is a caller outside the
+    # dispatcher (no num_ctx -> the instance's OLLAMA_CONTEXT_LENGTH, or its own
+    # options.num_ctx). Discord with a 6 h cooldown: a mis-sized poller repeats
+    # every few minutes until it is fixed, and one message per shift is enough.
+    'findings.pinned_endpoint_context_mismatch.delivery': 'discord',
+    'findings.pinned_endpoint_context_mismatch.fallback': 'log_only',
+    'findings.pinned_endpoint_context_mismatch.cooldown_minutes': '360',
+    'findings.pinned_endpoint_context_mismatch.min_severity': 'warn',
     # The vision judge stopped returning the text_coverage array the
     # qa.vision_image_relevance prompt asks for — the rendered-text deduction
     # is inert and gibberish-headline heroes score in the 90s again. Long
@@ -4570,6 +4580,23 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # every fire — measured 2026-09-17: two 50 s loads per fire, judge cold for
     # real calls half the time. Raise only if the instance really holds more.
     'warm_pinned_llm_max_models_per_endpoint': '1',
+    # The ONE context size every call to a GPU-pinned endpoint runs at (the
+    # :11435 judge on the 3090). Such an instance holds one model at one size,
+    # and Ollama reloads it whenever a request asks for another num_ctx: 10-40 s
+    # for the 19.6 GB judge, mid-rail. dispatch_complete therefore runs every
+    # call routed there at this value, overriding the caller's num_ctx and every
+    # per-phase *_num_ctx key (qa_ragas_judge_num_ctx and
+    # qa_deepeval_judge_num_ctx included, which then only size a judge that is
+    # NOT pinned). WarmPinnedLlmEndpointsJob warms at it, and the brain's
+    # ollama_runner_ram_watch re-pins at it. Measured before this existed
+    # (2026-09-24): 48 llama-server starts in a day on ollama-vision.service,
+    # alternating 16384 / 32768 / 8192. Keep OLLAMA_CONTEXT_LENGTH in
+    # scripts/linux/ollama-vision.sh equal to it (test-enforced against this
+    # default), since that is the size a caller outside Poindexter gets when it
+    # sends none. Sized to the pinned card: the judge leaves ~1.8 GB free on the
+    # 24 GB 3090 at 16384, so check that headroom before raising it. 0 = off
+    # (pinned calls resolve per phase again, which reintroduces the reloads).
+    'pinned_llm_endpoint_num_ctx': '16384',
     # ----- Settings read-telemetry + orphan probe (#756 items 2-3) -----
     # SiteConfig.get records read keys in-memory; FlushSettingsReadTelemetryJob
     # stamps app_settings.last_read_at each minute; ProbeZeroReaderSettingsJob
@@ -7011,6 +7038,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'wan_server_url': {'owner': 'wan2_1'},
     'warm_pinned_llm_endpoints_enabled': {'owner': 'warm_pinned_llm_endpoints', 'value_type': 'boolean'},
     'warm_pinned_llm_max_models_per_endpoint': {'owner': 'warm_pinned_llm_endpoints', 'value_type': 'integer'},
+    'pinned_llm_endpoint_num_ctx': {'owner': 'dispatcher', 'value_type': 'integer'},
     'worker_heartbeat_interval_seconds': {'owner': 'worker_service', 'value_type': 'integer'},
     'writer_disable_thinking': {'owner': 'two_pass_writer', 'value_type': 'boolean'},
     'writer_length_expansion_enabled': {'owner': 'two_pass_writer', 'value_type': 'boolean'},

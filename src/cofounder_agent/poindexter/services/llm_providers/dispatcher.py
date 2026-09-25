@@ -351,6 +351,115 @@ def _resolve_default_num_ctx(
     return resolve_num_ctx(phase, site_config=site_config)
 
 
+# ---------------------------------------------------------------------------
+# One context per GPU-pinned endpoint
+# ---------------------------------------------------------------------------
+# An endpoint that ``model_api_base_overrides`` pins a model to (the :11435
+# judge on the 3090) holds ONE model at ONE context size, and Ollama reloads a
+# resident model whenever a request asks for a different ``num_ctx``: a 10-40 s
+# cold load of a ~20 GB model in the middle of a QA rail. Per-phase resolution
+# gives every caller its own size (``<phase>_num_ctx`` -> ``ollama_num_ctx``,
+# or 8192 in a process with no container). A shared endpoint that swaps models
+# anyway absorbs that. A pinned one cannot: on 2026-09-24 ollama-vision.service
+# started llama-server 48 times, alternating 16384 / 32768 / 8192. So every
+# call routed to a pinned endpoint runs at ``pinned_llm_endpoint_num_ctx``,
+# whatever the caller or its phase key asked for.
+
+PINNED_NUM_CTX_KEY = "pinned_llm_endpoint_num_ctx"
+
+# (phase, requested, pinned) triples already warned about in this process, so
+# a caller whose per-phase key disagrees says so once rather than per call.
+_pinned_ctx_overrides_logged: set[tuple[str, int, int]] = set()
+
+
+def parse_pinned_num_ctx(raw: Any) -> int | None:
+    """``pinned_llm_endpoint_num_ctx`` -> the context to enforce, or ``None`` (off).
+
+    Absent or blank means the declared default, not "off". A row the seeder
+    has not written yet (a script against a DB that no worker has booted on
+    since the key landed) must not quietly bring the per-phase sizes back.
+    ``0`` or below is the explicit opt-out, and pinned calls then resolve per
+    phase as they did before. An unparseable value is logged and replaced by
+    the declared default.
+    """
+    from poindexter.services.settings_defaults import default_int
+
+    text = "" if raw is None else str(raw).strip()
+    if not text:
+        return default_int(PINNED_NUM_CTX_KEY)
+    try:
+        value = int(text)
+    except ValueError:
+        declared = default_int(PINNED_NUM_CTX_KEY)
+        logger.warning(
+            "[dispatch] %s=%r is not an integer; pinned endpoints run at the "
+            "declared default %d", PINNED_NUM_CTX_KEY, raw, declared,
+        )
+        return declared
+    return value if value > 0 else None
+
+
+async def pinned_endpoint_num_ctx(pool: Any, *, site_config: Any = None) -> int | None:
+    """The context every call to a GPU-pinned endpoint runs at (``None`` = off).
+
+    Reads the injected ``site_config``, else the process container's. A
+    process with neither (a script, a smoke run) reads the row from ``pool``
+    rather than taking a code default. Without a container ``resolve_num_ctx``
+    answers 8192: the ad-hoc shot-vision calls beside a 16384 Ragas smoke did
+    that on 2026-09-24 and reloaded the judge four times between 20:50 and
+    20:53.
+    """
+    if site_config is None:
+        from poindexter.services.container_registry import get_container
+
+        container = get_container()
+        site_config = container.site_config if container is not None else None
+    if site_config is not None:
+        return parse_pinned_num_ctx(site_config.get(PINNED_NUM_CTX_KEY, ""))
+    raw = None
+    if pool is not None:
+        try:
+            raw = await pool.fetchval(
+                "SELECT value FROM app_settings WHERE key = $1", PINNED_NUM_CTX_KEY,
+            )
+        except Exception as exc:  # noqa: BLE001 — the declared default still pins ONE size
+            logger.warning(
+                "[dispatch] could not read %s (%s); pinned endpoints run at the "
+                "declared default", PINNED_NUM_CTX_KEY, describe_exception(exc),
+            )
+    return parse_pinned_num_ctx(raw)
+
+
+def _note_pinned_num_ctx_override(
+    phase: str, model: str, requested: Any, pinned: int,
+) -> None:
+    """Warn (once per process per phase/size) when a pinned route overrides a caller.
+
+    The override itself is the point. This only makes it visible, so a tuned
+    ``<phase>_num_ctx`` that no longer applies does not look like it does.
+    """
+    if requested is None or isinstance(requested, bool):
+        return
+    try:
+        asked = int(requested)
+    except (TypeError, ValueError):
+        return  # not a size at all; the override below replaces it either way
+    if asked == pinned:
+        return
+    key = (phase, asked, pinned)
+    if key in _pinned_ctx_overrides_logged:
+        return
+    _pinned_ctx_overrides_logged.add(key)
+    logger.warning(
+        "[dispatch] phase=%s asked for num_ctx=%d on %s, which a GPU-pinned "
+        "endpoint serves; running it at %s=%d. A pinned instance holds one "
+        "model at one context, so %d would reload it now and again for the "
+        "next caller. Per-phase *_num_ctx keys do not apply to pinned routes: "
+        "change %s to resize every call there together.",
+        phase, asked, model, PINNED_NUM_CTX_KEY, pinned, asked, PINNED_NUM_CTX_KEY,
+    )
+
+
 def _local_fallback_or_reraise(
     exhausted: Any,
     model: str,
@@ -748,11 +857,25 @@ async def dispatch_complete(
                 model = _local_fallback_or_reraise(
                     exhausted, model, provider_config, phase=phase, span=span,
                 )
+            # A model routed to a GPU-pinned endpoint runs at that endpoint's one
+            # context (see pinned_endpoint_num_ctx), overriding the caller's
+            # num_ctx and the per-phase backfill below: any second size is a
+            # full reload of the pinned model. It also skips the VRAM clamp,
+            # whose budget is the whole GPU pool rather than the pinned card,
+            # and which could hand the pinned model a second size of its own.
+            pinned_ctx: int | None = None
+            if not _is_paid_llm_call(model, provider_config) and _routes_to_pinned_endpoint(
+                model, provider_config,
+            ):
+                pinned_ctx = await pinned_endpoint_num_ctx(pool)
+            if pinned_ctx is not None:
+                _note_pinned_num_ctx_override(phase, model, kwargs.get("num_ctx"), pinned_ctx)
+                kwargs["num_ctx"] = pinned_ctx
             # Default num_ctx for LOCAL dispatches that never threaded one, so
             # every local path (vision QA, media, scheduled research) is bounded
             # + clamped like the writer — not left at Ollama's Modelfile default
             # (e.g. gemma-4-31B at 262144). Paid/cloud calls are left untouched.
-            if kwargs.get("num_ctx") is None:
+            elif kwargs.get("num_ctx") is None:
                 default_ctx = _resolve_default_num_ctx(phase, model, provider_config)
                 if default_ctx is not None:
                     kwargs["num_ctx"] = default_ctx
@@ -762,7 +885,7 @@ async def dispatch_complete(
             # error logs and falls through to the requested ctx rather than
             # breaking the dispatch.
             req_num_ctx = kwargs.get("num_ctx")
-            if req_num_ctx and _vram_guard_enabled():
+            if req_num_ctx and pinned_ctx is None and _vram_guard_enabled():
                 try:
                     kwargs["num_ctx"] = await _clamp_num_ctx_to_budget(
                         pool, model, int(req_num_ctx), provider_config or {},

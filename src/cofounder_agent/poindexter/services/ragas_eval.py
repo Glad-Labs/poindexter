@@ -247,12 +247,14 @@ def _build_dispatcher_ragas_wrappers(
     # The judge's context window, sent explicitly from qa_ragas_judge_num_ctx.
     # In a real flow the dispatcher already backfills the per-phase num_ctx
     # from the app container, so this mainly covers callers with no container
-    # (scripts, smoke runs), which otherwise fall back to 8192. Keep it EQUAL
-    # to every other caller of the :11435 judge instance: Ollama holds one
-    # model at one context size and reloads it (10-40 s on the 3090) whenever
-    # a caller asks for a different one. Long drafts can still overflow 16384
-    # in faithfulness (statement extraction alone ran ~10k output tokens on a
-    # 23k-char draft, 2026-09-25) and score -1.0.
+    # (scripts, smoke runs), which otherwise fall back to 8192. It only sizes a
+    # judge on a SHARED endpoint: when ragas_judge_model routes to a GPU-pinned
+    # one (the :11435 judge), dispatch_complete runs the call at
+    # pinned_llm_endpoint_num_ctx instead, because that instance holds one
+    # model at one context and reloads it (10-40 s on the 3090) for any other
+    # size. Long drafts can still overflow 16384 in faithfulness (statement
+    # extraction alone ran ~10k output tokens on a 23k-char draft, 2026-09-25)
+    # and score -1.0.
     judge_extra: dict[str, Any] = {}
     try:
         judge_num_ctx = (
@@ -465,7 +467,8 @@ async def _build_ragas_models(
 # Faithfulness scales with the DRAFT, not the corpus: Ragas first splits the
 # draft into statements (~0.45 output tokens per draft character), then judges
 # every statement against the context. Both steps must fit the judge's window
-# (qa_ragas_judge_num_ctx, 16384 on the operator stack). Measured 2026-09-25:
+# (pinned_llm_endpoint_num_ctx for the pinned :11435 judge, else
+# qa_ragas_judge_num_ctx; 16384 on the operator stack). Measured 2026-09-25:
 # drafts of 4.6k-13.2k chars scored; a 23.4k-char draft filled the window on
 # every long call (prompt + answer = 16384 exactly) and scored -1.0 on all
 # three QA passes, burning ~5 min of judge time per pass. Scaling the 12.7k

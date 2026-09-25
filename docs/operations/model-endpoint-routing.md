@@ -69,14 +69,33 @@ requires a second endpoint.
   "passing open" rather than as an error. Set
   `gpu_pinned_endpoint_skips_lock=false` if your second instance shares one
   physical GPU with the first — two servers on one card genuinely do contend.
+- **A routed model runs at one context size.** An instance that holds one
+  model (`OLLAMA_MAX_LOADED_MODELS=1`, `KEEP_ALIVE=-1`) holds it at one
+  `num_ctx`. Ollama reloads a resident model whenever a request asks for a
+  different one, and for a ~20 GB vision judge that is a 10-40 s cold load in
+  the middle of a QA rail. So every dispatch routed through this map runs at
+  `pinned_llm_endpoint_num_ctx` (default 16384). That overrides the caller's
+  `num_ctx` and every per-phase `*_num_ctx` key, including
+  `qa_ragas_judge_num_ctx` and `qa_deepeval_judge_num_ctx`, which only size a
+  judge that is _not_ pinned. The first time an override changes a size, a
+  warning names the phase. `WarmPinnedLlmEndpointsJob` warms at the same size,
+  and the brain's Ollama RAM-recycle re-pins at it. Anything outside Poindexter
+  that sends no `num_ctx` gets the instance's `OLLAMA_CONTEXT_LENGTH`, so set
+  that to the same value in the wrapper (the recipe below does). If the warm
+  job finds the model resident at any other size it raises
+  `pinned_endpoint_context_mismatch` and leaves the model loaded, because
+  re-warming would fight the other caller. Set the key to `0` to go back to
+  per-phase sizes. Before this rule the reference judge logged 48 loads in one
+  day (2026-09-24), alternating 16384 / 32768 / 8192.
 
 ## Recipe: a second Ollama pinned to a specific GPU
 
 Ollama has no per-model GPU affinity — one instance schedules across
 every GPU it can see. Hard placement means a second instance that can
-only see the target GPU. On Windows (`scripts/ollama-vision-gpu1.ps1`
-is the reference implementation, registered as a scheduled task by
-`scripts/background-services.ps1`):
+only see the target GPU. On Linux the reference implementation is
+`scripts/linux/ollama-vision.sh`, run as the `ollama-vision.service`
+systemd unit. On Windows it was `scripts/ollama-vision-gpu1.ps1`,
+registered as a scheduled task by `scripts/background-services.ps1`:
 
 ```powershell
 # Resolve the target GPU's UUID (index from `nvidia-smi -L`)
@@ -88,13 +107,16 @@ $env:OLLAMA_VULKAN = "false"           # REQUIRED — see gotchas
 $env:OLLAMA_HOST = "127.0.0.1:11435"
 $env:OLLAMA_KEEP_ALIVE = "-1"          # keep the routed model warm forever
 $env:OLLAMA_MAX_LOADED_MODELS = "1"
+$env:OLLAMA_CONTEXT_LENGTH = "16384"   # = pinned_llm_endpoint_num_ctx
 & "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" serve
 ```
 
-Then set the override map to point the model at `:11435` and warm it once
-(`curl :11435/api/generate` with a one-word prompt). With
-`OLLAMA_KEEP_ALIVE=-1` it stays resident; the primary instance cannot
-evict it because it's a separate server process.
+Then set the override map to point the model at `:11435`.
+`WarmPinnedLlmEndpointsJob` loads it within five minutes. To warm it by hand,
+send `options.num_ctx` equal to `pinned_llm_endpoint_num_ctx`, or the first
+real call reloads it at that size. With `OLLAMA_KEEP_ALIVE=-1` it stays
+resident; the primary instance cannot evict it because it's a separate server
+process.
 
 ### Gotchas (each of these cost us a debugging round)
 
@@ -133,6 +155,17 @@ evict it because it's a separate server process.
    refusals to `:11435` with sub-10ms latency (an instant refusal, not a
    slow/contended timeout), check `tasklist | grep ollama` for a missing
    second process before assuming GPU contention.
+7. **Every context-size change is a full reload.** A pinned judge that
+   answers slowly with a tiny decode time is usually reloading, not slow:
+   look for a huge `cost_logs.duration_ms` beside a small
+   `decode_duration_ms`. The serve log records every load with its size.
+   Count them by size (Linux, systemd unit):
+   `journalctl -u ollama-vision.service --since today | grep -o 'starting llama-server.* -c [0-9]*' | grep -o ' -c [0-9]*$' | sort | uniq -c`.
+   A healthy instance shows one size, loaded once per restart or RAM
+   recycle. Two sizes mean a caller is bypassing the dispatcher. Map the
+   loads to callers with the `[GIN]` lines that complete right after each
+   `starting llama-server` line: their client IP names the container, and
+   `::1` is a process on the host.
 
 ## Verifying a routed model end-to-end
 
@@ -143,3 +176,6 @@ evict it because it's a separate server process.
    (`ollama ps` against the default base stays clean).
 3. If you pinned it to a GPU, watch that GPU's utilization spike during
    the call.
+4. Confirm it stays at one context: `curl <override-base>/api/ps` shows
+   `context_length` equal to `pinned_llm_endpoint_num_ctx`, and the serve
+   log's load count (gotcha 7) does not grow between recycles.

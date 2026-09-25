@@ -10,7 +10,8 @@ Pinned here:
 
 1. A cold pinned endpoint gets warmed, with ``keep_alive=-1`` and an explicit
    ``num_ctx`` — Ollama reloads when the context changes, so warming at the
-   wrong one is worse than not warming.
+   wrong one is worse than not warming. The size is
+   ``pinned_llm_endpoint_num_ctx``, the one every dispatch routed there runs at.
 2. An already-resident model is left alone (no eviction, no wasted load).
 3. The DEFAULT endpoint is never warmed — under ``OLLAMA_MAX_LOADED_MODELS=1``
    that would evict whatever the pipeline is mid-way through.
@@ -32,12 +33,15 @@ _MODEL = "ollama/qwen3-vl:30b"
 _TAG = "qwen3-vl:30b"
 
 
-def _site_config(enabled: bool = True, num_ctx: str = "8192") -> MagicMock:
+def _site_config(
+    enabled: bool = True, num_ctx: str = "8192", pinned: str = "16384",
+) -> MagicMock:
     sc = MagicMock()
     sc.get_bool.return_value = enabled
-    sc.get.side_effect = lambda key, default="": (
-        num_ctx if key == "ollama_num_ctx" else default
-    )
+    sc.get.side_effect = lambda key, default="": {
+        "ollama_num_ctx": num_ctx,
+        "pinned_llm_endpoint_num_ctx": pinned,
+    }.get(key, default)
     return sc
 
 
@@ -104,9 +108,10 @@ async def test_cold_pinned_endpoint_is_warmed_with_keep_alive_and_num_ctx():
     body = call.kwargs["json"]
     assert body["model"] == _TAG
     assert body["keep_alive"] == -1, "a pin that evicts is not a pin"
-    assert body["options"]["num_ctx"] == 8192, (
-        "warm must use the context real calls request — Ollama reloads when "
-        "num_ctx changes, so warming at a different one wastes the load"
+    assert body["options"]["num_ctx"] == 16384, (
+        "warm must use the context real calls request (pinned_llm_endpoint_num_ctx, "
+        "which dispatch_complete enforces on a pinned route) — Ollama reloads "
+        "when num_ctx changes, so warming at a different one wastes the load"
     )
 
 
@@ -292,3 +297,116 @@ def test_non_integer_cap_falls_back_to_one():
     assert _max_models_per_endpoint(_site_config_with_cap("two")) == 1
     assert _max_models_per_endpoint(_site_config_with_cap("0")) == 1
     assert _max_models_per_endpoint(_site_config_with_cap("3")) == 3
+
+
+# --- one context per pinned endpoint (2026-09-25) --------------------------
+#
+# Ollama reloads a resident model for any other num_ctx. The judge alternated
+# 16384 / 32768 / 8192 on 2026-09-24 (48 llama-server starts): the rails asked
+# for one size, a host poller and the brain's re-pin got the instance default,
+# an ad-hoc run got 8192. The warm must load at the size dispatch enforces, and
+# a model resident at any other size must be reported, not reloaded.
+
+
+async def _run_collecting(ctx, overrides, site_config):
+    import contextlib
+
+    findings: list[dict[str, Any]] = []
+    with contextlib.ExitStack() as stack:
+        for p in _patches(ctx, overrides):
+            stack.enter_context(p)
+        stack.enter_context(
+            patch("poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)),
+        )
+        result = await WarmPinnedLlmEndpointsJob().run(
+            pool=MagicMock(), config={"_site_config": site_config},
+        )
+    return result, findings
+
+
+@pytest.mark.asyncio
+async def test_warm_uses_the_pinned_size_not_the_fleet_default():
+    """ollama_num_ctx is the shared endpoint's default; a pinned endpoint runs
+    at its own setting, and the warm must match THAT or it is thrown away."""
+    client, ctx = _client({"models": []})
+    result = await _run(ctx, {_MODEL: _PINNED}, site_config=_site_config(num_ctx="8192", pinned="24576"))
+
+    assert client.post.await_args.kwargs["json"]["options"]["num_ctx"] == 24576
+    assert result.metrics["warm_num_ctx"] == 24576
+
+
+@pytest.mark.asyncio
+async def test_opting_out_warms_at_the_fleet_default_as_before():
+    """pinned_llm_endpoint_num_ctx=0 hands pinned calls back to per-phase sizes;
+    the warm then falls back to what it always used."""
+    client, ctx = _client({"models": []})
+    await _run(ctx, {_MODEL: _PINNED}, site_config=_site_config(pinned="0"))
+
+    # _patches stubs resolve_num_ctx (the fleet-default path) to 8192.
+    assert client.post.await_args.kwargs["json"]["options"]["num_ctx"] == 8192
+
+
+@pytest.mark.asyncio
+async def test_resident_at_another_size_is_reported_and_left_loaded():
+    """The 10-minute poller's 32768 load: the next rail call reloads it, and
+    re-warming would only fight the poller. Report it; touch nothing."""
+    client, ctx = _client({"models": [{"name": _TAG, "context_length": 32768}]})
+    result, findings = await _run_collecting(ctx, {_MODEL: _PINNED}, _site_config())
+
+    client.post.assert_not_awaited()
+    assert result.metrics["context_mismatch"] == 1
+    assert "context_mismatch=1" in result.detail
+    assert [f["kind"] for f in findings] == ["pinned_endpoint_context_mismatch"]
+    finding = findings[0]
+    assert finding["severity"] == "warn"
+    assert finding["dedup_key"] == f"pinned_endpoint_context_mismatch_{_PINNED}"
+    assert "32768" in finding["title"] and "16384" in finding["title"]
+    assert "pinned_llm_endpoint_num_ctx" in finding["body"]
+    assert "OLLAMA_CONTEXT_LENGTH" in finding["body"]
+
+
+@pytest.mark.asyncio
+async def test_resident_at_the_pinned_size_is_quiet():
+    client, ctx = _client({"models": [{"name": _TAG, "context_length": 16384}]})
+    result, findings = await _run_collecting(ctx, {_MODEL: _PINNED}, _site_config())
+
+    assert findings == []
+    assert result.metrics["context_mismatch"] == 0
+    client.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_unreported_context_is_unknown_not_a_mismatch():
+    """An Ollama too old to put context_length in /api/ps must not page."""
+    client, ctx = _client({"models": [{"name": _TAG, "size_vram": 1}]})
+    result, findings = await _run_collecting(ctx, {_MODEL: _PINNED}, _site_config())
+
+    assert findings == []
+    assert result.metrics["context_mismatch"] == 0
+
+
+@pytest.mark.asyncio
+async def test_opted_out_endpoints_are_not_size_checked():
+    """With the enforcement off, per-phase sizes are the configured intent, so
+    a resident size proves nothing."""
+    client, ctx = _client({"models": [{"name": _TAG, "context_length": 32768}]})
+    result, findings = await _run_collecting(ctx, {_MODEL: _PINNED}, _site_config(pinned="0"))
+
+    assert findings == []
+    assert result.metrics["context_mismatch"] == 0
+
+
+def test_resident_contexts_parses_only_real_sizes():
+    from poindexter.services.jobs.warm_pinned_llm_endpoints import _resident_contexts
+
+    body = {"models": [
+        {"name": "a", "context_length": 16384},
+        {"model": "b", "context_length": 32768},
+        {"name": "c"},
+        {"name": "d", "context_length": "16384"},
+        {"name": "e", "context_length": True},
+        {"name": "f", "context_length": 0},
+        "junk",
+    ]}
+    assert _resident_contexts(body) == {"a": 16384, "b": 32768}
+    assert _resident_contexts(None) == {}

@@ -193,6 +193,10 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("gemini", "models"),
     ("groq", "models"),
     ("ollama", "models"),
+    # GPU-pinned LLM endpoints (model_api_base_overrides): the one context they
+    # run at, and the warm job that keeps them resident.
+    ("pinned_llm", "models"),
+    ("warm_pinned_llm", "models"),
     ("thinking_model", "models"),
     ("router_feedback", "models"),
     ("structured_extraction", "models"),

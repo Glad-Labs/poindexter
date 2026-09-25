@@ -51,7 +51,7 @@ def _summary(pool, **kw):
         "mem_fn",
         lambda url: {"ollama-vision.service": {"anon_gb": 9.0, "cpu_percent": 0.0}},
     )
-    kw.setdefault("recycle_fn", lambda e, m: (True, "unloaded and re-pinned"))
+    kw.setdefault("recycle_fn", lambda e, m, n: (True, "unloaded and re-pinned"))
     kw.setdefault("now_fn", lambda: 10_000.0)
     return _run(ow.run_ollama_runner_ram_watch_probe(pool, **kw))
 
@@ -220,7 +220,7 @@ class TestFailureModes:
 
     def test_recycle_failure_is_reported_and_not_stamped(self):
         pool = _Pool(ENABLED)
-        out = _summary(pool, recycle_fn=lambda e, m: (False, "connection refused"))
+        out = _summary(pool, recycle_fn=lambda e, m, n: (False, "connection refused"))
         assert out["ok"] is False
         assert out["status"] == "recycle_failed"
         # A failed attempt must not start the cooldown, or a broken endpoint
@@ -271,7 +271,7 @@ class TestUrlSchemeGuard:
             ow.run_ollama_runner_ram_watch_probe(
                 pool,
                 gpu_lock_fn=AsyncMock(return_value=False),
-                recycle_fn=lambda e, m: (True, "ok"),
+                recycle_fn=lambda e, m, n: (True, "ok"),
                 now_fn=lambda: 1.0,
             )
         )
@@ -294,3 +294,91 @@ def test_gpu_lock_key_matches_the_worker_constant():
     from poindexter.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY
 
     assert ow.GPU_ADVISORY_LOCK_KEY == GPU_ADVISORY_LOCK_KEY
+
+
+class TestRepinContext:
+    """The re-pin loads at pinned_llm_endpoint_num_ctx (2026-09-25).
+
+    Ollama reloads a resident model for any other num_ctx. The re-pin used to
+    send none, so it loaded at the instance default (32768 on the 24 GB card)
+    while the rails run at 16384, and every recycle cost two reloads: its own,
+    then the next rail call's. Four times on 2026-09-25 alone.
+    """
+
+    def test_the_probe_repins_at_the_configured_size(self):
+        seen: list[tuple[str, str, int]] = []
+        pool = _Pool({**ENABLED, ow.PINNED_NUM_CTX_KEY: "24576"})
+
+        out = _summary(pool, recycle_fn=lambda e, m, n: seen.append((e, m, n)) or (True, "ok"))
+
+        assert out["status"] == "recycled"
+        assert seen == [("http://h:11435", "qwen3-vl:30b", 24576)]
+
+    def test_an_unset_row_repins_at_the_declared_default(self):
+        """The brain may run before any worker has seeded the key."""
+        seen: list[int] = []
+        _summary(_Pool(ENABLED), recycle_fn=lambda e, m, n: seen.append(n) or (True, "ok"))
+        assert seen == [ow.DEFAULT_PINNED_NUM_CTX]
+
+    def test_the_recycled_finding_records_the_size(self):
+        pool = _Pool({**ENABLED, ow.PINNED_NUM_CTX_KEY: "16384"})
+        _summary(pool)
+        params = [c.args for c in pool.execute.await_args_list]
+        assert any("16384" in str(p) for p in params), params
+
+    @staticmethod
+    def _capture_posts(monkeypatch) -> list[dict]:
+        bodies: list[dict] = []
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        def _urlopen(req, timeout=None):
+            import json as _json
+
+            bodies.append(_json.loads(req.data.decode()))
+            return _Resp()
+
+        monkeypatch.setattr(ow.urllib.request, "urlopen", _urlopen)
+        return bodies
+
+    def test_recycle_runner_unloads_then_repins_at_num_ctx(self, monkeypatch):
+        bodies = self._capture_posts(monkeypatch)
+
+        ok, detail = ow.recycle_runner("http://h:11435", "qwen3-vl:30b", 16384)
+
+        assert ok is True
+        assert "num_ctx=16384" in detail
+        unload, repin = bodies
+        assert unload == {"model": "qwen3-vl:30b", "keep_alive": 0}
+        assert repin["keep_alive"] == -1, "a re-pin that can be evicted is not a pin"
+        assert repin["options"] == {"num_ctx": 16384}, (
+            "without num_ctx the re-pin loads at the instance default and the "
+            "next rail call reloads the model at its own size"
+        )
+
+    def test_recycle_runner_with_zero_leaves_the_size_to_the_instance(self, monkeypatch):
+        bodies = self._capture_posts(monkeypatch)
+
+        ow.recycle_runner("http://h:11435", "qwen3-vl:30b", 0)
+
+        assert "options" not in bodies[1]
+
+
+def test_pinned_ctx_key_and_default_match_the_worker():
+    """The brain copies the worker's key and default by hand (it runs stdlib +
+    asyncpg). A drifted key re-pins at the declared default forever; a drifted
+    default re-pins at a size no rail asks for — each is the double reload this
+    replaced, silently."""
+    from poindexter.services.llm_providers.dispatcher import PINNED_NUM_CTX_KEY
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    assert ow.PINNED_NUM_CTX_KEY == PINNED_NUM_CTX_KEY
+    assert ow.DEFAULT_PINNED_NUM_CTX == int(DEFAULTS[PINNED_NUM_CTX_KEY])

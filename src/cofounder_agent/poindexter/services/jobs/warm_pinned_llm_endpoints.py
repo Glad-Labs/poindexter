@@ -17,9 +17,20 @@ loaded model by its context size and *reloads* when a request asks for a
 different one (measured 2026-07-30: requesting phi4 at 8192 then 16384 leaves ONE
 resident instance at 16384, not two). So warming at the wrong ``num_ctx`` is
 worse than not warming: it burns VRAM and the first real call still pays a full
-cold load. The warm request must use the context the real calls will use, which
-is why this job resolves ``num_ctx`` the same way ``dispatch_complete`` does
-rather than letting Ollama pick a default.
+cold load. The warm request must use the context the real calls will use.
+``dispatch_complete`` runs every call routed to a pinned endpoint at
+``pinned_llm_endpoint_num_ctx``, so this job warms at that size, read through
+the same ``pinned_endpoint_num_ctx`` helper, rather than letting Ollama pick.
+
+**A resident model at the wrong size is reported, not re-warmed (2026-09-25).**
+``/api/ps`` names each resident model's ``context_length``. When a pinned tag is
+resident at any other size, something outside the dispatcher loaded it: a
+request with no ``num_ctx`` gets the instance's ``OLLAMA_CONTEXT_LENGTH``, and a
+direct call with its own ``options.num_ctx`` sets it outright. The next rail call
+reloads it either way. The job raises ``pinned_endpoint_context_mismatch`` and
+leaves the model alone, because re-warming would fight that caller. The judge
+was reloaded 80 times on 2026-09-24/25, most of them a 10-minute poller at
+32768 trading places with the rails at 16384.
 
 Scope is deliberately narrow: only endpoints that ``model_api_base_overrides``
 declares, and only when the model is genuinely absent. The default endpoint is
@@ -70,6 +81,25 @@ def _resident_models(payload: Any) -> set[str]:
     return out
 
 
+def _resident_contexts(payload: Any) -> dict[str, int]:
+    """``{model name: loaded context_length}`` from an ``/api/ps`` body.
+
+    A model whose entry carries no usable ``context_length`` (an Ollama too old
+    to report it) is left out: an unknown size is not a mismatch.
+    """
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, int] = {}
+    for entry in payload.get("models") or []:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name") or entry.get("model")
+        ctx = entry.get("context_length")
+        if name and isinstance(ctx, int) and not isinstance(ctx, bool) and ctx > 0:
+            out[str(name)] = ctx
+    return out
+
+
 def _max_models_per_endpoint(site_config: Any) -> int:
     """How many of its own pinned tags one endpoint may hold at once (>= 1)."""
     raw = str(site_config.get(_MAX_PER_ENDPOINT_KEY, "1") or "1").strip()
@@ -106,8 +136,13 @@ class WarmPinnedLlmEndpointsJob:
 
         import httpx
 
-        from poindexter.services.llm_providers.dispatcher import get_provider_config
+        from poindexter.services.llm_providers.dispatcher import (
+            PINNED_NUM_CTX_KEY,
+            get_provider_config,
+            pinned_endpoint_num_ctx,
+        )
         from poindexter.services.llm_providers.litellm_provider import _coerce_override_map
+        from poindexter.services.ollama_client import resolve_num_ctx
         from poindexter.utils.findings import emit_finding
 
         provider_config = await get_provider_config(pool, _PROVIDER)
@@ -123,10 +158,20 @@ class WarmPinnedLlmEndpointsJob:
 
         max_per_endpoint = _max_models_per_endpoint(site_config)
 
+        # The size every dispatch routed to a pinned endpoint runs at. With the
+        # enforcement opted out (0), calls resolve per phase and the warm falls
+        # back to the fleet default it always used.
+        pinned_ctx = await pinned_endpoint_num_ctx(pool, site_config=site_config)
+        warm_ctx = (
+            pinned_ctx if pinned_ctx is not None
+            else resolve_num_ctx(None, site_config=site_config)
+        )
+
         warmed: list[str] = []
         already: list[str] = []
         failed: list[str] = []
         skipped: list[str] = []
+        mismatched: list[str] = []
 
         # Group the map by endpoint first: the ``ollama/`` and ``ollama_chat/``
         # spellings of one tag are the same model, and two DIFFERENT tags on
@@ -148,7 +193,9 @@ class WarmPinnedLlmEndpointsJob:
                 try:
                     resp = await client.get(f"{endpoint}/api/ps", timeout=10)
                     resp.raise_for_status()
-                    resident = _resident_models(resp.json())
+                    ps_body = resp.json()
+                    resident = _resident_models(ps_body)
+                    contexts = _resident_contexts(ps_body)
                 except Exception as exc:
                     logger.warning(
                         "[warm_pinned] %s unreachable at %s: %s",
@@ -164,6 +211,46 @@ class WarmPinnedLlmEndpointsJob:
                 already.extend(held)
                 overcommitted: list[str] = []
 
+                # A pinned tag resident at a size no dispatch will ask for is a
+                # reload waiting for the next rail call. Name it; don't reload it
+                # (see the module docstring for why re-warming makes it worse).
+                for tag in held:
+                    loaded = contexts.get(tag)
+                    if pinned_ctx is None or loaded is None or loaded == pinned_ctx:
+                        continue
+                    mismatched.append(tag)
+                    logger.warning(
+                        "[warm_pinned] %s is resident at %s with num_ctx=%d, but "
+                        "pinned calls run at %s=%d; the next one will reload it",
+                        tag, endpoint, loaded, PINNED_NUM_CTX_KEY, pinned_ctx,
+                    )
+                    emit_finding(
+                        source="warm_pinned_llm_endpoints",
+                        kind="pinned_endpoint_context_mismatch",
+                        severity="warn",
+                        title=(
+                            f"pinned endpoint holds {tag} at num_ctx={loaded}, "
+                            f"not {pinned_ctx}"
+                        ),
+                        body=(
+                            f"{tag} is resident at {endpoint} with a {loaded}-token "
+                            f"context, but every Poindexter call routed there runs at "
+                            f"{PINNED_NUM_CTX_KEY}={pinned_ctx}, so the next one "
+                            "reloads it (10-40 s for a ~20 GB judge). Something "
+                            "outside the dispatcher loaded it at another size. A "
+                            "request that sends no num_ctx gets the instance's "
+                            "OLLAMA_CONTEXT_LENGTH (scripts/linux/ollama-vision.sh "
+                            f"on the reference install; keep it equal to "
+                            f"{PINNED_NUM_CTX_KEY}), and a direct /api/generate or "
+                            "/api/chat with its own options.num_ctx sets the size "
+                            "outright. The instance's serve log names every load's "
+                            "size ('starting llama-server ... -c <num_ctx>'). This "
+                            "job leaves the model loaded: re-warming would fight "
+                            "that caller and double the reloads."
+                        ),
+                        dedup_key=f"pinned_endpoint_context_mismatch_{endpoint}",
+                    )
+
                 for tag in tags:
                     if tag in resident:
                         continue
@@ -173,7 +260,7 @@ class WarmPinnedLlmEndpointsJob:
                         overcommitted.append(tag)
                         continue
                     if not await self._warm(
-                        client, endpoint=endpoint, tag=tag, site_config=site_config,
+                        client, endpoint=endpoint, tag=tag, num_ctx=warm_ctx,
                         failed=failed,
                     ):
                         continue
@@ -209,7 +296,8 @@ class WarmPinnedLlmEndpointsJob:
 
         detail = (
             f"warmed={len(warmed)} already_resident={len(already)} "
-            f"unreachable={len(failed)} skipped_shared_slot={len(skipped)}"
+            f"unreachable={len(failed)} skipped_shared_slot={len(skipped)} "
+            f"context_mismatch={len(mismatched)}"
         )
         return JobResult(
             # Unreachable endpoints are the operator's signal, but this job is
@@ -223,21 +311,21 @@ class WarmPinnedLlmEndpointsJob:
                 "already_resident": len(already),
                 "unreachable": len(failed),
                 "skipped_shared_slot": len(skipped),
+                "context_mismatch": len(mismatched),
                 "pinned_endpoints": len(by_endpoint),
+                "warm_num_ctx": warm_ctx,
             },
         )
 
     @staticmethod
     async def _warm(
-        client: Any, *, endpoint: str, tag: str, site_config: Any, failed: list[str],
+        client: Any, *, endpoint: str, tag: str, num_ctx: int, failed: list[str],
     ) -> bool:
-        """Load ``tag`` on ``endpoint`` never-evict; False (and recorded) on failure."""
-        from poindexter.services.ollama_client import resolve_num_ctx
+        """Load ``tag`` on ``endpoint`` never-evict at ``num_ctx``; False (and
+        recorded) on failure. ``num_ctx`` must be the size real calls use, or
+        Ollama reloads on first use and the warm was wasted (module docs)."""
         from poindexter.utils.findings import emit_finding
 
-        # Context must match what real calls will request or Ollama
-        # reloads on first use and the warm was wasted — see module docs.
-        num_ctx = resolve_num_ctx(None, site_config=site_config)
         try:
             warm = await client.post(
                 f"{endpoint}/api/generate",

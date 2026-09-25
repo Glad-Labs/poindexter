@@ -36,6 +36,16 @@ Reloading a 30B model takes ~85s, during which requests to that endpoint fail.
 That is why this is watermark-gated and idle-gated rather than a periodic timer,
 and why the reload is issued eagerly instead of waiting for the next caller to
 pay the latency.
+
+THE RE-PIN SENDS THE PINNED CONTEXT (2026-09-25)
+------------------------------------------------
+Ollama reloads a resident model whenever a request asks for a different
+``num_ctx``. The re-pin used to send none, so it loaded at the instance default
+(32768 on the 24 GB card) while every Poindexter call routed to the endpoint
+runs at ``pinned_llm_endpoint_num_ctx`` (16384). Every recycle therefore cost
+TWO reloads: its own, then the first rail call's. That happened four times on
+2026-09-25 (01:53, 04:21, 06:53, 13:17). The re-pin now sends that setting, so
+the eager reload is the only one.
 """
 
 from __future__ import annotations
@@ -91,6 +101,16 @@ DEFAULT_COOLDOWN_MINUTES = 120
 DEFAULT_CPU_IDLE_PERCENT = 5.0
 DEFAULT_REQUIRE_GPU_LOCK_FREE = True
 DEFAULT_EXPORTER_URL = ""  # empty = derive from the runtime (docker vs host)
+
+# The context every dispatch routed to a pinned endpoint runs at — the worker's
+# ``dispatcher.PINNED_NUM_CTX_KEY``, whose default lives in settings_defaults.
+# The brain runs stdlib + asyncpg and does not import the worker, so the key and
+# its default are copied here and pinned to the originals by
+# tests/unit/brain/test_ollama_runner_ram_watch.py. The re-pin loads at this
+# size so the next rail call does not reload the model. A value of 0 or less
+# sends no num_ctx, leaving the size to the instance default.
+PINNED_NUM_CTX_KEY = "pinned_llm_endpoint_num_ctx"
+DEFAULT_PINNED_NUM_CTX = 16384
 
 GPU_ADVISORY_LOCK_KEY = 7_777_777_777
 _HTTP_TIMEOUT_SECONDS = 15
@@ -197,6 +217,10 @@ async def _read_config(pool: Any) -> dict[str, Any]:
             await read_setting(pool, EXPORTER_URL_KEY, DEFAULT_EXPORTER_URL) or ""
         ).strip()
         or default_exporter_url(),
+        "num_ctx": coerce_int(
+            await read_setting(pool, PINNED_NUM_CTX_KEY, DEFAULT_PINNED_NUM_CTX),
+            DEFAULT_PINNED_NUM_CTX,
+        ),
     }
 
 
@@ -310,15 +334,20 @@ async def _prove_idle(
 # --- the recycle -------------------------------------------------------------
 
 
-def recycle_runner(endpoint: str, model: str) -> tuple[bool, str]:
+def recycle_runner(endpoint: str, model: str, num_ctx: int) -> tuple[bool, str]:
     """Unload then re-pin. Unloading is what frees the memory.
 
     ``keep_alive: 0`` makes ollama terminate the runner process; the leaked
     anonymous pages die with it. The reload is issued eagerly so the ~85s cost
     lands here rather than on whichever QA rail calls next, and it re-pins with
     ``keep_alive: -1`` so the model stays resident as the placement doctrine
-    intends.
+    intends. It loads at ``num_ctx`` (``pinned_llm_endpoint_num_ctx``), the size
+    the rails will ask for; loading at any other size just moves the reload onto
+    the next rail call. ``num_ctx <= 0`` sends none (the instance default).
     """
+    repin: dict[str, Any] = {"model": model, "prompt": "", "stream": False, "keep_alive": -1}
+    if num_ctx > 0:
+        repin["options"] = {"num_ctx": num_ctx}
 
     def _post(body: dict[str, Any], timeout: int) -> None:
         req = urllib.request.Request(
@@ -338,16 +367,14 @@ def recycle_runner(endpoint: str, model: str) -> tuple[bool, str]:
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return False, f"unload failed: {exc}"
     try:
-        _post(
-            {"model": model, "prompt": "", "stream": False, "keep_alive": -1},
-            _RELOAD_TIMEOUT_SECONDS,
-        )
+        _post(repin, _RELOAD_TIMEOUT_SECONDS)
     except (urllib.error.URLError, OSError) as exc:
         # The memory IS freed at this point — the unload succeeded. Report the
         # partial outcome loudly rather than as a failure that implies nothing
         # happened; the next caller will load the model on demand.
         return True, f"unloaded, but re-pin failed ({exc}) — will load on demand"
-    return True, "unloaded and re-pinned"
+    size = f"num_ctx={num_ctx}" if num_ctx > 0 else "the instance's default num_ctx"
+    return True, f"unloaded and re-pinned at {size}"
 
 
 # --- the probe ---------------------------------------------------------------
@@ -358,7 +385,7 @@ async def run_ollama_runner_ram_watch_probe(
     *,
     gpu_lock_fn: Callable[[], Awaitable[bool | None]] | None = None,
     mem_fn: Callable[[str], dict[str, dict[str, float]] | None] | None = None,
-    recycle_fn: Callable[[str, str], tuple[bool, str]] | None = None,
+    recycle_fn: Callable[[str, str, int], tuple[bool, str]] | None = None,
     now_fn: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
     """Single cycle of the ollama-runner host-RAM recycle watch."""
@@ -443,7 +470,7 @@ async def run_ollama_runner_ram_watch_probe(
             "anon_gb": round(anon_gb, 2),
         }
 
-    ok, detail = await asyncio.to_thread(recycle_fn, endpoint, model)
+    ok, detail = await asyncio.to_thread(recycle_fn, endpoint, model, int(config["num_ctx"]))
     if not ok:
         await emit_finding(
             pool,
@@ -487,6 +514,7 @@ async def run_ollama_runner_ram_watch_probe(
             "watermark_gb": watermark_gb,
             "endpoint": endpoint,
             "model": model,
+            "num_ctx": int(config["num_ctx"]),
         },
     )
     return {

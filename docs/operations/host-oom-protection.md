@@ -310,7 +310,13 @@ elsewhere:
   is what actually frees the memory; a follow-up load with `keep_alive: -1`
   restores the pin eagerly, so the ~85 s reload lands on the probe rather than
   on whichever QA rail calls next. Restarting the systemd unit is neither
-  possible from the daemon's namespaces nor necessary.
+  possible from the daemon's namespaces nor necessary. The re-pin sends
+  `options.num_ctx = pinned_llm_endpoint_num_ctx`, the one size every
+  dispatch to that endpoint runs at (see
+  [model-endpoint-routing](model-endpoint-routing.md)). Until 2026-09-25 it
+  sent none. It loaded at the instance default (32768 on the 24 GB card), so
+  the first rail call reloaded the model at 16384, and every recycle cost two
+  reloads instead of one.
 
 Two idle gates, same shape as its sibling, and unprovable counts as busy:
 

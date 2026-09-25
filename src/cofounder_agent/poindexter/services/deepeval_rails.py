@@ -240,6 +240,10 @@ def _build_dispatcher_judge_model(
             kwargs: dict[str, Any] = {
                 "max_tokens": resolve_judge_num_predict(judge_model, site_config),
             }
+            # Sizes a judge on a SHARED endpoint. A judge routed to a GPU-pinned
+            # endpoint runs at pinned_llm_endpoint_num_ctx whatever this says —
+            # dispatch_complete overrides it, since any second size reloads the
+            # pinned model.
             try:
                 num_ctx = int(site_config.get("qa_deepeval_judge_num_ctx", 0) or 0) if site_config is not None else 0
             except Exception:  # noqa: BLE001 — stubbed site_config
