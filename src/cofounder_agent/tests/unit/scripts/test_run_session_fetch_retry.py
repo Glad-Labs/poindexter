@@ -3,7 +3,7 @@
 On 2026-08-14 the ``test-health`` session died two seconds in:
 
     remote: Internal Server Error
-    fatal: unable to access 'https://github.com/Glad-Labs/glad-labs-stack.git/':
+    fatal: unable to access 'https://github.com/Glad-Labs/poindexter.git/':
            The requested URL returned error: 500
 
 A transient GitHub 5xx on ``git fetch origin``. Under ``set -euo pipefail`` that
@@ -36,7 +36,7 @@ for a in "$@"; do
     n=$(cat "$FAKE_GIT_STATE" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$FAKE_GIT_STATE"
     if [ "$n" -gt "${FAKE_GIT_SUCCEED_AFTER:-99}" ]; then exit 0; fi
     echo "remote: Internal Server Error" >&2
-    echo "fatal: unable to access 'https://github.com/Glad-Labs/glad-labs-stack.git/': The requested URL returned error: 500" >&2
+    echo "fatal: unable to access 'https://github.com/Glad-Labs/poindexter.git/': The requested URL returned error: 500" >&2
     exit 128
   fi
 done
