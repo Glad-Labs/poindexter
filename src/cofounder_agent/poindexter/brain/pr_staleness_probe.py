@@ -47,6 +47,12 @@ Design parity with the rest of the brain:
   a ``probe.pr_staleness_failed`` audit row at severity=warning and
   return ``ok=False`` so the brain cycle's probe-failures count
   reflects reality.
+- Pages a broken probe ONCE per failure episode, not once per pass.
+  The episode lives in ``brain_knowledge`` so a brain restart does
+  not re-page; the operator hears again only when the failure changes,
+  when a replaced ``gh_token`` fails too, as a reminder every
+  ``pr_staleness_failure_repage_hours``, and once more on recovery.
+  See "Failure episodes" below for the incident that earned this.
 """
 
 from __future__ import annotations
@@ -81,6 +87,7 @@ MIN_HOURS_KEY = "pr_staleness_min_hours"
 DEDUP_HOURS_KEY = "pr_staleness_dedup_hours"
 REPO_KEY = "pr_staleness_repo"
 MAX_PRS_PER_ALERT_KEY = "pr_staleness_max_prs_per_alert"
+FAILURE_REPAGE_HOURS_KEY = "pr_staleness_failure_repage_hours"
 
 # Token reuse — same secret the dev_diary topic source already populates.
 TOKEN_SETTING_KEY = "gh_token"
@@ -91,6 +98,7 @@ DEFAULT_MIN_HOURS = 24
 DEFAULT_DEDUP_HOURS = 12
 DEFAULT_REPO = "Glad-Labs/poindexter"
 DEFAULT_MAX_PRS_PER_ALERT = 5
+DEFAULT_FAILURE_REPAGE_HOURS = 24
 
 # Brain default cycle is ~5 min; the registry-driven probe path runs
 # every cycle and the inner cadence gate decides whether to do real work.
@@ -122,13 +130,18 @@ MAX_DETAIL_BODY_CHARS = 1800
 # ---------------------------------------------------------------------------
 
 _state: dict[str, Any] = {
-    "last_real_pass_at": None,  # datetime — last "do work" cycle
+    "last_real_pass_at": None,  # datetime — last "do work" cycle, failed or not
+    # Operator-facing text of the last failed pass, None once a pass succeeds.
+    # Lets the cycles skipped by the cadence gate keep reporting ok=False
+    # while the probe is broken, instead of reading as healthy 11 cycles in 12.
+    "failing_detail": None,
 }
 
 
 def _reset_state() -> None:
     """Test hook — clear the cadence-gate memory."""
     _state["last_real_pass_at"] = None
+    _state["failing_detail"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +210,11 @@ async def _read_config(pool: Any) -> dict[str, Any]:
     )
     if max_prs <= 0:
         max_prs = DEFAULT_MAX_PRS_PER_ALERT
+    # 0 is meaningful here: page once per episode and never remind.
+    failure_repage_hours = max(0, _coerce_int(
+        await _read_setting(pool, FAILURE_REPAGE_HOURS_KEY, DEFAULT_FAILURE_REPAGE_HOURS),
+        DEFAULT_FAILURE_REPAGE_HOURS,
+    ))
 
     return {
         "enabled": enabled,
@@ -205,6 +223,7 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "dedup_hours": dedup_hours,
         "repo": repo,
         "max_prs": max_prs,
+        "failure_repage_hours": failure_repage_hours,
     }
 
 
@@ -284,6 +303,214 @@ async def _record_pr_dedup(
             "[PR_STALENESS] alert_dedup_state upsert failed for %s: %s",
             fingerprint, exc,
         )
+
+
+# ---------------------------------------------------------------------------
+# Failure episodes — page a broken probe once, not every pass.
+#
+# 2026-09-23 23:13 UTC the gh_token was replaced with one that cannot see the
+# private repo, and from 23:37 every pass failed with the same 404. The
+# failure path neither advanced the hourly cadence gate nor remembered that it
+# had paged, so the probe retried every ~5-min brain cycle and called
+# notify_operator each time: 286 pages on 2026-09-24, 52 of them delivered to
+# Discord. The only brake was the notifier's in-memory 30-min
+# ``operator_page_cooldown_minutes``, and every brain restart reset even that.
+# ``pr_staleness_dedup_hours`` never applied: it dedups stale-PR alerts, not
+# the probe's own failure.
+#
+# The brain cannot fix a bad token — only the operator can — so the failure
+# opens an EPISODE, persisted in brain_knowledge (restart-safe; the
+# clock_skew_probe / data_freshness_probe shape), and pages when:
+#   * the episode opens;
+#   * the failure changes (different endpoint, status class or exception) —
+#     that is new information, e.g. 404 -> 401;
+#   * the gh_token row was replaced mid-episode and the new token fails too —
+#     the operator's fix did not take, and a day of silence would read as
+#     success;
+#   * the previous page reached no channel (a failed send must not swallow
+#     the page — the notifier's own rule);
+#   * ``pr_staleness_failure_repage_hours`` have passed since the last page
+#     (a reminder; 0 = never remind).
+# Every other failing pass is still recorded — audit_log row, WARNING log,
+# ok=False — it just does not page. The first successful pass after a paged
+# episode sends one recovery note and closes the episode.
+# ---------------------------------------------------------------------------
+
+FAILURE_STATE_ENTITY = "pr_staleness_probe"
+
+# page_reason values, as they appear in the summary and the audit row.
+PAGE_NEW = "new"
+PAGE_CHANGED = "changed"
+PAGE_TOKEN_REPLACED = "token_replaced"
+PAGE_UNDELIVERED = "undelivered"
+PAGE_REMINDER = "reminder"
+
+
+def _failure_attribute(repo: str) -> str:
+    """brain_knowledge attribute holding the open episode for ``repo``."""
+    return f"failure_episode:{repo}"
+
+
+async def _read_failure_episode(pool: Any, repo: str) -> dict[str, Any] | None:
+    """Return the open failure episode for ``repo``, or None."""
+    try:
+        raw = await pool.fetchval(
+            "SELECT value FROM brain_knowledge WHERE entity = $1 AND attribute = $2",
+            FAILURE_STATE_ENTITY, _failure_attribute(repo),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[PR_STALENESS] failure-episode read failed for %s: %s — treating "
+            "the failure as new, so the operator may be paged again",
+            repo, exc,
+        )
+        return None
+    if not raw:
+        return None
+    try:
+        episode = json.loads(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "[PR_STALENESS] failure-episode row for %s is not JSON (%.80r) — "
+            "starting a new episode", repo, raw,
+        )
+        return None
+    return episode if isinstance(episode, dict) else None
+
+
+async def _write_failure_episode(pool: Any, repo: str, episode: dict[str, Any]) -> None:
+    """Upsert the episode row; never raises."""
+    try:
+        await pool.execute(
+            """
+            INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
+            VALUES ($1, $2, $3, 1.0, 'pr_staleness_probe')
+            ON CONFLICT (entity, attribute)
+              DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+            """,
+            FAILURE_STATE_ENTITY, _failure_attribute(repo), json.dumps(episode),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[PR_STALENESS] failure-episode write failed for %s: %s — the next "
+            "failing pass cannot tell it already paged and may page again",
+            repo, exc,
+        )
+
+
+async def _clear_failure_episode(pool: Any, repo: str) -> None:
+    """Delete the episode row; never raises."""
+    try:
+        await pool.execute(
+            "DELETE FROM brain_knowledge WHERE entity = $1 AND attribute = $2",
+            FAILURE_STATE_ENTITY, _failure_attribute(repo),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[PR_STALENESS] failure-episode clear failed for %s: %s — the "
+            "recovery note may be sent again on the next clean pass",
+            repo, exc,
+        )
+
+
+async def _read_token_changed_at(pool: Any) -> str | None:
+    """When the ``gh_token`` row's value last changed (ISO), or None.
+
+    Reads the row's timestamp, never the secret. ``updated_at`` moves only
+    when the value is written (``app_settings_set_updated_at_trigger`` is
+    ``BEFORE UPDATE OF value``), so read-telemetry stamps don't move it.
+    """
+    try:
+        val = await pool.fetchval(
+            "SELECT updated_at FROM app_settings WHERE key = $1",
+            TOKEN_SETTING_KEY,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[PR_STALENESS] could not read %s.updated_at: %s — a replaced "
+            "token that still fails will wait for the next reminder",
+            TOKEN_SETTING_KEY, exc,
+        )
+        return None
+    if not isinstance(val, datetime):
+        return None
+    if val.tzinfo is None:
+        val = val.replace(tzinfo=UTC)
+    return val.isoformat()
+
+
+def _decide_failure_page(
+    prev: dict[str, Any] | None,
+    *,
+    signature: str,
+    token_changed_at: str | None,
+    now_utc: datetime,
+    repage_hours: int,
+) -> tuple[dict[str, Any], str | None]:
+    """Fold one failing pass into the episode.
+
+    Returns ``(episode, page_reason)``; ``page_reason`` is None when this
+    pass should stay quiet. Pure — the caller persists the episode and, once
+    a page is delivered, stamps ``paged_at``.
+    """
+    now_iso = now_utc.isoformat()
+    if not prev:
+        return {
+            "signature": signature,
+            "token_changed_at": token_changed_at,
+            "since": now_iso,
+            "attempts": 1,
+            "paged_at": None,
+            "pages": 0,
+        }, PAGE_NEW
+
+    episode = dict(prev)
+    episode["attempts"] = _coerce_int(prev.get("attempts"), 0) + 1
+    if not episode.get("since"):
+        episode["since"] = now_iso
+
+    if prev.get("signature") != signature:
+        episode["signature"] = signature
+        episode["previous_signature"] = prev.get("signature")
+        episode["token_changed_at"] = token_changed_at
+        return episode, PAGE_CHANGED
+
+    prev_token = prev.get("token_changed_at")
+    if token_changed_at and token_changed_at != prev_token:
+        episode["token_changed_at"] = token_changed_at
+        # Only a KNOWN earlier token is evidence of a replacement; a first
+        # successful read of the timestamp is just bookkeeping.
+        if prev_token:
+            return episode, PAGE_TOKEN_REPLACED
+
+    paged_at = _parse_iso8601_utc(prev.get("paged_at"))
+    if paged_at is None:
+        return episode, PAGE_UNDELIVERED
+    if repage_hours > 0 and now_utc - paged_at >= timedelta(hours=repage_hours):
+        return episode, PAGE_REMINDER
+    return episode, None
+
+
+def _page_delivered(results: Any) -> bool:
+    """Did ``notify_operator`` get the page to an external channel?
+
+    False only when a configured channel FAILED to send — retrying next pass
+    can fix that. No channel configured at all is not retryable (alerts.log
+    already has it), and a return value this function can't read (a test or
+    custom notifier) counts as delivered rather than re-paging every pass.
+    """
+    if not isinstance(results, dict):
+        return True
+    statuses = [str(results.get(channel) or "") for channel in ("discord", "telegram")]
+    if any(s in ("discord", "telegram") or s.startswith("suppressed") for s in statuses):
+        return True
+    return not any("send failed" in s for s in statuses)
+
+
+def _fmt_utc(iso: Any) -> str:
+    """Render a stored ISO timestamp as ``YYYY-MM-DD HH:MM UTC``."""
+    ts = _parse_iso8601_utc(iso)
+    return ts.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC") if ts else "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +613,131 @@ async def _emit_stale_alert(
 # ---------------------------------------------------------------------------
 
 
+class GitHubAPIError(RuntimeError):
+    """GitHub answered with a non-200; keeps what the operator page needs."""
+
+    def __init__(
+        self,
+        endpoint: str,
+        status_code: int,
+        body: str,
+        *,
+        rate_limited: bool = False,
+        ref: str = "",
+    ) -> None:
+        self.endpoint = endpoint
+        self.status_code = status_code
+        self.body = body
+        self.rate_limited = rate_limited
+        self.ref = ref
+        super().__init__(f"GitHub /{endpoint} returned {status_code}: {body[:200]}")
+
+
+def _is_rate_limited(response: Any) -> bool:
+    """True for GitHub's primary or secondary rate-limit answer (403/429)."""
+    if response.status_code not in (403, 429):
+        return False
+    headers = getattr(response, "headers", None) or {}
+    try:
+        remaining = headers.get("x-ratelimit-remaining")
+    except Exception:  # noqa: BLE001 — a header object we can't read is "no header"
+        remaining = None
+    if remaining is not None and str(remaining).strip() == "0":
+        return True
+    return "rate limit" in (getattr(response, "text", "") or "").lower()
+
+
+def _github_message(body: str) -> str:
+    """The ``message`` field of a GitHub error body, else a compact excerpt."""
+    try:
+        data = json.loads(body)
+    except (TypeError, ValueError):
+        data = None
+    if isinstance(data, dict) and data.get("message"):
+        return str(data["message"])[:200]
+    return " ".join((body or "").split())[:200] or "no body"
+
+
+_TOKEN_FIX = "`poindexter settings set gh_token <token> --secret`"
+
+
+def _describe_failure(exc: BaseException, *, repo: str, has_token: bool) -> tuple[str, str]:
+    """Map a failed round-trip to ``(signature, operator-facing detail)``.
+
+    ``signature`` is the failure's identity for episode dedup: the same
+    signature on the next pass is the same failure, not news. It groups by
+    what the operator would do about it — every 5xx is one "GitHub is
+    having a bad day" failure — so flapping between 502 and 503 stays quiet.
+    """
+    if not isinstance(exc, GitHubAPIError):
+        name = type(exc).__name__
+        # str() of an httpx timeout is the EMPTY string; name the class alone.
+        msg = str(exc).strip()
+        what = f"{name}: {msg[:200]}" if msg else name
+        return name, (
+            f"{what} — the GitHub round-trip for {repo} did not complete. "
+            f"Usually a network or GitHub blip; the probe retries on its "
+            f"next pass."
+        )
+
+    status = exc.status_code
+    said = _github_message(exc.body)
+    if exc.rate_limited:
+        return f"{exc.endpoint}:rate-limited", (
+            f"GitHub rate-limited the probe on /{exc.endpoint} (HTTP {status}: "
+            f"{said}). It retries on its next pass; if this persists, another "
+            f"gh_token consumer is spending the budget."
+        )
+    if status >= 500:
+        return f"{exc.endpoint}:5xx", (
+            f"GitHub /{exc.endpoint} for {repo} returned {status} — a GitHub-side "
+            f"error. The probe retries on its next pass."
+        )
+    if status == 401:
+        return f"{exc.endpoint}:401", (
+            f"GitHub rejected the gh_token (HTTP 401: {said}) — it is invalid, "
+            f"expired or revoked. Replace it with {_TOKEN_FIX}."
+        )
+    if exc.endpoint == "pulls" and status == 404:
+        if not has_token:
+            return "pulls:404-no-token", (
+                f"gh_token is not set, and GitHub answers 404 to an anonymous "
+                f"request for {repo} — the repo is private, or the name in "
+                f"app_settings.{REPO_KEY} is wrong. Set a token that can read "
+                f"its pull requests and checks with {_TOKEN_FIX}."
+            )
+        return "pulls:404", (
+            f"The gh_token cannot see {repo}, check its scopes. GitHub answers "
+            f"404, not 403, for a private repo the token has no access to, so "
+            f"unless app_settings.{REPO_KEY} is misspelled, the token is the "
+            f"problem. It needs {repo} in its repository access with Pull "
+            f"requests (read) and Checks (read), or the classic `repo` scope. "
+            f"Rotate it with {_TOKEN_FIX}."
+        )
+    if exc.endpoint == "pulls" and status == 403:
+        return "pulls:403", (
+            f"The gh_token may not list pull requests on {repo} (HTTP 403: "
+            f"{said}), check its scopes: it needs Pull requests (read) and "
+            f"Checks (read). Rotate it with {_TOKEN_FIX}."
+        )
+    if exc.endpoint == "check-runs" and status == 403:
+        return "check-runs:403", (
+            f"The gh_token can list pull requests on {repo} but cannot read "
+            f"their check runs (HTTP 403: {said}) — grant it Checks (read), or "
+            f"rotate it with {_TOKEN_FIX}."
+        )
+    if exc.endpoint == "check-runs" and status == 404:
+        return "check-runs:404", (
+            f"GitHub /check-runs returned 404 for commit {exc.ref[:9]} on "
+            f"{repo} — the commit is gone (force-pushed or deleted head) or "
+            f"the gh_token cannot read checks there. Nothing is surfaced for "
+            f"any PR this pass."
+        )
+    return f"{exc.endpoint}:{status}", (
+        f"GitHub /{exc.endpoint} for {repo} returned HTTP {status}: {said}"
+    )
+
+
 async def _fetch_open_prs(
     client: httpx.AsyncClient,
     repo: str,
@@ -396,9 +748,9 @@ async def _fetch_open_prs(
         params={"state": "open", "per_page": MAX_PRS_PER_CYCLE},
     )
     if r.status_code != 200:
-        raise RuntimeError(
-            f"GitHub /pulls returned {r.status_code}: "
-            f"{(r.text or '')[:200]}"
+        raise GitHubAPIError(
+            "pulls", r.status_code, r.text or "",
+            rate_limited=_is_rate_limited(r),
         )
     data = r.json()
     if not isinstance(data, list):
@@ -419,9 +771,9 @@ async def _fetch_check_runs(
         params={"per_page": 100},
     )
     if r.status_code != 200:
-        raise RuntimeError(
-            f"GitHub /check-runs returned {r.status_code}: "
-            f"{(r.text or '')[:200]}"
+        raise GitHubAPIError(
+            "check-runs", r.status_code, r.text or "",
+            rate_limited=_is_rate_limited(r), ref=sha,
         )
     data = r.json()
     if not isinstance(data, dict):
@@ -508,6 +860,55 @@ def _build_discord_body(
     return body
 
 
+def _build_failure_page(
+    *,
+    repo: str,
+    reason: str,
+    detail: str,
+    episode: dict[str, Any],
+    poll_interval_minutes: int,
+    repage_hours: int,
+) -> tuple[str, str]:
+    """Render ``(title, body)`` for a failure page."""
+    if reason == PAGE_REMINDER:
+        title = f"PR staleness probe still failing against {repo}"
+    else:
+        title = f"PR staleness probe failed against {repo}"
+
+    lines = [detail, ""]
+    if reason == PAGE_CHANGED:
+        lines.append(
+            f"The failure changed (was {episode.get('previous_signature')}, "
+            f"now {episode.get('signature')})."
+        )
+    elif reason == PAGE_TOKEN_REPLACED:
+        lines.append(
+            f"The gh_token was replaced at "
+            f"{_fmt_utc(episode.get('token_changed_at'))}, and the new token "
+            f"fails the same way."
+        )
+    elif reason == PAGE_UNDELIVERED:
+        lines.append("The previous page about this failure reached no channel.")
+    attempts = _coerce_int(episode.get("attempts"), 1)
+    lines.append(
+        f"Failing since {_fmt_utc(episode.get('since'))} "
+        f"({attempts} attempt{'s' if attempts != 1 else ''}); the probe retries "
+        f"every {poll_interval_minutes} min and stays quiet while the failure "
+        f"is unchanged."
+    )
+    if repage_hours > 0:
+        lines.append(
+            f"Next reminder in {repage_hours}h if it persists; a recovery note "
+            f"follows when it clears."
+        )
+    else:
+        lines.append(
+            f"Reminders are off (app_settings.{FAILURE_REPAGE_HOURS_KEY}=0); a "
+            f"recovery note follows when it clears."
+        )
+    return title, "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Top-level probe entry point
 # ---------------------------------------------------------------------------
@@ -515,6 +916,172 @@ def _build_discord_body(
 
 NotifyFn = Callable[..., Any]
 HttpClientFactory = Callable[..., Any]
+
+
+async def _handle_round_trip_failure(
+    pool: Any,
+    exc: BaseException,
+    *,
+    repo: str,
+    has_token: bool,
+    now_utc: datetime,
+    config: dict[str, Any],
+    notify_fn: NotifyFn,
+    pr_count_seen: int,
+) -> dict[str, Any]:
+    """Record a failed pass; page only when the episode says it is news."""
+    signature, detail = _describe_failure(exc, repo=repo, has_token=has_token)
+    # A traceback adds nothing to a status code GitHub sent us; keep it for
+    # the failures nobody anticipated.
+    logger.warning(
+        "[PR_STALENESS] GitHub round-trip failed (%s): %s", signature, detail,
+        exc_info=not isinstance(exc, GitHubAPIError),
+    )
+    _state["failing_detail"] = detail
+
+    repage_hours = int(config["failure_repage_hours"])
+    prev = await _read_failure_episode(pool, repo)
+    episode, reason = _decide_failure_page(
+        prev,
+        signature=signature,
+        token_changed_at=await _read_token_changed_at(pool),
+        now_utc=now_utc,
+        repage_hours=repage_hours,
+    )
+    episode["last_detail"] = detail[:500]
+
+    paged = False
+    if reason is None:
+        logger.info(
+            "[PR_STALENESS] failure unchanged (%s, attempt %s since %s) — "
+            "already paged at %s; not paging again",
+            signature, episode.get("attempts"), episode.get("since"),
+            episode.get("paged_at"),
+        )
+    else:
+        title, body = _build_failure_page(
+            repo=repo,
+            reason=reason,
+            detail=detail,
+            episode=episode,
+            poll_interval_minutes=int(config["poll_interval_minutes"]),
+            repage_hours=repage_hours,
+        )
+        try:
+            results = notify_fn(
+                title=title,
+                detail=body,
+                source="brain.pr_staleness_probe",
+                severity="warning",
+                # Per-failure key so the notifier's own cooldown can never
+                # swallow a CHANGED failure behind the previous page.
+                dedup_key=f"pr_staleness_failed:{repo}:{signature}",
+            )
+        except Exception as notify_exc:  # noqa: BLE001
+            # The probe failure itself is already logged above; what would be
+            # lost here is that the operator's PAGE never went out. This
+            # system is run from a phone via Telegram/Discord, so a dead
+            # notifier reads as "no stale PRs" — silence looks like health.
+            logger.warning(
+                "[PR_STALENESS] probe-failure notification could not be "
+                "delivered (%s: %s) — the operator was NOT paged about the "
+                "GitHub error above; retrying on the next pass",
+                type(notify_exc).__name__, notify_exc,
+            )
+        else:
+            paged = _page_delivered(results)
+            if not paged:
+                logger.warning(
+                    "[PR_STALENESS] probe-failure page reached no channel (%s) — "
+                    "retrying on the next pass", results,
+                )
+        if paged:
+            episode["paged_at"] = now_utc.isoformat()
+            episode["pages"] = _coerce_int(episode.get("pages"), 0) + 1
+
+    await _write_failure_episode(pool, repo, episode)
+    await _emit_audit_event(
+        pool,
+        "probe.pr_staleness_failed",
+        detail,
+        extra={
+            "repo": repo,
+            "signature": signature,
+            "attempts": episode.get("attempts"),
+            "failing_since": episode.get("since"),
+            "page_reason": reason,
+            "paged": paged,
+        },
+        severity="warning",
+    )
+    return {
+        "ok": False,
+        "status": "github_error",
+        "stale_prs": 0,
+        "alert_emitted": False,
+        "pr_count_seen": pr_count_seen,
+        "detail": detail,
+        "failure_signature": signature,
+        "failed_attempts": episode.get("attempts"),
+        "failing_since": episode.get("since"),
+        "page_reason": reason,
+        "paged": paged,
+    }
+
+
+async def _close_failure_episode(
+    pool: Any,
+    *,
+    repo: str,
+    notify_fn: NotifyFn,
+) -> bool:
+    """End an open failure episode after a clean pass; True if one was open.
+
+    Sends one recovery note — only when the episode reached the operator;
+    an episode nobody was told about has nothing to take back.
+    """
+    episode = await _read_failure_episode(pool, repo)
+    if not episode:
+        return False
+    await _clear_failure_episode(pool, repo)
+
+    attempts = _coerce_int(episode.get("attempts"), 0)
+    since = _fmt_utc(episode.get("since"))
+    signature = episode.get("signature") or "unknown"
+    note = (
+        f"GitHub answered for {repo} again after {attempts} failed "
+        f"attempt{'s' if attempts != 1 else ''} since {since} (last failure: "
+        f"{signature}). Stale-PR checks resume on the normal cadence."
+    )
+    logger.info("[PR_STALENESS] recovered — %s", note)
+    await _emit_audit_event(
+        pool,
+        "probe.pr_staleness_recovered",
+        note,
+        extra={
+            "repo": repo,
+            "signature": signature,
+            "attempts": attempts,
+            "failing_since": episode.get("since"),
+            "was_paged": bool(episode.get("paged_at")),
+        },
+    )
+    if episode.get("paged_at"):
+        try:
+            notify_fn(
+                title=f"PR staleness probe recovered against {repo}",
+                detail=note,
+                source="brain.pr_staleness_probe",
+                severity="info",
+                dedup_key=f"pr_staleness_recovered:{repo}",
+            )
+        except Exception as notify_exc:  # noqa: BLE001
+            logger.warning(
+                "[PR_STALENESS] recovery note could not be delivered (%s: %s) — "
+                "the operator still believes the probe is failing",
+                type(notify_exc).__name__, notify_exc,
+            )
+    return True
 
 
 async def run_pr_staleness_probe(
@@ -532,8 +1099,9 @@ async def run_pr_staleness_probe(
             Tests inject a fixed clock so dedup math is deterministic.
         notify_fn: operator notifier callable. Defaults to
             ``brain.operator_notifier.notify_operator``. Used ONLY for
-            loud-failure paths (GitHub auth misconfig). The success
-            path writes a Discord-only ``alert_events`` row.
+            the probe's own health — a failure page per episode (see
+            "Failure episodes") and the recovery note that ends one.
+            Stale PRs go out as a Discord-only ``alert_events`` row.
         http_client_factory: zero-arg callable returning an
             ``httpx.AsyncClient`` context manager — supplied by tests so
             they can inject a mock client without monkeypatching httpx.
@@ -567,14 +1135,18 @@ async def run_pr_staleness_probe(
     if isinstance(last_pass, datetime):
         elapsed = (now_utc - last_pass).total_seconds()
         if elapsed < poll_interval_minutes * 60:
+            # A skipped cycle inherits the last real pass's verdict, so the
+            # brain heartbeat keeps showing a broken probe as broken.
+            failing = _state.get("failing_detail")
+            detail = f"Within poll interval ({poll_interval_minutes} min) — skipped."
+            if failing:
+                detail += f" Last attempt failed: {failing}"
             return {
-                "ok": True,
+                "ok": failing is None,
                 "status": "skipped_interval",
                 "stale_prs": 0,
                 "alert_emitted": False,
-                "detail": (
-                    f"Within poll interval ({poll_interval_minutes} min) — skipped."
-                ),
+                "detail": detail,
             }
 
     if httpx is None:  # pragma: no cover — only when dep is uninstalled
@@ -591,6 +1163,13 @@ async def run_pr_staleness_probe(
             "alert_emitted": False,
             "detail": "httpx not installed in brain image",
         }
+
+    # Every real attempt advances the cadence gate, failed ones included, so
+    # a persistent failure is retried once per poll interval rather than
+    # every ~5-min brain cycle (branch_drift_probe does the same). Until
+    # 2026-09-25 only a clean pass advanced it, which is how one bad token
+    # became 286 attempts — and 286 pages — in a day.
+    _state["last_real_pass_at"] = now_utc
 
     # ---- GitHub round-trip ----------------------------------------------
     token = await _read_token(pool)
@@ -672,54 +1251,22 @@ async def run_pr_staleness_probe(
                     "fingerprint": fingerprint,
                 })
     except Exception as exc:  # noqa: BLE001 — fail loud per feedback_no_silent_defaults
-        detail = f"{type(exc).__name__}: {str(exc)[:300]}"
-        logger.warning("[PR_STALENESS] GitHub round-trip failed: %s", detail, exc_info=True)
-        await _emit_audit_event(
+        return await _handle_round_trip_failure(
             pool,
-            "probe.pr_staleness_failed",
-            detail,
-            extra={"repo": repo},
-            severity="warning",
+            exc,
+            repo=repo,
+            has_token=bool(token),
+            now_utc=now_utc,
+            config=config,
+            notify_fn=notify_fn,
+            pr_count_seen=pr_count_seen,
         )
-        # Loud-failure operator nudge — surfaces the misconfig once even
-        # if the dispatcher's per-fingerprint dedup later collapses repeats.
-        try:
-            notify_fn(
-                title=f"PR staleness probe failed against {repo}",
-                detail=(
-                    f"{detail}\n\n"
-                    f"Fix: confirm app_settings.gh_token is set and has "
-                    f"`repo` read scope, or unset "
-                    f"app_settings.{ENABLED_KEY} until the API is reachable."
-                ),
-                source="brain.pr_staleness_probe",
-                severity="warning",
-            )
-        except Exception as notify_exc:  # noqa: BLE001
-            # The probe failure itself is already logged above; what would be
-            # lost here is that the operator's PAGE never went out. This
-            # system is run from a phone via Telegram/Discord, so a dead
-            # notifier reads as "no stale PRs" — silence looks like health.
-            logger.warning(
-                "[PR_STALENESS] probe-failure notification could not be "
-                "delivered (%s: %s) — the operator was NOT paged about the "
-                "GitHub error above",
-                type(notify_exc).__name__, notify_exc,
-            )
-        return {
-            "ok": False,
-            "status": "github_error",
-            "stale_prs": 0,
-            "alert_emitted": False,
-            "pr_count_seen": pr_count_seen,
-            "detail": detail,
-        }
 
-    # Mark the cadence gate now that the round-trip completed cleanly.
-    _state["last_real_pass_at"] = now_utc
+    _state["failing_detail"] = None
+    await _close_failure_episode(pool, repo=repo, notify_fn=notify_fn)
 
     if not stale_prs:
-        summary = {
+        summary: dict[str, Any] = {
             "ok": True,
             "status": "no_stale_prs",
             "stale_prs": 0,
@@ -835,6 +1382,10 @@ class PRStalenessProbe:
                     "skipped_too_young",
                     "skipped_ci_not_green",
                     "skipped_deduped",
+                    "failure_signature",
+                    "failed_attempts",
+                    "page_reason",
+                    "paged",
                 )
                 if k in summary
             },

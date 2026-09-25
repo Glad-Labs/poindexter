@@ -379,6 +379,17 @@ DEFAULTS: dict[str, str] = {
     # here (the code default in poindexter/brain/branch_drift_probe.py is the backstop).
     'branch_drift_min_commits_behind': '3',
 
+    # brain pr_staleness_probe — hours between reminder pages while the probe
+    # ITSELF keeps failing the same way (bad gh_token, GitHub unreachable).
+    # The episode pages once when it opens, again if the failure changes or a
+    # replaced token fails too, then only on this reminder, and once on
+    # recovery. 0 = never remind. Before this (2026-09-24) one bad token paged
+    # every 5-min brain cycle: 286 pages in a day, 52 delivered to Discord.
+    # The other pr_staleness_* keys seed via baseline.seeds.sql; this
+    # go-forward key seeds here (the code default in
+    # poindexter/brain/pr_staleness_probe.py is the backstop).
+    'pr_staleness_failure_repage_hours': '24',
+
     # Postiz queue-wedge watch (poindexter/brain/postiz_queue_watch.py) — detects posts
     # stuck in QUEUE/ERROR past their publishDate via the Postiz API (the
     # Temporal-restart wedge: our social_post_drafts rows read 'posted' but
@@ -6044,6 +6055,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'brain_anomaly_current_window_hours': {'owner': 'detect_anomalies', 'value_type': 'integer'},
     'brain_digest_window_hours': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'branch_drift_min_commits_behind': {'owner': 'branch_drift_probe', 'value_type': 'integer'},
+    'pr_staleness_failure_repage_hours': {'owner': 'pr_staleness_probe', 'value_type': 'integer'},
     'cadence_slo_enabled': {'owner': 'health_probes', 'value_type': 'boolean'},
     'cadence_slo_expected_posts_per_day': {'owner': 'health_probes', 'value_type': 'integer'},
     'cadence_slo_shortfall_ratio': {'owner': 'health_probes', 'value_type': 'float'},
