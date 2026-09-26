@@ -1,6 +1,6 @@
 """Add ``page_views.ref_source`` — which distribution surface sent this reader.
 
-ISSUE: Glad-Labs/glad-labs-stack (distribution attribution)
+ISSUE: Glad-Labs/poindexter (distribution attribution)
 
 Every link Poindexter places on another platform pointed at a bare
 ``{site_url}/posts/{slug}``, so the only attribution signal a view carried was
