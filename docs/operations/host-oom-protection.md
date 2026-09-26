@@ -347,9 +347,16 @@ never read again, which is why the kernel swaps it out and it lands in the zram
 fast tier. The structural lever is the cap: llama-server reads
 **`LLAMA_ARG_CACHE_RAM`**, and ollama passes its environment to the runner
 (`/proc/<runner>/environ` shows the unit's `OLLAMA_*` plus ollama's own
-`LLAMA_ARG_FIT_TARGET`), so one export in `scripts/linux/ollama-vision.sh`
-would bound the footprint without any reload. Not set yet. Until it is, the
-recycle below gives the memory back.
+`LLAMA_ARG_FIT_TARGET`). **As of 2026-09-26, `scripts/linux/ollama-vision.sh`
+sets it** (`pinned_llm_endpoint_cache_ram_mib`, default **3072 MiB**), chosen
+from the retention this same lookup data implies at a smaller cap: an LRU
+replay of the logged cache-state listings shows 3072 MiB keeps **97% of hits
+/ 99% of reused prefill tokens**, 2048 keeps 74%/61%, 512 keeps 55%/36%. A
+vision-heavy mix still rides ~46 MiB of untracked image data per cached frame
+above whatever the cap is, so the expected plateau is the cap plus that
+overhead plus base RSS — roughly **4.2 GiB**, not the 3 GiB the cap alone
+suggests. The recycle below is now a backstop against growth past that
+plateau, not the routine defense it was while the cache was unbounded.
 
 ### The recycle
 
@@ -422,14 +429,22 @@ Two idle gates, and unprovable counts as busy. They see different traffic:
 (4.7 MiB for a short prompt, 151 MiB for a frame, 356 MiB for a 3,800-token
 prompt) and a repeated prompt costs nothing. A count sized for text recycles
 on a few hundred MiB; one sized for vision lets a render add 6 GiB first. The
-watermark reads the quantity itself. The default **4 GB** sits above a fresh
-runner (0.2-0.4 GiB) and below the cache's own 8 GiB cap, so it trips on any
-workload that can fill the cache, and both observed plateaus (9.35 GiB, 10.6
-GiB) sit well above it. What it costs: the poller alone crosses 4 GB about
-2.2 h after a load and a render's shot-QA burst crosses it within ~25 frames,
-so expect roughly one recycle per `ollama_runner_ram_recycle_cooldown_minutes`
-(120) on a busy day. That was six on 2026-09-25, with the old gate still
-blocking during renders. Each one is a 39-66 s reload.
+watermark reads the quantity itself.
+
+Before the cache was capped at the source (above), the default **4 GB** sat
+above a fresh runner (0.2-0.4 GiB) and below the cache's own 8 GiB cap, so it
+tripped on any workload that could fill the cache — it was the ONLY
+containment, and that cost roughly one recycle per
+`ollama_runner_ram_recycle_cooldown_minutes` (120) on a busy day: six on
+2026-09-25, with the old lock gate still blocking during renders, each a
+39-66 s reload. **Since 2026-09-26 the default is 6 GB**, sitting ABOVE the
+capped cache's expected plateau (~4.2 GiB) instead of below the old uncapped
+one — a normal vision-heavy day no longer trips it, and the recycle is now a
+BACKSTOP for growth past that plateau: something else consuming host RAM
+under the same unit, a bug in the cap, or a workload this measurement didn't
+anticipate. Both historic uncapped footprints (9.35 GiB, 10.6 GiB) still sit
+well above 6 GB, so either recurring — the cap getting disabled, say — still
+trips it.
 
 Ships **off** (`ollama_runner_ram_recycle_enabled=false`) — other installs run
 ollama differently, and a probe that restarts someone's LLM endpoint uninvited
@@ -438,9 +453,13 @@ delimited unlike the colon-delimited sidecar setting, because the endpoint is a
 URL and the model carries a `:tag`; a colon split is genuinely ambiguous
 (`…:qwen3-vl:30b` right-splits to model `30b`).
 
-Watch it on the **"Ollama runner host memory"** panel: it should read as a
-sawtooth, each drop a recycle. A line that climbs without dropping means the
-recycle is off, deferring, or failing. A deferral is logged with its reason
+Watch it on the **"Ollama runner host memory"** panel: since the cache is
+capped at the source, the expected shape changed — it should mostly hold near
+the ~4.2 GiB plateau rather than sawtooth. A sawtooth (each drop a recycle) is
+now the EXCEPTION, evidence the backstop fired, not the routine pattern it was
+while the watermark was the only containment. A line that keeps climbing PAST
+the plateau without ever dropping means the recycle is off, deferring, or
+failing. A deferral is logged with its reason
 (`[OLLAMA_RAM] deferred: …` and, when a lock blocked it, `[OLLAMA_RAM] lock
 covering GPU 1 (qa_judge) held by: …`); the brain's heartbeat records only
 ok/issue, so the log is the only place a deferral leaves a trace. A failed

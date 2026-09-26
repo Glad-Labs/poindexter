@@ -4,8 +4,12 @@ The sibling of sidecar_ram_watch that reaches what it cannot: ollama runs as a
 HOST systemd unit here, so cadvisor never sees it and `docker restart` cannot
 touch it. What grows is llama-server's host-RAM prompt cache (re-measured
 2026-09-25; first read as a ~6.9 MiB/request leak on 2026-08-28): 96 KiB per
-cached token, capped at 8 GiB of KV, and it plateaued at 10.6 GB on
-2026-09-25 with image data riding above the cap.
+cached token, and it plateaued at 10.6 GB on 2026-09-25 against the upstream
+8 GiB default, with image data riding above the cap. Since 2026-09-26
+`scripts/linux/ollama-vision.sh` caps it at the source (3072 MiB by default,
+`pinned_llm_endpoint_cache_ram_mib`), so this probe's 6 GB watermark is now a
+BACKSTOP against growth past the capped plateau (~4.2 GiB) rather than the
+only containment.
 
 Two dangerous failures, pulling opposite ways. A FALSE IDLE recycles a runner
 mid-request and costs a QA rail its answer (plus a 40-85 s reload). A FALSE
@@ -219,25 +223,34 @@ class TestWatermarkAndCooldown:
         assert out["status"] == "under_watermark"
 
     def test_a_fresh_runner_is_under_the_shipped_watermark(self):
-        """0.30 GB measured on a fresh runner vs a 4 GB default watermark. If a
+        """0.30 GB measured on a fresh runner vs a 6 GB default watermark. If a
         change ever puts the watermark below a fresh runner, the probe would
         recycle in a loop and never converge."""
         watermark = ow.parse_targets(ow.DEFAULT_TARGETS)[0][1]
         assert watermark > 0.30
 
     def test_the_incident_footprint_would_have_tripped(self):
-        """9.35 GB was the measured 2026-08-28 footprint. A watermark above it
-        would mean shipping a probe that watches the incident it was written
-        for (the stable-audio lesson from 2026-08-27)."""
+        """9.35 GB was the measured 2026-08-28 footprint, from BEFORE the
+        prompt cache was capped at the source. A watermark above it would mean
+        shipping a probe that no longer watches the incident it was written
+        for, if that cap were ever off or misconfigured (the stable-audio
+        lesson from 2026-08-27)."""
         assert ow.parse_targets(ow.DEFAULT_TARGETS)[0][1] < 9.35
 
-    def test_the_watermark_sits_below_the_prompt_cache_cap(self):
-        """What grows is llama-server's prompt cache, capped at 8 GiB of KV
-        (--cache-ram's default). A text-only workload plateaus at about the
-        cap, so a watermark at or above it would never fire on one; vision
-        entries carry ~46 MiB each above it, which is how 2026-09-25 reached
-        10.6 GB."""
-        assert ow.parse_targets(ow.DEFAULT_TARGETS)[0][1] < 8.0
+    def test_the_watermark_sits_above_the_capped_prompt_cache_ceiling(self):
+        """Before scripts/linux/ollama-vision.sh set LLAMA_ARG_CACHE_RAM
+        (2026-09-26), the watermark had to sit BELOW the (uncapped, ~8-10.6
+        GiB) ceiling to ever fire on a normal fill — it was the only
+        containment. Now the cache is capped at the source
+        (pinned_llm_endpoint_cache_ram_mib, 3072 MiB default) and the
+        watermark must sit ABOVE the capped cache's expected plateau instead —
+        the cap plus ~46 MiB of per-frame image overhead the cap does not
+        count plus base RSS, roughly 4.2 GiB — or a normal vision-heavy day
+        trips the recycle on every burst and capping the source bought
+        nothing. The relationship inverted; this test would have caught it if
+        only the numbers had changed."""
+        cap_gib = ow.DEFAULT_PROMPT_CACHE_RAM_MIB / 1024
+        assert ow.parse_targets(ow.DEFAULT_TARGETS)[0][1] > cap_gib
 
     def test_cooldown_blocks_a_second_recycle(self):
         pool = _Pool({**ENABLED, ow.COOLDOWN_MINUTES_KEY: "120"})
@@ -442,6 +455,44 @@ def test_pinned_ctx_key_and_default_match_the_worker():
 
     assert ow.PINNED_NUM_CTX_KEY == PINNED_NUM_CTX_KEY
     assert ow.DEFAULT_PINNED_NUM_CTX == int(DEFAULTS[PINNED_NUM_CTX_KEY])
+
+
+def test_cache_ram_mib_key_and_default_match_the_worker():
+    """Same doctrine as the num_ctx parity test above, but this key has no
+    independent worker-side constant to cross-check by name (nothing in the
+    worker reads it at runtime — only the shell script and this probe's
+    finding message do), so a mistyped ``ow.PROMPT_CACHE_RAM_MIB_KEY`` fails
+    this test with a KeyError rather than a silent mismatch, which is fine:
+    either way a drifted default states the wrong cap in every recycled
+    finding until the setting is explicitly overridden."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    assert ow.DEFAULT_PROMPT_CACHE_RAM_MIB == int(
+        DEFAULTS[ow.PROMPT_CACHE_RAM_MIB_KEY]
+    )
+
+
+class TestCacheRamMibInFinding:
+    """pinned_llm_endpoint_cache_ram_mib carries no behavior of its own — the
+    brain never sends it anywhere; llama-server only reads it once, as an env
+    var, at process start. It exists so the recycled-finding message can state
+    the actual configured cap instead of a number that drifts the moment an
+    operator retunes the live setting. Coverage is therefore just: the default
+    reaches the message, and so does an override."""
+
+    def test_the_default_reaches_the_recycled_finding(self):
+        pool = _Pool(ENABLED)
+        _summary(pool)
+        params = [c.args for c in pool.execute.await_args_list]
+        assert any(
+            str(ow.DEFAULT_PROMPT_CACHE_RAM_MIB) in str(p) for p in params
+        ), params
+
+    def test_an_override_reaches_the_recycled_finding(self):
+        pool = _Pool({**ENABLED, ow.PROMPT_CACHE_RAM_MIB_KEY: "2048"})
+        _summary(pool)
+        params = [c.args for c in pool.execute.await_args_list]
+        assert any("2048" in str(p) for p in params), params
 
 
 class TestLockScopeResolution:

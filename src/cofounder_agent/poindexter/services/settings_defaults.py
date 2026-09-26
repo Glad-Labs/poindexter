@@ -473,13 +473,20 @@ DEFAULTS: dict[str, str] = {
     # these four is 0.09-1.21%). See docs/operations/host-oom-protection.md.
     # --- ollama runner RAM recycle (poindexter#3434) -----------------------
     # The llama-server runner ollama spawns keeps a host-RAM prompt cache
-    # (--cache-ram, 8 GiB of KV by default; re-measured 2026-09-25 — first read
-    # as a ~6.9 MiB/request leak on 2026-08-28). It costs 96 KiB per cached
-    # token: ~5 MiB for a short prompt, ~151 MiB for one video frame, 356 MiB
-    # for a 3,800-token prompt. Image entries carry ~46 MiB each that the cap
-    # does not count, so a vision-heavy runner plateaued at 10.6 GB and was
-    # the largest holder of host swap. sidecar_ram_recycle_* cannot reach it —
-    # that probe restarts DOCKER containers and ollama is a host systemd unit.
+    # (--cache-ram; re-measured 2026-09-25 — first read as a ~6.9 MiB/request
+    # leak on 2026-08-28). It costs 96 KiB per cached token: ~5 MiB for a
+    # short prompt, ~151 MiB for one video frame, 356 MiB for a 3,800-token
+    # prompt. Image entries carry ~46 MiB each that the cap does not count.
+    # Uncapped (ollama runs llama-server with no --cache-ram of its own, so
+    # the upstream 8 GiB default applied), a vision-heavy runner plateaued at
+    # 10.6 GB and was the largest holder of host swap.
+    # scripts/linux/ollama-vision.sh now sets LLAMA_ARG_CACHE_RAM
+    # (pinned_llm_endpoint_cache_ram_mib, default 3072 MiB), so the plateau
+    # now bounds at roughly that plus one frame's overhead plus base RSS
+    # (~4.2 GiB) instead — this recycle is a BACKSTOP against runaway growth
+    # past that, not the primary containment. sidecar_ram_recycle_* cannot
+    # reach it either way — that probe restarts DOCKER containers and ollama
+    # is a host systemd unit.
     #
     # OFF by default: every other install's ollama layout differs (one
     # instance, a container, a remote host), and a probe that restarts
@@ -488,11 +495,13 @@ DEFAULTS: dict[str, str] = {
     # unit|watermark_gb|endpoint|model — PIPE-delimited, unlike its colon-
     # delimited sidecar sibling, because two fields carry their own colons (the
     # endpoint is a URL, the model has a `:tag`) and a colon split is genuinely
-    # ambiguous. 4 GB sits above a fresh runner (0.2-0.4 GB) and below the
-    # cache's own 8 GiB cap, so it trips on any workload that can fill it.
-    # Memory, not a request count: per-request cost spans 75x.
+    # ambiguous. 6 GB sits ABOVE the capped cache's expected plateau (~4.2 GiB
+    # — see pinned_llm_endpoint_cache_ram_mib) so a normal vision-heavy day
+    # doesn't trip it, and still below the 9.35/10.6 GB footprints this was
+    # written to catch if the cap is ever off or misconfigured. Memory, not a
+    # request count: per-request cost spans 75x.
     'ollama_runner_ram_recycle_targets':
-        'ollama-vision.service|4|http://host.docker.internal:11435|qwen3-vl:30b-a3b-instruct',
+        'ollama-vision.service|6|http://host.docker.internal:11435|qwen3-vl:30b-a3b-instruct',
     # A recycle costs a 40-85 s model reload, so do not churn.
     'ollama_runner_ram_recycle_cooldown_minutes': '120',
     # A loaded-but-idle runner reads 0.0%; one mid-generation pegs a core.
@@ -4655,6 +4664,27 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # 24 GB 3090 at 16384, so check that headroom before raising it. 0 = off
     # (pinned calls resolve per phase again, which reintroduces the reloads).
     'pinned_llm_endpoint_num_ctx': '16384',
+    # The host-RAM cap (MiB) llama-server's own prompt-cache keeps for the
+    # pinned endpoint's finished requests (LLAMA_ARG_CACHE_RAM; llama.cpp
+    # #16391) — ollama runs llama-server with no --cache-ram of its own, so
+    # without this the upstream 8192 MiB default applied and a vision-heavy
+    # mix rode ~46 MiB of untracked image data per cached frame above it,
+    # plateauing at 10.5-10.7 GiB (2026-09-25) and forcing
+    # ollama_runner_ram_watch to recycle the runner just to get the memory
+    # back. 3072 keeps 97% of hits / 99% of reused prefill tokens (measured
+    # over 2026-09-24/25's 1,347 lookups; 2048 keeps 74%/61%, 512 keeps
+    # 55%/36%) while bounding the plateau at roughly this value + one frame's
+    # image overhead + base RSS (~4.2 GiB) instead of drifting toward the old
+    # 10.5+ GiB. llama-server itself never reads this row — it only sees the
+    # LLAMA_ARG_CACHE_RAM env var ollama forwards from the unit — so the row
+    # exists to be the one documented, test-pinned source of truth (the brain
+    # reads it live only to name the configured cap in its finding message).
+    # Keep scripts/linux/ollama-vision.sh's default equal to it
+    # (test_ollama_vision_context_pin.py enforces it), and
+    # ollama_runner_ram_recycle_targets's watermark comfortably above it, or
+    # a normal day's cache fill trips the recycle on every vision burst and
+    # capping the source bought nothing.
+    'pinned_llm_endpoint_cache_ram_mib': '3072',
     # ----- Settings read-telemetry + orphan probe (#756 items 2-3) -----
     # SiteConfig.get records read keys in-memory; FlushSettingsReadTelemetryJob
     # stamps app_settings.last_read_at each minute; ProbeZeroReaderSettingsJob

@@ -47,18 +47,38 @@ render's qa_shot_vision burst filled it from 2.9 to 8.1 GiB in 80 seconds. The
 Most of it is never read back: 213 of 1,347 lookups (16%) found a reusable
 entry over 2026-09-24/25, so the kernel swaps the rest out and it sits in the
 zram fast tier. The structural lever is the cap itself: llama-server reads
-``LLAMA_ARG_CACHE_RAM`` and inherits ollama's environment. Until the unit sets
-it, this probe gives the memory back by recycling the runner.
+``LLAMA_ARG_CACHE_RAM`` and inherits ollama's environment. Before the unit set
+it, this probe gave the memory back by recycling the runner; see below for
+what changed once it did.
 
 WHY A MEMORY WATERMARK, NOT A REQUEST COUNT
 -------------------------------------------
 Per-request cost spans 75x (4.7 to 356 MiB) and a repeated prompt costs
 nothing, so no request count maps onto memory held: sized for text it recycles
 on a few hundred MiB, sized for vision it lets a render add 6 GiB first. The
-watermark reads the quantity itself. 4 GB sits above a fresh runner (0.2-0.4
-GiB) and below the cache's own 8 GiB cap, so it trips on any workload that can
-fill the cache, text or vision. The observed plateaus sit higher still: 9.35
-GiB (2026-08-28) and 10.6 GiB (2026-09-25).
+watermark reads the quantity itself. 6 GB sits above a fresh runner (0.2-0.4
+GiB) and, since the cache got capped (below), above the capped cache's own
+expected plateau too — the uncapped plateaus this was written to catch (9.35
+GiB 2026-08-28, 10.6 GiB 2026-09-25) sit higher still, so it still catches
+either recurring.
+
+THE CACHE IS NOW CAPPED AT THE SOURCE, AND THE WATERMARK IS A BACKSTOP (2026-09-26)
+-----------------------------------------------------------------------------------
+``scripts/linux/ollama-vision.sh`` now sets ``LLAMA_ARG_CACHE_RAM`` itself
+(default 3072 MiB, ``pinned_llm_endpoint_cache_ram_mib``), chosen from the
+retention curve measured over 2026-09-24/25's 1,347 lookups: 3072 keeps 97% of
+hits and 99% of reused prefill tokens, 2048 keeps 74%/61%, 512 keeps 55%/36%.
+A vision-heavy mix still rides ~46 MiB of untracked image data per cached
+frame above the cap, so the expected plateau is the cap plus that overhead
+plus base RSS — roughly 4.2 GiB, not the 3 GiB the cap alone suggests.
+
+The watermark moved from 4 GB to 6 GB for this: before, it was the ONLY
+containment and had to sit below the (uncapped, ~8-10.6 GiB) ceiling to ever
+fire on a normal fill. Now the cap does that job, and the recycle is a
+BACKSTOP for growth past the capped plateau — something else consuming host
+RAM under the same unit, a bug in the cap itself, or a workload this
+measurement didn't anticipate — not the routine defense. A watermark left at
+4 GB here would trip on nearly every vision-heavy day and buy the cap nothing.
 
 THE COST OF A RECYCLE IS REAL
 -----------------------------
@@ -147,11 +167,14 @@ DEFAULT_ENABLED = False
 # (`http://host:11435`) and the model carries a tag (`qwen3-vl:30b`). Colons
 # make the split genuinely ambiguous — a right-split reads the model as "30b"
 # — and no amount of clever splitting fixes it, so the delimiter changes.
-# 4 GB sits above a fresh runner (0.2-0.4 GiB) and below the prompt cache's
-# own 8 GiB cap, let alone the 9.35 GiB (2026-08-28) and 10.6 GiB (2026-09-25)
-# plateaus, so it returns the memory long before the fast swap tier notices.
+# 6 GB sits above a fresh runner (0.2-0.4 GiB) and above the CAPPED prompt
+# cache's own expected plateau (~4.2 GiB — see PROMPT_CACHE_RAM_MIB_KEY below),
+# so a normal vision-heavy day no longer trips it; it still sits well below
+# the uncapped 9.35 GiB (2026-08-28) and 10.6 GiB (2026-09-25) footprints this
+# was written to catch, so it returns the memory long before the fast swap
+# tier notices if that cap is ever off or misconfigured.
 DEFAULT_TARGETS = (
-    "ollama-vision.service|4|http://host.docker.internal:11435|qwen3-vl:30b-a3b-instruct"
+    "ollama-vision.service|6|http://host.docker.internal:11435|qwen3-vl:30b-a3b-instruct"
 )
 
 DEFAULT_COOLDOWN_MINUTES = 120
@@ -169,6 +192,16 @@ DEFAULT_EXPORTER_URL = ""  # empty = derive from the runtime (docker vs host)
 # sends no num_ctx, leaving the size to the instance default.
 PINNED_NUM_CTX_KEY = "pinned_llm_endpoint_num_ctx"
 DEFAULT_PINNED_NUM_CTX = 16384
+
+# The prompt-cache RAM cap the endpoint's own systemd unit sets via
+# LLAMA_ARG_CACHE_RAM (scripts/linux/ollama-vision.sh) — copied for the same
+# reason as PINNED_NUM_CTX_KEY above. Unlike num_ctx this probe never SENDS
+# it anywhere — llama-server only ever sees the cap as an env var at process
+# start, not a per-request option — but the probe still reads the row live
+# (in ``_read_config`` below) so the finding message can state the actual
+# configured cap instead of a bare, driftable number.
+PROMPT_CACHE_RAM_MIB_KEY = "pinned_llm_endpoint_cache_ram_mib"
+DEFAULT_PROMPT_CACHE_RAM_MIB = 3072
 
 GPU_ADVISORY_LOCK_KEY = 7_777_777_777
 
@@ -302,6 +335,15 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "num_ctx": coerce_int(
             await read_setting(pool, PINNED_NUM_CTX_KEY, DEFAULT_PINNED_NUM_CTX),
             DEFAULT_PINNED_NUM_CTX,
+        ),
+        # Not sent anywhere — read only so the finding message below can
+        # state the actual configured cap rather than a hardcoded number that
+        # drifts the moment an operator retunes the live setting.
+        "cache_ram_mib": coerce_int(
+            await read_setting(
+                pool, PROMPT_CACHE_RAM_MIB_KEY, DEFAULT_PROMPT_CACHE_RAM_MIB
+            ),
+            DEFAULT_PROMPT_CACHE_RAM_MIB,
         ),
     }
 
@@ -775,12 +817,16 @@ async def run_ollama_runner_ram_watch_probe(
             f"watermark, while provably idle: {idle_proof}. The brain unloaded "
             f"and re-pinned {model} on {endpoint}, which terminates the runner "
             f"process and returns the memory to the host: {detail}. The memory "
-            f"is llama-server's host-RAM prompt cache (--cache-ram, 8 GiB by "
-            f"default, plus ~46 MiB of image data per cached vision prompt that "
-            f"the cap does not count), so this recurs by design: it is a "
-            f"recycle, not a fix. Setting LLAMA_ARG_CACHE_RAM on the unit caps "
-            f"it at the source. Tune via app_settings.{TARGETS_KEY} / "
-            f"{COOLDOWN_MINUTES_KEY}; disable via {ENABLED_KEY}."
+            f"is llama-server's host-RAM prompt cache (--cache-ram, capped at "
+            f"{int(config['cache_ram_mib'])} MiB on the unit via "
+            f"LLAMA_ARG_CACHE_RAM, plus ~46 MiB of image data per cached "
+            f"vision prompt that the cap does not count), so this recurs by "
+            f"design even with the cap in place: it is a recycle, not a fix, "
+            f"and now a backstop against growth past the capped plateau "
+            f"rather than the routine defense. Tune via "
+            f"app_settings.{TARGETS_KEY} / {COOLDOWN_MINUTES_KEY} / "
+            f"{PROMPT_CACHE_RAM_MIB_KEY} (also update the matching literal in "
+            f"scripts/linux/ollama-vision.sh); disable via {ENABLED_KEY}."
         ),
         dedup_key=f"{_RECYCLED_KIND}:{unit}",
         extra={
@@ -790,6 +836,7 @@ async def run_ollama_runner_ram_watch_probe(
             "endpoint": endpoint,
             "model": model,
             "num_ctx": int(config["num_ctx"]),
+            "cache_ram_mib": int(config["cache_ram_mib"]),
             "lock_scope": scope.label,
         },
     )

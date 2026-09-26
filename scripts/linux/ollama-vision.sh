@@ -28,5 +28,24 @@ export OLLAMA_MAX_LOADED_MODELS=1
 # (test_ollama_vision_context_pin.py enforces it); if you retune the setting
 # live, export the same value here and restart the unit.
 export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-16384}"
+# llama-server keeps a host-RAM prompt cache of finished requests' KV state
+# (llama.cpp #16391) so a later prompt sharing a prefix skips re-prefilling it.
+# Ollama runs llama-server with no --cache-ram, so the upstream 8192 MiB
+# default applied — plenty for text, but a vision-heavy mix rides ~46 MiB of
+# untracked image data per cached frame above whatever the cap is, so it
+# plateaued at 10.5-10.7 GiB (2026-09-25) and the brain's
+# ollama_runner_ram_watch had to recycle the runner to get the memory back.
+# LLAMA_ARG_CACHE_RAM caps it at the source instead. 3072 MiB keeps 97% of
+# hits / 99% of reused prefill tokens (measured over 2026-09-24/25's 1,347
+# lookups; a 2048 MiB cap keeps only 74%/61%, a 512 MiB cap 55%/36%) while
+# capping the plateau at roughly cap + one frame's image overhead + base RSS
+# (~4.2 GiB here) instead of drifting toward the old 10.5+ GiB. The default
+# below must equal pinned_llm_endpoint_cache_ram_mib's declared default
+# (test_ollama_vision_context_pin.py enforces it); if you retune the setting
+# live, export the same value here and restart the unit. Raising
+# ollama_runner_ram_recycle_targets's watermark to sit above that plateau (see
+# settings_defaults.py) is what turns the recycle from the only containment
+# into a backstop against runaway growth beyond it.
+export LLAMA_ARG_CACHE_RAM="${LLAMA_ARG_CACHE_RAM:-3072}"
 export OLLAMA_MODELS="${OLLAMA_MODELS:-/data/ollama/models}"
 exec ollama serve
