@@ -1,7 +1,7 @@
 """Contract test: embeddings_collapse policies must not be TTL-starved.
 
 Regression guard for the dead-policy race first fixed on prod in
-Glad-Labs/glad-labs-stack#2228 and synced into the baseline seed on 2026-07-10.
+Glad-Labs/poindexter#2228 and synced into the baseline seed on 2026-07-10.
 
 An ``embeddings_collapse`` retention policy clusters rows older than its
 ``config.age_days`` into summary rows and deletes the raw originals. The
