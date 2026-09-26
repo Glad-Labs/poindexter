@@ -2,6 +2,68 @@
 
 ## Unreleased
 
+## [0.149.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.148.0...v0.149.0) (2026-09-26)
+
+
+### Features
+
+* **backup:** add a volume-backup tier for observability data ([#4089](https://github.com/Glad-Labs/glad-labs-stack/issues/4089)) ([58ad5d0](https://github.com/Glad-Labs/glad-labs-stack/commit/58ad5d0b6d6d03ef4a9f328798ca67415067359c))
+* **ci:** ratchet net-new phantom app_settings reads ([#4088](https://github.com/Glad-Labs/glad-labs-stack/issues/4088)) ([191f967](https://github.com/Glad-Labs/glad-labs-stack/commit/191f9673b41a42ec5db47870b6fea67c70ee1c09))
+* **thumbnails:** set one video's text by hand, and reach videos awaiting approval ([#4077](https://github.com/Glad-Labs/glad-labs-stack/issues/4077)) ([feb1180](https://github.com/Glad-Labs/glad-labs-stack/commit/feb11801c098fe5918da7f69b8739f0d7f15562c))
+* **youtube:** composed custom thumbnails for long-form uploads, reviewed with the video ([#4031](https://github.com/Glad-Labs/glad-labs-stack/issues/4031)) ([173da13](https://github.com/Glad-Labs/glad-labs-stack/commit/173da1398164d6003fb8d3011f9b31fe1adde3c0))
+* **youtube:** reach tap lands thumbnail impressions + CTR in external_metrics ([#4029](https://github.com/Glad-Labs/glad-labs-stack/issues/4029)) ([78e6616](https://github.com/Glad-Labs/glad-labs-stack/commit/78e6616a0ed7a0f6035656b62db091facab147fa))
+
+
+### Bug Fixes
+
+* **affiliate-redirect:** mark every /go/ response noindex ([#4044](https://github.com/Glad-Labs/glad-labs-stack/issues/4044)) ([08b9500](https://github.com/Glad-Labs/glad-labs-stack/commit/08b95000670fb330ffafd5b634dfd163741cbb3d))
+* **brain:** a run a resolved notification started restarts at its first firing row ([#4078](https://github.com/Glad-Labs/glad-labs-stack/issues/4078)) ([66ef724](https://github.com/Glad-Labs/glad-labs-stack/commit/66ef724fb215039d337fac8d57646b1da3a5293a)), closes [#4024](https://github.com/Glad-Labs/glad-labs-stack/issues/4024)
+* **brain:** image-gen answers to the default health threshold again ([#4027](https://github.com/Glad-Labs/glad-labs-stack/issues/4027)) ([b614424](https://github.com/Glad-Labs/glad-labs-stack/commit/b614424407fd0d7fa9d8d96159a161f6a446f3f5))
+* **brain:** page a blind branch-drift canary once per failure episode ([#4051](https://github.com/Glad-Labs/glad-labs-stack/issues/4051)) ([86e2174](https://github.com/Glad-Labs/glad-labs-stack/commit/86e217430ef0a7911ad4021d6d666ac3871f9900))
+* **brain:** page a blind scheduled-CI watchdog once per failure episode ([#4064](https://github.com/Glad-Labs/glad-labs-stack/issues/4064)) ([569406a](https://github.com/Glad-Labs/glad-labs-stack/commit/569406afe518c35cff324a86ebf95b6026495c84))
+* **brain:** page a failing PR staleness probe once, not every cycle ([#4041](https://github.com/Glad-Labs/glad-labs-stack/issues/4041)) ([4e06486](https://github.com/Glad-Labs/glad-labs-stack/commit/4e06486711ec9df6f2a237e9449869fe5c21a13c))
+* **brain:** PR staleness reads CI from Actions runs; skipped is green ([#4067](https://github.com/Glad-Labs/glad-labs-stack/issues/4067)) ([51a2657](https://github.com/Glad-Labs/glad-labs-stack/commit/51a265776bb06072eb1c32565e0c2be92370ec56))
+* **brain:** route the brain's success, recovery and info notices to Discord, not Telegram ([#4063](https://github.com/Glad-Labs/glad-labs-stack/issues/4063)) ([a77b277](https://github.com/Glad-Labs/glad-labs-stack/commit/a77b277a5d16e27c0c1ec7f8180e9997ca3547f7))
+* **brain:** scope the ollama runner recycle's lock gate to the judge's own card ([#4069](https://github.com/Glad-Labs/glad-labs-stack/issues/4069)) ([c8d7caf](https://github.com/Glad-Labs/glad-labs-stack/commit/c8d7caf6ecdaa8693e2834d55db1a039a82278b8))
+* **brain:** the firefighter gets one look per episode, not one per dedup window ([#4025](https://github.com/Glad-Labs/glad-labs-stack/issues/4025)) ([98c9a7c](https://github.com/Glad-Labs/glad-labs-stack/commit/98c9a7c6d90c76d0d9e7c0bfea3833b78824d4c2))
+* **brain:** the firefighter pages a failed fix where the alert's own page would have gone ([#4047](https://github.com/Glad-Labs/glad-labs-stack/issues/4047)) ([524c9ef](https://github.com/Glad-Labs/glad-labs-stack/commit/524c9efb4443ca5a1554ddd51c7a87af7abae2c3))
+* **brain:** the firefighter's verify reads the alert's own rows; an Alertmanager fix needs its resolved notification ([#4023](https://github.com/Glad-Labs/glad-labs-stack/issues/4023)) ([#4030](https://github.com/Glad-Labs/glad-labs-stack/issues/4030)) ([0b25a42](https://github.com/Glad-Labs/glad-labs-stack/commit/0b25a42f6fb65d9a282985c7e295d433303b142c))
+* **brain:** the LLM long-tail looks at the repeat where an alert turns persistent ([#4022](https://github.com/Glad-Labs/glad-labs-stack/issues/4022)) ([#4032](https://github.com/Glad-Labs/glad-labs-stack/issues/4032)) ([13fb695](https://github.com/Glad-Labs/glad-labs-stack/commit/13fb695c553fcd93218fca6e774e16e411689fbc))
+* **cf-workers:** restore vite to three Worker lockfiles so npm ci works ([#4046](https://github.com/Glad-Labs/glad-labs-stack/issues/4046)) ([a9246e6](https://github.com/Glad-Labs/glad-labs-stack/commit/a9246e628771effbb2b9adbf9d6d488e9ff2429c))
+* **ci:** gate tests/unit/{seo,console,infrastructure}; scope [#4011](https://github.com/Glad-Labs/glad-labs-stack/issues/4011)'s rule to compose() ([#4043](https://github.com/Glad-Labs/glad-labs-stack/issues/4043)) ([518e877](https://github.com/Glad-Labs/glad-labs-stack/commit/518e877a44e1b4adebe419ee7c5cac5d3fb5f36a))
+* **ci:** unit-test dir lint counts only steps whose pytest can fail the job ([#4056](https://github.com/Glad-Labs/glad-labs-stack/issues/4056)) ([cf1078e](https://github.com/Glad-Labs/glad-labs-stack/commit/cf1078eb9173e887abdd0eb0fac5737fda887ec7))
+* **coldload-guard:** reclaim the render GPU only for loads that land on it ([#4042](https://github.com/Glad-Labs/glad-labs-stack/issues/4042)) ([fef486a](https://github.com/Glad-Labs/glad-labs-stack/commit/fef486ada8385ef14ffb79052d34ed1a6c830017))
+* **deploy:** hold the worker bounce for the gap between media lanes ([#4085](https://github.com/Glad-Labs/glad-labs-stack/issues/4085)) ([8780c0b](https://github.com/Glad-Labs/glad-labs-stack/commit/8780c0b514d164e297a78816e4fbed88192bb603))
+* **gpu:** admission weighs a holder in another container, scoped to the caller's cards ([#4060](https://github.com/Glad-Labs/glad-labs-stack/issues/4060)) ([f034980](https://github.com/Glad-Labs/glad-labs-stack/commit/f03498084df664f6c0aa162221f7a7900b730281))
+* **gpu:** cost each GPU session on the cards it held, over the whole hold ([#4065](https://github.com/Glad-Labs/glad-labs-stack/issues/4065)) ([439fc73](https://github.com/Glad-Labs/glad-labs-stack/commit/439fc735876bea57a4da363df0b624d7ae504a70))
+* **gpu:** name the sidecar a VRAM-squat restart bounced, and keep its finding ([#4068](https://github.com/Glad-Labs/glad-labs-stack/issues/4068)) ([25ae0c9](https://github.com/Glad-Labs/glad-labs-stack/commit/25ae0c94960a3866cb20abac8cc7d22c64be2ab4))
+* **grafana:** point the Loki Explore link at a label this Loki actually has ([#3980](https://github.com/Glad-Labs/glad-labs-stack/issues/3980)) ([22ff70c](https://github.com/Glad-Labs/glad-labs-stack/commit/22ff70c9256e4722dcb010077f745f628a845fa0))
+* **image-gen:** /health answers mid-render; a GPU lock keeps renders one at a time ([#4021](https://github.com/Glad-Labs/glad-labs-stack/issues/4021)) ([dba08d8](https://github.com/Glad-Labs/glad-labs-stack/commit/dba08d830a8f5af30136977e92dd145b500ca64f))
+* **llm:** run every call to the pinned judge at one context size ([#4054](https://github.com/Glad-Labs/glad-labs-stack/issues/4054)) ([9cb59da](https://github.com/Glad-Labs/glad-labs-stack/commit/9cb59dace3440c33381692c8d640f76c6b85ee8c))
+* **media:** stop reading the podcast aloud in Stage 1; nothing used it ([#4053](https://github.com/Glad-Labs/glad-labs-stack/issues/4053)) ([2f61c18](https://github.com/Glad-Labs/glad-labs-stack/commit/2f61c183e70b155aedae44147e4ec2a46dc89606))
+* **media:** take the render GPU lock around the Stable Audio renders ([#4048](https://github.com/Glad-Labs/glad-labs-stack/issues/4048)) ([d441800](https://github.com/Glad-Labs/glad-labs-stack/commit/d44180041d0aa8d50d5b665051db4465099c4154))
+* **ollama:** pin the vision instance's default context to 16384 ([#4040](https://github.com/Glad-Labs/glad-labs-stack/issues/4040)) ([3d21752](https://github.com/Glad-Labs/glad-labs-stack/commit/3d21752314448ff3c120af4ad9fba5eba2949415)), closes [#4039](https://github.com/Glad-Labs/glad-labs-stack/issues/4039)
+* **qa:** image_relevance judges each image in its own call ([#4081](https://github.com/Glad-Labs/glad-labs-stack/issues/4081)) ([d578917](https://github.com/Glad-Labs/glad-labs-stack/commit/d578917ddb767bc7735b6139e1c8c0614fd0530a))
+* **qa:** skip Ragas faithfulness on drafts that overflow the judge window ([#4038](https://github.com/Glad-Labs/glad-labs-stack/issues/4038)) ([bcd77dc](https://github.com/Glad-Labs/glad-labs-stack/commit/bcd77dc1d1d8a270a7c568b0e1f6f44d4ee57838))
+* **rife:** one interpolation at a time; a request's files leave with it ([#4055](https://github.com/Glad-Labs/glad-labs-stack/issues/4055)) ([c445306](https://github.com/Glad-Labs/glad-labs-stack/commit/c445306fe77099b2db7b130c2a29d57db2d0f700))
+* **speaches:** start Kokoro on the GPU at every container start, not on a coin flip ([#4070](https://github.com/Glad-Labs/glad-labs-stack/issues/4070)) ([674d479](https://github.com/Glad-Labs/glad-labs-stack/commit/674d479ed43edeb9d66596c8b8011cacc9fba3a4))
+* **stable-audio:** /health answers mid-load; a GPU lock keeps renders one at a time ([#4034](https://github.com/Glad-Labs/glad-labs-stack/issues/4034)) ([4c2b1f1](https://github.com/Glad-Labs/glad-labs-stack/commit/4c2b1f1ea98f71b42823220121ab95709ab8e920))
+* **tests:** CI unit tests stop hard-unloading production GPU sidecars ([#4036](https://github.com/Glad-Labs/glad-labs-stack/issues/4036)) ([891c0ac](https://github.com/Glad-Labs/glad-labs-stack/commit/891c0ac5e6e04a5b3f738cb0ef5e0a9da9116a2a))
+* **tests:** stop two unit tests writing outside tmp_path ([#4073](https://github.com/Glad-Labs/glad-labs-stack/issues/4073)) ([8f35f02](https://github.com/Glad-Labs/glad-labs-stack/commit/8f35f020e19db5ff91a0d631dd68fda3d004dc3e))
+* **tests:** unit tier stops exporting Langfuse spans and fetching live feeds ([#4052](https://github.com/Glad-Labs/glad-labs-stack/issues/4052)) ([d12fe4e](https://github.com/Glad-Labs/glad-labs-stack/commit/d12fe4e16f90c74e4343dedb5780600debfa0f12))
+* **thumbnails:** keep a hyphenated hook word on one line ([#4037](https://github.com/Glad-Labs/glad-labs-stack/issues/4037)) ([2d1517b](https://github.com/Glad-Labs/glad-labs-stack/commit/2d1517bc71db6623445538e70962aecf90f85c8d))
+* **thumbnails:** vary hook openers; never set a hook over an image's own type ([#4035](https://github.com/Glad-Labs/glad-labs-stack/issues/4035)) ([d1771da](https://github.com/Glad-Labs/glad-labs-stack/commit/d1771dace8ad1ef10e9b87a06c471e0ae423082c))
+* **video:** hero plate thresholds per animator, measured on ComfyUI at 1 s ([#4026](https://github.com/Glad-Labs/glad-labs-stack/issues/4026)) ([fbeca55](https://github.com/Glad-Labs/glad-labs-stack/commit/fbeca55fe1c54411e2a3d141a266deb95c02e9e2))
+* **video:** judge a hero clip's final frame, the one the compositor holds ([#4028](https://github.com/Glad-Labs/glad-labs-stack/issues/4028)) ([6a9bffe](https://github.com/Glad-Labs/glad-labs-stack/commit/6a9bffe4d652e6139028762c73608d4e3e92141e))
+* **video:** re-roll a collapsed hero with its camera held ([#4045](https://github.com/Glad-Labs/glad-labs-stack/issues/4045)) ([15d1501](https://github.com/Glad-Labs/glad-labs-stack/commit/15d1501166d4625813aad022cdd346be239ab9ea))
+* **video:** the director ends a hero's motion on its subject ([#4072](https://github.com/Glad-Labs/glad-labs-stack/issues/4072)) ([6f87c17](https://github.com/Glad-Labs/glad-labs-stack/commit/6f87c170e235254c1332c16a93d92d16b7b80305))
+* **wan:** read /health free VRAM via NVML; gate probes the configured animator ([#4050](https://github.com/Glad-Labs/glad-labs-stack/issues/4050)) ([7c104cd](https://github.com/Glad-Labs/glad-labs-stack/commit/7c104cdc79b22bd97726f73b7c2924b26b880643))
+
+
+### Code Refactoring
+
+* **publish:** republish RSS feeds through the shared rebuild seam ([#4059](https://github.com/Glad-Labs/glad-labs-stack/issues/4059)) ([73ca7c8](https://github.com/Glad-Labs/glad-labs-stack/commit/73ca7c8c08574f3c8c2af1852da04073fd0048fa))
+
 ## [0.148.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.147.0...v0.148.0) (2026-09-25)
 
 
