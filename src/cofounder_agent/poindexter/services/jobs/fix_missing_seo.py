@@ -81,40 +81,65 @@ class FixMissingSeoJob:
                 changes_made=0,
             )
 
+        # The writes run on a connection acquired HERE (poindexter#1079). They
+        # used to reuse ``conn`` from the query block above after it had been
+        # released back to the pool, so every UPDATE raised "connection has
+        # been released", the per-row handler logged it, and the job reported
+        # ok=True with 0 fixed — for weeks, while the backlog never moved.
         fixed = 0
-        for row in rows:
-            title = row["title"] or ""
-            content = row["content"] or ""
-            seo_title = row["seo_title"] or ""
-            seo_description = row["seo_description"] or ""
-            seo_keywords = row["seo_keywords"] or ""
+        attempted = 0
+        first_error = ""
+        async with pool.acquire() as conn:
+            for row in rows:
+                title = row["title"] or ""
+                content = row["content"] or ""
+                seo_title = row["seo_title"] or ""
+                seo_description = row["seo_description"] or ""
+                seo_keywords = row["seo_keywords"] or ""
 
-            if seo_title and seo_description and seo_keywords:
-                continue
+                if seo_title and seo_description and seo_keywords:
+                    continue
 
-            assets = metadata_generator.generate_seo_assets(
-                title=title,
-                content=content,
-                topic="",
+                assets = metadata_generator.generate_seo_assets(
+                    title=title,
+                    content=content,
+                    topic="",
+                )
+                new_title = seo_title or assets["seo_title"]
+                new_description = seo_description or assets["meta_description"]
+                new_keywords = seo_keywords or ", ".join(assets["meta_keywords"])
+
+                attempted += 1
+                try:
+                    await conn.execute(
+                        "UPDATE posts SET seo_title = $1, seo_description = $2, seo_keywords = $3, updated_at = NOW() WHERE id = $4",
+                        new_title,
+                        new_description,
+                        new_keywords,
+                        row["id"],
+                    )
+                    fixed += 1
+                except Exception as e:
+                    first_error = first_error or describe_exception(e)
+                    logger.warning(
+                        "FixMissingSeoJob: update failed for %s: %s",
+                        row.get("id"), describe_exception(e),
+                    )
+
+        if attempted and not fixed:
+            # "0 of N updated" is a failure, not a quiet success.
+            detail = (
+                f"updated SEO metadata for 0 of {attempted} post(s) — every "
+                f"update failed; first error: {first_error}"
             )
-            new_title = seo_title or assets["seo_title"]
-            new_description = seo_description or assets["meta_description"]
-            new_keywords = seo_keywords or ", ".join(assets["meta_keywords"])
-
-            try:
-                await conn.execute(
-                    "UPDATE posts SET seo_title = $1, seo_description = $2, seo_keywords = $3, updated_at = NOW() WHERE id = $4",
-                    new_title,
-                    new_description,
-                    new_keywords,
-                    row["id"],
-                )
-                fixed += 1
-            except Exception as e:
-                logger.warning(
-                    "FixMissingSeoJob: update failed for %s: %s",
-                    row.get("id"), describe_exception(e),
-                )
+            logger.error("FixMissingSeoJob: %s", detail)
+            return JobResult(
+                ok=False,
+                detail=detail,
+                changes_made=0,
+                metrics={"posts_scanned": len(rows), "posts_fixed": 0,
+                         "posts_failed": attempted},
+            )
 
         if fixed and file_issue:
             emit_finding(
@@ -139,5 +164,6 @@ class FixMissingSeoJob:
             metrics={
                 "posts_scanned": len(rows),
                 "posts_fixed": fixed,
+                "posts_failed": attempted - fixed,
             },
         )

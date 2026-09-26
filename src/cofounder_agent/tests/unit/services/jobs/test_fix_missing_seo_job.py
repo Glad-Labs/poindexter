@@ -165,3 +165,81 @@ class TestDevDiaryIsNotExcluded:
         assert await self._excluded_arg(
             {"excluded_templates": ["dev_diary", "scratch"]},
         ) == ["dev_diary", "scratch"]
+
+
+class _ReleasableConn:
+    """A connection that behaves like asyncpg's: unusable once released.
+
+    The old fake stayed usable after ``async with pool.acquire()`` exited, so
+    the job's writes on a released connection passed every test while failing
+    every run on prod (poindexter#1079).
+    """
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.released = False
+        self.updates: list[tuple] = []
+
+    async def fetch(self, *a):
+        self._check()
+        return self.rows
+
+    async def execute(self, sql, *args):
+        self._check()
+        self.updates.append(args)
+        return "UPDATE 1"
+
+    def _check(self):
+        if self.released:
+            raise RuntimeError(
+                "cannot call Connection.execute(): connection has been released back to the pool"
+            )
+
+
+class _RealisticPool:
+    def __init__(self, rows):
+        self.rows = rows
+        self.conns: list[_ReleasableConn] = []
+
+    def acquire(self):
+        pool = self
+
+        class _Ctx:
+            async def __aenter__(self):
+                conn = _ReleasableConn(pool.rows)
+                pool.conns.append(conn)
+                self.conn = conn
+                return conn
+
+            async def __aexit__(self, *exc):
+                self.conn.released = True
+                return False
+
+        return _Ctx()
+
+
+_MISSING = {
+    "id": "p1", "title": "AI content pipeline",
+    "content": "This post explains how the pipeline works.",
+    "seo_title": None, "seo_description": None, "seo_keywords": None,
+}
+
+
+@pytest.mark.asyncio
+class TestReleasedConnection:
+    async def test_updates_run_on_a_live_connection(self):
+        pool = _RealisticPool([dict(_MISSING), dict(_MISSING, id="p2")])
+        with patch("poindexter.services.jobs.fix_missing_seo.emit_finding", new=MagicMock()):
+            result = await FixMissingSeoJob().run(pool, {})
+        assert result.ok is True
+        assert result.changes_made == 2
+        assert sum(len(c.updates) for c in pool.conns) == 2
+
+    async def test_every_update_failing_is_not_ok(self):
+        """'0 of N updated' must not report success."""
+        pool, _ = _make_pool([dict(_MISSING)], execute_raises=RuntimeError("boom"))
+        result = await FixMissingSeoJob().run(pool, {"file_gitea_issue": False})
+        assert result.ok is False
+        assert result.changes_made == 0
+        assert "boom" in result.detail
+        assert result.metrics["posts_failed"] == 1

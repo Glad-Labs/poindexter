@@ -63,7 +63,7 @@ class TestRun:
             result = await job.run(pool, {"limit": 10})
 
         assert result.ok is True
-        assert result.changes_made == 3
+        assert result.changes_made == 0  # report-only (poindexter#1079)
         assert result.metrics["posts_missing_seo"] == 3
         mock_gitea.assert_called_once()
         # emit_finding is keyword-only; the human-readable message is title=.
@@ -103,7 +103,7 @@ class TestRun:
         ):
             result = await job.run(pool, {})
         assert result.ok is True
-        assert result.changes_made == 1
+        assert result.changes_made == 0  # report-only (poindexter#1079)
 
     @pytest.mark.asyncio
     async def test_fetch_failure_returns_not_ok(self):

@@ -98,6 +98,8 @@ class FlagMissingSeoJob:
         return JobResult(
             ok=True,
             detail=detail,
-            changes_made=len(rows),
+            # Report-only: it changes nothing, so changes_made is 0 and the
+            # count lives in metrics (poindexter#1079).
+            changes_made=0,
             metrics={"posts_missing_seo": len(rows)},
         )
