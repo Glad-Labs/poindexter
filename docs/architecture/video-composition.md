@@ -422,6 +422,96 @@ the hero phase exited it), 6 min for the animation, and seconds for RIFE and
 the judge. The incumbent's still had already passed at 92, so re-using it
 would save the still's share.
 
+### A collapse re-roll re-animates the vetted still (2026-09-25)
+
+The held-camera re-roll above still rendered a new still before animating it,
+and that still cost 2 min 42 s of the 9 min round. The incumbent's own still
+had passed at 92. When the verdict being repaired is a detail collapse whose
+opening frame passed, the still is sound: the frame emptied after it, usually
+because the motion took the camera off the subject, and the re-roll has
+already replaced the motion. So that re-roll animates the incumbent's still
+again (`_reanimation_still`, `_reanimate_hero`) when all of these hold:
+
+- the verdict is the collapse rule's (`ShotQAResult.detail_collapse`), not the
+  judge's. A garbled or warped ending can be the still's own doing;
+- the candidate holds the camera. With `video_hero_collapse_reroll_motion`
+  emptied, a re-animation would re-run the render that collapsed with only the
+  seed changed, so the re-roll renders a new still as before;
+- `_hero_still_fallback` vouches for the still: a hero whose final frame
+  decided the score, whose opening passed the threshold, with the still on
+  disk.
+
+The still is copied into the round's `work_dir/repairN` and animated there.
+`_animate_hero` writes its clip beside its still, and beside the incumbent's
+still sits the incumbent's clip, so animating the still in place would
+overwrite the clip the candidate competes with (the #4028 bug). Keep-best is
+unchanged: a losing candidate is discarded and the incumbent keeps its own
+still for `fallback_still`. A winner that is still under the threshold falls
+back to its copy, which is the same image.
+
+No still renders, so the re-roll skips the image-gen half of
+`_ready_card_for_escalation`: the wait for image-gen `/health`, and
+image-gen's cold start with it. It keeps the soft levers (`_soft_clear_card`:
+ComfyUI `/free`, Ollama evict, idle chatterbox and RIFE models). They run
+before the animation because `_animate_hero`'s own clear opens with
+image-gen's hard rung, and while ComfyUI still holds its last clip's pool that
+rung reads an idle image-gen's `nothing_to_reclaim` as a squat. A clip
+animated straight after another on 2026-09-25 did exactly that: 11.6 GB free,
+and an image-gen restart queued for a server holding nothing. ComfyUI's own
+ready-wait runs in its provider.
+
+**The second round renders a new still.**
+`video_hero_collapse_reroll_reanimate_max` (default 1) caps how many re-rolls
+of one hero re-animate a vetted still. The held camera kept the frame on all 4
+renders of the collapsed shot it was measured on (above), so when a held
+re-animation loses anyway, the still is the suspect, its composition rather
+than the seed. The next round draws a fresh still of the same prompt, the one
+input the re-roll has not yet changed, and it still holds the camera. That
+round is rare, and so are its extra minutes. If it loses too, the incumbent
+ships the vetted still (`fallback_still`). A still prompt that moves its own
+subject (hero_00004's shrinking monolith) collapses whichever still it gets;
+neither path fixes that, and `fallback_still` is the floor either way. A cap
+of 0 renders a new still on every re-roll.
+
+A collapse is also remembered when a winning candidate replaces it. A held
+re-roll can beat the collapse's 30 and still fall short, garbled at the end at
+45 say. The next re-roll used to go back to the director's motion, the
+pull-back that collapsed, because only a losing candidate's collapse was
+recorded. It now keeps the camera held, as `_ShotState.collapse_seen` said it
+did.
+
+**Measured on the live stack** (2026-09-25 21:51–22:21 UTC), as a paired
+before/after: the same collapsed incumbent (f555bedc long shot 15's
+hero_00036, its still, its own collapse verdict) replayed through
+`_repair_pass` end to end under `gpu.lock("video")`, once per package —
+`old` (pre-this-PR: a fresh still every re-roll) and `new` (this PR) — with
+production media work quiet first. Both re-rolls held the camera and both
+candidates cleared the collapse (edge ratio 0.99 and 1.09 against the 0.30
+rule, judge 92): the fix from the section above worked either way, so this
+pair isolates only the still.
+
+| package                 | round               | still render        | animate + RIFE | score  |
+| ----------------------- | ------------------- | ------------------- | -------------- | ------ |
+| old (fresh still)       | 610.7 s (10 m 11 s) | 152.5 s (2 m 33 s)  | 425.9 s        | 14.8 s |
+| new (re-animated still) | 419.4 s (6 m 59 s)  | — (copy, no render) | 401.9 s        | 10.1 s |
+
+191.3 s (3 m 11 s) faster — the whole eliminated still-render share, plus
+the shorter card-clear (no `_wait_image_gen_ready`). `new`'s candidate still
+is byte-identical to the vetted one (`_reanimate_hero`'s copy); `old`'s is a
+different file, as its still render draws a fresh seed each time. Neither
+incumbent file moved.
+
+A second attempt at a warm-ComfyUI pair (`B2`/`A2`, 22:23–22:38 UTC) landed
+in a window where production `classify_content_type`/`topic_ranking` work
+and a separate session's director-prompt calls were both cycling through the
+same GPU lock. Both packages' candidates hit `insufficient free VRAM for a
+quality hero plate` — `new`'s fell back to Ken Burns on its re-animated
+still (`hero_render_fallback`, info), `old`'s still render or animation
+failed outright and the incumbent's own 30 stood. Both are the documented
+fail-soft behavior, not a defect in either package, and neither touched the
+incumbent's files — but the two rounds measured contention, not the
+re-animation path, so they aren't in the table above.
+
 ### The director ends a hero's motion on its subject (2026-09-25)
 
 The held camera above changes only a re-roll. A hero's first render follows the

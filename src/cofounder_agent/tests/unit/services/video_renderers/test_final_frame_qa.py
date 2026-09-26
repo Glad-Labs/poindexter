@@ -20,7 +20,8 @@ And the repair path those verdicts feed, which had never run for a hero: its
 candidates overwrote the incumbent's files, and it re-rolled heroes onto a card
 the presenter phase had filled. Its first live re-roll of a collapse asked for
 the same pull-back again ("slow zoom out ... to the horizon") and collapsed
-again, so a collapse is now re-rolled with the camera held.
+again, so a collapse is now re-rolled with the camera held, and when its
+opening passed, from the same still, copied, instead of a new one.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -42,6 +44,17 @@ from poindexter.services.video_renderers import shot_vision_qa as sq
 from poindexter.services.video_renderers.shot_vision_qa import ShotQAResult
 
 _MODEL = "ollama/qwen3-vl:30b-a3b-instruct"
+
+
+@pytest.fixture(autouse=True)
+def _inert_reclaim_rungs(monkeypatch):
+    """No test here reaches a GPU sidecar. The reclaim rungs are real POSTs to
+    compose service names, which on the CI runner are the production
+    containers (tests/unit/_gpu_isolation.py), and a repair-pass test whose
+    stubs miss a path would evict the live models. Returns the rung mocks."""
+    from tests.unit._gpu_isolation import make_reclaim_rungs_inert
+
+    return make_reclaim_rungs_inert(monkeypatch)
 
 
 def _sc(**over) -> SiteConfig:
@@ -687,17 +700,53 @@ def _collapsed_state(tmp_path: Path, **qa_over) -> slr._ShotState:
     return st
 
 
-def _recording_render(rendered: list[Shot]):
-    """A ``_render_one_shot`` that writes a candidate clip and records its shot."""
+def _stub_re_roll_paths(monkeypatch) -> SimpleNamespace:
+    """Stub both ways a hero re-roll renders and record them in order.
+
+    ``("fresh", shot, None)``: a new still, through ``_render_one_shot``.
+    ``("again", shot, still)``: the vetted still again, through
+    ``_animate_hero``. Each writes its clip where the real path would, and the
+    card clears are mocks the test can inspect.
+    """
+    calls: list[tuple[str, Shot, str | None]] = []
 
     async def _render(shot, *, prior_clip, attempt, work_dir, **kw):
-        rendered.append(shot)
+        calls.append(("fresh", shot, None))
         clip = Path(work_dir) / "shot_15.mp4"
         clip.write_bytes(f"candidate-{attempt}".encode())
         return slr.ShotRenderResult(idx=15, source=shot.source, success=True,
                                     clip_path=str(clip), duration_s=5.0)
 
-    return _render
+    async def _animate(shot, *, still_path, **kw):
+        calls.append(("again", shot, still_path))
+        clip = Path(still_path).with_suffix(".mp4")
+        clip.write_bytes(b"re-animated")
+        return slr.ShotRenderResult(idx=15, source=shot.source, success=True,
+                                    clip_path=str(clip), duration_s=5.0,
+                                    still_path=still_path)
+
+    paths = SimpleNamespace(calls=calls, ready=AsyncMock(), soft=AsyncMock())
+    monkeypatch.setattr(slr, "_render_one_shot", _render)
+    monkeypatch.setattr(slr, "_animate_hero", _animate)
+    monkeypatch.setattr(slr, "_ready_card_for_escalation", paths.ready)
+    monkeypatch.setattr(slr, "_soft_clear_card", paths.soft)
+    return paths
+
+
+def _judge(monkeypatch, *verdicts: ShotQAResult) -> None:
+    """The judge's verdicts on the candidates, in order; the last repeats."""
+    queue = list(verdicts)
+
+    async def _score(**kw):
+        return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    monkeypatch.setattr(slr, "score_shot_frame", _score)
+
+
+def _collapse() -> ShotQAResult:
+    """A candidate that collapsed again: 30, the same as the incumbent's."""
+    return ShotQAResult(score=30.0, reason="final frame lost its detail", frame="final",
+                        opening_score=92.0, detail_collapse=True)
 
 
 async def _repair(st, *, site_config=None, max_retries=2, tmp_path):
@@ -713,14 +762,12 @@ async def test_a_collapsed_hero_is_re_rolled_with_its_camera_held(tmp_path, monk
     spends ~5 min of GPU asking for the same pull-back."""
     st = _collapsed_state(tmp_path)
     director = st.shot
-    rendered: list[Shot] = []
-    monkeypatch.setattr(slr, "_render_one_shot", _recording_render(rendered))
-    monkeypatch.setattr(slr, "score_shot_frame",
-                        AsyncMock(return_value=ShotQAResult(score=20.0, reason="worse")))
-    monkeypatch.setattr(slr, "_ready_card_for_escalation", AsyncMock())
+    paths = _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, ShotQAResult(score=20.0, reason="worse"))
     await _repair(st, tmp_path=tmp_path)
-    assert [s.motion for s in rendered] == [_HELD, _HELD]
-    assert rendered[0].model_dump(exclude={"motion"}) == director.model_dump(exclude={"motion"}), (
+    assert [shot.motion for _, shot, _ in paths.calls] == [_HELD, _HELD]
+    first = paths.calls[0][1]
+    assert first.model_dump(exclude={"motion"}) == director.model_dump(exclude={"motion"}), (
         "only the camera changes: the subject is still the director's"
     )
     assert st.shot is director and st.shot.motion == _DIRECTOR_MOTION
@@ -734,11 +781,9 @@ async def test_a_collapsed_hero_is_re_rolled_with_its_camera_held(tmp_path, monk
 async def test_a_held_camera_that_wins_replaces_the_clip_not_the_shot(tmp_path, monkeypatch):
     st = _collapsed_state(tmp_path)
     director = st.shot
-    rendered: list[Shot] = []
-    monkeypatch.setattr(slr, "_render_one_shot", _recording_render(rendered))
-    monkeypatch.setattr(slr, "score_shot_frame", AsyncMock(return_value=ShotQAResult(
-        score=92.0, reason="clean", frame="opening", opening_score=92.0)))
-    monkeypatch.setattr(slr, "_ready_card_for_escalation", AsyncMock())
+    _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, ShotQAResult(score=92.0, reason="clean", frame="opening",
+                                     opening_score=92.0))
     await _repair(st, tmp_path=tmp_path)
     assert st.result.clip_path == str(tmp_path / "repair1" / "shot_15.mp4")
     assert st.qa.score == 92.0 and st.attempts == 1
@@ -751,27 +796,21 @@ async def test_a_held_camera_that_wins_replaces_the_clip_not_the_shot(tmp_path, 
 ])
 async def test_the_held_camera_is_db_tunable(tmp_path, monkeypatch, setting, motion):
     st = _collapsed_state(tmp_path)
-    rendered: list[Shot] = []
-    monkeypatch.setattr(slr, "_render_one_shot", _recording_render(rendered))
-    monkeypatch.setattr(slr, "score_shot_frame",
-                        AsyncMock(return_value=ShotQAResult(score=20.0, reason="worse")))
-    monkeypatch.setattr(slr, "_ready_card_for_escalation", AsyncMock())
+    paths = _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, ShotQAResult(score=20.0, reason="worse"))
     await _repair(st, site_config=_sc(video_hero_collapse_reroll_motion=setting),
                   max_retries=1, tmp_path=tmp_path)
-    assert [s.motion for s in rendered] == [motion]
+    assert [shot.motion for _, shot, _ in paths.calls] == [motion]
 
 
 async def test_a_judged_low_ending_keeps_the_directors_motion(tmp_path, monkeypatch):
     """Garbled text or a warped ending is not the camera's doing."""
     st = _collapsed_state(tmp_path, score=45.0, reason="garbled text: banner",
                           detail_collapse=False)
-    rendered: list[Shot] = []
-    monkeypatch.setattr(slr, "_render_one_shot", _recording_render(rendered))
-    monkeypatch.setattr(slr, "score_shot_frame",
-                        AsyncMock(return_value=ShotQAResult(score=20.0, reason="worse")))
-    monkeypatch.setattr(slr, "_ready_card_for_escalation", AsyncMock())
+    paths = _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, ShotQAResult(score=20.0, reason="worse"))
     await _repair(st, max_retries=1, tmp_path=tmp_path)
-    assert [s.motion for s in rendered] == [_DIRECTOR_MOTION]
+    assert [(how, shot.motion) for how, shot, _ in paths.calls] == [("fresh", _DIRECTOR_MOTION)]
 
 
 async def test_a_collapse_on_a_losing_candidate_holds_the_next_re_roll(tmp_path, monkeypatch):
@@ -779,17 +818,34 @@ async def test_a_collapse_on_a_losing_candidate_holds_the_next_re_roll(tmp_path,
     what the shot's motion does: the next re-roll holds the camera."""
     st = _collapsed_state(tmp_path, score=45.0, reason="garbled text: banner",
                           detail_collapse=False)
-    rendered: list[Shot] = []
-    monkeypatch.setattr(slr, "_render_one_shot", _recording_render(rendered))
-    monkeypatch.setattr(slr, "score_shot_frame", AsyncMock(side_effect=[
-        ShotQAResult(score=30.0, reason="final frame lost its detail", frame="final",
-                     opening_score=92.0, detail_collapse=True),
-        ShotQAResult(score=40.0, reason="final frame: soft"),
-    ]))
-    monkeypatch.setattr(slr, "_ready_card_for_escalation", AsyncMock())
+    paths = _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, _collapse(), ShotQAResult(score=40.0, reason="final frame: soft"))
     await _repair(st, tmp_path=tmp_path)
-    assert [s.motion for s in rendered] == [_DIRECTOR_MOTION, _HELD]
+    # A new still both times: the verdict being repaired is the judge's, which
+    # does not vouch for the still the way a passed opening before a collapse does.
+    assert [(how, shot.motion) for how, shot, _ in paths.calls] == [
+        ("fresh", _DIRECTOR_MOTION), ("fresh", _HELD),
+    ]
     assert st.qa.score == 45.0, "neither candidate beat the incumbent"
+
+
+async def test_a_collapse_the_winner_replaced_still_holds_the_next_re_roll(tmp_path, monkeypatch):
+    """A held re-roll can beat the collapse and still fall short (garbled at
+    its end, 45). The collapse it replaced was the director's motion at work,
+    so the next re-roll keeps the camera held. It used to be forgotten with the
+    verdict: the second round went back to the pull-back."""
+    st = _collapsed_state(tmp_path)
+    paths = _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch,
+           ShotQAResult(score=45.0, reason="garbled text: banner", frame="final",
+                        opening_score=92.0, text="garbled"),
+           ShotQAResult(score=40.0, reason="final frame: soft"))
+    await _repair(st, tmp_path=tmp_path)
+    # Round 2 repairs the garbled ending, the judge's verdict: a new still.
+    assert [(how, shot.motion) for how, shot, _ in paths.calls] == [
+        ("again", _HELD), ("fresh", _HELD),
+    ]
+    assert st.collapse_seen
 
 
 @pytest.mark.parametrize("source", ["image_kenburns", "image_gen"])
@@ -799,12 +855,259 @@ def test_only_a_hero_has_a_camera_to_hold(tmp_path, source):
     assert slr._candidate_shot(st, _sc()) is st.shot
 
 
-async def test_the_held_camera_reaches_the_animator_prompt(tmp_path, monkeypatch):
-    """The whole seam, from the verdict to the text ComfyUI is sent: the
-    still's own description, then the held camera in place of the pull-back."""
-    from tests.unit._gpu_isolation import make_reclaim_rungs_inert
+# ---------------------------------------------------------------------------
+# a collapse whose opening passed re-animates its vetted still
+# ---------------------------------------------------------------------------
 
-    make_reclaim_rungs_inert(monkeypatch)
+
+async def test_a_collapse_re_roll_re_animates_the_vetted_still(tmp_path, monkeypatch):
+    """The opening passed at 92, so the still is sound and the motion emptied
+    the frame. The held camera replaces the motion; a new still would spend
+    image-gen's cold start and a render (2 min 42 s of a 9 min round on
+    f555bedc) on a question the opening already answered."""
+    st = _collapsed_state(tmp_path)
+    paths = _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, ShotQAResult(score=92.0, reason="clean", frame="opening",
+                                     opening_score=92.0))
+    await _repair(st, max_retries=1, tmp_path=tmp_path)
+
+    (how, shot, still), = paths.calls
+    assert how == "again" and shot.motion == _HELD
+    assert still == str(tmp_path / "repair1" / "shot_15.png")
+    assert Path(still).read_bytes() == b"incumbent-still", "the incumbent's own still, copied"
+    paths.ready.assert_not_awaited()  # image-gen is not needed: nothing to wait for
+    paths.soft.assert_awaited_once_with("re-animation")
+    assert st.reanimations == 1
+    assert st.result.clip_path == str(tmp_path / "repair1" / "shot_15.mp4")
+    assert st.result.still_path == still
+    # The incumbent's files are where they were, untouched.
+    assert (tmp_path / "shot_15.mp4").read_bytes() == b"incumbent-clip"
+    assert (tmp_path / "shot_15.png").read_bytes() == b"incumbent-still"
+
+
+async def test_a_losing_re_animation_leaves_the_incumbent_and_its_fallback(tmp_path, monkeypatch):
+    """Keep-best and ``fallback_still`` are the same as for a new still: the
+    loser is discarded, and the incumbent ships the still its opening vetted."""
+    st = _collapsed_state(tmp_path)
+    incumbent = st.result
+    _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, _collapse())
+    await _repair(st, max_retries=1, tmp_path=tmp_path)
+    assert st.result is incumbent and st.qa.score == 30.0
+    assert (tmp_path / "shot_15.mp4").read_bytes() == b"incumbent-clip"
+    assert (tmp_path / "repair1" / "shot_15.mp4").read_bytes() == b"re-animated"
+
+    monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
+    out = await slr._finalize_pass(
+        [st], qa=slr._QAConfig(enabled=True, threshold=60.0, max_retries=1),
+        pool=None, post_id="p1",
+    )
+    assert out[0].clip_path == str(tmp_path / "shot_15.png")
+
+
+async def test_a_winning_re_animation_still_short_falls_back_to_its_copy(tmp_path, monkeypatch):
+    st = _collapsed_state(tmp_path)
+    _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, ShotQAResult(score=45.0, reason="final frame: garbled text",
+                                     frame="final", opening_score=92.0, text="garbled"))
+    await _repair(st, max_retries=1, tmp_path=tmp_path)
+    assert st.qa.score == 45.0, "45 beats the collapse's 30"
+
+    monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
+    out = await slr._finalize_pass(
+        [st], qa=slr._QAConfig(enabled=True, threshold=60.0, max_retries=1),
+        pool=None, post_id="p1",
+    )
+    assert out[0].clip_path == str(tmp_path / "repair1" / "shot_15.png")
+    assert Path(out[0].clip_path).read_bytes() == b"incumbent-still"
+
+
+async def test_the_second_round_draws_a_fresh_still(tmp_path, monkeypatch):
+    """The decision: the held camera kept the frame on all 4 measured renders
+    of the collapsed shot, so when a held re-animation of this still collapses
+    too, the still is the suspect. Round 2 renders a new one, with the camera
+    still held, and only that round wakes image-gen."""
+    st = _collapsed_state(tmp_path)
+    paths = _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, _collapse(), ShotQAResult(score=20.0, reason="worse"))
+    await _repair(st, max_retries=2, tmp_path=tmp_path)
+    assert [(how, shot.motion) for how, shot, _ in paths.calls] == [
+        ("again", _HELD), ("fresh", _HELD),
+    ]
+    paths.ready.assert_awaited_once()
+    assert st.reanimations == 1 and st.attempts == 2
+    # Round 2 lost as well: the incumbent keeps the still its opening vetted.
+    assert st.result.still_path == str(tmp_path / "shot_15.png")
+
+
+@pytest.mark.parametrize(("cap", "expected"), [
+    ("0", ["fresh", "fresh"]),   # the pre-2026-09-25 re-roll
+    ("-1", ["fresh", "fresh"]),  # nonsense reads as off, not as unlimited
+    ("2", ["again", "again"]),
+])
+async def test_the_re_animation_cap_is_db_tunable(tmp_path, monkeypatch, cap, expected):
+    st = _collapsed_state(tmp_path)
+    paths = _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, _collapse())
+    await _repair(st, site_config=_sc(video_hero_collapse_reroll_reanimate_max=cap),
+                  max_retries=2, tmp_path=tmp_path)
+    assert [how for how, _, _ in paths.calls] == expected
+    assert all(shot.motion == _HELD for _, shot, _ in paths.calls)
+    for n, (how, _, still) in enumerate(paths.calls, start=1):
+        if how == "again":  # each round's copy lives in that round's directory
+            assert still == str(tmp_path / f"repair{n}" / "shot_15.png")
+
+
+def _unvetted(tmp_path: Path, case: str) -> tuple[slr._ShotState, SiteConfig]:
+    st, sc = _collapsed_state(tmp_path), _sc()
+    if case == "opening_failed":  # the still itself is suspect
+        st.qa.opening_score = 55.0
+    elif case == "judged_ending":  # garbled text may be the still's own doing
+        st.qa = ShotQAResult(score=45.0, reason="garbled", frame="final",
+                             opening_score=92.0, text="garbled")
+        st.collapse_seen = True  # a collapse elsewhere holds the camera anyway
+    elif case == "camera_not_held":  # same motion again: only the seed changes
+        sc = _sc(video_hero_collapse_reroll_motion="")
+    elif case == "still_missing":
+        os.remove(st.result.still_path)
+    elif case == "already_a_still":  # the incumbent shipped its still, no clip
+        st.result.clip_path = st.result.still_path
+    elif case == "not_a_hero":
+        st.shot = st.shot.model_copy(update={"source": "image_kenburns"})
+    return st, sc
+
+
+def test_a_vetted_collapse_names_its_still(tmp_path):
+    st, sc = _unvetted(tmp_path, "vetted")
+    qa = slr._QAConfig(enabled=True, threshold=60.0, max_retries=2)
+    assert slr._reanimation_still(st, slr._candidate_shot(st, sc), qa=qa, site_config=sc) == (
+        str(tmp_path / "shot_15.png")
+    )
+
+
+@pytest.mark.parametrize("case", [
+    "opening_failed", "judged_ending", "camera_not_held", "still_missing",
+    "already_a_still", "not_a_hero",
+])
+def test_only_a_vetted_collapse_is_re_animated(tmp_path, case):
+    st, sc = _unvetted(tmp_path, case)
+    qa = slr._QAConfig(enabled=True, threshold=60.0, max_retries=2)
+    assert slr._reanimation_still(st, slr._candidate_shot(st, sc), qa=qa, site_config=sc) is None
+
+
+async def test_a_re_animation_never_writes_beside_the_incumbent(tmp_path, monkeypatch):
+    """Handed the incumbent's own directory instead of the round's, the copy
+    would be the incumbent's still and the clip would land on the incumbent's
+    clip: the overwrite #4028 fixed. It declines instead."""
+    st = _collapsed_state(tmp_path)
+    paths = _stub_re_roll_paths(monkeypatch)
+    got = await slr._reanimate_hero(st.shot, still=st.result.still_path,
+                                    render_kwargs={"work_dir": tmp_path})
+    assert got is None and paths.calls == []
+    paths.soft.assert_not_awaited()
+    assert (tmp_path / "shot_15.mp4").read_bytes() == b"incumbent-clip"
+
+
+async def test_a_still_that_cannot_be_copied_is_rendered_anew(tmp_path, monkeypatch):
+    st = _collapsed_state(tmp_path)
+    paths = _stub_re_roll_paths(monkeypatch)
+    _judge(monkeypatch, ShotQAResult(score=20.0, reason="worse"))
+
+    def _full_disk(src, dst, *a, **kw):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(slr.shutil, "copy2", _full_disk)
+    await _repair(st, max_retries=1, tmp_path=tmp_path)
+    assert [(how, shot.motion) for how, shot, _ in paths.calls] == [("fresh", _HELD)]
+    paths.ready.assert_awaited_once()
+    assert st.reanimations == 0
+
+
+async def test_the_re_animation_frees_the_card_softly_and_skips_image_gen(
+    tmp_path, monkeypatch, _inert_reclaim_rungs,
+):
+    """No still renders, so no wait for image-gen. The soft levers still run,
+    and before the animation: its own clear opens with image-gen's hard rung,
+    which on a card still holding ComfyUI's last pool reads an idle image-gen
+    as a squat and queues its restart (11.6 GB free, 2026-09-25)."""
+    order: list[str] = []
+    for name, rung in _inert_reclaim_rungs.items():
+        rung.side_effect = lambda *a, _n=name, **kw: order.append(_n)
+    wait = AsyncMock()
+    monkeypatch.setattr(slr, "_wait_image_gen_ready", wait)
+    seen: dict = {}
+
+    async def _animate(shot, *, still_path, **kw):
+        order.append("animate")
+        seen.update(kw, still_path=still_path)
+        return slr.ShotRenderResult(idx=15, source=shot.source, success=True,
+                                    clip_path=str(Path(still_path).with_suffix(".mp4")))
+
+    monkeypatch.setattr(slr, "_animate_hero", _animate)
+    st = _collapsed_state(tmp_path)
+    beat, sc = AsyncMock(), _sc()
+    work = tmp_path / "repair1"
+    work.mkdir()
+    with patch.object(slr.asyncio, "sleep", AsyncMock()):
+        got = await slr._reanimate_hero(
+            st.shot, still=st.result.still_path,
+            render_kwargs={"work_dir": work, "site_config": sc, "orientation": "portrait",
+                           "post_id": "p1", "heartbeat_cb": beat, "image_gen_url": "http://x"},
+        )
+    assert order == ["_unload_comfyui", "_unload_ollama_models", "_unload_chatterbox",
+                     "_unload_rife", "animate"]
+    _inert_reclaim_rungs["_unload_comfyui"].assert_awaited_once_with(hard=False)
+    wait.assert_not_awaited()
+    assert seen == {"still_path": str(work / "shot_15.png"), "site_config": sc,
+                    "orientation": "portrait", "post_id": "p1", "heartbeat_cb": beat}
+    assert got.clip_path == str(work / "shot_15.mp4")
+
+
+async def test_the_re_animated_still_reaches_the_animator(tmp_path, monkeypatch):
+    """The whole seam, from the verdict to what ComfyUI is sent: the incumbent's
+    still (a copy, in the round's directory), its own description, then the
+    held camera in place of the pull-back. No still is rendered."""
+    st = _collapsed_state(tmp_path)
+    sent: list[dict] = []
+
+    async def _clip(**kw):
+        sent.append(kw)
+        Path(kw["output_path"]).write_bytes(b"mp4")
+        return True, ""
+
+    new_still = AsyncMock()
+    monkeypatch.setattr(slr, "_render_hero_still", new_still)
+    monkeypatch.setattr(slr, "_clear_image_gen_for_hero", AsyncMock())
+    monkeypatch.setattr(slr, "_fit_hero_dims_to_free_vram", AsyncMock(return_value=(832, 480)))
+    monkeypatch.setattr(slr, "_render_generative_clip", _clip)
+    monkeypatch.setattr(slr, "_clip_has_motion", AsyncMock(return_value=True))
+    monkeypatch.setattr(slr, "_ready_card_for_escalation", AsyncMock())
+    monkeypatch.setattr(slr, "_soft_clear_card", AsyncMock())
+    _judge(monkeypatch, ShotQAResult(score=92.0, reason="clean", frame="opening",
+                                     opening_score=92.0))
+    await slr._repair_pass(
+        [st], qa=slr._QAConfig(enabled=True, threshold=60.0, max_retries=2),
+        site_config=_sc(), pool=object(),
+        render_kwargs={"work_dir": tmp_path, "image_gen_url": "", "site_config": _sc(),
+                       "http_client_factory": None, "orientation": "landscape",
+                       "post_id": "p1"},
+    )
+    new_still.assert_not_awaited()
+    (kw,) = sent
+    assert kw["prompt"] == f"{st.shot.prompt}. Camera and motion: {_HELD}"
+    assert kw["image_path"] == str(tmp_path / "repair1" / "shot_15.png")
+    assert Path(kw["image_path"]).read_bytes() == b"incumbent-still"
+    assert kw["output_path"] == str(tmp_path / "repair1" / "shot_15.mp4")
+    assert st.result.clip_path == str(tmp_path / "repair1" / "shot_15.mp4")
+    assert st.result.still_path == str(tmp_path / "repair1" / "shot_15.png"), (
+        "the winner's own still, which a later fallback_still would ship"
+    )
+    assert (tmp_path / "shot_15.mp4").read_bytes() == b"incumbent-clip"
+
+
+async def test_with_re_animation_off_the_held_camera_gets_a_new_still(tmp_path, monkeypatch):
+    """``video_hero_collapse_reroll_reanimate_max=0``: the #4045 seam, a fresh
+    still animated with the held camera."""
     st = _collapsed_state(tmp_path)
     prompts: list[str] = []
 
@@ -824,18 +1127,19 @@ async def test_the_held_camera_reaches_the_animator_prompt(tmp_path, monkeypatch
     monkeypatch.setattr(slr, "_fit_hero_dims_to_free_vram", AsyncMock(return_value=(832, 480)))
     monkeypatch.setattr(slr, "_render_generative_clip", _clip)
     monkeypatch.setattr(slr, "_clip_has_motion", AsyncMock(return_value=True))
-    monkeypatch.setattr(slr, "_ready_card_for_escalation", AsyncMock())
-    monkeypatch.setattr(slr, "score_shot_frame", AsyncMock(return_value=ShotQAResult(
-        score=92.0, reason="clean", frame="opening", opening_score=92.0)))
+    ready = AsyncMock()
+    monkeypatch.setattr(slr, "_ready_card_for_escalation", ready)
+    _judge(monkeypatch, ShotQAResult(score=92.0, reason="clean", frame="opening",
+                                     opening_score=92.0))
+    sc = _sc(video_hero_collapse_reroll_reanimate_max="0")
     await slr._repair_pass(
         [st], qa=slr._QAConfig(enabled=True, threshold=60.0, max_retries=2),
-        site_config=_sc(), pool=object(),
-        render_kwargs={"work_dir": tmp_path, "image_gen_url": "", "site_config": _sc(),
+        site_config=sc, pool=object(),
+        render_kwargs={"work_dir": tmp_path, "image_gen_url": "", "site_config": sc,
                        "http_client_factory": None, "orientation": "landscape",
                        "post_id": "p1"},
     )
     assert prompts == [f"{st.shot.prompt}. Camera and motion: {_HELD}"]
-    assert st.result.clip_path == str(tmp_path / "repair1" / "shot_15.mp4")
-    assert st.result.still_path == str(tmp_path / "repair1" / "shot_15.png"), (
-        "the winner's own still, which a later fallback_still would ship"
-    )
+    ready.assert_awaited_once()
+    assert st.result.still_path == str(tmp_path / "repair1" / "shot_15.png")
+    assert (tmp_path / "repair1" / "shot_15.png").read_bytes() == b"png", "a new still"

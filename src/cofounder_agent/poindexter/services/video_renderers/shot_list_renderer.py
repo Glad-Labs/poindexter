@@ -196,6 +196,9 @@ class _ShotState:
     # candidate that lost keep-best. Every later re-roll holds the camera
     # (``_candidate_shot``): the shot's own motion is the likeliest cause.
     collapse_seen: bool = False
+    # Re-rolls of this shot that re-animated a vetted still rather than
+    # rendering a new one (``_reanimation_still``).
+    reanimations: int = 0
 
 
 def _build_qa_config(site_config: Any) -> _QAConfig:
@@ -3978,6 +3981,57 @@ def _candidate_shot(st: _ShotState, site_config: Any) -> Shot:
     return st.shot.model_copy(update={"motion": motion})
 
 
+def _collapse_reanimate_max(site_config: Any) -> int:
+    """``video_hero_collapse_reroll_reanimate_max``: how many of one hero's
+    collapse re-rolls may re-animate a vetted still (0 = never)."""
+    key = "video_hero_collapse_reroll_reanimate_max"
+    if site_config is None:
+        return default_int(key)
+    try:
+        return max(0, int(site_config.get_int(key, default_int(key))))
+    except Exception:  # noqa: BLE001  # silent-ok: a settings read must not
+        return default_int(key)     # decide a render's fate.
+
+
+def _reanimation_still(
+    st: _ShotState, candidate: Shot, *, qa: _QAConfig, site_config: Any,
+) -> str | None:
+    """The still a collapse re-roll animates again as it is, or ``None`` to
+    render a new one.
+
+    A collapse whose opening frame passed vouches for the still: the frame
+    emptied after it, usually because the motion took the camera off the
+    subject. ``_candidate_shot`` has already replaced that motion, so the
+    re-roll can change the motion alone and keep the still that passed. A new
+    still cost 2 min 42 s of a 9 min re-roll on f555bedc shot 15 (image-gen
+    cold after the hero phase exited it), for a still whose opening had
+    passed at 92. All of:
+
+    * the verdict being repaired is the collapse rule's. A judged ending
+      (garbled text, a warped face) may be the still's own doing;
+    * the candidate holds the camera. Re-animating a still with the motion
+      that emptied it would change nothing but the seed;
+    * ``_hero_still_fallback`` vouches for the still: a hero whose final frame
+      decided the score, whose opening passed, with the still on disk;
+    * this shot has re-animated fewer stills than
+      ``video_hero_collapse_reroll_reanimate_max`` (default 1).
+
+    The cap is the second-round decision. The held camera kept the frame on
+    all 4 renders of the collapsed shot it was measured on
+    (docs/architecture/video-composition.md), so a held re-animation that
+    loses anyway points at this still, its composition, rather than at the
+    seed. The next round renders a fresh still of the same prompt, the one
+    draw the re-roll has not tried. That round is rare, so its extra minutes
+    are too. If it loses as well, the incumbent keeps the vetted still for
+    ``fallback_still``.
+    """
+    if st.qa is None or not st.qa.detail_collapse or candidate is st.shot:
+        return None
+    if st.reanimations >= _collapse_reanimate_max(site_config):
+        return None
+    return _hero_still_fallback(st, qa=qa)
+
+
 async def _repair_pass(
     states: list[_ShotState],
     *,
@@ -4004,7 +4058,9 @@ async def _repair_pass(
 
     A hero whose render ended in a detail collapse is re-rolled with its
     camera held (``_candidate_shot``), not with the motion that emptied the
-    frame.
+    frame. When the collapse verdict's opening passed, that re-roll animates
+    a copy of the incumbent's still instead of rendering a new one
+    (``_reanimation_still``), so image-gen sits it out.
     """
     if not qa.enabled or qa.max_retries <= 0:
         return
@@ -4017,10 +4073,6 @@ async def _repair_pass(
         cands: list[tuple[_ShotState, ShotRenderResult]] = []
         for st in pending:
             st.attempts += 1
-            if st.shot.source in _IMAGE_GEN_FAMILY:
-                # Before every one: a hero's animation re-fills the card that
-                # the previous candidate's clear emptied.
-                await _ready_card_for_escalation(render_kwargs)
             shot = _candidate_shot(st, site_config)
             if shot is not st.shot:
                 logger.info(
@@ -4028,9 +4080,24 @@ async def _repair_pass(
                     "ended in a detail collapse): motion %r -> %r",
                     st.shot.idx, st.attempts, st.shot.motion, shot.motion,
                 )
-            cand = await _render_one_shot(
-                shot, prior_clip=None, attempt=st.attempts, **round_kwargs,
-            )
+            cand: ShotRenderResult | None = None
+            still = _reanimation_still(st, shot, qa=qa, site_config=site_config)
+            if still:
+                logger.info(
+                    "[SHOT_QA] shot %d re-roll %d re-animates %s, whose opening "
+                    "passed: no new still", st.shot.idx, st.attempts, still,
+                )
+                cand = await _reanimate_hero(shot, still=still, render_kwargs=round_kwargs)
+                if cand is not None:
+                    st.reanimations += 1
+            if cand is None:
+                if st.shot.source in _IMAGE_GEN_FAMILY:
+                    # Before every one: a hero's animation re-fills the card
+                    # that the previous candidate's clear emptied.
+                    await _ready_card_for_escalation(render_kwargs)
+                cand = await _render_one_shot(
+                    shot, prior_clip=None, attempt=st.attempts, **round_kwargs,
+                )
             logger.info(
                 "[SHOT_QA] shot %d (%s) re-roll %d/%d: %s", st.shot.idx,
                 st.shot.source, st.attempts, qa.max_retries,
@@ -4064,6 +4131,9 @@ async def _repair_pass(
                 "kept" if kept else f"discarded ({cand_qa.reason})",
             )
             if kept:
+                # The verdict being replaced may be the collapse that brought
+                # the shot here. The camera stays held for any later re-roll.
+                st.collapse_seen = st.collapse_seen or bool(best and best.detail_collapse)
                 st.result, st.qa = cand, cand_qa
 
 
@@ -4085,21 +4155,15 @@ def _candidate_render_kwargs(render_kwargs: dict[str, Any], tag: str) -> dict[st
     return {**render_kwargs, "work_dir": sub}
 
 
-async def _ready_card_for_escalation(render_kwargs: dict[str, Any]) -> None:
-    """Give image-gen the card before an escalation or repair still renders.
+async def _soft_clear_card(purpose: str) -> None:
+    """Free the card with soft levers only, then settle: ComfyUI /free, Ollama
+    evict, idle chatterbox / RIFE models.
 
-    Both run after the hero and presenter phases, when ComfyUI still
-    holds the last clip's weights and something else may have loaded since. On
-    f555bedc (2026-09-24) three of four escalation stills died on image-gen
-    503 "CUDA out of memory" with 78 MiB free, and each of those shots fell back
-    to replaying the one before it. Soft levers only (ComfyUI /free, Ollama
-    evict, idle chatterbox / RIFE models): none queues a restart, so a card
-    that is short because of someone else's model cannot set off the restart
-    storm. speaches is not a lever: its unload API deadlocks it (2026-09-24),
-    and its idle Whisper leaves on its own WHISPER__TTL timer. Then wait for
-    image-gen /health, since the hero phase hard-exits it.
+    None queues a restart, so a card that is short because of someone else's
+    model cannot set off the restart storm. speaches is not a lever: its
+    unload API deadlocks it (2026-09-24), and its idle Whisper leaves on its
+    own WHISPER__TTL timer. ``purpose`` names the caller in the logs.
     """
-    site_config = render_kwargs.get("site_config")
     try:
         from poindexter.services.gpu_scheduler import gpu
 
@@ -4114,12 +4178,75 @@ async def _ready_card_for_escalation(render_kwargs: dict[str, Any]) -> None:
                 await lever()
             except Exception as exc:  # noqa: BLE001  # silent-ok: best-effort, logged
                 logger.warning(
-                    "[SHOT_QA] pre-escalation %s release failed (%s) — continuing",
-                    name, describe_exception(exc),
+                    "[SHOT_QA] pre-%s %s release failed (%s) — continuing",
+                    purpose, name, describe_exception(exc),
                 )
         await asyncio.sleep(3.0)
     except Exception as exc:  # noqa: BLE001  # silent-ok: the render is attempted regardless
-        logger.warning("[SHOT_QA] pre-escalation card clear failed: %s", describe_exception(exc))
+        logger.warning("[SHOT_QA] pre-%s card clear failed: %s", purpose, describe_exception(exc))
+
+
+async def _reanimate_hero(
+    shot: Shot, *, still: str, render_kwargs: dict[str, Any],
+) -> ShotRenderResult | None:
+    """Animate a copy of the vetted ``still`` in the candidate's own directory.
+
+    ``None`` when there is no directory to copy into or the copy fails; the
+    caller then renders a fresh still, the path before this one existed.
+
+    A copy, never the incumbent's file: ``_animate_hero`` writes the clip
+    beside its still (``Path(still_path).with_suffix(".mp4")``), and beside
+    the incumbent's still sits the incumbent's clip. Animated in place, the
+    candidate would overwrite the clip it competes with, which is how
+    keep-best came to keep a score whose file held the loser (#4028).
+
+    The card gets ``_soft_clear_card`` and not the image-gen wait that
+    ``_ready_card_for_escalation`` adds: no still renders. The soft levers
+    still run first, because ``_animate_hero``'s own clear opens with
+    image-gen's hard rung, and while ComfyUI still holds its last clip's pool
+    that rung reads an idle image-gen's decline as a squat. A clip animated
+    straight after another on 2026-09-25 did exactly that: 11.6 GB free, an
+    image-gen restart queued for a server holding nothing. ComfyUI's own
+    ready-wait runs in its provider.
+    """
+    work_dir = render_kwargs.get("work_dir")
+    if not work_dir:
+        return None
+    dest = Path(work_dir) / Path(still).name
+    try:
+        # Handed the incumbent's own directory instead of the round's, this is
+        # a copy onto itself, which copy2 refuses (SameFileError, an OSError):
+        # a fresh still, never the in-place overwrite above.
+        shutil.copy2(still, dest)
+    except OSError as exc:
+        logger.warning(
+            "[SHOT_QA] could not copy the vetted still %s for re-animation (%s) "
+            "— rendering a new still instead", still, describe_exception(exc),
+        )
+        return None
+    await _soft_clear_card("re-animation")
+    return await _animate_hero(
+        shot,
+        still_path=str(dest),
+        site_config=render_kwargs.get("site_config"),
+        orientation=render_kwargs.get("orientation", "landscape"),
+        post_id=render_kwargs.get("post_id", ""),
+        heartbeat_cb=render_kwargs.get("heartbeat_cb"),
+    )
+
+
+async def _ready_card_for_escalation(render_kwargs: dict[str, Any]) -> None:
+    """Give image-gen the card before an escalation or repair still renders.
+
+    Both run after the hero and presenter phases, when ComfyUI still
+    holds the last clip's weights and something else may have loaded since. On
+    f555bedc (2026-09-24) three of four escalation stills died on image-gen
+    503 "CUDA out of memory" with 78 MiB free, and each of those shots fell back
+    to replaying the one before it. ``_soft_clear_card`` frees the card, then
+    this waits for image-gen /health, since the hero phase hard-exits it.
+    """
+    site_config = render_kwargs.get("site_config")
+    await _soft_clear_card("escalation")
     try:
         budget = (
             float(site_config.get_float("video_image_gen_ready_wait_s", 90.0))

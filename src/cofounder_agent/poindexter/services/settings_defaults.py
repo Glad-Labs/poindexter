@@ -979,6 +979,17 @@ DEFAULTS: dict[str, str] = {
         'fully in frame to the last frame; the camera holds its angle and '
         'height; ambient light and particles drift softly; stable composition'
     ),
+    # How many of one hero's collapse re-rolls re-animate the still its
+    # collapsed clip was animated from, instead of rendering a new one. When
+    # the collapse verdict's opening frame passed, the still is vetted and the
+    # defect was the motion, which the re-roll replaces with the held camera
+    # above. A new still cost 2 min 42 s of a 9 min re-roll on f555bedc
+    # (image-gen cold after the hero phase exited it). 1 = the first collapse
+    # re-roll re-animates the vetted still, and a later one, after that held
+    # re-animation also lost, renders a fresh still: the still is then the
+    # likelier cause, and a new one is the draw the re-roll has not tried.
+    # 0 = every re-roll renders a fresh still.
+    'video_hero_collapse_reroll_reanimate_max': '1',
     # ------------------------------------------------------------------
     # Generative hero provider seam (2026-08-15 ComfyUI spike). 'wan21' =
     # the deployed 5B diffusers sidecar; 'comfyui' = Wan 2.2 14B via the
@@ -5862,6 +5873,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_hero_fps': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_motion_default': {'owner': 'video', 'value_type': 'string'},
     'video_hero_collapse_reroll_motion': {'owner': 'video', 'value_type': 'string'},
+    'video_hero_collapse_reroll_reanimate_max': {'owner': 'video', 'value_type': 'integer'},
     'video_generative_provider': {'owner': 'video', 'value_type': 'string'},
     'video_shot_qa_crop_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_crop_fraction': {'owner': 'video', 'value_type': 'float'},
