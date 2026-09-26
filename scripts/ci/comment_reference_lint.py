@@ -196,9 +196,16 @@ def main() -> int:
               "the comment is still right — re-run with --update-baseline.")
         return 1
 
+    # Print FOUND and BASELINED separately. They are not the same number and
+    # can legitimately differ — a tree sitting below its baseline is clean but
+    # not yet locked in. Collapsing them into one figure is what made a stale
+    # bandit baseline entry invisible during the 2026-08-28 CI audit (the same
+    # doctrine as semgrep_lint.py).
+    baselined = sum(sum(v.values()) for v in baseline.values())
+    tail = "" if total == baselined else "  <- re-baseline to lock the win in"
     print(f"comment-reference-lint: clean — no new dead references "
-          f"({total} baselined across {len(findings)} files, "
-          f"{scanned} python files scanned; ratchet only shrinks).")
+          f"({total} found / {baselined} baselined across {scanned} python "
+          f"files scanned; ratchet only shrinks).{tail}")
     return 0
 
 

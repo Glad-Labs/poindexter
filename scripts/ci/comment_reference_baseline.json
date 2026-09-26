@@ -4,9 +4,6 @@
     "src/cofounder_agent/poindexter/brain/deploy_sync_probe.py": {
       "bootstrap.toml": 1
     },
-    "src/cofounder_agent/poindexter/brain/glitchtip_triage_probe.py": {
-      "feedback_alert_auto_triage.md": 1
-    },
     "src/cofounder_agent/poindexter/brain/operator_url_probe.py": {
       "20260510_152609_url_probe_per_target_overrides.py": 1
     },
@@ -135,9 +132,6 @@
     },
     "src/cofounder_agent/poindexter/services/topic_sources/__init__.py": {
       "services/topic_discovery.py": 2
-    },
-    "src/cofounder_agent/poindexter/services/topic_sources/igdb.py": {
-      "feedback_brand_niches.md": 1
     },
     "src/cofounder_agent/poindexter/services/video_service.py": {
       "scripts/video-server.py": 1

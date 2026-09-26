@@ -89,3 +89,54 @@ def test_scan_floor_refuses_an_empty_tree(tmp_path):
     assert r.returncode != 0, "an empty tree must not report clean"
     out = (r.stdout + r.stderr).lower()   # the floor guard writes to stderr
     assert "refusing" in out or "does not exist" in out, out[:300]
+
+def test_shrunk_baseline_passes_and_reports_found_and_baselined_separately(tmp_path):
+    """A baseline allowing a reference the tree no longer has must stay clean.
+
+    ``total`` in the success message used to be the count FOUND in the tree,
+    not the count in the baseline — collapsing them into one figure hid a
+    stale baseline entry (two dead references sat un-pruned for weeks because
+    the message read the same either way). The fix prints both, plus a
+    re-baseline tail when they differ.
+    """
+    lint = _copy_lint(tmp_path)
+    module = tmp_path / "src/cofounder_agent/poindexter/services/settings_categories.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("# nothing referenced here.\n", encoding="utf-8")
+
+    # The baseline allows a reference this tree does not contain — the
+    # "already fixed in code, never re-baselined" scenario.
+    (lint.parent / BASELINE.name).write_text(
+        json.dumps({"files": {
+            "src/cofounder_agent/poindexter/services/settings_categories.py": {
+                "docs/some_deleted_doc.md": 1,
+            },
+        }}),
+        encoding="utf-8")
+
+    r = _run(tmp_path, script=lint)
+    assert r.returncode == 0, f"a shrunk baseline must still be clean:\n{r.stdout}\n{r.stderr}"
+    assert "0 found" in r.stdout
+    assert "1 baselined" in r.stdout
+    assert "re-baseline to lock the win in" in r.stdout
+
+def test_matched_baseline_reports_no_tail(tmp_path):
+    """Found == baselined must print cleanly with no re-baseline tail."""
+    lint = _copy_lint(tmp_path)
+    module = tmp_path / "src/cofounder_agent/poindexter/services/settings_categories.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("# See ``docs/some_deleted_doc.md`` for details.\n", encoding="utf-8")
+
+    (lint.parent / BASELINE.name).write_text(
+        json.dumps({"files": {
+            "src/cofounder_agent/poindexter/services/settings_categories.py": {
+                "docs/some_deleted_doc.md": 1,
+            },
+        }}),
+        encoding="utf-8")
+
+    r = _run(tmp_path, script=lint)
+    assert r.returncode == 0, f"unexpected regression:\n{r.stdout}\n{r.stderr}"
+    assert "1 found" in r.stdout
+    assert "1 baselined" in r.stdout
+    assert "re-baseline" not in r.stdout
