@@ -43,6 +43,14 @@ _REPO_ROOT = next(
 )
 _MCP_DIR = _REPO_ROOT / "mcp-server"
 _MCP_GLADLABS_DIR = _REPO_ROOT / "mcp-server-gladlabs"
+# `_import_server` below reads `server_dir / "server.py"`, but every call site
+# passes `server_dir` as a plain argument (`_import_server(_MCP_DIR, ...)`),
+# never as part of a `/`-chain there — so the read is invisible to
+# tests/unit/infrastructure/test_ci_runs_when_its_inputs_change.py unless it
+# is spelled directly, here, the same way `_MCP_DIR`/`_MCP_GLADLABS_DIR`
+# already are for oauth_client.py's `/`-chain.
+_MCP_SERVER_PY = _MCP_DIR / "server.py"
+_MCP_GLADLABS_SERVER_PY = _MCP_GLADLABS_DIR / "server.py"
 
 
 def _make_jwt(exp_offset: int = 3600, sub: str = "pdx_mcp") -> str:

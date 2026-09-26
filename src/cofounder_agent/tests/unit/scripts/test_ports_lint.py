@@ -37,6 +37,17 @@ REPO_ROOT = next(
 )
 LINTER_PATH = REPO_ROOT / "scripts" / "ci" / "ports_lint.py"
 
+# Named here too (not just inside the imported lint) so this file's own AST
+# spells the reads test_repo_passes_lint_in_process/_subprocess exercise for
+# real: LINT.main([]) reads docs/operations/ports.md and
+# docker-compose.local.yml via the lint module's OWN COMPOSE_PATH /
+# PORTS_DOC_PATH constants, which are invisible from here without a local
+# duplicate. tests/unit/infrastructure/test_ci_runs_when_its_inputs_change.py
+# only sees a path a test names — same reason test_semgrep_lint.py names
+# VENDORED_RULES.
+COMPOSE_LOCAL = REPO_ROOT / "docker-compose.local.yml"
+PORTS_DOC = REPO_ROOT / "docs" / "operations" / "ports.md"
+
 
 def _load_linter():
     spec = importlib.util.spec_from_file_location("ports_lint", LINTER_PATH)
@@ -76,6 +87,15 @@ class TestRepoContract:
         assert result.returncode == 0, (
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
+
+    def test_the_lint_checks_the_files_this_file_names(self) -> None:
+        """If the lint moves either path, the local duplicates above must follow.
+
+        Otherwise the CI trigger keeps watching a path this file no longer
+        reads for real, or starts missing one it does.
+        """
+        assert LINT.COMPOSE_PATH.resolve() == COMPOSE_LOCAL.resolve()
+        assert LINT.PORTS_DOC_PATH.resolve() == PORTS_DOC.resolve()
 
 
 # ---------------------------------------------------------------------------

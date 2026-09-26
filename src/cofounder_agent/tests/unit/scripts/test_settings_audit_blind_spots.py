@@ -40,6 +40,17 @@ def _repo_root() -> Path:
     )
 
 
+# Named here too (not just inside the imported audit module) so this file's
+# own AST spells the read test_a_shell_only_key_is_visible exercises for real
+# via audit._walk(audit.CODE_ROOTS): without a local duplicate, the only
+# visible path is audit.CODE_ROOTS itself, an attribute defined in
+# scripts/ci/settings_audit.py, and
+# tests/unit/infrastructure/test_ci_runs_when_its_inputs_change.py only sees a
+# path a test names. mcp-server/ and mcp-server-gladlabs/ are also in
+# CODE_ROOTS, but cli/test_mcp_oauth.py already names both directly.
+WEB_PUBLIC_SITE = _repo_root() / "web" / "public-site"
+
+
 @pytest.fixture(scope="module")
 def audit():
     path = _repo_root() / "scripts/ci/settings_audit.py"
@@ -67,6 +78,15 @@ def test_a_shell_only_key_is_visible(audit):
     appears in no scanned Python file at all."""
     corpus = audit._walk(audit.CODE_ROOTS)
     assert "offsite_backup_keep_daily" in corpus
+
+
+def test_the_audit_still_walks_the_tree_this_file_names(audit) -> None:
+    """If CODE_ROOTS drops web/public-site, WEB_PUBLIC_SITE must follow.
+
+    Otherwise the CI trigger keeps watching a tree this file no longer reads
+    for real.
+    """
+    assert WEB_PUBLIC_SITE in audit.CODE_ROOTS
 
 
 # --- blind spot 2: multi-segment dynamic suffixes ----------------------------

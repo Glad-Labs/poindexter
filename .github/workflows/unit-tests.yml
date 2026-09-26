@@ -245,12 +245,92 @@ jobs:
           # example `^infrastructure/cloudflare/[^/]+/src/`), never the
           # lockfiles. loki/, tempo/, promtail/ and pgadmin/ are out because
           # no test reads them either.
-          # `docker-compose*.yml` for the same reason: 22 unit-test files read
-          # the compose files (mounts, parked services, the speaches seed/digest
-          # pairing in tests/unit/infrastructure/). A PR that only moves an
-          # image digest is the one those checks exist for, and without this
-          # clause it skipped them. That was 2 of the 635 merges from
-          # 2026-08-25 to 2026-09-25.
+          #
+          # Widened again 2026-09-25 past infrastructure/ to the rest of what
+          # unit tests read outside src/cofounder_agent/ and scripts/ (audited
+          # with a sys.addaudithook plugin over a full suite run, not grep --
+          # grep over-names comments/labels and under-names an indirect read
+          # through an imported script's own path constant). Of 638 first-
+          # parent merges from 2026-08-25 to 2026-09-25, 142 were skipped by
+          # the pattern as it stood that morning; each clause below names how
+          # many of those 142 it now catches.
+          #
+          # `.github/workflows/**`, not just this file: ci_runner_seam_lint,
+          # the system-python floor, unit_test_dirs_lint, and the
+          # grafana-panels-lint workflow guard each glob every `*.yml` under
+          # here, so a PR editing only ANOTHER workflow used to skip all four
+          # (8 of the 142).
+          #
+          # `mcp-server/**` and `mcp-server-gladlabs/**`: settings_audit.py's
+          # CODE_ROOTS walks both trees for real
+          # (test_settings_audit_blind_spots.py exercises it unmocked), and
+          # test_mcp_oauth.py imports `oauth_client.py`/`server.py` from both
+          # by file path (1 of the 142). NOT `mcp-server-voice/` -- nothing
+          # here reads its source, only its *version files*, which the
+          # `uv.lock`/`pyproject.toml` clause above already covers (that
+          # clause's `[^/]*` was written to span all three `mcp-server*`
+          # variants for exactly this reason). `web/public-site/**` is
+          # CODE_ROOTS' third member, walked by the same test (12 of the 142,
+          # nearly all `package.json`/`package-lock.json` dependabot bumps --
+          # matching only the code-extension subset would need a per-tree
+          # filter this pattern doesn't have, and whole-tree is cheap enough
+          # not to bother). `web/starter/` and `web/storefront/` are separate
+          # trees CODE_ROOTS never lists; nothing reads them, so they stay out.
+          #
+          # `docker-compose*.yml` at the repo root: tests/unit/_egress_guard.py
+          # opens all three on EVERY pytest process (deriving the GPU ports a
+          # unit test may not reach), and 22 more unit-test files read the
+          # compose files directly -- mounts, parked services, the
+          # compose-drift probe, setup.py's default DB port, the
+          # deploy-rebuild map, the nvidia-smi/game-mode/demo-clip-mount
+          # fixtures, ports_lint, and the speaches seed/digest pairing in
+          # tests/unit/infrastructure/test_speaches_kokoro_provider_order.py.
+          # A PR that only moves an image digest is exactly the kind that
+          # skipped every one of them (2 of the 142).
+          #
+          # `README.md`: test_package_metadata.py parses its fenced
+          # `poindexter ...` commands and asserts each resolves against the
+          # live CLI -- a doc/CLI rename mismatch nothing else here would
+          # catch (12 of the 142, mostly the nightly stats-sync PR). NOT
+          # `CLAUDE.md`: migrations-smoke.yml's claude_md_anchor_lint step
+          # already runs UNCONDITIONALLY on every PR (no detect-changes gate,
+          # and it IS a required check), so a wording break that kills a sync
+          # anchor is already caught there. This suite's own
+          # test_claude_md_anchor_lint.py exercises the identical patterns and
+          # would only ever go red alongside that already-running check, so
+          # adding CLAUDE.md here would buy a second run of the same result,
+          # never a catch migrations-smoke missed.
+          #
+          # `.release-please-manifest.json` and
+          # `release-please-config.poindexter.json`: test_package_metadata.py
+          # cross-checks the manifest's version against
+          # src/cofounder_agent/pyproject.toml (already matched above) and
+          # both release configs' extra-files list. Cheap defense in depth --
+          # the extra-files JSONPath bump silently froze for ~100 releases
+          # before this suite could have caught it (see
+          # uv_lock_version_lint.py's docstring); if it breaks again, a
+          # release commit touching only the manifest should not be the one
+          # thing that skips the check for it.
+          #
+          # `pyproject.toml` (root), `.gitleaks.toml`,
+          # `packages/brand/src/tokens/colors.css`,
+          # `docs/architecture/anti-hallucination.md`, and
+          # `docs/operations/ports.md`: five single files, each read by one
+          # test for real -- the root-pyproject-stays-empty guard, the
+          # gitleaks app-token rule pin, the brand-hero color check, the
+          # retired-QA-gate doc check, and (the last one) ports_lint's own
+          # repo-contract test. 1 of the 142 between them; for docs/ this is
+          # the specific-files-not-the-tree choice the infrastructure/
+          # exclusion above already made for the same reason.
+          #
+          # NOT `gladlabs-rig/`, `marketing/`, `skills/*/scripts/run.sh`: the
+          # only tests that touch them scan the WHOLE repo for a universal
+          # property, not this file's own content --
+          # test_adapter_purity_lint's rglob("*.py") for a dead `# noqa:
+          # adapter-ok` spelling, and test_check_shell_line_endings' rglob for
+          # CRLF. Same class as the whole-repo-walk exemption already named
+          # above; matching them would buy a 9-14 minute run that no ordinary
+          # edit to those trees could ever fail.
           # NOT `echo "$changed" | grep -q ...`: under `set -o pipefail`, grep -q exits
           # at its FIRST match and a list larger than the pipe buffer leaves echo
           # holding SIGPIPE, so the pipeline reports failure and the branch below
@@ -258,7 +338,7 @@ jobs:
           # PR (stack#3626, 2026-09-10) having run nothing -- the biggest changes
           # are exactly the ones that were skipping. A here-string has no pipe, and
           # -c reads the whole list; the count is printed so a skip is auditable.
-          backend_hits=$(grep -cE '^src/cofounder_agent/|^scripts/|^infrastructure/(grafana|prometheus|semgrep|systemd)/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$|^docker-compose[^/]*\.yml$' <<<"$changed" || true)
+          backend_hits=$(grep -cE '^src/cofounder_agent/|^scripts/|^infrastructure/(grafana|prometheus|semgrep|systemd)/|^\.github/workflows/|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^mcp-server(-gladlabs)?/|^web/public-site/|^docker-compose[^/]*\.ya?ml$|^README\.md$|^pyproject\.toml$|^\.gitleaks\.toml$|^packages/brand/src/tokens/colors\.css$|^docs/(architecture/anti-hallucination|operations/ports)\.md$|^(release-please-config(\.poindexter)?\.json|\.release-please-manifest\.json)$' <<<"$changed" || true)
           echo "Backend-pattern matches: ${backend_hits} of $(wc -l <<<"$changed") changed paths"
           if [ "${backend_hits}" -gt 0 ]; then
             echo "Backend code or this workflow changed — running full suite."
