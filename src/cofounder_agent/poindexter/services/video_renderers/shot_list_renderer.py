@@ -913,24 +913,23 @@ async def _fit_hero_dims_to_free_vram(
             # unreadable first read: never shrink a render on no evidence.
             return width, height
     if live is not None:
-        free_gb = live
         landscape = width >= height
         for lw, lh, needs_gb in ladder:
-            if free_gb >= needs_gb:
+            if live >= needs_gb:
                 new_w, new_h = (lw, lh) if landscape else (lh, lw)
                 if new_w * new_h >= width * height:
                     return width, height
                 logger.info(
                     "[SHOT_LIST] hero plate %dx%d -> %dx%d (%.1fGB free live, "
                     "%s needs %.1fGB for it)", width, height, new_w, new_h,
-                    free_gb, _hero_animator(site_config), needs_gb,
+                    live, _hero_animator(site_config), needs_gb,
                 )
                 return new_w, new_h
         logger.warning(
             "[SHOT_LIST] only %.1fGB usable (live free + the animator's own pool; "
             "%s needs %.1fGB for its smallest plate) — NOT animating this hero; "
             "using its Ken Burns still.",
-            free_gb, _hero_animator(site_config), ladder[-1][2],
+            live, _hero_animator(site_config), ladder[-1][2],
         )
         return None
 
@@ -946,7 +945,7 @@ async def _fit_hero_dims_to_free_vram(
         from poindexter.services.gpu_registry import GPURegistry
 
         registry = GPURegistry(site_config=site_config)
-        free_gb = None
+        free_gb: float | None = None
         for attempt in range(_FREE_VRAM_SAMPLES):
             sample = await registry.free_gb(0)
             if sample is not None:
@@ -1022,7 +1021,7 @@ def _hero_render_dims(
 
 
 def _compose_hero_wan_prompt(
-    still_prompt: str, motion: str | None, site_config: Any,
+    still_prompt: str | None, motion: str | None, site_config: Any,
 ) -> str:
     """Build the i2v prompt: the still's description + explicit motion.
 
@@ -4188,8 +4187,11 @@ async def _escalate_offtopic_stock(
 
     escalated = 0
     all_shots = [st.shot for st in states]
+    # Each candidate carries the score it entered the pass with: the number
+    # rung 1's re-query has to beat. Rung 2 re-reads ``st.qa`` instead,
+    # because a rung-1 win replaces it.
     candidates = [
-        st for st in states
+        (st, st.qa.score) for st in states
         if st.shot.source == "pexels"
         and st.qa is not None and st.qa.score is not None
         and st.qa.score < qa.threshold
@@ -4207,7 +4209,7 @@ async def _escalate_offtopic_stock(
             for st in states if st.shot.source == "pexels"
         ) or "no stock shots",
     )
-    for st in candidates:
+    for st, entry_score in candidates:
 
         # RUNG 1 — re-query stock with a better search string. The clip missed
         # because the QUERY was wrong, not because stock footage is wrong, so
@@ -4233,11 +4235,11 @@ async def _escalate_offtopic_stock(
                     site_config=site_config, pool=pool,
                     topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
                 )
-                if cand_qa.score is not None and cand_qa.score > st.qa.score:
+                if cand_qa.score is not None and cand_qa.score > entry_score:
                     logger.info(
                         "[SHOT_QA] shot %d re-queried %r -> %r (%.0f -> %.0f)",
                         st.shot.idx, st.shot.query, new_query,
-                        st.qa.score, cand_qa.score,
+                        entry_score, cand_qa.score,
                     )
                     emit_finding(
                         source="shot_list_renderer", kind="shot_requeried",
@@ -4245,7 +4247,7 @@ async def _escalate_offtopic_stock(
                             f"shot {st.shot.idx}: off-topic stock query rewritten"
                         ),
                         body=(
-                            f"{st.shot.query!r} scored {st.qa.score:.0f} against "
+                            f"{st.shot.query!r} scored {entry_score:.0f} against "
                             f"threshold {qa.threshold}; re-queried as "
                             f"{new_query!r} and scored {cand_qa.score:.0f}. "
                             f"Advisory — a shot that re-queries every render is "
@@ -4257,7 +4259,7 @@ async def _escalate_offtopic_stock(
                             "shot_idx": st.shot.idx,
                             "old_query": st.shot.query or "",
                             "new_query": new_query,
-                            "old_score": st.qa.score, "new_score": cand_qa.score,
+                            "old_score": entry_score, "new_score": cand_qa.score,
                         },
                     )
                     st.result, st.qa, st.shot = cand, cand_qa, requeried

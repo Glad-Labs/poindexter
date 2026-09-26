@@ -193,7 +193,9 @@ def _keyed_logo(logo_path: str) -> Any | None:
     except Exception as exc:  # noqa: BLE001 — a bad logo must not kill the card
         logger.warning("[ENDCARD] logo unreadable at %s: %s", logo_path, exc)
         return None
-    alpha = logo.getchannel("A")
+    # PIL objects are Any in this module. Pillow types getextrema() for every
+    # mode; a single band like this one always returns (min, max).
+    alpha: Any = logo.getchannel("A")
     if alpha.getextrema()[0] < 255:
         return logo  # real transparency already present
     # RGB-on-white: flood the background from each corner with a sentinel,
@@ -206,7 +208,9 @@ def _keyed_logo(logo_path: str) -> Any | None:
             ImageDraw.floodfill(keyed, corner, sentinel, thresh=45)
         except (ValueError, RecursionError):
             continue
-    px = keyed.load()
+    # Pillow types load() as Optional and a pixel as float-or-tuple; an
+    # in-memory RGBA copy always loads, and its pixels are 4-tuples.
+    px: Any = keyed.load()
     mask_needed = False
     for y in range(h):
         for x in range(w):

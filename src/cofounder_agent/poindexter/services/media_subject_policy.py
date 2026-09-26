@@ -40,12 +40,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 logger = logging.getLogger(__name__)
 
 HumanSubjects = Literal["allow", "stylized_only", "none"]
 StylePolicy = Literal["stylized", "any"]
+_Policy = TypeVar("_Policy", bound=str)
 
 HUMAN_SUBJECTS_KEY = "media_human_subjects"
 STYLE_POLICY_KEY = "media_style_policy"
@@ -60,8 +61,8 @@ DEFAULT_HUMAN_SUBJECTS: HumanSubjects = "allow"
 DEFAULT_STYLE_POLICY: StylePolicy = "stylized"
 DEFAULT_HUMAN_TERMS = "face, person, human, hands, fingers"
 
-_HUMAN_VALUES: tuple[str, ...] = ("allow", "stylized_only", "none")
-_STYLE_VALUES: tuple[str, ...] = ("stylized", "any")
+_HUMAN_VALUES: tuple[HumanSubjects, ...] = ("allow", "stylized_only", "none")
+_STYLE_VALUES: tuple[StylePolicy, ...] = ("stylized", "any")
 
 
 def niche_key(niche_slug: str, leaf: str) -> str:
@@ -110,7 +111,7 @@ def _get(site_config: Any, key: str) -> str:
         return ""
 
 
-def _resolve(site_config: Any, leaf: str, key: str, allowed: tuple[str, ...], default: str, niche_slug: str | None) -> tuple[str, str]:
+def _resolve(site_config: Any, leaf: str, key: str, allowed: tuple[_Policy, ...], default: _Policy, niche_slug: str | None) -> tuple[_Policy, str]:
     """(value, source) — niche override, then global, then the code default."""
     candidates: list[tuple[str, str]] = []
     if niche_slug:
@@ -213,7 +214,7 @@ def resolve_media_policy(site_config: Any, niche_slug: str | None = None) -> Med
         human_subjects=human, style_policy=style, house_style=house, niche_slug=niche_slug, human_terms=terms, sources=(h_src, s_src),
         presenter_slug=slug, presenter_display_name=display, presenter_style=pstyle,
         presenter_available=available, presenter_max_shots=max_shots,
-    )  # type: ignore[arg-type]
+    )
 
 
 # ---------------------------------------------------------------------------

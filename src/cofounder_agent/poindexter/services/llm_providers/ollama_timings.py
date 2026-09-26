@@ -40,6 +40,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 HIDDEN_PARAMS_KEY = "ollama_timings"
+# Set on the patched ``transform_response`` so a second install skips it.
+_WRAPPED_MARKER = "__ollama_timings_wrapped__"
 
 _installed = False
 
@@ -63,7 +65,7 @@ def _stash_timings(model_response: Any, raw_response: Any) -> None:
         logger.debug("[ollama_timings] raw-response parse failed", exc_info=True)
 
 
-def _wrap(cls: type) -> None:
+def _wrap(cls: type[Any]) -> None:
     orig = cls.transform_response
 
     @functools.wraps(orig)
@@ -72,7 +74,7 @@ def _wrap(cls: type) -> None:
         _stash_timings(out, raw_response)
         return out
 
-    patched.__ollama_timings_wrapped__ = True  # idempotency marker
+    setattr(patched, _WRAPPED_MARKER, True)
     cls.transform_response = patched
 
 
@@ -92,7 +94,7 @@ def install_ollama_timing_capture() -> bool:
         )
         return False
     for cls in (OllamaChatConfig, OllamaConfig):
-        if getattr(cls.transform_response, "__ollama_timings_wrapped__", False):
+        if getattr(cls.transform_response, _WRAPPED_MARKER, False):
             continue
         _wrap(cls)
     _installed = True

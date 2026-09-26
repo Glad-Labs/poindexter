@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -201,3 +202,32 @@ async def test_seconds_since_last_request_ignores_non_numeric_rows():
     from poindexter.services.service_restart_requests import seconds_since_last_request
 
     assert await seconds_since_last_request(MagicMock(), "poindexter-comfyui") is None
+
+
+def _fetchval_pool(value):
+    conn = MagicMock()
+    conn.fetchval = AsyncMock(return_value=value)
+    pool = MagicMock()
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+    return pool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("age", "expected"),
+    [
+        # What asyncpg returns for EXTRACT(EPOCH …). Decimal is not a
+        # numbers.Real, so a "real numbers only" check that forgot it would
+        # read every live cooldown as unknown.
+        (Decimal("676.25"), 676.25),
+        (120, 120.0),
+        (1.5, 1.5),
+        (None, None),  # no request for this container yet
+        (1 + 2j, None),  # a numbers.Number that float() cannot take
+    ],
+)
+async def test_seconds_since_last_request_reads_real_numbers(age, expected):
+    from poindexter.services.service_restart_requests import seconds_since_last_request
+
+    assert await seconds_since_last_request(_fetchval_pool(age), "poindexter-comfyui") == expected

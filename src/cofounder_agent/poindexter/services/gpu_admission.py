@@ -187,7 +187,9 @@ def decide(i: AdmissionInputs) -> AdmissionDecision:
     # fit question is "does it fit any one card, or the pool as a whole",
     # each card contributing its free VRAM minus its own reserve.
     cards = i.effective_cards()
-    if i.model_estimate_gb is None or any(c.free_gb is None for c in cards):
+    # Card order is kept, so a short list means a card with no reading.
+    free = [c.free_gb for c in cards if c.free_gb is not None]
+    if i.model_estimate_gb is None or len(free) < len(cards):
         # Unknown estimate, or ANY card's telemetry missing: the pool total
         # is unknowable, so a no_fit cannot be asserted — fail open, same
         # posture the single-card gate always had.
@@ -197,7 +199,7 @@ def decide(i: AdmissionInputs) -> AdmissionDecision:
     # deficit is meaningful for the single-card check and for eviction credit
     # (a freed model must first refill the reserve before contributing), but
     # a deficit card contributes zero capacity to a split, never negative.
-    budgets = [c.free_gb - c.headroom_gb for c in cards]
+    budgets = [f - c.headroom_gb for f, c in zip(free, cards, strict=True)]
     if i.model_estimate_gb <= max(budgets) or i.model_estimate_gb <= sum(
         b for b in budgets if b > 0.0
     ):

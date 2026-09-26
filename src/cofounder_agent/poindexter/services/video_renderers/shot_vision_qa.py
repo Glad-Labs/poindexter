@@ -592,10 +592,10 @@ async def _score_stock(
         used = min(seconds, float(shot.duration_s)) if seconds else None
         if used:
             for k in range(n):
-                at = used * (k + 0.5) / n
-                img = await _frame_at(frame_path, at, f"s{k}")
+                at_s = used * (k + 0.5) / n
+                img = await _frame_at(frame_path, at_s, f"s{k}")
                 if img:
-                    frames.append((at, img))
+                    frames.append((at_s, img))
         else:
             img = await _extract_video_frame(frame_path)
             if img:
@@ -641,8 +641,10 @@ async def _score_image(
 
     # OpenAI-multimodal message; LiteLLM translates image_url data URIs into
     # Ollama's native images array. Frames are PNG (image_gen still, or an
-    # extracted video frame).
-    messages = [{
+    # extracted video frame). dispatch_complete's messages type is the plain
+    # str-content shape; the multimodal content-list shape is the same one
+    # image_fanout/media_quality_service/image_captioner already ship.
+    messages: list[dict[str, Any]] = [{
         "role": "user",
         "content": [
             {"type": "text", "text": prompt},
@@ -652,7 +654,9 @@ async def _score_image(
     }]
     try:
         completion = await dispatch_complete(
-            pool, messages, model,
+            pool, messages, model,  # type: ignore[arg-type]  # multimodal
+            # content list — same shape image_fanout.py ships (its call site
+            # carries the identical ignore for the identical reason).
             tier="standard", phase="qa_shot_vision",
             temperature=0.2, max_tokens=1024, timeout_s=150.0,
         )

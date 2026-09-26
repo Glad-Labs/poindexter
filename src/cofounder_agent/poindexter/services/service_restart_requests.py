@@ -13,6 +13,7 @@ import logging
 import numbers
 import re
 import uuid
+from decimal import Decimal
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -141,7 +142,8 @@ async def seconds_since_last_request(pool: Any, container: str) -> float | None:
         return None
     # asyncpg hands EXTRACT(EPOCH …) back as a Decimal; anything that is not a
     # real number (a test double, an unexpected driver type) is "unknown".
-    return float(age) if isinstance(age, numbers.Number) else None
+    # Decimal is not a numbers.Real, so it has to be named alongside it.
+    return float(age) if isinstance(age, (numbers.Real, Decimal)) else None
 
 
 async def get_restart_request(pool: Any, request_id: str) -> dict[str, Any] | None:

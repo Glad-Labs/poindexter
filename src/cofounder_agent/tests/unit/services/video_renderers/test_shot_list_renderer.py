@@ -2722,6 +2722,11 @@ class TestComposeHeroWanPrompt:
         import poindexter.services.video_renderers.shot_list_renderer as mod
         assert mod._compose_hero_wan_prompt("", "drift", None) == "drift"
 
+    def test_missing_still_prompt_returns_direction_alone(self):
+        """``Shot.prompt`` is optional, and the renderer passes it straight in."""
+        import poindexter.services.video_renderers.shot_list_renderer as mod
+        assert mod._compose_hero_wan_prompt(None, "drift", None) == "drift"
+
 
 class TestHeroMotionThreading:
     """The composed prompt + lane geometry reach Wan21Provider.fetch."""
