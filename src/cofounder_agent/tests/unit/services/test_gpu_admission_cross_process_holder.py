@@ -34,6 +34,7 @@ from poindexter.services.gpu_lease_stats import LeaseStats
 from poindexter.services.gpu_scheduler import (
     GPU_ADVISORY_LOCK_KEY,
     GPUScheduler,
+    _GpuSession,
     _holder_stats_key,
     pg_holder_blocks,
 )
@@ -520,14 +521,17 @@ def test_reject_finding_names_a_cross_process_holder():
 
 def test_in_process_overlap_is_judged_by_the_sessions_own_keys():
     gpu = GPUScheduler()
-    gpu._current_owner = "image_gen"
-    gpu._held_keys = [GPU0]
-    assert gpu._overlapping_in_process_holder([GPU0]) is True
-    assert gpu._overlapping_in_process_holder([GPU1]) is False
-    # A gate-holder still parked at the pg step has not named itself yet: it
-    # is a waiter, not the holder.
-    gpu._current_owner = None
-    assert gpu._overlapping_in_process_holder([GPU0]) is False
+    render = _GpuSession(
+        owner="image_gen", model="sdxl", phase="featured_image",
+        keys=[GPU0], acquired_at=0.0,
+    )
+    gpu._register_session(render)
+    assert gpu._in_process_admission_holders([GPU0]) == [render]
+    assert gpu._in_process_admission_holders([GPU1]) == []
+    # A caller that names no keys keeps the old any-holder view.
+    assert gpu._in_process_admission_holders(None) == [render]
+    gpu._unregister_session(render)
+    assert gpu._in_process_admission_holders([GPU0]) == []
 
 
 # ---------------------------------------------------------------------------

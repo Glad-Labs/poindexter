@@ -139,6 +139,37 @@ class _WaiterMirror:
     attempted: bool = False
 
 
+@dataclass
+class _PgHold:
+    """One session's cross-process advisory locks.
+
+    The dedicated connection, the keys taken on it, and whether it also holds
+    the base key shared. ``lock()`` keeps its own hold and releases exactly
+    that one. The scheduler used to keep a single ``_pg_lock_conn`` slot, and
+    under device scoping two sessions on different cards run concurrently in
+    one process. The second acquire overwrote the first session's
+    connection. asyncpg holds a connection only weakly from its protocol, so
+    that dropped the last reference and ``Connection.__del__`` terminated it.
+    Postgres then released the first session's keys mid-render, while its
+    in-process gate was released by the wrong session or never at all.
+    """
+
+    conn: Any
+    keys: list[int]
+    shared_base: bool
+
+
+@dataclass
+class _GpuSession:
+    """One ``lock()`` session in this process that holds its gates AND pg locks."""
+
+    owner: str
+    model: str | None
+    phase: str
+    keys: list[int]
+    acquired_at: float
+
+
 async def _mirror_waiter_after(
     delay_s: float,
     owner: str,
@@ -1361,11 +1392,18 @@ class GPUScheduler:
     """Async-safe GPU resource coordinator with gaming detection.
 
     Cross-process locking (poindexter#731):
-        ``_lock`` (asyncio.Lock) serializes within one Python process.
-        ``_pg_lock_conn`` holds a dedicated asyncpg connection that holds
-        ``pg_advisory_lock(GPU_ADVISORY_LOCK_KEY)`` for the duration of a
-        GPU session.  Two containers sharing one physical GPU will block on
-        this Postgres-level lock even though they run in separate processes.
+        ``_lock`` (asyncio.Lock) serializes within one Python process. Each
+        GPU session also holds ``pg_advisory_lock`` on a dedicated asyncpg
+        connection (its ``_PgHold``) for its whole duration. Two containers
+        sharing one physical GPU block on this Postgres-level lock even
+        though they run in separate processes.
+
+    Concurrent sessions:
+        Device scoping lets sessions on different cards run at the same time
+        in ONE process. So everything a release needs (gate keys, pg hold,
+        acquire time) lives with the session inside ``lock()``, never in an
+        instance slot another session can overwrite. The instance attributes
+        below are introspection only.
     """
 
     def __init__(self) -> None:
@@ -1377,9 +1415,17 @@ class GPUScheduler:
         # tests poke directly — stays the same object. With scoping off there
         # is exactly one gate and one key, i.e. today's behaviour.
         self._gates: dict[int, _PriorityGate] = {GPU_ADVISORY_LOCK_KEY: self._lock}
-        #: Keys held by the CURRENT session, ascending. Also the release order
-        #: (reversed) and what ``status`` reports.
+        #: Every gate key held in this process, ascending (the union across
+        #: concurrent sessions). Introspection only: each session releases
+        #: the keys it took itself.
         self._held_keys: list[int] = []
+        #: Sessions holding their gates AND pg locks, in acquire order.
+        #: Admission and the timeout messages read the one that blocks a
+        #: caller from here.
+        self._sessions: list[_GpuSession] = []
+        #: The most recently acquired live session, as scalars. Kept for the
+        #: console route, ``status`` and the gaming guard. With concurrent
+        #: sessions they describe just one of them.
         self._current_owner: str | None = None  # "ollama", "image_gen", or "video"
         self._current_model: str | None = None
         self._current_phase: str | None = None
@@ -1389,20 +1435,12 @@ class GPUScheduler:
         self._gaming_detected: bool = False
         self._gaming_paused_since: float = 0
         self._total_gaming_paused_s: float = 0  # cumulative for metrics
-        # Dedicated asyncpg connection that holds the cross-process
-        # pg_advisory_lock for the duration of each GPU session.
-        # None when the lock is not held.  Must NOT be a pool checkout —
-        # session-level advisory locks are released when the connection
-        # is returned to the pool.
-        self._pg_lock_conn: "asyncpg.Connection | None" = None  # type: ignore[name-defined]  # noqa: UP037, F821
-        #: Advisory-lock keys currently held on that connection, ascending.
-        #: Released in reverse. Closing the connection would release them all
-        #: anyway (they are session-scoped) — the explicit unlock is for a
-        #: clean, observable release path.
-        self._pg_lock_keys: list[int] = []
-        #: True when this session also holds the whole-GPU key in SHARED mode
-        #: (every scoped session does — see _acquire_pg_advisory_lock).
-        self._pg_lock_shared_base: bool = False
+        #: Every open pg advisory-lock hold, one per live session, so
+        #: ``aclose`` can close them all and ``status`` can report them. Each
+        #: holds a dedicated connection. It must NOT be a pool checkout:
+        #: session-level advisory locks are released when the connection is
+        #: returned to the pool.
+        self._pg_holds: list[_PgHold] = []
         # Lazily-initialised shared httpx client. Every public-API call
         # used to spin up a fresh ``httpx.AsyncClient(...)`` for one GET
         # (nvidia-smi exporter, Ollama /api/ps, image-gen /unload) — that's
@@ -1430,25 +1468,22 @@ class GPUScheduler:
         """Close shared resources. Idempotent. Called from main.py on app
         shutdown; safe to call when no client was ever built.
 
-        If the pg advisory-lock connection is still open (e.g. shutdown
-        during an active GPU session), it is closed here — Postgres will
-        automatically release any session-level advisory locks held by a
-        closing connection.
+        Any pg advisory-lock connection still open (e.g. shutdown during an
+        active GPU session) is closed here — Postgres will automatically
+        release any session-level advisory locks held by a closing connection.
         """
         if self._http_client is not None and not self._http_client.is_closed:
             await self._http_client.aclose()
         self._http_client = None
-        if self._pg_lock_conn is not None:
+        holds, self._pg_holds = self._pg_holds, []
+        for hold in holds:
             try:
-                await self._pg_lock_conn.close()
+                await hold.conn.close()
             except Exception:
-                # silent-ok: teardown close — the reference is dropped to None
-                # immediately below regardless, so a failed close leaks no
-                # usable handle and there is nothing for an operator to act on.
+                # silent-ok: teardown close — the hold is already dropped from
+                # the list, so a failed close leaks no usable handle and there
+                # is nothing for an operator to act on.
                 pass
-            self._pg_lock_conn = None
-            self._pg_lock_keys = []
-            self._pg_lock_shared_base = False
 
     # ------------------------------------------------------------------
     # Cross-process pg_advisory_lock helpers (poindexter#731)
@@ -1488,6 +1523,9 @@ class GPUScheduler:
         ``keys == []`` means the caller occupies no GPU (managed API,
         serverless, CPU) and takes nothing. With scoping off this is a
         one-element list and behaves exactly as the single gate always did.
+
+        The caller releases with ``_release_gates(keys)``, passing the same
+        list. Nothing on the instance says which session took which gate.
         """
         acquired: list[int] = []
         deadline = (
@@ -1514,11 +1552,16 @@ class GPUScheduler:
                         "[GPU] rollback release of gate %d failed", key, exc_info=True
                     )
             raise
-        self._held_keys = list(keys)
+        self._held_keys = sorted(set(self._held_keys) | set(keys))
 
-    def _release_gates(self) -> None:
-        """Release the current session's gates in reverse acquire order."""
-        for key in reversed(self._held_keys):
+    def _release_gates(self, keys: list[int]) -> None:
+        """Release one session's gates (``keys``) in reverse acquire order.
+
+        The keys come from the session itself. Reading them off the instance
+        was how one session released another's gate: with two concurrent
+        sessions on different cards the slot held whichever acquired last.
+        """
+        for key in reversed(keys):
             gate = self._gates.get(key)
             if gate is None:
                 continue
@@ -1530,7 +1573,63 @@ class GPUScheduler:
                 logger.warning(
                     "[GPU] release of gate %d failed", key, exc_info=True
                 )
-        self._held_keys = []
+        self._held_keys = sorted(set(self._held_keys) - set(keys))
+
+    def _drop_acquired(self, hold: _PgHold | None, keys: list[int]) -> None:
+        """Release a fully-acquired session whose own ``finally`` will never run.
+
+        Synchronous on purpose. It runs while a cancellation propagates, and
+        another await there could be interrupted before the release
+        completes. Terminating the connection releases its advisory locks
+        server-side, the same terminate path ``_release_pg_advisory_lock``
+        takes on a timeout.
+        """
+        if hold is not None:
+            try:
+                self._pg_holds.remove(hold)
+            except ValueError:
+                # silent-ok: not listed (a stubbed acquire in tests, or
+                # already dropped) — the terminate below still runs.
+                pass
+            try:
+                hold.conn.terminate()
+            except Exception:
+                logger.warning(
+                    "[GPU] terminate() while dropping a cancelled session failed",
+                    exc_info=True,
+                )
+        self._release_gates(keys)
+
+    def _register_session(self, session: _GpuSession) -> None:
+        """Record a fully-acquired session and point the scalars at it."""
+        self._sessions.append(session)
+        self._show_session(session)
+
+    def _unregister_session(self, session: _GpuSession) -> None:
+        """Drop a released session. The scalars fall back to the newest one left."""
+        try:
+            self._sessions.remove(session)
+        except ValueError:
+            # silent-ok: already gone. Unregistering twice must not raise
+            # inside lock()'s release path.
+            pass
+        if self._sessions:
+            self._show_session(self._sessions[-1])
+        else:
+            self._current_owner = None
+            self._current_model = None
+            self._current_phase = None
+
+    def _show_session(self, session: _GpuSession) -> None:
+        self._current_owner = session.owner
+        self._current_model = session.model
+        self._current_phase = session.phase
+        self._acquired_at = session.acquired_at
+
+    def _in_process_sessions_for(self, keys: Collection[int]) -> list[_GpuSession]:
+        """Live sessions in this process holding a gate among ``keys``, newest first."""
+        want = set(keys)
+        return [s for s in reversed(self._sessions) if want & set(s.keys)]
 
     async def _describe_cross_process_holder(self) -> str:
         """One phrase naming whoever holds the GPU in another process.
@@ -1571,7 +1670,7 @@ class GPUScheduler:
         owner: str | None = None,
         phase: str | None = None,
         task_id: str | None = None,
-    ) -> None:
+    ) -> _PgHold | None:
         """Open a dedicated asyncpg connection and acquire the session-level
         GPU advisory lock.
 
@@ -1581,13 +1680,17 @@ class GPUScheduler:
         silently releases the lock — another process could then acquire it
         while our session still believes it holds the lock.
 
-        The connection is stored on ``self._pg_lock_conn`` so
-        ``_release_pg_advisory_lock`` can unlock + close it.
+        Returns the session's :class:`_PgHold`, which the caller hands back
+        to ``_release_pg_advisory_lock``. It is also listed on
+        ``self._pg_holds``, which keeps a strong reference: asyncpg's
+        protocol holds its connection only weakly, and a connection nobody
+        references is terminated by ``Connection.__del__``, which releases
+        its advisory locks.
 
         If Postgres is unavailable (DSN not resolved, network error) this
-        logs a warning and falls back to the in-process asyncio.Lock only —
-        the scheduler must remain functional in test environments and on
-        first-boot before the DB is reachable.
+        logs a warning, returns ``None`` and falls back to the in-process
+        asyncio.Lock only — the scheduler must remain functional in test
+        environments and on first-boot before the DB is reachable.
 
         ``timeout_s`` (poindexter#807) bounds the wait for the advisory lock.
         A timeout means another SESSION HOLDS the lock (not that Postgres is
@@ -1604,7 +1707,7 @@ class GPUScheduler:
             )
         except ImportError:
             logger.debug("[GPU] asyncpg/brain.bootstrap unavailable — skipping pg advisory lock")
-            return
+            return None
 
         dsn = resolve_database_url()
         if not dsn:
@@ -1612,7 +1715,7 @@ class GPUScheduler:
                 "[GPU] database_url not resolved — cross-process GPU lock unavailable; "
                 "two containers may race. Configure database_url in bootstrap.toml."
             )
-            return
+            return None
 
         conn = None
         try:
@@ -1685,10 +1788,10 @@ class GPUScheduler:
                 await _take("SELECT pg_advisory_lock_shared($1)", GPU_ADVISORY_LOCK_KEY)
             for key in want:
                 await _take("SELECT pg_advisory_lock($1)", key)
-            self._pg_lock_conn = conn
-            self._pg_lock_keys = list(want)
-            self._pg_lock_shared_base = scoped
+            hold = _PgHold(conn=conn, keys=list(want), shared_base=scoped)
+            self._pg_holds.append(hold)
             logger.debug("[GPU] pg_advisory_lock acquired (keys=%s)", want)
+            return hold
         except TimeoutError:
             # terminate() (not close()) — the session is mid-`pg_advisory_lock`
             # wait, so a graceful close would block behind the same wait.
@@ -1721,12 +1824,30 @@ class GPUScheduler:
                     # above — the operator-facing signal is emitted; this is
                     # just tidying up after it.
                     pass
+            return None
+        except BaseException:
+            # Cancelled mid-acquire (a stage's asyncio.wait_for, a flow
+            # cancel). CancelledError is a BaseException, so neither branch
+            # above sees it. The connection may already hold the shared base
+            # key, and left to the garbage collector it held that key for as
+            # long as the propagating traceback kept it alive. Terminate, not
+            # close: the session may be parked in pg_advisory_lock, and a
+            # graceful close would wait behind that.
+            if conn is not None:
+                try:
+                    conn.terminate()
+                except Exception:
+                    logger.warning(
+                        "[GPU] terminate() after a cancelled pg acquire failed",
+                        exc_info=True,
+                    )
+            raise
 
-    async def _release_pg_advisory_lock(self) -> None:
-        """Release the session-level GPU advisory lock and close the dedicated
-        connection.
+    async def _release_pg_advisory_lock(self, hold: _PgHold | None) -> None:
+        """Release one session's GPU advisory locks and close its connection.
 
-        Idempotent — safe to call when no connection is held.
+        ``hold`` is what ``_acquire_pg_advisory_lock`` returned for this
+        session; ``None`` (the no-Postgres fallback) is a no-op.
 
         Bounded (poindexter#807): a hung ``pg_advisory_unlock`` here used to
         hang the lock's ``finally`` block — which meant even a stage-level
@@ -1735,25 +1856,26 @@ class GPUScheduler:
         terminated instead; Postgres releases session advisory locks when
         the session disconnects, so terminate-on-timeout is safe.
         """
-        conn = self._pg_lock_conn
-        held_keys = list(self._pg_lock_keys)
-        shared_base = self._pg_lock_shared_base
-        self._pg_lock_conn = None
-        # Cleared HERE, not after the unlocks: every exit path below (timeout,
-        # error, success) drops the connection, and a stale key list would be
-        # replayed against the NEXT session's connection.
-        self._pg_lock_keys = []
-        self._pg_lock_shared_base = False
-        if conn is None:
+        if hold is None:
             return
+        # Dropped from the list HERE, not after the unlocks: every exit path
+        # below (timeout, error, success) ends with the connection closed or
+        # terminated, so the hold must not outlive this call on the list.
+        # (Another session's hold is untouched by construction.)
+        try:
+            self._pg_holds.remove(hold)
+        except ValueError:
+            # silent-ok: already dropped (aclose, or a double release) —
+            # releasing twice must not raise into lock()'s finally.
+            pass
+        conn = hold.conn
         release_timeout = _cfg_int(
             "gpu_lock_release_timeout_seconds", _DEFAULT_LOCK_RELEASE_TIMEOUT_S
         )
         try:
-            # Reverse of the acquire order. Defaults to the single whole-GPU
-            # key so an un-scoped session releases exactly what it took.
-            held = held_keys or [GPU_ADVISORY_LOCK_KEY]
-            if shared_base:
+            # Reverse of the acquire order.
+            held = list(hold.keys)
+            if hold.shared_base:
                 if release_timeout > 0:
                     await asyncio.wait_for(
                         conn.execute(
@@ -2006,6 +2128,12 @@ class GPUScheduler:
         # under-reports the panel, never touches the wait.
         mirror_task: asyncio.Task[None] | None = None
         mirror_state: _WaiterMirror | None = None
+        # This session's own hold. It is released by THIS session and never
+        # read back off the instance, where a concurrent session on another
+        # card could have replaced it. `acquired` says the gates and pg locks
+        # are both held, which is what the cleanup below has to know.
+        pg_hold: _PgHold | None = None
+        acquired = False
         if want_keys:
             mirror_state = _WaiterMirror(row_id=str(uuid.uuid4()))
             mirror_task = asyncio.create_task(
@@ -2063,14 +2191,18 @@ class GPUScheduler:
                 except TimeoutError:
                     # poindexter#1018 covered the pg_advisory stage only, so
                     # this branch kept printing the exact phrasing it set out
-                    # to kill: "in-process holder None (None)". `_current_owner`
-                    # is None here whenever the gate-holder in THIS process is
-                    # itself still parked at the pg stage behind another
-                    # container — the common case, not a rare one — so ask
-                    # Postgres for the real holder before giving up.
+                    # to kill: "in-process holder None (None)". No live session
+                    # here holds the gate whenever the gate-holder in THIS
+                    # process is itself still parked at the pg stage behind
+                    # another container — the common case, not a rare one — so
+                    # ask Postgres for the real holder before giving up. The
+                    # session named is the one holding a gate THIS caller
+                    # wants: with device scoping another session in this
+                    # process may hold a different card entirely.
+                    blocking = self._in_process_sessions_for(want_keys)
                     in_proc = (
-                        f"{self._current_owner!r} ({self._current_model!r})"
-                        if self._current_owner
+                        f"{blocking[0].owner!r} ({blocking[0].model!r})"
+                        if blocking
                         else None
                     )
                     cross = await self._describe_cross_process_holder()
@@ -2081,7 +2213,7 @@ class GPUScheduler:
                         # The finding used to carry `_current_owner`, which is
                         # None on exactly the path that most needs naming a
                         # holder. Fall back to what Postgres saw.
-                        holder=self._current_owner or cross,
+                        holder=blocking[0].owner if blocking else cross,
                         phase=phase,
                         task_id=task_id,
                         max_wait_s=max_wait_s,
@@ -2111,7 +2243,7 @@ class GPUScheduler:
                 )
             try:
                 if want_keys:
-                    await self._acquire_pg_advisory_lock(
+                    pg_hold = await self._acquire_pg_advisory_lock(
                         timeout_s=pg_timeout, keys=want_keys,
                         owner=owner, phase=phase, task_id=task_id,
                     )
@@ -2120,7 +2252,7 @@ class GPUScheduler:
             except GpuLockTimeoutError:
                 # Never hold the in-process gates after a failed acquire —
                 # that would wedge every later caller in THIS process too.
-                self._release_gates()
+                self._release_gates(want_keys)
                 self._emit_lock_timeout_finding(
                     owner=owner,
                     stage="pg_advisory",
@@ -2132,16 +2264,41 @@ class GPUScheduler:
                     priority=priority,
                 )
                 raise
+            except BaseException:
+                # Cancelled while parked at the pg step (a stage's
+                # asyncio.wait_for expiring, a flow cancel). CancelledError is
+                # a BaseException, so the branch above never saw it. The
+                # gates stayed held with no session left to release them,
+                # and every later caller for these cards in this process
+                # waited out the full ceiling. poindexter#967's wedge, on the
+                # acquire side.
+                self._release_gates(want_keys)
+                raise
+            acquired = True
         finally:
-            await _finish_waiter_mirror(mirror_task, mirror_state)
+            try:
+                await _finish_waiter_mirror(mirror_task, mirror_state)
+            except BaseException:
+                # Cancelled during the mirror cleanup AFTER a successful
+                # acquire: past this point nothing but the session's own
+                # finally releases what it holds, and that finally is never
+                # reached. A failed acquire released its gates above, so this
+                # only ever drops a session that got everything.
+                if acquired:
+                    self._drop_acquired(pg_hold, want_keys)
+                raise
 
         wait_msg = " (waited)" if waited else ""
         logger.info("GPU acquired%s", wait_msg, owner=owner, model=model)
 
-        self._current_owner = owner
-        self._current_model = model
-        self._current_phase = phase or owner
-        self._acquired_at = time.monotonic()
+        session = _GpuSession(
+            owner=owner,
+            model=model,
+            phase=phase or owner,
+            keys=list(want_keys),
+            acquired_at=time.monotonic(),
+        )
+        self._register_session(session)
         session_start = datetime.now(UTC)
 
         # Mark the GPU session active so nested gpu.lock() calls within this
@@ -2175,11 +2332,13 @@ class GPUScheduler:
                     await self._unload_ollama_models()
             yield
         finally:
-            duration = time.monotonic() - self._acquired_at
+            # This session's own acquire time. The instance's _acquired_at
+            # names whichever session acquired last, and folding a concurrent
+            # session's start into this hold's duration corrupted the
+            # gpu_lease_stats p90 that admission's ETA reads.
+            duration = time.monotonic() - session.acquired_at
             logger.info("GPU released", owner=owner, model=model, duration_s=round(duration, 1))
-            self._current_owner = None
-            self._current_model = None
-            self._current_phase = None
+            self._unregister_session(session)
             # Release pg advisory lock BEFORE releasing the in-process lock
             # so that the cross-process barrier stays up until we are done —
             # but NEVER at the cost of holding the in-process gate.
@@ -2201,9 +2360,9 @@ class GPUScheduler:
             # preserved on the happy path; correctness no longer depends on
             # the cheap-to-lose half succeeding.
             try:
-                await self._release_pg_advisory_lock()
+                await self._release_pg_advisory_lock(pg_hold)
             finally:
-                self._release_gates()
+                self._release_gates(want_keys)
                 _gpu_session_active.reset(token)
             # GPU-scheduler P0 (poindexter#914): fold this hold's duration
             # into the per-(owner, phase) rolling stats that feed the P1
@@ -2376,23 +2535,23 @@ class GPUScheduler:
             return _cfg_float("gpu0_headroom_gb", 6.0)
         return _cfg_float(f"gpu{index}_headroom_gb", 4.5)
 
-    def _overlapping_in_process_holder(self, lock_keys: list[int] | None) -> bool:
-        """True when a session in THIS process holds a card the caller needs.
+    def _in_process_admission_holders(
+        self, lock_keys: list[int] | None,
+    ) -> list[_GpuSession]:
+        """Sessions in THIS process that hold a card the caller needs, newest first.
 
-        ``_current_owner`` is set only once a session holds both its gates and
-        its pg lock, so a gate-holder still parked at the pg step is not a
-        holder here. It is waiting too, and the session it waits behind is
-        found in Postgres instead.
+        A session is registered only once it holds both its gates and its pg
+        lock, so a gate-holder still parked at the pg step is not a holder
+        here. It is waiting too, and the session it waits behind is found in
+        Postgres instead.
 
         ``lock_keys=None`` means the caller did not say which keys it will
-        take. Any in-process holder then counts, which was admission's whole
+        take. Every live session then counts, which was admission's whole
         view before it learned about keys.
         """
-        if self._current_owner is None:
-            return False
         if lock_keys is None:
-            return self._any_gate_locked()
-        return bool(set(lock_keys) & set(self._held_keys))
+            return list(reversed(self._sessions))
+        return self._in_process_sessions_for(lock_keys)
 
     async def _resolve_admission_holder(
         self, lock_keys: list[int] | None, eta_fallback_s: float,
@@ -2412,18 +2571,31 @@ class GPUScheduler:
         ``None`` means no holder blocks this caller as far as admission can
         tell, and the ETA gate is skipped.
         """
-        h_owner = self._current_owner
-        if h_owner is not None and self._overlapping_in_process_holder(lock_keys):
-            h_phase = self._current_phase or h_owner
-            elapsed = time.monotonic() - self._acquired_at
-            try:
-                from poindexter.services import gpu_lease_stats as _lease_stats
+        sessions = self._in_process_admission_holders(lock_keys)
+        if sessions:
+            from poindexter.services import gpu_lease_stats as _lease_stats
+            from poindexter.services.gpu_admission import holder_remaining_s
 
-                stats = await _lease_stats.read_stats(h_owner, h_phase)
-            except Exception:
-                # silent-ok: stats degrade to the fallback ETA inside decide().
-                stats = None
-            return (h_owner, h_phase), elapsed, stats, "in_process"
+            # Usually one. A caller spanning several cards can overlap one
+            # session per card, and it has to outlast all of them, so the
+            # longest estimated remaining time wins — as it does for
+            # cross-process holders. `now` is read before any await so every
+            # elapsed is measured at the same instant.
+            now = time.monotonic()
+            best: tuple[float, tuple[str, str], float, Any] | None = None
+            for s in sessions:
+                try:
+                    stats = await _lease_stats.read_stats(s.owner, s.phase)
+                except Exception:
+                    # silent-ok: stats degrade to the fallback ETA inside decide().
+                    stats = None
+                elapsed = now - s.acquired_at
+                remaining = holder_remaining_s(stats, elapsed, eta_fallback_s)
+                if best is None or remaining > best[0]:
+                    best = (remaining, (s.owner, s.phase), elapsed, stats)
+            if best is not None:
+                _, key, elapsed, stats = best
+                return key, elapsed, stats, "in_process"
         if not lock_keys:
             # None: the caller did not name its keys, so overlap cannot be
             # judged. []: it takes no lock, so nothing can block it.
@@ -3923,18 +4095,21 @@ class GPUScheduler:
             "busy": self._any_gate_locked(),
             "owner": self._current_owner,
             "model": self._current_model,
-            "duration_s": round(time.monotonic() - self._acquired_at, 1) if self._any_gate_locked() else 0,
+            # A live session, not merely a held gate: a gate-holder still
+            # parked at the pg step has no acquire time of its own yet.
+            "duration_s": round(time.monotonic() - self._acquired_at, 1) if self._sessions else 0,
             "gaming_detected": self._gaming_detected,
             "gaming_paused_s": current_pause,
             "total_gaming_paused_s": round(self._total_gaming_paused_s + current_pause, 1),
             # poindexter#731 — cross-process lock observability
-            "pg_advisory_lock_held": self._pg_lock_conn is not None,
+            "pg_advisory_lock_held": bool(self._pg_holds),
             # The whole-GPU key stays the headline for backcompat (console +
-            # existing tests read it). `pg_advisory_lock_keys` is what the
-            # session ACTUALLY holds once device scoping is on — a list,
-            # because a caller spanning two cards holds two keys.
+            # existing tests read it). `pg_advisory_lock_keys` is what this
+            # process's sessions ACTUALLY hold once device scoping is on — a
+            # list, because a caller spanning two cards holds two keys and two
+            # sessions on different cards hold one each.
             "pg_advisory_lock_key": GPU_ADVISORY_LOCK_KEY,
-            "pg_advisory_lock_keys": list(self._pg_lock_keys),
+            "pg_advisory_lock_keys": sorted({k for h in self._pg_holds for k in h.keys}),
             "gpu_lock_scoping_enabled": _gpu_lock_scoping_enabled(),
             "config": {
                 "threshold_percent": _cfg_int("gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD),

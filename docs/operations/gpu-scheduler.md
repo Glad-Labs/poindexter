@@ -68,6 +68,49 @@ Admission's ETA gate kept the same process-local view after the console
 moved to Postgres (stack#3974). It reads the Postgres holders too now; see
 [Which holder admission weighs](#which-holder-admission-weighs).
 
+### Concurrent sessions in one process
+
+With device scoping, a GPU-0 render and a GPU-1 judge hold the lock **at the
+same time in the same process**. Everything a release needs belongs to the
+session and lives inside `lock()`: its gate keys, its pg hold (the dedicated
+connection plus the keys taken on it) and its acquire time. Nothing another
+session can overwrite is ever read back to decide what to release.
+
+Until 2026-09-25 those lived in single instance slots, and the second session
+to acquire overwrote the first's. Three things broke:
+
+- **The render's card was released to other containers mid-render.** Its lock
+  connection lost its only strong reference, since asyncpg's protocol holds
+  the connection weakly. `Connection.__del__` terminated it, and Postgres
+  dropped the render's advisory locks.
+- **The wrong gate was released.** The first session out released whatever the
+  slot named. When the judge acquired first, that was the render's GPU-0
+  gate, so the next GPU-0 caller in the process walked in mid-render, and the
+  judge's own gate stayed held until a restart.
+- **`gpu_lease_stats` recorded the wrong durations.** A hold was measured from
+  whichever session acquired last, which skews the p90 that admission's ETA
+  reads.
+
+**Cancellation releases everything too.** A caller can sit at the pg step for
+up to the 900 s ceiling behind another container, and a stage's
+`asyncio.wait_for` or a flow cancel can end that wait. `CancelledError` is a
+`BaseException`, so the pg-timeout handler never saw it. The in-process gates
+stayed held with no session left to release them, which is poindexter#967's
+wedge on the acquire side. Now:
+
+- a cancelled pg acquire terminates its half-acquired connection, which may
+  already hold the shared base key;
+- `lock()` releases the gates on any exception at the pg step;
+- a cancel during the waiter-mirror cleanup, after everything was acquired,
+  drops the whole session.
+
+What remains on the instance is introspection. `_sessions` lists the live
+sessions in acquire order, and admission and the timeout messages pick the one
+holding the caller's card from it. `_current_owner` / `_current_model` /
+`_current_phase` / `_acquired_at` name the newest live session and fall back
+to the one still running when it releases. `status()` reports every open hold
+(`pg_advisory_lock_keys` is their union).
+
 ## Queue admission (P1 — opt-in per caller)
 
 `gpu.lock()` accepts two contract kwargs:

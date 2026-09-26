@@ -193,7 +193,7 @@ class TestInProcessStageNamesTheCrossProcessHolder:
             await gpu._acquire_gates([7777777777], rank=0, timeout_s=None)
             entered.set()
             await release.wait()
-            gpu._release_gates()
+            gpu._release_gates([7777777777])
 
         h = asyncio.create_task(gate_holder())
         await entered.wait()

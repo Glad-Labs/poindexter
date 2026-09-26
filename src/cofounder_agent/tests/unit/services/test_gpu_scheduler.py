@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from poindexter.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUScheduler
+from poindexter.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUScheduler, _PgHold
 
 # Network isolation for gpu.lock("image_gen"/"video") (which delegates to the
 # real unload_loaded_ollama_models + confirm poll) is provided globally by
@@ -1078,7 +1078,7 @@ class TestPgAdvisoryLock:
 
         with ctx:
             scheduler = GPUScheduler()
-            await scheduler._acquire_pg_advisory_lock()
+            hold = await scheduler._acquire_pg_advisory_lock()
 
         # The dedicated connection is stamped so a WAITER in another process
         # can name this holder out of pg_stat_activity instead of reporting
@@ -1092,30 +1092,34 @@ class TestPgAdvisoryLock:
         mock_conn.execute.assert_awaited_once_with(
             "SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY
         )
-        assert scheduler._pg_lock_conn is mock_conn
+        # The hold comes back to the session that took it, and stays listed
+        # (a strong reference) until that session releases it.
+        assert hold is not None and hold.conn is mock_conn
+        assert scheduler._pg_holds == [hold]
 
     @pytest.mark.asyncio
     async def test_release_calls_pg_advisory_unlock_and_closes_conn(self):
         """_release_pg_advisory_lock calls pg_advisory_unlock then closes the conn."""
         mock_conn = _make_mock_pg_conn()
         scheduler = GPUScheduler()
-        scheduler._pg_lock_conn = mock_conn
+        hold = _PgHold(conn=mock_conn, keys=[GPU_ADVISORY_LOCK_KEY], shared_base=False)
+        scheduler._pg_holds.append(hold)
 
-        await scheduler._release_pg_advisory_lock()
+        await scheduler._release_pg_advisory_lock(hold)
 
         mock_conn.execute.assert_awaited_once_with(
             "SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY
         )
         mock_conn.close.assert_awaited_once()
-        assert scheduler._pg_lock_conn is None
+        assert scheduler._pg_holds == []
 
     @pytest.mark.asyncio
     async def test_release_is_idempotent_when_no_conn_held(self):
         """_release_pg_advisory_lock is a no-op when no connection is held."""
         scheduler = GPUScheduler()
-        assert scheduler._pg_lock_conn is None
+        assert scheduler._pg_holds == []
         # Must not raise
-        await scheduler._release_pg_advisory_lock()
+        await scheduler._release_pg_advisory_lock(None)
 
     @pytest.mark.asyncio
     async def test_acquire_falls_back_gracefully_when_dsn_missing(self):
@@ -1123,10 +1127,11 @@ class TestPgAdvisoryLock:
         ctx, _, _ = _patch_pg(dsn=None, conn=_make_mock_pg_conn())
         with ctx:
             scheduler = GPUScheduler()
-            await scheduler._acquire_pg_advisory_lock()
+            hold = await scheduler._acquire_pg_advisory_lock()
 
         # No connection was stored — graceful fallback to process-local lock
-        assert scheduler._pg_lock_conn is None
+        assert hold is None
+        assert scheduler._pg_holds == []
 
     @pytest.mark.asyncio
     async def test_acquire_falls_back_gracefully_when_pg_connect_fails(self):
@@ -1134,9 +1139,10 @@ class TestPgAdvisoryLock:
         ctx, _, _ = _patch_pg(conn=None)  # conn=None → connect raises OSError
         with ctx:
             scheduler = GPUScheduler()
-            await scheduler._acquire_pg_advisory_lock()
+            hold = await scheduler._acquire_pg_advisory_lock()
 
-        assert scheduler._pg_lock_conn is None
+        assert hold is None
+        assert scheduler._pg_holds == []
 
     @pytest.mark.asyncio
     async def test_lock_context_manager_acquires_and_releases_pg_lock(self):
@@ -1235,12 +1241,14 @@ class TestPgAdvisoryLock:
         """aclose() closes any held pg advisory lock connection."""
         mock_conn = _make_mock_pg_conn()
         scheduler = GPUScheduler()
-        scheduler._pg_lock_conn = mock_conn
+        scheduler._pg_holds.append(
+            _PgHold(conn=mock_conn, keys=[GPU_ADVISORY_LOCK_KEY], shared_base=False)
+        )
 
         await scheduler.aclose()
 
         mock_conn.close.assert_awaited_once()
-        assert scheduler._pg_lock_conn is None
+        assert scheduler._pg_holds == []
 
     def test_gpu_advisory_lock_key_is_int64(self):
         """GPU_ADVISORY_LOCK_KEY must fit in int64 for pg_advisory_lock."""
@@ -1345,7 +1353,7 @@ class TestGpuLockAcquireTimeout:
             with pytest.raises(GpuLockTimeoutError):
                 await gpu._acquire_pg_advisory_lock(timeout_s=0.2)
         mock_conn.terminate.assert_called_once()
-        assert gpu._pg_lock_conn is None
+        assert gpu._pg_holds == []
 
     @pytest.mark.asyncio
     async def test_release_terminates_conn_when_unlock_hangs(self):
@@ -1361,14 +1369,15 @@ class TestGpuLockAcquireTimeout:
         mock_conn.execute = AsyncMock(side_effect=_hang)
         mock_conn.terminate = MagicMock()
         gpu = GPUScheduler()
-        gpu._pg_lock_conn = mock_conn
+        hold = _PgHold(conn=mock_conn, keys=[GPU_ADVISORY_LOCK_KEY], shared_base=False)
+        gpu._pg_holds.append(hold)
         with patch(
             "poindexter.services.gpu_scheduler._cfg_int",
             _cfg_int_map(gpu_lock_release_timeout_seconds=1),
         ):
-            await gpu._release_pg_advisory_lock()
+            await gpu._release_pg_advisory_lock(hold)
         mock_conn.terminate.assert_called_once()
-        assert gpu._pg_lock_conn is None
+        assert gpu._pg_holds == []
 
 
 @pytest.mark.asyncio

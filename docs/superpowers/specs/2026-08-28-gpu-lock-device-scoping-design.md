@@ -139,6 +139,18 @@ convention.
 
 Empty scope ⇒ steps 2-5 are no-ops; the caller runs unserialised by design.
 
+> **Amendment (2026-09-25):** step 3's "single dedicated connection" held only
+> while sessions were serial. Disjoint scopes run concurrently _in one process_
+> too, and the scheduler kept that connection, the held gate keys and the
+> acquire time in single instance slots. The second session to acquire
+> overwrote the first's. The first's connection then lost its last strong
+> reference, and asyncpg's `Connection.__del__` terminated it, so Postgres
+> released a render's card mid-render. The first session to release freed
+> whatever the gate slot named, which could be the other session's card, and
+> the other gate stayed held. Each session now keeps its own `_PgHold` and gate
+> keys inside `lock()` and releases exactly those. See
+> `docs/operations/gpu-scheduler.md`, "Concurrent sessions in one process".
+
 ### 3.7 Fail closed, never open
 
 If the device set cannot be resolved — unknown owner, malformed map, or the
@@ -197,6 +209,10 @@ The mutex is the highest-blast-radius file in the repo; a partial-acquire or
 release-ordering bug deadlocks content generation. Minimum bar:
 
 - **Disjoint scopes run concurrently** — two locks, no overlap, both proceed.
+  **And each releases only what it took**, in either release order: its own
+  gates, its own pg connection and keys (added 2026-09-25, when proceeding
+  concurrently turned out to be where the single-slot state broke;
+  `test_gpu_lock_concurrent_sessions.py`).
 - **Overlapping scopes serialise** — `[1]` vs `[0,1]` must not both proceed.
 - **Ordering is deterministic** — acquisition is ascending regardless of the
   order the scope was declared in (the deadlock proof).
