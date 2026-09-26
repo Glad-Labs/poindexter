@@ -9,6 +9,17 @@ Model is loaded lazily on first request, cached, and released again after
 `CHATTERBOX_IDLE_TIMEOUT_S` of inactivity (or on demand via `POST /unload`)
 so narration doesn't squat VRAM through the video render that follows it.
 
+Releasing the model is not the whole of it (2026-09-25). The first synthesis
+creates a CUDA context that only a process exit returns: measured per PID from
+the host's nvidia-smi in a throwaway container of this image, 3.9 GB with the
+model loaded, 660 MiB after the idle unload (704 MiB on the live server, with
+20 MB reserved and 8 MB allocated). So once the idle timeout has run and no
+model is loaded, the idle pass exits if the driver still counts VRAM against
+this process (NVML, read without a context); Docker's restart policy brings the
+server back in under a second. The next request pays only process start and
+CUDA init on top of the ~13 s model load every request after an idle unload
+already paid (measured: 20.6 s for the first request, 0.7 s warm).
+
 Device is `TTS_DEVICE` (default `cuda`); the bake-off runs it CPU-only when
 there's no spare VRAM. Build/verify is hardware-gated (first-run model
 download from HF):
@@ -29,6 +40,7 @@ _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import subprocess
 import threading
 import time
+from typing import Any
 
 import numpy as np
 import soundfile as sf
@@ -62,6 +74,28 @@ _IDLE_POLL_S = 30
 # which is correct anyway for one GPU (same reasoning as wan-server's lock).
 _model_lock = threading.Lock()
 _last_used = 0.0
+
+# Requests in the server, counted from the moment /v1/audio/speech is entered
+# until its handler returns, including a wait on _model_lock behind another
+# synthesis. /unload and the idle exit decline while there is one: a request
+# queued on the lock is about to use the model, and an exit would reset its
+# connection (the wan / stable-audio in-flight lesson, poindexter#992).
+_inflight = 0
+_inflight_lock = threading.Lock()
+
+# Exit floors (2026-09-25): below them an exit returns nothing worth a restart,
+# so the process stays up. The process floor applies to the driver's count for
+# this process (NVML), which includes the CUDA context; every context measured
+# on the render GPU was 498 MiB or more, so any context clears it. The
+# reserved-pool floor is the fallback when NVML cannot answer: torch's view,
+# which cannot see a context.
+_HARD_UNLOAD_MIN_PROCESS_MB = int(os.environ.get("CHATTERBOX_HARD_UNLOAD_MIN_PROCESS_MB", "128"))
+_HARD_UNLOAD_MIN_RESERVED_MB = int(os.environ.get("CHATTERBOX_HARD_UNLOAD_MIN_RESERVED_MB", "512"))
+
+# The NVML binding once initialised, and why NVML is unusable once it has
+# failed (see _process_vram_mb).
+_nvml: Any = None
+_nvml_error: str | None = None
 
 # Silence inserted between concatenated sentence chunks, for natural pacing.
 # This is now the WHOLE boundary (join_segments trims each chunk's own edge
@@ -141,6 +175,121 @@ def _unload_model() -> bool:
     return True
 
 
+def _reserved_mb() -> int:
+    """torch's reserved pool (MB): the exit gate's fallback measure.
+
+    torch is read from ``sys.modules`` and never imported here: until the
+    first model load nothing has imported it, and nothing has touched CUDA.
+    ``is_available`` and ``memory_reserved`` create no CUDA context.
+    """
+    torch = _sys.modules.get("torch")
+    if torch is None or not torch.cuda.is_available():
+        return 0
+    return int(torch.cuda.memory_reserved(0) // 1024 // 1024)
+
+
+def _process_vram_mb() -> int | None:
+    """VRAM this process holds (MiB), as the driver counts it, or ``None``
+    when NVML cannot say.
+
+    The driver's count includes the CUDA context, and ``memory_reserved``
+    does not; after the idle unload this server held 660-704 MiB with 20 MB
+    reserved. NVML answers without creating a context. Inside a container it
+    lists only that container's processes, under their in-container PIDs
+    (measured on driver 595.84), so ``os.getpid()`` finds this server. Summed
+    over every GPU NVML can see, because an exit returns all of it. The first
+    failure disables NVML for this process and logs once; the exit gate then
+    falls back to ``memory_reserved``.
+    """
+    global _nvml, _nvml_error
+    if _nvml_error is not None:
+        return None
+    try:
+        if _nvml is None:
+            # nvidia-ml-py. Images built before 2026-09-25 do not have it, and
+            # libnvidia-ml.so.1 is only in the container when the NVIDIA
+            # runtime grants the `utility` driver capability.
+            import pynvml
+
+            pynvml.nvmlInit()
+            _nvml = pynvml
+        pid = os.getpid()
+        used = 0
+        for index in range(_nvml.nvmlDeviceGetCount()):
+            handle = _nvml.nvmlDeviceGetHandleByIndex(index)
+            for proc in _nvml.nvmlDeviceGetComputeRunningProcesses(handle):
+                if proc.pid != pid:
+                    continue
+                if proc.usedGpuMemory is None:
+                    raise RuntimeError(
+                        "NVML lists this process without its memory "
+                        "(per-process accounting unavailable here)",
+                    )
+                used += int(proc.usedGpuMemory)
+        return used // 1024 // 1024
+    except Exception as exc:  # noqa: BLE001 — any NVML failure means "use torch's view"
+        _nvml = None
+        _nvml_error = f"{type(exc).__name__}: {exc}"
+        logger.warning(
+            "NVML unusable (%s). The exit gate falls back to torch's reserved "
+            "pool, which cannot see a CUDA context, so an idle process keeps "
+            "its context (~0.7 GB on the render GPU).",
+            _nvml_error,
+        )
+        return None
+
+
+def _exit_gate() -> dict[str, Any]:
+    """What an exit would return to the card, and whether it clears the floor.
+
+    ``reclaimable`` decides both the hard ``/unload`` and the idle exit. With
+    NVML it is the driver's count for this process against
+    ``CHATTERBOX_HARD_UNLOAD_MIN_PROCESS_MB``; without it, torch's reserved
+    pool against ``CHATTERBOX_HARD_UNLOAD_MIN_RESERVED_MB``.
+    ``vram_process_source`` is ``"nvml"`` only when the driver answered.
+    """
+    process_mb = _process_vram_mb()
+    reserved_mb = _reserved_mb()
+    if process_mb is not None:
+        reclaimable = process_mb >= _HARD_UNLOAD_MIN_PROCESS_MB
+    else:
+        reclaimable = reserved_mb >= _HARD_UNLOAD_MIN_RESERVED_MB
+    return {
+        "reclaimable": reclaimable,
+        "vram_process_mb": process_mb,
+        "vram_process_source": "nvml" if process_mb is not None else None,
+        "min_process_mb": _HARD_UNLOAD_MIN_PROCESS_MB,
+        "vram_reserved_mb": reserved_mb,
+        "min_reserved_mb": _HARD_UNLOAD_MIN_RESERVED_MB,
+    }
+
+
+def _gate_fields(gate: dict[str, Any]) -> dict[str, Any]:
+    """The gate's measurements, as a response reports them."""
+    return {k: v for k, v in gate.items() if k != "reclaimable"}
+
+
+def _describe_gate(gate: dict[str, Any]) -> str:
+    if gate["vram_process_source"] == "nvml":
+        return (
+            f"{gate['vram_process_mb']} MiB held per the driver, "
+            f"floor {gate['min_process_mb']} MiB"
+        )
+    return (
+        f"{gate['vram_reserved_mb']} MB reserved (NVML unusable), "
+        f"floor {gate['min_reserved_mb']} MB"
+    )
+
+
+def _exit_now(reason: str) -> None:
+    """Exit so the CUDA context goes back to the card. Docker's restart policy
+    brings the server back; the next request loads the model again."""
+    logger.warning("%s — exiting to return the CUDA context", reason)
+    _sys.stdout.flush()
+    _sys.stderr.flush()
+    os._exit(0)
+
+
 def _encode(samples, sample_rate: int, fmt: str) -> bytes:
     """WAV samples -> requested container via ffmpeg (mp3/wav/opus/aac).
 
@@ -184,13 +333,24 @@ class UnloadRequest(BaseModel):
     # Exit the process after unloading, so the CUDA context itself returns to
     # the host (torch.cuda.empty_cache() leaves it behind). Docker's
     # `restart: unless-stopped` brings the sidecar back and it lazy-loads on
-    # the next request. Same contract image-gen's /unload already implements.
+    # the next request. Gated like wan / stable-audio / RIFE: the exit happens
+    # only when the process still holds VRAM (see _exit_gate).
     hard: bool = False
 
 
 def _is_idle(now: float | None = None) -> bool:
-    """True when a model is loaded and has gone untouched past the timeout."""
-    if _IDLE_TIMEOUT_S <= 0 or _model is None:
+    """True when a model is loaded, untouched past the timeout, and nothing
+    is in the server.
+
+    ``_inflight`` catches a narrow window ``_last_used`` cannot: a request
+    that has entered ``speech()`` and counted itself in but is still waiting
+    for ``_model_lock`` (real synthesis holds that lock for its whole run, so
+    this is brief) has not yet re-stamped ``_last_used``. Without the check,
+    a drop here would cost that request a cold reload for no reason — it is
+    surviving in either case, since only an EXIT (``_context_exit_due``,
+    gated the same way) can destroy its connection.
+    """
+    if _IDLE_TIMEOUT_S <= 0 or _model is None or _inflight > 0:
         return False
     return ((now or time.time()) - _last_used) > _IDLE_TIMEOUT_S
 
@@ -210,12 +370,61 @@ def _maybe_idle_unload() -> bool:
         return _unload_model()
 
 
+def _context_exit_due(now: float | None = None) -> bool:
+    """True when the idle timeout has run, no model is loaded, the process has
+    served at least one request, and none is in the server.
+
+    ``_last_used`` 0 means nothing ever ran here, so there is no context to
+    give back. The model may have been dropped by the idle unload or by the
+    ladder's soft ``/unload``: either way what is left is the context.
+    """
+    if _IDLE_TIMEOUT_S <= 0 or _model is not None or _last_used <= 0 or _inflight > 0:
+        return False
+    return ((now or time.time()) - _last_used) > _IDLE_TIMEOUT_S
+
+
+def _maybe_idle_exit() -> bool:
+    """Exit if idle with no model loaded and the process still holds VRAM.
+
+    What is left then is the CUDA context the first synthesis created, and
+    only an exit returns it (the module docstring has the measurements).
+    Checked again under ``_model_lock``, and ``_inflight`` with it: a request
+    counts itself in before it waits for the lock. Returns True only where
+    ``os._exit`` is patched out.
+
+    Blocking (takes ``_model_lock``) — call it off the event loop.
+    """
+    if not _context_exit_due():
+        return False
+    with _model_lock:
+        if not _context_exit_due():
+            return False
+        gate = _exit_gate()
+        if not gate["reclaimable"]:
+            return False
+        _exit_now(
+            f"[IDLE EXIT] idle {_IDLE_TIMEOUT_S}s with no model loaded, "
+            f"{_describe_gate(gate)}",
+        )
+        return True
+
+
+def _idle_pass() -> None:
+    """One idle pass: drop an idle model, then exit for what it leaves."""
+    _maybe_idle_unload()
+    _maybe_idle_exit()
+
+
 @app.on_event("startup")
 async def _start_idle_unloader():
     """Release VRAM after _IDLE_TIMEOUT_S with no /v1/audio/speech calls."""
     if _IDLE_TIMEOUT_S <= 0:
         logger.info("Idle unload disabled (CHATTERBOX_IDLE_TIMEOUT_S=%s)", _IDLE_TIMEOUT_S)
         return
+    # Resolve NVML now, so a missing binding shows up in the boot log rather
+    # than as an idle process that never gives its context back. In a worker
+    # thread, like every other NVML read here.
+    held = await asyncio.to_thread(_process_vram_mb)
 
     async def idle_unloader():
         while True:
@@ -224,12 +433,19 @@ async def _start_idle_unloader():
             # generate, so acquiring it on the event loop would stall every
             # other request for the length of a synthesis.
             try:
-                await asyncio.to_thread(_maybe_idle_unload)
+                await asyncio.to_thread(_idle_pass)
             except Exception as exc:  # never let the watchdog die silently
                 logger.warning("idle unload failed: %s", exc)
 
     asyncio.create_task(idle_unloader())
-    logger.info("Idle unloader started (timeout=%ds)", _IDLE_TIMEOUT_S)
+    logger.info(
+        "Idle unloader started (timeout=%ds); the exit gate measures %s",
+        _IDLE_TIMEOUT_S,
+        f"this process through NVML ({held} MiB held now, no CUDA context)"
+        if held is not None
+        else "torch's reserved pool (NVML unusable, see the warning above); it "
+        "cannot see a CUDA context",
+    )
 
 
 @app.get("/health")
@@ -245,25 +461,89 @@ def health():
         "seconds_since_last_use": (
             round(time.time() - _last_used, 1) if _last_used else None
         ),
+        # Requests in the server (synthesizing, or waiting for the model).
+        "inflight": _inflight,
+        # What this process holds on the card as the driver counts it, CUDA
+        # context included (null when NVML cannot answer). With the model
+        # dropped this reads ~0.7 GB while torch's reserved pool reads ~20 MB.
+        "vram_process_mb": _process_vram_mb(),
     }
+
+
+def _decline_unload(hard: bool) -> dict[str, Any]:
+    logger.warning(
+        "[UNLOAD] declining %s unload — %d synthesis request(s) in flight",
+        "hard" if hard else "soft", _inflight,
+    )
+    return {"status": "busy", "detail": "synthesis in flight; not unloading",
+            "inflight": _inflight, "hard": hard}
+
+
+def _deferred_exit() -> None:
+    """The hard unload's exit, run once its response has gone out.
+
+    A request that arrived in between keeps the process up: it is using the
+    model (``_model_lock`` held), or counted in and about to (``_inflight``),
+    or has already loaded it again. The lock is only tried, never waited
+    for, so a synthesis that started meanwhile is never followed by an exit
+    the moment it ends.
+    """
+    if not _model_lock.acquire(blocking=False):
+        logger.warning("[HARD UNLOAD] not exiting: a synthesis started after the unload answered")
+        return
+    try:
+        if _inflight > 0 or _model is not None:
+            logger.warning("[HARD UNLOAD] not exiting: a request arrived after the unload answered")
+            return
+        _exit_now("[HARD UNLOAD]")
+    finally:
+        _model_lock.release()
 
 
 @app.post("/unload")
 def unload(req: UnloadRequest | None = None):
-    """Free VRAM on demand (called by the GPU scheduler's reclaim path)."""
+    """Free VRAM on demand (called by the GPU scheduler's reclaim path).
+
+    Declines while a request is in the server rather than waiting out its
+    synthesis: the ladder that calls this wants VRAM to start work, and the
+    work already running is what the VRAM is for. A hard unload exits only
+    when the process still holds VRAM once the model is dropped
+    (``_exit_gate``), so a cold server answers ``nothing_to_reclaim`` instead
+    of paying a restart for nothing; the exit is deferred so this response is
+    delivered first.
+    """
     hard = bool(req and req.hard)
+    if _inflight > 0:
+        return _decline_unload(hard)
     with _model_lock:
+        if _inflight > 0:
+            return _decline_unload(hard)
         released = _unload_model()
-    if hard:
-        # Defer the exit so this response is actually delivered; the caller
-        # treats 200 as "reclaim accepted", and Docker restarts us.
-        logger.info("Hard unload requested — exiting so the CUDA context returns")
-        threading.Timer(0.5, lambda: os._exit(0)).start()
-    return {"status": "unloaded", "released": released, "hard": hard}
+        gate = _exit_gate()
+        if hard and gate["reclaimable"]:
+            logger.info("Hard unload — exiting so the CUDA context returns (%s)", _describe_gate(gate))
+            threading.Timer(0.5, _deferred_exit).start()
+            return {"status": "exiting", "released": released, "hard": True,
+                    **_gate_fields(gate)}
+    return {"status": "nothing_to_reclaim" if hard else "unloaded",
+            "released": released, "hard": hard, **_gate_fields(gate)}
 
 
 @app.post("/v1/audio/speech")
 def speech(req: SpeechRequest):
+    """Counted in ``_inflight`` for its whole stay, including any wait for the
+    model lock, so neither ``/unload`` nor the idle exit acts under it."""
+    global _inflight
+    with _inflight_lock:
+        _inflight += 1
+    try:
+        return _speech(req)
+    finally:
+        with _inflight_lock:
+            _inflight -= 1
+
+
+def _speech(req: SpeechRequest) -> Response:
     global _last_used
     if not req.input.strip():
         raise HTTPException(400, "empty input")

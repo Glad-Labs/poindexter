@@ -21,6 +21,17 @@ arithmetically impossible, and it is why ``vram_reclaim_ineffective`` kept
 firing: the ladder was faithfully evicting four services that between them held
 almost nothing.
 
+**The reserved-pool floor was itself half-blind (2026-09-25).** Once the model
+is really dropped, ``empty_cache()`` returns the pool near 0, and what remains
+is the CUDA context — 670 MiB, measured per PID from the host's nvidia-smi in a
+throwaway container — which ``memory_reserved`` cannot see at all. The watchdog
+logged "skipped — 40 MB reserved is below the 512 MB floor" and kept that
+context for good. ``_exit_gate`` now measures the driver's count for this
+process (NVML) and falls back to ``memory_reserved`` only when NVML is
+unusable — which is the default in this test file (no fake installed), so the
+tests above are unchanged: they exercise the fallback path exactly as before.
+``TestExitGate`` below exercises the NVML path.
+
 Loader mirrors test_wan_server_unload.py (scoped torch stub, popped after exec
 so a bare ModuleType can't poison later ``import torch``).
 """
@@ -36,6 +47,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+from tests.unit.scripts._fake_nvml import fake_pynvml
 
 
 def _find_repo_root(start: Path) -> Path:
@@ -89,8 +102,17 @@ def _patch_reserved(mb: int):
 @pytest.fixture(autouse=True)
 def _fresh_state(monkeypatch):
     # A new _State per test, not a reset one: it owns an asyncio.Lock, and
-    # every test here runs its own event loop.
+    # every test here runs its own event loop. NVML is unusable unless a test
+    # installs a fake (`_nvml`): no `pynvml` is on the backend test env's
+    # sys.path, so `import pynvml` raises, and the gate falls back to
+    # `memory_reserved` exactly as it did before the gate existed.
     monkeypatch.setattr(sa, "_state", sa._State())
+
+
+def _nvml(monkeypatch, **kwargs):
+    fake = fake_pynvml(**kwargs)
+    monkeypatch.setitem(sys.modules, "pynvml", fake)
+    return fake
 
 
 @pytest.mark.unit
@@ -232,7 +254,7 @@ def test_idle_watchdog_hard_exits_the_reserved_pool():
     sa._state.degraded = False
     sa._state.last_used = 1.0  # long past the idle timeout
     with patch.object(sa.time, "monotonic", lambda: 1.0 + sa.IDLE_TIMEOUT + 60), \
-         patch.object(sa, "_hard_exit_if_reserved_pool") as hard_mock:
+         patch.object(sa, "_hard_exit_if_reclaimable") as hard_mock:
         _run_one_watchdog_pass()
     hard_mock.assert_called_once_with(quiet_skip=True)
 
@@ -246,7 +268,7 @@ def test_idle_watchdog_leaves_an_in_flight_generation_alone():
     sa._state.last_used = 1.0
     sa._state.inflight = 1
     with patch.object(sa.time, "monotonic", lambda: 1.0 + sa.IDLE_TIMEOUT + 60), \
-         patch.object(sa, "_hard_exit_if_reserved_pool") as hard_mock:
+         patch.object(sa, "_hard_exit_if_reclaimable") as hard_mock:
         _run_one_watchdog_pass()
     hard_mock.assert_not_called()
 
@@ -294,3 +316,116 @@ def test_health_exposes_the_reserved_pool():
         assert out["inflight"] == 0
 
     asyncio.run(body())
+
+
+@pytest.mark.unit
+class TestExitGate:
+    """What the driver counts for this process (2026-09-25), preferred over
+    torch's reserved pool whenever NVML can answer."""
+
+    def test_gate_prefers_nvml_over_the_reserved_pool(self, monkeypatch):
+        _nvml(monkeypatch, own_mb=None)  # the driver says: nothing held
+
+        with _patch_reserved(999_999):  # would gate reclaimable=True on its own
+            gate = sa._exit_gate()
+
+        assert gate["vram_process_source"] == "nvml"
+        assert gate["reclaimable"] is False, "the driver's answer wins, not the stale reserved figure"
+
+    def test_hard_unload_exits_for_the_context_the_reserved_pool_cannot_see(self, monkeypatch):
+        """The measured state: model dropped, reserved 0 (a real
+        ``empty_cache()``), the driver still counting 670 MiB against this
+        process. Only an exit returns that."""
+        _nvml(monkeypatch, own_mb=670)
+
+        async def body():
+            with patch.object(sa, "_unload_model"), \
+                 _patch_reserved(0), \
+                 patch.object(os, "_exit") as mock_exit:
+                result = await sa.unload(sa.UnloadRequest(hard=True))
+            mock_exit.assert_called_once_with(0)
+            assert result["vram_process_mb"] == 670
+            assert result["vram_process_source"] == "nvml"
+
+        asyncio.run(body())
+
+    def test_hard_unload_holding_nothing_declines_in_the_drivers_terms(self, monkeypatch):
+        """A cold process is not listed by the driver at all. The decline
+        names its source, which is what lets the GPU scheduler trust it
+        instead of reading a short render GPU as proof of a squat."""
+        _nvml(monkeypatch, own_mb=None)
+
+        async def body():
+            with patch.object(sa, "_unload_model"), \
+                 _patch_reserved(0), \
+                 patch.object(os, "_exit") as mock_exit:
+                result = await sa.unload(sa.UnloadRequest(hard=True))
+            mock_exit.assert_not_called()
+            assert result["status"] == "nothing_to_reclaim"
+            assert result["vram_process_mb"] == 0
+            assert result["vram_process_source"] == "nvml"
+            assert result["min_process_mb"] == sa.HARD_UNLOAD_MIN_PROCESS_MB
+
+        asyncio.run(body())
+
+    def test_gate_falls_back_to_reserved_pool_when_nvml_is_unusable_and_warns_once(
+        self, monkeypatch, caplog,
+    ):
+        monkeypatch.setitem(sys.modules, "pynvml", None)  # import raises
+
+        with _patch_reserved(700), \
+             caplog.at_level("WARNING", logger="stable-audio-server"):
+            gates = [sa._exit_gate() for _ in range(3)]
+
+        assert all(g["vram_process_source"] is None for g in gates)
+        assert all(g["vram_reserved_mb"] == 700 and g["reclaimable"] for g in gates)
+        assert sum("unusable" in r.getMessage() for r in caplog.records) == 1
+
+    def test_nvml_initialises_once_and_reads_every_time(self, monkeypatch):
+        fake = _nvml(monkeypatch, own_mb=670)
+
+        for _ in range(3):
+            sa._process_vram_mb()
+
+        assert fake.calls["init"] == 1
+        assert fake.calls["procs"] == 3
+
+    def test_a_process_listed_without_its_memory_falls_back_instead_of_reading_zero(
+        self, monkeypatch,
+    ):
+        """Where per-process accounting is unavailable (WDDM, WSL2) NVML lists
+        the process with no figure; reading that as 0 would call a
+        context-holding process empty."""
+        fake = _nvml(monkeypatch)
+        fake.own_unavailable = True
+
+        assert sa._process_vram_mb() is None
+        assert "per-process accounting" in sa._state.nvml_error
+
+    def test_health_reports_what_the_driver_counts(self, monkeypatch):
+        _nvml(monkeypatch, own_mb=670)
+
+        async def body():
+            with _patch_reserved(0):
+                out = await sa.health()
+            assert out["vram_process_mb"] == 670
+            assert out["vram_reserved_mb"] == 0
+            assert out["hard_unload_min_process_mb"] == sa.HARD_UNLOAD_MIN_PROCESS_MB
+
+        asyncio.run(body())
+
+    def test_idle_watchdog_exits_for_the_context_a_soft_unload_left(self, monkeypatch):
+        """The measured shape once the gate could see it: model already None
+        (the ladder's soft ``/unload`` beat the watchdog to it), reserved 0,
+        670 MiB still counted against this process."""
+        _nvml(monkeypatch, own_mb=670)
+        sa._state.model = None
+        sa._state.degraded = False
+        sa._state.last_used = 1.0
+
+        with _patch_reserved(0), \
+             patch.object(sa.time, "monotonic", lambda: 1.0 + sa.IDLE_TIMEOUT + 60), \
+             patch.object(os, "_exit") as mock_exit:
+            _run_one_watchdog_pass()
+
+        mock_exit.assert_called_once_with(0)

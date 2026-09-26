@@ -45,6 +45,14 @@ RUN pip install --no-cache-dir --no-deps chatterbox-tts==0.1.7 && \
     omegaconf \
     fastapi "uvicorn[standard]" soundfile
 
+# NVML bindings for the exit gate (2026-09-25). After the idle unload drops the
+# model the server still holds a CUDA context (660-704 MiB on the render GPU,
+# measured) that only a process exit returns; NVML reads what the driver counts
+# for this process without creating one. libnvidia-ml.so.1 itself is injected
+# by the NVIDIA runtime (the base image grants the `utility` driver
+# capability). Its own layer so the pinned list above is not re-resolved.
+RUN pip install --no-cache-dir nvidia-ml-py
+
 RUN useradd -m appuser
 USER appuser
 WORKDIR /app

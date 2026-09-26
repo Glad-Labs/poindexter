@@ -44,6 +44,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
     numpy \
     safetensors
 
+# NVML bindings for the exit gate (2026-09-25). After an interpolation the
+# server holds a CUDA context (622 MiB on the render GPU, measured) that
+# torch.cuda.memory_reserved() cannot see and only a process exit returns;
+# NVML reads what the driver counts for this process without creating one.
+# libnvidia-ml.so.1 itself is injected by the NVIDIA runtime (the base image
+# grants the `utility` driver capability). Its own layer on purpose: adding it
+# to the list above would re-resolve every unpinned package there.
+RUN pip install --no-cache-dir nvidia-ml-py
+
 # Pinned revision — bump deliberately, it changes how every clip looks.
 ARG RIFE_REV=78a62b7c2dd910536432d6c2c3a25e76f14fbf78
 ARG RIFE_BASE=https://huggingface.co/TensorForger/RIFE-safetensors/resolve/${RIFE_REV}

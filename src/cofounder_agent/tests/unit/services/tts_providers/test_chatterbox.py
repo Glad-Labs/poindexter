@@ -227,3 +227,84 @@ class TestChatterboxTTSProvider:
                 "hi", tmp_path / "x.mp3", config={"response_format": "mp3"},
             )
         assert result.audio_format == "mp3"
+
+
+@pytest.mark.unit
+class TestSidecarConnectRetries:
+    """The sidecar exits once idle to give its CUDA context back and is
+    unreachable for ~2 s while Docker restarts it (2026-09-25)."""
+
+    async def test_connect_retries_forwarded_to_render_openai_tts(self, tmp_path):
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
+
+        with patch(
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
+            new=AsyncMock(return_value=b"CBBYTES"),
+        ) as m:
+            await ChatterboxTTSProvider().synthesize(
+                "Hello", tmp_path / "cb.mp3",
+                config={"connect_retries": "5"},
+            )
+
+        assert m.await_args.kwargs["connect_retries"] == 5
+
+    async def test_missing_connect_retries_defaults_to_a_single_attempt(self, tmp_path):
+        """A caller that didn't set it (an older config, a direct call) must
+        not get retries it never asked for."""
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
+
+        with patch(
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
+            new=AsyncMock(return_value=b"CBBYTES"),
+        ) as m:
+            await ChatterboxTTSProvider().synthesize("Hello", tmp_path / "cb.mp3", config={})
+
+        assert m.await_args.kwargs["connect_retries"] == 0
+
+
+@pytest.mark.unit
+class TestRenderOpenaiTtsConnectRetries:
+    """``render_openai_tts`` itself builds the retrying transport — the
+    provider only forwards a count."""
+
+    async def test_positive_retries_build_a_retrying_transport(self):
+        from poindexter.services.tts_service import render_openai_tts
+
+        with patch("poindexter.services.tts_service.httpx.AsyncClient") as client_cls:
+            client = AsyncMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            resp = AsyncMock()
+            resp.status_code = 200
+            resp.content = b"WAVBYTES"
+            client.post = AsyncMock(return_value=resp)
+            client_cls.return_value = client
+
+            await render_openai_tts(
+                base_url="http://chatterbox:8000/v1", model="chatterbox",
+                voice="default", text="hi", response_format="wav",
+                connect_retries=5,
+            )
+
+        import httpx as _httpx
+        assert isinstance(client_cls.call_args.kwargs.get("transport"), _httpx.AsyncHTTPTransport)
+
+    async def test_zero_retries_omits_the_transport_kwarg(self):
+        from poindexter.services.tts_service import render_openai_tts
+
+        with patch("poindexter.services.tts_service.httpx.AsyncClient") as client_cls:
+            client = AsyncMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            resp = AsyncMock()
+            resp.status_code = 200
+            resp.content = b"WAVBYTES"
+            client.post = AsyncMock(return_value=resp)
+            client_cls.return_value = client
+
+            await render_openai_tts(
+                base_url="http://chatterbox:8000/v1", model="chatterbox",
+                voice="default", text="hi", response_format="wav",
+            )
+
+        assert "transport" not in client_cls.call_args.kwargs

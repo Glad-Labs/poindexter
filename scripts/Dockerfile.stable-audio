@@ -63,6 +63,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
     v-diffusion-pytorch \
     webdataset
 
+# NVML bindings for the exit gate (2026-09-25). After the idle watchdog drops
+# the model the server still holds a CUDA context (670 MiB on the render GPU
+# with 40 MB reserved, measured) that the reserved-pool floor could not see, so
+# it never exited; NVML reads what the driver counts for this process without
+# creating a context. libnvidia-ml.so.1 itself is injected by the NVIDIA runtime
+# (the base image grants the `utility` driver capability). Its own layer so the
+# unpinned list above is not re-resolved.
+RUN pip install --no-cache-dir nvidia-ml-py
+
 COPY stable-audio-server.py /app/server.py
 
 RUN addgroup --system --gid 1001 appgroup && \

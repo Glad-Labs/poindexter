@@ -46,6 +46,8 @@ import pytest
 from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
+from tests.unit.scripts._fake_nvml import fake_pynvml
+
 #: Upper bound on any simulated load, interpolation or unload. A test that
 #: forgets to release one fails after this long instead of hanging the suite.
 _HOLD_TIMEOUT_S = 5.0
@@ -212,9 +214,13 @@ class FakeInterpolate:
 @pytest.fixture
 def server(monkeypatch, tmp_path):
     """Fresh state per test (its own GPU lock), torch faked, and work dirs
-    created under tmp_path."""
+    created under tmp_path. NVML is unusable unless a test installs a fake
+    (``_nvml``): the exit gate then measures torch's reserved pool, which is
+    what the tests written before the gate moved to the driver's count pin,
+    and no test reads a real driver on a box that has one."""
     monkeypatch.setattr(rife, "_state", rife._State())
     monkeypatch.setattr(rife, "torch", types.SimpleNamespace(cuda=_FakeCuda()))
+    monkeypatch.setitem(sys.modules, "pynvml", None)
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     # A real load puts MODEL_CODE_DIR on sys.path.
     monkeypatch.setattr(sys, "path", list(sys.path))
@@ -900,7 +906,12 @@ async def test_soft_unload_drops_the_model_and_stays_up(server):
 
     exit_mock.assert_not_called()
     assert result == {
-        "status": "unloaded", "vram_reserved_mb": 20_000,
+        "status": "unloaded",
+        # NVML is unusable here (the fixture), so the driver's count is absent
+        # and the reserved pool is the measure the gate used.
+        "vram_process_mb": None, "vram_process_source": None,
+        "min_process_mb": server.HARD_UNLOAD_MIN_PROCESS_MB,
+        "vram_reserved_mb": 20_000,
         "min_reserved_mb": server.HARD_UNLOAD_MIN_RESERVED_MB,
     }
     assert server._state.model is None
@@ -1043,3 +1054,240 @@ def test_a_clean_clip_closes_the_encoder_and_leaves_it_to_finish(server, monkeyp
     assert stats["model_calls"] == 6
     assert stats["dense_fps"] == 64.0
     assert (tmp_path / "out.mp4").read_bytes() == b"encoded"
+
+
+# ---------------------------------------------------------------------------
+# The exit gate: what the driver counts for this process (2026-09-25)
+# ---------------------------------------------------------------------------
+#
+# Measured in a throwaway container of the rife image, per PID from the host's
+# nvidia-smi: 720 MiB after an interpolation, 622 MiB once the model was
+# dropped (by the idle timer or the ladder's soft /unload), with
+# memory_reserved at 0. The old floor measured memory_reserved, so a hard
+# unload answered nothing_to_reclaim and the idle pass never exited: 622 MiB
+# of the render GPU for good. The gate now reads NVML's count for this PID.
+
+
+def _nvml(monkeypatch, **kwargs):
+    fake = fake_pynvml(**kwargs)
+    monkeypatch.setitem(sys.modules, "pynvml", fake)
+    return fake
+
+
+async def test_hard_unload_exits_for_the_context_the_reserved_pool_cannot_see(
+    server, monkeypatch,
+):
+    """The measured state: model dropped, reserved 0, the driver still
+    counting 622 MiB against this process. Only an exit returns that."""
+    server._state.model = _FakeModel()
+    server.torch.cuda.available = True  # reserved stays 0
+    _nvml(monkeypatch, own_mb=622)
+
+    with patch.object(os, "_exit") as exit_mock:
+        result = await server.unload(server.UnloadRequest(hard=True))
+
+    exit_mock.assert_called_once_with(0)
+    # os._exit is mocked here, so execution falls through to this return;
+    # a real exit never gets this far. It must read as the exit that
+    # happened, not as a generic post-lock "nothing_to_reclaim".
+    assert result["status"] == "exiting"
+    assert result["vram_process_mb"] == 622
+
+
+async def test_hard_unload_holding_nothing_declines_in_the_drivers_terms(server, monkeypatch):
+    """A process with no context is not listed by the driver at all. The
+    decline says so, and names its source: that is what lets the GPU
+    scheduler trust it instead of reading it as a squat."""
+    server.torch.cuda.available = True
+    _nvml(monkeypatch, own_mb=None)
+
+    with patch.object(os, "_exit") as exit_mock:
+        result = await server.unload(server.UnloadRequest(hard=True))
+
+    exit_mock.assert_not_called()
+    assert result["status"] == "nothing_to_reclaim"
+    assert result["vram_process_mb"] == 0
+    assert result["vram_process_source"] == "nvml"
+    assert result["min_process_mb"] == server.HARD_UNLOAD_MIN_PROCESS_MB
+
+
+async def test_idle_pass_exits_once_the_model_is_dropped_and_a_context_is_left(
+    server, monkeypatch,
+):
+    """RIFE's own path: a clip, the idle timeout, the model dropped, and then
+    the context goes with the process."""
+    server._state.model = _FakeModel()
+    server.torch.cuda.available = True
+    fake = _nvml(monkeypatch, own_mb=720)
+    dropped: list[bool] = []
+
+    def drop() -> None:
+        server._state.model = None
+        fake.own_mb = 622  # what the driver counted once the model was gone
+        dropped.append(True)
+
+    monkeypatch.setattr(server, "_unload_model", drop)
+    _idle(server, monkeypatch)
+
+    with patch.object(os, "_exit") as exit_mock:
+        await server._idle_unload_tick()
+
+    assert dropped == [True]
+    exit_mock.assert_called_once_with(0)
+
+
+async def test_idle_pass_exits_for_the_context_a_soft_unload_left(server, monkeypatch):
+    """The ladder's soft /unload drops the model before the timer does and
+    leaves the context. The idle pass exits for it once the timeout has run."""
+    server._state.model = None
+    server.torch.cuda.available = True
+    _nvml(monkeypatch, own_mb=622)
+    _idle(server, monkeypatch)
+
+    with patch.object(os, "_exit") as exit_mock:
+        await server._idle_unload_tick()
+
+    exit_mock.assert_called_once_with(0)
+
+
+async def test_idle_pass_keeps_a_warm_process_inside_the_timeout(server, monkeypatch):
+    """A render interpolates a clip every few minutes; inside RIFE_IDLE_TIMEOUT
+    the process and its context stay for the next one."""
+    server._state.model = None
+    server.torch.cuda.available = True
+    _nvml(monkeypatch, own_mb=622)
+    server._state.last_used = time.monotonic()
+
+    with patch.object(os, "_exit") as exit_mock:
+        await server._idle_unload_tick()
+
+    exit_mock.assert_not_called()
+
+
+async def test_idle_pass_on_a_process_that_has_served_nothing_reads_nothing(
+    server, monkeypatch,
+):
+    """Every exit starts a fresh process with ``last_used`` 0 and no context;
+    the pass does not even ask the driver."""
+    fake = _nvml(monkeypatch, own_mb=None)
+    monkeypatch.setattr(server, "IDLE_TIMEOUT", 0)
+
+    with patch.object(os, "_exit") as exit_mock:
+        await server._idle_unload_tick()
+
+    exit_mock.assert_not_called()
+    assert fake.calls["procs"] == 0
+
+
+async def test_idle_pass_holding_nothing_does_not_take_the_lock(server, monkeypatch):
+    """Idle with nothing loaded and nothing held: the pass answers from the
+    driver's count and never waits for the GPU lock (it runs every 30 s)."""
+    server._state.model = None
+    server.torch.cuda.available = True
+    _nvml(monkeypatch, own_mb=None)
+    _idle(server, monkeypatch)
+
+    await server._state.gpu_lock.acquire()  # a pass that wanted it would block
+    try:
+        with patch.object(os, "_exit") as exit_mock:
+            await asyncio.wait_for(server._idle_unload_tick(), timeout=1)
+    finally:
+        server._state.gpu_lock.release()
+
+    exit_mock.assert_not_called()
+
+
+async def test_idle_exit_stands_down_for_a_request_admitted_during_the_unload(
+    server, monkeypatch,
+):
+    """The exit is irreversible. A request admitted while the pass dropped the
+    model is queued on the lock the pass holds, and would lose its connection."""
+    server._state.model = _FakeModel()
+    server.torch.cuda.available = True
+    _nvml(monkeypatch, own_mb=622)
+    _idle(server, monkeypatch)
+    unloading = threading.Event()
+    finish = threading.Event()
+
+    def slow_unload() -> None:
+        server._state.model = None
+        unloading.set()
+        finish.wait(_HOLD_TIMEOUT_S)
+
+    monkeypatch.setattr(server, "_unload_model", slow_unload)
+    with patch.object(os, "_exit") as exit_mock:
+        tick = asyncio.create_task(server._idle_unload_tick())
+        await _wait_for(unloading)
+        server._state.busy = True  # an /interpolate admitted mid-unload
+        finish.set()
+        await asyncio.wait_for(tick, _HOLD_TIMEOUT_S)
+
+    exit_mock.assert_not_called()
+
+
+def test_the_count_is_this_pid_summed_over_every_visible_gpu(server, monkeypatch):
+    """An exit returns what this process holds on every card, and nothing
+    that another process holds."""
+    _nvml(monkeypatch, own_mb=622, own_device=1, devices=2, others=[(4242, 10_952)])
+
+    assert server._process_vram_mb() == 622
+
+
+def test_nvml_initialises_once_and_reads_every_time(server, monkeypatch):
+    fake = _nvml(monkeypatch, own_mb=622)
+
+    for _ in range(3):
+        server._process_vram_mb()
+
+    assert fake.calls["init"] == 1
+    assert fake.calls["procs"] == 3
+
+
+def test_without_nvml_the_gate_measures_the_reserved_pool_and_says_so_once(server, caplog):
+    """An image built without nvidia-ml-py (the fixture's default): the gate
+    falls back to the pre-2026-09-25 measure and warns once, not every pass."""
+    server.torch.cuda.available = True
+    server.torch.cuda.reserved_mb = 40
+
+    with caplog.at_level(logging.WARNING, logger="rife"):
+        gates = [server._exit_gate() for _ in range(3)]
+
+    assert all(g["vram_process_source"] is None for g in gates)
+    assert all(g["vram_reserved_mb"] == 40 and not g["reclaimable"] for g in gates)
+    assert sum("NVML unusable" in r.getMessage() for r in caplog.records) == 1
+
+
+def test_a_process_listed_without_its_memory_is_not_holding_nothing(server, monkeypatch):
+    """Where per-process accounting is unavailable (WDDM, WSL2) NVML lists the
+    process with no figure. Reading that as 0 would call a context-holding
+    process empty, so the gate falls back to the reserved pool instead."""
+    fake = _nvml(monkeypatch)
+    fake.own_unavailable = True
+
+    assert server._process_vram_mb() is None
+    assert "per-process accounting" in server._state.nvml_error
+
+
+async def test_health_reports_what_the_driver_counts(server, monkeypatch):
+    """With the model dropped the reserved pool reads 0 while the process
+    still holds its context."""
+    server.torch.cuda.available = True
+    _nvml(monkeypatch, own_mb=622)
+
+    body = await server.health()
+
+    assert body["vram_process_mb"] == 622
+    assert body["vram_reserved_mb"] == 0
+
+
+async def test_boot_log_names_the_exit_gates_measure(server, monkeypatch, caplog):
+    _nvml(monkeypatch, own_mb=None)
+
+    with caplog.at_level(logging.INFO, logger="rife"):
+        async with server._lifespan(server.app):
+            pass
+
+    assert any(
+        "exit gate measures this process through NVML (0 MiB held now" in r.getMessage()
+        for r in caplog.records
+    )

@@ -1395,6 +1395,38 @@ class TestGenerateWithVoiceEngineDispatch:
         assert captured["config"]["loudnorm_enabled"] is False
 
     @pytest.mark.asyncio
+    async def test_chatterbox_engine_forwards_the_sidecar_connect_retry_count(
+        self, tmp_path,
+    ):
+        """The sidecar exits once idle to give its CUDA context back and is
+        unreachable for ~2 s while Docker restarts it (2026-09-25) — without
+        this, a request landing in that gap falls through to the next voice
+        in ``synthesize``'s ladder instead of riding out the restart."""
+        sc = SiteConfig(initial_config={
+            "podcast_tts_engine": "chatterbox",
+            "gpu_sidecar_connect_retries": "7",
+        })
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        out = tmp_path / "ep.mp3"
+        captured = {}
+
+        async def _fake_synthesize(self, text, output_path, *, voice=None, config=None):
+            captured["config"] = config
+            output_path.write_bytes(b"X")
+            return TTSResult(
+                audio_path=output_path, duration_seconds=1, voice=voice or "default",
+                file_size_bytes=1, metadata={"engine": "chatterbox"},
+            )
+
+        with patch(
+            "poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            new=_fake_synthesize,
+        ):
+            await svc._generate_with_voice("hello", "bf_emma", out)
+
+        assert captured["config"]["connect_retries"] == 7
+
+    @pytest.mark.asyncio
     async def test_chatterbox_provider_failure_surfaces_as_error_result(self, tmp_path):
         """A raised provider error becomes EpisodeResult(success=False), never
         an unhandled exception — matches the Speaches path's failure contract."""

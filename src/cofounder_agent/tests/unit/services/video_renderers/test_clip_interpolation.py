@@ -290,3 +290,64 @@ async def test_rife_leaves_the_clip_alone_when_the_sidecar_errors(tmp_path, monk
     assert ok is False and "503" in detail
     assert clip.read_bytes() == b"native16"
     assert not (tmp_path / "c.mp4.rife.mp4").exists()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRifeSidecarConnectRetries:
+    """RIFE exits once idle to give its CUDA context back and is unreachable
+    for ~2 s while Docker restarts it (2026-09-25). The upload is never sent
+    twice — only the connection is retried."""
+
+    async def test_the_configured_retry_count_builds_a_retrying_transport(
+        self, tmp_path,
+    ):
+        clip = tmp_path / "c.mp4"
+        clip.write_bytes(b"native16")
+
+        class _Resp:
+            status_code = 200
+            text = "ok"
+            content = b"interpolated"
+            headers: dict[str, str] = {}
+
+        with patch("httpx.AsyncClient") as client_cls:
+            client = AsyncMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            client.post = AsyncMock(return_value=_Resp())
+            client_cls.return_value = client
+
+            await slr._rife_interpolate(
+                str(clip), site_config=_rife_sc(gpu_sidecar_connect_retries="5"),
+                target_fps=30.0, timeout_s=5.0,
+            )
+
+        assert client_cls.call_count == 1
+        kwargs = client_cls.call_args.kwargs
+        import httpx as _httpx
+        assert isinstance(kwargs.get("transport"), _httpx.AsyncHTTPTransport)
+
+    async def test_zero_retries_omits_the_transport_kwarg(self, tmp_path):
+        clip = tmp_path / "c.mp4"
+        clip.write_bytes(b"native16")
+
+        class _Resp:
+            status_code = 200
+            text = "ok"
+            content = b"interpolated"
+            headers: dict[str, str] = {}
+
+        with patch("httpx.AsyncClient") as client_cls:
+            client = AsyncMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            client.post = AsyncMock(return_value=_Resp())
+            client_cls.return_value = client
+
+            await slr._rife_interpolate(
+                str(clip), site_config=_rife_sc(gpu_sidecar_connect_retries="0"),
+                target_fps=30.0, timeout_s=5.0,
+            )
+
+        assert "transport" not in client_cls.call_args.kwargs

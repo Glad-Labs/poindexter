@@ -113,6 +113,18 @@ HARD_UNLOAD_MIN_RESERVED_MB = int(
     os.getenv("WAN_HARD_UNLOAD_MIN_RESERVED_MB", "512")
 )
 
+# The same floor measured on the driver's count for this process (NVML), which
+# includes the CUDA context (2026-09-25). Once the unload really frees the
+# pipeline, empty_cache leaves the reserved pool near 0 and the reserved floor
+# can never be met, yet the process still holds its context: the live server
+# held 498 MiB after a load and unload, and the idle tick's pre-check skipped
+# it every 30 s for good. Every context measured on the render GPU was 498 MiB
+# or more, so any context clears 128. The reserved floor above is the
+# fallback when NVML cannot answer.
+HARD_UNLOAD_MIN_PROCESS_MB = int(
+    os.getenv("WAN_HARD_UNLOAD_MIN_PROCESS_MB", "128")
+)
+
 # Frame cap so a runaway request can't OOM the GPU. Wan's temporal VAE
 # compresses by 4, so valid frame counts are 4k+1 (81, 121, …).
 _MAX_FRAMES = 121  # 5s at 24fps; TI2V-5B's documented working range
@@ -147,6 +159,12 @@ class ServerState:
         # once set, /health reads through torch for the rest of this process.
         self.nvml: tuple[Any, Any] | None = None
         self.nvml_error: str | None = None
+        # The NVML binding for this process's own footprint (the exit gate,
+        # _process_vram_mb), kept apart from the device-free read above: a
+        # platform with device counters but no per-process accounting must not
+        # push /health back onto the context-holding mem_get_info.
+        self.nvml_process: Any = None
+        self.nvml_process_error: str | None = None
 
 
 state = ServerState()
@@ -340,52 +358,62 @@ def _unload_pipeline_blocking() -> None:
     )
 
 
-def _hard_exit_if_reserved_pool(*, quiet_skip: bool = False) -> dict[str, Any]:
+def _hard_exit_if_reclaimable(*, quiet_skip: bool = False) -> dict[str, Any]:
     """Floor-gated process exit (poindexter#962). Caller must hold the GPU
-    lock and have already soft-unloaded — allocated is ~0 by construction, so
-    the gate measures ``memory_reserved``, the pool only a process exit
-    returns. Below the floor: no exit (``quiet_skip`` silences the log for
-    the 30s idle cadence). At or above: flush + ``os._exit(0)``; Docker's
-    restart policy revives the server and it lazy-loads on next /generate.
+    lock and have already soft-unloaded. Only an exit returns the CUDA
+    context and whatever the caching allocator still holds, so the gate asks
+    what the process still holds (``_exit_gate``): the driver's count, context
+    included, or ``memory_reserved`` when NVML cannot answer. Below the floor:
+    no exit (``quiet_skip`` silences the log for the 30s idle cadence). At or
+    above: flush + ``os._exit(0)``; Docker's restart policy revives the server
+    and it lazy-loads on next /generate.
 
     Shared by the ``POST /unload {"hard": true}`` endpoint (consumer-driven
     reclaim) and the idle unloader (self-driven — 2026-08-01: the post-render
     soft unload left a 10.3 GB reserved pool squatting for hours because no
     render was pending to trigger the reclaim rung, OOMing every Ollama load
-    on the card)."""
-    reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
-    if reserved_mb < HARD_UNLOAD_MIN_RESERVED_MB:
+    on the card; 2026-09-25: once the unload really freed the pipeline the
+    pool read ~0 and the 498 MiB context stayed for good).
+
+    A /generate counts itself in ``inflight`` before it waits for the GPU
+    lock the caller holds, so the count is checked once more right before the
+    exit, which is irreversible and would reset that request's connection.
+    """
+    gate = _exit_gate()
+    if not gate["reclaimable"]:
         if not quiet_skip:
             logger.info(
-                "[HARD UNLOAD] skipped — %d MB reserved is below the "
-                "%d MB floor; exiting would reclaim nothing and cost a "
-                "cold reload on the next hero shot",
-                reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
+                "[HARD UNLOAD] skipped — %s; exiting would reclaim nothing and "
+                "cost a cold reload on the next hero shot",
+                _describe_gate(gate),
             )
-        return {
-            "status": "nothing_to_reclaim",
-            "vram_reserved_mb": reserved_mb,
-            "min_reserved_mb": HARD_UNLOAD_MIN_RESERVED_MB,
-        }
+        return {"status": "nothing_to_reclaim", **_gate_fields(gate)}
+    if state.inflight > 0:
+        logger.warning(
+            "[HARD UNLOAD] not exiting — %d generation(s) arrived during the "
+            "unload; pipelines dropped, process kept up", state.inflight,
+        )
+        return {"status": "busy_generation_in_flight", "inflight": state.inflight}
     logger.warning(
-        "[HARD UNLOAD] exiting process to return the CUDA context to "
-        "the host (vram_reserved=%d MB >= %d MB floor); Docker "
-        "restart policy brings it back",
-        reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
+        "[HARD UNLOAD] exiting process to return the CUDA context to the host "
+        "(%s); Docker restart policy brings it back", _describe_gate(gate),
     )
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(0)
-    return {"status": "exiting"}  # unreachable outside tests
+    # Reachable only with os._exit mocked (tests): carries the same gate
+    # fields as every other status, rather than a bare "exiting".
+    return {"status": "exiting", **_gate_fields(gate)}
 
 
 async def _idle_unload_tick() -> None:
     """One idle-unloader pass: after IDLE_TIMEOUT_S of no /generate calls,
-    soft-unload the pipelines, then hard-exit if the leftover reserved pool
-    clears the floor. The second stage is what actually returns VRAM to the
-    card: without it an idle wan squats ~10 GB between renders until some
-    consumer event (a render gate reclaim) happens to notice, starving
-    ollama-primary on the shared GPU (2026-08-01 incident)."""
+    soft-unload the pipelines, then hard-exit if the process still holds VRAM
+    (``_hard_exit_if_reclaimable``). The second stage is what actually returns
+    VRAM to the card: without it an idle wan squats ~10 GB between renders
+    until some consumer event (a render gate reclaim) happens to notice,
+    starving ollama-primary on the shared GPU (2026-08-01 incident), or keeps
+    its CUDA context for good once the pool itself is gone (2026-09-25)."""
     # In-flight guard (2026-08-07): a generation can run LONGER than
     # IDLE_TIMEOUT_S (a 480p i2v hero takes ~147s vs the 120s default), and
     # last_used is only stamped when it finishes. Without this check the tick
@@ -399,13 +427,14 @@ async def _idle_unload_tick() -> None:
         return
     if (time.time() - state.last_used) <= IDLE_TIMEOUT_S:
         return
-    # Cheap pre-check outside the lock: nothing loaded and no reserved pool
-    # means nothing to do — the common cold-idle case, every 30s.
+    # Cheap pre-check outside the lock: nothing loaded and nothing held means
+    # nothing to do — the common cold-idle case, every 30s. "Nothing held" is
+    # the exit gate's answer (NVML's count for this process, the reserved pool
+    # only when NVML is unusable): a context with an empty pool is not idle.
     if (
         state.pipeline is None
         and state.t2v_pipeline is None
-        and torch.cuda.memory_reserved(0) // 1024 // 1024
-        < HARD_UNLOAD_MIN_RESERVED_MB
+        and not _exit_gate()["reclaimable"]
     ):
         return
     async with state.gpu_lock:
@@ -414,7 +443,7 @@ async def _idle_unload_tick() -> None:
         if state.inflight > 0 or (time.time() - state.last_used) <= IDLE_TIMEOUT_S:
             return
         _unload_pipeline_blocking()
-        _hard_exit_if_reserved_pool(quiet_skip=True)
+        _hard_exit_if_reclaimable(quiet_skip=True)
 
 
 # ============================================================================
@@ -495,6 +524,109 @@ def _device_free_mb() -> tuple[int, str]:
     if free is not None:
         return free, "nvml"
     return torch.cuda.mem_get_info(0)[0] // 1024 // 1024, "cuda"
+
+
+# ============================================================================
+# THIS PROCESS'S FOOTPRINT — the exit gate, read through NVML
+# ============================================================================
+
+
+def _process_vram_mb() -> int | None:
+    """VRAM this process holds (MiB), as the driver counts it, or ``None``
+    when NVML cannot say.
+
+    The driver's count includes the CUDA context, and ``memory_reserved``
+    does not: after a load and an unload the live server held 498 MiB with the
+    pool at ~0 (2026-09-25). NVML answers without creating a context. Inside
+    a container it lists only that container's processes, under their
+    in-container PIDs (measured on driver 595.84), so ``os.getpid()`` finds
+    this server. Summed over every GPU NVML can see, because an exit returns
+    all of it. The first failure disables this read for the process and logs
+    once; the exit gate then falls back to ``memory_reserved``. Kept apart
+    from the device-free read: a failure here never sends /health back to
+    ``mem_get_info``.
+    """
+    if state.nvml_process_error is not None:
+        return None
+    try:
+        nvml = state.nvml_process
+        if nvml is None:
+            if state.nvml is not None:
+                # The device-free read already initialised NVML.
+                nvml = state.nvml[0]
+            else:
+                import pynvml
+
+                pynvml.nvmlInit()
+                nvml = pynvml
+            state.nvml_process = nvml
+        pid = os.getpid()
+        used = 0
+        for index in range(nvml.nvmlDeviceGetCount()):
+            handle = nvml.nvmlDeviceGetHandleByIndex(index)
+            for proc in nvml.nvmlDeviceGetComputeRunningProcesses(handle):
+                if proc.pid != pid:
+                    continue
+                if proc.usedGpuMemory is None:
+                    raise RuntimeError(
+                        "NVML lists this process without its memory "
+                        "(per-process accounting unavailable here)",
+                    )
+                used += int(proc.usedGpuMemory)
+        return used // 1024 // 1024
+    except Exception as exc:  # noqa: BLE001 — any NVML failure means "use torch's view"
+        state.nvml_process = None
+        state.nvml_process_error = f"{type(exc).__name__}: {exc}"
+        logger.warning(
+            "NVML cannot count this process (%s). The exit gate falls back to "
+            "torch's reserved pool, which cannot see a CUDA context, so an "
+            "idle process keeps its context (~0.5 GB on the render GPU).",
+            state.nvml_process_error,
+        )
+        return None
+
+
+def _exit_gate() -> dict[str, Any]:
+    """What an exit would return to the card, and whether it clears the floor.
+
+    ``reclaimable`` decides both the hard ``/unload`` and the idle exit. With
+    NVML it is the driver's count for this process against
+    ``HARD_UNLOAD_MIN_PROCESS_MB``; without it, torch's reserved pool against
+    ``HARD_UNLOAD_MIN_RESERVED_MB`` (the pre-2026-09-25 measure, which cannot
+    see a context). ``vram_process_source`` is ``"nvml"`` only when the
+    driver answered: the GPU scheduler trusts a decline that says so.
+    """
+    process_mb = _process_vram_mb()
+    reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
+    if process_mb is not None:
+        reclaimable = process_mb >= HARD_UNLOAD_MIN_PROCESS_MB
+    else:
+        reclaimable = reserved_mb >= HARD_UNLOAD_MIN_RESERVED_MB
+    return {
+        "reclaimable": reclaimable,
+        "vram_process_mb": process_mb,
+        "vram_process_source": "nvml" if process_mb is not None else None,
+        "min_process_mb": HARD_UNLOAD_MIN_PROCESS_MB,
+        "vram_reserved_mb": reserved_mb,
+        "min_reserved_mb": HARD_UNLOAD_MIN_RESERVED_MB,
+    }
+
+
+def _gate_fields(gate: dict[str, Any]) -> dict[str, Any]:
+    """The gate's measurements, as a response reports them."""
+    return {k: v for k, v in gate.items() if k != "reclaimable"}
+
+
+def _describe_gate(gate: dict[str, Any]) -> str:
+    if gate["vram_process_source"] == "nvml":
+        return (
+            f"{gate['vram_process_mb']} MiB held per the driver, "
+            f"floor {gate['min_process_mb']} MiB"
+        )
+    return (
+        f"{gate['vram_reserved_mb']} MB reserved (NVML cannot count this "
+        f"process), floor {gate['min_reserved_mb']} MB"
+    )
 
 
 # ============================================================================
@@ -603,6 +735,14 @@ async def on_startup() -> None:
             if free_mb is not None
             else "torch.cuda.mem_get_info (NVML unusable, see the warning above)",
         )
+        held = _process_vram_mb()
+        logger.info(
+            "The exit gate measures %s.",
+            f"this process through NVML ({held} MiB held now)"
+            if held is not None
+            else "torch's reserved pool (NVML cannot count this process, see "
+            "the warning above); it cannot see a CUDA context",
+        )
 
     async def idle_unloader() -> None:
         """Drive _idle_unload_tick() every 30s, forever. Exception-proof: one
@@ -666,6 +806,11 @@ async def health() -> dict[str, Any]:
         # the read went through torch.cuda.mem_get_info and this process now
         # holds a CUDA context (~0.5 GB on the render GPU).
         "device_free_source": free_source,
+        # What THIS process holds on the card as the driver counts it, CUDA
+        # context included (null when NVML cannot count it). vram_used_mb is
+        # torch's allocated figure and reads 0 once the pipeline is dropped,
+        # while the context stays until the process exits.
+        "vram_process_mb": _process_vram_mb() if gpu_ok else None,
         "gpu_available": gpu_ok,
         "idle_timeout_s": IDLE_TIMEOUT_S,
     }
@@ -695,11 +840,12 @@ async def unload(req: UnloadRequest | None = None) -> dict[str, Any]:
     VRAM reclaim.
 
     The exit is gated on there being something worth reclaiming
-    (``WAN_HARD_UNLOAD_MIN_RESERVED_MB``): measured on ``memory_reserved``,
-    NOT ``memory_allocated`` — the unload above just dropped every live
-    tensor, so allocated is ~0 by construction; the reserved pool is what a
-    process exit actually returns. Below the floor the endpoint answers
-    ``nothing_to_reclaim`` instead of paying a pointless cold-start window
+    (``_exit_gate``): the driver's count for this process, CUDA context
+    included (``WAN_HARD_UNLOAD_MIN_PROCESS_MB``), or ``memory_reserved``
+    when NVML cannot answer (``WAN_HARD_UNLOAD_MIN_RESERVED_MB``) — NOT
+    ``memory_allocated``, which the unload above just took to ~0 by
+    construction. Below the floor the endpoint answers ``nothing_to_reclaim``
+    with what it measured, instead of paying a pointless cold-start window
     (the image-gen lesson: ~24 consecutive no-op exits before its gate).
     """
     # Never unload out from under a live generation (2026-08-07).
@@ -728,11 +874,12 @@ async def unload(req: UnloadRequest | None = None) -> dict[str, Any]:
     if req and req.hard:
         async with state.gpu_lock:
             _unload_pipeline_blocking()
-            return _hard_exit_if_reserved_pool()
+            return _hard_exit_if_reclaimable()
 
     async with state.gpu_lock:
         _unload_pipeline_blocking()
-    return {"status": "unloaded"}
+        # What the soft unload left behind: the context, when a render ran.
+        return {"status": "unloaded", **_gate_fields(_exit_gate())}
 
 
 def _generate_blocking(

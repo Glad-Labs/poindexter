@@ -1750,6 +1750,13 @@ DEFAULTS: dict[str, str] = {
     # pids are host pids). Empty = derive from the runtime (host.docker.internal
     # inside a container, localhost outside).
     'gpu_exporter_metrics_url': 'http://host.docker.internal:9835/metrics',
+    # Connect-phase retries for requests to the GPU sidecars that exit to give
+    # their CUDA context back (RIFE, chatterbox, stable-audio, wan; 2026-09-25).
+    # While Docker restarts one its compose name refuses connections, then
+    # fails to resolve, for ~2 s (measured). httpx retries the connection only,
+    # never the request, with 0/0.5/1/2/4 s backoff: 5 rides out ~7.5 s. See
+    # services/net_transient.sidecar_connect_retries.
+    'gpu_sidecar_connect_retries': '5',
 
     'pipeline_idle_probe_enabled': 'true',
     'pipeline_idle_max_hours': '12',

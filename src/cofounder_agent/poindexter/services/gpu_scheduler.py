@@ -249,6 +249,11 @@ _LAST_RESTART_REQUEST: dict[str, float] = {}
 # decline would bounce a healthy (often actively rendering) service.
 _UNLOAD_ACTED_STATUSES = frozenset({"unloaded", "exiting"})
 
+# Declines that mean the sidecar is WORKING: a render or interpolation is in
+# the server. The squat rule must never override these — a restart kills the
+# job the VRAM is for, and the card is short precisely while a render runs.
+_BUSY_DECLINE_STATUSES = frozenset({"busy_generation_in_flight", "busy"})
+
 
 def _container_pool() -> Any:
     """The active container's DB pool, or None when nothing is registered.
@@ -3375,9 +3380,11 @@ class GPUScheduler:
             # nothing" from "there was nothing to release".
             before_gb = await self._render_free_vram_gb() if hard else None
             declined = False
+            trusted: str | None = None
             resp = await client.post(f"{image_gen_url}/unload", **kwargs)
             if resp.status_code == 200:
                 declined = self._declined_hard_unload(resp)
+                trusted = self._trusted_decline(resp) if declined else None
                 logger.info(
                     "[GPU] image-gen model unloaded via /unload endpoint%s",
                     " (hard)" if hard else "",
@@ -3394,6 +3401,7 @@ class GPUScheduler:
                     container="poindexter-image-gen-server",
                     before_gb=before_gb,
                     declined=declined,
+                    trusted_decline=trusted,
                 )
         except Exception as exc:
             # silent-ok: poindexter#455 — used to be `except: pass`. Log at
@@ -3423,6 +3431,12 @@ class GPUScheduler:
         an idle timer; this is the on-demand lever for the reclaim path, for
         when the render can't wait out the timeout.
 
+        The ladder calls it soft: the model (3.9 GB) goes now, and the CUDA
+        context it leaves (660-704 MiB) goes when the sidecar's own idle pass
+        exits, ``CHATTERBOX_IDLE_TIMEOUT_S`` after the last request (2026-09-25).
+        The sidecar answers ``busy`` while a synthesis is in flight rather than
+        waiting it out.
+
         Unlike image-gen, a hard unload here DOES answer before exiting (the
         sidecar defers its ``os._exit`` briefly), so a reset connection is a
         real failure rather than the expected path.
@@ -3447,8 +3461,8 @@ class GPUScheduler:
             )
             if resp.status_code == 200:
                 logger.info(
-                    "[GPU] chatterbox model unloaded via /unload%s (%s)",
-                    " (hard)" if hard else "", resp.text[:120],
+                    "[GPU] chatterbox /unload%s answered: %s",
+                    " (hard)" if hard else "", resp.text[:160],
                 )
             else:
                 logger.warning(
@@ -3500,9 +3514,11 @@ class GPUScheduler:
             # nothing" from "there was nothing to release".
             before_gb = await self._render_free_vram_gb() if hard else None
             declined = False
+            trusted: str | None = None
             resp = await client.post(f"{base}/unload", **kwargs)
             if resp.status_code == 200:
                 declined = self._declined_hard_unload(resp)
+                trusted = self._trusted_decline(resp) if declined else None
                 logger.info(
                     "[GPU] wan model unloaded via /unload endpoint%s (%s)",
                     " (hard)" if hard else "",
@@ -3514,6 +3530,7 @@ class GPUScheduler:
                     container="poindexter-wan-server",
                     before_gb=before_gb,
                     declined=declined,
+                    trusted_decline=trusted,
                 )
         except Exception as exc:
             # silent-ok: same posture as _unload_image_gen — for hard=True a
@@ -3601,6 +3618,47 @@ class GPUScheduler:
         return body.get("status") not in _UNLOAD_ACTED_STATUSES
 
     @staticmethod
+    def _trusted_decline(resp: Any) -> str | None:
+        """Why a hard-unload decline needs no second opinion, or ``None``.
+
+        ``_verify_reclaim_or_restart`` overrides a decline while the render GPU
+        is short (the squat rule), because a sidecar that measured itself with
+        ``torch.cuda.memory_reserved()`` cannot see its own CUDA context:
+        stable-audio answered ``nothing_to_reclaim`` at reserved=0 while its
+        process held 9-11 GB. Two declines carry their own proof and are not
+        overridden:
+
+        - ``busy_generation_in_flight`` / ``busy``: the sidecar is working.
+          Before 2026-09-25 the squat rule restarted it anyway whenever the
+          card was short, and a card is short precisely while a render runs;
+          the brain's footprint guard then saw a render-sized footprint and
+          let the restart through.
+        - ``nothing_to_reclaim`` with ``vram_process_source: "nvml"``
+          (2026-09-25): the sidecar counted itself with the driver, CUDA
+          context included, and holds less than its exit floor. A restart
+          could return no more than that.
+        """
+        if getattr(resp, "status_code", None) != 200:
+            return None
+        try:
+            body = resp.json()
+        except Exception:  # noqa: BLE001
+            # silent-ok: an unreadable body proves nothing, so the decline
+            # stays subject to the squat rule, exactly as before this existed.
+            return None
+        if not isinstance(body, dict):
+            return None
+        status = body.get("status")
+        if status in _BUSY_DECLINE_STATUSES:
+            return f"{status}: work in flight, a restart would kill it"
+        if status == "nothing_to_reclaim" and body.get("vram_process_source") == "nvml":
+            return (
+                f"it holds {body.get('vram_process_mb')} MiB as the driver counts "
+                f"it, below its {body.get('min_process_mb')} MiB exit floor"
+            )
+        return None
+
+    @staticmethod
     async def _sidecar_credit_gb(registry: Any, gpu_index: int) -> float | None:
         """Sidecar reclaim credit for one card, or ``None`` when unanswerable.
 
@@ -3633,6 +3691,7 @@ class GPUScheduler:
         container: str,
         before_gb: float | None,
         declined: bool = False,
+        trusted_decline: str | None = None,
         busy_check: Any = None,
     ) -> None:
         """Bounce ``container`` when its hard unload freed nothing.
@@ -3652,9 +3711,14 @@ class GPUScheduler:
           ``status: nothing_to_reclaim`` is a legitimate decline below the
           reserved-pool floor.
 
-        ``declined=True`` means the server correctly said there was nothing to
-        reclaim: restarting then would bounce a healthy service for doing its
-        job, which is the mistake this guard exists to avoid.
+        ``declined=True`` means the server said there was nothing to reclaim.
+        While the render GPU has room that is trusted: restarting then would
+        bounce a healthy service for doing its job, which is the mistake this
+        guard exists to avoid. While it is short, a decline measured on
+        torch's allocator view is treated as a squat (the allocator cannot see
+        a CUDA context). ``trusted_decline`` (from ``_trusted_decline``) names
+        the declines that carry their own proof, busy or measured by the
+        driver: those are never restarted, however short the card.
 
         Measured 2026-08-25 (poindexter#1019): ComfyUI held **20,700 MiB**
         with an empty queue, ``/free`` returned 200 and released **0**, and a
@@ -3667,13 +3731,20 @@ class GPUScheduler:
         ``service_restart_requests`` queue that brain executes — the same
         mechanism the console restart button uses.
 
-        Fail-safe in four places, because a spurious restart kills renders:
-        a legitimate ``nothing_to_reclaim`` decline is never restarted, an
+        Fail-safe in five places, because a spurious restart kills renders:
+        a trusted decline (busy, or measured by the driver) is never
+        restarted, any decline is trusted while the GPU has room, an
         unreadable VRAM figure declines (never bounce blind), an optional
         ``busy_check`` is re-run after the settle (a render may have started),
         and a per-container cooldown stops a squatting sidecar from being
         restarted on every ladder pass.
         """
+        if declined and trusted_decline:
+            logger.info(
+                "[GPU] %s declined the hard unload (%s) — not a squat, no restart",
+                service, trusted_decline,
+            )
+            return
         sc = _sc()
         # A restart is only ever worth it while the render GPU is actually
         # short. Below this much free VRAM a squat matters; above it, a sidecar
@@ -4007,9 +4078,11 @@ class GPUScheduler:
             # nothing" from "there was nothing to release".
             before_gb = await self._render_free_vram_gb() if hard else None
             declined = False
+            trusted: str | None = None
             resp = await client.post(f"{base}/unload", **kwargs)
             if resp.status_code == 200:
                 declined = self._declined_hard_unload(resp)
+                trusted = self._trusted_decline(resp) if declined else None
                 logger.info(
                     "[GPU] stable-audio unloaded via /unload endpoint%s (%s)",
                     " (hard)" if hard else "",
@@ -4021,6 +4094,7 @@ class GPUScheduler:
                     container="poindexter-stable-audio",
                     before_gb=before_gb,
                     declined=declined,
+                    trusted_decline=trusted,
                 )
         except Exception as exc:
             # silent-ok: identical posture to _unload_wan / _unload_image_gen —
@@ -4053,8 +4127,12 @@ class GPUScheduler:
         RIFE keeps its model after interpolating a hero clip, about 0.86 GB
         on the card, which on 2026-09-23 was exactly the 0.2 GB a later hero
         wait fell short by. The soft unload frees the model and the cached
-        allocator pool; the CUDA context stays (only an exit returns that,
-        and bouncing the sidecar before every hero is not worth ~0.6 GB).
+        allocator pool. The CUDA context (622 MiB, measured 2026-09-25) stays
+        until RIFE's own idle pass exits it, ``RIFE_IDLE_TIMEOUT`` after the
+        last clip. This rung stays soft on purpose: it runs before every hero
+        and on every newcomer eviction, and exiting RIFE each time costs the
+        next clip ~2 s of cold start and bumps its restart count once per
+        clip, while the restart-loop probe pages at three per brain cycle.
         The sidecar answers ``busy`` while an interpolation is in flight, so
         this can never cut one short.
         """
@@ -4067,7 +4145,7 @@ class GPUScheduler:
                 f"{base.rstrip('/')}/unload", timeout=15, json={"hard": False},
             )
             if resp.status_code == 200:
-                logger.info("[GPU] rife model unloaded via /unload (%s)", resp.text[:120])
+                logger.info("[GPU] rife /unload answered: %s", resp.text[:160])
             else:
                 logger.warning(
                     "[GPU] rife /unload returned %d: %s",

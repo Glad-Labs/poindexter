@@ -16,6 +16,19 @@ server kept that context for good. The hard unload's floor measures
 reclaim it. /health now reads NVML (same instant, same number: 21673 MiB both
 ways) and goes through ``mem_get_info`` only when NVML is unusable.
 
+**The floor itself was fixed the same day (2026-09-25), by the same physics.**
+A load-then-unload left the live server at 498 MiB with the reserved pool near
+0: ``memory_reserved`` cannot see a context either, so the hard-unload floor
+answered ``nothing_to_reclaim`` and the idle tick's pre-check
+(``pipeline is None and t2v_pipeline is None and <no reserved pool>``) never
+even asked. ``_exit_gate`` measures the DRIVER's count for THIS process
+(``nvmlDeviceGetComputeRunningProcesses`` filtered to ``os.getpid()``) instead,
+and falls back to ``memory_reserved`` only when that read is unusable. See
+``TestProcessFootprintGate`` below. It reuses ``state.nvml`` (the device-free
+handle above) when a ``/health`` poll already resolved it, and otherwise
+resolves its own — a second ``pynvml.nvmlInit()`` is harmless, but the tests
+pin that it doesn't happen twice for nothing.
+
 Under test:
 
 1. NVML path: ``device_free_mb`` from NVML with ``device_free_source="nvml"``,
@@ -28,6 +41,9 @@ Under test:
    calls only the torch.cuda functions the measurement found context-free.
 4. ``vram_used_mb`` keeps its meaning (this process's torch allocations).
 5. The image installs the binding.
+6. ``TestProcessFootprintGate``: the exit gate reads the driver's count for
+   this process, shares NVML init with the device-free read, and falls back
+   to ``memory_reserved`` on its own when that count is unusable.
 
 Loader mirrors test_wan_server_unload.py (scoped torch stub, popped after
 exec so a bare ModuleType can't poison later ``import torch``). Every test
@@ -47,6 +63,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+from tests.unit.scripts._fake_nvml import fake_pynvml
 
 MIB = 1024 * 1024
 _UUID = "aa4eb63a-0720-4c1d-1755-fc255ede6780"
@@ -192,6 +210,8 @@ def _fresh_server_state():
     test a cold, idle one."""
     wan.state.nvml = None
     wan.state.nvml_error = None
+    wan.state.nvml_process = None
+    wan.state.nvml_process_error = None
     wan.state.pipeline = None
     wan.state.t2v_pipeline = None
     wan.state.degraded = False
@@ -201,6 +221,8 @@ def _fresh_server_state():
     yield
     wan.state.nvml = None
     wan.state.nvml_error = None
+    wan.state.nvml_process = None
+    wan.state.nvml_process_error = None
 
 
 @pytest.fixture
@@ -302,7 +324,12 @@ def test_missing_binding_falls_back_to_mem_get_info(cuda, monkeypatch, caplog):
 
 @pytest.mark.unit
 def test_nvml_failure_is_sticky_and_warns_once(cuda, monkeypatch, caplog):
-    """One warning, not one per 5 s gate poll, and no re-init every call."""
+    """One warning per read, not one per 5 s gate poll, and no re-init every
+    call. ``/health`` now makes two independent first-attempt NVML calls —
+    device-free (this test's own fake) and this-process (``vram_process_mb``,
+    2026-09-25) — each with its OWN sticky failure, so a broken binding costs
+    two ``nvmlInit()`` calls total across the whole run, not one: one per
+    domain, and each stays down for the rest of the process."""
     broken = _fake_pynvml(init_error=_NVMLError("Driver Not Loaded"))
     monkeypatch.setitem(sys.modules, "pynvml", broken)
 
@@ -310,10 +337,12 @@ def test_nvml_failure_is_sticky_and_warns_once(cuda, monkeypatch, caplog):
         sources = [asyncio.run(wan.health())["device_free_source"] for _ in range(3)]
 
     assert sources == ["cuda", "cuda", "cuda"]
-    assert broken.calls["init"] == 1
+    assert broken.calls["init"] == 2
     assert cuda.mem_get_info_calls == 3
     assert sum("NVML unusable" in m for m in _warnings(caplog)) == 1
+    assert sum("NVML cannot count this process" in m for m in _warnings(caplog)) == 1
     assert "Driver Not Loaded" in wan.state.nvml_error
+    assert "Driver Not Loaded" in wan.state.nvml_process_error
 
 
 @pytest.mark.unit
@@ -423,3 +452,117 @@ def test_wan_image_installs_the_nvml_binding():
 
     server = (REPO_ROOT / "scripts" / "wan-server.py").read_text(encoding="utf-8")
     assert re.search(r"^\s*import pynvml\b", server, flags=re.MULTILINE)
+
+
+# ---------------------------------------------------------------------------
+# 6. The exit gate: what the driver counts for THIS process
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestProcessFootprintGate:
+    """``_exit_gate`` / ``_process_vram_mb`` — the floor a hard ``/unload`` and
+    the idle tick both gate on. Uses the shared sidecar NVML fake (RIFE,
+    chatterbox and stable-audio use the same one) rather than this file's own
+    ``_fake_pynvml``, which only answers the device-free calls."""
+
+    def test_gate_prefers_nvml_over_the_reserved_pool(self, cuda, monkeypatch):
+        monkeypatch.setitem(sys.modules, "pynvml", fake_pynvml(own_mb=None))
+        cuda.reserved_mb = 999_999  # would gate reclaimable=True on its own
+
+        gate = wan._exit_gate()
+
+        assert gate["vram_process_source"] == "nvml"
+        assert gate["reclaimable"] is False, "the driver's answer wins, not the stale reserved figure"
+
+    def test_gate_falls_back_to_reserved_pool_when_nvml_is_unusable(self, cuda, monkeypatch, caplog):
+        monkeypatch.setitem(sys.modules, "pynvml", None)  # import raises
+        cuda.reserved_mb = 700
+
+        with caplog.at_level(logging.WARNING, logger="wan-server"):
+            gates = [wan._exit_gate() for _ in range(3)]
+
+        assert all(g["vram_process_source"] is None for g in gates)
+        assert all(g["vram_reserved_mb"] == 700 and g["reclaimable"] for g in gates)
+        assert sum("cannot count this process" in r.getMessage() for r in caplog.records) == 1
+
+    def test_process_footprint_reuses_the_device_frees_nvml_handle(self, cuda, monkeypatch):
+        """``/health`` already resolved NVML for the device-free read; the
+        process-count read must reuse that module, not init a second time."""
+        fake = fake_pynvml(free_mb=21673, own_mb=498)
+        monkeypatch.setitem(sys.modules, "pynvml", fake)
+
+        asyncio.run(wan.health())
+        assert wan.state.nvml is not None, "the device-free read should have resolved it"
+
+        held = wan._process_vram_mb()
+
+        assert held == 498
+        assert fake.calls["init"] == 1, "the process read must not init NVML again"
+
+    def test_process_footprint_resolves_its_own_nvml_when_health_never_ran(self, monkeypatch):
+        """The reclaim ladder can call ``/unload`` without ``/health`` ever
+        having polled first — the process read must not depend on it."""
+        fake = fake_pynvml(own_mb=498)
+        monkeypatch.setitem(sys.modules, "pynvml", fake)
+
+        held = wan._process_vram_mb()
+
+        assert held == 498
+        assert fake.calls["init"] == 1
+
+    def test_a_process_holding_nothing_is_absent_from_the_drivers_list(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "pynvml", fake_pynvml(own_mb=None))
+
+        assert wan._process_vram_mb() == 0
+
+    def test_a_process_listed_without_its_memory_falls_back_rather_than_reading_zero(
+        self, monkeypatch,
+    ):
+        """Where per-process accounting is unavailable (WDDM, WSL2) NVML lists
+        the process with no figure; reading that as 0 would call a
+        context-holding process empty."""
+        fake = fake_pynvml()
+        fake.own_unavailable = True
+        monkeypatch.setitem(sys.modules, "pynvml", fake)
+
+        assert wan._process_vram_mb() is None
+        assert "per-process accounting" in wan.state.nvml_process_error
+
+    def test_hard_unload_exits_for_the_context_the_reserved_pool_cannot_see(
+        self, cuda, monkeypatch,
+    ):
+        """The measured live state: a load-then-unload left 498 MiB counted
+        against this process with the reserved pool near 0. Only an exit
+        returns it."""
+        monkeypatch.setitem(sys.modules, "pynvml", fake_pynvml(own_mb=498))
+        cuda.reserved_mb = 0
+        wan.state.pipeline = None
+        wan.state.t2v_pipeline = None
+        calls: list[int] = []
+        monkeypatch.setattr(wan.os, "_exit", lambda code: calls.append(code))
+
+        result = asyncio.run(wan.unload(wan.UnloadRequest(hard=True)))
+
+        assert calls == [0]
+        assert result["status"] == "exiting"
+        assert result["vram_process_mb"] == 498
+
+    def test_idle_tick_precheck_no_longer_blind_to_a_bare_context(self, cuda, monkeypatch):
+        """2026-09-25: with both pipelines already None and the reserved pool
+        at 0, the OLD pre-check short-circuited before the lock — exactly the
+        state a load-then-unload leaves. The new pre-check reads the gate
+        instead and must go on to exit."""
+        import time
+
+        monkeypatch.setitem(sys.modules, "pynvml", fake_pynvml(own_mb=498))
+        cuda.reserved_mb = 0
+        wan.state.pipeline = None
+        wan.state.t2v_pipeline = None
+        wan.state.last_used = time.time() - 10_000  # long past IDLE_TIMEOUT_S
+        calls: list[int] = []
+        monkeypatch.setattr(wan.os, "_exit", lambda code: calls.append(code))
+
+        asyncio.run(wan._idle_unload_tick())
+
+        assert calls == [0]

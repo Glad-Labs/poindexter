@@ -100,13 +100,16 @@ def _mock_httpx_post(response):
 
 
 class _StubSiteConfig:
-    """Minimal site_config double — supports .get() with a mapping."""
+    """Minimal site_config double — supports .get()/.get_int() with a mapping."""
 
     def __init__(self, mapping: dict | None = None) -> None:
         self._mapping = mapping or {}
 
     def get(self, key: str, default=None):
         return self._mapping.get(key, default)
+
+    def get_int(self, key: str, default: int = 0) -> int:
+        return int(self._mapping.get(key, default))
 
 
 # ---------------------------------------------------------------------------
@@ -573,3 +576,84 @@ class TestStableAudioOpenGenerate:
 # that lived here always failed. Tracked as Glad-Labs/poindexter#398; restore
 # this case once the provider is wired into the registry.
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Connect-retry across a sidecar restart (2026-09-25)
+# ---------------------------------------------------------------------------
+#
+# The server exits once idle to give its CUDA context back and is
+# unreachable for ~2 s while Docker restarts it. The connection is retried;
+# the generate request itself is never sent twice.
+
+
+@pytest.mark.unit
+class TestSidecarConnectRetries:
+    async def test_the_configured_retry_count_builds_a_retrying_transport(self, tmp_path):
+        from poindexter.services.audio_gen_providers.stable_audio_open import (
+            _generate_to_path,
+        )
+
+        with patch(
+            "poindexter.services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
+        ) as client_cls:
+            client = AsyncMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            client.post = AsyncMock(return_value=_audio_response())
+            client_cls.return_value = client
+
+            await _generate_to_path(
+                prompt="p", output_path=str(tmp_path / "o.wav"),
+                server_url="http://stable-audio-server:9839", duration=2.0,
+                sample_rate=44100, output_format="wav",
+                connect_retries=5,
+            )
+
+        assert client_cls.call_count == 1
+        kwargs = client_cls.call_args.kwargs
+        import httpx as _httpx
+        assert isinstance(kwargs.get("transport"), _httpx.AsyncHTTPTransport)
+
+    async def test_zero_retries_omits_the_transport_kwarg(self, tmp_path):
+        from poindexter.services.audio_gen_providers.stable_audio_open import (
+            _generate_to_path,
+        )
+
+        with patch(
+            "poindexter.services.audio_gen_providers.stable_audio_open.httpx.AsyncClient",
+        ) as client_cls:
+            client = AsyncMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            client.post = AsyncMock(return_value=_audio_response())
+            client_cls.return_value = client
+
+            await _generate_to_path(
+                prompt="p", output_path=str(tmp_path / "o.wav"),
+                server_url="http://stable-audio-server:9839", duration=2.0,
+                sample_rate=44100, output_format="wav",
+            )
+
+        assert "transport" not in client_cls.call_args.kwargs
+
+    async def test_provider_reads_the_retry_count_from_site_config(self, tmp_path):
+        """The provider's own ``generate()`` must thread site_config's retry
+        count through to ``_generate_to_path`` — this is the live call path,
+        not just the helper in isolation."""
+        from poindexter.services.net_transient import SIDECAR_CONNECT_RETRIES_KEY
+
+        provider = StableAudioOpenProvider()
+        with patch(
+            "poindexter.services.audio_gen_providers.stable_audio_open._generate_to_path",
+            new=AsyncMock(return_value=2.0),
+        ) as generate_mock:
+            await provider.generate(
+                "ambient pad", "ambient",
+                {
+                    "_site_config": _StubSiteConfig({SIDECAR_CONNECT_RETRIES_KEY: "7"}),
+                    "output_path": str(tmp_path / "o.wav"),
+                },
+            )
+
+        assert generate_mock.await_args.kwargs["connect_retries"] == 7

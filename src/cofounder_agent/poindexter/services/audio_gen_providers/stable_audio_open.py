@@ -169,6 +169,8 @@ class StableAudioOpenProvider:
                 output_path = tmp.name
             cleanup_on_failure = True
 
+        from poindexter.services.net_transient import sidecar_connect_retries
+
         rendered_duration = await _generate_to_path(
             prompt=templated_prompt,
             output_path=output_path,
@@ -177,6 +179,7 @@ class StableAudioOpenProvider:
             sample_rate=sample_rate,
             output_format=output_format,
             timeout=render_timeout,
+            connect_retries=sidecar_connect_retries(site_config),
         )
 
         if rendered_duration is None or not os.path.exists(output_path):
@@ -378,6 +381,7 @@ async def _generate_to_path(
     sample_rate: int,
     output_format: str,
     timeout: float = 180.0,
+    connect_retries: int = 0,
 ) -> float | None:
     """POST the prompt to the Stable Audio Open inference server; write
     the resulting audio file to ``output_path``.
@@ -386,9 +390,19 @@ async def _generate_to_path(
     successfully, or ``None`` on any failure (server unreachable,
     non-200, parse failure). Operators see a clear log line on failure
     so they can bring the inference server up — never silent.
+
+    ``connect_retries`` retries the connection only, never the request: the
+    server exits once idle to give its CUDA context back and is unreachable
+    for ~2 s while Docker restarts it (2026-09-25; see
+    ``net_transient.sidecar_connect_retries``).
     """
+    client_kwargs: dict[str, Any] = {"timeout": _HTTP_TIMEOUT}
+    if connect_retries > 0:
+        from poindexter.services.net_transient import transient_retry_transport
+
+        client_kwargs["transport"] = transient_retry_transport(connect_retries)
     try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        async with httpx.AsyncClient(**client_kwargs) as client:
             resp = await client.post(
                 f"{server_url}/generate",
                 json={

@@ -2139,6 +2139,7 @@ class PodcastService:
         read for the Speaches path only, so tuning them had zero effect on
         Chatterbox, the engine actually live in production.
         """
+        from poindexter.services.net_transient import sidecar_connect_retries
         from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
 
         sc = self._site_config
@@ -2152,6 +2153,11 @@ class PodcastService:
             "exaggeration": sc.get("plugin.tts_provider.chatterbox.exaggeration", "0.5"),
             "cfg_weight": sc.get("plugin.tts_provider.chatterbox.cfg_weight", "0.5"),
             "timeout_s": sc.get("plugin.tts_provider.chatterbox.timeout_s", "600"),
+            # The sidecar exits once idle to give its CUDA context back and is
+            # unreachable for ~2 s while Docker restarts it; without these
+            # retries a request landing in that gap would fall through to the
+            # next voice in synthesize's ladder.
+            "connect_retries": sidecar_connect_retries(sc),
             # A persona's own clone reference wins over the install-wide one.
             "audio_prompt_path": (
                 audio_prompt_path

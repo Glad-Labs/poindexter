@@ -657,7 +657,7 @@ async def test_idle_watchdog_leaves_a_running_render_alone(server, monkeypatch):
     dropped: list[int] = []
     exits: list[dict] = []
     monkeypatch.setattr(server, "_unload_model", lambda: dropped.append(render.active))
-    monkeypatch.setattr(server, "_hard_exit_if_reserved_pool", lambda **kw: exits.append(kw))
+    monkeypatch.setattr(server, "_hard_exit_if_reclaimable", lambda **kw: exits.append(kw))
 
     gen = asyncio.create_task(server.generate(_req()))
     await _wait_for(render.started)
@@ -681,7 +681,7 @@ async def test_idle_watchdog_rechecks_after_waiting_for_the_gpu(server, monkeypa
     dropped: list[bool] = []
     exits: list[dict] = []
     monkeypatch.setattr(server, "_unload_model", lambda: dropped.append(True))
-    monkeypatch.setattr(server, "_hard_exit_if_reserved_pool", lambda **kw: exits.append(kw))
+    monkeypatch.setattr(server, "_hard_exit_if_reclaimable", lambda **kw: exits.append(kw))
 
     await server._state.gpu_lock.acquire()  # e.g. /unload mid-unload
     tick = asyncio.create_task(server._idle_unload_tick())

@@ -279,6 +279,7 @@ async def render_openai_tts(
     loudnorm_ar: str = _DEFAULT_LOUDNORM_AR,
     atempo: str = _DEFAULT_ATEMPO,
     encode_format: str | None = None,
+    connect_retries: int = 0,
 ) -> bytes | None:
     """POST to an OpenAI-compatible /audio/speech endpoint and normalize.
 
@@ -307,6 +308,12 @@ async def render_openai_tts(
     encoding to ``encode_format`` here is exactly one lossy pass, instead of
     decoding an already-lossy mp3/aac/opus response and re-encoding it again.
     Ignored when ``response_format`` isn't ``"wav"``.
+
+    ``connect_retries`` retries the CONNECTION only (never the request, so a
+    synthesis is never started twice) for an engine whose sidecar exits once
+    idle to give its CUDA context back and is unreachable for ~2 s while
+    Docker restarts it (Chatterbox, 2026-09-25; see
+    ``net_transient.sidecar_connect_retries``). 0 keeps the single attempt.
     """
     base_url = (base_url or "").rstrip("/")
     fmt = (response_format or _DEFAULT_FORMAT).lower()
@@ -323,8 +330,13 @@ async def render_openai_tts(
         _HTTP_TIMEOUT if read_timeout is None
         else httpx.Timeout(read_timeout, connect=5.0)
     )
+    client_kwargs: dict[str, Any] = {"timeout": timeout}
+    if connect_retries > 0:
+        from poindexter.services.net_transient import transient_retry_transport
+
+        client_kwargs["transport"] = transient_retry_transport(connect_retries)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(**client_kwargs) as client:
             resp = await client.post(
                 f"{base_url}/audio/speech",
                 headers={"Authorization": f"Bearer {api_key}"},

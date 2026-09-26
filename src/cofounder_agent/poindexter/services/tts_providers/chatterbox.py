@@ -87,6 +87,11 @@ class ChatterboxTTSProvider:
         # paragraph — the sidecar chunks by sentence and generates serially,
         # so give the client room past the 120s render_openai_tts default.
         timeout_s = _as_float(cfg.get("timeout_s"), 600.0)
+        # The sidecar exits once idle with its model dropped, to give its CUDA
+        # context back, and is unreachable for ~2 s while Docker restarts it
+        # (2026-09-25). Connection-only retries ride that out; the caller sets
+        # this from gpu_sidecar_connect_retries (0 = a single attempt).
+        connect_retries = max(0, int(_as_float(cfg.get("connect_retries"), 0.0)))
         # Voice-clone reference (a path inside the chatterbox container). Empty
         # string is the app_settings unset sentinel — omit rather than send ''
         # (chatterbox_server.py os.path.exists-checks any truthy value and 400s
@@ -137,7 +142,8 @@ class ChatterboxTTSProvider:
         audio = await render_openai_tts(
             base_url=base_url, model=model, voice=voice or "default",
             text=text, response_format=_WIRE_FORMAT, read_timeout=timeout_s,
-            extra_body=extra_body, encode_format=delivery_fmt, **render_kwargs,
+            extra_body=extra_body, encode_format=delivery_fmt,
+            connect_retries=connect_retries, **render_kwargs,
         )
         if audio is None:
             raise RuntimeError(

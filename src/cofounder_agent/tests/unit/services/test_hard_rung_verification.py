@@ -278,6 +278,127 @@ class TestVerifierRespectsTheDecline:
 
 
 @pytest.mark.unit
+class TestTrustedDecline:
+    """``_trusted_decline`` — declines the squat rule must never override,
+    because they carry their own proof (2026-09-25).
+
+    Two shapes. ``busy_generation_in_flight`` / ``busy``: the sidecar is
+    working, and a card is short precisely while a render runs — before this,
+    the squat rule restarted a WORKING sidecar whenever the card was short,
+    because it could not tell "declined because busy" from "declined because
+    blind". ``nothing_to_reclaim`` with ``vram_process_source: "nvml"``: the
+    sidecar counted itself with the driver, CUDA context included, and
+    genuinely holds less than its exit floor — the squat rule exists because
+    ``torch.cuda.memory_reserved()`` can't see a context; a decline that
+    already accounted for the context needs no second-guessing.
+    """
+
+    @pytest.mark.parametrize("status", ["busy_generation_in_flight", "busy"])
+    def test_busy_is_trusted_regardless_of_body_shape(self, status):
+        reason = GPUScheduler._trusted_decline(_resp(200, {"status": status}))
+        assert reason is not None
+        assert "work in flight" in reason
+
+    def test_nvml_measured_nothing_to_reclaim_is_trusted(self):
+        reason = GPUScheduler._trusted_decline(_resp(200, {
+            "status": "nothing_to_reclaim", "vram_process_mb": 0,
+            "vram_process_source": "nvml", "min_process_mb": 128,
+        }))
+        assert reason is not None
+        assert "0 MiB" in reason and "128 MiB" in reason
+
+    def test_reserved_pool_measured_nothing_to_reclaim_is_not_trusted(self):
+        """The exact shape the squat rule exists for: torch's allocator view
+        (stable-audio, poindexter#999) can't see a held context."""
+        reason = GPUScheduler._trusted_decline(_resp(200, {
+            "status": "nothing_to_reclaim", "vram_reserved_mb": 0,
+            "vram_process_source": None,
+        }))
+        assert reason is None
+
+    def test_already_unloaded_and_degraded_are_not_trusted(self):
+        """Real declines, but not ones that carry evidence about VRAM — the
+        squat rule still gets to weigh in against render-GPU freeness."""
+        for status in ("already_unloaded", "degraded"):
+            assert GPUScheduler._trusted_decline(_resp(200, {"status": status})) is None
+
+    def test_an_acted_status_is_not_a_decline_at_all(self):
+        assert GPUScheduler._trusted_decline(_resp(200, {"status": "unloaded"})) is None
+
+    def test_non_200_is_not_trusted(self):
+        assert GPUScheduler._trusted_decline(_resp(503, {})) is None
+
+    def test_unparseable_body_is_not_trusted(self):
+        r = MagicMock(status_code=200)
+        r.json = MagicMock(side_effect=ValueError("not json"))
+        assert GPUScheduler._trusted_decline(r) is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestVerifierRespectsTrustedDecline:
+    async def test_a_trusted_decline_is_never_restarted_even_when_the_card_is_short(self):
+        """The regression this closes: before it, a busy sidecar or an
+        NVML-measured decline was restarted whenever the render GPU read
+        below ``vram_reclaim_restart_below_free_gb`` — exactly the situation
+        a render creates."""
+        s = _sched()
+        created = AsyncMock()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=2.0)), \
+             patch("poindexter.services.service_restart_requests.create_restart_request", created):
+            await s._verify_reclaim_or_restart(
+                service="stable-audio", container="poindexter-stable-audio",
+                before_gb=2.0, declined=True,
+                trusted_decline="busy_generation_in_flight: work in flight, a restart would kill it",
+            )
+        created.assert_not_awaited()
+
+    async def test_an_untrusted_decline_is_still_measured_against_the_card(self):
+        """Without a trusted reason, the existing squat rule is unchanged:
+        short card + decline = squat."""
+        s = _sched()
+        created = AsyncMock(return_value={"id": "r1"})
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=6.5)), \
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request", AsyncMock(return_value=None)):
+            await s._verify_reclaim_or_restart(
+                service="image-gen", container="poindexter-image-gen-server",
+                before_gb=6.5, declined=True, trusted_decline=None,
+            )
+        created.assert_awaited_once()
+
+    async def test_a_full_call_wires_trusted_decline_from_the_response(self):
+        """End-to-end through one hard rung: a busy decline from the sidecar
+        must reach the verifier as a trusted reason, not just ``declined``."""
+        s = _sched()
+        client = MagicMock()
+        client.post = AsyncMock(return_value=_resp(200, {
+            "status": "busy_generation_in_flight", "inflight": 1,
+        }))
+        seen = {}
+
+        async def _verify(**kw):
+            seen.update(kw)
+
+        with patch.object(s, "_get_http_client", return_value=client), \
+             patch(
+                 "poindexter.services.audio_gen_providers.stable_audio_open._resolve_server_url",
+                 return_value="http://svc:9000",
+             ), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=2.0)), \
+             patch.object(s, "_verify_reclaim_or_restart", _verify):
+            await s._unload_stable_audio(hard=True)
+
+        assert seen.get("declined") is True
+        assert seen.get("trusted_decline") is not None
+        assert "work in flight" in seen["trusted_decline"]
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 class TestCooldownIsPerContainer:
     async def test_one_squatting_service_does_not_mute_another(self):

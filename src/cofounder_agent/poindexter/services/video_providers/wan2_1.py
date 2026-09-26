@@ -436,8 +436,20 @@ async def _generate_to_path(
         body["negative_prompt"] = negative
     if image_b64:
         body["image_b64"] = image_b64
+    # The server exits once idle to give its CUDA context back and is
+    # unreachable for ~2 s while Docker restarts it (2026-09-25). Retry the
+    # connection only; a generation is never started twice.
+    from poindexter.services.net_transient import (
+        sidecar_connect_retries,
+        transient_retry_transport,
+    )
+
+    retries = sidecar_connect_retries(site_config)
+    client_kwargs: dict[str, Any] = {"timeout": _HTTP_TIMEOUT}
+    if retries > 0:
+        client_kwargs["transport"] = transient_retry_transport(retries)
     try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        async with httpx.AsyncClient(**client_kwargs) as client:
             # No per-call timeout= override — this used to hardcode 300s,
             # silently overriding the client's _HTTP_TIMEOUT (900s, sized
             # for Wan's worst-case cold-load per its docstring above).

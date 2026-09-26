@@ -816,3 +816,87 @@ class TestLastErrorReason:
         """The renderer reads it off a brand-new instance every clip, so it has
         to exist before any fetch runs."""
         assert Wan21Provider().last_error == ""
+
+
+# ---------------------------------------------------------------------------
+# Connect-retry across a sidecar restart (2026-09-25)
+# ---------------------------------------------------------------------------
+#
+# wan exits once idle to give its CUDA context back and is unreachable for
+# ~2 s while Docker restarts it. The connection is retried; the generate
+# request itself is never sent twice.
+
+
+@pytest.mark.unit
+class TestSidecarConnectRetries:
+    async def test_the_configured_retry_count_builds_a_retrying_transport(self, tmp_path):
+        from poindexter.services.net_transient import SIDECAR_CONNECT_RETRIES_KEY
+        from poindexter.services.video_providers.wan2_1 import _generate_to_path
+
+        with patch(
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
+        ) as client_cls:
+            client = AsyncMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            client.post = AsyncMock(return_value=_video_response())
+            client_cls.return_value = client
+
+            await _generate_to_path(
+                prompt="p", negative="", output_path=str(tmp_path / "o.mp4"),
+                server_url="http://wan-server:9840", steps=4, guidance=1.0,
+                duration=5, width=832, height=480, fps=16,
+                site_config=_StubSiteConfig({SIDECAR_CONNECT_RETRIES_KEY: "5"}),
+            )
+
+        assert client_cls.call_count == 1
+        kwargs = client_cls.call_args.kwargs
+        assert "transport" in kwargs
+        import httpx as _httpx
+        assert isinstance(kwargs["transport"], _httpx.AsyncHTTPTransport)
+
+    async def test_zero_retries_omits_the_transport_kwarg(self, tmp_path):
+        from poindexter.services.net_transient import SIDECAR_CONNECT_RETRIES_KEY
+        from poindexter.services.video_providers.wan2_1 import _generate_to_path
+
+        with patch(
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
+        ) as client_cls:
+            client = AsyncMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            client.post = AsyncMock(return_value=_video_response())
+            client_cls.return_value = client
+
+            await _generate_to_path(
+                prompt="p", negative="", output_path=str(tmp_path / "o.mp4"),
+                server_url="http://wan-server:9840", steps=4, guidance=1.0,
+                duration=5, width=832, height=480, fps=16,
+                site_config=_StubSiteConfig({SIDECAR_CONNECT_RETRIES_KEY: "0"}),
+            )
+
+        assert "transport" not in client_cls.call_args.kwargs
+
+    async def test_no_site_config_still_gets_the_default_retries(self, tmp_path):
+        """A caller with no site_config (a bare script, tests) must not lose
+        the retry protection — sidecar_connect_retries(None) is the default."""
+        from poindexter.services.net_transient import DEFAULT_SIDECAR_CONNECT_RETRIES
+        from poindexter.services.video_providers.wan2_1 import _generate_to_path
+
+        assert DEFAULT_SIDECAR_CONNECT_RETRIES > 0
+        with patch(
+            "poindexter.services.video_providers.wan2_1.httpx.AsyncClient",
+        ) as client_cls:
+            client = AsyncMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            client.post = AsyncMock(return_value=_video_response())
+            client_cls.return_value = client
+
+            await _generate_to_path(
+                prompt="p", negative="", output_path=str(tmp_path / "o.mp4"),
+                server_url="http://wan-server:9840", steps=4, guidance=1.0,
+                duration=5, width=832, height=480, fps=16,
+            )
+
+        assert "transport" in client_cls.call_args.kwargs

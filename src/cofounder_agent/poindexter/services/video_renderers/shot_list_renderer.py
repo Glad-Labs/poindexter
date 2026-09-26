@@ -1482,6 +1482,12 @@ async def _rife_interpolate(
     ``(False, reason)`` on any miss, and the caller falls back to ffmpeg — an
     ffmpeg-interpolated clip is a quality regression, a missing clip is a lost
     shot.
+
+    RIFE exits once it has been idle ``RIFE_IDLE_TIMEOUT`` with its model
+    dropped, to give its CUDA context back (2026-09-25), and is unreachable
+    for ~2 s while Docker restarts it. The connection is retried across that
+    gap (``net_transient.sidecar_connect_retries``); the upload is never sent
+    twice.
     """
     url = ""
     if site_config is not None:
@@ -1496,7 +1502,18 @@ async def _rife_interpolate(
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s, connect=10.0)) as client:
+        from poindexter.services.net_transient import (
+            sidecar_connect_retries,
+            transient_retry_transport,
+        )
+
+        client_kwargs: dict[str, Any] = {
+            "timeout": httpx.Timeout(timeout_s, connect=10.0),
+        }
+        retries = sidecar_connect_retries(site_config)
+        if retries > 0:
+            client_kwargs["transport"] = transient_retry_transport(retries)
+        async with httpx.AsyncClient(**client_kwargs) as client:
             with open(clip_path, "rb") as fh:
                 resp = await client.post(
                     f"{url}/interpolate",

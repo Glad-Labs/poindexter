@@ -377,6 +377,121 @@ reading instead of squatting on it. The pre-hero clear still leaves wan alone,
 because there is nothing left to reclaim and a forced exit would only blind
 the gate while the container restarts.
 
+> **Correction, same day.** "An idle wan now leaves its ~0.5 GB to the gate
+> reading" is true only for a wan that has **never loaded a model** — the
+> healthcheck-only row in the table above. A wan that loaded and then
+> soft-unloaded (its own idle timer, or the ladder's soft rung) is a different
+> case, and it is not fixed by the `/health` change: see the next section,
+> where the same live container is caught holding exactly that context.
+
+### The context outlives the reserved pool too — RIFE, chatterbox, stable-audio, and wan's own hard-unload floor (2026-09-25)
+
+The `/health` fix above stopped `/health` itself from creating a context. It
+did nothing for the **hard-unload floor**, which has the identical blind spot
+for a different reason: `_hard_exit_if_reserved_pool` (wan) and its siblings
+(`_hard_exit_if_reserved_pool` on stable-audio, RIFE's floor, chatterbox's
+idle timer) all measure `torch.cuda.memory_reserved()`, and dropping the model
+objects takes that to ~0 by construction — the context is not reserved memory,
+so the floor reads "nothing to reclaim" forever once the model is gone. This
+is the identical defect the [ghost on the
+ladder](#the-ghost-on-the-ladder-poindexter999-2026-08-07) fixed for
+stable-audio's multi-GB reserved pool, one layer deeper: after that fix
+correctly returns the pool, a few hundred MiB of context is still left behind,
+and the pool-based floor cannot see it either.
+
+**Measured** (throwaway containers of each image, per PID from the host's
+nvidia-smi; wan's row is the live production container, caught mid-session
+with `restarts=0` — no throwaway needed):
+
+| sidecar      | after first use | after the model is dropped | `memory_reserved` then |
+| ------------ | --------------- | -------------------------- | ---------------------- |
+| RIFE         | 720 MiB         | 622 MiB                    | 0 MB                   |
+| chatterbox   | 3.9 GB          | 660-704 MiB                | 20 MB                  |
+| stable-audio | 10,952 MiB      | 670 MiB                    | 40 MB                  |
+| wan          | 23,081 MB       | 498 MiB                    | 0 MB                   |
+
+Each of these is small next to the multi-GB ghosts #999 and #962 fixed, but
+they are **permanent** in exactly the same way: nothing on the reclaim ladder,
+the brain's restart executor, or either sidecar's own idle path could ever
+return them, so they were a standing ~2 GB tax on the render GPU with no lever
+reaching it. wan's case matters most: `no_fit` on a card that reads 498 MiB
+short is indistinguishable from one that is genuinely full, and the director
+step reads exactly that gate.
+
+**Fix: an exit gate that reads what the driver counts for the process, not
+what the allocator has returned.** Each of the four sidecars gained
+`_process_vram_mb()` — `nvmlDeviceGetComputeRunningProcesses` on every visible
+GPU, filtered to `os.getpid()`, summed — reusing the same `nvidia-ml-py`
+dependency and UUID-matching approach the `/health` fix above already proved.
+wan's version reuses the NVML module `/health` already resolved rather than
+initialising a second time. `_exit_gate()` gates the hard `/unload` **and**
+the idle/self-unload path on this count against a small floor
+(`*_HARD_UNLOAD_MIN_PROCESS_MB`, default 128 — every context measured above
+clears it), falling back to `memory_reserved` only when NVML is unusable
+(missing binding, no `utility` driver capability), exactly like the `/health`
+fallback. A response now reports `vram_process_mb` / `vram_process_source`
+alongside the pre-existing `vram_reserved_mb`, so a decline carries its own
+evidence instead of requiring an nvidia-smi PID hunt to interpret.
+
+RIFE's ladder rung stays **soft-only** on purpose — it runs before every hero
+render and on every mid-wait newcomer eviction (see [Idle models, and tenants
+that arrive mid-wait](#idle-models-and-tenants-that-arrive-mid-wait-2026-09-23)),
+and exiting it that often would cost a cold start per hero and inflate its
+restart count against the [restart-loop
+probe](../../src/cofounder_agent/poindexter/brain/container_restart_loop_probe.py).
+Its own idle timer (`RIFE_IDLE_TIMEOUT`, default 300s) is where the exit
+happens instead. Chatterbox's idle unloader gained the same second stage wan
+and stable-audio already had — drop the model, then exit if a context is left
+— plus an `_inflight` counter (mirroring wan/stable-audio's) so neither
+`/unload` nor the new idle exit can act while a synthesis is running or
+queued on the model lock.
+
+**The squat rule had to learn the difference between "blind" and "measured
+empty".** `gpu_scheduler._verify_reclaim_or_restart`'s existing rule — a
+decline while the render GPU reads short is a squat, because the allocator
+view can't see a context (poindexter#999) — was right for a
+`memory_reserved`-sourced decline, but wrong for one of these NVML-measured
+declines: a sidecar that answers `nothing_to_reclaim` after counting its own
+context via the driver has already answered the squat question, and a sidecar
+that answers `busy_generation_in_flight` is not squatting at all. Restarting
+either whenever the card was short (which a render makes true by
+construction) bounced a working or an honestly-declining sidecar mid-job.
+`GPUScheduler._trusted_decline` names the two response shapes that carry
+their own proof — a busy status, or `nothing_to_reclaim` with
+`vram_process_source: "nvml"` — and `_verify_reclaim_or_restart` returns
+before the render-GPU check for either, regardless of how short the card
+reads. Every other decline (an unmeasured `nothing_to_reclaim`, `degraded`,
+`already_unloaded`) is unchanged: still weighed against
+`vram_reclaim_restart_below_free_gb` as before.
+
+**The clients retry the connection across the sidecar's own restart.** An
+exit is followed by Docker's `restart: unless-stopped`; measured across one
+(SIGTERM, then a real exit), a caller sees "Connection refused", a DNS
+failure while the container is down, "Connection refused" again, then a clean
+200 — about 2 s end to end. `net_transient.sidecar_connect_retries` (new)
+reads `gpu_sidecar_connect_retries` (default 5) and builds the same
+connect-retrying `httpx.AsyncHTTPTransport` `net_transient` already used for
+resolver blips (stack#3161), with its 0/0.5/1/2/4 s backoff comfortably
+covering the window. Only the **connection** is retried — a request already
+in flight is never sent twice — so this is safe for the wan/stable-audio
+generate calls and the RIFE upload alike. Wired into all four call sites:
+`shot_list_renderer._rife_interpolate`, `tts_service.render_openai_tts` (used
+by the chatterbox provider, and threaded through `podcast_service`'s
+chatterbox config), `stable_audio_open._generate_to_path`, and
+`wan2_1._generate_to_path`.
+
+| Key                                             | Default | Meaning                                                                                              |
+| ----------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `RIFE_HARD_UNLOAD_MIN_PROCESS_MB` (env)         | `128`   | Below this driver-counted MiB for the RIFE process, an exit would reclaim nothing.                   |
+| `CHATTERBOX_HARD_UNLOAD_MIN_PROCESS_MB` (env)   | `128`   | Same, chatterbox.                                                                                    |
+| `STABLE_AUDIO_HARD_UNLOAD_MIN_PROCESS_MB` (env) | `128`   | Same, stable-audio.                                                                                  |
+| `WAN_HARD_UNLOAD_MIN_PROCESS_MB` (env)          | `128`   | Same, wan.                                                                                           |
+| `gpu_sidecar_connect_retries`                   | `5`     | Connect-phase retries for a request to any of the four sidecars, to ride out its own restart window. |
+
+The process floors are env, not `app_settings`, for the same reason their
+`*_HARD_UNLOAD_MIN_RESERVED_MB` siblings are: each sidecar must be able to
+reclaim VRAM without a reachable DB.
+
 ### Settings (`settings_defaults.py`)
 
 | Key                                          | Default | Meaning                                                                                                                  |
