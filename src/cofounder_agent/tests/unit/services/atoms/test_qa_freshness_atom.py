@@ -40,6 +40,9 @@ class TestRelativePhrases:
             "The model was just announced at the keynote.",
             "It landed a few days ago and the benchmarks are in.",
             "Breaking: the lab has released the checkpoints.",
+            "BREAKING: the weights are public.",
+            "## Breaking: new model tops the leaderboard",
+            "This is breaking news for anyone running local models.",
             "As of this writing the repo has 2k stars.",
         ],
     )
@@ -53,6 +56,11 @@ class TestRelativePhrases:
             "Now is a good time to revisit your VRAM budget.",
             "Ken Burns pans over stills are fine for evergreen posts.",
             "In September 2026 the scheduler gained a queue.",
+            # poindexter#1076: bare "breaking" is evergreen English.
+            "Several pages are close to breaking into a better position.",
+            "Version 3 ships a breaking change to the config format.",
+            "Stop breaking the build on every merge.",
+            "The update was breaking for older plugins.",
         ],
     )
     def test_evergreen_prose_is_not_anchored(self, text: str) -> None:

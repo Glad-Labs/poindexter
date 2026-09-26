@@ -93,9 +93,15 @@ _RELATIVE_RE = re.compile(
     r"this\s+afternoon|this\s+evening|tonight|last\s+night|yesterday|earlier\s+today|"
     r"today['’]s\s+(?:announcement|news|release|paper|launch)|just\s+(?:announced|released|"
     r"shipped|dropped|published|landed)|hours\s+ago|(?:a\s+few|two|three|\d+)\s+days\s+ago|"
-    r"over\s+the\s+weekend|this\s+weekend|breaking(?:\s+news)?|as\s+of\s+this\s+(?:morning|writing))\b",
+    r"over\s+the\s+weekend|this\s+weekend|breaking\s+news|as\s+of\s+this\s+(?:morning|writing))\b",
     re.IGNORECASE,
 )
+# Bare "breaking" is NOT a moment anchor: "breaking into a better position",
+# "breaking changes" and "breaking the build" are evergreen, and the first one
+# vetoed an evergreen how-to as a stale news take (poindexter#1076). Only the
+# news sense counts — "breaking news" above, or a headline-style "Breaking:" /
+# "BREAKING:" banner that opens a line (the colon at line start is the tell).
+_BREAKING_BANNER_RE = re.compile(r"^[ \t>#*_]*breaking\s*:", re.MULTILINE | re.IGNORECASE)
 
 _MONTHS = {
     m: i
@@ -139,6 +145,8 @@ def find_relative_phrases(content: str) -> list[str]:
         phrase = re.sub(r"\s+", " ", m.group(0).lower())
         if phrase not in seen:
             seen.append(phrase)
+    if _BREAKING_BANNER_RE.search(content or "") and "breaking" not in seen:
+        seen.append("breaking")
     return seen
 
 
