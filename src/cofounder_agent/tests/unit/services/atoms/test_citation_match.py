@@ -13,6 +13,9 @@ corpus-matched names and leave the rest for the advisory flag.
 
 from __future__ import annotations
 
+import pytest
+
+from poindexter.modules.content.atoms import _citation_match as _cm
 from poindexter.modules.content.atoms._citation_match import (
     CorpusSource,
     _domain_match,
@@ -645,3 +648,35 @@ def test_strip_leaves_claim_when_multiple_frames_mixed():
     assert "Latency climbs." in new
     assert "TechFlux" in stripped
     assert "GetMaxim" not in stripped
+
+
+# poindexter#1075 — a subject must not cross a sentence break, and a pronoun
+# names nobody. "Zero. We wrote" read as source "Zero. We" and vetoed a clean
+# draft through the gated qa.unlinked_attribution rail.
+
+def test_the_reported_sentence_break_yields_no_attribution():
+    content = "Not low output. Zero. We wrote up the full postmortem in the repo."
+    assert _cm.find_unmatched_attributions(content, _cm.parse_corpus("")) == []
+
+
+def test_a_real_source_after_a_sentence_break_is_still_found():
+    subjects = [a.subject for a in _cm.find_attributions("Output was zero. Anthropic reported the same drop.")]
+    assert subjects == ["Anthropic"]
+
+
+@pytest.mark.parametrize(
+    ("text", "subject"),
+    [
+        ("Dr. Smith argued the point.", "Dr. Smith"),
+        ("M. Night reported it.", "M. Night"),
+        ("Acme Inc. Research reported gains.", "Acme Inc. Research"),
+    ],
+)
+def test_initials_and_abbreviations_do_not_split_a_subject(text, subject):
+    assert [a.subject for a in _cm.find_attributions(text)] == [subject]
+
+
+def test_the_start_offset_follows_the_trimmed_subject():
+    text = "Output was zero. Anthropic reported the same drop."
+    (att,) = _cm.find_attributions(text)
+    assert text[att.start:att.end] == "Anthropic"

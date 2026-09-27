@@ -221,6 +221,33 @@ def match_subject(subject: str, sources: list[CorpusSource]) -> CorpusSource | N
 _TOKEN = r"[A-Z][A-Za-z0-9.&'’-]*"
 _SUBJECT_CS = rf"(?-i:{_TOKEN}(?:\s+{_TOKEN}){{0,3}})"
 
+# Because tokens may carry dots, a subject can run across a sentence break:
+# "...Not low output. Zero. We wrote up the postmortem" read as subject
+# "Zero. We" + verb "wrote" and vetoed a clean draft (poindexter#1075).
+# A non-final token ending in a period that is neither an initial ("M.") nor a
+# known abbreviation, and has no internal dot ("U.S.", "Kore.ai"), ends a
+# sentence — only what follows it can be the subject. A subject that is, starts
+# with or ends with a pronoun names nobody.
+_ABBREVIATIONS = {"inc", "ltd", "co", "corp", "st", "dr", "mr", "mrs", "ms", "jr", "sr", "vs", "no"}
+_PRONOUNS = {"we", "i", "they", "it", "you", "he", "she", "us", "our", "this", "that"}
+
+
+def _ends_sentence(token: str) -> bool:
+    if not token.endswith("."):
+        return False
+    core = token[:-1]
+    return len(core) > 1 and "." not in core and core.lower() not in _ABBREVIATIONS
+
+
+def _trim_to_sentence(subject: str) -> tuple[int, str]:
+    """(offset, subject) — the subject after its last in-subject sentence break."""
+    tokens = list(re.finditer(r"\S+", subject))
+    offset = 0
+    for tok, nxt in zip(tokens, tokens[1:], strict=False):
+        if _ends_sentence(tok.group(0)):
+            offset = nxt.start()
+    return offset, subject[offset:]
+
 _PREP_VERBS = (
     r"noted|observed|argued|explained|shown|highlighted|reported|described|"
     r"demonstrated|discussed|mentioned|written|documented|outlined|detailed|stated"
@@ -430,6 +457,10 @@ def find_attributions(
     for rx in frames:
         for m in rx.finditer(content):
             subject = m.group(1).strip()
+            cut, subject = _trim_to_sentence(subject)
+            words = subject.lower().replace(".", "").split()
+            if not words or words[0] in _PRONOUNS or words[-1] in _PRONOUNS:
+                continue
             # A sentence-final period rides along on the last token ("Tutorials
             # Point.") because the token grammar admits dots for initials
             # ("M."). Drop it unless the last token really is an initial.
@@ -450,6 +481,7 @@ def find_attributions(
                 if not (sources and _domain_match(subject, sources) is not None):
                     continue
             start, end = m.span(1)
+            start += cut
             if start in seen:
                 continue
             seen.add(start)
