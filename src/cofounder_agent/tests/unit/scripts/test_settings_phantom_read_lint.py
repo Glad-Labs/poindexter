@@ -139,12 +139,16 @@ class TestNoFallthroughOnAttributeCalls:
 
 class TestKeyShapeFilter:
     def test_non_key_shaped_literal_is_ignored(self):
-        # Guards the `false`/`off`/`true`-style false positives this lint's
-        # own development run turned up before the no-fallthrough fix above —
-        # belt and suspenders: even a non-literal-key call that somehow still
-        # produced one of these as a "key" would be filtered here too.
         src = "site_config.get_int('', 5)\n"
         assert _keys(src) == []
+
+    def test_boolean_words_are_key_shaped_so_no_fallthrough_is_load_bearing(self):
+        # `false`/`off`/`true` PASS the shape filter — they are lowercase
+        # letters. The only thing stopping a dynamic-key call's default from
+        # being read as its key is the no-fallthrough rule above, not this
+        # filter. (An earlier version of this file claimed the filter was a
+        # backstop for exactly that case. It never was.)
+        assert all(LINT.KEY_SHAPE.match(w) for w in ("false", "off", "true"))
 
     def test_uppercase_literal_is_ignored(self):
         src = "site_config.get('NOT_THE_APP_SETTINGS_CONVENTION', '')\n"
@@ -155,74 +159,79 @@ class TestKeyShapeFilter:
         assert _keys(src) == ["plugin.llm_provider.anthropic.enabled"]
 
 
+WIDGET_REL = "src/cofounder_agent/poindexter/widget_service.py"
+
+
+def _use_fake_tree(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """Write a minimal repo tree with one read per seed source plus one
+    unseeded read, and point the lint's module-level paths at it.
+
+    Returns ``(pkg, svc)`` so a test can add files or rewrite a seed source.
+    """
+    pkg = tmp_path / "src" / "cofounder_agent" / "poindexter"
+    svc = pkg / "services"
+    migrations = svc / "migrations"
+    brain = pkg / "brain"
+    migrations.mkdir(parents=True)
+    brain.mkdir(parents=True)
+    (svc / "settings_defaults.py").write_text(
+        "from __future__ import annotations\n"
+        "DEFAULTS: dict[str, str] = {\n"
+        "    'seeded_key': 'fine',\n"
+        "}\n"
+        "METADATA: dict = {}\n",
+        encoding="utf-8",
+    )
+    (migrations / "0000_baseline.seeds.sql").write_text(
+        "INSERT INTO app_settings (key, value, category, description, is_secret, is_active) "
+        "VALUES ('baseline_seeded_key', '1', 'general', 'x', false, true) "
+        "ON CONFLICT (key) DO NOTHING;\n",
+        encoding="utf-8",
+    )
+    (brain / "seed_app_settings.json").write_text(
+        json.dumps({"_meta": {"tier": "free"}, "settings": [
+            {"key": "brain_seeded_key", "value": "1", "category": "general", "description": "x"},
+        ]}),
+        encoding="utf-8",
+    )
+    (pkg / "widget_service.py").write_text(
+        "def f(site_config):\n"
+        "    a = site_config.get('seeded_key', 'x')\n"
+        "    b = site_config.get('baseline_seeded_key', 'x')\n"
+        "    c = site_config.get('brain_seeded_key', 'x')\n"
+        "    d = site_config.get('totally_unseeded_key', 'y')\n"
+        "    return a, b, c, d\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(LINT, "REPO", tmp_path)
+    monkeypatch.setattr(LINT, "PKG", pkg)
+    monkeypatch.setattr(LINT, "SVC", svc)
+    monkeypatch.setattr(LINT, "DEFAULTS_PY", svc / "settings_defaults.py")
+    monkeypatch.setattr(LINT, "BASELINE_SEEDS", migrations / "0000_baseline.seeds.sql")
+    monkeypatch.setattr(LINT, "BRAIN_SEED", brain / "seed_app_settings.json")
+    return pkg, svc
+
+
 class TestFindPhantomReadsAgainstAFakeTree:
     """End-to-end: a seeded read passes, an unseeded read fails — the
     contract the task that created this lint asked to be pinned."""
 
-    def _write_fake_tree(self, tmp_path: Path):
-        pkg = tmp_path / "src" / "cofounder_agent" / "poindexter"
-        svc = pkg / "services"
-        migrations = svc / "migrations"
-        brain = pkg / "brain"
-        migrations.mkdir(parents=True)
-        brain.mkdir(parents=True)
-        (svc / "settings_defaults.py").write_text(
-            "from __future__ import annotations\n"
-            "DEFAULTS: dict[str, str] = {\n"
-            "    'seeded_key': 'fine',\n"
-            "}\n"
-            "METADATA: dict = {}\n",
-            encoding="utf-8",
-        )
-        (migrations / "0000_baseline.seeds.sql").write_text(
-            "INSERT INTO app_settings (key, value, category, description, is_secret, is_active) "
-            "VALUES ('baseline_seeded_key', '1', 'general', 'x', false, true) "
-            "ON CONFLICT (key) DO NOTHING;\n",
-            encoding="utf-8",
-        )
-        (brain / "seed_app_settings.json").write_text(
-            json.dumps({"_meta": {"tier": "free"}, "settings": [
-                {"key": "brain_seeded_key", "value": "1", "category": "general", "description": "x"},
-            ]}),
-            encoding="utf-8",
-        )
-        (pkg / "widget_service.py").write_text(
-            "def f(site_config):\n"
-            "    a = site_config.get('seeded_key', 'x')\n"
-            "    b = site_config.get('baseline_seeded_key', 'x')\n"
-            "    c = site_config.get('brain_seeded_key', 'x')\n"
-            "    d = site_config.get('totally_unseeded_key', 'y')\n"
-            "    return a, b, c, d\n",
-            encoding="utf-8",
-        )
-        return pkg, svc, migrations, brain
-
-    def _patch_paths(self, monkeypatch, tmp_path: Path, pkg: Path, svc: Path, migrations: Path, brain: Path):
-        monkeypatch.setattr(LINT, "REPO", tmp_path)
-        monkeypatch.setattr(LINT, "PKG", pkg)
-        monkeypatch.setattr(LINT, "SVC", svc)
-        monkeypatch.setattr(LINT, "DEFAULTS_PY", svc / "settings_defaults.py")
-        monkeypatch.setattr(LINT, "BASELINE_SEEDS", migrations / "0000_baseline.seeds.sql")
-        monkeypatch.setattr(LINT, "BRAIN_SEED", brain / "seed_app_settings.json")
-
     def test_seeded_reads_pass_unseeded_read_fails(self, tmp_path, monkeypatch):
-        pkg, svc, migrations, brain = self._write_fake_tree(tmp_path)
-        self._patch_paths(monkeypatch, tmp_path, pkg, svc, migrations, brain)
+        _use_fake_tree(tmp_path, monkeypatch)
 
         result, n_files = LINT.find_phantom_reads()
 
         # widget_service.py + settings_defaults.py itself (PKG scans its own
         # services/ subtree, same as the real poindexter/ tree does).
         assert n_files == 2
-        rel = "src/cofounder_agent/poindexter/widget_service.py"
+        rel = WIDGET_REL
         # Only the one truly-unseeded key survives -- all three seed sources
         # (DEFAULTS / baseline.seeds.sql / brain JSON) correctly clear their
         # own key, and none of them are mistaken for clearing the others'.
         assert result == {rel: ["totally_unseeded_key"]}
 
     def test_allowlisted_key_never_reported_even_when_unseeded(self, tmp_path, monkeypatch):
-        pkg, svc, migrations, brain = self._write_fake_tree(tmp_path)
-        self._patch_paths(monkeypatch, tmp_path, pkg, svc, migrations, brain)
+        pkg, _svc = _use_fake_tree(tmp_path, monkeypatch)
         (pkg / "extra_service.py").write_text(
             "def g(site_config):\n"
             "    return site_config.get('database_url', '')\n",
@@ -236,8 +245,7 @@ class TestFindPhantomReadsAgainstAFakeTree:
         assert "database_url" in LINT.ALLOWLIST
 
     def test_secret_accessor_never_reported_even_when_unseeded(self, tmp_path, monkeypatch):
-        pkg, svc, migrations, brain = self._write_fake_tree(tmp_path)
-        self._patch_paths(monkeypatch, tmp_path, pkg, svc, migrations, brain)
+        pkg, _svc = _use_fake_tree(tmp_path, monkeypatch)
         (pkg / "secret_service.py").write_text(
             "async def h(site_config):\n"
             "    return await site_config.get_secret('some_new_third_party_api_key', '')\n",
@@ -270,31 +278,130 @@ class TestRegressionDetection:
         assert LINT.find_regressions(current, baseline) == []
 
 
-class TestBaselineRatchetAgainstRealTree:
-    def test_real_tree_has_no_unbaselined_phantom_reads(self):
-        """The committed baseline must satisfy the live tree (no drift).
+class TestStaleBaseline:
+    """A baselined read that no longer exists is slack in the ratchet at
+    exactly the spot the read is most likely to come back."""
 
-        Fails if a new phantom read was added without baselining it (or
-        allowlisting/fixing it), or a finding was fixed and the baseline
-        wasn't shrunk to match.
+    def test_fixed_read_leaves_a_stale_entry(self):
+        # The real incident: the fix (#4065) merged, the baseline still held it.
+        current: dict[str, list[str]] = {}
+        baseline = {"gpu_scheduler.py": ["electricity_rate_kwh_usd"]}
+        assert LINT.find_stale_baseline(current, baseline) == [
+            ("gpu_scheduler.py", "electricity_rate_kwh_usd"),
+        ]
+
+    def test_still_present_read_is_not_stale(self):
+        current = {"a.py": ["k1"]}
+        baseline = {"a.py": ["k1"]}
+        assert LINT.find_stale_baseline(current, baseline) == []
+
+    def test_read_moved_to_another_file_is_stale_at_the_old_file(self):
+        # ...and a regression at the new one — both halves fire, because the
+        # baseline is keyed per file.
+        current = {"b.py": ["k1"]}
+        baseline = {"a.py": ["k1"]}
+        assert LINT.find_stale_baseline(current, baseline) == [("a.py", "k1")]
+        assert LINT.find_regressions(current, baseline) == [("b.py", "k1")]
+
+
+class TestStaleAllowlist:
+    """An ALLOWLIST entry with nothing left to exempt would silently excuse a
+    future, genuine phantom read of the same key."""
+
+    ALLOW = {"legacy_alias_key": "reason"}
+
+    def test_live_exemption_is_not_stale(self):
+        by_file = {"a.py": {"legacy_alias_key"}}
+        assert LINT.find_stale_allowlist(by_file, {}, set(), self.ALLOW) == []
+
+    def test_key_no_longer_read_is_stale(self):
+        (key, why), = LINT.find_stale_allowlist({}, {}, set(), self.ALLOW)
+        assert key == "legacy_alias_key"
+        assert "reads it any more" in why
+
+    def test_key_now_seeded_is_stale(self):
+        by_file = {"a.py": {"legacy_alias_key"}}
+        (key, why), = LINT.find_stale_allowlist(by_file, {}, {"legacy_alias_key"}, self.ALLOW)
+        assert key == "legacy_alias_key"
+        assert "seeded" in why
+
+    def test_key_now_read_via_get_secret_is_stale(self):
+        # e.g. eia_api_key moving to .get_secret(): the structural secret
+        # exemption covers it, so the ALLOWLIST line is dead weight.
+        by_file = {"a.py": {"legacy_alias_key"}}
+        via_secret = {"legacy_alias_key": True}
+        (key, why), = LINT.find_stale_allowlist(by_file, via_secret, set(), self.ALLOW)
+        assert key == "legacy_alias_key"
+        assert "get_secret" in why
+
+
+class TestMainFailsOnStaleEntries:
+    """The stale checks are wired into main(), not just defined."""
+
+    def test_stale_baseline_entry_fails_the_run(self, tmp_path, monkeypatch, capsys):
+        _pkg, svc = _use_fake_tree(tmp_path, monkeypatch)
+        # Seed the one unseeded read so the tree itself is clean, leaving the
+        # stale baseline entry as the only thing that can fail the run.
+        (svc / "settings_defaults.py").write_text(
+            "DEFAULTS: dict[str, str] = {\n"
+            "    'seeded_key': 'fine',\n"
+            "    'totally_unseeded_key': 'now seeded',\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text(json.dumps({"gone.py": ["fixed_long_ago"]}), encoding="utf-8")
+        monkeypatch.setattr(LINT, "BASELINE_PATH", baseline)
+        monkeypatch.setattr(LINT, "ALLOWLIST", {})
+        monkeypatch.setattr("sys.argv", ["settings_phantom_read_lint.py"])
+
+        assert LINT.main() == 1
+        out = capsys.readouterr().out
+        assert "STALE BASELINE ENTRY" in out
+        assert "fixed_long_ago" in out
+
+    def test_stale_allowlist_entry_fails_the_run(self, tmp_path, monkeypatch, capsys):
+        _pkg, svc = _use_fake_tree(tmp_path, monkeypatch)
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text(
+            json.dumps({WIDGET_REL: ["totally_unseeded_key"]}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(LINT, "BASELINE_PATH", baseline)
+        monkeypatch.setattr(LINT, "ALLOWLIST", {"key_nothing_reads": "reason"})
+        monkeypatch.setattr("sys.argv", ["settings_phantom_read_lint.py"])
+
+        assert LINT.main() == 1
+        out = capsys.readouterr().out
+        assert "STALE ALLOWLIST ENTRY" in out
+        assert "key_nothing_reads" in out
+
+
+class TestBaselineRatchetAgainstRealTree:
+    def test_real_tree_matches_baseline_and_allowlist_exactly(self):
+        """The committed baseline and ALLOWLIST must describe the live tree
+        exactly: no phantom read outside them, and no entry in either that
+        no longer matches a real read.
+
+        The stale half is not decoration. This lint shipped with a baseline
+        entry for electricity_rate_kwh_usd that #4065 had already removed,
+        and the old version of this test claimed to catch that while only
+        checking for regressions.
         """
-        current, n_files = LINT.find_phantom_reads()
+        by_file, via_secret, n_files = LINT._scan_tree()
         assert n_files > 100, n_files  # sanity: the real poindexter/ tree was scanned
+        seeded = LINT._seeded_keys()
+        current = LINT._filter_phantoms(by_file, via_secret, seeded)
         baseline = LINT.load_baseline()
         assert LINT.find_regressions(current, baseline) == []
+        assert LINT.find_stale_baseline(current, baseline) == []
+        assert LINT.find_stale_allowlist(by_file, via_secret, seeded) == []
 
-    def test_known_pending_fix_is_the_only_baseline_entry(self):
-        """Pins the ratchet's steady state so it can't quietly regrow.
+    def test_baseline_is_empty_after_burndown(self):
+        """Zero grandfathered phantom reads is the intended steady state.
 
-        electricity_rate_kwh_usd (glad-labs-stack#4065) is deliberately the
-        only baselined finding today: it's a real bug, but it's already being
-        fixed by a separate open PR, so this lint's own PR doesn't duplicate
-        that edit. Once that PR merges, re-running --update-baseline should
-        shrink this to empty and this test should be updated accordingly.
+        Pinned so a new phantom read can't be quietly re-baselined back to
+        green: grandfathering one now means editing this test too, in the
+        same diff, where a reviewer sees it.
         """
-        baseline = LINT.load_baseline()
-        assert baseline == {
-            "src/cofounder_agent/poindexter/services/gpu_scheduler.py": [
-                "electricity_rate_kwh_usd",
-            ],
-        }
+        assert LINT.load_baseline() == {}

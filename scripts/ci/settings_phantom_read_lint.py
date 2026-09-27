@@ -27,11 +27,13 @@ wrong-key-name bug (``worker_service.py``'s image-gen capability probe read
 a key that never existed and was permanently ``False``) plus several keys
 that are unseeded ON PURPOSE (a deliberate legacy-key fallback, an
 OSS-privacy redaction, a bootstrap credential) — see ``ALLOWLIST`` below for
-why each of those is not a bug. ``electricity_rate_kwh_usd`` itself is NOT
-fixed in the same change that adds this lint — it is already being fixed by
-a separate, already-open PR (glad-labs-stack#4065), so it is the one entry
-grandfathered in ``settings_phantom_read_baseline.json`` rather than
-re-touched here.
+why each of those is not a bug. ``electricity_rate_kwh_usd`` itself was fixed
+by glad-labs-stack#4065, which merged about an hour BEFORE this lint did. The
+lint's PR had been cut from an older main, so it shipped with that read
+grandfathered in ``settings_phantom_read_baseline.json``. Nothing noticed the
+entry had gone stale, and the ratchet was quietly blind to the one bug it was
+written for: put the read back at the same site and CI would pass. That is
+why a stale entry now fails; see "Stale entries fail" below.
 
 What counts as a phantom read
 ------------------------------
@@ -126,6 +128,31 @@ Two different mechanisms, on purpose:
   baseline is keyed per FILE, like bandit's, not per key, exactly so that a
   second copy of the same mistake in a new place cannot ride in for free).
   Refresh with ``--update-baseline`` only after reading what changed.
+
+Stale entries fail
+------------------
+Unlike ``bandit_lint`` and ``consumer_contract_lint``, which treat a tree
+BELOW its baseline as clean ("re-baseline to lock the win in", optional),
+this lint fails on a stale entry in either list:
+
+* a **baseline** entry whose read no longer exists at that file. A phantom
+  read is most likely to come back exactly where it was: a revert, a stale
+  branch rebased onto the fix, or a copy from git history. The stale entry is
+  slack at precisely that spot. This is not hypothetical. The baseline this
+  lint shipped with grandfathered ``electricity_rate_kwh_usd`` after
+  glad-labs-stack#4065 had already removed it (the two PRs raced), and
+  nothing said so.
+* an **ALLOWLIST** entry that no longer describes a real unseeded read: the
+  key is now seeded, no matched reader reads it any more, or it is now read
+  through ``.get_secret()`` and so is exempt structurally anyway. A leftover
+  exemption would silently excuse a future, genuine phantom read of the same
+  key. Precedent: ``settings_seed_value_drift_lint``'s stale ``TIER_POLICY``
+  check, for the same reason.
+
+The cost of failing is one ``--update-baseline`` run (or deleting one
+``ALLOWLIST`` line) in the PR that fixed the read. Both lists are kept
+near-empty, so that cost stays small, and the fix is named in the failure
+message.
 
 What this lint deliberately does NOT catch
 --------------------------------------------
@@ -347,28 +374,30 @@ def _iter_py_files() -> list[Path]:
     ]
 
 
-def find_phantom_reads() -> tuple[dict[str, list[str]], int]:
-    """``{relpath: [key, ...]}`` for every literal settings read with no seed,
-    after the secret-accessor exemption and ``ALLOWLIST`` are applied.
+def _scan_tree() -> tuple[dict[str, set[str]], dict[str, bool], int]:
+    """Every matched settings read in the tree, before any filtering:
+    ``({relpath: {key, ...}}, {key: read_via_get_secret_anywhere}, n_files)``.
 
-    Two passes over the same scan: pass 1 (``scan_source`` per file) records,
-    per key, whether ANY site reached it via ``.get_secret()`` (the exemption
-    is per-KEY — a secret read through the wrong accessor elsewhere is a
-    different lint's bug, not un-exempted here). Pass 2 keeps only the
-    non-secret, non-allowlisted, unseeded ones.
+    The secret flag is per-KEY: if any site reads a key via ``.get_secret()``
+    the key is exempt everywhere. A secret read through the wrong accessor
+    elsewhere is ``lint_secret_ciphertext_footgun``'s bug, not this lint's.
     """
     files = _iter_py_files()
     by_file: dict[str, set[str]] = {}
     via_secret: dict[str, bool] = {}
-
     for path in files:
         rel = str(path.relative_to(REPO))
         text = path.read_text(encoding="utf-8", errors="ignore")
         for key, is_secret_call in scan_source(text):
             by_file.setdefault(rel, set()).add(key)
             via_secret[key] = via_secret.get(key, False) or is_secret_call
+    return by_file, via_secret, len(files)
 
-    seeded = _seeded_keys()
+
+def _filter_phantoms(
+    by_file: dict[str, set[str]], via_secret: dict[str, bool], seeded: set[str]
+) -> dict[str, list[str]]:
+    """Keep only the non-secret, non-allowlisted, unseeded reads."""
     result: dict[str, list[str]] = {}
     for rel, keys in by_file.items():
         kept = sorted(
@@ -377,7 +406,50 @@ def find_phantom_reads() -> tuple[dict[str, list[str]], int]:
         )
         if kept:
             result[rel] = kept
-    return {rel: result[rel] for rel in sorted(result)}, len(files)
+    return {rel: result[rel] for rel in sorted(result)}
+
+
+def find_phantom_reads() -> tuple[dict[str, list[str]], int]:
+    """``{relpath: [key, ...]}`` for every literal settings read with no seed,
+    after the secret-accessor exemption and ``ALLOWLIST`` are applied."""
+    by_file, via_secret, n_files = _scan_tree()
+    return _filter_phantoms(by_file, via_secret, _seeded_keys()), n_files
+
+
+def find_stale_baseline(
+    current: dict[str, list[str]], baseline: dict[str, list[str]]
+) -> list[tuple[str, str]]:
+    """``(relpath, key)`` for every baselined read that no longer exists at
+    that file — slack in the ratchet at exactly the spot a phantom read is
+    most likely to come back (see "Stale entries fail" in the module
+    docstring)."""
+    out: list[tuple[str, str]] = []
+    for rel, keys in sorted(baseline.items()):
+        live = set(current.get(rel, []))
+        out.extend((rel, key) for key in sorted(keys) if key not in live)
+    return out
+
+
+def find_stale_allowlist(
+    by_file: dict[str, set[str]],
+    via_secret: dict[str, bool],
+    seeded: set[str],
+    allowlist: dict[str, str] | None = None,
+) -> list[tuple[str, str]]:
+    """``(key, why)`` for every ``ALLOWLIST`` entry that no longer describes a
+    real unseeded, non-secret read — an exemption with nothing left to
+    exempt, which would silently excuse a future phantom read of that key."""
+    allowlist = ALLOWLIST if allowlist is None else allowlist
+    read = {k for keys in by_file.values() for k in keys}
+    out: list[tuple[str, str]] = []
+    for key in sorted(allowlist):
+        if key in seeded:
+            out.append((key, "now seeded — the exemption is no longer needed"))
+        elif key not in read:
+            out.append((key, "no matched settings reader reads it any more"))
+        elif via_secret.get(key, False):
+            out.append((key, "now read via .get_secret(), so exempt structurally"))
+    return out
 
 
 def _dict_str_keys(name: str, tree: ast.Module) -> set[str]:
@@ -452,8 +524,10 @@ def main() -> int:
     require_dir(SVC, lint=LINT)
     require_dir(SVC / "migrations", lint=LINT)
 
-    current, n_files = find_phantom_reads()
+    by_file, via_secret, n_files = _scan_tree()
     require_scanned(n_files, lint=LINT, what="python files", roots=(PKG,))
+    seeded = _seeded_keys()
+    current = _filter_phantoms(by_file, via_secret, seeded)
 
     total = sum(len(v) for v in current.values())
 
@@ -467,7 +541,11 @@ def main() -> int:
         )
         return 0
 
-    regressions = find_regressions(current, load_baseline())
+    baseline = load_baseline()
+    regressions = find_regressions(current, baseline)
+    stale_baseline = find_stale_baseline(current, baseline)
+    stale_allowlist = find_stale_allowlist(by_file, via_secret, seeded)
+
     if regressions:
         print("NEW PHANTOM SETTINGS READ (not in baseline):")
         for rel, key in regressions:
@@ -488,16 +566,40 @@ def main() -> int:
             "settings_seed_value_drift_lint.py.\n"
             "  * unseeded ON PURPOSE (legacy alias, OSS-privacy redaction, "
             "bootstrap credential, third-party key) -> add it to ALLOWLIST "
-            "in this file with the reason.\n"
-            "If you intentionally fixed a BASELINED entry, re-run with "
-            "--update-baseline to lock the win in."
+            "in this file with the reason."
         )
+
+    if stale_baseline:
+        print("\nSTALE BASELINE ENTRY (the grandfathered read no longer exists):")
+        for rel, key in stale_baseline:
+            print(f"  {rel}: {key!r}")
+        print(
+            "\nA baselined read that is gone leaves the ratchet blind at exactly "
+            "that spot: put the read back (a revert, a rebase onto the fix, a "
+            "copy from history) and it passes. Lock the win in with:\n"
+            f"  python scripts/ci/{Path(__file__).name} --update-baseline"
+        )
+
+    if stale_allowlist:
+        print("\nSTALE ALLOWLIST ENTRY (the exemption no longer matches a real read):")
+        for key, why in stale_allowlist:
+            print(f"  {key!r}: {why}")
+        print(
+            "\nDelete it from ALLOWLIST in this file. A leftover exemption would "
+            "silently excuse a future, genuine phantom read of the same key."
+        )
+
+    if regressions or stale_baseline or stale_allowlist:
         return 1
 
     print(
-        f"{LINT}: clean — no new phantom reads "
-        f"({total} baselined across {len(current)} file(s), "
-        f"{len(ALLOWLIST)} by-design key(s) allowlisted; ratchet only shrinks)."
+        # `total` is the CURRENT scan, not the baseline file — say "found".
+        # bandit_lint.py learned this during the 2026-08-28 CI audit; this lint
+        # first shipped with the old wording and printed "0 baselined" while
+        # its baseline file held a (stale) entry.
+        f"{LINT}: clean — no new phantom reads, no stale entries "
+        f"({total} found across {len(current)} file(s), all baselined; "
+        f"{len(ALLOWLIST)} by-design key(s) allowlisted; {n_files} python files scanned)."
     )
     return 0
 
