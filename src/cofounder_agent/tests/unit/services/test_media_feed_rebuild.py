@@ -91,6 +91,7 @@ async def test_rebuild_podcast_feed_fetches_route_and_uploads_r2_key() -> None:
     upload = AsyncMock(return_value="https://r2.test/podcast/feed.xml")
     r2 = MagicMock()
     r2.upload_to_r2 = upload
+    r2.get_object_text = AsyncMock(return_value=None)  # nothing published yet
     with patch("httpx.AsyncClient", return_value=client), patch(
         "poindexter.services.r2_upload_service.R2UploadService", return_value=r2
     ):
@@ -108,6 +109,7 @@ async def test_rebuild_video_feed_fetches_route_and_uploads_r2_key() -> None:
     upload = AsyncMock(return_value="https://r2.test/video/feed.xml")
     r2 = MagicMock()
     r2.upload_to_r2 = upload
+    r2.get_object_text = AsyncMock(return_value=None)  # nothing published yet
     with patch("httpx.AsyncClient", return_value=client), patch(
         "poindexter.services.r2_upload_service.R2UploadService", return_value=r2
     ):
@@ -165,6 +167,7 @@ async def test_rebuild_is_non_fatal_when_the_upload_fails(
     client = _mock_httpx_client("<rss>podcast</rss>")
     r2 = MagicMock()
     r2.upload_to_r2 = AsyncMock(side_effect=OSError("bucket unreachable"))
+    r2.get_object_text = AsyncMock(return_value=None)  # nothing published yet
     with patch("httpx.AsyncClient", return_value=client), patch(
         "poindexter.services.r2_upload_service.R2UploadService", return_value=r2
     ), caplog.at_level(logging.WARNING, logger="poindexter.services.media_feed_rebuild"):
@@ -176,6 +179,52 @@ async def test_rebuild_is_non_fatal_when_the_upload_fails(
         "podcast feed upload failed (non-fatal)" in r.message for r in caplog.records
     )
     assert list(tmp_path.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# rebuild_{podcast,video}_feed — shrink guard shared with reconcile_feed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rebuild_refuses_a_would_shrink_render() -> None:
+    """THE new guard (2026-09-27): an event-driven rebuild firing during a DB
+    blip must not ship an empty feed to Apple/Spotify just because it fired at
+    publish/approve/dispatch time instead of the 15-minute reconcile loop —
+    same asymmetric guard as ``reconcile_feed``, now applied here too."""
+    sc = _site_config()
+    cp, rp, upload = _patch_transport(rendered=_feed(0), published=_feed(100))
+    finding = MagicMock()
+    with cp, rp, patch("poindexter.utils.findings.emit_finding", new=finding):
+        await media_feed_rebuild.rebuild_podcast_feed(sc)
+    upload.assert_not_awaited()
+    finding.assert_called_once()
+    assert finding.call_args.kwargs["kind"] == "media_feed_render_collapse"
+    assert finding.call_args.kwargs["source"] == "media_feed_rebuild"
+
+
+@pytest.mark.asyncio
+async def test_rebuild_still_publishes_an_ordinary_update() -> None:
+    """The guard must not block a normal rebuild — growth still uploads
+    exactly like before the guard existed."""
+    sc = _site_config()
+    cp, rp, upload = _patch_transport(rendered=_feed(101), published=_feed(100))
+    with cp, rp:
+        await media_feed_rebuild.rebuild_podcast_feed(sc)
+    upload.assert_awaited_once()
+    assert upload.await_args.args[1] == "podcast/feed.xml"
+
+
+@pytest.mark.asyncio
+async def test_rebuild_allows_a_shrink_within_tolerance() -> None:
+    """An operator un-publishing one post is a legitimate shrink on this path
+    too — the guard must not wedge the feed for ordinary edits."""
+    sc = _site_config()
+    cp, rp, upload = _patch_transport(rendered=_feed(99), published=_feed(100))
+    with cp, rp:
+        await media_feed_rebuild.rebuild_video_feed(sc)
+    upload.assert_awaited_once()
+    assert upload.await_args.args[1] == "video/feed.xml"
 
 
 # ---------------------------------------------------------------------------

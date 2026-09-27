@@ -74,6 +74,27 @@ as "unreachable." An unreachable worker still reports nothing safe to publish
 without a finding — that case hasn't changed, because a worker that is briefly
 unreachable during a restart is not itself an operator-actionable signal the
 way a misconfigured route is.
+
+**The four event-driven rebuilds share the shrink guard too** (2026-09-27) —
+they all funnel through :func:`_rebuild_feed`, so the check lives once and
+every caller inherits it with no call-site changes. It was deliberately
+deferred when the non-2xx-render fix above landed
+(``fix/media-feed-refuse-non-2xx-render``, 2026-09-25) on the reasoning that
+:func:`reconcile_feed` already bounds a bad-empty-render's visible exposure to
+its 15-minute cycle and self-heals it without paging. Reassessed: those four
+callers are the ones that can put a fresh empty render in front of subscribers
+at publish/approve/dispatch time — Apple/Spotify poll the R2 object directly,
+so a gap there is not merely internal staleness — and closing it costs one
+extra authenticated R2 ``GetObject`` per publish/approve/dispatch event. That
+read is accepted: these are low-frequency content events (posts/episodes
+publish or get approved a handful of times a day), never a per-request hot
+path, unlike :func:`reconcile_feed`'s own unconditional read every 15 minutes.
+A refusal on this path emits the same ``media_feed_render_collapse`` finding
+:mod:`media_feed_reconciliation` does, so both mechanisms collapse onto one
+Telegram-routed alert instead of a second policy for the identical failure.
+Unlike the non-2xx case just above, the event-driven path does NOT get its own
+non-2xx escalation — that asymmetry (also deliberate) is documented on
+:func:`_rebuild_feed` itself.
 """
 from __future__ import annotations
 
@@ -276,6 +297,57 @@ def _max_shrink(site_config: Any) -> int:
         return _DEFAULT_MAX_SHRINK
 
 
+def _shrink_guard_verdict(
+    site_config: Any, *, published_items: int, rendered_items: int,
+) -> tuple[bool, int, int]:
+    """Would publishing ``rendered_items`` over ``published_items`` shrink the
+    feed past ``media_feed_reconcile_max_shrink``?
+
+    Returns ``(refuse, shrink, limit)``. The one predicate behind the guard,
+    shared by :func:`reconcile_feed` and :func:`_rebuild_feed` so both paths
+    agree on what counts as a collapse rather than carrying two copies that
+    could drift apart.
+    """
+    limit = _max_shrink(site_config)
+    shrink = published_items - rendered_items
+    refuse = published_items > 0 and shrink > limit
+    return refuse, shrink, limit
+
+
+def _emit_render_collapse_finding(
+    *, source: str, label: str, rendered_items: int, published_items: int,
+    shrink: int, limit: int,
+) -> None:
+    """Escalate a refused shrink. Same ``kind`` :mod:`media_feed_reconciliation`
+    uses for its own refusals, so both collapse onto the one Telegram-routed
+    finding policy instead of a second policy for the identical failure mode.
+    """
+    from poindexter.utils.findings import emit_finding
+
+    emit_finding(
+        source=source,
+        kind="media_feed_render_collapse",
+        severity="error",
+        title=f"{label} feed render collapsed — republish REFUSED",
+        body=(
+            f"Rendering the {label} feed produced {rendered_items} episodes "
+            f"against {published_items} currently published. That shrink "
+            f"({shrink}) exceeds media_feed_reconcile_max_shrink ({limit}), so "
+            f"the published feed was left untouched — publishing this render "
+            f"would have removed episodes from Apple/Spotify.\n\n"
+            f"The feed route returns a valid *empty* feed when its database "
+            f"query fails, so the likeliest cause is the renderer or the "
+            f"database, not missing episodes."
+        ),
+        dedup_key=f"media_feed_render_collapse:{label}",
+        extra={
+            "medium": label,
+            "published_items": published_items,
+            "rendered_items": rendered_items,
+        },
+    )
+
+
 async def _rebuild_feed(
     site_config: Any, *, route: str, r2_path: str, label: str,
 ) -> None:
@@ -287,11 +359,40 @@ async def _rebuild_feed(
     :func:`reconcile_feed`, a non-2xx response here is not escalated with a
     finding of its own; the reconciler is the backstop that notices and
     reports a route that stays broken.
+
+    Shares :func:`reconcile_feed`'s shrink guard (module docstring, "The
+    shrink guard") — see there for why the extra ``GetObject`` read is
+    accepted on this path.
     """
     fetch = await _fetch_rendered_feed(site_config, route)
     if fetch.body is None:
         return
-    await _upload_feed(site_config, fetch.body, r2_path=r2_path, label=label)
+    body = fetch.body
+
+    published = await _read_published_feed(site_config, r2_path)
+    rendered_items = count_feed_items(body)
+    published_items = count_feed_items(published)
+    refuse, shrink, limit = _shrink_guard_verdict(
+        site_config, published_items=published_items, rendered_items=rendered_items,
+    )
+    if refuse:
+        logger.error(
+            "[MEDIA_FEED_REBUILD] REFUSING to publish %s feed: render has %d "
+            "items vs %d published (shrink %d > limit %d). The renderer is "
+            "the likely fault — published feed left untouched.",
+            label, rendered_items, published_items, shrink, limit,
+        )
+        _emit_render_collapse_finding(
+            source="media_feed_rebuild",
+            label=label,
+            rendered_items=rendered_items,
+            published_items=published_items,
+            shrink=shrink,
+            limit=limit,
+        )
+        return
+
+    await _upload_feed(site_config, body, r2_path=r2_path, label=label)
 
 
 async def rebuild_podcast_feed(site_config: Any) -> None:
@@ -404,9 +505,10 @@ async def reconcile_feed(site_config: Any, medium: str) -> FeedReconcileResult:
                 published_items=published_items, drifted=False, healed=False,
             )
 
-        shrink = published_items - rendered_items
-        limit = _max_shrink(site_config)
-        if published_items > 0 and shrink > limit:
+        refuse, shrink, limit = _shrink_guard_verdict(
+            site_config, published_items=published_items, rendered_items=rendered_items,
+        )
+        if refuse:
             logger.error(
                 "[MEDIA_FEED_RECONCILE] REFUSING to publish %s feed: render has "
                 "%d items vs %d published (shrink %d > limit %d). The renderer "
