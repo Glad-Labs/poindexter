@@ -203,6 +203,66 @@ _not_ a failover event: the reconcile keys on "≥1 online", so the survivor kee
 serving jobs (at half throughput). For instant failover after a known outage,
 run `gh workflow run runner-healthcheck.yml` (or bump the cron).
 
+### Recovering runs already queued for dead runners
+
+Unsetting `CI_RUNNER` only fails over runs **created after** the flip. A run's
+`vars` context is fixed when the run is created, so a job that was already
+queued for `[self-hosted, linux, x64]` keeps waiting for a runner that is never
+coming back. On 2026-09-27 PR #4102 sat "Queued" for 15+ hours that way, after
+the healthcheck had already unset the variable. Two things made it worse:
+
+- **A plain cancel does not clear it.** Gate jobs carry `if: always()`, which
+  re-evaluates true on cancel, so the run keeps a queued job and never
+  completes. Only the `force-cancel` endpoint bypasses `always()`.
+- **Concurrency groups back up behind it.** `benchmarks`, `cloudflare-workers`,
+  `docker-build` and `security` use `cancel-in-progress`, so every new push
+  queued behind the stuck run too.
+
+So when the healthcheck ends a run with the seam unset **and** zero runners
+online, it also runs `scripts/ci/recover_stranded_runs.py`. That finds every
+`queued`/`in_progress` run holding a job that is `queued` with the
+`self-hosted` label and force-cancels it: nothing can pick it up, and it may be
+holding its concurrency group. It then waits for the run to reach `completed`
+and calls `rerun-failed-jobs`. The new attempt reads the current (unset)
+`CI_RUNNER` and lands on `ubuntu-latest`; jobs that already passed on hosted
+runners are not repeated. It uses the workflow's own `GITHUB_TOKEN`
+(`permissions: actions: write`), not the runner App, which holds no Actions
+permission. A Discord ops ping reports what it re-ran and what it only
+cancelled.
+
+A cancelled run is **not** re-run in two cases:
+
+- **A newer run of the same workflow exists on the same branch.** Nearly every
+  seam workflow groups on `workflow + ref` with `cancel-in-progress` for pull
+  requests. If the author pushed again during the outage, re-running the older
+  run would rejoin that group and cancel the PR's _current_ head run. The newer
+  run is the one that matters, and cancelling the stale one is what lets it
+  start.
+- **It is already at attempt 3** (`--max-attempt`). The run stranded again
+  after being re-run, so the re-run is landing on self-hosted again; the usual
+  cause is the dormant `CI_RUNNER_DOCKER` seam still being set. It is cancelled
+  (so it stops holding its concurrency group) and flagged with a warning.
+
+Guard rails:
+
+- It never acts while a runner is online (a queued job just gets picked up) or
+  while `CI_RUNNER` is still set, as in `CI_RUNNER_MODE=on` (the re-run would
+  queue on the dead label again).
+- It needs a zero the runners API actually reported. A failed probe still
+  fails `CI_RUNNER` over (the safe side of an API error), but skips recovery,
+  since recovery cancels runs.
+- Hosted backlog (a queued job with no `self-hosted` label) is left alone.
+
+Preview without changing anything: dispatch the healthcheck with
+`recover_dry_run` ticked:
+
+```bash
+gh workflow run runner-healthcheck.yml --repo Glad-Labs/glad-labs-stack -f recover_dry_run=true
+```
+
+Recovery still waits on the healthcheck's cron (≤6h). If the PC is known to be
+down, dispatch the healthcheck right away rather than waiting.
+
 ### Registration pruning
 
 Each runner container **wipes its config and re-registers under a fresh random
@@ -297,7 +357,12 @@ pinned by `.wslconfig`; that VM is gone, so size against the host directly.)
   third queues). If not, no online runner matches the labels:
   `docker compose -f docker-compose.local.yml logs github-runner-1 github-runner-2`;
   check the App private key is valid and the App install still has Administration
-  access. Immediate unblock: `gh variable set CI_RUNNER_MODE off`.
+  access. Immediate unblock: `gh variable set CI_RUNNER_MODE off`, then
+  `gh workflow run runner-healthcheck.yml`. The variable alone only helps new
+  runs. The healthcheck is what force-cancels and re-runs the ones already
+  queued (see
+  [Recovering runs already queued for dead runners](#recovering-runs-already-queued-for-dead-runners)),
+  and it only does that while zero runners are online.
 - **Runner registers then immediately deregisters:** usually a bad App private
   key, or the App install is missing `Administration: write`.
 - **Runner crash-loops with "already configured" / "Value cannot be null

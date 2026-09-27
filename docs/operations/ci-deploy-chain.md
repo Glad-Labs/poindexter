@@ -216,6 +216,11 @@ decorators in `test_database_service.py` and
   minutes). When none are online, it clears `CI_RUNNER` so `unit-tests`
   falls back to `ubuntu-latest` and a PR's required check can still pass.
   Override via `CI_RUNNER_MODE` repo var (`auto` / `on` / `off`).
+  Clearing the variable only reaches runs created afterwards, so when none
+  are online it also force-cancels and re-runs runs already queued for the
+  self-hosted labels (`scripts/ci/recover_stranded_runs.py`; see
+  `self-hosted-ci-runner.md`, "Recovering runs already queued for dead
+  runners").
 - `src/cofounder_agent/tests/` — Python unit tests (pytest). The
   `test-backend` check runs the full backend suite (several thousand
   cases; the exact count drifts as agents add tests, so it is not

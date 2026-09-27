@@ -24,6 +24,9 @@
 #   >=1 self-hosted runner online  ->  set CI_RUNNER   (seam jobs run on the PC, $0 minutes)
 #   none online                    ->  unset CI_RUNNER (seam jobs fall back to ubuntu-latest,
 #                                                        so a PR's required check can't hang)
+#                                   + force-cancel / re-run runs ALREADY queued for
+#                                     self-hosted (their vars were fixed at creation,
+#                                     so the unset alone never reaches them)
 #
 # Operator override via the `CI_RUNNER_MODE` repo variable:
 #   auto (default / unset) = liveness-driven, as above (self-heal both directions)
@@ -42,11 +45,21 @@ on:
     # instant. Tune in docs/operations/self-hosted-ci-runner.md.
     - cron: "0 */6 * * *"
   workflow_dispatch:
+    inputs:
+      recover_dry_run:
+        description: "Only report stranded self-hosted runs; do not force-cancel / re-run them"
+        type: boolean
+        default: false
 
-# The runner App's installation token (minted in the first step) carries all
-# privilege; the default GITHUB_TOKEN needs nothing here.
+# The runner App's installation token (minted in the first step) carries the
+# runner + variable privilege. The default GITHUB_TOKEN gets `actions: write`
+# for one thing only: force-cancelling and re-running runs stranded on dead
+# runners (the "Recover stranded runs" step). The runner App deliberately does
+# not hold Actions — widening a dedicated App is worse than using the token
+# the workflow already has.
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: runner-healthcheck
@@ -59,7 +72,9 @@ jobs:
     # ubuntu-latest by construction. The job no-ops there.
     if: github.repository == 'Glad-Labs/glad-labs-stack'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 10, not 5: the stranded-run recovery waits for force-cancelled runs to
+    # reach `completed` (up to 3 min) before re-running them.
+    timeout-minutes: 10
     env:
       REPO: ${{ github.repository }}
       RUNNER_LABELS: '["self-hosted","linux","x64"]'
@@ -98,6 +113,7 @@ jobs:
           private-key: ${{ secrets.CI_RUNNER_APP_PRIVATE_KEY }}
 
       - name: Reconcile CI_RUNNER against live runner status
+        id: reconcile
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -126,18 +142,26 @@ jobs:
 
           mode="$(read_var CI_RUNNER_MODE)"; mode="${mode:-auto}"
           current="$(read_var CI_RUNNER)"
-          online="$(gh api "/repos/$REPO/actions/runners" \
-            --jq '[.runners[] | select(.status=="online")] | length' 2>/dev/null || echo 0)"
+          # A failed probe reads as 0 for the reconcile (failing over is the
+          # safe side of an API error) but clears `probe_ok`: the stranded-run
+          # recovery below force-cancels runs, so it acts only on a zero the
+          # API actually reported.
+          probe_online() {
+            gh api "/repos/$REPO/actions/runners" \
+              --jq '[.runners[] | select(.status=="online")] | length' 2>/dev/null
+          }
+          probe_ok=1
+          online="$(probe_online)" || { online=0; probe_ok=0; }
 
           # Guard against a transient blip (container restart after a stack
           # update): if we see zero, wait briefly and re-sample once before
           # deciding to revert.
           if [ "$online" -eq 0 ]; then
             sleep 30
-            online="$(gh api "/repos/$REPO/actions/runners" \
-              --jq '[.runners[] | select(.status=="online")] | length' 2>/dev/null || echo 0)"
+            probe_ok=1
+            online="$(probe_online)" || { online=0; probe_ok=0; }
           fi
-          echo "mode=$mode  online_runners=$online  CI_RUNNER='${current}'"
+          echo "mode=$mode  online_runners=$online  probe_ok=$probe_ok  CI_RUNNER='${current}'"
 
           case "$mode" in
             on)  desired="set"   ;;
@@ -155,17 +179,77 @@ jobs:
           fi
 
           echo "result: $change"
+
+          # Read by the stranded-run recovery below. It acts only when the
+          # seam now points at ubuntu-latest AND nothing self-hosted is alive —
+          # with a runner online a queued job just gets picked up, and with
+          # CI_RUNNER still set a re-run would queue on the dead label again.
+          recover=false
+          if [ "$desired" = "unset" ] && [ "$online" -eq 0 ]; then
+            if [ "$probe_ok" = 1 ]; then
+              recover=true
+            else
+              echo "::warning::runner probe failed — skipping stranded-run recovery, which force-cancels runs and so needs a confirmed zero."
+            fi
+          fi
+          echo "recover=$recover" >> "$GITHUB_OUTPUT"
           {
             echo "### runner-healthcheck"
             echo "- mode: \`$mode\`"
-            echo "- online self-hosted runners: **$online**"
+            echo "- online self-hosted runners: **$online**$([ "$probe_ok" = 1 ] || echo ' (probe failed)')"
             echo "- action: **$change**"
+            echo "- stranded-run recovery: **$recover**"
           } >> "$GITHUB_STEP_SUMMARY"
 
           # Routine ops ping on a state change only (Discord, not Telegram —
           # this is graceful failover, not an outage). No-op if unconfigured.
           if [ "$change" != "none" ] && [ -n "${DISCORD_OPS_WEBHOOK_URL:-}" ]; then
             payload="$(printf '{"content":"⚙️ CI runner auto-flip: %s (mode=%s, online=%s)"}' "$change" "$mode" "$online")"
+            curl -fsS -H 'Content-Type: application/json' -d "$payload" "$DISCORD_OPS_WEBHOOK_URL" >/dev/null || true
+          fi
+
+      # Unsetting CI_RUNNER only fails over runs created AFTER the flip: a
+      # run's `vars` context is fixed at creation, so jobs already queued for
+      # `[self-hosted, linux, x64]` wait forever for a runner that is gone.
+      # PR #4102 (2026-09-27) sat Queued 15+ hours that way, and its stuck
+      # `if: always()` gates held the `cancel-in-progress` concurrency groups
+      # of benchmarks / cloudflare-workers / docker-build / security, so new
+      # pushes queued behind it too. The script force-cancels each stranded
+      # run (plain cancel does not clear an `always()` job) and re-runs its
+      # failed/cancelled jobs, which re-read vars and land on ubuntu-latest —
+      # unless a newer run of the same workflow + branch exists (a re-run would
+      # rejoin the cancel-in-progress group and cancel the PR's current head
+      # run) or it hit the attempt cap. Rationale in the script's docstring.
+      - name: Check out the recovery script
+        if: ${{ steps.reconcile.outputs.recover == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+        with:
+          sparse-checkout: scripts/ci/recover_stranded_runs.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Recover runs stranded on dead self-hosted runners
+        id: recover
+        if: ${{ steps.reconcile.outputs.recover == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.recover_dry_run && '--dry-run' || '' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086  # DRY_RUN is empty or one flag
+          python3 scripts/ci/recover_stranded_runs.py --repo "$REPO" $DRY_RUN
+
+      - name: Report recovered runs
+        # !cancelled(): a partial recovery exits 1 but may still have acted.
+        if: ${{ !cancelled() && (fromJSON(steps.recover.outputs.recovered || '0') > 0 || fromJSON(steps.recover.outputs.cancelled || '0') > 0) }}
+        shell: bash
+        env:
+          RECOVERED: ${{ steps.recover.outputs.recovered }}
+          CANCELLED: ${{ steps.recover.outputs.cancelled }}
+        run: |
+          if [ -n "${DISCORD_OPS_WEBHOOK_URL:-}" ]; then
+            payload="$(printf '{"content":"⚙️ CI runner failover: re-ran %s run(s) stranded on offline self-hosted runners (now on ubuntu-latest); cancelled %s superseded or looping run(s) without a re-run"}' "$RECOVERED" "$CANCELLED")"
             curl -fsS -H 'Content-Type: application/json' -d "$payload" "$DISCORD_OPS_WEBHOOK_URL" >/dev/null || true
           fi
 
@@ -189,7 +273,8 @@ jobs:
       # housekeeping step on a workflow whose real job is keeping a required
       # check unblocked is worse noise than the ghosts.
       - name: Prune offline runner registrations
-        if: ${{ env.RUNNER_APP_ID != '' }}
+        # !cancelled(): a failed recovery above must not skip housekeeping.
+        if: ${{ !cancelled() && env.RUNNER_APP_ID != '' }}
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
