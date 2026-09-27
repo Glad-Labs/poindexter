@@ -1606,25 +1606,68 @@ class TestMediaSpawnRespectsPolicy:
         assert "short_video" not in joined
 
 
-class TestStorageDelayKeyName:
-    """storage_* cutover (#731): the post-publish R2 upload delay is read
-    from the storage-agnostic ``media_upload_delay_seconds`` key, not the
-    deprecated ``media_r2_upload_delay_seconds``.
+class TestUploadMediaToR2BgRetired:
+    """The "11e" fire-and-forget tail (``_upload_media_to_r2_bg``) was
+    retired 2026-09-25 as dead code: unreachable from the default
+    approve->stage_only->promote flow (measured 30 days, zero spawns), and
+    its own drain timeout cancelled it mid-sleep on the rare path that did
+    reach it. See ``docs/architecture/services/publish_service.md`` and the
+    migration
+    ``20260925_222741_drop_the_media_upload_delay_seconds_setting_orphaned_by_the_11e_tail_retirement``.
 
-    The read lives inside the ``_upload_media_to_r2`` closure in
-    ``publish_post_from_task`` (a fire-and-forget background task that's
-    awkward to drive in isolation), so pin the contract at the source
-    level — this catches a regression that reintroduces the old key.
+    This pins the retirement so it can't silently regress back in.
     """
 
-    def test_reads_storage_agnostic_delay_key(self):
+    def test_function_and_setting_are_gone(self):
         import inspect
 
         import poindexter.services.publish_service as ps
 
+        assert not hasattr(ps, "_upload_media_to_r2_bg"), (
+            "_upload_media_to_r2_bg was retired — do not re-add it to the "
+            "immediate-publish tail; podcast/video delivery + RSS rebuilds "
+            "are owned by jobs/podcast_distribute.py and "
+            "jobs/media_distribute.py."
+        )
         src = inspect.getsource(ps)
-        # Phase-1 DI shim (#272) renamed the receiver from the module
-        # global ``site_config`` to the resolved ``_sc`` local; the
-        # storage-agnostic key name is what this test actually pins.
-        assert '.get("media_upload_delay_seconds"' in src
-        assert "media_r2_upload_delay_seconds" not in src
+        # A historical comment naming the retired key/methods is fine (and
+        # present, explaining the retirement); what must never come back is
+        # an actual read or call.
+        assert '.get("media_upload_delay_seconds"' not in src
+        assert ".upload_podcast_episode(" not in src
+        assert ".upload_video_episode(" not in src
+
+    @pytest.mark.asyncio
+    @patch("poindexter.services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("poindexter.services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("poindexter.services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("poindexter.services.publish_service._spawn_background")
+    async def test_immediate_publish_tail_never_spawns_r2_media_upload(
+        self, mock_spawn, mock_sched, mock_ping, mock_hooks, mock_export,
+    ):
+        """The immediate-publish tail — the one exit that used to spawn
+        ``_upload_media_to_r2_bg`` — no longer names any such background
+        task."""
+        db = _make_db()
+        task = _make_task(
+            topic="AI Revolution",
+            content="# Great title\n\nBody.",
+        )
+
+        with _LazyImportContext():
+            result = await publish_post_from_task(
+                db_service=db,
+                task=task,
+                task_id="no-r2-upload-task-id",
+                publisher="test-user",
+                trigger_revalidation=False,
+                queue_social=False,
+                site_config=_TEST_SC,
+            )
+
+        assert result.success is True
+        spawn_names = " ".join(
+            c.kwargs.get("name", "") for c in mock_spawn.call_args_list
+        )
+        assert "upload_media_r2" not in spawn_names

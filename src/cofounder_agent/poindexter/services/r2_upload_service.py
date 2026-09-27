@@ -20,7 +20,6 @@ Usage::
 """
 
 import io
-import os
 from pathlib import Path
 
 from poindexter.services.logger_config import get_logger
@@ -462,58 +461,6 @@ class R2UploadService:
             )
             return None
 
-    async def upload_podcast_episode(self, post_id: str) -> str | None:
-        """Upload a podcast episode MP3 to R2. Returns public URL or None.
-
-        Uses versioned path (podcast_cdn_version) for cache-busting.
-
-        On success, also stamps the public URL onto the corresponding
-        ``media_assets`` row so cleanup / retention / cost-attribution
-        sees the live URL (Glad-Labs/poindexter#161).
-        """
-        sc = self._site_config
-        try:
-            cdn_ver = sc.get("podcast_cdn_version", "v2")
-        except Exception:
-            cdn_ver = "v2"
-        podcast_dir = Path(os.path.expanduser("~")) / ".poindexter" / "podcast"
-        mp3_path = podcast_dir / f"{post_id}.mp3"
-        if not mp3_path.exists():
-            return None
-        url = await self.upload_to_r2(
-            str(mp3_path), f"podcast/{cdn_ver}/{post_id}.mp3",
-        )
-        if url:
-            await self._update_media_asset_url(
-                post_id=post_id,
-                asset_type="podcast",
-                storage_path=str(mp3_path),
-                public_url=url,
-            )
-        return url
-
-    async def upload_video_episode(self, post_id: str) -> str | None:
-        """Upload a video episode MP4 to R2. Returns public URL or None.
-
-        On success, also stamps the public URL onto the corresponding
-        ``media_assets`` row so cleanup / retention / cost-attribution
-        sees the live URL (Glad-Labs/poindexter#161).
-        """
-        video_dir = Path(os.path.expanduser("~")) / ".poindexter" / "video"
-        mp4_path = video_dir / f"{post_id}.mp4"
-        if not mp4_path.exists():
-            return None
-        url = await self.upload_to_r2(str(mp4_path), f"video/{post_id}.mp4")
-        if url:
-            # Legacy path stores rows as asset_type='video' (no _long/_short).
-            await self._update_media_asset_url(
-                post_id=post_id,
-                asset_type="video",
-                storage_path=str(mp4_path),
-                public_url=url,
-            )
-        return url
-
     async def _update_media_asset_url(
         self,
         *,
@@ -524,10 +471,20 @@ class R2UploadService:
     ) -> None:
         """Best-effort: stamp the public URL onto an existing media_assets row.
 
-        Used after a successful object-storage upload to keep the row in
-        sync with the live URL (Glad-Labs/poindexter#161). Failures log
-        and never propagate — the upload itself was the operator-visible
-        success.
+        For a caller to invoke after a successful object-storage upload, to
+        keep the row in sync with the live URL (Glad-Labs/poindexter#161).
+        No current caller — its former callers, the legacy post-keyed
+        ``upload_podcast_episode`` / ``upload_video_episode`` convenience
+        methods, were retired 2026-09-25 alongside the dead
+        ``publish_service`` tail that was their only invoker. Task-keyed
+        podcast delivery (``jobs/podcast_distribute.py``) stamps
+        ``media_assets.url`` inline with its own SQL instead of calling this;
+        task-keyed video (``jobs/media_distribute.py``) currently stamps
+        NOTHING for the raw file's R2 URL at all — a real gap, tracked
+        separately, not fixed by keeping this method around. Kept as a
+        general-purpose helper for a future upload path that wants the same
+        stamp-after-upload contract. Failures log and never propagate — the
+        upload itself was the operator-visible success.
 
         Reads the asyncpg pool from ``site_config._pool`` (set by
         ``site_config.load(pool)`` during app startup); no-ops cleanly

@@ -585,10 +585,12 @@ async def decide(
 
     When ``approved`` and a ``site_config`` is supplied, the matching R2
     RSS feed is rebuilt immediately (non-fatal) so the approval reaches
-    Apple / Spotify / the video feed without waiting for the next publish —
-    media is approved *after* the post publishes, when the publish-time R2
-    rebuild has already run. Callers without a ``site_config`` (jobs, tests,
-    legacy call sites) simply skip the rebuild — backcompat preserved
+    Apple / Spotify / the video feed right away, rather than waiting for the
+    next ``podcast_distribute`` / ``media_distribute`` cycle or the
+    ``media_feed_reconciliation`` watchdog (up to 15 min) to notice the drift
+    and converge it. Callers without a ``site_config`` (jobs, tests, legacy
+    call sites) simply skip the immediate rebuild — the reconciliation
+    watchdog still catches it, just not instantly — backcompat preserved
     (``feedback_backcompat_now_required``).
 
     ``db`` accepts either an asyncpg Pool or Connection.
@@ -617,10 +619,10 @@ async def decide(
         new_status, decided_by, medium, post_id,
     )
 
-    # Self-healing feed propagation: media is approved AFTER publish, so the
-    # R2 feed (rebuilt only on publish in publish_service) is stale until the
-    # next publish — an approval would otherwise never reach Apple/Spotify/the
-    # video feed. Rebuild the matching feed now. Non-fatal + idempotent; the
+    # Self-healing feed propagation: without this, an approval would only
+    # reach Apple/Spotify/the video feed on the next podcast_distribute /
+    # media_distribute cycle or the media_feed_reconciliation watchdog's next
+    # pass. Rebuild the matching feed now instead. Non-fatal + idempotent; the
     # approval is already committed above, so a rebuild failure must not bubble.
     if approved and site_config is not None:
         try:

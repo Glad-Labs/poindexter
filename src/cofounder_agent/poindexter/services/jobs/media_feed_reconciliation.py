@@ -9,20 +9,23 @@ that index them.
 Every podcast/video RSS rebuild is triggered by a discrete event, and each one
 swallows its own failures:
 
-* ``publish_service`` rebuilds at publish — but media is approved *after*
-  publish, so that rebuild can never contain the post it fired for.
 * ``media_approval_service.decide`` rebuilds on approve — only when the calling
   surface threads a ``site_config`` through, and inside a bare ``except``.
 * ``podcast_distribute`` Pass 3 rebuilds — only when that cycle delivered a
   *new* approved-and-undispatched asset. An episode whose URL was stamped by
   any other path reads as already-dispatched and never re-triggers it.
-* ``media_distribute`` (video) rebuilt nothing at all.
+* ``media_distribute`` (video) rebuilds only when that cycle dispatched a new
+  video — an already-dispatched one never re-triggers it.
 
 So a single dropped event left the published feed wrong until some unrelated
 later event happened to rebuild it. Measured on 2026-07-18: the podcast feed on
 R2 listed **71** episodes while **100** were DB-eligible — a 29-episode backlog
 that had survived weeks of publishes, and which only a manual
-``rebuild_podcast_feed`` cleared.
+``rebuild_podcast_feed`` cleared. (A fourth trigger, ``publish_service``, used
+to rebuild at publish time — before media is even approved, so it could never
+contain the post it fired for. Its tail was retired 2026-09-25 as dead code:
+unreachable from the default approve→stage→promote flow, 30+ days with zero
+uploads.)
 
 ## What it does
 
@@ -79,10 +82,9 @@ def _emit_drift_finding(medium: str, res: Any) -> None:
             f"but {res.rendered_items} are currently eligible. The feed has been "
             f"republished, so subscribers are current again.\n\n"
             f"The drift itself means an upstream rebuild was missed — the "
-            f"event-coupled rebuilds live in publish_service, "
-            f"media_approval_service.decide, podcast_distribute and "
-            f"media_distribute. Worth checking which one dropped it if this "
-            f"finding keeps recurring."
+            f"event-coupled rebuilds live in media_approval_service.decide, "
+            f"podcast_distribute and media_distribute. Worth checking which "
+            f"one dropped it if this finding keeps recurring."
         ),
         dedup_key=f"media_feed_drift:{medium}",
         extra={

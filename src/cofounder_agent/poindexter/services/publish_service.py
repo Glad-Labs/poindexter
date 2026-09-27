@@ -287,7 +287,7 @@ async def drain_background_tasks(timeout: float = 30.0) -> None:
     """Flush in-flight fire-and-forget publish tasks before pool teardown.
 
     The publish tail spawns its side effects fire-and-forget (newsletter,
-    R2 media upload, search-engine ping, cloud sync) — safe in the
+    search-engine ping, cloud sync) — safe in the
     long-lived worker, but a short-lived pool owner (the Prefect flow
     subprocess that builds+closes its own ``DatabaseService`` per run on
     the auto-publish path, or the CLI publish commands) reaches teardown
@@ -1158,84 +1158,6 @@ async def _resolve_tag_ids(
     return tag_ids
 
 
-async def _upload_media_to_r2_bg(site_config: SiteConfig, post_id: str) -> None:
-    """Phase 11e (fire-and-forget) — wait for media files, then upload to R2.
-
-    Waits ``media_upload_delay_seconds`` for podcast/video/short generation to
-    finish, uploads each medium to R2, then republishes the public podcast +
-    video RSS feeds through ``media_feed_rebuild``. Every step is best-effort
-    (non-fatal): a failed upload or feed rebuild never stops the ones after it.
-    """
-    import asyncio as _aio
-    from pathlib import Path
-
-    from poindexter.services.r2_upload_service import R2UploadService
-    _r2 = R2UploadService(site_config=site_config)
-    # Give podcast/video/short generation time to complete
-    _delay = int(site_config.get("media_upload_delay_seconds", "240"))
-    await _aio.sleep(_delay)
-    # Each medium is wrapped individually so a podcast failure does not
-    # also kill the video upload (and vice versa).  Without try/except here
-    # any storage hiccup raises into the fire-and-forget task and is silently
-    # swallowed (Glad-Labs/poindexter#708).  Exceptions are logged at ERROR so
-    # they surface in Grafana/GlitchTip rather than disappearing into container
-    # logs.
-    try:
-        await _r2.upload_podcast_episode(post_id)
-    except Exception as _exc:
-        logger.error(
-            "[R2] Podcast episode upload failed for post %s: %s",
-            post_id, _exc, exc_info=True,
-        )
-    try:
-        await _r2.upload_video_episode(post_id)
-    except Exception as _exc:
-        logger.error(
-            "[R2] Video episode upload failed for post %s: %s",
-            post_id, _exc, exc_info=True,
-        )
-    # Upload short video if it exists
-    short_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{post_id}-short.mp4"
-    if short_path.exists():
-        try:
-            await _r2.upload_to_r2(str(short_path), f"video/{post_id}-short.mp4", "video/mp4")
-        except Exception as _exc:
-            logger.error(
-                "[R2] Short video upload failed for post %s: %s",
-                post_id, _exc, exc_info=True,
-            )
-    # Republish both public RSS feeds through the shared rebuild seam
-    # (``media_feed_rebuild``), the one implementation every caller uses. The
-    # feeds are rendered from the DB by the worker's feed routes, not from this
-    # post's files, so they are republished even when the uploads above failed.
-    # The seam logs and swallows its own failures (worker unreachable, R2
-    # unconfigured, upload error). Each call is guarded here as well, so a
-    # podcast-feed failure can never skip the video feed.
-    try:
-        from poindexter.services.media_feed_rebuild import rebuild_podcast_feed
-
-        await rebuild_podcast_feed(site_config)
-    except Exception as _exc:
-        logger.error(
-            "[R2] Podcast feed rebuild failed for post %s (non-fatal): %s",
-            post_id, _exc, exc_info=True,
-        )
-    try:
-        from poindexter.services.media_feed_rebuild import rebuild_video_feed
-
-        await rebuild_video_feed(site_config)
-    except Exception as _exc:
-        logger.error(
-            "[R2] Video feed rebuild failed for post %s (non-fatal): %s",
-            post_id, _exc, exc_info=True,
-        )
-
-    # YouTube upload removed in the 2026-05-08 services audit cleanup —
-    # the stub adapter raised NotImplementedError and there's no real
-    # implementation behind it yet. See poindexter#449 for the OAuth
-    # setup checklist; re-wire this branch when the real adapter ships.
-
-
 async def _send_post_newsletter_bg(
     pool_or_db,
     site_config: SiteConfig,
@@ -1933,18 +1855,27 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 11b/c/d. Derived media (podcast / video / short) — REMOVED.
     # ---------------------------------------------------------------
-    # Media generation no longer fires from the publish path.
-    # It is now the backfill jobs' responsibility. The 11e R2-upload
-    # hook below remains (it uploads whatever media files exist; a no-op
-    # when none are present).
+    # Media generation no longer fires from the publish path. It is now
+    # the render pipeline's responsibility (Stage-2/3), and delivery to
+    # R2 + the RSS feeds is owned by ``jobs/podcast_distribute.py`` /
+    # ``jobs/media_distribute.py`` (task-keyed, Gate-2-approval-driven).
 
     # ---------------------------------------------------------------
-    # 11e. Upload media to R2 CDN (fire-and-forget, after generation)
+    # 11e. Upload media to R2 CDN — RETIRED 2026-09-25.
     # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks():
-        _spawn_background(
-            _upload_media_to_r2_bg(_sc, post_id), name=f"upload_media_r2({post_id})"
-        )
+    # This fire-and-forget hook (``_upload_media_to_r2_bg``) waited
+    # ``media_upload_delay_seconds``, then uploaded post-keyed
+    # ``{post_id}.{mp3,mp4}`` files to R2 and re-rendered both RSS feeds.
+    # Deleted: it was unreachable from the default approve -> stage_only ->
+    # promote flow (see ``reference_publish_post_from_task_three_exits``
+    # in project memory), its own drain timeout cancelled it mid-sleep on
+    # the rare path that did reach it, and its file-naming convention
+    # never matched what the task-keyed pipeline produces (podcast since
+    # the #884 dedup cutover, video since #1460) — measured 30 days with
+    # zero uploads. Delivery + feed rebuilds are fully covered by
+    # ``jobs/podcast_distribute.py`` / ``jobs/media_distribute.py`` (event-
+    # coupled) and ``jobs/media_feed_reconciliation.py`` (15-min DB-state
+    # convergence, catches anything an event drops).
 
     # ---------------------------------------------------------------
     # 11f. Newsletter to subscribers (fire-and-forget)

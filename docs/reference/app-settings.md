@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-09-25.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 678 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 677 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -375,7 +375,6 @@ The worker re-reads on every poll; no restart needed.
 | `indexnow_ping_url` | `https://api.indexnow.org/indexnow` |  | Auto-seeded by services.settings_defaults (#379) |
 | `internal_api_base_url` | `http://localhost:8002` |  | Base URL for the internal worker API (used for self-calls like the podcast feed regen) |
 | `media_approval_discord_notify_enabled` | `true` |  | Master switch — when true, a Discord ops ping fires when a newly-generated podcast/video/short lands in media_approva... |
-| `media_upload_delay_seconds` | `240` |  | Wait this many seconds after a post publishes before uploading podcast/video/short to the object-store CDN |
 | `memory_stale_last_alerts` | `{"shared-context": "2026-04-15T22:13:...` |  |  |
 | `memory_stale_threshold_seconds_openclaw` | `2592000` |  |  |
 | `memory_stale_threshold_seconds_shared-context` | `2592000` |  |  |

@@ -244,27 +244,6 @@ class TestContentTypes:
         assert _CONTENT_TYPES[".webp"] == "image/webp"
 
 
-class TestUploadPodcastEpisode:
-    """upload_podcast_episode convenience method."""
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_file_missing(self):
-        svc = _make_service({})
-        # Use a non-existent post_id — Path will resolve, file won't exist.
-        result = await svc.upload_podcast_episode("nonexistent-post-id-000")
-        assert result is None
-
-
-class TestUploadVideoEpisode:
-    """upload_video_episode convenience method."""
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_file_missing(self):
-        svc = _make_service({})
-        result = await svc.upload_video_episode("nonexistent-video-id-000")
-        assert result is None
-
-
 class TestConstructorRequiresSiteConfig:
     """Fail-loud: instantiation without site_config is a TypeError.
 

@@ -169,6 +169,18 @@ happens to rebuild it. Measured 2026-07-18: `podcast/feed.xml` on R2 listed
 > human to notice is the same failure as a thirty-episode one — but the
 > magnitude was overstated. Count public surfaces with a parser, not a prompt.
 
+> **Update (2026-09-25).** The `publish_service` row in the table above no
+> longer applies — its immediate-publish tail (`_upload_media_to_r2_bg`, the
+> only place it ever rebuilt a feed) was retired entirely. It was unreachable
+> from the default approve→`stage_only`→promote flow (the tail is the third
+> of three exits from `publish_post_from_task`, and the other two never spawn
+> it), and even on the rare path that did reach it, `DatabaseService.close()`
+> cancelled it mid-sleep before any upload. Its file-naming convention was
+> also stale on both media types — every podcast/video file on disk is
+> task-keyed, never the post-keyed name it looked for. The reconciliation loop
+> below is now the only one of these triggers that never depended on
+> `publish_service` having worked in the first place.
+
 `services/jobs/media_feed_reconciliation.py` (`MediaFeedReconciliationJob`, every
 15 min, `media_feed_reconciliation_enabled` default **true**) makes the feed a
 function of DB **state** instead of events. Per medium with an RSS surface

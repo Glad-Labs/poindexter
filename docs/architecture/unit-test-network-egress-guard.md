@@ -219,14 +219,18 @@ What the probe found, by target:
 
 The Postgres majority is the real story: most of these want a stubbed pool, not a live DB.
 
-The worker API row was media feed renders. `media_distribute` and `publish_service`
-re-render `/api/podcast/feed.xml` and `/api/video/feed.xml` from `internal_api_base_url`,
-which is `localhost:8002` on the operator box. Both go through the shared rebuild seam, so
-stub `rebuild_video_feed` or `rebuild_podcast_feed` at
-`poindexter.services.media_feed_rebuild`, where they are defined. The callers import them
-when they call them, so a patch on the seam module is the one they pick up. Both files were
-burned down on 2026-09-25. `publish_service._upload_media_to_r2_bg` still fetched inline
-then, and its tests patched `httpx.AsyncClient` until it moved onto the seam the same day.
+The worker API row was media feed renders. `media_distribute`, `podcast_distribute`
+and `media_approval_service.decide` re-render `/api/podcast/feed.xml` and
+`/api/video/feed.xml` from `internal_api_base_url`, which is `localhost:8002` on
+the operator box, all through the shared `poindexter.services.media_feed_rebuild`
+seam — stub `rebuild_video_feed` or `rebuild_podcast_feed` there, where they are
+defined (the callers import them when they call them, so a patch on the seam
+module is the one they pick up).
+`publish_service` used to make this same call inline from a since-deleted
+fire-and-forget tail (`_upload_media_to_r2_bg`, retired 2026-09-25 as dead
+code — see `docs/architecture/services/publish_service.md`); its tests patched
+`httpx.AsyncClient` directly, but that whole code path no longer exists.
+`test_media_distribute` was burned down on 2026-09-25.
 
 ### The baseline is a union, not a snapshot
 

@@ -7,23 +7,33 @@
 ## What it does
 
 `publish_post_from_task()` is the ONE place where a completed
-`pipeline_tasks` row becomes a row in `posts`. It runs from three
-entry points (the `/approve` endpoint with `auto_publish=True`, the
-explicit `/publish` endpoint, and the `auto_publish_gate` atom in the
-content pipeline — `TaskExecutor` was deleted 2026-05-16; its
-`_auto_publish_task` was ported to `services/auto_publish.py`)
-and handles everything that should happen exactly once when a post
-goes live: parse merged result+metadata, extract title from content,
-slugify, resolve author + category + tags, insert the `posts` row,
-update the task to `published`, emit a `post.published` webhook, then
-fan out a long list of fire-and-forget side effects.
+`pipeline_tasks` row becomes a row in `posts`. It has three exits
+(see `reference_publish_post_from_task_three_exits` in project
+memory): the `stage_only` short-circuit (the default operator flow —
+approve stages a post at `status='approved'` and returns early), the
+`_promote_or_skip_existing` short-circuit (a later go-live call
+promotes the staged row in place), and the immediate-publish tail
+(reached only by a direct/immediate publish, rare since ~2026-06-24).
+Each exit handles everything that should happen exactly once when a
+post goes live: parse merged result+metadata, extract title from
+content, slugify, resolve author + category + tags, insert (or
+promote) the `posts` row, update the task status, and — on the
+promote and tail exits — fan out a list of fire-and-forget side
+effects.
 
 Side effects (each gated by feature toggles or local-mode checks):
-sync to cloud DB, embed into pgvector, queue social posts,
-cross-post to Dev.to, ISR revalidation on Vercel, static JSON export
-to R2, IndexNow + Google sitemap pings, podcast episode generation,
-video episode generation, short-form video, R2 media upload + RSS
-regen, YouTube upload, newsletter blast, OpenClaw notification.
+sync to cloud DB, embed into pgvector, cross-post to Dev.to, ISR
+revalidation on Vercel, static JSON export to R2, IndexNow + Google
+sitemap pings, newsletter blast, operator notification. Podcast/video
+generation, delivery to R2, and RSS feed rebuilds are NOT done here —
+they're owned by the Stage-2/3 render pipeline and
+`jobs/podcast_distribute.py` / `jobs/media_distribute.py`
+(task-keyed, Gate-2-approval-driven). A prior fire-and-forget R2-upload
+hook on the immediate-publish tail (`_upload_media_to_r2_bg`, "phase
+11e") was retired 2026-09-25: it operated on a post-keyed file
+convention nothing in the pipeline had produced since the task-keyed
+delivery cutovers, and — being on the tail — was unreachable from the
+default flow besides.
 
 The pacing scheduler (`_calculate_scheduled_publish_time`) is opt-in
 via `honor_pacing=True`. Default is immediate publish because the
@@ -54,26 +64,19 @@ All from `app_settings` via `site_config`:
   set to `""` to skip IndexNow entirely.
 - `google_sitemap_ping_url` (default `https://www.google.com/ping`) —
   set to `""` to skip Google sitemap ping.
-- `internal_api_base_url` (default = `DEFAULT_WORKER_API_URL`) — read
-  by `media_feed_rebuild`, the shared feed-rebuild seam, when the
-  media-upload tail republishes the podcast/video RSS feeds to R2.
-  publish_service does not read it directly.
-- `short_video_post_publish_delay_seconds` (default `180`) — wait
-  before generating the short video so the long-form podcast/video
-  finish first.
-- `media_upload_delay_seconds` (default `240`) — wait before
-  uploading media to the object-store CDN so generators have time to
-  finish. (Storage-agnostic rename of the deprecated
-  `media_r2_upload_delay_seconds`, #731.)
 - `max_posts_per_day` (default `3`, only when `honor_pacing=True`).
 - `publish_spacing_hours` (default `4`, only when `honor_pacing=True`).
 
 Bootstrap-only env var:
 
-- `LOCAL_DATABASE_URL` — presence flips on the local-mode side
-  effects (cloud sync, podcast/video gen, R2 upload, newsletter).
-  This is one of the ~8 legitimate env vars per GH#93. See
-  `_should_run_post_publish_hooks()`.
+- `DEPLOYMENT_MODE` — `"worker"` flips on the local-mode side effects
+  (cloud sync, Dev.to cross-post, newsletter); `"coordinator"` (the
+  default) skips them all. Read directly from the environment rather
+  than via `site_config`, deliberately, so the check is consistent
+  with how `main.py` decides which mode to start in. See
+  `_should_run_post_publish_hooks()`. (Read `LOCAL_DATABASE_URL`
+  until 2026-05-08 — a stale signal no container actually set, which
+  silently disabled every hook for 8 days.)
 
 ## Dependencies
 
@@ -94,15 +97,18 @@ Bootstrap-only env var:
 - **External APIs (all fire-and-forget, errors swallowed):**
   - Vercel ISR (`trigger_nextjs_revalidation`)
   - IndexNow + Google sitemap ping
-  - Cloudflare R2 / S3 (`upload_to_r2`, `upload_podcast_episode`,
-    `upload_video_episode`)
+  - Cloudflare R2 / S3 (`upload_to_r2`, via `static_export_service` for
+    the post's JSON — NOT for podcast/video, which this file no longer
+    touches; see "What it does" above)
   - Dev.to (`DevToCrossPostService`)
-  - Media distribution — YouTube / Postiz via the `publishing_adapters` surface (`services/jobs/media_distribute.py`)
-  - Internal worker API (`internal_api_base_url`) for the RSS feed
-    rebuild, reached through `media_feed_rebuild.rebuild_podcast_feed` /
-    `rebuild_video_feed`
+  - Media distribution — podcast delivery via
+    `services/jobs/podcast_distribute.py`, video/YouTube/Postiz via the
+    `publishing_adapters` surface (`services/jobs/media_distribute.py`)
+    — neither is called from this file; they run on their own schedule
+    against the `media_assets` / `media_approvals` rows this file's
+    upstream pipeline produced
   - Newsletter delivery (`send_post_newsletter`)
-  - Telegram/Discord via `_notify_openclaw`
+  - Telegram/Discord via `notify_operator`
 
 ## Failure modes
 

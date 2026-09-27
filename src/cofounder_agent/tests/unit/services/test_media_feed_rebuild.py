@@ -2,8 +2,8 @@
 
 Shared, non-fatal helper that rebuilds a media RSS feed on R2 from the
 worker's feed route. ``media_approval_service.decide`` calls it on approve so
-an approval reaches Apple/Spotify/the video feed immediately (media is
-approved AFTER publish, when the publish-time R2 rebuild already ran).
+an approval reaches Apple/Spotify/the video feed immediately, rather than
+waiting for the next event-coupled trigger or reconciliation cycle.
 """
 from __future__ import annotations
 

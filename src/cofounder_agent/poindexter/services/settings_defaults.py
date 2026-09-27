@@ -3708,11 +3708,6 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # is pure wasted bucket space with zero possible visual benefit.
     'storage_image_max_width': '1920',
     'storage_image_max_height': '1920',
-    # Wait this many seconds after a post publishes before uploading
-    # podcast/video/short to the object-store CDN — gives generation
-    # time to finish. Storage-agnostic rename of the deprecated
-    # ``media_r2_upload_delay_seconds`` (#731).
-    'media_upload_delay_seconds': '240',
     # Minimum ASR-vs-script similarity ratio for the Stage-2 caption
     # fidelity check (media.transcribe_narration, Plan 5 #676). When the
     # one-ASR-pass transcript diverges below this normalized
@@ -6807,7 +6802,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_render_reclaim_enabled': {'owner': 'dispatch_media_pipeline', 'value_type': 'boolean'},
     'media_render_reclaim_settle_seconds': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},
     'media_render_vram_gate_enabled': {'owner': 'media_infra_health', 'value_type': 'boolean'},
-    'media_upload_delay_seconds': {'owner': 'publish_service', 'value_type': 'integer'},
     'migration_drift_deploy_checkout_path': {'owner': 'migration_drift_probe', 'value_type': 'string'},
     'migration_drift_max_inflight_defers': {'owner': 'migration_drift_probe', 'value_type': 'integer'},
     'migration_drift_recover_max_attempts': {'owner': 'migration_drift_probe', 'value_type': 'integer'},

@@ -259,8 +259,8 @@ async def test_decide_raises_when_row_does_not_exist(
 
 async def test_decide_approve_rebuilds_matching_feed(mock_db: MagicMock) -> None:
     """On approve with a site_config, the matching R2 feed is rebuilt so the
-    approval reaches Apple/Spotify/the video feed immediately — media is
-    approved AFTER publish, when the publish-time R2 rebuild already ran."""
+    approval reaches Apple/Spotify/the video feed immediately, rather than
+    waiting for the next event-coupled trigger or reconciliation cycle."""
     mock_db.fetchrow.return_value = {"status": "approved"}
     sc = MagicMock()
     with patch(

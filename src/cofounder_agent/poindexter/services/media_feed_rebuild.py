@@ -1,11 +1,13 @@
 """Rebuild — and reconcile — a media RSS feed on R2 from the worker's feed route.
 
 Shared, idempotent + non-fatal helpers. Media (podcast / video) is approved
-*after* the post publishes, but the R2 copy of a feed is only rebuilt at
-publish time (``publish_service``) — so between publish and approval the feed
-is stale and an approval never propagates until some *later* publish. That's
-the mechanism behind the 2026-05-27→06-13 feed freeze recurring even once
-assets were seeded.
+*after* the post publishes, so an approval alone never rebuilds the feed —
+before the 2026-06-14 fix below, the R2 copy was only ever rebuilt at *publish*
+time (from ``publish_service``, since retired — see the trigger list further
+down), leaving the feed stale between publish and approval until some
+*later*, unrelated publish happened to refresh it. That was the mechanism
+behind the 2026-05-27→06-13 feed freeze recurring even once assets were
+seeded.
 
 ``media_approval_service.decide`` calls :func:`rebuild_feed_for_medium` on
 approve so the approval reaches Apple / Spotify / the video feed immediately.
@@ -19,12 +21,17 @@ generalized to podcast + video so there's one rebuild seam, not three copies
 Every rebuild trigger is a discrete event, and every one of them swallows its
 own failures:
 
-- ``publish_service`` — fires at publish, *before* the medium is approved, so
-  it can never include the post it fired for.
 - ``decide()`` — only when the caller threads a ``site_config`` through.
 - ``podcast_distribute`` Pass 3 — only when that cycle delivered a *new*
   approved-and-undispatched asset; an already-dispatched one never re-fires.
 - ``media_distribute`` (video) — historically fired nothing at all.
+
+(``publish_service`` used to be a fourth trigger — fired at publish, *before*
+the medium is approved, so it could never include the post it fired for
+anyway. Its tail was retired 2026-09-25: it was unreachable from the default
+approve→stage→promote flow and had done no work in prod in 30+ days. See
+``jobs/podcast_distribute.py`` / ``jobs/media_distribute.py`` for who owns
+podcast/video delivery now.)
 
 Miss one and the published feed stays wrong until an unrelated later event
 happens to rebuild it. On 2026-07-18 the podcast feed on R2 held **71**
