@@ -17,7 +17,7 @@
 
 ---
 
-This is not a demo repo. Poindexter is the production system behind [gladlabs.io](https://www.gladlabs.io) — 210+ live posts and counting, every one generated, reviewed, and published by this pipeline on a single PC. Here is the operator's actual view of it running:
+This is not a demo repo. Poindexter™ is the production system behind [gladlabs.io](https://www.gladlabs.io) — 210+ live posts and counting, every one generated, reviewed, and published by this pipeline on a single PC. Here is the operator's actual view of it running:
 
 <img src="docs/assets/readme/console.gif" alt="Operator console, live: a post mid-pipeline in the system pulse, KPI row, approval inbox with QA verdicts, then the TRACE view and the animated system map" width="100%">
 
@@ -325,3 +325,7 @@ Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The screensho
 Built in the open by <a href="https://www.gladlabs.io">Glad Labs</a>. If Poindexter is interesting, a ⭐ helps other operators find it.
 
 </div>
+
+---
+
+_Poindexter™ is a trademark of Glad Labs LLC. The code is Apache-2.0; use of the name is covered by the [trademark policy](TRADEMARKS.md)._
