@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-09-25.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 677 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 676 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -524,7 +524,6 @@ The worker re-reads on every poll; no restart needed.
 | `shared_http_client_max_connections` | `100` |  | Auto-seeded by services.settings_defaults (#379) |
 | `shared_http_client_max_keepalive` | `20` |  | Auto-seeded by services.settings_defaults (#379) |
 | `shared_http_client_timeout_seconds` | `30.0` |  | Auto-seeded by services.settings_defaults (#379) |
-| `short_video_post_publish_delay_seconds` | `180` |  | Wait this many seconds after a post publishes before kicking off short-video generation (lets podcast finish first) |
 | `smtp_host` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `smtp_port` | `587` |  | Auto-seeded by services.settings_defaults (#379) |
 | `smtp_use_tls` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
