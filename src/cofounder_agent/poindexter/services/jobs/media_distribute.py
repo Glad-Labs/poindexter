@@ -29,11 +29,25 @@ task-keyed render output to the post-keyed Gate-2 distribution world:
    was no record of what landed on YouTube (or any handle to dedupe re-uploads).
    Runs the same cycle as link/seed so a freshly-approved asset can reach YouTube
    without waiting a cycle.
+4. **Mirror the feed's enclosures** (``services/video_r2_mirror.py``). Every
+   long-form video the RSS feed lists whose asset has no stamped URL gets its
+   raw MP4 uploaded to ``video/{post_id}.mp4`` (the key the feed advertises, one
+   spelling in ``r2_upload_service.video_episode_key``) and ``media_assets.url``
+   + ``storage_provider='cloudflare_r2'`` stamped: the video twin of
+   ``podcast_distribute._deliver_podcast``. Deliberately not part of pass 3:
+   pass 3 never revisits a row once YouTube lands, so an upload that failed
+   after a YouTube success could never be retried there, and the
+   already-dispatched backlog would be invisible to it. Keyed on the unstamped
+   URL instead, it retries on its own and heals that backlog on the first cycle.
+   Before 2026-09-27 nothing did this, and every long-form video since #1460
+   shipped a 404 enclosure (Glad-Labs/poindexter#1085). ``video_short`` is not
+   mirrored: Shorts have no RSS surface.
 
-**Single video producer (#1460).** media_distribute is the sole video distributor:
-the legacy ``backfill_videos`` disk-scan pass is retired, and reconciliation
-re-dispatches Stage-2 rather than producing competing ``{post_id}.mp4`` renders.
-One asset per post per type (schema-enforced) means no double-send.
+**Single video producer (#1460).** media_distribute is the sole video distributor
+(YouTube and the feed's copy in the bucket): the legacy ``backfill_videos``
+disk-scan pass is retired, and reconciliation re-dispatches Stage-2 rather than
+producing competing ``{post_id}.mp4`` renders. One asset per post per type
+(schema-enforced) means no double-send.
 
 **Default-OFF.** Gated on ``media_pipeline_trigger_enabled`` (the Stage-2 master
 switch, default ``false``) so the job is scheduled but a behaviour no-op in prod
@@ -56,6 +70,7 @@ from poindexter.services.jobs.dispatch_handles import (
     persist_platform_handles,
 )
 from poindexter.services.media_approval_service import record_dispatched, record_pending
+from poindexter.services.video_r2_mirror import run_video_r2_mirror
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
@@ -781,6 +796,12 @@ class MediaDistributeJob:
                             row["post_id"], medium, describe_exception(exc),
                         )
 
+        # --- Mirror pass: put the feed's enclosures in the bucket -----------
+        # Keyed on state (feed item with no stamped URL), not on this cycle's
+        # dispatches, so it also covers rows dispatched in earlier cycles and
+        # retries its own failures. See services/video_r2_mirror.py.
+        mirror = await run_video_r2_mirror(pool, sc, limit=limit)
+
         # Refresh the public video RSS feed once per cycle when this pass put a
         # new long-form episode behind it. Podcast's twin lane has always done
         # this (podcast_distribute Pass 3); the video lane did not, so a
@@ -788,14 +809,35 @@ class MediaDistributeJob:
         # (a publish, or an approve that happened to carry a site_config) came
         # along later. video_short is excluded — Shorts go to YouTube, they have
         # no RSS surface. media_feed_reconciliation is the backstop that catches
-        # whatever this still misses.
+        # whatever this still misses. The mirror pass needs no rebuild of its
+        # own: the URL it stamps is the one the feed already rendered through
+        # its fallback, so the feed body doesn't change when it lands.
         if rss_dispatched:
             from poindexter.services.media_feed_rebuild import rebuild_video_feed
 
             await rebuild_video_feed(sc)
 
-        detail = f"linked {linked}, dispatched {dispatched}"
-        return JobResult(ok=True, detail=detail, changes_made=linked + dispatched)
+        detail = (
+            f"linked {linked}, dispatched {dispatched}; "
+            f"video R2 mirror: {mirror.summary()}"
+        )
+        metrics = {
+            "linked": linked,
+            "dispatched": dispatched,
+            "video_r2_uploaded": mirror.count("uploaded"),
+            "video_r2_stamped": mirror.count("stamped"),
+            "video_r2_blocked": mirror.count("blocked"),
+            "video_r2_errors": mirror.count("error"),
+        }
+        return JobResult(
+            ok=True,
+            detail=detail,
+            changes_made=linked + dispatched + mirror.delivered,
+            # The scheduler writes an audit_log job_run row for every fire that
+            # carries metrics. An idle cycle every 10 minutes would add 144
+            # rows of zeros a day, so only a cycle that did something records.
+            metrics=metrics if any(metrics.values()) else {},
+        )
 
 
 __all__ = ["MediaDistributeJob"]

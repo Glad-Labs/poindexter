@@ -19,6 +19,7 @@ Usage::
     url = await svc.upload_to_r2("/path/to/file.mp3", "podcast/abc123.mp3")
 """
 
+import asyncio
 import io
 from pathlib import Path
 
@@ -27,6 +28,52 @@ from poindexter.services.site_config import SiteConfig
 from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
+
+
+def video_episode_key(post_id: str) -> str:
+    """The object key a post's long-form video lives at: ``video/{post_id}.mp4``.
+
+    The one place this key is spelled. The video RSS feed advertises it as the
+    enclosure fallback (``routes/video_routes.py``) and ``media_distribute``'s
+    mirror pass writes it (``services/video_r2_mirror.py``). They used to spell
+    it separately, and after the task-keyed cutover (#1460) the feed kept
+    advertising a key that nothing wrote any more: every enclosure rendered
+    since then 404ed (Glad-Labs/poindexter#1085).
+
+    Unversioned, unlike ``podcast/{cdn_ver}/…``: a post holds one long-form
+    video (``uniq_media_assets_post_video_type``), so the object is written
+    once and there is no stale render to bust. It is also the key the 59
+    pre-cutover rows were stamped with, so every enclosure URL a subscriber
+    already holds stays valid.
+    """
+    return f"video/{post_id}.mp4"
+
+
+class ObjectStoreUnavailable(RuntimeError):
+    """The object store could not say whether an object exists.
+
+    Raised by :meth:`R2UploadService.object_size` for missing config or
+    credentials, a missing ``boto3``, or any error other than "no such key".
+    Kept distinct from an absent object on purpose: a caller that read
+    "couldn't ask" as "not there" would re-upload, or report a file lost, on
+    every network blip.
+    """
+
+
+def _is_not_found(exc: Exception) -> bool:
+    """True when a botocore ``ClientError`` means the key does not exist.
+
+    ``head_object`` has no response body, so a missing key surfaces as a bare
+    ``404`` code rather than ``NoSuchKey``. Duck-typed on ``exc.response`` so
+    this module never imports botocore.
+    """
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    code = str((response.get("Error") or {}).get("Code") or "")
+    status = (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
+    return code in {"404", "NoSuchKey", "NotFound"} or status == 404
+
 
 # Cache-Control header value applied to all image uploads so CDN and
 # browsers cache them for a year. Images are content-addressed by UUID
@@ -163,6 +210,16 @@ class R2UploadService:
             return custom.rstrip("/")
         return self._storage("public_url").rstrip("/")
 
+    def object_url(self, key: str) -> str:
+        """Public URL of a non-image object at ``key``, exactly as
+        ``upload_to_r2`` would return it, or ``""`` when no public base is set.
+
+        Lets a caller record the URL of an object that is already in the
+        bucket without uploading it again.
+        """
+        base = self._storage("public_url").rstrip("/")
+        return f"{base}/{key}" if base else ""
+
     async def upload_to_r2(
         self,
         local_path: str,
@@ -263,6 +320,12 @@ class R2UploadService:
             if upload_content_type.startswith("image/"):
                 extra_args["CacheControl"] = _IMAGE_CACHE_CONTROL
 
+            # The transfer runs in a worker thread. boto3 is blocking, and
+            # the worker's event loop also answers /api/health: a 100 MB video
+            # takes ~10 s at the measured ~10 MB/s uplink (stalls of 20-50 s
+            # happen even on 5 MB podcasts), long enough for the brain to call
+            # the API down and restart the worker mid-upload. boto3 clients
+            # are thread-safe.
             if _webp_buf is not None:
                 # Upload from in-memory buffer (avoids a temp file round-trip).
                 size = _webp_buf.getbuffer().nbytes
@@ -271,7 +334,10 @@ class R2UploadService:
                     path.name, upload_r2_key, upload_content_type,
                     size / 1024 / 1024,
                 )
-                s3.upload_fileobj(_webp_buf, bucket, upload_r2_key, ExtraArgs=extra_args)
+                await asyncio.to_thread(
+                    s3.upload_fileobj, _webp_buf, bucket, upload_r2_key,
+                    ExtraArgs=extra_args,
+                )
             else:
                 size = path.stat().st_size
                 logger.info(
@@ -279,7 +345,10 @@ class R2UploadService:
                     path.name, upload_r2_key, upload_content_type,
                     size / 1024 / 1024,
                 )
-                s3.upload_file(upload_path, bucket, upload_r2_key, ExtraArgs=extra_args)
+                await asyncio.to_thread(
+                    s3.upload_file, upload_path, bucket, upload_r2_key,
+                    ExtraArgs=extra_args,
+                )
 
             # Prefer the custom image domain for image keys; fall back to the
             # generic public URL for non-image objects (audio, video, JSON).
@@ -309,9 +378,11 @@ class R2UploadService:
         """Build a boto3 S3 client + bucket name from app_settings.
 
         Returns ``(client, bucket)`` or ``(None, None)`` when credentials /
-        config are missing or boto3 isn't installed. Used by ``delete_object``
-        and ``list_keys``; ``upload_to_r2`` builds its own client inline and is
-        left untouched to keep the publish-critical path unchanged.
+        config are missing or boto3 isn't installed. Used by every read/delete
+        helper (``delete_object``, ``list_keys``, ``list_objects``,
+        ``get_json``, ``get_object_text``, ``object_size``). ``upload_to_r2``
+        still builds its own client inline, so a change here can't reach the
+        publish-critical path.
         """
         access_key = self._storage("access_key")
         secret_key = await self._storage_secret("secret_key")
@@ -461,77 +532,31 @@ class R2UploadService:
             )
             return None
 
-    async def _update_media_asset_url(
-        self,
-        *,
-        post_id: str,
-        asset_type: str,
-        storage_path: str,
-        public_url: str,
-    ) -> None:
-        """Best-effort: stamp the public URL onto an existing media_assets row.
+    async def object_size(self, key: str) -> int | None:
+        """Size in bytes of the object at ``key``, or ``None`` if there is none.
 
-        For a caller to invoke after a successful object-storage upload, to
-        keep the row in sync with the live URL (Glad-Labs/poindexter#161).
-        No current caller — its former callers, the legacy post-keyed
-        ``upload_podcast_episode`` / ``upload_video_episode`` convenience
-        methods, were retired 2026-09-25 alongside the dead
-        ``publish_service`` tail that was their only invoker. Task-keyed
-        podcast delivery (``jobs/podcast_distribute.py``) stamps
-        ``media_assets.url`` inline with its own SQL instead of calling this;
-        task-keyed video (``jobs/media_distribute.py``) currently stamps
-        NOTHING for the raw file's R2 URL at all — a real gap, tracked
-        separately, not fixed by keeping this method around. Kept as a
-        general-purpose helper for a future upload path that wants the same
-        stamp-after-upload contract. Failures log and never propagate — the
-        upload itself was the operator-visible success.
+        An authenticated S3 ``HeadObject``, not a request to the public URL:
+        ``pub-*.r2.dev`` is rate-limited and cached, and a public HEAD that
+        flakes reads as "object gone" (``media_reconciliation`` re-uploads the
+        same delivered podcasts every few hours on exactly that).
 
-        Reads the asyncpg pool from ``site_config._pool`` (set by
-        ``site_config.load(pool)`` during app startup); no-ops cleanly
-        when the pool is None (test environments, fresh boots before
-        lifespan completes).
+        Tri-state on purpose. ``None`` means the store answered "no such key";
+        :class:`ObjectStoreUnavailable` means it could not answer (config or
+        credentials missing, ``boto3`` absent, network, 403, 5xx). Folding the
+        second into the first would make every blip look like a lost file.
         """
-        sc = self._site_config
-        pool = getattr(sc, "_pool", None)
-        if pool is None:
-            return
+        s3, bucket = await self._s3_client_and_bucket()
+        if not s3:
+            raise ObjectStoreUnavailable(
+                "object store not configured (storage_endpoint / storage_bucket "
+                "/ storage_access_key / storage_secret_key), or boto3 missing",
+            )
         try:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE media_assets
-                       SET url = $4,
-                           storage_provider = 'cloudflare_r2',
-                           updated_at = NOW()
-                     WHERE post_id::text = $1
-                       AND type = $2
-                       AND storage_path = $3
-                    """,
-                    str(post_id), asset_type, storage_path, public_url,
-                )
-        except Exception as exc:
-            logger.debug(
-                "[STORAGE] media_assets URL update failed (post_id=%s type=%s): %s",
-                post_id, asset_type, exc,
-            )
-            # The file IS uploaded to R2, but the row still points at a
-            # stale/absent URL — and the site renders from that row, so this
-            # surfaces to readers as a broken or outdated image while every log
-            # looks healthy. media_assets is not audit_log, so a finding is the
-            # right signal here.
-            from poindexter.utils.findings import emit_finding
-
-            emit_finding(
-                source="services.r2_upload_service",
-                kind="media_asset_url_update_failed",
-                title="media_assets URL stamp failed after R2 upload",
-                body=(
-                    f"Stamping the public URL onto media_assets for post "
-                    f"{post_id} (type={asset_type}, path={storage_path}) raised "
-                    f"{describe_exception(exc)}. The upload itself succeeded, "
-                    f"so the asset row keeps a stale/absent url and the rendered "
-                    f"page can show a broken or outdated image."
-                ),
-                severity="info",
-                dedup_key="media_asset_url_update_failed",
-            )
+            head = await asyncio.to_thread(s3.head_object, Bucket=bucket, Key=key)
+        except Exception as exc:  # noqa: BLE001 — classified below, never swallowed
+            if _is_not_found(exc):
+                return None
+            raise ObjectStoreUnavailable(
+                f"HEAD {key} failed: {describe_exception(exc)}",
+            ) from exc
+        return int(head.get("ContentLength") or 0)

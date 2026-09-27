@@ -6,9 +6,17 @@ inline images (`images/featured/`, `images/inline/`), podcast audio
 
 ## Why orphans accumulate
 
-Image and video object keys carry a fresh UUID per generation, so regenerating
-a post's image or video writes a **new** object and leaves the old one behind.
-Deterministic keys (podcast `{post_id}` paths, `static/` JSON) overwrite instead.
+Image object keys carry a fresh UUID per generation, so regenerating a post's
+image writes a **new** object and leaves the old one behind. Deterministic keys
+overwrite instead: podcast `podcast/{cdn_ver}/{post_id}.mp3`, long-form video
+`video/{post_id}.mp4`, and `static/` JSON.
+
+Long-form video reaches the bucket through `media_distribute`'s mirror pass
+(`services/video_r2_mirror.py`): each video the RSS feed lists is uploaded to
+`video/{post_id}.mp4` and its `media_assets.url` stamped, which also keeps the
+object in the sweep's keep-set below. Shorts are not uploaded; they have no RSS
+surface. See
+[podcast-pipeline-stage3.md §11](podcast-pipeline-stage3.md#the-video-feeds-copy-in-the-bucket-shipped-2026-09-27--poindexter1085).
 
 ## Cleanup jobs
 

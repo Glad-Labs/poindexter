@@ -292,3 +292,72 @@ class TestVideoFeed:
         resp = client.get("/api/video/feed.xml")
         assert resp.status_code == 200
         assert "<item>" not in resp.text
+
+
+def _pool_serving(rows=None, captured=None):
+    async def _fetch(sql, *_a, **_kw):
+        if captured is not None:
+            captured.append(sql)
+        return rows or []
+
+    mock_conn = AsyncMock()
+    mock_conn.fetch = AsyncMock(side_effect=_fetch)
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_pool = MagicMock()
+    mock_pool.acquire.return_value = ctx
+    mock_db = MagicMock()
+    mock_db.cloud_pool = mock_pool
+    return mock_db
+
+
+class TestVideoFeedEnclosureKey:
+    """poindexter#1085: the feed advertised ``video/{post_id}.mp4`` for every
+    unstamped row while nothing wrote that key after #1460."""
+
+    @patch("poindexter.utils.route_utils.get_services")
+    def test_unstamped_row_falls_back_to_the_key_the_mirror_writes(self, mock_gs):
+        from poindexter.services.r2_upload_service import video_episode_key
+
+        mock_gs.return_value.get_database.return_value = _pool_serving([{
+            "post_id": "post-2",
+            "title": "Not mirrored yet",
+            "slug": "not-mirrored-yet",
+            "excerpt": "",
+            "published_at": datetime(2026, 9, 15, tzinfo=timezone.utc),
+            "url": "",
+            "file_size_bytes": 89_160_365,
+        }])
+
+        resp = client.get("/api/video/feed.xml")
+
+        assert resp.status_code == 200
+        expected = f"https://pub-test-bucket.r2.dev/{video_episode_key('post-2')}"
+        assert f'url="{expected}"' in resp.text
+        assert 'length="89160365"' in resp.text
+
+    @patch("poindexter.utils.route_utils.get_services")
+    def test_the_mirror_selects_with_the_feeds_own_gates(self, mock_gs):
+        """Two independent spellings of one selection must agree: if the feed
+        gains or drops a gate, the mirror has to follow, or it uploads videos
+        nobody lists (or misses ones the feed advertises)."""
+        from poindexter.services.video_r2_mirror import _CANDIDATES_SQL
+
+        captured: list[str] = []
+        mock_gs.return_value.get_database.return_value = _pool_serving(captured=captured)
+        client.get("/api/video/feed.xml")
+        feed_sql = " ".join(captured)
+
+        for gate in (
+            "status = 'published'",
+            "'video' = ANY(",
+            "media_to_generate",
+            "medium = 'video'",
+            "status = 'approved'",
+            "type = 'video'",
+            "DISTINCT ON (p.id)",
+            "created_at DESC NULLS LAST",
+        ):
+            assert gate in feed_sql, f"feed lost gate {gate!r}"
+            assert gate in _CANDIDATES_SQL, f"mirror lost gate {gate!r}"

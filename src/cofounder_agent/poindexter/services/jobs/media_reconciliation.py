@@ -513,10 +513,12 @@ class MediaReconciliationJob:
         # / cost-attribution / the public feed see the asset. This is a
         # pure DB write, so it's NOT capped and NOT time-windowed — every
         # file-present-row-absent post gets healed in a single cycle.
-        # Video is no longer R2-reconciled (#1460): Stage-2 produces it
-        # task-keyed and distribution back-stamps the media_assets row, so
-        # there's no {post_id}.mp4 on R2 to stamp. Only podcast files get the
-        # cheap file-present row-stamp pass.
+        # Video is not R2-reconciled here (#1460): Stage-2 produces it
+        # task-keyed and media_distribute links the row, then its mirror pass
+        # (services/video_r2_mirror.py) uploads video/{post_id}.mp4 and stamps
+        # the URL itself, including a stamp-only path for an object already in
+        # the bucket. A second row-stamper here would race it. Only podcast
+        # files get the cheap file-present row-stamp pass.
         stamped_podcast = 0
         for r in results:
             pid = r["id"]
@@ -817,9 +819,13 @@ class MediaReconciliationJob:
         # Pass-2 re-deliver path needn't re-query the DB.
         row["podcast_asset"] = podcast_asset or {}
 
-        # Video: presence is a media_assets video row, not an R2 file. No HEAD,
-        # no row-stamp pass for video (it's never on the {post_id}.mp4 path); a
-        # wants-video post with no video row is drift → re-dispatched (Pass 2).
+        # Video: presence is a media_assets video row, not an R2 file. No HEAD
+        # and no row-stamp pass here. Since 2026-09-27 an approved long-form
+        # video does get a video/{post_id}.mp4 object, but media_distribute's
+        # mirror pass owns it end to end (upload, stamp, and parking a row whose
+        # render is gone). A wants-video post with no video row is drift →
+        # re-dispatched (Pass 2). Not built: the podcast_delivered_gone twin
+        # (HEAD a delivered video, re-upload if its object vanished).
         row["video_missing"] = wants_video and (post_id, "video") not in existing_pairs
         row["video_exists"] = False
         row["video_url"] = ""

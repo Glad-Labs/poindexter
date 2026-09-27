@@ -1099,3 +1099,79 @@ async def test_a_refused_thumbnail_raises_a_finding(tmp_path):
     finding.assert_called_once()
     assert finding.call_args.kwargs["kind"] == "youtube_thumbnail_failed"
     assert "--apply" in finding.call_args.kwargs["body"]
+
+
+# --------------------------------------------------------------------------
+# Mirror pass (Glad-Labs/poindexter#1085): the feed's enclosures go in the
+# bucket every cycle, whether or not this cycle linked or dispatched anything
+# --------------------------------------------------------------------------
+
+
+def _mirror_result(*statuses):
+    from poindexter.services.video_r2_mirror import MirrorOutcome, MirrorPassResult
+
+    return MirrorPassResult(
+        outcomes=[MirrorOutcome(f"p{i}", s) for i, s in enumerate(statuses)],
+    )
+
+
+@pytest.mark.asyncio
+async def test_every_active_cycle_runs_the_mirror_pass_even_with_nothing_new():
+    """The pass is keyed on state, not on this cycle's dispatches: the
+    backlog it exists to heal was dispatched to YouTube cycles (months) ago."""
+    job = MediaDistributeJob()
+    pool = _FakePool(unlinked=[], approved=[])
+    sc = _sc(media_pipeline_trigger_enabled="true", media_distribute_max_per_cycle="7")
+    mirror = AsyncMock(return_value=_mirror_result("uploaded", "stamped", "blocked", "error"))
+    with patch.object(md, "run_video_r2_mirror", mirror):
+        out = await job.run(pool, {"_site_config": sc})
+
+    mirror.assert_awaited_once_with(pool, sc, limit=7)
+    assert out.ok
+    # Delivered (uploaded + stamped) count as changes; blocked/error don't.
+    assert out.changes_made == 2
+    assert "video R2 mirror: uploaded 1, stamped 1, blocked 1, errors 1" in out.detail
+    assert out.metrics["video_r2_uploaded"] == 1
+    assert out.metrics["video_r2_stamped"] == 1
+    assert out.metrics["video_r2_blocked"] == 1
+    assert out.metrics["video_r2_errors"] == 1
+
+
+@pytest.mark.asyncio
+async def test_an_idle_cycle_records_no_metrics():
+    """The scheduler turns any metrics into an audit_log job_run row; an idle
+    10-minute cycle must not write 144 rows of zeros a day."""
+    job = MediaDistributeJob()
+    with patch.object(md, "run_video_r2_mirror", AsyncMock(return_value=_mirror_result())):
+        out = await job.run(
+            _FakePool(unlinked=[], approved=[]),
+            {"_site_config": _sc(media_pipeline_trigger_enabled="true")},
+        )
+    assert out.ok
+    assert out.metrics == {}
+
+
+@pytest.mark.asyncio
+async def test_a_dormant_lane_does_not_mirror():
+    job = MediaDistributeJob()
+    mirror = AsyncMock(return_value=_mirror_result())
+    with patch.object(md, "run_video_r2_mirror", mirror):
+        await job.run(_FakePool(), {"_site_config": _sc()})
+    mirror.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_mirror_only_cycle_does_not_rebuild_the_feed():
+    """The stamped URL is the one the feed already rendered through its
+    fallback, so a cycle that only mirrored has nothing to republish."""
+    job = MediaDistributeJob()
+    mirror = AsyncMock(return_value=_mirror_result("uploaded"))
+    rebuild = AsyncMock()
+    with patch.object(md, "run_video_r2_mirror", mirror), \
+            patch("poindexter.services.media_feed_rebuild.rebuild_video_feed", rebuild):
+        await job.run(
+            _FakePool(unlinked=[], approved=[]),
+            {"_site_config": _sc(media_pipeline_trigger_enabled="true")},
+        )
+    mirror.assert_awaited_once()
+    rebuild.assert_not_awaited()

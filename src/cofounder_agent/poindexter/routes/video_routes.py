@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, Response
 
 from poindexter.schemas.media_schemas import VideoEpisodeListResponse
 from poindexter.services.logger_config import get_logger
+from poindexter.services.r2_upload_service import video_episode_key
 from poindexter.services.video_service import VIDEO_DIR
 from poindexter.utils.route_utils import get_site_config_dependency
 
@@ -176,9 +177,13 @@ async def video_feed(
             SubElement(item, "pubDate").text = _rfc2822(pub_date)
 
         # Prefer the media_assets R2 url (#689 source of truth); fall back to
-        # the deterministic CDN path for rows without a stamped url.
+        # the deterministic key for rows not stamped yet. The fallback and
+        # media_distribute's mirror pass share video_episode_key, so a feed
+        # item's URL is the object the mirror writes and stays the same after
+        # the stamp lands. They used to be spelled apart, and every enclosure
+        # since #1460 pointed at a key nothing wrote (poindexter#1085).
         enclosure = SubElement(item, "enclosure")
-        enclosure.set("url", ep["url"] or f"{_r2}/video/{pid}.mp4")
+        enclosure.set("url", ep["url"] or f"{_r2}/{video_episode_key(pid)}")
         enclosure.set("length", str(ep["file_size_bytes"]))
         enclosure.set("type", "video/mp4")
 

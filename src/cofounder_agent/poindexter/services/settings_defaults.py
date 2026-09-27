@@ -3231,6 +3231,15 @@ DEFAULTS: dict[str, str] = {
     # published post + seeds Gate-2 approvals; caps assets linked per cycle.
     # Gated on the same media_pipeline_trigger_enabled master switch.
     'media_distribute_max_per_cycle': '20',
+    # media_distribute's mirror pass (services/video_r2_mirror.py) uploads the
+    # raw MP4 of every long-form video the RSS feed lists to video/{post_id}.mp4
+    # and stamps media_assets.url; without it every enclosure since #1460
+    # 404ed (poindexter#1085). Turn off only on an install that doesn't publish
+    # the video feed. A video it can't mirror (the local render is gone) is
+    # parked for video_r2_mirror_recheck_hours, so the pass doesn't HEAD dead
+    # rows every cycle and still picks up a render restored to its path.
+    'video_r2_mirror_enabled': 'true',
+    'video_r2_mirror_recheck_hours': '24',
     # Stage-3 podcast lane (#689 deviation — separate isolated graph). Its own
     # master switch so podcast goes live independently of the video media_pipeline
     # (default off — safe for OSS forks; the operator flips prod to 'true').
@@ -4197,6 +4206,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.youtube_thumbnail_failed.fallback': 'log_only',
     'findings.youtube_thumbnail_failed.cooldown_minutes': '360',
     'findings.youtube_thumbnail_failed.min_severity': 'warn',
+    # Approved long-form videos whose RSS enclosure can't be put in the bucket
+    # because the local render is gone (media_distribute's mirror pass). One
+    # finding per newly blocked SET, never per cycle — the rows are parked, so
+    # the cooldown only spaces two different sets. Routine ops → Discord.
+    'findings.video_r2_mirror_blocked.delivery': 'discord',
+    'findings.video_r2_mirror_blocked.fallback': 'log_only',
+    'findings.video_r2_mirror_blocked.cooldown_minutes': '60',
+    'findings.video_r2_mirror_blocked.min_severity': 'warn',
     # ----- Media QA findings (podcast + video) -----
     # Every one of these inherited findings.default.delivery='log_only', so the
     # whole media-QA surface emitted into audit_log and told nobody: 74
@@ -6606,6 +6623,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.short_hook_unrepaired.fallback': {'value_type': 'string'},
     'findings.short_hook_unrepaired.cooldown_minutes': {'value_type': 'integer'},
     'findings.short_hook_unrepaired.min_severity': {'value_type': 'string'},
+    'findings.video_r2_mirror_blocked.delivery': {'value_type': 'string'},
+    'findings.video_r2_mirror_blocked.fallback': {'value_type': 'string'},
+    'findings.video_r2_mirror_blocked.cooldown_minutes': {'value_type': 'integer'},
+    'findings.video_r2_mirror_blocked.min_severity': {'value_type': 'string'},
     'findings_daily_digest_enabled': {'owner': 'findings_daily_digest', 'value_type': 'boolean'},
     'findings_daily_digest_lookback_hours': {'owner': 'findings_daily_digest', 'value_type': 'integer'},
     'findings_daily_digest_top_n': {'owner': 'findings_daily_digest', 'value_type': 'integer'},
@@ -6798,6 +6819,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media.video.topic_match_min': {'owner': 'media_quality_service', 'value_type': 'integer'},
     'media.video.topic_match_model': {'owner': 'media_quality_service'},
     'media_distribute_max_per_cycle': {'owner': 'media_distribute', 'value_type': 'integer'},
+    'video_r2_mirror_enabled': {'owner': 'video_r2_mirror', 'value_type': 'boolean'},
+    'video_r2_mirror_recheck_hours': {'owner': 'video_r2_mirror', 'value_type': 'integer'},
     'media_feed_reconcile_max_shrink': {'owner': 'media_feed_rebuild', 'value_type': 'integer'},
     'media_feed_reconciliation_enabled': {'owner': 'media_feed_reconciliation', 'value_type': 'boolean'},
     'media_pipeline_max_per_cycle': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},

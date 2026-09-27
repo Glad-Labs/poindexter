@@ -627,3 +627,146 @@ def test_convert_to_webp_emits_finding_on_failure(tmp_path, monkeypatch):
     assert calls, "expected an emit_finding call on conversion failure"
     assert calls[0]["kind"] == "webp_conversion_fallback"
     assert calls[0]["severity"] == "info"
+
+
+# ---------------------------------------------------------------------------
+# Video feed delivery seams (Glad-Labs/poindexter#1085)
+# ---------------------------------------------------------------------------
+
+
+def _client_error(code: str, status: int) -> Exception:
+    """A botocore-``ClientError``-shaped exception without importing botocore."""
+    exc = RuntimeError(f"An error occurred ({code})")
+    exc.response = {  # type: ignore[attr-defined]
+        "Error": {"Code": code},
+        "ResponseMetadata": {"HTTPStatusCode": status},
+    }
+    return exc
+
+
+class TestObjectSize:
+    """object_size — an authenticated HEAD with three distinct answers."""
+
+    @pytest.mark.asyncio
+    async def test_present_object_returns_its_size(self):
+        svc = _make_service({})
+        fake_s3 = MagicMock()
+        fake_s3.head_object.return_value = {"ContentLength": 89_160_365}
+        with patch.object(
+            R2UploadService, "_s3_client_and_bucket",
+            AsyncMock(return_value=(fake_s3, "bucket")),
+        ):
+            assert await svc.object_size("video/p.mp4") == 89_160_365
+        fake_s3.head_object.assert_called_once_with(Bucket="bucket", Key="video/p.mp4")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("code", "status"), [("404", 404), ("NoSuchKey", 404), ("NotFound", 0)])
+    async def test_missing_object_is_none(self, code, status):
+        svc = _make_service({})
+        fake_s3 = MagicMock()
+        fake_s3.head_object.side_effect = _client_error(code, status)
+        with patch.object(
+            R2UploadService, "_s3_client_and_bucket",
+            AsyncMock(return_value=(fake_s3, "bucket")),
+        ):
+            assert await svc.object_size("video/p.mp4") is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error",
+        [_client_error("AccessDenied", 403), _client_error("InternalError", 500), OSError("reset")],
+    )
+    async def test_an_unanswered_head_is_not_an_absent_object(self, error):
+        """Reading "couldn't ask" as "not there" would re-upload, or report a
+        file lost, on every blip."""
+        from poindexter.services.r2_upload_service import ObjectStoreUnavailable
+
+        svc = _make_service({})
+        fake_s3 = MagicMock()
+        fake_s3.head_object.side_effect = error
+        with patch.object(
+            R2UploadService, "_s3_client_and_bucket",
+            AsyncMock(return_value=(fake_s3, "bucket")),
+        ), pytest.raises(ObjectStoreUnavailable):
+            await svc.object_size("video/p.mp4")
+
+    @pytest.mark.asyncio
+    async def test_an_unconfigured_store_is_unavailable(self):
+        from poindexter.services.r2_upload_service import ObjectStoreUnavailable
+
+        svc = _make_service({})
+        with patch.object(
+            R2UploadService, "_s3_client_and_bucket",
+            AsyncMock(return_value=(None, None)),
+        ), pytest.raises(ObjectStoreUnavailable):
+            await svc.object_size("video/p.mp4")
+
+
+class TestObjectUrlAndVideoKey:
+    def test_video_episode_key(self):
+        from poindexter.services.r2_upload_service import video_episode_key
+
+        assert video_episode_key("post-1") == "video/post-1.mp4"
+
+    def test_object_url_matches_what_upload_returns(self):
+        svc = _make_service({"storage_public_url": "https://pub-test.r2.dev/"})
+        assert svc.object_url("video/p.mp4") == "https://pub-test.r2.dev/video/p.mp4"
+
+    def test_object_url_is_empty_without_a_public_base(self):
+        assert _make_service({}).object_url("video/p.mp4") == ""
+
+    @pytest.mark.asyncio
+    async def test_object_url_equals_the_uploaded_url(self, tmp_path):
+        mp4 = tmp_path / "v.mp4"
+        mp4.write_bytes(b"video")
+        values = {
+            "storage_access_key": "k",
+            "storage_secret_key": "s",
+            "storage_endpoint": "https://x.r2.dev",
+            "storage_bucket": "b",
+            "storage_public_url": "https://pub-test.r2.dev",
+        }
+        svc = _make_service(values)
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = MagicMock()
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            uploaded = await svc.upload_to_r2(str(mp4), "video/p.mp4", "video/mp4")
+        assert uploaded == svc.object_url("video/p.mp4")
+
+
+class TestUploadRunsOffTheEventLoop:
+    """A 100 MB video takes ~10 s at the measured uplink. On the loop, that
+    blocks the worker's /api/health long enough for the brain to restart it."""
+
+    @pytest.mark.asyncio
+    async def test_the_transfer_runs_in_a_worker_thread(self, tmp_path):
+        import asyncio
+        import threading
+
+        mp4 = tmp_path / "v.mp4"
+        mp4.write_bytes(b"video")
+        seen: dict[str, object] = {}
+
+        def _upload_file(*_a, **_kw):
+            seen["thread"] = threading.current_thread()
+            try:
+                asyncio.get_running_loop()
+                seen["loop"] = True
+            except RuntimeError:
+                seen["loop"] = False
+
+        mock_s3 = MagicMock()
+        mock_s3.upload_file.side_effect = _upload_file
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        svc = _make_service({
+            "storage_access_key": "k",
+            "storage_secret_key": "s",
+            "storage_endpoint": "https://x.r2.dev",
+            "storage_bucket": "b",
+            "storage_public_url": "https://pub-test.r2.dev",
+        })
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            assert await svc.upload_to_r2(str(mp4), "video/p.mp4") is not None
+        assert seen["thread"] is not threading.main_thread()
+        assert seen["loop"] is False

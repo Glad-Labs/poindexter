@@ -443,6 +443,91 @@ all producers are conflict-aware so the one-video-per-post invariant holds going
 > read-side surface independently of the §11 `video_long`→`video` rename +
 > distributor re-dispatch cutover above.
 
+### The video feed's copy in the bucket (shipped 2026-09-27 — poindexter#1085)
+
+The cutover left one duty behind. Item 2 made `media_distribute` the only video
+distributor, but it only uploaded to YouTube. The video RSS feed gives each
+approved, published long-form video an enclosure built from `media_assets.url`,
+falling back to `video/{post_id}.mp4`. Everything that used to write that key
+was post-keyed: the retired `_regen_video`, and `publish_service`'s
+publish-time upload (itself dead and retired in #4086). From #1460 on, renders
+were task-keyed (`{task_id}.mp4`, `storage_provider='local'`, `url=''`), so
+nothing wrote the key or stamped the URL. Every long-form video approved since
+then shipped a dead enclosure. The podcast lane never had this gap:
+`podcast_distribute._deliver_podcast` uploads the MP3 and stamps its URL.
+
+Measured 2026-09-25 and re-checked 2026-09-27:
+
+- The feed had 69 items and **11 enclosures returned 404**, all task-keyed
+  renders published 2026-06-23 to 09-15.
+- 13 feed items had no stamped URL: those 11, plus 2 whose key did resolve,
+  but to a pre-cutover render of another size (61.7 MB and 5.4 MB, against
+  rows recording 39.2 MB and 46.4 MB).
+- Of the 11, **6 still had their local render** (41–97 MB). **5 did not.** The
+  oldest file left in the video dir is from 2026-08-02.
+- A dry run of the new pass against prod on 2026-09-27 (the real query and
+  real HEADs; writes recorded, not executed) chose exactly that: upload 6
+  (420 MB), park 5 as `source_missing` and the 2 as `mismatch`, and raise one
+  finding for the 7.
+
+**The fix is a mirror pass in `media_distribute`** (`services/video_r2_mirror.py`),
+the video twin of `_deliver_podcast`. It uploads the render to
+`video/{post_id}.mp4` and stamps `url` + `storage_provider='cloudflare_r2'`.
+The decisions:
+
+- **It is its own pass, keyed on state.** It is not a step inside the YouTube
+  pass (pass 3), because pass 3 selects `dispatched_at IS NULL` and never
+  revisits a row once YouTube lands. An upload that failed after a YouTube
+  success could never be retried there, and the backlog (all dispatched
+  months ago) was invisible to it. The mirror selects "feed items with no
+  stamped URL" using the feed's own gates. A test compares the two queries
+  gate by gate. So the pass retries its own failures, and it clears the
+  backlog on its first cycle after deploy, as in §10. There is no backfill
+  script.
+- **The key is `video/{post_id}.mp4`, unversioned.** It is the key the feed's
+  fallback already advertised, and the key all 59 pre-cutover rows were stamped
+  with. So the URL a subscriber already holds for a dead item starts resolving
+  where it is, and the rendered feed doesn't change when the stamp lands. No
+  republish is needed. There is no `cdn_ver` as podcast has, because a post
+  holds one long-form video (`uniq_media_assets_post_video_type`) and the
+  object is written once. The key is now spelled in one place,
+  `r2_upload_service.video_episode_key`, which the feed and the mirror both call.
+- **It checks the bucket before uploading, with an authenticated HEAD.**
+  `R2UploadService.object_size` sends an S3 `HeadObject` rather than hitting the
+  rate-limited public URL. It returns a size, "absent", or raises
+  `ObjectStoreUnavailable`. An object matching the render's size is only
+  stamped, so there is no 100 MB re-upload. A different object under a present
+  render is replaced with the approved one, since that render is what the
+  operator reviewed at Gate 2. A store that can't answer ends the pass for
+  that cycle; it never counts as "absent".
+- **Rows it can't deliver are parked, not retried every cycle.** When the
+  render is gone, the pass writes `media_assets.metadata->'r2_mirror'`
+  (`source_missing`, or `mismatch` when the key holds another file) and
+  re-checks the row every `video_r2_mirror_recheck_hours` (24). A render
+  restored to its `storage_path` is picked up with no flag to clear. One
+  `video_r2_mirror_blocked` finding (Discord) fires per newly blocked set,
+  never per cycle. The finding lists the recovery options:
+  - restore the render (YouTube Studio can download the approved upload);
+  - drop the item from the feed with `poindexter media reject <post> video`;
+  - re-render. That means deleting the `video` row first, and the new render
+    inherits the existing approval.
+- **The upload runs off the event loop.** `upload_to_r2` now runs the boto3
+  transfer in `asyncio.to_thread`, for every caller. The measured uplink is
+  ~10 MB/s, with 20–54 s stalls on 5 MB podcasts. A 97 MB video on the loop
+  would stall the worker's `/api/health` long enough for the brain to restart
+  the worker mid-upload.
+- **`video_short` is not mirrored, by choice.** Shorts go to YouTube Shorts and
+  have no RSS surface, so a copy in the bucket would have no reader.
+- `video_r2_mirror_enabled` (default `true`) turns the pass off for an install
+  that doesn't publish the video feed. The pass also runs only while
+  `media_pipeline_trigger_enabled` is on, like the rest of `media_distribute`.
+
+**Still open:** `media_reconciliation` treats video presence as "has a `video`
+row" and never HEADs video objects. Nothing checks whether a delivered video's
+object is still there, which the podcast lane does with
+`podcast_delivered_gone`. The stamped URL keeps the object in
+`media_orphan_sweep`'s keep-set, so that sweep won't delete it.
+
 ## 12. Podcast one-per-post parity (shipped 2026-07-17 — #884)
 
 The §11 cutover gave the **video** lane a one-asset-per-post invariant
