@@ -326,10 +326,10 @@ class AppContainer:
         ``research_min_snippet_length`` / ``research_min_snippet_words`` /
         ``research_dedup_similarity_threshold`` + the
         ``research_tier1_domains`` / ``research_tier2_domains`` overrides
-        from ``SiteConfig`` at construction. ``research_service`` builds its
-        own per-call instance from the context SiteConfig (caller-bridge);
-        this property is the canonical wiring seam for container-aware
-        callers + tests.
+        from ``SiteConfig`` at construction. Only tests construct it today:
+        ``research_service`` never has, and its one production caller (the
+        content_agent research agent) was deleted in poindexter#367. This
+        property is the seam a re-wired caller should use.
 
         ``WebhookDeliveryService`` migrated in the same batch but needs a
         runtime ``pool`` the container can't supply at build time, so it has

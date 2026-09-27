@@ -9,6 +9,7 @@ recency scoring, deduplication, uniqueness recalculation, and context formatting
 import pytest
 
 from poindexter.services.research_quality_service import ResearchQualityService, ScoredSource
+from poindexter.services.settings_defaults import DEFAULTS
 from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
@@ -279,9 +280,7 @@ _SNIPPET = " ".join(
 def _reworded(text: str, every: int) -> str:
     """A re-scrape or light syndication rewrite: differences SCATTERED through
     the snippet rather than gathered in one place."""
-    return " ".join(
-        ("data" if i % every == 0 else w) for i, w in enumerate(text.split())
-    )
+    return " ".join(("data" if i % every == 0 else w) for i, w in enumerate(text.split()))
 
 
 class TestSimilarityOnRealisticSnippets:
@@ -314,9 +313,7 @@ class TestSimilarityOnRealisticSnippets:
 
     def test_genuinely_different_snippets_stay_below_the_threshold(self, service):
         """The fix must not collapse everything into one duplicate."""
-        other = " ".join(
-            ["quarterly revenue guidance margin expansion retail footprint"] * 30
-        )
+        other = " ".join(["quarterly revenue guidance margin expansion retail footprint"] * 30)
         assert service._calculate_similarity(_SNIPPET, other) < service.SIMILARITY_THRESHOLD
 
     def test_identical_long_snippets_still_score_1(self, service):
@@ -525,3 +522,32 @@ class TestDeduplicate:
         ]
         result = svc._deduplicate(sources)
         assert len(result) == 3
+
+
+# ---------------------------------------------------------------------------
+# Scoring-weight settings
+# ---------------------------------------------------------------------------
+
+# No lint can see a key built by _weight()'s f-string, so these tests are the
+# only thing tying each seeded row to the read it is meant to back.
+_WEIGHT_SETTINGS = {
+    "research_credibility_weight": "credibility_weight",
+    "research_snippet_quality_weight": "snippet_quality_weight",
+    "research_recency_weight": "recency_weight",
+    "research_uniqueness_weight": "uniqueness_weight",
+}
+
+
+class TestScoringWeightSettings:
+    @pytest.mark.parametrize(("key", "attr"), _WEIGHT_SETTINGS.items())
+    def test_unseeded_default_matches_the_seed(self, key, attr):
+        svc = ResearchQualityService(site_config=SiteConfig())
+        assert getattr(svc, attr) == float(DEFAULTS[key])
+
+    @pytest.mark.parametrize(("key", "attr"), _WEIGHT_SETTINGS.items())
+    def test_the_seeded_key_is_the_one_the_service_reads(self, key, attr):
+        svc = ResearchQualityService(site_config=SiteConfig(initial_config={key: "0.77"}))
+        assert getattr(svc, attr) == 0.77
+
+    def test_seeded_weights_sum_to_one(self):
+        assert sum(float(DEFAULTS[k]) for k in _WEIGHT_SETTINGS) == pytest.approx(1.0)

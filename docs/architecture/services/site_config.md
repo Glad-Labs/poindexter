@@ -119,7 +119,11 @@ finds a key that is read but never exists. Secrets are exempt structurally
 (a legacy-key fallback, an OSS-privacy redaction, a bootstrap credential)
 needs a reasoned entry in that lint's own `ALLOWLIST`. A ratchet, like the
 value-drift lint above: existing gaps are grandfathered, only a net-new one
-fails CI.
+fails CI. It sees literal keys only: a key assembled at the call site
+(`research_quality_service.py`'s `_weight()` reads `f"research_{key}_weight"`)
+is invisible to it by construction, so a dynamically keyed tunable has to be
+seeded by hand, with a unit test that ties each seeded key to the read it backs
+(see `TestScoringWeightSettings`).
 
 The only env vars `SiteConfig` itself touches:
 

@@ -5710,6 +5710,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         'arxiv.org,research.google.com,aws.amazon.com,cloud.google.com,'
         'microsoft.com,apple.com'
     ),
+    # The four source-scoring weights, added 2026-09-27: _weight() reads them as
+    # f"research_{key}_weight", which the literal-key phantom-read lint cannot
+    # see, so the audit above missed them. Values are the class constants; they
+    # sum to 1.0 because overall_score is their weighted sum.
+    'research_credibility_weight': '0.4',
+    'research_snippet_quality_weight': '0.3',
+    'research_recency_weight': '0.2',
+    'research_uniqueness_weight': '0.1',
     # qa.audio rail thresholds (qa_audio.py) — dotted namespace matches the
     # `media.*` config convention used elsewhere for media-pipeline knobs.
     'media.qa.audio.max_silence_s': '3.0',
@@ -7292,6 +7300,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'research_dedup_similarity_threshold': {'owner': 'research_quality_service', 'value_type': 'float'},
     'research_tier1_domains': {'owner': 'research_quality_service', 'value_type': 'string'},
     'research_tier2_domains': {'owner': 'research_quality_service', 'value_type': 'string'},
+    'research_credibility_weight': {'owner': 'research_quality_service', 'value_type': 'float'},
+    'research_snippet_quality_weight': {'owner': 'research_quality_service', 'value_type': 'float'},
+    'research_recency_weight': {'owner': 'research_quality_service', 'value_type': 'float'},
+    'research_uniqueness_weight': {'owner': 'research_quality_service', 'value_type': 'float'},
     'media.qa.audio.max_silence_s': {'owner': 'qa_audio', 'value_type': 'float'},
     'media.qa.audio.min_mean_volume_db': {'owner': 'qa_audio', 'value_type': 'float'},
     'media.qa.audio.max_volume_clip_db': {'owner': 'qa_audio', 'value_type': 'float'},
