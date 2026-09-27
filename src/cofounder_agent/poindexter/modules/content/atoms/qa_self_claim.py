@@ -699,9 +699,14 @@ def _product_markers(site_config: Any) -> list[str]:
     return markers or ["poindexter"]
 
 
+# First-person prose about our own system. Plurals count ("our content QA
+# rails"): the trailing \b used to reject them, so a draft full of first-party
+# claims that never named the product read as not-applicable and nothing was
+# checked (poindexter#1077). "job" is deliberately absent — "we did a good job"
+# is ordinary English and would pull every draft in.
 _SELF_PROSE_RE = re.compile(
     r"\b(?:our|we)\b.{0,50}\b(?:pipeline|rail|atom|graph|worker|scheduler|"
-    r"codebase|repo|release|queue|dashboard)\b",
+    r"codebase|repo|release|queue|dashboard|stack|tap|gate|probe|migration)s?\b",
     re.IGNORECASE | re.DOTALL,
 )
 

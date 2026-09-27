@@ -73,6 +73,24 @@ class TestSelfReferenceGate:
             "Last week we rewired the pipeline to defer rejects.", "", ["zzz"],
         )
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # poindexter#1077 — the draft that went unchecked.
+            "We shipped a searchable-entity title gate as part of our content QA rails.",
+            "Our probes page once per failure episode now.",
+            "We moved three migrations into the baseline.",
+            "Our stack runs on one PC.",
+        ],
+    )
+    def test_plural_and_extended_system_nouns_fire(self, text):
+        assert atom.is_self_referential(text, "", ["zzz"])
+
+    def test_a_good_job_is_not_our_system(self):
+        assert not atom.is_self_referential(
+            "We did a good job, and our team celebrated the result.", "", ["zzz"],
+        )
+
     def test_unrelated_product_review_does_not_fire(self):
         assert not atom.is_self_referential(
             "Next.js 16 shipped the app router. It changed everything for React.",
