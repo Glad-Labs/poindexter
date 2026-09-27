@@ -54,6 +54,8 @@ Poindexter is in alpha, Apache 2.0, self-host only, honest rough edges listed in
 
 And if you're an engineer wondering whether directing agents is real engineering: I spent a year embarrassed about it, and the artifact ships daily and survives its own test suite. Draw your own conclusion — I've drawn mine.
 
+[IF THE FIELD GUIDE IS LIVE — otherwise delete this paragraph:] If the part of this you care about is the directing rather than the pipeline, I'm writing that up properly: _Green Is Not a Result_, a field guide to running a codebase your agents write. It covers the operating rules, the measured failures that earned each one, and the guardrails you can drop into your own repo the same evening. [Pre-order at gladlabs.ai/field-guide](https://www.gladlabs.ai/field-guide).
+
 ---
 
-_Posting notes: publish on gladlabs.io dev diary as canonical. Syndicate to dev.to with `canonical_url` set. This post is separately submittable to HN later (plain link submission, not Show HN) — it's a second lottery ticket, at least a few weeks after the Show HN._
+_Posting notes (updated 2026-09-26, see the strategy update in `marketing/launch/launch-plan.md`): publish on gladlabs.io dev diary as canonical. Syndicate to dev.to with `canonical_url` set. **This post is now the main HN submission** (plain link submission, not Show HN), because its audience of everyone directing coding agents is far larger than the audience that can run a 23-container GPU stack. The Show HN for the tool follows later, or not at all if this thread already carries it. Before posting, refresh the numbers that drift (live posts, pipeline runs, stars) and add the story's URL to the README's provenance line._

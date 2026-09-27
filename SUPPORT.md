@@ -25,10 +25,10 @@ Poindexter is built and maintained by [Glad Labs LLC](https://www.gladlabs.io). 
 
 ### Paid (sold by Glad Labs LLC)
 
-- **Pro ($19/month or $180/year, Founding Member rate)** — premium prompts (Matt's full production library, exported from Langfuse), a 300+-key tuned `app_settings` seed, 5 premium Grafana dashboards (Pipeline, QA Rails, Cost & Analytics, Revenue, Observability), VIP Discord, and the full Poindexter book. Continuous updates as Matt tunes the live system — the subscription buys freshness, not gated features; the engine itself stays fully functional under Apache 2.0. Cancel anytime — you keep everything you downloaded.
+- **Pro ($19/month or $180/year, Founding Member rate, 7-day free trial)** — the operator console (the cockpit UI, and the one Pro-only surface), the live config seed (1,200+ non-secret production settings, re-exported from the running system every week and adopted with a dry-run-first `poindexter pro apply`), the Poindexter book, and the founding-member Discord. Pro gates exactly one surface, the console; everything else it sells is curation and freshness, not capability. Every prompt pack and every Grafana dashboard ships free in this repo. Cancel anytime — you keep everything you downloaded.
 - **Custom development and consulting** — for organizations that want a Glad Labs-staffed integration. Inquire at sales@gladlabs.io.
 
-The free version is fully functional. Pro exists because Matt runs Poindexter as his own content business daily — the subscription gives you continuous access to his production tuning. The engine improves as a side effect of running the business, and subscribers get those improvements automatically.
+The free version is fully functional. Pro exists because Matt runs Poindexter as his own content business daily — the subscription gives you continuous access to his production tuning. Engine improvements ship to everyone, free, on every push; subscribers also get the tuning changes, rebuilt from the live system every week.
 
 ## Response time expectations
 

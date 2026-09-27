@@ -25,9 +25,19 @@ export const LS_PRO_URL =
 // Prices shown on the site. Lemon Squeezy controls the actual charged price;
 // these are copy only. Keep them in sync manually.
 // Founding Member rate — locked for life; the standard rate rises after launch.
+//
+// WHAT Pro contains is described in marketing/pro-offer.md — the one canonical
+// description, with the list of every surface (README, SUPPORT.md, docs, these
+// pages, the FAQ) that paraphrases it. Change the offer there first.
 export const PRO_MONTHLY_USD = 19;
 export const PRO_ANNUAL_USD = 180;
 export const PRO_TRIAL_DAYS = 7;
+
+// Seed size, stated as a floor. The weekly pro-freshness rebuild writes the
+// exact count into the Pro repo's config/README.md (1,228 on 2026-09-20). This
+// read "1,800+" while the build shipped 1,228 — a floor that overstates is a
+// false claim on a paid product, so lower it the week a rebuild dips below.
+export const PRO_SEED_KEYS_FLOOR = '1,200+';
 
 // LIVE since 2026-08-26: the pay→deliver chain shipped (glad-labs-stack#3216 —
 // LS poll → GitHub collaborator invite, weekly freshness rebuilds) and a live
@@ -35,6 +45,26 @@ export const PRO_TRIAL_DAYS = 7;
 // pointed to the founding-members community instead of checkout, so no one
 // could be charged for a deliverable that couldn't yet be delivered.
 export const CHECKOUT_LIVE = true;
+
+// The field guide — a one-time e-book for developers directing AI coding
+// agents on a real codebase (plan + turn-on checklist:
+// marketing/field-guide/README.md). OFF by default: /field-guide 404s and the
+// nav hides it until BOTH the flag is true AND a Lemon Squeezy buy URL is set,
+// so flipping the flag alone can never publish a page with a dead checkout.
+export const FIELD_GUIDE_LIVE = false;
+export const LS_FIELD_GUIDE_URL = '';
+// Copy only — Lemon Squeezy charges the real price. 0 turns the page into a
+// free "notify me" waitlist (a $0 LS product) instead of a pre-order.
+export const FIELD_GUIDE_PRICE_USD = 29;
+// Ship month shown on the page, e.g. 'December 2026'. Required for a paid
+// pre-order: the page states it next to the refund promise.
+export const FIELD_GUIDE_SHIPS = '';
+// Optional: a free sample chapter published elsewhere (e.g. on the dev diary).
+export const FIELD_GUIDE_SAMPLE_URL = '';
+export const FIELD_GUIDE_ENABLED =
+  FIELD_GUIDE_LIVE &&
+  LS_FIELD_GUIDE_URL !== '' &&
+  (FIELD_GUIDE_PRICE_USD === 0 || FIELD_GUIDE_SHIPS !== '');
 
 // Founding-members CTA (used while CHECKOUT_LIVE === false).
 // Permanent invite (Expire: Never) minted 2026-08-26 — the previous one was

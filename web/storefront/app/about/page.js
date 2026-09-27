@@ -4,7 +4,7 @@ import { Eyebrow, Display, Button } from '@glad-labs/brand';
 export const metadata = {
   title: 'About',
   description:
-    'Glad Labs is a one-person AI/ML shop building local-first publishing pipelines and the hardware + playbooks to run them.',
+    'Glad Labs is a one-person AI/ML shop building local-first publishing pipelines and the playbooks to run them.',
 };
 
 export default function AboutPage() {
@@ -41,17 +41,16 @@ export default function AboutPage() {
             }}
           >
             <p>
-              Glad Labs builds the tooling, the hardware, and the playbooks for
-              people who want to run their own AI publishing pipeline — without
-              handing the content, the relationships, or the vendor-lock-in to a
-              SaaS company.
+              Glad Labs builds the tooling and the playbooks for people who want
+              to run their own AI publishing pipeline — without handing the
+              content, the relationships, or the vendor-lock-in to a SaaS
+              company.
             </p>
             <p>
               The product is Poindexter: an open-source autonomous publishing
               agent that runs one post a day at a quality score above 80, in our
-              house style, on commodity enthusiast-grade hardware. No paid APIs.
-              No external inference. No one else deciding what you can write
-              about.
+              house style, on one enthusiast-grade PC. Local by default. No one
+              else deciding what you can write about.
             </p>
             <p>
               Poindexter Pro is how you get there fastest — the operator
@@ -81,8 +80,10 @@ export default function AboutPage() {
               <em>Local-first</em>
             </div>
             <p className="sf-fact__body">
-              Every model runs on hardware you own. Ollama, image-gen, Piper. No
-              paid inference, no egress to a vendor dashboard.
+              Every step can run on hardware you own: Ollama, local image
+              generation, local speech. Hosted models are opt-in behind a spend
+              cap — our own instance rents one, the writer, for about $10 a
+              month, and runs every other call locally.
             </p>
           </div>
 

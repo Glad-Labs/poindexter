@@ -21,7 +21,7 @@ This is not a demo repo. Poindexter is the production system behind [gladlabs.io
 
 <img src="docs/assets/readme/console.gif" alt="Operator console, live: a post mid-pipeline in the system pulse, KPI row, approval inbox with QA verdicts, then the TRACE view and the animated system map" width="100%">
 
-_The operator console (ships with the repo, served by the worker at `/console/`), recorded live: a post mid-generation, the approval inbox with per-task QA verdicts, pipeline traces, and the system map._
+_The operator console, recorded live: a post mid-generation, the approval inbox with per-task QA verdicts, pipeline traces, and the system map. The console is the one [Pro](#poindexter-pro)-only surface — the free engine exposes the same data through the Grafana boards, the CLI, and the REST API below._
 
 <img src="docs/assets/readme/grafana-pipeline.png" alt="Grafana Pipeline dashboard — approval queue with average quality 93, 8 approved, 4 auto-rejected, live pipeline activity" width="100%">
 
@@ -253,6 +253,8 @@ Shipping samples (`HelloTap`, `DatabaseProbe`, `NoopJob`) live in `src/cofounder
 
 Poindexter is in **alpha**. Honest snapshot:
 
+Built by one person in evening hours, directing AI coding agents (Claude Code) that wrote almost all of the code. The test suite and the CI ratchets are what keep it coherent.
+
 **What works today**
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Pop!\_OS). Single-operator content business publishing daily.
@@ -277,14 +279,14 @@ If any of those would block your use case, that's worth knowing before you start
 
 ## Poindexter Pro
 
-The engine is free and open-source under Apache 2.0. **Pro** is for operators who want production-grade output without months of tuning.
+The engine is free and open-source under Apache 2.0. **Pro** is the operator layer on top: the console at the top of this page, plus the configuration and the book behind the live site.
 
-| Tier     | Price                                | What you get                                                                                                                                                                     |
-| -------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Free** | $0                                   | Full pipeline engine, nothing feature-gated — baseline prompts, all Grafana dashboards this repo ships, GitHub issues support                                                    |
-| **Pro**  | $19/mo or $180/yr — 7-day free trial | Production-tuned prompt packs exported from the live system, curated dashboard refreshes, prompt updates as the system is tuned, private VIP Discord, the Poindexter book (perk) |
+| Tier     | Price                                | What you get                                                                                                                                                                                                                          |
+| -------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Free** | $0                                   | The full pipeline: every QA rail, every prompt pack, every Grafana dashboard, the CLI and REST API. GitHub issues support.                                                                                                            |
+| **Pro**  | $19/mo or $180/yr — 7-day free trial | The operator console (the one Pro-only surface), the live config seed (1,200+ production settings, re-exported every week, adopted with a dry-run-first `poindexter pro apply`), the Poindexter book, and the founding-member Discord |
 
-Pro exists for the obvious case: you've installed the OSS, you've seen output that's _almost_ there, and you want the version that's actually shipping content on gladlabs.io daily.
+Pro gates exactly one surface: the console. Everything else it sells is curation and freshness. You've installed the engine, you've seen output that's _almost_ there, and you want to start from the settings that actually ship gladlabs.io, rebuilt from the live system every week, instead of spending months finding them yourself. Every prompt pack and dashboard in this repo stays free. Pro doesn't hold them back.
 
 Pro starts with a **7-day free trial**, and the current price is a **Founding Member rate, locked for life**. The free engine never needs a subscription either way.
 

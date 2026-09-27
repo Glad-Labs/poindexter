@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import { Eyebrow, Display, Button } from '@glad-labs/brand';
 import { ProCTA } from '@/components/ProCTA';
-import { PRO_MONTHLY_USD, PRO_ANNUAL_USD } from '@/lib/site.config';
+import {
+  PRO_MONTHLY_USD,
+  PRO_ANNUAL_USD,
+  PRO_SEED_KEYS_FLOOR,
+} from '@/lib/site.config';
 
 export const metadata = {
   title: 'Poindexter Pro',
@@ -39,8 +43,8 @@ export default function GuidePage() {
             The free Poindexter engine runs the full pipeline end-to-end. Pro is
             the operator layer on top: the cockpit console, the exact
             configuration running Matt&apos;s production content business, and
-            the operator book — rebuilt from the live system every week, so your
-            copy never goes stale.
+            the operator book. The console and the configuration are rebuilt
+            from the live system every week, so your copy never goes stale.
           </p>
         </div>
 
@@ -66,29 +70,32 @@ export default function GuidePage() {
             </li>
             <li>
               <span>
-                <strong>THE LIVE-TUNED CONFIG SEED</strong> — 1,800+ production
-                values from the running business: quality thresholds, QA-rail
-                strictness, cadence, routing, cost controls. One command —
-                <code> poindexter pro apply</code> — adopts them safely, never
-                overwriting your own tuning.
+                <strong>THE LIVE CONFIG SEED</strong> — {PRO_SEED_KEYS_FLOOR}{' '}
+                production values from the running business: quality thresholds,
+                QA-rail strictness, cadence, routing, cost controls. One command
+                —<code> poindexter pro apply</code> — shows a dry-run diff
+                first, then adopts them without overwriting your own tuning.
+                Model and GPU pins are held for your review, because
+                they&apos;re tuned to a 5090.
               </span>
             </li>
             <li>
               <span>
-                <strong>THE POINDEXTER BOOK</strong> — the full operator book
-                covering architecture, hardware, models, prompts, quality gates,
-                operations, distribution, and the DB-driven config plane — kept
-                reconciled against the live code.
+                <strong>THE POINDEXTER BOOK</strong> — 15 chapters plus
+                appendices: architecture, models and sizing by VRAM, quality
+                gates, operations, distribution, the DB-driven config plane, and
+                an unflattering chapter on the real economics. It&apos;s prose,
+                so it isn&apos;t regenerated: the weekly rebuild scans it for
+                references to deleted code and retired prices.
               </span>
             </li>
             <li>
               <span>
                 <strong>REBUILT WEEKLY, AUTOMATICALLY</strong> — an automated
                 session exports the live system&apos;s current tuning to your
-                repo every week (the full prompt pack and Grafana boards ride
-                along, mirrored from the live tree). The CHANGELOG is the
-                receipt; <code>git pull</code> is the whole upgrade. Cancel
-                anytime, keep everything you&apos;ve downloaded.
+                repo every week. The CHANGELOG is the receipt;{' '}
+                <code>git pull</code> is the whole upgrade. Cancel anytime, keep
+                everything you&apos;ve downloaded.
               </span>
             </li>
             <li>
@@ -99,6 +106,16 @@ export default function GuidePage() {
               </span>
             </li>
           </ul>
+
+          <p
+            className="gl-body"
+            style={{ marginTop: '1.5rem', opacity: 0.75, maxWidth: '640px' }}
+          >
+            Free with the engine, and not what Pro sells: the full pipeline,
+            every QA rail, every prompt pack, and every Grafana dashboard. Pro
+            gates exactly one surface — the console. Everything else here is
+            curation and freshness, not capability.
+          </p>
         </section>
 
         <section

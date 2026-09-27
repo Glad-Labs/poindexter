@@ -4,6 +4,7 @@ import { ProCTA } from '@/components/ProCTA';
 import {
   PRO_MONTHLY_USD,
   PRO_ANNUAL_USD,
+  PRO_SEED_KEYS_FLOOR,
   POINDEXTER_VERSION,
 } from '@/lib/site.config';
 
@@ -19,7 +20,7 @@ export default function Landing() {
                 POINDEXTER · V{POINDEXTER_VERSION}
               </span>
               <span>LICENSED APACHE-2.0</span>
-              <span>SHIPS WITH HARDWARE SPEC</span>
+              <span>REBUILT WEEKLY FROM THE LIVE SYSTEM</span>
             </div>
 
             <div className="sf-reveal sf-reveal--2">
@@ -37,8 +38,9 @@ export default function Landing() {
             >
               A full content factory on one PC: a post a day at 80+ quality,
               with images, podcast episodes, video, YouTube Shorts, and social
-              drafts riding along. Runs local with Ollama — no paid APIs, no
-              vendor deciding what you&apos;re allowed to write about.
+              drafts riding along. Runs local with Ollama by default — no paid
+              APIs required, no vendor deciding what you&apos;re allowed to
+              write about.
             </p>
 
             <div className="sf-reveal sf-reveal--4 sf-hero__ctas">
@@ -66,21 +68,22 @@ export default function Landing() {
               <div className="sf-card__num">01 · TUNING</div>
               <h3 className="sf-card__title">Production Tuning</h3>
               <p className="sf-card__body">
-                The 1,800+ live-tuned settings that run Matt&apos;s content
+                The {PRO_SEED_KEYS_FLOOR} settings that run Matt&apos;s content
                 business — exported from the running system every week, not a
-                frozen snapshot, and adopted safely in one command. Skip the
-                months of trial and error. This is the product.
+                frozen snapshot, and adopted in one command that shows you a
+                dry-run diff first and never overwrites your own tuning. Skip
+                the months of trial and error. This is the product.
               </p>
             </article>
 
             <article className="sf-card">
-              <div className="sf-card__num">02 · HARDWARE</div>
-              <h3 className="sf-card__title">The Hardware Spec</h3>
+              <div className="sf-card__num">02 · CONSOLE</div>
+              <h3 className="sf-card__title">The Operator Console</h3>
               <p className="sf-card__body">
-                Parts list, rack layout, thermals, electrical, and the precise
-                model-per-GPU allocation that makes a single-node agent viable
-                in 2026. Tested on a 9950X3D + 5090 workstation and reproducible
-                on smaller rigs.
+                System pulse, the approval queue with QA verdicts, pipeline
+                traces, GPU and cost telemetry — one screen for the whole
+                machine. The one Pro-only surface: the free engine shows the
+                same data through Grafana, the CLI, and the API.
               </p>
             </article>
 
@@ -88,10 +91,11 @@ export default function Landing() {
               <div className="sf-card__num">03 · COMPANION</div>
               <h3 className="sf-card__title">Book &amp; Community</h3>
               <p className="sf-card__body">
-                A long-form operator book on the architecture and the decisions
-                behind it, plus the VIP Discord where live tuning knowledge
-                accrues. Both ride alongside the engine — which stays free and
-                Apache-2.0.
+                A long-form operator book — the architecture, the decisions
+                behind it, sizing by VRAM, and an unflattering economics chapter
+                — plus the founding Discord where live tuning knowledge accrues.
+                The engine, every prompt pack, and every dashboard stay free
+                under Apache-2.0.
               </p>
             </article>
           </div>

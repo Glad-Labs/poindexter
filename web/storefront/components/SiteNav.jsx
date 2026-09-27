@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { FIELD_GUIDE_ENABLED } from '@/lib/site.config';
 
 /*
   Storefront nav — the mono eyebrow is baked into the brand mark itself:
@@ -17,6 +18,11 @@ export function SiteNav() {
           <Link href="/guide" className="sf-nav__link">
             Pricing
           </Link>
+          {FIELD_GUIDE_ENABLED && (
+            <Link href="/field-guide" className="sf-nav__link">
+              Field guide
+            </Link>
+          )}
           <Link href="/about" className="sf-nav__link">
             About
           </Link>

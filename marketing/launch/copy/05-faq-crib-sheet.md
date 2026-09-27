@@ -76,7 +76,9 @@ For launch days, on your phone. These are pre-written so 10pm-after-work-and-bed
 
 **"What's the catch with Pro?"**
 
-> Engine's Apache 2.0 with nothing feature-gated. Pro is the production-tuned prompt packs and dashboard configs from my live system — the months-of-tuning layer, not the capability layer. $19/mo, or $180/yr, and if you'd rather tune your own from the baselines, that's a fully supported path, not a crippled one.
+> Engine's Apache 2.0 and fully functional. Pro gates exactly one thing, the operator console UI — the same data is in the free Grafana boards and CLI. The rest of Pro is the tuning layer: the live settings from my production system, re-exported every week, plus the book and a Discord. Every prompt pack and dashboard is already free in the repo. $19/mo or $180/yr, and if you'd rather tune your own from the defaults, that's a fully supported path, not a crippled one.
+
+(Keep this answer in step with `marketing/pro-offer.md`, the one canonical description of Pro. Earlier versions of this answer said "nothing feature-gated" and sold the prompt packs and dashboards — both free — which an HN reader would have caught by cloning the repo and finding no `/console`.)
 
 **"Why Apache 2.0? / I saw it was AGPL before."**
 
@@ -84,4 +86,6 @@ For launch days, on your phone. These are pre-written so 10pm-after-work-and-bed
 
 **"Are you making money? What's the business?"**
 
-> Not yet meaningfully — this launch is me finding out whether anyone besides me wants it. Pro exists, the site runs ads, and I have theories, but I'd be lying if I dressed that up as a business model with traction. Ask me in six months.
+> Not yet meaningfully — this launch is me finding out whether anyone besides me wants it. Pro exists and checkout works end to end, and I have theories, but I'd be lying if I dressed that up as a business model with traction. Ask me in six months.
+
+(Changed from "the site runs ads": the repo still documents AdSense as pending approval with no ad slot configured, so that line couldn't be verified. If ads are live by launch day, put it back.)

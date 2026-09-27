@@ -235,9 +235,13 @@ loud. Flags:
 - `--excerpt TEXT` — optional excerpt / SEO description.
 - `--status {draft,awaiting_approval}` — initial status (default `draft`).
   `awaiting_approval` routes it into the approval queue.
-- `--media A,B` — media to generate **at publish time** (`podcast`, `video`,
-  `video_short`; `short` is an alias for `video_short`). Defaults to
-  `default_media_to_generate`.
+- `--media A,B` — media this post wants (`podcast`, `video`, `video_short`;
+  `short` is an alias for `video_short`). Defaults to
+  `default_media_to_generate`. **Recorded only, not yet rendered:** the media
+  pipeline renders from a source pipeline task and its Stage-1 scripts, which a
+  hand-written post doesn't have (stack#4099). For a podcast today, publish
+  the post and call
+  `POST /api/podcast/generate/{post_id}`.
 - `--force` — bypass the semantic dedup guard **and** idempotency.
 - `--json` — machine-readable output.
 

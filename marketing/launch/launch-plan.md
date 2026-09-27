@@ -26,6 +26,97 @@
 > `[FILL]`s in the copy — now down to the 1am failure, the relicensing reason,
 > and tooling/subscription spend.
 
+---
+
+## Strategy update — 2026-09-26
+
+A monetization review of the whole repo, audited against the code rather than
+from memory. It changes the plan in five places, marked **(changed)** below.
+The rest of the plan stands.
+
+### What the review found
+
+- **Distribution, not product, is the bottleneck, and the freeze isn't
+  holding.** 271 PRs merged between the freeze above (2026-09-16) and
+  2026-09-26, mostly GPU, video and watchdog fixes. The stars were 5 as of the
+  copy pack. No Phase 2 box is ticked.
+- **The content site can't be the pitch.** Search Console: ~45,500 impressions
+  and ~70 clicks lifetime (2026-08-09 audit); the August cohort got 3.4
+  impressions per post in its first 21 days and zero clicks. "Run a content
+  business from one machine" invites the question "what does yours earn?", so
+  the copy must never imply income. It doesn't today; keep it that way.
+- **The installable audience is narrow by construction.** A 16 GB+ NVIDIA GPU,
+  ~30 GB of models, and 23–45 containers. The audience for _how it was built_
+  is much larger and needs none of that.
+- **Pro was described five different ways, and three of them were false.**
+  Prompts and dashboards were sold as premium but ship free. The README
+  captioned the console "ships with the repo" when the mirror strips it. The
+  storefront advertised 1,800+ settings (the build had 1,228) and a hardware
+  spec the deliverable doesn't contain. **Fixed** in the same PR as this
+  update. `marketing/pro-offer.md` is now the one canonical description, with
+  the list of every surface that paraphrases it.
+
+### Changes to the plan
+
+1. **(changed) The truth pass is done — keep it done.** Before any launch post
+   goes out, re-read `marketing/pro-offer.md` against the Pro repo's latest
+   CHANGELOG entry. An HN reader who clones the repo and finds no `/console`
+   ends the thread's goodwill in one comment.
+2. **(changed) Story-first.** The story post (`copy/01-story-post.md`) becomes
+   **the** HN submission: a plain link, not Show HN. r/LocalLLaMA stays the dry
+   run before it. Its audience, everyone directing coding agents, is far larger
+   than the audience that can run the stack, and it's the strongest thing in
+   the pack. The tool is its call to action. The Show HN follows later, or is
+   dropped if the story's thread already carries it. The posting notes in the
+   story draft are updated to match.
+3. **(changed) Give story readers something to buy that needs no GPU.** The
+   field-guide pre-sale package is ready in `marketing/field-guide/`: the
+   product plan, an outline sourced from the repo, a fully drafted sample
+   chapter, and a storefront page at `/field-guide` that 404s until you turn it
+   on. **Your decision first:** the June pricing spec made "single Pro SKU" a
+   non-goal, and this would be a second SKU for a different buyer. The
+   README there lays out both options, and the turn-on checklist is six steps.
+   If you take it, the story's closing paragraph links to it.
+4. **(changed) Make the freeze mechanical, not aspirational.** Until the
+   tripwire fires, merge only launch blockers plus the automated sessions
+   (dependency review, CLAUDE.md sync, test-health). Everything else waits in
+   the issue tracker. The review's two engine follow-ups are already filed and
+   can wait there:
+   - **stack#4100** — no-GPU "try it tonight" profile. This is the real version
+     of 1.2's "kick the tires in 10 minutes" item, and pairs with **#1922**
+     (starter profile for 8–16 GB).
+   - **stack#4099** — hand-written posts get no video or Shorts. The biggest
+     widening of the engine's audience ("you write it, Poindexter ships it
+     everywhere"), and the CLI help now stops claiming otherwise.
+   - **stack#4101** — Pro's recurring value: a monthly measured model-routing
+     update per VRAM tier.
+5. **(changed) Money goes on the scoreboard.** Add to Phase 3's monthly
+   scoreboard: Pro trials started, trials converted, field-guide pre-orders (if
+   live). **First money milestone: ~18 monthly Pro subscribers covers the
+   ~$310/month run cost** (~$69 electricity + API and ~$240 subscriptions, per
+   the story draft; $19 nets ~$17.55 after Lemon Squeezy's 5% + 50¢).
+
+### Decision rules at ~90 days after the sweep
+
+- **Story readers pre-order the guide** → the method is the product; Poindexter
+  becomes its living case study, and Pro stays a side line.
+- **Self-hosters install and start Pro trials** → invest in #1922, #4100 and
+  #4101, the three things that make Pro worth renewing.
+- **Both quiet after the full sweep, including one HN repost** → the plan's
+  original rule stands: that's real information. The next conversation is about
+  the skill (issue #327), not more channels.
+
+### What not to do
+
+- **No hosted/managed version** — it conflicts with the "zero customer
+  service" constraint, and nobody has asked for it yet.
+- **No hardware bundle.**
+- **No income claims anywhere.**
+- **No AdSense work** — at ~70 lifetime clicks it can't move the needle. Record
+  the decision #1309 never recorded, and shelve it.
+
+---
+
 ## Phase 1 — Prep (≈ 6 evenings, ~8–10 hours of your time)
 
 ### 1.1 Demo GIF/video — 2 evenings ~ 3 hrs · **[YOU record, Claude scripts]**
@@ -41,7 +132,7 @@ The single highest-value asset you're missing.
 - [x] Retitle away from "factory" → lead with rejection (e.g., "the content pipeline that rejects half of what it writes").
 - [x] Put the actual Pro price in the tier table. **(DONE 2026-09-16 — $19/mo / $180/yr now in the table, replacing the "See gladlabs.ai" deferral.)**
 - [ ] Add a "kick the tires in 10 minutes" demo config (one small model in every role, clearly labeled demo-quality) for people below 8 GB VRAM or below 30 GB of patience.
-- [ ] Add one line + link in Project Status: built by one person directing AI agents (links to the story post from 1.4).
+- [x] Add one line + link in Project Status: built by one person directing AI agents (links to the story post from 1.4). **(line added 2026-09-26; add the story's URL to it the day the story publishes)**
 - [x] Enable GitHub Discussions (verified on 2026-09-16) and seed it with 2–3 starter threads (a welcome/intro thread, a "what are you running it on?" thread).
 
 ### 1.3 Funnel check — 1 evening ~ 1 hr · **[YOU]**
@@ -78,6 +169,8 @@ Staggered on purpose: each post is a feedback dry-run for the next, and simultan
 
 ### 2.2 Launch #2: Show HN — the big one, ~4–7 days later
 
+> **(changed 2026-09-26)** Submit the **story post** here as a plain link, not the Show HN — see "Strategy update" item 2. The timing, first-comment and repost advice below still applies.
+
 - [ ] Night before: final read of submission + first-comment, crib sheet on your phone.
 - [ ] Submit **Tue/Wed/Thu ~8–10am ET from your phone** (2 minutes — this is the one daytime action in the whole plan; conventional wisdom on timing, not gospel).
 - [ ] Post your prepared first comment immediately after submitting.
@@ -85,6 +178,8 @@ Staggered on purpose: each post is a feedback dry-run for the next, and simultan
 - [ ] If it stalls (<10 points, little discussion): that's normal, not a verdict — HN's own FAQ allows a small number of reposts for stories that got no significant attention. Wait 3–4 weeks, improve the angle from what Reddit taught you, repost once.
 
 ### 2.3 Launch #3: r/selfhosted + the story post — the following week
+
+> **(changed 2026-09-26)** The story post already went out in 2.2, so this step is r/selfhosted plus, optionally, the Show HN for the tool.
 
 - [ ] Publish the story post on gladlabs.io; syndicate to dev.to with canonical link.
 - [ ] Post to r/selfhosted (their audience loves a well-tested self-hosted alternative to SaaS).
@@ -107,7 +202,7 @@ This is the part sized for real life. Three habits, nothing else:
 
 1. **First-10-users white glove.** Anyone who opens a Discussion, issue, or installs it gets a real, prompt, warm reply. Ten actual users teach you what Pro should be; they are worth more than 10,000 pageviews. This is the highest-ROI hour of your week.
 2. **One dev-diary post a month** — Claude drafts it from your changelog + whatever you fought with that month; you edit for truth; syndicate to whichever channels responded in Phase 2. Release-note posts to r/selfhosted when there's a meaty release.
-3. **Scoreboard, monthly, 15 minutes:** GitHub stars + traffic + clones, Discussions activity, newsletter signups, Pro page clicks. Pageviews on gladlabs.io are explicitly **not** on the scoreboard.
+3. **Scoreboard, monthly, 15 minutes:** GitHub stars + traffic + clones, Discussions activity, newsletter signups, Pro page clicks, **Pro trials started and converted, field-guide pre-orders (if live)**. Pageviews on gladlabs.io are explicitly **not** on the scoreboard. First money milestone: ~18 monthly Pro subscribers covers the run cost (see "Strategy update" item 5).
 
 ---
 

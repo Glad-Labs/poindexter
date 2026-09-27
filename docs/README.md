@@ -8,9 +8,9 @@ If you're reading on the Mintlify docs site, the rendered version with
 search and navigation lives at the [welcome page](welcome.mdx). If
 you're on GitHub, this index is the table of contents.
 
-The engine is Apache 2.0 and free. A **Poindexter Pro** add-on (tuned prompts,
-extra dashboards, the book) lives at
-[gladlabs.ai](https://www.gladlabs.ai).
+The engine is Apache 2.0 and free, including every prompt pack and Grafana
+dashboard. A **Poindexter Pro** add-on (the operator console, the live config
+seed rebuilt weekly, the book) lives at [gladlabs.ai](https://www.gladlabs.ai).
 
 ## Start here
 

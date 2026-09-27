@@ -486,10 +486,13 @@ def _compute_idempotency_key(
 @click.option(
     "--media",
     default=None,
-    help="Comma-separated list of media to generate "
+    help="Comma-separated list of media this post wants "
     "(podcast, video, video_short; 'short' is accepted as an "
     "alias for video_short). Empty/omitted = use default_media_to_generate "
-    "from app_settings. Media is generated at publish time, not now.",
+    "from app_settings. Recorded on the post only: the media pipeline "
+    "renders from a source pipeline task, which a hand-written post does "
+    "not have yet (stack#4099). For a podcast today, publish the post and call "
+    "POST /api/podcast/generate/<post_id>.",
 )
 @click.option(
     "--force",
@@ -525,7 +528,12 @@ def post_create(
     ``--slug`` (else the slugified title plus a short suffix). ``--status``
     defaults to ``draft``; pass ``awaiting_approval`` to route it into the
     approval queue. ``--niche`` lands in ``metadata.niche_slug``. Any
-    ``--media`` is generated at publish time.
+    ``--media`` is recorded in ``media_to_generate`` but not rendered: Stage-2
+    media dispatches from a source pipeline task plus its persisted Stage-1
+    scripts, and a hand-written post has neither, so ``media_reconciliation``
+    can only report it as unresolved drift (stack#4099). The one working media path
+    for a hand-written post is ``POST /api/podcast/generate/{post_id}``
+    (podcast only) once it is published.
 
     Semantic dedup: the resolved title is checked against already-published
     posts and refused if too similar (``create_post_dedup_threshold``, default
