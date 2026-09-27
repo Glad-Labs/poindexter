@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## [0.149.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.149.0...v0.149.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **brain:** cap the ollama-vision prompt cache at the source, raise the watermark to a backstop ([#4098](https://github.com/Glad-Labs/glad-labs-stack/issues/4098)) ([3559539](https://github.com/Glad-Labs/glad-labs-stack/commit/3559539c95103d6f37b16ecc9f2c98e4c500587f))
+* **ci:** comment-reference-lint reports found vs baselined separately ([#4095](https://github.com/Glad-Labs/glad-labs-stack/issues/4095)) ([118371c](https://github.com/Glad-Labs/glad-labs-stack/commit/118371c73fe5c58d6794e53e32c0b394751268c6))
+* **gpu:** concurrent sessions on different cards keep their own lock state ([#4096](https://github.com/Glad-Labs/glad-labs-stack/issues/4096)) ([215c5e6](https://github.com/Glad-Labs/glad-labs-stack/commit/215c5e6d9b7415ba9eeeab6446f62da541578665))
+* **gpu:** return the CUDA context RIFE/chatterbox/stable-audio/wan hold after unload ([#4097](https://github.com/Glad-Labs/glad-labs-stack/issues/4097)) ([a03322a](https://github.com/Glad-Labs/glad-labs-stack/commit/a03322a0902098e9fcac8e4bb187a04b9ddd8b5e))
+* **mypy:** clear shot_list_renderer's 21 mypy errors + imported modules ([#4079](https://github.com/Glad-Labs/glad-labs-stack/issues/4079)) ([3e1f8ab](https://github.com/Glad-Labs/glad-labs-stack/commit/3e1f8ab29e44eeef69c842224923b391b4efb226))
+* **qa:** freshness stops reading bare "breaking" as a news anchor ([#4074](https://github.com/Glad-Labs/glad-labs-stack/issues/4074)) ([ae766d1](https://github.com/Glad-Labs/glad-labs-stack/commit/ae766d1bf24cbc659e56e3effbf23d5c88159964))
+* **seo:** FixMissingSeoJob writes on a live connection and fails loud ([#4071](https://github.com/Glad-Labs/glad-labs-stack/issues/4071)) ([8940acc](https://github.com/Glad-Labs/glad-labs-stack/commit/8940acc138003214c508c904866d343e8493d1b1))
+* **video:** re-animate a collapsed hero's vetted still instead of rendering a new one ([#4083](https://github.com/Glad-Labs/glad-labs-stack/issues/4083)) ([abdd914](https://github.com/Glad-Labs/glad-labs-stack/commit/abdd9147937f66c16bb64f9770a0fd81a53b3702))
+
 ## [0.149.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.148.0...v0.149.0) (2026-09-26)
 
 
