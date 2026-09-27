@@ -62,7 +62,11 @@ repo in ``brain_knowledge``, so a brain restart does not page again.
   audit_log unless they last
   ``scheduled_workflow_watch_transient_failure_page_hours`` without a break.
 
-One recovery note follows on the first clean pass after a page.
+One recovery note follows on the first clean pass after a page. A repo taken
+out of ``scheduled_workflows`` is never checked again, so its open episode is
+closed when the list stops naming it, with one closing note if it paged. A
+list that fails to parse closes nothing, so a JSON typo does not end every
+episode at once.
 
 A 404 means two different things on this endpoint. GitHub answers 404, not
 403, for a private repo the token cannot see, and it also answers 404 for a
@@ -86,7 +90,9 @@ rather than running on every 5-minute brain cycle: each target costs two
 GitHub API calls and nothing here changes minute to minute. A throttled cycle
 reports the verdict of the last real pass, which is kept in
 ``brain_knowledge``, so a failing watchdog does not read as healthy on the
-eleven cycles in twelve that skip GitHub.
+eleven cycles in twelve that skip GitHub. With no verdict recorded yet (the
+first cycle after an upgrade, or a lost row), the cycle runs a real pass
+instead of reporting health nobody measured.
 
 Standalone — stdlib + asyncpg + httpx (asyncpg pool injected by the daemon).
 """
@@ -373,17 +379,16 @@ async def _read_last_pass(pool: Any) -> dict[str, Any] | None:
     return last
 
 
-async def _throttled_summary(pool: Any, interval_minutes: float) -> dict[str, Any]:
+def _throttled_summary(last: dict[str, Any], interval_minutes: float) -> dict[str, Any]:
     """A cycle that skips GitHub reports the last real pass's verdict.
 
     Before 2026-09-25 it always reported ok. The brain heartbeat showed the
     result: while ``playwright-e2e`` was stale, one cycle an hour read
     "issue" and the other eleven "ok", and a blind watchdog read "ok" on all
-    twelve.
+    twelve. The caller measures instead when there is no verdict to report.
     """
     detail = f"throttled ({interval_minutes:.0f}m)"
-    last = await _read_last_pass(pool)
-    if last is None or last["ok"]:
+    if last["ok"]:
         return {"ok": True, "detail": detail, "workflows": {}}
     return {
         "ok": False,
@@ -876,6 +881,93 @@ async def _close_repo_episode(
         )
 
 
+def _watch_list_parses(raw: str) -> bool:
+    """True when ``scheduled_workflows`` is empty or a JSON list.
+
+    Guards :func:`_close_unwatched_episodes`: a typo that breaks the JSON
+    empties the watch list too, and must not close every open episode.
+    """
+    if not raw.strip():
+        return True
+    try:
+        return isinstance(json.loads(raw), list)
+    except json.JSONDecodeError:
+        return False
+
+
+async def _open_episode_repos(pool: Any) -> list[str]:
+    """The repos that have an open failure episode in brain_knowledge."""
+    prefix = "failure_episode:"
+    try:
+        rows = await pool.fetch(
+            "SELECT attribute FROM brain_knowledge "
+            "WHERE entity = $1 AND attribute LIKE 'failure_episode:%'",
+            FAILURE_STATE_ENTITY,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[sched_wf] could not list open failure episodes: %s. An episode "
+            "for a repo that is no longer watched stays open this pass", exc,
+        )
+        return []
+    repos = [str(r["attribute"])[len(prefix):] for r in rows]
+    # Only repo-shaped keys: anything else in this entity is not ours to close.
+    return [repo for repo in repos if _REPO_RE.match(repo)]
+
+
+async def _close_unwatched_episodes(
+    pool: Any,
+    *,
+    watched: set[str],
+    notify_fn: Callable[..., Any],
+) -> None:
+    """Close the failure episode of every repo that is no longer watched.
+
+    Only a clean pass over a repo closes its episode, and a repo removed
+    from ``scheduled_workflows`` is never checked again. Without this its
+    episode stayed open for good. No closing message reached the operator
+    who was paged about it, and a re-added repo that still failed was not
+    news until the next reminder. A closing note goes out only when the
+    episode paged, the same rule as a recovery note.
+    """
+    for repo in await _open_episode_repos(pool):
+        if repo in watched:
+            continue
+        episode = await failure_episode.close_episode(pool, _failure_key(repo))
+        if not episode:
+            continue
+        note = (
+            f"{repo} is no longer watched: app_settings.{WATCHES_SETTING_KEY} "
+            f"has no valid entry for it. Its failure episode is closed "
+            f"{failure_episode.recovery_summary(episode)}, and no more pages "
+            f"about it will follow."
+        )
+        logger.info("[sched_wf] %s", note)
+        await _emit_audit_event(
+            pool,
+            "probe.scheduled_workflow_watch_unwatched",
+            note,
+            extra={
+                "repo": repo,
+                "signature": episode.get("signature") or "unknown",
+                "attempts": episode.get("attempts"),
+                "failing_since": episode.get("since"),
+                "was_paged": bool(episode.get("paged_at")),
+            },
+        )
+        if episode.get("paged_at"):
+            failure_episode.send_page(
+                notify_fn,
+                label="sched_wf",
+                title=f"Scheduled-CI watchdog no longer watching {repo}",
+                detail=note,
+                source=_SOURCE,
+                severity="info",
+                dedup_key=f"scheduled_workflow_watch_unwatched:{repo}",
+                if_undelivered="the operator still expects pages about that repo",
+            )
+
+
 # ---------------------------------------------------------------------------
 # Top-level entry point.
 # ---------------------------------------------------------------------------
@@ -1002,8 +1094,13 @@ async def run_scheduled_workflow_watch(
     if enabled in ("false", "0", "no", "off"):
         return {"ok": True, "detail": "disabled", "workflows": {}}
 
-    watches = _parse_watches(await _read_setting(pool, WATCHES_SETTING_KEY, ""))
+    raw_watches = await _read_setting(pool, WATCHES_SETTING_KEY, "")
+    watches = _parse_watches(raw_watches)
     if not watches:
+        if _watch_list_parses(raw_watches):
+            # The operator emptied the list, or left no valid entry: close
+            # any episode still open for a repo that used to be watched.
+            await _close_unwatched_episodes(pool, watched=set(), notify_fn=notify_fn)
         return {"ok": True, "detail": "no workflows configured", "workflows": {}}
 
     try:
@@ -1011,7 +1108,13 @@ async def run_scheduled_workflow_watch(
     except ValueError:
         interval = DEFAULT_INTERVAL_MINUTES
     if not await _should_run(pool, interval, now_utc):
-        return await _throttled_summary(pool, interval)
+        last = await _read_last_pass(pool)
+        if last is not None:
+            return _throttled_summary(last, interval)
+        # No verdict to report: the first cycle after this code deployed, or
+        # the row was lost. Measure now rather than report health nobody
+        # measured. On 2026-09-25 that window read "ok" from 23:24 to 23:56
+        # UTC while playwright-e2e was known to be stale.
 
     config = {
         "interval_minutes": interval,
@@ -1023,6 +1126,7 @@ async def run_scheduled_workflow_watch(
         ),
     }
     by_repo = _group_by_repo(watches)
+    await _close_unwatched_episodes(pool, watched=set(by_repo), notify_fn=notify_fn)
 
     token = await _read_token(pool)
     if not token:

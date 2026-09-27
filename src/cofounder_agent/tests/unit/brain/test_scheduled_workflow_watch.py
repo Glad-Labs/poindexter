@@ -46,6 +46,8 @@ def _pool(*, prev_state=None, watches=_WATCH_JSON, enabled="true", last_checked=
     pool.fetchrow = AsyncMock(side_effect=_fetchrow)
     # failure_episode reads the episode row and gh_token.updated_at here.
     pool.fetchval = AsyncMock(return_value=None)
+    # _open_episode_repos lists open failure episodes: none here.
+    pool.fetch = AsyncMock(return_value=[])
     pool.execute = AsyncMock()
     return pool
 

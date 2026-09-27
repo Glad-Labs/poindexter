@@ -373,7 +373,10 @@ pins`, `Lint shell + PowerShell scripts`, `poetry check --lock
   (default 60) rather than riding the brain's 5-minute cycle, since each
   target costs two GitHub API calls. A throttled cycle reports the last real
   pass's verdict, so a failing or blind watchdog reads as failing on every
-  brain cycle, not one in twelve.
+  brain cycle, not one in twelve. When no verdict is recorded yet (the first
+  cycle after an upgrade, or a lost row), the cycle runs a real pass instead
+  of reporting ok. The upgrade to this behaviour read ok from 23:24 to 23:56
+  UTC on 2026-09-25 while `playwright-e2e` was stale.
 
   **When the watchdog itself cannot read the runs**, it pages once per
   failure episode per repo (`poindexter/brain/failure_episode.py`, shared
@@ -405,7 +408,13 @@ pins`, `Lint shell + PowerShell scripts`, `poetry check --lock
   One recovery note follows on the first clean pass after a page, and a
   workflow that went stale meanwhile is reported on that same pass. Every
   failing pass writes a `probe.scheduled_workflow_watch_failed` audit row,
-  and the recovery writes `probe.scheduled_workflow_watch_recovered`. Until
+  and the recovery writes `probe.scheduled_workflow_watch_recovered`.
+  Taking a failing repo out of `scheduled_workflows` (or leaving it only
+  invalid entries) closes its episode, since it will never be checked
+  again. A closing note is sent if the episode paged, and
+  `probe.scheduled_workflow_watch_unwatched` is written either way. If the
+  list does not parse, nothing is closed, so a JSON typo cannot end every
+  episode at once. Until
   2026-09-25 each of these failures only left the target "not assessed"
   and the pass reported ok. From 2026-09-23 23:13 UTC the replaced
   `gh_token` could not see the repo, all nine workflows 404'd on every

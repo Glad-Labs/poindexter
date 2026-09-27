@@ -131,6 +131,16 @@ class _FakeDB:
             return {"value": value} if value is not None else None
         return None
 
+    async def fetch(self, query: str, *args: Any) -> list[dict[str, Any]]:
+        # _open_episode_repos: every failure episode under the watchdog's entity.
+        if "FROM brain_knowledge" in query and "failure_episode:%" in query:
+            return [
+                {"attribute": attribute}
+                for entity, attribute in self.knowledge
+                if entity == args[0] and attribute.startswith("failure_episode:")
+            ]
+        return []
+
     async def execute(self, query: str, *args: Any) -> str:
         if "INSERT INTO brain_knowledge" in query:
             if "'last_state'" in query:
@@ -980,6 +990,223 @@ class TestSeveralRepos:
         await _passes(1, db, gh, clock, notify)
         assert notify.titles()[-1] == f"Scheduled-CI watchdog checking {REPO} again"
         assert len(notify.calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# A throttled cycle with no verdict to report measures instead
+# ---------------------------------------------------------------------------
+
+
+def _old_code_state(db: _FakeDB, clock: _Clock, *, checked_minutes_ago: float = 4) -> None:
+    """What the pre-#4064 watchdog left in brain_knowledge: a fresh throttle
+    stamp and per-target states, but no recorded verdict."""
+    stamp = (clock.now - timedelta(minutes=checked_minutes_ago)).isoformat()
+    db.knowledge[("scheduled_workflow_watchdog:_last_checked", "last_state")] = stamp
+    db.knowledge[(f"scheduled_workflow_watchdog:{REPO}:playwright-e2e.yml", "last_state")] = "stale"
+
+
+@pytest.mark.unit
+class TestNoRecordedVerdict:
+    @pytest.mark.asyncio
+    async def test_the_first_cycle_after_the_upgrade_measures(self):
+        """Prod, 2026-09-25: #4064 went live at 23:22 UTC, four minutes into
+        the old code's throttle window. With no verdict recorded, every cycle
+        until the 23:56 pass read "throttled", ok, while playwright-e2e was
+        known to be stale. Now the first cycle runs a real pass."""
+        db, gh, clock, notify = _setup()
+        _old_code_state(db, clock)
+        gh.per_workflow["playwright-e2e.yml"] = _runs(clock.now - timedelta(hours=250))
+
+        first = await _run(db, gh, clock, notify)
+
+        assert len(gh.requests) == 18  # a real pass, not a throttled one
+        assert first["ok"] is False
+        assert first["detail"].startswith("1 of 9 assessed scheduled workflow(s) unhealthy")
+        assert db.findings() == []  # already reported as stale; edge-triggered
+
+        clock.advance(minutes=5)
+        throttled = await _run(db, gh, clock, notify)
+
+        assert len(gh.requests) == 18
+        assert throttled["ok"] is False
+        assert throttled["detail"].startswith("throttled (60m); last pass: 1 of 9 assessed")
+
+    @pytest.mark.asyncio
+    async def test_an_unreadable_verdict_row_measures_too(self):
+        db, gh, clock, notify = _setup()
+        _old_code_state(db, clock)
+        db.knowledge[("scheduled_workflow_watchdog:_last_pass", "last_state")] = "{not json"
+
+        summary = await _run(db, gh, clock, notify)
+
+        assert len(gh.requests) == 18
+        assert summary["ok"] is True
+        assert summary["detail"] == "all 9 assessed scheduled workflow(s) healthy"
+
+    @pytest.mark.asyncio
+    async def test_a_recorded_verdict_is_reported_without_a_github_call(self):
+        db, gh, clock, notify = _setup()
+        _old_code_state(db, clock)
+        db.knowledge[("scheduled_workflow_watchdog:_last_pass", "last_state")] = json.dumps(
+            {"ok": True, "detail": "all 9 assessed scheduled workflow(s) healthy",
+             "at": clock.now.isoformat()},
+        )
+
+        summary = await _run(db, gh, clock, notify)
+
+        assert gh.requests == []
+        assert summary == {"ok": True, "detail": "throttled (60m)", "workflows": {}}
+
+
+# ---------------------------------------------------------------------------
+# A repo taken out of the watch list: its episode is closed
+# ---------------------------------------------------------------------------
+
+
+_OTHER_WATCH = {"repo": OTHER_REPO, "workflow": "nightly.yml", "max_age_hours": 30}
+
+
+def _set_watches(db: _FakeDB, watches: list[dict[str, Any]]) -> None:
+    db.settings[swf.WATCHES_SETTING_KEY] = json.dumps(watches)
+
+
+@pytest.mark.unit
+class TestUnwatchedRepos:
+    @pytest.mark.asyncio
+    async def test_removing_a_failing_repo_closes_its_episode_with_one_note(self):
+        db, gh, clock, notify = _setup(watches=_WATCHES[:3] + [_OTHER_WATCH])
+        gh.per_repo[REPO] = _Resp(404, text=_NOT_FOUND)
+        await _passes(2, db, gh, clock, notify)
+        assert notify.titles() == [f"Scheduled-CI watchdog cannot check {REPO}"]
+
+        # The operator stops watching the repo instead of fixing the token.
+        _set_watches(db, [_OTHER_WATCH])
+        after = await _passes(3, db, gh, clock, notify)
+
+        assert notify.titles() == [
+            f"Scheduled-CI watchdog cannot check {REPO}",
+            f"Scheduled-CI watchdog no longer watching {REPO}",
+        ]
+        note = notify.calls[1]
+        assert note["severity"] == "info"
+        assert note["dedup_key"] == f"scheduled_workflow_watch_unwatched:{REPO}"
+        assert (
+            f"{REPO} is no longer watched: app_settings.{swf.WATCHES_SETTING_KEY} has "
+            f"no valid entry for it. Its failure episode is closed after 2 failed "
+            f"attempts since 2026-09-23 23:48 UTC (last failure: workflow-runs:404), "
+            f"and no more pages about it will follow." == note["detail"]
+        )
+        closed = db.audit_of("probe.scheduled_workflow_watch_unwatched")
+        assert len(closed) == 1
+        assert closed[0]["repo"] == REPO
+        assert closed[0]["was_paged"] is True
+        assert db.episode() is None
+        assert all(r["ok"] is True for r in after)
+
+    @pytest.mark.asyncio
+    async def test_a_re_added_repo_that_still_fails_is_news_again(self):
+        """Before, the stale episode survived the removal, so re-adding a
+        still-broken repo stayed quiet until the 24h reminder."""
+        db, gh, clock, notify = _setup(watches=_WATCHES[:3] + [_OTHER_WATCH])
+        gh.per_repo[REPO] = _Resp(404, text=_NOT_FOUND)
+        await _passes(1, db, gh, clock, notify)
+        _set_watches(db, [_OTHER_WATCH])
+        await _passes(1, db, gh, clock, notify)
+
+        _set_watches(db, _WATCHES[:3] + [_OTHER_WATCH])
+        again = await _run(db, gh, clock, notify)
+
+        assert again["failures"][REPO]["page_reason"] == fe.PAGE_NEW
+        assert notify.titles()[-1] == f"Scheduled-CI watchdog cannot check {REPO}"
+        assert len(notify.calls) == 3
+
+    @pytest.mark.asyncio
+    async def test_emptying_the_watch_list_closes_the_episode(self):
+        db, gh, clock, notify = _setup()
+        gh.answer = _Resp(404, text=_NOT_FOUND)
+        await _passes(1, db, gh, clock, notify)
+
+        _set_watches(db, [])
+        summary = await _run(db, gh, clock, notify)
+
+        assert summary == {"ok": True, "detail": "no workflows configured", "workflows": {}}
+        assert notify.titles()[-1] == f"Scheduled-CI watchdog no longer watching {REPO}"
+        assert db.episode() is None
+
+    @pytest.mark.asyncio
+    async def test_a_repo_left_with_only_invalid_entries_is_unwatched(self):
+        db, gh, clock, notify = _setup(watches=_WATCHES[:2] + [_OTHER_WATCH])
+        gh.per_repo[REPO] = _Resp(404, text=_NOT_FOUND)
+        await _passes(1, db, gh, clock, notify)
+
+        _set_watches(db, [{**w, "max_age_hours": 0} for w in _WATCHES[:2]] + [_OTHER_WATCH])
+        await _passes(1, db, gh, clock, notify)
+
+        assert notify.titles()[-1] == f"Scheduled-CI watchdog no longer watching {REPO}"
+        assert db.episode() is None
+
+    @pytest.mark.parametrize("raw", ["[{not json", '{"repo": "Test-Org/test-repo"}'])
+    @pytest.mark.asyncio
+    async def test_a_watch_list_that_fails_to_parse_closes_nothing(self, raw):
+        """A typo empties the watch list too; it must not end every episode."""
+        db, gh, clock, notify = _setup()
+        gh.answer = _Resp(404, text=_NOT_FOUND)
+        await _passes(1, db, gh, clock, notify)
+
+        db.settings[swf.WATCHES_SETTING_KEY] = raw
+        await _passes(2, db, gh, clock, notify)
+        assert db.episode() is not None
+        assert db.audit_of("probe.scheduled_workflow_watch_unwatched") == []
+
+        _set_watches(db, _WATCHES)  # the typo is fixed; the token still fails
+        await _passes(1, db, gh, clock, notify)
+        assert len(notify.calls) == 1  # the same episode, already reported
+
+    @pytest.mark.asyncio
+    async def test_an_unpaged_episode_closes_without_a_note(self):
+        db, gh, clock, notify = _setup(watches=_WATCHES[:3] + [_OTHER_WATCH])
+        gh.per_repo[REPO] = _Resp(503, text=_UNICORN)
+        await _passes(2, db, gh, clock, notify)  # transient: audit-only so far
+
+        _set_watches(db, [_OTHER_WATCH])
+        await _passes(1, db, gh, clock, notify)
+
+        assert notify.calls == []
+        closed = db.audit_of("probe.scheduled_workflow_watch_unwatched")
+        assert len(closed) == 1
+        assert closed[0]["was_paged"] is False
+        assert db.episode() is None
+
+    @pytest.mark.asyncio
+    async def test_a_non_repo_key_under_the_entity_is_left_alone(self):
+        db, gh, clock, notify = _setup()
+        other = (swf.FAILURE_STATE_ENTITY, "failure_episode:_config")
+        db.knowledge[other] = json.dumps({"since": _T0.isoformat(), "attempts": 1})
+
+        await _passes(1, db, gh, clock, notify)
+
+        assert other in db.knowledge
+        assert db.knowledge_deletes == 0
+
+    @pytest.mark.asyncio
+    async def test_an_episode_listing_that_fails_is_logged_and_the_pass_runs(
+        self, monkeypatch, caplog,
+    ):
+        db, gh, clock, notify = _setup()
+
+        async def _boom(*_a: Any, **_k: Any) -> Any:
+            raise RuntimeError("connection reset")
+
+        monkeypatch.setattr(db, "fetch", _boom)
+        with caplog.at_level("WARNING", logger=swf.logger.name):
+            summary = await _run(db, gh, clock, notify)
+
+        assert summary["ok"] is True
+        assert len(gh.requests) == 18
+        assert any(
+            "could not list open failure episodes: connection reset" in r.getMessage()
+            for r in caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------
