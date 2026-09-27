@@ -73,9 +73,10 @@ async def test_rebuild_feed_for_medium_video_short_is_noop() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _mock_httpx_client(feed_text: str) -> MagicMock:
+def _mock_httpx_client(feed_text: str, status_code: int = 200) -> MagicMock:
     resp = MagicMock()
     resp.text = feed_text
+    resp.status_code = status_code
     client = MagicMock()
     client.get = AsyncMock(return_value=resp)
     client.__aenter__ = AsyncMock(return_value=client)
@@ -123,6 +124,29 @@ async def test_rebuild_is_non_fatal_on_error() -> None:
     with patch("httpx.AsyncClient", side_effect=RuntimeError("worker down")):
         # Must not raise.
         await media_feed_rebuild.rebuild_podcast_feed(sc)
+
+
+@pytest.mark.asyncio
+async def test_rebuild_never_uploads_a_non_2xx_body() -> None:
+    """THE bug this change fixes for the event-driven rebuild path.
+
+    A 503 (storage_public_url unset) or 500 (site_url missing) body is not a
+    feed. Uploading it as podcast/feed.xml would publish an error page to
+    Apple/Spotify. The rebuild must skip the upload entirely, the same as an
+    unreachable worker.
+    """
+    sc = _site_config()
+    client = _mock_httpx_client(
+        '{"detail": "storage_public_url not configured"}', status_code=503,
+    )
+    upload = AsyncMock(return_value="https://r2.test/podcast/feed.xml")
+    r2 = MagicMock()
+    r2.upload_to_r2 = upload
+    with patch("httpx.AsyncClient", return_value=client), patch(
+        "poindexter.services.r2_upload_service.R2UploadService", return_value=r2
+    ):
+        await media_feed_rebuild.rebuild_podcast_feed(sc)
+    upload.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -200,8 +224,15 @@ def test_count_feed_items_ignores_itunes_prefixed_tags() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _patch_transport(rendered: str | None, published: str | None):
+def _patch_transport(
+    rendered: str | None, published: str | None, *, rendered_status: int = 200,
+):
     """Patch the rendered-feed GET + the authoritative R2 read/write.
+
+    ``rendered=None`` simulates a totally unreachable worker (the GET itself
+    raises). ``rendered_status`` != 2xx simulates a worker that answered but
+    with an error status — ``rendered`` is then the error body (e.g. an
+    HTTPException's JSON detail), which the real fetch discards.
 
     Returns ``(context_manager_factory, upload_mock)``.
     """
@@ -213,7 +244,10 @@ def _patch_transport(rendered: str | None, published: str | None):
     if rendered is None:
         client_patch = patch("httpx.AsyncClient", side_effect=RuntimeError("worker down"))
     else:
-        client_patch = patch("httpx.AsyncClient", return_value=_mock_httpx_client(rendered))
+        client_patch = patch(
+            "httpx.AsyncClient",
+            return_value=_mock_httpx_client(rendered, status_code=rendered_status),
+        )
 
     return client_patch, patch(
         "poindexter.services.r2_upload_service.R2UploadService", return_value=r2
@@ -323,6 +357,57 @@ async def test_reconcile_never_clobbers_when_render_fails() -> None:
         res = await media_feed_rebuild.reconcile_feed(sc, "podcast")
     assert res.healed is False
     assert res.error is not None
+    # Unreachable is not the same failure as a non-2xx response — no status
+    # code to report, and (per test_reconcile_is_non_fatal_on_unexpected_error
+    # and the emit_finding call sites below) this must not be escalated.
+    assert res.status_code is None
+    assert res.refused is False
+    upload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_refuses_and_reports_a_non_2xx_render() -> None:
+    """THE bug this change fixes for the convergence loop.
+
+    A 503 (storage_public_url unset) or a 500 (site_url missing/unhandled
+    error) is not a render, even though the body may still be non-empty JSON.
+    Uploading it would publish an error body to Apple/Spotify as the feed.
+    Unlike an unreachable worker, this DOES set status_code/refused, so the
+    job escalates it (see test_media_feed_reconciliation_job.py) rather than
+    silently reporting "unreachable".
+    """
+    sc = _site_config()
+    cp, rp, upload = _patch_transport(
+        rendered='{"detail": "storage_public_url not configured"}',
+        published=_feed(100),
+        rendered_status=503,
+    )
+    with cp, rp:
+        res = await media_feed_rebuild.reconcile_feed(sc, "podcast")
+    assert res.refused is True
+    assert res.healed is False
+    assert res.status_code == 503
+    assert res.error is not None and "503" in res.error
+    # The currently-published count is still surfaced for the finding body,
+    # even though there was no valid render to compare it against.
+    assert res.published_items == 100
+    assert res.rendered_items == 0
+    upload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_non_2xx_reports_zero_published_when_object_absent() -> None:
+    """A fresh install with no published object yet AND a broken route — the
+    published-item count in the escalation must not explode on a missing key."""
+    sc = _site_config()
+    cp, rp, upload = _patch_transport(
+        rendered="Internal Server Error", published=None, rendered_status=500,
+    )
+    with cp, rp:
+        res = await media_feed_rebuild.reconcile_feed(sc, "video")
+    assert res.refused is True
+    assert res.status_code == 500
+    assert res.published_items == 0
     upload.assert_not_awaited()
 
 
@@ -342,6 +427,9 @@ async def test_reconcile_refuses_to_publish_an_empty_feed_over_a_full_one() -> N
     assert res.refused is True
     assert res.healed is False
     assert (res.rendered_items, res.published_items) == (0, 100)
+    # A shrink refusal is a 2xx render, just one the guard distrusts — unlike
+    # a non-2xx refusal, there's no HTTP status to report.
+    assert res.status_code is None
     upload.assert_not_awaited()
 
 

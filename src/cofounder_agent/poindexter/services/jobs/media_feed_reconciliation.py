@@ -39,10 +39,15 @@ still emits a ``media_feed_drift`` finding (``warn``) — the same contract
 ``media_reconciliation`` uses.
 
 A *refused* reconcile emits ``media_feed_render_collapse`` at ``error``. That
-one is not ordinary drift: it means the renderer produced far fewer episodes
-than are published, and since ``podcast_feed`` returns a **valid empty feed**
-when its DB query fails, publishing it would wipe the podcast off Apple and
-Spotify. The watchdog declines and escalates instead of self-harming.
+one is not ordinary drift, and it covers two distinct causes, both worse than
+staleness: the renderer produced far fewer episodes than are published (and
+since ``podcast_feed`` returns a **valid empty feed** when its DB query
+fails, publishing it would wipe the podcast off Apple and Spotify), or the
+feed route answered with a non-2xx status instead of a render at all (e.g.
+``storage_public_url``/``site_url`` unset) — a broken route, not a shrunk
+feed, but equally something the watchdog must never publish. The watchdog
+declines and escalates instead of self-harming either way;
+``FeedReconcileResult.status_code`` tells the two apart for the finding body.
 
 Enabled by default (``media_feed_reconciliation_enabled``) — unlike the Stage-2
 media jobs it needs no GPU and no dormant master switch; it is a read-mostly
@@ -89,13 +94,28 @@ def _emit_drift_finding(medium: str, res: Any) -> None:
 
 
 def _emit_collapse_finding(medium: str, res: Any) -> None:
-    """The render collapsed — publishing it would have destroyed the feed."""
-    emit_finding(
-        source="media_feed_reconciliation",
-        kind="media_feed_render_collapse",
-        severity="error",
-        title=f"{medium} feed render collapsed — republish REFUSED",
-        body=(
+    """The render collapsed — publishing it would have destroyed the feed.
+
+    Two distinct causes share this finding: a shrunk render (``res.status_code``
+    is ``None``) or a route that answered non-2xx instead of rendering at all
+    (``res.status_code`` set). The body branches so an operator reading it
+    isn't told about a "shrink" that never happened.
+    """
+    if res.status_code is not None:
+        title = f"{medium} feed route returned HTTP {res.status_code} — republish REFUSED"
+        body = (
+            f"The {medium} feed route returned HTTP {res.status_code} instead of "
+            f"a rendered feed, so nothing was published. {res.published_items} "
+            f"episode(s) remain live and untouched.\n\n"
+            f"A non-2xx response means the route itself is broken — most likely "
+            f"storage_public_url or site_url is unset, or the worker hit an "
+            f"unhandled error. Check the worker's /api/{medium}/feed.xml route "
+            f"directly before assuming the episodes are the problem.\n\n"
+            f"Detail: {res.error}"
+        )
+    else:
+        title = f"{medium} feed render collapsed — republish REFUSED"
+        body = (
             f"Rendering the {medium} feed produced {res.rendered_items} episodes "
             f"against {res.published_items} currently published. That shrink "
             f"exceeds media_feed_reconcile_max_shrink, so the published feed was "
@@ -106,12 +126,19 @@ def _emit_collapse_finding(medium: str, res: Any) -> None:
             f"missing episodes. Check the worker's /api/{medium}/feed.xml route "
             f"and the database before overriding the guard.\n\n"
             f"Detail: {res.error}"
-        ),
+        )
+    emit_finding(
+        source="media_feed_reconciliation",
+        kind="media_feed_render_collapse",
+        severity="error",
+        title=title,
+        body=body,
         dedup_key=f"media_feed_render_collapse:{medium}",
         extra={
             "medium": medium,
             "published_items": res.published_items,
             "rendered_items": res.rendered_items,
+            "status_code": res.status_code,
         },
     )
 
@@ -159,7 +186,10 @@ class MediaFeedReconciliationJob:
             if res.refused:
                 refused += 1
                 _emit_collapse_finding(medium, res)
-                details.append(f"{medium}: REFUSED")
+                details.append(
+                    f"{medium}: REFUSED (HTTP {res.status_code})"
+                    if res.status_code is not None else f"{medium}: REFUSED",
+                )
                 continue
 
             if res.healed:

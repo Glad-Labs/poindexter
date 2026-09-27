@@ -176,7 +176,7 @@ function of DB **state** instead of events. Per medium with an RSS surface
 route, read the published object out of the bucket, republish when they differ.
 No future delivery path can starve the feed, including ones not written yet.
 
-Two implementation details carry the weight:
+Three implementation details carry the weight:
 
 - **The published copy is read via authenticated S3 `GetObject`**
   (`R2UploadService.get_object_text`), not by fetching the public
@@ -196,13 +196,30 @@ Two implementation details carry the weight:
   turning a staleness bug into an outage. The reconciler grows a feed freely but
   refuses to remove more than `media_feed_reconcile_max_shrink` items (default 5) in one pass, leaving the published feed untouched and escalating instead.
 
+A render can also fail a level below "zero items": the feed route itself can
+answer with a non-2xx status — `storage_public_url` unset 503s both routes,
+and a missing `site_url` raises, which the app's generic exception handler
+turns into a 500. That response body is not a feed (it's an `HTTPException`
+detail or a 500 handler's JSON envelope), so `_fetch_rendered_feed` checks the
+status code and treats a non-2xx the same as "nothing to publish" — every
+caller used to upload that error body to R2 as the feed itself, whichever
+route hit it first. The two callers diverge on purpose: the event-coupled
+rebuilds (`rebuild_podcast_feed`/`rebuild_video_feed`) just skip the upload,
+same as an unreachable worker, since they already swallow every failure
+silently and the reconciler is the backstop. `reconcile_feed` does not stay
+quiet — a non-2xx response means the _route_ is broken, which is strictly
+more actionable than "nothing changed" (an unreachable worker), so it refuses
+to publish and reports through the same escalation path a collapsed render
+uses (`media_feed_render_collapse`), with the HTTP status in the finding body
+in place of an (invented) item count.
+
 Findings follow the `media_reconciliation` fail-loud contract — a self-heal that
 stayed quiet would hide the upstream regression:
 
-| Finding                      | Severity | Route        | Meaning                                                                |
-| ---------------------------- | -------- | ------------ | ---------------------------------------------------------------------- |
-| `media_feed_drift`           | `warn`   | Discord, 6h  | Feed had drifted and was republished. An upstream rebuild was dropped. |
-| `media_feed_render_collapse` | `error`  | Telegram, 2h | Render collapsed; republish **refused**. The renderer or DB is broken. |
+| Finding                      | Severity | Route        | Meaning                                                                                                             |
+| ---------------------------- | -------- | ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `media_feed_drift`           | `warn`   | Discord, 6h  | Feed had drifted and was republished. An upstream rebuild was dropped.                                              |
+| `media_feed_render_collapse` | `error`  | Telegram, 2h | Republish **refused** — either the render collapsed (renderer/DB broken) or the feed route itself returned non-2xx. |
 
 The same commit also gave `media_distribute` the podcast lane's long-missing
 `rebuild_video_feed` call after a long-form delivery (shorts excluded — no RSS

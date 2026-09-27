@@ -27,11 +27,12 @@ def _site_config(enabled: bool = True) -> MagicMock:
 def _result(
     medium: str, *, drifted: bool = False, healed: bool = False,
     refused: bool = False, rendered: int = 100, published: int = 100,
-    error: str | None = None,
+    error: str | None = None, status_code: int | None = None,
 ) -> FeedReconcileResult:
     return FeedReconcileResult(
         medium=medium, rendered_items=rendered, published_items=published,
         drifted=drifted, healed=healed, refused=refused, error=error,
+        status_code=status_code,
     )
 
 
@@ -147,6 +148,39 @@ async def test_refused_shrink_escalates_to_error_severity() -> None:
     kw = finding.call_args.kwargs
     assert kw["kind"] == "media_feed_render_collapse"
     assert kw["severity"] == "error"
+    assert "shrink" in kw["body"].lower()
+    assert kw["extra"]["status_code"] is None
+
+
+@pytest.mark.asyncio
+async def test_refused_non_2xx_escalates_with_status_in_body_and_extra() -> None:
+    """A non-2xx render is a DIFFERENT reason to refuse than a shrunk render,
+    and the operator-facing finding must say so — not claim a shrink that
+    never happened. Still the same kind/severity as the shrink case (both
+    mean "did not publish, needs a human"), but the body and extra payload
+    must carry the HTTP status, not shrink language."""
+    with patch.object(
+        job_mod, "reconcile_feed",
+        new=AsyncMock(side_effect=lambda sc, m: (
+            _result(
+                m, drifted=False, healed=False, refused=True,
+                rendered=0, published=42, status_code=503,
+                error="feed route returned HTTP 503 instead of a render — refused to publish",
+            ) if m == "podcast" else _result(m)
+        )),
+    ), patch.object(job_mod, "emit_finding") as finding:
+        res = await _job().run(
+            pool=MagicMock(), config={"_site_config": _site_config()},
+        )
+    assert res.changes_made == 0
+    kw = finding.call_args.kwargs
+    assert kw["kind"] == "media_feed_render_collapse"
+    assert kw["severity"] == "error"
+    assert "503" in kw["title"]
+    assert "503" in kw["body"]
+    assert "shrink" not in kw["body"].lower()
+    assert kw["extra"]["status_code"] == 503
+    assert "HTTP 503" in res.detail
 
 
 @pytest.mark.asyncio

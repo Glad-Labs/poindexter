@@ -43,6 +43,30 @@ off Apple/Spotify — turning a staleness bug into an outage. So the loop is
 deliberately asymmetric: it will grow a feed freely, but refuses to shrink one
 by more than ``media_feed_reconcile_max_shrink`` items and escalates instead
 (``feedback_self_heal_not_suppress`` — self-heal, but never self-harm).
+
+## Non-2xx renders are not renders
+
+A feed route can also answer with a non-2xx status instead of a zero-item
+feed: ``_r2_url_or_503`` (both routes) 503s when ``storage_public_url`` is
+unset, and ``_site_url``/``site_config.require("site_url")`` raises when
+``site_url`` is missing, which the app's generic exception handler turns into
+a 500. Neither is XML. :func:`_fetch_rendered_feed` checks the status code and
+never hands a non-2xx body to a caller as if it were a render — every caller
+used to upload that error body to R2 as the feed itself, whatever it happened
+to contain (an HTTPException's JSON detail, or a 500 handler's JSON envelope).
+
+The two callers diverge on purpose. The event-coupled rebuilds
+(:func:`rebuild_podcast_feed` / :func:`rebuild_video_feed`) just skip the
+upload, same as an unreachable worker — they already swallow every failure
+silently, and the reconciler is the backstop that notices. :func:`reconcile_feed`
+does not stay quiet: a non-2xx response means the route itself is broken (not
+merely stale), which is strictly more actionable than "nothing changed," so it
+refuses to publish and reports it through the same escalation path as a
+collapsed render (``media_feed_render_collapse``) rather than being swallowed
+as "unreachable." An unreachable worker still reports nothing safe to publish
+without a finding — that case hasn't changed, because a worker that is briefly
+unreachable during a restart is not itself an operator-actionable signal the
+way a misconfigured route is.
 """
 from __future__ import annotations
 
@@ -91,9 +115,12 @@ class FeedReconcileResult:
     """Outcome of one :func:`reconcile_feed` pass.
 
     ``drifted`` means published != rendered. ``healed`` means we republished.
-    ``refused`` means we found drift but declined to publish it because the
-    render would have shrunk the feed past the guard — the interesting state,
-    since it points at the *renderer* being broken rather than the feed.
+    ``refused`` means we declined to publish for one of two reasons, both
+    pointing at the *renderer* being broken rather than the published feed:
+    the render would have shrunk the feed past the guard, or the feed route
+    answered with a non-2xx status instead of a render. ``status_code`` is
+    set only for the second case (``None`` for a shrink refusal, and for
+    every non-refused outcome) — the caller uses it to tell the two apart.
     """
 
     medium: str
@@ -103,6 +130,7 @@ class FeedReconcileResult:
     healed: bool
     refused: bool = False
     error: str | None = None
+    status_code: int | None = None
 
 
 def _normalize_for_compare(xml: str | None) -> str:
@@ -137,9 +165,27 @@ def count_feed_items(xml: str | None) -> int:
     return len(_ITEM_RE.findall(xml))
 
 
-async def _fetch_rendered_feed(site_config: Any, route: str) -> str | None:
+@dataclass(frozen=True)
+class _FeedFetch:
+    """Outcome of one GET against a worker feed route.
+
+    ``status_code`` is ``None`` only when the request itself never completed
+    (connection refused, timeout, DNS failure, ...) — the worker is
+    unreachable, and there is nothing to distinguish beyond that. Any other
+    value means the route answered: ``body`` is the response text on 2xx,
+    and ``None`` on every other status, so a non-2xx body (an HTTPException's
+    JSON detail, a 500 handler's error envelope) can never be mistaken for a
+    render by a caller that only checks ``body is None``.
+    """
+
+    body: str | None
+    status_code: int | None
+
+
+async def _fetch_rendered_feed(site_config: Any, route: str) -> _FeedFetch:
     """GET ``{internal_api_base_url}{route}`` — the feed as the DB currently
-    defines it. Returns ``None`` when the worker is unreachable."""
+    defines it. ``body`` is ``None`` on an unreachable worker OR a non-2xx
+    response; ``status_code`` tells the caller which."""
     try:
         import httpx
 
@@ -150,12 +196,19 @@ async def _fetch_rendered_feed(site_config: Any, route: str) -> str | None:
             timeout=httpx.Timeout(30.0, connect=5.0)
         ) as client:
             feed = await client.get(f"{api_base}{route}", timeout=30)
-        return feed.text
+        if not (200 <= feed.status_code < 300):
+            logger.warning(
+                "[MEDIA_FEED_REBUILD] %s returned HTTP %d instead of a "
+                "render — refusing to treat the body as feed content: %s",
+                route, feed.status_code, feed.text[:300],
+            )
+            return _FeedFetch(body=None, status_code=feed.status_code)
+        return _FeedFetch(body=feed.text, status_code=feed.status_code)
     except Exception as exc:  # noqa: BLE001 — caller decides; never raise upward
         logger.warning(
             "[MEDIA_FEED_REBUILD] could not render %s: %s", route, exc,
         )
-        return None
+        return _FeedFetch(body=None, status_code=None)
 
 
 async def _upload_feed(
@@ -221,14 +274,17 @@ async def _rebuild_feed(
 ) -> None:
     """Render ``route`` → upload the body to R2 ``r2_path``.
 
-    Non-fatal: any failure (worker unreachable, R2 unconfigured, upload error)
-    is logged and swallowed — the rebuild is additive self-healing, never part
-    of the approval transaction.
+    Non-fatal: any failure (worker unreachable, non-2xx route, R2
+    unconfigured, upload error) is logged and swallowed — the rebuild is
+    additive self-healing, never part of the approval transaction. Unlike
+    :func:`reconcile_feed`, a non-2xx response here is not escalated with a
+    finding of its own; the reconciler is the backstop that notices and
+    reports a route that stays broken.
     """
-    body = await _fetch_rendered_feed(site_config, route)
-    if body is None:
+    fetch = await _fetch_rendered_feed(site_config, route)
+    if fetch.body is None:
         return
-    await _upload_feed(site_config, body, r2_path=r2_path, label=label)
+    await _upload_feed(site_config, fetch.body, r2_path=r2_path, label=label)
 
 
 async def rebuild_podcast_feed(site_config: Any) -> None:
@@ -267,13 +323,23 @@ async def reconcile_feed(site_config: Any, medium: str) -> FeedReconcileResult:
 
     Renders the feed, reads the published object, and republishes when they
     differ — so the feed self-corrects regardless of which event-coupled
-    rebuild was missed. Two refusals keep the loop safe:
+    rebuild was missed. Three refusals keep the loop safe:
 
-    - a render we couldn't obtain is never published (nothing to converge on);
+    - a render we couldn't obtain at all (worker unreachable) is never
+      published — there's nothing to converge on, and this does NOT emit a
+      finding: a briefly unreachable worker isn't itself an operator-actionable
+      signal, and the next cycle tries again;
+    - a render whose route answered but with a non-2xx status is never
+      published either. Unlike the unreachable case, this DOES escalate — the
+      route itself is broken (``storage_public_url``/``site_url`` unset, or an
+      unhandled error), which is strictly more actionable than "nothing
+      changed" — reported through the same finding a collapsed render uses
+      (``media_feed_render_collapse``);
     - a render that would shrink the feed past ``media_feed_reconcile_max_shrink``
       is never published, because the likeliest cause is a broken renderer (the
       feed route returns a valid *empty* feed when its DB query fails), not 90
-      episodes genuinely disappearing.
+      episodes genuinely disappearing. Also escalated as
+      ``media_feed_render_collapse``.
 
     Never raises for operational failures — the caller is a scheduled watchdog.
     An unknown ``medium`` *does* raise: that's a programming error, and failing
@@ -287,13 +353,33 @@ async def reconcile_feed(site_config: Any, medium: str) -> FeedReconcileResult:
         )
 
     try:
-        rendered = await _fetch_rendered_feed(site_config, spec.route)
-        if rendered is None:
+        fetch = await _fetch_rendered_feed(site_config, spec.route)
+
+        if fetch.status_code is not None and fetch.body is None:
+            published = await _read_published_feed(site_config, spec.r2_path)
+            published_items = count_feed_items(published)
+            logger.error(
+                "[MEDIA_FEED_RECONCILE] %s route returned HTTP %d instead of "
+                "a render — refusing to publish; %d item(s) remain published.",
+                spec.label, fetch.status_code, published_items,
+            )
+            return FeedReconcileResult(
+                medium=medium, rendered_items=0, published_items=published_items,
+                drifted=False, healed=False, refused=True,
+                status_code=fetch.status_code,
+                error=(
+                    f"feed route returned HTTP {fetch.status_code} instead of "
+                    f"a render — refused to publish"
+                ),
+            )
+
+        if fetch.body is None:
             return FeedReconcileResult(
                 medium=medium, rendered_items=0, published_items=0,
                 drifted=False, healed=False,
                 error="feed route unreachable — nothing safe to publish",
             )
+        rendered = fetch.body
 
         published = await _read_published_feed(site_config, spec.r2_path)
         rendered_items = count_feed_items(rendered)
