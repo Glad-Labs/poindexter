@@ -33,21 +33,20 @@ App settings keys (all optional, fall back to listed defaults):
 """
 
 import logging
-import time
 from typing import Any
+
+from poindexter.brain import probe_schedule
 
 logger = logging.getLogger("brain.post_performance_probe")
 
-_last_run: dict[str, float] = {}
 
-
+# Last-run times survive a brain restart (see probe_schedule.py).
 def _is_due(probe_name: str, interval_minutes: int) -> bool:
-    last = _last_run.get(probe_name, 0)
-    return (time.time() - last) >= interval_minutes * 60
+    return probe_schedule.schedule.is_due(probe_name, interval_minutes * 60)
 
 
-def _mark_run(probe_name: str) -> None:
-    _last_run[probe_name] = time.time()
+async def _mark_run(pool: Any, probe_name: str) -> None:
+    await probe_schedule.schedule.mark_run(pool, probe_name)
 
 
 async def _read_setting(pool: Any, key: str, default: str) -> str:
@@ -88,9 +87,10 @@ async def probe_post_performance(pool: Any, notify_fn: Any) -> dict:
             pool, "post_performance_probe_interval_minutes", "1440"
         ) or 1440
     )
+    await probe_schedule.schedule.load(pool)
     if not _is_due("post_performance", interval):
         return {"ok": True, "detail": "not due yet"}
-    _mark_run("post_performance")
+    await _mark_run(pool, "post_performance")
 
     broken_min_age_days = int(
         await _read_setting(

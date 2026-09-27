@@ -20,6 +20,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from poindexter.brain import health_probes as hp
+from poindexter.brain import probe_schedule
+from poindexter.brain.probe_schedule import ProbeSchedule
 
 
 class _AcquireCM:
@@ -56,14 +58,14 @@ def _make_pool():
 
 
 @pytest.fixture(autouse=True)
-def _reset_module_state():
+def _reset_module_state(monkeypatch):
     # _created_issues was removed when the Gitea-issue auto-create helper
     # was deleted (Gitea decommissioned 2026-04-30).
-    hp._last_run.clear()
+    # A fresh probe schedule per test, as in a newly started brain.
+    monkeypatch.setattr(probe_schedule, "schedule", ProbeSchedule())
     hp._failure_counts.clear()
     hp._last_remediation.clear()
     yield
-    hp._last_run.clear()
     hp._failure_counts.clear()
     hp._last_remediation.clear()
 
@@ -89,16 +91,16 @@ class TestIsDue:
     def test_returns_true_when_never_run(self):
         assert hp._is_due("db_ping") is True
 
-    def test_returns_false_when_within_interval(self):
-        hp._mark_run("db_ping")
+    async def test_returns_false_when_within_interval(self):
+        await hp._mark_run(_make_pool(), "db_ping")
         assert hp._is_due("db_ping") is False
 
     def test_returns_true_after_interval_elapsed(self):
-        hp._last_run["db_ping"] = time.time() - 1000
+        probe_schedule.schedule.last_run["db_ping"] = time.time() - 1000
         assert hp._is_due("db_ping") is True
 
-    def test_unknown_probe_uses_default_interval(self):
-        hp._mark_run("unknown_probe_name")
+    async def test_unknown_probe_uses_default_interval(self):
+        await hp._mark_run(_make_pool(), "unknown_probe_name")
         assert hp._is_due("unknown_probe_name") is False
 
 
@@ -225,7 +227,7 @@ class TestRunHealthProbes:
     async def test_skips_undue_probes(self):
         now = time.time()
         for name in hp.PROBES.keys():
-            hp._last_run[name] = now
+            probe_schedule.schedule.last_run[name] = now
 
         p = _make_pool()
         results = await hp.run_health_probes(p)
@@ -1529,7 +1531,6 @@ class TestCallAgentRecovery:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 class TestOllamaRemediation:
     """REMEDIATIONS config and _try_remediation routing for Ollama probes."""
 

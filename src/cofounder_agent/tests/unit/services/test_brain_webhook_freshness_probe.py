@@ -20,6 +20,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from poindexter.brain import business_probes as bp
+from poindexter.brain import probe_schedule
+from poindexter.brain.probe_schedule import ProbeSchedule
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -41,6 +43,8 @@ def _make_pool(
     The probe calls each via ``pool.fetchval``. We side_effect on the
     first arg (the SQL string) — keeping things string-matchy keeps the
     mocks honest about which query the probe is actually emitting.
+    ``fetch`` / ``execute`` serve the probe schedule's load (no persisted
+    runs) and its last-run write.
     """
     settings = settings or {}
 
@@ -56,17 +60,17 @@ def _make_pool(
 
     pool = MagicMock()
     pool.fetchval = AsyncMock(side_effect=_fetchval)
+    pool.fetch = AsyncMock(return_value=[])
+    pool.execute = AsyncMock()
     return pool
 
 
 @pytest.fixture(autouse=True)
-def _reset_probe_state():
-    """Probes track their own due-time in the module-level _last_run dict.
-    Wipe between tests so each test has a clean slate.
+def _reset_probe_state(monkeypatch):
+    """Probes track their due-time in the process-wide probe schedule.
+    Give each test a fresh one, as in a newly started brain.
     """
-    bp._last_run.clear()
-    yield
-    bp._last_run.clear()
+    monkeypatch.setattr(probe_schedule, "schedule", ProbeSchedule())
 
 
 # ---------------------------------------------------------------------------

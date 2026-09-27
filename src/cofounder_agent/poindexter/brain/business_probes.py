@@ -1,22 +1,22 @@
 """
 Business Probes — operator-level monitoring that runs on the brain daemon cycle.
 
-These are Glad Labs private probes, NOT part of Poindexter open source.
-They implement the Probe interface from probe_interface.py.
+Plain ``(pool, notify_fn) -> dict`` functions called by ``run_business_probes``
+each cycle; each gates itself on its own interval.
 
 Probes:
-  - webhook_freshness: alert when revenue/subscriber webhooks go quiet
-    (Glad-Labs/poindexter#27 follow-up — webhooks were wired with test
-    rows on Apr 25 but no real provider deliveries since)
-  - (future) email_triage: Gmail inbox scan, flag actionable items
-  - (future) revenue_monitor: storefront sales + bank balance
+  - webhook_freshness: alert when revenue_events / subscriber_events stop
+    receiving rows (Glad-Labs/poindexter#27 follow-up)
+  - silent_alerter: page when no alert has gone out for hours while probes
+    are failing — the alerting path itself may be dead
 """
 
 import inspect
 import logging
-import time
 from datetime import UTC
 from typing import Any
+
+from poindexter.brain import probe_schedule
 
 logger = logging.getLogger("brain.business_probes")
 
@@ -33,31 +33,31 @@ async def _maybe_await(value: Any) -> Any:
         return await value
     return value
 
-# Schedule tracking — brain runs every 5 min, probes run on their own intervals
-_last_run: dict[str, float] = {}
 
-
+# Brain runs every 5 min, probes run on their own intervals. Last-run times
+# survive a brain restart (see probe_schedule.py).
 def _is_due(probe_name: str, interval_minutes: int) -> bool:
     """Check if a probe is due to run based on its interval."""
-    last = _last_run.get(probe_name, 0)
-    return (time.time() - last) >= interval_minutes * 60
+    return probe_schedule.schedule.is_due(probe_name, interval_minutes * 60)
 
 
-def _mark_run(probe_name: str):
-    """Record that a probe just ran."""
-    _last_run[probe_name] = time.time()
+async def _mark_run(pool, probe_name: str) -> None:
+    """Record that a probe just ran, in memory and in brain_knowledge."""
+    await probe_schedule.schedule.mark_run(pool, probe_name)
 
 
 # ============================================================================
 # WEBHOOK FRESHNESS — alert when revenue / subscriber tables go quiet
 # ============================================================================
 #
-# Glad-Labs/poindexter#27 follow-up. Both Lemon Squeezy and Resend webhook
-# handlers shipped (signature-verified, registered, idempotent). But each
-# table has exactly one row from 2026-04-25 — the test fires at
-# handler-wire time. No real provider deliveries since.
-#
-# Two ways that can be the system's fault:
+# Glad-Labs/poindexter#27 follow-up. A quiet table has two causes that are
+# the system's fault — its producer stopped, or rows are dropped on the way
+# in — and one that isn't: no sales or sends happened. This probe can't tell
+# them apart; it makes the silence visible and names each table's producer,
+# so the operator can. Both producers are polls now, not the webhook routes,
+# which are unreachable from the internet.
+
+
 async def _read_setting(pool, key: str, default: str) -> str:
     """Read an app_settings value with a typed default. Never raises."""
     try:
@@ -119,6 +119,7 @@ async def probe_webhook_freshness(pool, notify_fn) -> dict:
     interval = int(await _read_setting(
         pool, "probe_webhook_freshness_interval_minutes", "1440",
     ) or 1440)
+    await probe_schedule.schedule.load(pool)
     if not _is_due("webhook_freshness", interval):
         return {"ok": True, "detail": "not due yet"}
 
@@ -185,11 +186,15 @@ async def probe_webhook_freshness(pool, notify_fn) -> dict:
             age_str = f"{subscriber_age:.1f}d"
         alerts.append(
             f"subscriber_events: no row in {age_str} (threshold "
-            f"{subscriber_threshold_days:.0f}d). Verify Resend webhook "
-            "config: https://resend.com/webhooks"
+            f"{subscriber_threshold_days:.0f}d). The producer is the "
+            "sync_resend_delivery job (Resend GET /emails, hourly) — check "
+            "its run metrics first, NOT the webhook config: the "
+            "/api/webhooks/resend route is unreachable from the internet. "
+            "No row in this window means either no newsletter sends or a "
+            "broken poll."
         )
 
-    _mark_run("webhook_freshness")
+    await _mark_run(pool, "webhook_freshness")
 
     if not alerts:
         logger.info(
@@ -257,9 +262,10 @@ async def probe_silent_alerter(pool, notify_fn) -> dict:
     interval_minutes = await _setting_int(
         pool, "silent_alerter_probe_interval_minutes", 60,
     )
+    await probe_schedule.schedule.load(pool)
     if not _is_due("silent_alerter", interval_minutes):
         return {"ok": True, "detail": "not due yet"}
-    _mark_run("silent_alerter")
+    await _mark_run(pool, "silent_alerter")
 
     if not await _setting_bool(pool, "silent_alerter_probe_enabled", True):
         return {"ok": True, "detail": "disabled via app_settings"}

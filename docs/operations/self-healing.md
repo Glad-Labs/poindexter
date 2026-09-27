@@ -952,6 +952,68 @@ in-container Docker `HEALTHCHECK` is impossible. Their liveness is an **external
 Prometheus rule instead (`up{job="..."} == 0` in
 `infrastructure/prometheus/alerts/observability-sidecars.yml`).
 
+## Probe schedules survive a restart
+
+`health_probes.py`, `business_probes.py` and `post_performance_probe.py` run
+each probe on its own interval: `PROBE_SCHEDULES` for the health probes, and
+an `*_interval_minutes` setting for each of the others. Every run's time is
+written to `brain_knowledge`, and a new brain process reads those rows back
+on its first cycle (`poindexter/brain/probe_schedule.py`). A restart no
+longer makes every probe due at once.
+
+It used to. The last-run times lived only in memory, and the brain restarted
+111 times in the 30 days to 2026-09-25. 111 of `post_performance`'s 120 pages
+and all 31 of `webhook_freshness`'s alerts came within 15 minutes of a
+restart. Their 24-hour intervals had not elapsed; the new process had no
+record of the old one's runs.
+
+| Column      | Value                        |
+| ----------- | ---------------------------- |
+| `entity`    | `probe.<name>`               |
+| `attribute` | `last_run_at`                |
+| `value`     | ISO-8601 UTC time of the run |
+| `source`    | `probe_schedule`             |
+
+The rows sit beside each probe's `health_status` row. Keep the `probe.`
+prefix: the knowledge topic source (`services/topic_sources/knowledge.py`)
+skips `probe.` entities when it mines `brain_knowledge` for blog topics.
+
+When did each probe last run?
+
+```sql
+SELECT entity, value FROM brain_knowledge
+ WHERE attribute = 'last_run_at' AND source = 'probe_schedule'
+ ORDER BY value DESC;
+```
+
+To make a probe run on the next cycle, delete its row, then restart the brain.
+The running process keeps its own copy of the time until it restarts.
+
+```sql
+DELETE FROM brain_knowledge
+ WHERE entity = 'probe.post_performance' AND attribute = 'last_run_at';
+```
+
+Every failure falls back to running the probe, because an extra run can be
+recovered from and a probe that never runs is silent:
+
+- The table is read once per process. If that read fails, it is retried each
+  cycle, and until it succeeds probes run as if they had never run.
+- A failed write logs a warning. This process's schedule is unaffected; only
+  a restart before that probe's next run would run it early.
+- A value that doesn't parse is ignored. One dated in the future counts as
+  now, so it can delay a probe by one interval but never disable it.
+
+What still resets on a restart: `health_probes._failure_counts` (a probe
+pages after `ALERT_AFTER_FAILURES` consecutive failures) and
+`_last_remediation` (15 minutes between self-heals of one probe). After a
+restart a failing probe counts from zero again, and it now waits out its
+interval before its first run instead of running at once. A 6-hour probe that
+keeps failing therefore needs roughly 12 to 18 hours without a restart to
+reach three strikes. Probes on a 5-minute interval, which include the outage
+checks (`db_ping`, `worker_error_rate`, `public_site`), wait at most five
+minutes after a restart, so they are barely affected.
+
 ## Container health watch — unhealthy is not exited
 
 Docker's restart policy acts when a container's main process **exits**. A

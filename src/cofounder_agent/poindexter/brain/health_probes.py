@@ -2,7 +2,8 @@
 Health probes — exercise each service with real inputs to verify they work.
 
 Unlike basic HTTP checks, these probes send actual requests and validate responses.
-Each probe runs on its own schedule (tracked by last-run time).
+Each probe runs on its own schedule, tracked by last-run times that survive a
+brain restart (see probe_schedule.py).
 Results are stored in brain_knowledge for trend analysis.
 
 Standalone: only depends on asyncpg + urllib (no FastAPI imports).
@@ -22,7 +23,7 @@ import urllib.request
 from datetime import UTC
 from typing import Any
 
-from poindexter.brain import cycle_stage
+from poindexter.brain import cycle_stage, probe_schedule
 from poindexter.brain.docker_utils import localize_url, resolve_url
 from poindexter.brain.secret_reader import read_app_setting as _read_app_setting
 
@@ -88,7 +89,7 @@ except ImportError:  # pragma: no cover - exercised in minimal dev envs
     class _NoopTracer:
         start_as_current_span = staticmethod(_noop_span)
 
-    _tracer = _NoopTracer()
+    _tracer = _NoopTracer()  # type: ignore[assignment]
 
 # Podcast staleness — the operator-tunable app_settings key and the default
 # the probe falls back to. The default is DERIVED FROM OBSERVED CADENCE, not
@@ -201,7 +202,7 @@ _CONFIG_BASELINE = {
 }
 
 
-async def _sync_config_from_db(pool):
+async def _sync_config_from_db(pool: Any) -> None:
     """Re-resolve URL/connection config from app_settings each probe cycle.
 
     Env vars take priority (Docker sets them correctly for the container
@@ -304,20 +305,16 @@ PROBE_SCHEDULES = {
     "cadence_slo": 3600,             # 1 hour — catch a cadence shortfall within hours, not days
 }
 
-# Track last run times
-_last_run: dict[str, float] = {}
-
-
 def _is_due(probe_name: str) -> bool:
     """Check if a probe is due to run based on its schedule."""
-    last = _last_run.get(probe_name, 0)
-    interval = PROBE_SCHEDULES.get(probe_name, 3600)
-    return (time.time() - last) >= interval
+    return probe_schedule.schedule.is_due(
+        probe_name, PROBE_SCHEDULES.get(probe_name, 3600),
+    )
 
 
-def _mark_run(probe_name: str):
-    """Mark a probe as having just run."""
-    _last_run[probe_name] = time.time()
+async def _mark_run(pool, probe_name: str) -> None:
+    """Mark a probe as having just run, in memory and in brain_knowledge."""
+    await probe_schedule.schedule.mark_run(pool, probe_name)
 
 
 # --- app_settings value coercion -------------------------------------------
@@ -1945,6 +1942,7 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
     ``notify`` has no severity.
     """
     await _sync_config_from_db(pool)
+    await probe_schedule.schedule.load(pool)
     results = {}
     info = info_fn or notify_fn
 
@@ -1965,7 +1963,7 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
         if not _is_due(name):
             continue
 
-        _mark_run(name)
+        await _mark_run(pool, name)
         # Per-probe child span — gives Tempo a flame-graph entry per probe so
         # slow/failing probes are visible instead of aggregating under the
         # parent run_health_probes span (issue #176).

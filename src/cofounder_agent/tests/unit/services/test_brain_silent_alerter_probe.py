@@ -26,6 +26,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from poindexter.brain import business_probes as bp
+from poindexter.brain import probe_schedule
+from poindexter.brain.probe_schedule import ProbeSchedule
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -87,14 +89,15 @@ def _make_pool(
     pool = MagicMock()
     pool.fetchval = AsyncMock(side_effect=_fetchval)
     pool.fetch = AsyncMock(side_effect=_fetch)
+    # The probe schedule's last-run write.
+    pool.execute = AsyncMock()
     return pool
 
 
 @pytest.fixture(autouse=True)
-def _reset_probe_state():
-    bp._last_run.clear()
-    yield
-    bp._last_run.clear()
+def _reset_probe_state(monkeypatch):
+    # A fresh probe schedule per test, as in a newly started brain.
+    monkeypatch.setattr(probe_schedule, "schedule", ProbeSchedule())
 
 
 # ---------------------------------------------------------------------------

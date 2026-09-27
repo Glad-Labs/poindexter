@@ -35,6 +35,8 @@ import pytest
 from poindexter.brain import alert_sync as asx
 from poindexter.brain import brain_daemon as bd
 from poindexter.brain import health_probes as hp
+from poindexter.brain import probe_schedule
+from poindexter.brain.probe_schedule import ProbeSchedule
 
 OPS_URL = "https://discord.test/ops-webhook"
 PAGE = ["discord-ops", "telegram"]
@@ -113,7 +115,6 @@ def _reset_brain_state() -> None:
     bd._external_outage_paged.clear()
     bd._pipeline_states_announced.clear()
     hp._failure_counts.clear()
-    hp._last_run.clear()
     hp._last_remediation.clear()
 
 
@@ -128,6 +129,7 @@ def channels(monkeypatch) -> Iterator[_Channels]:
     # A settled process: boot grace off, and no openclaw doctor subprocess.
     monkeypatch.setattr(bd, "_DAEMON_STARTED_AT", time.monotonic() - 10_000)
     monkeypatch.setattr(bd, "_last_openclaw_doctor", time.time())
+    monkeypatch.setattr(probe_schedule, "schedule", ProbeSchedule())
     _reset_brain_state()
     yield recorder
     _reset_brain_state()
