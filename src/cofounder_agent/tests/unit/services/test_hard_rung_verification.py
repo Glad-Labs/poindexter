@@ -198,8 +198,10 @@ class TestVerifierRespectsTheDecline:
             )
         created.assert_awaited_once()
         kw = finding.call_args.kwargs
-        assert kw["title"].startswith(service)
-        assert container in kw["title"]
+        assert kw["title"] == (
+            f"Render GPU still short after {service}'s hard unload "
+            f"— restart of {container} requested"
+        )
         assert f"A restart of `{container}` is queued" in kw["body"]
         assert "6.0 GB -> 6.2 GB" in kw["body"]
         if service != "comfyui":
@@ -209,6 +211,51 @@ class TestVerifierRespectsTheDecline:
         # The routing contract is unchanged: same kind, same dedup key.
         assert kw["kind"] == "comfyui_vram_squat"
         assert kw["dedup_key"] == "comfyui_vram_squat"
+
+    async def test_the_finding_claims_only_what_the_verifier_saw(self):
+        """The verifier sees the CARD, never a process footprint. On 2026-09-26
+        all six findings said "<sidecar> still held VRAM", and the brain then
+        measured each suspect at 0.00-0.71 GB and skipped every restart. The
+        finding has to state the observation and leave the verdict to the
+        brain's footprint check, which ``detail`` records."""
+        s = _sched()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=5.9)), \
+             patch("poindexter.services.service_restart_requests.create_restart_request",
+                   AsyncMock(return_value={"id": "r1"})), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request",
+                   AsyncMock(return_value=None)), \
+             patch("poindexter.utils.findings.emit_finding") as finding:
+            await s._verify_reclaim_or_restart(
+                service="wan", container="poindexter-wan-server",
+                before_gb=5.9, declined=True,
+            )
+        kw = finding.call_args.kwargs
+        text = kw["title"] + kw["body"]
+        assert "held" not in kw["title"]
+        assert "Render GPU still short" in kw["title"]
+        assert "Queued is not restarted" in kw["body"]
+        assert "`detail`" in kw["body"]
+        assert "squat is real" not in text
+
+    async def test_the_unqueued_finding_states_the_observation_too(self):
+        s = _sched()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=None), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=5.9)), \
+             patch("poindexter.utils.findings.emit_finding") as finding:
+            await s._verify_reclaim_or_restart(
+                service="stable-audio", container="poindexter-stable-audio",
+                before_gb=5.9, declined=True,
+            )
+        kw = finding.call_args.kwargs
+        assert kw["title"] == (
+            "Render GPU still short after stable-audio's hard unload "
+            "— restart of poindexter-stable-audio could NOT be queued"
+        )
+        assert kw["severity"] == "warn"
+        assert kw["dedup_key"] == "comfyui_vram_squat:unqueued"
 
     async def test_freeing_nothing_while_the_gpu_has_room_is_not_a_squat(self):
         """ComfyUI idles at ~0.5 GB and can never 'free 1 GB'; it was bounced

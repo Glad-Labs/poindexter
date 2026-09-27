@@ -3881,7 +3881,7 @@ class GPUScheduler:
                 "no DB pool is registered — cannot queue it",
                 service, freed,
             )
-            # This is the case a human matters for: the squat is real and the
+            # This is the case a human matters for: the card is short and the
             # self-heal could NOT engage. Warn-level (Discord) — the queued
             # path below is info because the restart itself is the remedy.
             try:
@@ -3890,15 +3890,20 @@ class GPUScheduler:
                     source="services.gpu_scheduler",
                     # Historical name: this kind routes every sidecar's squat.
                     kind="comfyui_vram_squat",
+                    # States what the verifier OBSERVED (the card is short), not
+                    # that this sidecar holds the VRAM: it cannot see a
+                    # per-process footprint, and the brain often measures the
+                    # suspect at under a gigabyte.
                     title=(
-                        f"{service} still held VRAM after its hard unload and "
-                        f"NO restart could be queued"
+                        f"Render GPU still short after {service}'s hard unload "
+                        f"— restart of {container} could NOT be queued"
                     ),
                     body=(
                         f"{what_happened}. No DB pool is registered in this "
                         f"process, so the restart request could not be written "
-                        f"to `service_restart_requests`. The render GPU stays "
-                        f"short until something restarts `{container}` by hand."
+                        f"to `service_restart_requests`. If {service} is what "
+                        f"fills the card, it stays short until something "
+                        f"restarts `{container}` by hand."
                     ),
                     severity="warn",
                     dedup_key="comfyui_vram_squat:unqueued",
@@ -3928,19 +3933,26 @@ class GPUScheduler:
                 source="services.gpu_scheduler",
                 # Historical name: this kind routes every sidecar's squat.
                 kind="comfyui_vram_squat",
+                # The observation, not a verdict: the verifier sees the card,
+                # not the process. The brain measures the suspect's own
+                # footprint before acting (stack#3838), and on 2026-09-26 it
+                # skipped all six requests with the sidecar at 0.00-0.71 GB.
                 title=(
-                    f"{service} still held VRAM after its hard unload — "
-                    f"restart of {container} queued"
+                    f"Render GPU still short after {service}'s hard unload "
+                    f"— restart of {container} requested"
                 ),
                 body=(
-                    f"{what_happened}. What squats is the caching-allocator "
-                    f"pool + CUDA context, which only a process exit returns "
-                    f"(poindexter#1019, and #999 before it for stable-audio).\n\n"
-                    f"A restart of `{container}` is queued on "
-                    f"`service_restart_requests` for the brain daemon to "
-                    f"execute; renders resume once it is back.\n\n"
-                    f"Repeated firings mean something re-loads {service} "
-                    f"between reclaims — check the media pipeline cadence."
+                    f"{what_happened}. A restart of `{container}` is queued "
+                    f"on `service_restart_requests`.\n\n"
+                    f"Queued is not restarted: the brain measures the "
+                    f"container's own GPU footprint first and skips the "
+                    f"restart when it holds less than the squat floor "
+                    f"(stack#3838). The request's `detail` records which "
+                    f"happened. A real squat is the caching-allocator pool + "
+                    f"CUDA context, which only a process exit returns "
+                    f"(poindexter#1019, and #999 before it for stable-audio). "
+                    f"A run of skipped restarts means the card is full of "
+                    f"something other than {service}."
                 ),
                 # info, not warn (stack#3585): the restart IS the designed
                 # remedy for the caching-allocator squat (poindexter#1019) and
