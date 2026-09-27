@@ -328,17 +328,27 @@ async def test_db_error_returns_not_ok_without_raising():
 
 
 @pytest.mark.unit
-async def test_audit_written_even_without_notifier():
-    """If no notifier resolves, the probe still leaves an audit trail (so a
-    brain that can't page still records the stall for the findings dash)."""
+async def test_audit_written_even_without_notifier(operator_pages):
+    """The probe leaves an audit trail regardless of whether paging
+    succeeds (so a brain that can't page still records the stall for the
+    findings dash).
+
+    Stale comment fixed 2026-09-25: this used to say "notify_fn=None and (in
+    a worker-side test) the default notifier import fails". That premise is
+    false since the poindexter.* namespace move put brain/ and this probe
+    under the same package tree — ``_default_notify_fn()`` now successfully
+    imports the real ``notify_operator``, and the probe DOES call it. What
+    keeps this test from sending a real page is the unit-tier isolation
+    fixture (tests.unit.conftest._isolate_operator_notifier), not an
+    ImportError — the ``operator_pages`` assertion below makes that
+    explicit instead of leaving it to an untested assumption.
+    """
     pool = _FakePool(
         settings=_enabled_settings(),
         last_success_epoch=_NOW - 5 * 3600.0,
         latest_status="ok",
     )
 
-    # notify_fn=None and (in a worker-side test) the default notifier import
-    # fails → the probe writes the audit row + logs but can't page.
     summary = await run_finance_poll_staleness_probe(
         pool, notify_fn=None, now_epoch_fn=lambda: _NOW
     )
@@ -346,6 +356,10 @@ async def test_audit_written_even_without_notifier():
     assert summary["stale"] is True
     assert len(pool.audit_rows) == 1
     assert pool.audit_rows[0][0] == "finance.poll_stale"
+    assert any(p["channel"] == "alerts_log" for p in operator_pages), (
+        "expected the probe's default-resolved notify_operator to have "
+        "attempted a page (intercepted by the isolation stub, not skipped)"
+    )
 
 
 @pytest.mark.unit

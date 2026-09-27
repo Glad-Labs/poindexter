@@ -182,7 +182,7 @@ class TestInitializeDatabase:
         # (Glad-Labs/glad-labs-stack#997).
         _run(mgr._cancel_background_tasks())
 
-    def test_failure_raises_system_exit(self):
+    def test_failure_raises_system_exit(self, operator_pages):
         mgr = _make_manager()
         mock_db = AsyncMock()
         mock_db.initialize.side_effect = Exception("connection refused")
@@ -194,7 +194,18 @@ class TestInitializeDatabase:
             with pytest.raises(SystemExit):
                 _run(mgr._initialize_database())
 
-    def test_failure_does_not_set_database_service(self):
+        # This failure pages the operator (critical — Postgres is required).
+        # Assert it through the unit-tier isolation stub
+        # (tests.unit.conftest._isolate_operator_notifier) rather than a real
+        # send — before that guard existed this appended a real line to
+        # ~/.poindexter/alerts.log on every run (poindexter#1084 — 570 fake
+        # CRITICAL entries traced to this test and its sibling below).
+        assert any(
+            "database connection failed" in p["text"] and "Severity: critical" in p["text"]
+            for p in operator_pages
+        ), f"expected a critical page naming the DB failure, got {operator_pages!r}"
+
+    def test_failure_does_not_set_database_service(self, operator_pages):
         mgr = _make_manager()
         mock_db = AsyncMock()
         mock_db.initialize.side_effect = Exception("timeout")
@@ -209,6 +220,10 @@ class TestInitializeDatabase:
         # database_service was NOT assigned before exception
         # (the exception happens during initialize(), so the attribute IS set to the instance)
         # just verify SystemExit propagated — attribute state is moot
+        assert any(
+            "database connection failed" in p["text"] and "Severity: critical" in p["text"]
+            for p in operator_pages
+        ), f"expected a critical page naming the DB failure, got {operator_pages!r}"
 
 
 # ---------------------------------------------------------------------------

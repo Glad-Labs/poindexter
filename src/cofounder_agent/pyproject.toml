@@ -641,6 +641,7 @@ markers = [
     "gpu_lock_real_db: test asserts on the GPU lock's own DB calls; opts out of _isolate_gpu_lock_direct_db (it stubs asyncpg itself)",
     "real_model_arch: test exercises services.vram_budget.read_model_arch directly; opts out of _isolate_ollama_model_arch_probe",
     "real_image_text_scan: test exercises services.image_text_scan.ImageGenServerScanBackend.scan directly; opts out of _isolate_image_text_scan",
+    "real_operator_notifier: test exercises operator_notifier's own channel functions (_try_telegram/_try_discord/_append_alerts_log); opts out of _isolate_operator_notifier",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

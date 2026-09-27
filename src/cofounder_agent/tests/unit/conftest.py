@@ -25,6 +25,11 @@ Why the isolation fixtures are necessary:
 - ``logging``'s root level is process-wide, and ``poindexter.cli.pipeline``
   lowers it to WARNING on every ``pipeline`` subcommand — which is correct for
   a CLI and silently disarms any later test asserting on an INFO record.
+- ``poindexter.brain.operator_notifier`` appends every alert to the real
+  ``~/.poindexter/alerts.log`` and, when Telegram/Discord credentials happen
+  to be set in the process env, sends a real page. A fail-loud startup path
+  or a probe's default ``notify_fn`` reaches it without asking — see
+  ``_isolate_operator_notifier`` below.
 
 Long-term fix (tracked separately): move each singleton to
 FastAPI-Depends-injected factory so tests pass explicit instances.
@@ -717,6 +722,89 @@ def _isolate_coldload_reclaim_guard():
     finally:
         if patcher is not None:
             patcher.stop()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_operator_notifier(request, monkeypatch):
+    """Keep unit tests off every real operator-paging channel.
+
+    ``poindexter.brain.operator_notifier.notify_operator`` always appends to
+    the operator's real ``~/.poindexter/alerts.log`` (``_append_alerts_log``),
+    and sends real Telegram/Discord whenever those credentials are set in the
+    process env (``_try_telegram`` / ``_try_discord``). Nothing gates that —
+    a fail-loud startup path (``StartupManager._check_module_syntax``,
+    ``_initialize_database``) or a probe's default ``notify_fn`` (e.g.
+    ``modules.finance.probes``) reaches the real function without the test
+    asking for it. By 2026-09-25 this had appended 1,602 of 1,624 lines in
+    the operator's real alerts.log — the file they read when Telegram and
+    Discord are both down — including 4 fake CRITICAL "Worker cannot start"
+    pages a day going back to July (poindexter#1084).
+
+    Default: patch the three outbound seams to local recorders that return
+    the same ``(ok, reason)`` shape as the real ones but touch no file or
+    socket, and reset the notifier's cross-call module state
+    (``_LAST_PAGED_AT``, ``_PAGE_COOLDOWN_SECONDS``, ``_NOTIFY_AUDIT_SINK``)
+    so one test's page can't suppress or leak into another's. Formatting,
+    redaction, and severity routing inside ``notify_operator`` still run in
+    full — only the send/write at the bottom is stubbed — so a test can
+    assert on the page it WOULD have sent via the ``operator_pages`` fixture
+    below.
+
+    A test whose actual subject is the notifier's own channel functions opts
+    out with ``@pytest.mark.real_operator_notifier`` (see the class-level
+    marks in ``test_operator_notifier.py``, which redirects ``_ALERTS_LOG``
+    to ``tmp_path`` and clears the channel env vars itself instead). The
+    ``_real_notifier`` helper in ``test_*_failure_episodes.py`` needs no such
+    mark — it monkeypatches these same three seams itself, inside the test
+    body, which runs after (and so wins over) this fixture's setup.
+    """
+    if request.node.get_closest_marker("real_operator_notifier"):
+        yield []
+        return
+
+    try:
+        from poindexter.brain import operator_notifier as on
+    except (ImportError, AttributeError, ModuleNotFoundError):
+        # operator_notifier unimportable in a minimal env — nothing to guard.
+        yield []
+        return
+
+    pages: list[dict[str, str]] = []
+
+    def _telegram(text: str) -> tuple[bool, str]:
+        pages.append({"channel": "telegram", "text": text})
+        return False, "isolated in unit tests (_isolate_operator_notifier)"
+
+    def _discord(text: str) -> tuple[bool, str]:
+        pages.append({"channel": "discord", "text": text})
+        return False, "isolated in unit tests (_isolate_operator_notifier)"
+
+    def _alerts_log(text: str) -> tuple[bool, str]:
+        pages.append({"channel": "alerts_log", "text": text})
+        return True, "alerts.log (isolated in unit tests)"
+
+    monkeypatch.setattr(on, "_try_telegram", _telegram)
+    monkeypatch.setattr(on, "_try_discord", _discord)
+    monkeypatch.setattr(on, "_append_alerts_log", _alerts_log)
+    monkeypatch.setattr(on, "_LAST_PAGED_AT", {})
+    monkeypatch.setattr(on, "_PAGE_COOLDOWN_SECONDS", 0)
+    monkeypatch.setattr(on, "_NOTIFY_AUDIT_SINK", None)
+
+    yield pages
+
+
+@pytest.fixture
+def operator_pages(_isolate_operator_notifier):
+    """The current test's intercepted ``notify_operator`` sends.
+
+    Each entry is ``{"channel": "telegram"|"discord"|"alerts_log", "text":
+    <the fully formatted page>}``. Request this fixture to assert a code path
+    paged the operator (title/severity/detail are substrings of ``text``)
+    without needing a real send. Empty unless the test's own code calls
+    ``notify_operator`` (directly or via a fail-loud path) and unless
+    ``@pytest.mark.real_operator_notifier`` opts the test out.
+    """
+    return _isolate_operator_notifier
 
 
 @pytest.fixture(autouse=True)

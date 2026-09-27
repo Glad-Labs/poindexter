@@ -90,7 +90,7 @@ class TestCheckModuleSyntax:
     def _make_manager(self):
         return StartupManager(site_config=None)
 
-    def test_exits_1_when_conflict_markers_present(self, tmp_path):
+    def test_exits_1_when_conflict_markers_present(self, tmp_path, operator_pages):
         (tmp_path / "conflicted.py").write_text("<<<<<<< HEAD\n")
 
         mgr = self._make_manager()
@@ -103,6 +103,16 @@ class TestCheckModuleSyntax:
                     mgr._check_module_syntax()
 
         assert exc_info.value.code == 1
+        # The operator IS paged for this — assert it through the unit-tier
+        # isolation stub (tests.unit.conftest._isolate_operator_notifier)
+        # rather than by a real send. Before this assertion existed, the
+        # page reached the real ~/.poindexter/alerts.log on every run of
+        # this test (poindexter#1084 — 712 fake CRITICAL entries traced to
+        # this file).
+        assert any(
+            "Worker cannot start" in p["text"] and "Severity: critical" in p["text"]
+            for p in operator_pages
+        ), f"expected a critical page naming the syntax failure, got {operator_pages!r}"
 
     def test_does_not_exit_when_modules_dir_missing(self, tmp_path):
         mgr = self._make_manager()
@@ -124,7 +134,7 @@ class TestCheckModuleSyntax:
                 # Should return without raising or exiting
                 mgr._check_module_syntax()
 
-    def test_logs_critical_with_offending_filename(self, tmp_path, caplog):
+    def test_logs_critical_with_offending_filename(self, tmp_path, caplog, operator_pages):
         offender = str(tmp_path / "oops.py")
         mgr = self._make_manager()
         with patch.object(StartupManager, "_scan_syntax_errors", return_value=[(offender, "SyntaxError: invalid syntax")]):
@@ -139,3 +149,9 @@ class TestCheckModuleSyntax:
         assert any("oops.py" in r.message for r in caplog.records), (
             "Offending filename must appear in a CRITICAL log message"
         )
+        # Same page, asserted via the isolation stub instead of a real send
+        # (see test_exits_1_when_conflict_markers_present above).
+        assert any(
+            "oops.py" in p["text"] and "Severity: critical" in p["text"]
+            for p in operator_pages
+        ), f"expected the offending filename in the operator page, got {operator_pages!r}"

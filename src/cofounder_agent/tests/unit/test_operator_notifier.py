@@ -3,6 +3,16 @@
 No network allowed — Telegram/Discord calls are patched to a stub. The
 alerts log is redirected to a tmp_path so we don't pollute the user's
 real ~/.poindexter/alerts.log.
+
+Every class here is ``@pytest.mark.real_operator_notifier``: the subject of
+this file IS the notifier's own channel functions (``_try_telegram`` /
+``_try_discord`` / ``_append_alerts_log``), so it opts out of the
+``tests.unit.conftest._isolate_operator_notifier`` autouse fixture that
+stubs those same functions for every other unit test. Isolation here is
+per-fixture instead: env vars cleared, ``_ALERTS_LOG`` redirected to
+``tmp_path`` (this file, not the conftest fixture, is what keeps these tests
+off the real file and off a real send — see ``isolated_notifier`` /
+``with_external_channels_configured`` / ``cooled_notifier`` below).
 """
 
 from __future__ import annotations
@@ -37,6 +47,7 @@ def isolated_notifier(monkeypatch, tmp_path):
     return tmp_path
 
 
+@pytest.mark.real_operator_notifier
 class TestNotifyChannels:
     def test_stderr_always_written(self, isolated_notifier, capsys):
         operator_notifier.notify_operator(
@@ -76,6 +87,7 @@ class TestNotifyChannels:
         assert "DISCORD" in results["discord"]
 
 
+@pytest.mark.real_operator_notifier
 class TestSeverityRouting:
     """Per feedback_telegram_vs_discord: Telegram = critical/error only,
     Discord = all severities. info/warning must NOT phone-ping the operator.
@@ -158,6 +170,7 @@ class TestSeverityRouting:
         assert called["discord"] == 4
 
 
+@pytest.mark.real_operator_notifier
 class TestSeverityEmoji:
     @pytest.mark.parametrize(
         "sev,expected_glyphs",
@@ -176,9 +189,25 @@ class TestSeverityEmoji:
         assert expected_glyphs in err
 
 
+@pytest.mark.real_operator_notifier
 class TestDoesNotRaise:
     def test_never_raises_even_when_everything_fails(self, monkeypatch, tmp_path, capsys):
         """The whole point of notify_operator is graceful degradation."""
+        # This test's severity is critical, so unlike most tests in this
+        # file it does NOT rely on missing credentials to keep Telegram/
+        # Discord from firing for real — clear them explicitly. Found via
+        # the unit-tier isolation leak probe (poindexter#1084): a real
+        # TELEGRAM_BOT_TOKEN/DISCORD_OPS_WEBHOOK_URL exported in the shell
+        # for some other tool would otherwise reach api.telegram.org / a
+        # real webhook from here.
+        for var in (
+            "TELEGRAM_BOT_TOKEN",
+            "TELEGRAM_CHAT_ID",
+            "DISCORD_OPS_WEBHOOK_URL",
+            "DISCORD_LAB_LOGS_WEBHOOK_URL",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
         # Point alerts log at a read-only path. Note: alerts log failure
         # should be recovered silently, not propagated.
         bogus = tmp_path / "nonexistent-dir" / "alerts.log"
@@ -203,6 +232,7 @@ class TestDoesNotRaise:
         assert "failed" in result["alerts_log"]
 
 
+@pytest.mark.real_operator_notifier
 class TestCredentialRedaction:
     """Credential-shaped substrings in detail never leave the notifier."""
 
@@ -240,6 +270,7 @@ class TestCredentialRedaction:
         assert operator_notifier._redact_credentials(text) == text
 
 
+@pytest.mark.real_operator_notifier
 class TestPageCooldown:
     """Repeat-suppression gate (2026-07-01 alert-noise audit).
 
