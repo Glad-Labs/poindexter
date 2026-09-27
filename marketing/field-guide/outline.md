@@ -6,8 +6,9 @@ of 2026-09-26 and name their source. When a chapter is drafted, every number
 in it must trace to one of these sources, or be re-measured and the source
 updated. That is the book's own rule applied to the book.
 
-**v1** marks the 8-chapter cut (+ Appendix A) to write only after pre-orders
-say it's wanted. `sample-chapter.md` is chapter 4, drafted in full.
+**v1** marks the 8-chapter cut (+ Appendix A) to write only after the waitlist
+says it's wanted. It ships to Pro subscribers as a perk (see `README.md`).
+`sample-chapter.md` is chapter 4, drafted in full.
 
 Voice: first person, flat register, the story post's tone. Real numbers, real
 rough edges. The reader should finish each chapter able to add one guardrail

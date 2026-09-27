@@ -5,6 +5,8 @@ import {
   PRO_MONTHLY_USD,
   PRO_ANNUAL_USD,
   PRO_SEED_KEYS_FLOOR,
+  FIELD_GUIDE_ENABLED,
+  FIELD_GUIDE_SHIPPED,
 } from '@/lib/site.config';
 
 export const metadata = {
@@ -89,6 +91,19 @@ export default function GuidePage() {
                 references to deleted code and retired prices.
               </span>
             </li>
+            {FIELD_GUIDE_ENABLED && FIELD_GUIDE_SHIPPED && (
+              <li>
+                <span>
+                  <strong>THE FIELD GUIDE</strong> —{' '}
+                  <Link href="/field-guide">
+                    <em>Green Is Not a Result</em>
+                  </Link>
+                  : the operating rules for a codebase your AI agents write,
+                  each earned by a measured failure and paired with a guardrail
+                  you can add to your own repo.
+                </span>
+              </li>
+            )}
             <li>
               <span>
                 <strong>REBUILT WEEKLY, AUTOMATICALLY</strong> — an automated
@@ -106,6 +121,19 @@ export default function GuidePage() {
               </span>
             </li>
           </ul>
+
+          {FIELD_GUIDE_ENABLED && !FIELD_GUIDE_SHIPPED && (
+            <p
+              className="gl-body"
+              style={{ marginTop: '1.5rem', maxWidth: '640px' }}
+            >
+              <strong>Coming to Pro:</strong>{' '}
+              <Link href="/field-guide">the field guide</Link>,{' '}
+              <em>Green Is Not a Result</em>, the operating rules for a codebase
+              your AI agents write. Subscribers get it the day it ships, at no
+              extra charge.
+            </p>
+          )}
 
           <p
             className="gl-body"

@@ -69,14 +69,15 @@ The rest of the plan stands.
    the pack. The tool is its call to action. The Show HN follows later, or is
    dropped if the story's thread already carries it. The posting notes in the
    story draft are updated to match.
-3. **(changed) Give story readers something to buy that needs no GPU.** The
-   field-guide pre-sale package is ready in `marketing/field-guide/`: the
-   product plan, an outline sourced from the repo, a fully drafted sample
-   chapter, and a storefront page at `/field-guide` that 404s until you turn it
-   on. **Your decision first:** the June pricing spec made "single Pro SKU" a
-   non-goal, and this would be a second SKU for a different buyer. The
-   README there lays out both options, and the turn-on checklist is six steps.
-   If you take it, the story's closing paragraph links to it.
+3. **(changed) Give story readers somewhere to go that needs no GPU.**
+   **Decided 2026-09-27: the field guide is a Pro perk with a free waitlist,
+   not a second product**, so the June spec's single Pro SKU stands. The
+   package is in `marketing/field-guide/`: the plan, an outline sourced from the
+   repo, a fully drafted sample chapter, and a storefront page at
+   `/field-guide` that 404s until you turn it on. Before the guide ships, the
+   page is a waitlist ("one email when it ships") and says the guide is coming
+   to Pro; after, it sells Pro. The turn-on checklist is in that README, and
+   the story's closing paragraph links to the waitlist.
 4. **(changed) Make the freeze mechanical, not aspirational.** Until the
    tripwire fires, merge only launch blockers plus the automated sessions
    (dependency review, CLAUDE.md sync, test-health). Everything else waits in
@@ -91,15 +92,18 @@ The rest of the plan stands.
    - **stack#4101** — Pro's recurring value: a monthly measured model-routing
      update per VRAM tier.
 5. **(changed) Money goes on the scoreboard.** Add to Phase 3's monthly
-   scoreboard: Pro trials started, trials converted, field-guide pre-orders (if
-   live). **First money milestone: ~18 monthly Pro subscribers covers the
-   ~$310/month run cost** (~$69 electricity + API and ~$240 subscriptions, per
-   the story draft; $19 nets ~$17.55 after Lemon Squeezy's 5% + 50¢).
+   scoreboard: Pro trials started, trials converted, field-guide waitlist
+   signups (if live). **First money milestone: ~18 monthly Pro subscribers
+   covers the ~$310/month run cost** (~$69 electricity + API and ~$240
+   subscriptions, per the story draft; $19 nets ~$17.55 after Lemon Squeezy's
+   5% + 50¢).
 
 ### Decision rules at ~90 days after the sweep
 
-- **Story readers pre-order the guide** → the method is the product; Poindexter
-  becomes its living case study, and Pro stays a side line.
+- **Story readers fill the field-guide waitlist** → the method is the product;
+  write v1 and ship it into Pro, and Poindexter becomes its living case study.
+  If waitlisters then don't start Pro trials, a standalone edition is the
+  question to reopen, with numbers.
 - **Self-hosters install and start Pro trials** → invest in #1922, #4100 and
   #4101, the three things that make Pro worth renewing.
 - **Both quiet after the full sweep, including one HN repost** → the plan's
@@ -202,7 +206,7 @@ This is the part sized for real life. Three habits, nothing else:
 
 1. **First-10-users white glove.** Anyone who opens a Discussion, issue, or installs it gets a real, prompt, warm reply. Ten actual users teach you what Pro should be; they are worth more than 10,000 pageviews. This is the highest-ROI hour of your week.
 2. **One dev-diary post a month** — Claude drafts it from your changelog + whatever you fought with that month; you edit for truth; syndicate to whichever channels responded in Phase 2. Release-note posts to r/selfhosted when there's a meaty release.
-3. **Scoreboard, monthly, 15 minutes:** GitHub stars + traffic + clones, Discussions activity, newsletter signups, Pro page clicks, **Pro trials started and converted, field-guide pre-orders (if live)**. Pageviews on gladlabs.io are explicitly **not** on the scoreboard. First money milestone: ~18 monthly Pro subscribers covers the run cost (see "Strategy update" item 5).
+3. **Scoreboard, monthly, 15 minutes:** GitHub stars + traffic + clones, Discussions activity, newsletter signups, Pro page clicks, **Pro trials started and converted, field-guide waitlist signups (if live)**. Pageviews on gladlabs.io are explicitly **not** on the scoreboard. First money milestone: ~18 monthly Pro subscribers covers the run cost (see "Strategy update" item 5).
 
 ---
 

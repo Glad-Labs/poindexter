@@ -46,25 +46,26 @@ export const PRO_SEED_KEYS_FLOOR = '1,200+';
 // could be charged for a deliverable that couldn't yet be delivered.
 export const CHECKOUT_LIVE = true;
 
-// The field guide — a one-time e-book for developers directing AI coding
-// agents on a real codebase (plan + turn-on checklist:
-// marketing/field-guide/README.md). OFF by default: /field-guide 404s and the
-// nav hides it until BOTH the flag is true AND a Lemon Squeezy buy URL is set,
-// so flipping the flag alone can never publish a page with a dead checkout.
+// The field guide — an e-book for developers directing AI coding agents on a
+// real codebase. Decided 2026-09-27: a Pro perk, not a separate product. Pro
+// subscribers get it in the Pro repo when it ships; everyone else can join a
+// free waitlist, a $0 Lemon Squeezy "notify me" product. Plan + turn-on
+// checklist: marketing/field-guide/README.md.
+//
+// OFF by default: /field-guide 404s and the nav hides it until the flag is
+// true AND the page has something to act on (the waitlist URL before the
+// guide ships, Pro itself after), so flipping the flag alone can never
+// publish a page with a dead button.
 export const FIELD_GUIDE_LIVE = false;
-export const LS_FIELD_GUIDE_URL = '';
-// Copy only — Lemon Squeezy charges the real price. 0 turns the page into a
-// free "notify me" waitlist (a $0 LS product) instead of a pre-order.
-export const FIELD_GUIDE_PRICE_USD = 29;
-// Ship month shown on the page, e.g. 'December 2026'. Required for a paid
-// pre-order: the page states it next to the refund promise.
-export const FIELD_GUIDE_SHIPS = '';
+export const LS_FIELD_GUIDE_WAITLIST_URL = '';
+// Flip only once the guide is actually in the Pro repo. Until then every
+// surface says "coming to Pro", never "included" (marketing/pro-offer.md).
+export const FIELD_GUIDE_SHIPPED = false;
 // Optional: a free sample chapter published elsewhere (e.g. on the dev diary).
 export const FIELD_GUIDE_SAMPLE_URL = '';
 export const FIELD_GUIDE_ENABLED =
   FIELD_GUIDE_LIVE &&
-  LS_FIELD_GUIDE_URL !== '' &&
-  (FIELD_GUIDE_PRICE_USD === 0 || FIELD_GUIDE_SHIPS !== '');
+  (FIELD_GUIDE_SHIPPED || LS_FIELD_GUIDE_WAITLIST_URL !== '');
 
 // Founding-members CTA (used while CHECKOUT_LIVE === false).
 // Permanent invite (Expire: Never) minted 2026-08-26 — the previous one was

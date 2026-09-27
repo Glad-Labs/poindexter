@@ -2,28 +2,34 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Eyebrow, Display, Button } from '@glad-labs/brand';
 import { LemonSqueezyOverlay } from '@/components/LemonSqueezyOverlay';
+import { ProCTA } from '@/components/ProCTA';
 import {
   FIELD_GUIDE_ENABLED,
-  FIELD_GUIDE_PRICE_USD,
-  FIELD_GUIDE_SHIPS,
+  FIELD_GUIDE_SHIPPED,
   FIELD_GUIDE_SAMPLE_URL,
-  LS_FIELD_GUIDE_URL,
+  LS_FIELD_GUIDE_WAITLIST_URL,
+  PRO_MONTHLY_USD,
+  PRO_TRIAL_DAYS,
 } from '@/lib/site.config';
 
 /*
-  /field-guide — the one-time e-book for people directing AI coding agents.
+  /field-guide — the field guide, a Poindexter Pro perk (decided 2026-09-27).
+  It is never sold separately, so no price of its own appears here.
 
-  Gated: 404s unless FIELD_GUIDE_ENABLED (flag on AND a Lemon Squeezy buy URL
-  AND, for a paid pre-order, a ship month). Plan, pricing rationale and the
-  operator's turn-on checklist: marketing/field-guide/README.md. Chapter claims
-  below come from marketing/field-guide/outline.md, which cites a repo source
-  for every number — keep them in step when either changes.
+  Gated: 404s unless FIELD_GUIDE_ENABLED (see site.config). Two states:
+  - Before FIELD_GUIDE_SHIPPED: "coming to Pro", plus a free waitlist for
+    everyone else. No trial button: a trial would expire before the guide
+    exists.
+  - After: "in Pro now", with the Pro trial button. The waitlist goes away.
+  Plan and the operator's turn-on checklist: marketing/field-guide/README.md.
+  Chapter claims below come from marketing/field-guide/outline.md, which cites
+  a repo source for every number — keep them in step when either changes.
 */
 
 export const metadata = {
   title: 'The Field Guide',
   description:
-    'Green Is Not a Result — a field guide to running a production codebase your AI agents write. The operating rules and guardrails from a ~700,000-line system built by one person directing Claude Code.',
+    'Green Is Not a Result — a field guide to running a production codebase your AI agents write. The operating rules and guardrails from a ~700,000-line system built by one person directing Claude Code. Included with Poindexter Pro.',
 };
 
 const CHAPTERS = [
@@ -56,11 +62,6 @@ const CHAPTERS = [
 export default function FieldGuidePage() {
   if (!FIELD_GUIDE_ENABLED) notFound();
 
-  const isPreorder = FIELD_GUIDE_PRICE_USD > 0;
-  const ctaLabel = isPreorder
-    ? `▶ Pre-order — $${FIELD_GUIDE_PRICE_USD}`
-    : '▶ Join the waitlist (free)';
-
   return (
     <section className="sf-page">
       <div className="sf-container">
@@ -69,8 +70,8 @@ export default function FieldGuidePage() {
             <span>
               <span className="dot" aria-hidden="true" /> FIELD GUIDE · E-BOOK
             </span>
-            <span>PDF + EPUB</span>
-            {isPreorder && <span>SHIPS {FIELD_GUIDE_SHIPS.toUpperCase()}</span>}
+            <span>INCLUDED WITH PRO</span>
+            <span>{FIELD_GUIDE_SHIPPED ? 'OUT NOW' : 'IN PROGRESS'}</span>
           </div>
 
           <div
@@ -147,22 +148,47 @@ export default function FieldGuidePage() {
         >
           <div className="sf-pricing">
             <div>
-              <div className="sf-pricing__label">
-                {isPreorder ? '// Pre-order · one-time' : '// Waitlist · free'}
-              </div>
+              <div className="sf-pricing__label">// Included with Pro</div>
               <div className="sf-pricing__amount">
-                {isPreorder ? `$${FIELD_GUIDE_PRICE_USD}` : '$0'}
+                ${PRO_MONTHLY_USD}
+                <span className="sf-pricing__cents">/mo</span>
               </div>
               <div className="sf-pricing__tagline">
-                {isPreorder
-                  ? `Ships ${FIELD_GUIDE_SHIPS}. Full refund if it slips.`
-                  : 'One email when it ships. Nothing else.'}
+                {FIELD_GUIDE_SHIPPED
+                  ? `In the Pro repo now, with the console, the config seed and the book. ${PRO_TRIAL_DAYS}-day free trial. Not sold separately.`
+                  : 'Pro subscribers get it in the Pro repo the day it ships, at no extra charge. Not sold separately.'}
               </div>
             </div>
-            <LemonSqueezyOverlay productUrl={LS_FIELD_GUIDE_URL}>
-              {ctaLabel}
-            </LemonSqueezyOverlay>
+            {FIELD_GUIDE_SHIPPED ? (
+              <ProCTA variant="primary" />
+            ) : (
+              <Button as={Link} href="/guide" variant="secondary">
+                What&apos;s in Pro
+              </Button>
+            )}
           </div>
+
+          {!FIELD_GUIDE_SHIPPED && (
+            <div
+              className="sf-pricing"
+              style={{
+                marginTop: '1.5rem',
+                borderTop: '1px dashed var(--gl-border)',
+                paddingTop: '1.5rem',
+              }}
+            >
+              <div>
+                <div className="sf-pricing__label">// Waitlist · free</div>
+                <div className="sf-pricing__amount">$0</div>
+                <div className="sf-pricing__tagline">
+                  One email when it ships. Nothing else.
+                </div>
+              </div>
+              <LemonSqueezyOverlay productUrl={LS_FIELD_GUIDE_WAITLIST_URL}>
+                ▶ Join the waitlist
+              </LemonSqueezyOverlay>
+            </div>
+          )}
         </section>
 
         <section

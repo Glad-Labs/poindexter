@@ -28,6 +28,15 @@ symptom it diagnosed.)
 | Prompt pack              | Exported from `src/cofounder_agent/skills/*/*/SKILL.md`.                                                                                                                                                                                                                                                                                                        | **No — identical to what ships free.**                                                                                                                                    |
 | Grafana boards           | Copies of five boards from `infrastructure/grafana/dashboards/`.                                                                                                                                                                                                                                                                                                | **No — every board ships free.**                                                                                                                                          |
 
+### Coming to Pro (not in it yet)
+
+**The field guide** (_Green Is Not a Result_). Decided 2026-09-27: a Pro perk,
+not a separate product. An outline and one sample chapter exist
+(`marketing/field-guide/`). When it ships, it goes into the Pro repo under
+`book/field-guide/`. Until then, non-subscribers can join a free waitlist at
+`/field-guide`, which stays dark until `FIELD_GUIDE_LIVE` is set. It moves into
+the table above the week it ships.
+
 ## Rules for describing it
 
 1. **Never list the prompt pack or the dashboards as Pro benefits.** They ride
@@ -55,6 +64,11 @@ symptom it diagnosed.)
    weekly session regenerates the seed, console, prompts and boards; the book
    is prose it only scans for drift. (The `/guide` page said the book was
    "rebuilt from the live system every week" until 2026-09-27.)
+8. **The field guide is a Pro perk, never a price of its own.** Until
+   `FIELD_GUIDE_SHIPPED` is true in `web/storefront/lib/site.config.js`, it is
+   only "coming to Pro", and only on the gated storefront surfaces and the
+   story post's closing call to action. Don't list it in the table, the README
+   or SUPPORT.md before it ships.
 
 ## Surfaces that describe Pro
 
@@ -67,9 +81,14 @@ Public (these ship to `Glad-Labs/poindexter` on every push to main):
 Private (stripped from the mirror):
 
 - `web/storefront/app/page.js` — hero meta + the three cards
-- `web/storefront/app/guide/page.js` — the "What's in Pro" checklist
+- `web/storefront/app/guide/page.js` — the "What's in Pro" checklist, plus the
+  field-guide lines gated behind `FIELD_GUIDE_LIVE`
+- `web/storefront/app/field-guide/page.js` — the field guide: a waitlist before
+  it ships, Pro after
 - `web/storefront/app/about/page.js` — the Pro paragraph + the `// MODE` fact
 - `web/storefront/app/layout.js` — site metadata description
+- `marketing/launch/copy/01-story-post.md` — the closing field-guide call to
+  action
 - `marketing/launch/copy/05-faq-crib-sheet.md` — "What's the catch with Pro?"
 - `Glad-Labs/poindexter-pro` `README.md` — buyer-facing; its "950+" seed floor
   is conservative but true

@@ -54,7 +54,7 @@ Poindexter is in alpha, Apache 2.0, self-host only, honest rough edges listed in
 
 And if you're an engineer wondering whether directing agents is real engineering: I spent a year embarrassed about it, and the artifact ships daily and survives its own test suite. Draw your own conclusion — I've drawn mine.
 
-[IF THE FIELD GUIDE IS LIVE — otherwise delete this paragraph:] If the part of this you care about is the directing rather than the pipeline, I'm writing that up properly: _Green Is Not a Result_, a field guide to running a codebase your agents write. It covers the operating rules, the measured failures that earned each one, and the guardrails you can drop into your own repo the same evening. [Pre-order at gladlabs.ai/field-guide](https://www.gladlabs.ai/field-guide).
+[IF THE FIELD GUIDE WAITLIST IS LIVE — otherwise delete this paragraph:] If the part of this you care about is the directing rather than the pipeline, I'm writing that up properly: _Green Is Not a Result_, a field guide to running a codebase your agents write. It covers the operating rules, the measured failures that earned each one, and the guardrails you can drop into your own repo the same evening. It'll ship as part of Poindexter Pro; [join the waitlist at gladlabs.ai/field-guide](https://www.gladlabs.ai/field-guide) for one email when it's out.
 
 ---
 

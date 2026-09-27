@@ -1,15 +1,17 @@
-# The field guide — a product for the audience that can't run Poindexter
+# The field guide — a Pro perk for the audience that can't run Poindexter
 
-**Status:** pre-sale package, drafted 2026-09-26. **Nothing here is live.** The
-storefront page exists but 404s until `FIELD_GUIDE_LIVE` is flipped (see
-"Turning it on").
+**Status:** decided 2026-09-27: **a Pro perk with a free waitlist, not a
+separate product.** An outline and one sample chapter exist (drafted
+2026-09-26). **Nothing here is live.** The storefront page exists but 404s until
+`FIELD_GUIDE_LIVE` is flipped (see "Turning it on").
 
 ## What it is
 
-A paid e-book for developers and engineering leads who are adopting AI coding
+An e-book for developers and engineering leads who are adopting AI coding
 agents and running into the problems this repo has already solved: drift,
 silent failures, docs that lie to the next session, CI that goes green by
-scanning nothing, config sprawl, scanners that bury real findings.
+scanning nothing, config sprawl, scanners that bury real findings. It ships to
+Poindexter Pro subscribers at no extra charge and is not sold separately.
 
 Working title (pick one):
 
@@ -35,85 +37,107 @@ From the 2026-09-26 evaluation (summarised in `marketing/launch/launch-plan.md`,
   a 16 GB+ NVIDIA card and 23+ containers. People who are directing coding
   agents on a real codebase need neither, and there are far more of them.
 - **The story post already reaches them.** "One person, 10,500+ commits, almost
-  no hand-written code" is the launch's strongest hook. Without something to
-  buy, that traffic reads, stars, and leaves.
-- **It fits the hard constraint.** Passive income, zero customer service
-  (`docs/superpowers/specs/2026-06-09-site-positioning-pricing-design.md`): a
-  one-time digital download, delivered by Lemon Squeezy, with no account, no
-  install, no support queue.
+  no hand-written code" is the launch's strongest hook. Without somewhere to
+  go next, that traffic reads, stars, and leaves.
+- **It fits the hard constraints.** Passive income, zero customer service and a
+  single Pro SKU
+  (`docs/superpowers/specs/2026-06-09-site-positioning-pricing-design.md`). As
+  a Pro perk it adds no second price, no new checkout and no support queue; it
+  rides the delivery Pro already has.
 - **The material exists.** CLAUDE.md's Key Principles, ~70 architecture docs, 32 CI lints,
   the decision log and the story draft are most of a book. The work is
   selection, narrative and a truth-edit, which is the division of labour the
   launch pack already uses (Claude drafts, you edit for truth).
 
-## Tension with the June spec — your call
+## The decision (2026-09-27)
 
-The June positioning spec made "single Pro tier, no new SKUs" a non-goal and
-deleted an orphan $29 "Claude Code Template Pack". This is a new SKU, but for a
-different buyer: the spec's buyer is the self-hoster, and this buyer never
-installs anything. If you'd rather keep one SKU, the fallback is to make the
-guide a **Pro perk** and use the storefront page as an email waitlist only.
-Either way, offering it **free to active Pro subscribers** adds Pro value at no
-cost.
+The June positioning spec made "single Pro tier, no new SKUs" a non-goal, so the
+guide is a **Pro perk**, not a second product:
 
-## Price and format
+- **Pro subscribers** get it in the Pro repo the day it ships, at no extra
+  charge. It reaches them the way everything else in Pro does: the GitHub
+  collaborator invite, then `git pull`.
+- **Everyone else** can join a free waitlist at `/field-guide`: one email when
+  it ships. The waitlist is a $0 "notify me" product in Lemon Squeezy, so it
+  needs no new infrastructure.
+- **Not sold separately,** so it has no price of its own anywhere.
 
-- **$29 pre-order**, rising to $39 at release. Set in
-  `web/storefront/lib/site.config.js` (`FIELD_GUIDE_PRICE_USD`); Lemon Squeezy
-  charges the real price.
-- PDF + EPUB, delivered by Lemon Squeezy's built-in file delivery. No repo
-  access, no GitHub username at checkout.
-- Pre-order terms on the page: a stated ship month, full refund on request if it
-  slips. A refund is one click in Lemon Squeezy.
+What this trades away, so it can be judged later against numbers:
 
-**Pre-order vs waitlist.** A pre-order is the stronger signal (someone paid),
-and is honest now that `outline.md` and `sample-chapter.md` exist. If you'd
-rather not owe a ship date, create a **$0 "notify me"** product instead and set
-`FIELD_GUIDE_PRICE_USD = 0`: the page switches to a free waitlist CTA with no
-other change.
+- **A weaker demand signal.** A waitlist signup costs nothing, so it says less
+  than a pre-order would have. Count signups _and_ the Pro trials that start
+  after the guide ships.
+- **Trial-and-cancel gets it free.** Trial subscribers get the Pro repo invite
+  (`on_trial` is an access status in
+  `src/cofounder_agent/poindexter/services/pro_delivery.py`), and Pro promises
+  "cancel anytime, keep everything you've downloaded". That's already true of
+  everything in Pro; the guide makes it likelier for readers who don't run the
+  engine.
+- **A self-hoster's price for a reader's product.** Pro is priced for people
+  running the stack. A story reader who only wants the guide pays $19 a month
+  or uses the trial. If the waitlist is large and conversions are poor, revisit
+  a standalone edition then, with numbers.
+
+## Format and delivery
+
+- It lives in the Pro repo (`Glad-Labs/poindexter-pro`) under
+  `book/field-guide/`, in Markdown like the book. Add a PDF build only if
+  subscribers ask for one.
+- Why `book/`: `scripts/ops_sessions/pro_freshness.py` rebuilds the Pro repo
+  every week but never edits `book/`. It also scans everything under it for
+  deleted-code names and retired prices, so the guide gets the same drift check
+  as the book.
 
 ## The v1 cut
 
-`outline.md` lists 15 chapters. Don't write 15 before anyone has paid. The v1
-cut is 8 chapters plus the guardrail appendix (marked **v1** in the outline),
-about 20,000 words. That's the size of the Pro operator book (~23,000 words),
-which the same drafting process has already produced once.
+`outline.md` lists 15 chapters. Don't write 15 before the waitlist says anyone
+wants them. The v1 cut is 8 chapters plus the guardrail appendix (marked **v1**
+in the outline), about 20,000 words. That's the size of the Pro operator book
+(~23,000 words), which the same drafting process has already produced once.
 
 ## Turning it on
 
 Nothing below is automated. Each step is yours.
 
-1. **Decide:** separate SKU, or Pro-perk plus waitlist (see above).
-2. **Before a second product exists in the store,** set
+**The waitlist (can go live before a word of v1 is written):**
+
+1. **Before a second product exists in the store,** set
    `pro_delivery_ls_product_id` to the Pro product's id
    (`poindexter settings set pro_delivery_ls_product_id <id>`).
    `docs/operations/pro-delivery.md` asks for this once the store sells more
-   than Pro. A one-time product creates orders, not subscriptions, so the Pro
-   sync would not invite its buyers anyway, but the filter makes that explicit.
-3. **Create the product in Lemon Squeezy:** one-time price, the page copy as its
-   description, the ship month in the description and receipt email, and the
-   file attached when the book exists.
-4. **Wire the storefront** in `web/storefront/lib/site.config.js`:
-   - `LS_FIELD_GUIDE_URL` = the product's buy URL
-   - `FIELD_GUIDE_SHIPS` = the ship month shown on the page, e.g. "December 2026"
-   - `FIELD_GUIDE_PRICE_USD` = the price (0 = free waitlist)
+   than Pro. A one-time $0 product creates orders, not subscriptions, so the Pro
+   sync would not invite its sign-ups anyway, but the filter makes that
+   explicit.
+2. **Create the waitlist in Lemon Squeezy:** a free, one-time "notify me"
+   product. Its description and receipt should say that the guide ships as part
+   of Pro, that it isn't sold separately, and that signing up means one email
+   when it's out.
+3. **Wire the storefront** in `web/storefront/lib/site.config.js`:
+   - `LS_FIELD_GUIDE_WAITLIST_URL` = the product's buy URL
    - `FIELD_GUIDE_LIVE = true`
 
-   The page goes live at `gladlabs.ai/field-guide`, and a "Field guide" link
-   appears in the storefront nav.
+   The page goes live at `gladlabs.ai/field-guide`, a "Field guide" link
+   appears in the storefront nav, and `/guide` gains a "Coming to Pro" line.
 
-5. **Point the story post at it:** the closing lines of
+4. **Point the story post at it:** the closing lines of
    `marketing/launch/copy/01-story-post.md` carry the call to action.
-6. **Know the revenue gap:** `SyncProSubscriptionsJob` records revenue from
-   `/v1/subscription-invoices` only, so one-time orders will **not** reach
-   `revenue_events` or the Revenue board. Track guide sales in the Lemon
-   Squeezy dashboard, or extend the poll to `/v1/orders` before launch.
+
+**Shipping the guide:**
+
+5. **Add it to the Pro repo** under `book/field-guide/`, with a `CHANGELOG.md`
+   entry.
+6. **Set `FIELD_GUIDE_SHIPPED = true`.** The page swaps the waitlist for the Pro
+   trial button, and `/guide` lists the guide as part of Pro.
+7. **Update the canonical offer:** move the guide into the table in
+   `marketing/pro-offer.md`, then walk that file's list of surfaces (README,
+   SUPPORT.md, the docs pages).
+8. **Email the waitlist once:** export the sign-ups from Lemon Squeezy.
 
 ## What would make this a bad idea
 
-- **Nobody pre-orders from the story launch.** Then the method isn't the
-  product. Refund anyone who did, and put the effort back into the engine per
-  the launch plan's decision rules.
-- **It eats the evenings the launch needs.** The pre-sale needs only the page,
+- **The waitlist stays empty after the story launch.** Then the method isn't
+  the product. Put the effort back into the engine per the launch plan's
+  decision rules.
+- **It eats the evenings the launch needs.** The waitlist needs only the page,
   the outline and the sample chapter, which now exist. Writing the full v1
-  should wait until pre-orders say it's wanted.
+  should wait until the waitlist says it's wanted.
