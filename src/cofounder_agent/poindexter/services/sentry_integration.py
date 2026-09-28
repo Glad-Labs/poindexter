@@ -54,8 +54,28 @@ fragmented by volatile text):
   ``[regex, replacement]`` pairs applied to the grouping fingerprint.
   Volatile tokens (temp filenames, UUIDs, float durations) otherwise mint
   a brand-new GlitchTip issue per event.
+
+Integrations — the list passed to ``sentry_sdk.init`` is the whole list.
+``auto_enabling_integrations=False`` because the SDK otherwise enables an
+integration for every library it finds installed, on top of the ones named
+here. In the worker image that was 21 integrations, and the LangChain one
+imports ``langchain_classic`` → transformers → torch (the LangGraph one
+imports the LangChain one): 6 s and +520 MB peak RSS on every Prefect
+flow-run subprocess, measured 2026-09-28. Listing it under
+``disabled_integrations`` does not help; the SDK imports it to build that
+list.
+
+* Core, always on: FastAPI, Starlette, asyncio, logging, threading, plus
+  the SDK's stdlib defaults (excepthook, atexit flush, dedupe, argv,
+  modules, stdlib http.client/subprocess).
+* ``sentry_extra_integrations`` (default ``''``) — CSV of sentry-sdk
+  integration identifiers to opt back in, e.g. ``asyncpg`` for SQL
+  breadcrumbs while chasing a database fault. Read at init, so the worker
+  needs a restart; each Prefect flow run initialises afresh. The costs of
+  the usual candidates are in docs/operations/glitchtip-triage.md.
 """
 
+import importlib
 import json
 import logging
 import re
@@ -68,24 +88,20 @@ from poindexter.services.logger_config import get_logger
 
 try:
     import sentry_sdk
+    from sentry_sdk.integrations import Integration
     from sentry_sdk.integrations.asyncio import AsyncioIntegration
     from sentry_sdk.integrations.fastapi import FastApiIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
     from sentry_sdk.integrations.starlette import StarletteIntegration
     from sentry_sdk.integrations.threading import ThreadingIntegration
 
-    try:
-        from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration  # type: ignore
-    except Exception:
-        SqlAlchemyIntegration = None  # type: ignore[assignment,misc]
-
     SENTRY_AVAILABLE = True
 except ImportError:
     sentry_sdk = None  # type: ignore[assignment]
+    Integration = None  # type: ignore[assignment,misc]
     AsyncioIntegration = None  # type: ignore[assignment,misc]
     FastApiIntegration = None  # type: ignore[assignment,misc]
     LoggingIntegration = None  # type: ignore[assignment,misc]
-    SqlAlchemyIntegration = None  # type: ignore[assignment,misc]
     StarletteIntegration = None  # type: ignore[assignment,misc]
     ThreadingIntegration = None  # type: ignore[assignment,misc]
     SENTRY_AVAILABLE = False
@@ -173,6 +189,16 @@ class SentryIntegration:
     # reload recompiles once rather than per event.
     _scrub_cache_key: str | None = None
     _scrub_cache: tuple[tuple[re.Pattern[str], str], ...] = ()
+
+    # Identifiers of the integrations ``initialize`` always passes. Naming one
+    # of these in ``sentry_extra_integrations`` would replace the configured
+    # instance (LoggingIntegration's levels) with a default-constructed one.
+    CORE_INTEGRATIONS = frozenset(
+        {"fastapi", "starlette", "asyncio", "logging", "threading"}
+    )
+
+    # An integration identifier is a module name under sentry_sdk.integrations.
+    _INTEGRATION_NAME = re.compile(r"[a-z][a-z0-9_]*\Z")
 
     @classmethod
     def initialize(
@@ -281,14 +307,18 @@ class SentryIntegration:
                     level=logging.INFO,
                     event_level=logging.ERROR,
                 ),
-                ThreadingIntegration(propagate_hub=True),  # type: ignore[misc]
+                # propagate_scope is the 2.x name. propagate_hub is deprecated
+                # and due for removal, at which point it would fail init.
+                ThreadingIntegration(propagate_scope=True),  # type: ignore[misc]
             ]
-            if SqlAlchemyIntegration is not None:
-                integrations.append(SqlAlchemyIntegration())  # type: ignore[misc]
+            extras = cls._extra_integrations(site_config)
 
-            sentry_sdk.init(
+            options: dict[str, Any] = dict(
                 dsn=sentry_dsn,
-                integrations=integrations,
+                # The integrations passed are the whole list. Left True, the
+                # SDK also enables one for every installed library it knows,
+                # and the LangChain one imports torch (module docstring).
+                auto_enabling_integrations=False,
                 # Environment and release information
                 environment=environment,
                 release=release,
@@ -299,7 +329,7 @@ class SentryIntegration:
                 traces_sample_rate=traces_sample_rate,
                 profiles_sample_rate=profiles_sample_rate,
                 # Before sending event to Sentry (filter sensitive data)
-                before_send=cls._before_send,  # type: ignore[arg-type]
+                before_send=cls._before_send,
                 # Include local variables in stack traces
                 include_local_variables=True,
                 # Error attachment configurations
@@ -309,6 +339,24 @@ class SentryIntegration:
                 # "error" count from `sentry_sdk.errors` DEBUG chatter.
                 debug=sentry_debug_logging,
             )
+            try:
+                sentry_sdk.init(integrations=[*integrations, *extras], **options)
+            except Exception as exc:
+                if not extras:
+                    raise
+                # An extra can still refuse at setup: the SDK raises
+                # DidNotEnable for an integration named explicitly whose
+                # library is too old. Error tracking outranks any extra, so
+                # say so and initialise with the core list alone.
+                logger.error(
+                    "[SENTRY] sentry_extra_integrations %s failed to enable "
+                    "(%s: %s) — initialising with the core integrations only. "
+                    "Fix or clear the setting.",
+                    [extra.identifier for extra in extras],
+                    type(exc).__name__,
+                    exc,
+                )
+                sentry_sdk.init(integrations=integrations, **options)
 
             # Set user context for authenticated requests (if available)
             sentry_sdk.set_tag("service", service_name)
@@ -333,6 +381,10 @@ class SentryIntegration:
             logger.info("   Release: %s", release)
             logger.info("   Traces Sample Rate: %s", traces_sample_rate)
             logger.info("   Profiles Sample Rate: %s", profiles_sample_rate)
+            logger.info(
+                "   Integrations: %s",
+                ",".join(sorted(getattr(sentry_sdk.get_client(), "integrations", {}))),
+            )
 
             cls._initialized = True
             cls._sentry_enabled = True
@@ -345,6 +397,76 @@ class SentryIntegration:
             cls._initialized = True
             cls._sentry_enabled = False
             return False
+
+    @classmethod
+    def _extra_integrations(cls, site_config: Any) -> list[Any]:
+        """The integrations ``sentry_extra_integrations`` opts into.
+
+        The setting is a CSV of sentry-sdk integration identifiers. Each name
+        must resolve to a module under ``sentry_sdk.integrations`` with an
+        ``Integration`` class of the same identifier, so the SDK's own layout
+        is the list of choices. A name that is malformed, unknown, core, or
+        whose library is not installed logs an error and is skipped. An
+        optional extra must never cost the process its error tracking.
+        """
+        raw = str(site_config.get("sentry_extra_integrations", "") or "")
+        extras: list[Any] = []
+        for name in dict.fromkeys(part.strip().lower() for part in raw.split(",")):
+            if not name:
+                continue
+            if name in cls.CORE_INTEGRATIONS:
+                logger.warning(
+                    "[SENTRY] sentry_extra_integrations: %r is always enabled — "
+                    "ignored. Remove it from the setting.",
+                    name,
+                )
+                continue
+            integration = cls._load_integration(name)
+            if integration is not None:
+                extras.append(integration)
+        return extras
+
+    @classmethod
+    def _load_integration(cls, name: str) -> Any | None:
+        """Instantiate the sentry-sdk integration ``name``, or ``None`` loudly.
+
+        Importing the integration module is the cost the operator opted into:
+        ``langchain`` and ``langgraph`` import torch in the worker image. It is
+        also where the SDK raises ``DidNotEnable`` when the library it
+        instruments is absent.
+        """
+        if Integration is None or not cls._INTEGRATION_NAME.match(name):
+            logger.error(
+                "[SENTRY] sentry_extra_integrations: %r is not a sentry-sdk "
+                "integration identifier — skipped.",
+                name,
+            )
+            return None
+        try:
+            module = importlib.import_module(f"sentry_sdk.integrations.{name}")
+            for candidate in vars(module).values():
+                if (
+                    isinstance(candidate, type)
+                    and issubclass(candidate, Integration)
+                    and getattr(candidate, "identifier", None) == name
+                ):
+                    return candidate()
+        except Exception as exc:  # noqa: BLE001 — ModuleNotFoundError (unknown name), DidNotEnable (library absent) and constructor errors all mean "skip it, loudly"
+            logger.error(
+                "[SENTRY] sentry_extra_integrations: %r is unavailable "
+                "(%s: %s) — skipped.",
+                name,
+                type(exc).__name__,
+                exc,
+            )
+            return None
+        logger.error(
+            "[SENTRY] sentry_extra_integrations: sentry_sdk.integrations.%s "
+            "defines no integration named %r — skipped.",
+            name,
+            name,
+        )
+        return None
 
     @classmethod
     def _setting(cls, key: str, default: str) -> str:

@@ -160,4 +160,13 @@ class TestInitSentry:
         ok = await bd._init_sentry(MagicMock())
         assert ok is True
         fake_sentry.init.assert_called_once()
-        assert fake_sentry.init.call_args.kwargs["dsn"] == "https://k@glitchtip.local/1"
+        kwargs = fake_sentry.init.call_args.kwargs
+        assert kwargs["dsn"] == "https://k@glitchtip.local/1"
+        # The explicit list is the whole list. With auto-enabling on, the SDK
+        # also turned on asyncpg + httpx in the brain image, and SQL breadcrumbs
+        # made up 80% of the brain's GlitchTip breadcrumbs.
+        assert kwargs["auto_enabling_integrations"] is False
+        assert kwargs["integrations"] == [
+            integ_logging.LoggingIntegration.return_value,
+            integ_asyncio.AsyncioIntegration.return_value,
+        ]

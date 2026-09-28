@@ -13,6 +13,80 @@ strictly better to never capture a non-error than to capture and then close it.
 | **Capture-side** | `services/sentry_integration.py::_before_send`                                                       | Events that should never have been errors at all        |
 | **Triage-side**  | `poindexter/brain/glitchtip_triage_probe.py` + `app_settings.glitchtip_triage_auto_resolve_patterns` | Real errors that are known/expected, and stale one-offs |
 
+## What the SDK records: integrations
+
+Before either layer runs, the SDK's integrations decide what gets captured and
+what context an event carries. Each process passes its integrations explicitly
+with `auto_enabling_integrations=False`, so the list in code is the whole list:
+
+| Process (`server_name`)                                                             | Initialised by                                                    | Integrations                                                                      |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `poindexter-worker`, and every Prefect content flow run (`poindexter-prefect-flow`) | `services/sentry_integration.py` (`SentryIntegration.initialize`) | FastAPI, Starlette, asyncio, logging, threading, plus `sentry_extra_integrations` |
+| `poindexter-brain`                                                                  | `poindexter/brain/brain_daemon.py` (`_init_sentry`)               | logging, asyncio                                                                  |
+| `poindexter-mcp-http`                                                               | `mcp-server/http_server.py`                                       | SDK auto-enabling, unchanged (see below)                                          |
+
+All of them keep the SDK defaults: excepthook, atexit (which flushes queued
+events when a short-lived flow run exits), dedupe, argv, modules, and stdlib
+(breadcrumbs for `http.client` requests and subprocesses). The worker and each
+flow run log the enabled set at init: `Integrations: argv,asyncio,atexit,...`.
+
+### Why auto-enabling is off
+
+Left on, sentry-sdk 2.x enables an integration for every installed library it
+recognises, whatever `integrations=` says. In the worker image that was 21
+integrations. The LangChain one imports `langchain_classic` → transformers →
+torch, and the LangGraph one imports the LangChain one. Measured in the
+prefect-worker image on 2026-09-28, after the content flow had imported its own
+modules:
+
+| `sentry_sdk.init` | Time      | Peak RSS                     |
+| ----------------- | --------- | ---------------------------- |
+| auto-enabling on  | 6.0–6.3 s | 172 → 701 MB, torch imported |
+| auto-enabling off | 0.01 s    | 172 → 174 MB                 |
+
+Every content flow run initialises Sentry, and a run starts about every two
+minutes even on an empty queue. Live, each `prefect.engine` subprocess mapped
+libtorch and peaked at about 855 MB. `disabled_integrations` cannot fix this:
+the SDK imports an integration to put it on that list.
+
+The rest of the auto set did harm as well. Over the 322 GlitchTip events of
+the 14 days to 2026-09-28:
+
+- **asyncpg** records one breadcrumb per query, and an event keeps only the
+  last 100. Queries were 66% of the worker's breadcrumbs and 80% of the
+  brain's; log lines, the part that tells the story, were 16% and 8.5%.
+- **httpx** records every request URL as a breadcrumb, path and query string
+  unredacted. URLs that carry a credential in their path, like a chat
+  webhook, were stored with it.
+
+The MCP HTTP server keeps auto-enabling on purpose. Its venv has no LangChain
+or torch, it initialises once per long-lived process (0.78 s, most of it
+importing FastAPI and `mcp`, which it loads anyway), and the auto-enabled
+FastAPI, Starlette and `mcp` integrations are what capture its request errors.
+
+### Opting an integration back in: `sentry_extra_integrations`
+
+A CSV of sentry-sdk integration identifiers (default empty) that
+`SentryIntegration.initialize` adds on top of its core list, for the worker
+and the content flow runs. The brain always uses its fixed list. Each
+identifier is a module under `sentry_sdk.integrations`. A name that is
+malformed, unknown, core, or whose library is not installed is logged as an
+error and skipped. If an extra refuses at setup, init retries with the core
+list alone. An optional extra never costs a process its error tracking.
+
+It is read at init: restart the worker to apply it; flow runs pick it up on
+their next run. Import cost of each candidate in the prefect-worker image,
+measured after the content flow's own modules had loaded:
+
+| Identifier                                     | Adds                                            | Import cost                                       |
+| ---------------------------------------------- | ----------------------------------------------- | ------------------------------------------------- |
+| `asyncpg`                                      | a breadcrumb and span per SQL query             | negligible (crowds out log breadcrumbs, as above) |
+| `httpx`                                        | a breadcrumb and span per HTTP request          | negligible (records full URLs, as above)          |
+| `aiohttp`, `redis`, `boto3`, `huggingface_hub` | per-call breadcrumbs and spans                  | ≤ 0.11 s, ≤ 6 MB                                  |
+| `sqlalchemy`                                   | query breadcrumbs (our code uses no SQLAlchemy) | 0.22 s, +15 MB                                    |
+| `openai`                                       | spans for OpenAI-client LLM calls               | 0.52 s, +28 MB                                    |
+| `langchain`, `langgraph`                       | spans for chains and graph runs                 | 4.2–4.8 s, +424–432 MB, imports torch             |
+
 ## Layer 1 — capture-side (`_before_send`)
 
 Runs in-process before an event is sent. Two knobs, both `app_settings`-driven

@@ -90,7 +90,6 @@ class TestSentryIntegration:
         assert result is False
         assert SentryIntegration._sentry_enabled is False
 
-    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_initialize_success(self, mock_sentry):
         from poindexter.services.sentry_integration import SentryIntegration
@@ -106,7 +105,6 @@ class TestSentryIntegration:
         assert SentryIntegration._sentry_enabled is True
         mock_sentry.init.assert_called_once()
 
-    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_sdk_debug_off_by_default_even_in_development(self, mock_sentry):
         """Default is debug=False everywhere — environment must not auto-enable it.
@@ -132,7 +130,6 @@ class TestSentryIntegration:
             "(false-positive error-count source)"
         )
 
-    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_sdk_debug_opt_in_via_legacy_alias(self, mock_sentry):
         """Legacy ``sentry_debug_logging`` still works (backcompat shim).
@@ -152,7 +149,6 @@ class TestSentryIntegration:
         kwargs = mock_sentry.init.call_args.kwargs
         assert kwargs["debug"] is True
 
-    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_sdk_debug_opt_in_via_canonical_key(self, mock_sentry):
         """``sentry_sdk_debug`` is the seeded key and must actually be read.
@@ -172,7 +168,6 @@ class TestSentryIntegration:
         SentryIntegration.initialize(MagicMock(), cfg)
         assert mock_sentry.init.call_args.kwargs["debug"] is True
 
-    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_sdk_debug_canonical_key_wins_over_legacy(self, mock_sentry):
         """An explicit canonical value overrides the legacy alias."""
@@ -950,7 +945,6 @@ class TestSentrySampleRates:
         SentryIntegration.initialize(MagicMock(), cfg)
         return mock_sentry.init.call_args.kwargs
 
-    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_operator_set_rates_are_honoured(self, mock_sentry):
         kwargs = self._init(mock_sentry, {
@@ -961,7 +955,6 @@ class TestSentrySampleRates:
         assert kwargs["traces_sample_rate"] == 0.5
         assert kwargs["profiles_sample_rate"] == 0.25
 
-    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("poindexter.services.sentry_integration.sentry_sdk")
     @pytest.mark.parametrize("environment", ["production", "development"])
     def test_unset_defaults_to_seeded_value_in_every_environment(
@@ -979,7 +972,6 @@ class TestSentrySampleRates:
         assert kwargs["traces_sample_rate"] == 0.1
         assert kwargs["profiles_sample_rate"] == 0.1
 
-    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_unparseable_and_empty_values_fall_back(self, mock_sentry):
         """'' is the documented unset sentinel; garbage must not crash init."""
@@ -991,7 +983,6 @@ class TestSentrySampleRates:
         assert kwargs["traces_sample_rate"] == 0.1
         assert kwargs["profiles_sample_rate"] == 0.1
 
-    @patch("poindexter.services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("poindexter.services.sentry_integration.sentry_sdk")
     def test_rates_are_real_floats_not_mocks(self, mock_sentry):
         """Guards the stub-shape trap that would make this suite vacuous.
@@ -1004,6 +995,160 @@ class TestSentrySampleRates:
         assert isinstance(kwargs["traces_sample_rate"], float)
         assert isinstance(kwargs["profiles_sample_rate"], float)
         assert isinstance(kwargs["debug"], bool)
+
+
+@pytest.mark.skipif(not _has_sentry, reason="sentry-sdk not installed")
+class TestIntegrationList:
+    """The integrations handed to ``sentry_sdk.init`` are the whole list.
+
+    sentry-sdk 2.x also enables an integration for every installed library it
+    recognises unless ``auto_enabling_integrations=False``. In the worker image
+    that was 21 integrations, and the LangChain one imports torch: 6 s and
+    +520 MB peak RSS on every Prefect flow-run subprocess (2026-09-28).
+    ``test_sentry_integration_import_closure.py`` checks the real import
+    behaviour; these tests pin the call.
+    """
+
+    # The contract: error capture for the FastAPI worker, asyncio tasks,
+    # logger.error lines and threads. Nothing that only adds breadcrumbs.
+    CORE = frozenset({"fastapi", "starlette", "asyncio", "logging", "threading"})
+
+    def setup_method(self):
+        from poindexter.services.sentry_integration import SentryIntegration
+
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+
+    def _init(self, mock_sentry, extra: dict | None = None):
+        from poindexter.services.sentry_integration import SentryIntegration
+
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "true",
+            **(extra or {}),
+        })
+        ok = SentryIntegration.initialize(MagicMock(), cfg)
+        return ok, mock_sentry.init.call_args_list
+
+    @staticmethod
+    def _ids(call) -> list[str]:
+        return [integration.identifier for integration in call.kwargs["integrations"]]
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_auto_enabling_is_off(self, mock_sentry):
+        ok, calls = self._init(mock_sentry)
+        assert ok is True
+        assert len(calls) == 1
+        assert calls[0].kwargs["auto_enabling_integrations"] is False
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_unset_passes_exactly_the_core_list(self, mock_sentry):
+        from poindexter.services.sentry_integration import SentryIntegration
+
+        _, calls = self._init(mock_sentry)
+        ids = self._ids(calls[0])
+        assert len(ids) == len(set(ids))
+        assert set(ids) == SentryIntegration.CORE_INTEGRATIONS == self.CORE
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_threading_integration_uses_the_current_argument(self, mock_sentry):
+        """``propagate_hub`` is deprecated in sentry-sdk 2.x and due for
+        removal, at which point passing it would fail init outright."""
+        from sentry_sdk.integrations.threading import ThreadingIntegration
+
+        with patch(
+            "poindexter.services.sentry_integration.ThreadingIntegration",
+            wraps=ThreadingIntegration,
+        ) as spy:
+            self._init(mock_sentry)
+        assert spy.call_args.kwargs == {"propagate_scope": True}
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_extra_integration_is_added_by_identifier(self, mock_sentry):
+        from sentry_sdk.integrations.asyncpg import AsyncPGIntegration
+
+        _, calls = self._init(
+            mock_sentry, {"sentry_extra_integrations": " AsyncPG , asyncpg,,"}
+        )
+        integrations = calls[0].kwargs["integrations"]
+        extras = [i for i in integrations if i.identifier not in self.CORE]
+        assert [type(i) for i in extras] == [AsyncPGIntegration]
+        assert calls[0].kwargs["auto_enabling_integrations"] is False
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    @pytest.mark.parametrize(
+        "value", ["no_such_integration", "../os", "sentry_sdk.integrations.httpx", "9lives"]
+    )
+    def test_unknown_or_malformed_names_are_skipped_loudly(self, mock_sentry, value, caplog):
+        with caplog.at_level(logging.ERROR):
+            ok, calls = self._init(mock_sentry, {"sentry_extra_integrations": value})
+        assert ok is True
+        assert set(self._ids(calls[0])) == self.CORE
+        assert "sentry_extra_integrations" in caplog.text
+        assert "skipped" in caplog.text
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_integration_whose_library_is_absent_is_skipped_loudly(self, mock_sentry, caplog):
+        """The SDK raises DidNotEnable while importing the integration module
+        when the library it instruments is not installed."""
+        from sentry_sdk.integrations import DidNotEnable
+
+        with patch("poindexter.services.sentry_integration.importlib") as fake_importlib:
+            fake_importlib.import_module.side_effect = DidNotEnable("pymongo is not installed")
+            with caplog.at_level(logging.ERROR):
+                ok, calls = self._init(mock_sentry, {"sentry_extra_integrations": "pymongo"})
+        fake_importlib.import_module.assert_called_once_with("sentry_sdk.integrations.pymongo")
+        assert ok is True
+        assert set(self._ids(calls[0])) == self.CORE
+        assert "pymongo is not installed" in caplog.text
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_naming_a_core_integration_does_not_replace_it(self, mock_sentry, caplog):
+        with caplog.at_level(logging.WARNING):
+            _, calls = self._init(mock_sentry, {"sentry_extra_integrations": "logging"})
+        assert sorted(self._ids(calls[0])) == sorted(self.CORE)
+        assert "always enabled" in caplog.text
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_an_extra_that_refuses_at_setup_falls_back_to_core(self, mock_sentry, caplog):
+        """An explicitly named integration that raises DidNotEnable in
+        ``setup_once`` makes ``sentry_sdk.init`` raise. Error tracking must
+        survive a bad optional extra."""
+        from sentry_sdk.integrations import DidNotEnable
+
+        mock_sentry.init.side_effect = [DidNotEnable("asyncpg too old"), None]
+        with caplog.at_level(logging.ERROR):
+            ok, calls = self._init(mock_sentry, {"sentry_extra_integrations": "asyncpg"})
+        assert ok is True
+        from poindexter.services.sentry_integration import SentryIntegration
+
+        assert SentryIntegration._sentry_enabled is True
+        assert len(calls) == 2
+        assert "asyncpg" in self._ids(calls[0])
+        assert set(self._ids(calls[1])) == self.CORE
+        assert calls[1].kwargs["auto_enabling_integrations"] is False
+        assert "failed to enable" in caplog.text
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_core_init_failure_is_not_retried(self, mock_sentry):
+        mock_sentry.init.side_effect = RuntimeError("bad dsn")
+        ok, calls = self._init(mock_sentry)
+        assert ok is False
+        assert len(calls) == 1
+
+    def test_seeded_default_and_missing_row_both_mean_core_only(self):
+        from poindexter.services.sentry_integration import SentryIntegration
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
+
+        seeded = DEFAULTS["sentry_extra_integrations"]
+        assert SentryIntegration._extra_integrations(
+            _stub_site_config({"sentry_extra_integrations": seeded})
+        ) == []
+        assert SentryIntegration._extra_integrations(_stub_site_config({})) == []
+        assert METADATA["sentry_extra_integrations"] == {
+            "owner": "sentry_integration",
+            "value_type": "csv",
+        }
 
 
 @pytest.mark.parametrize(

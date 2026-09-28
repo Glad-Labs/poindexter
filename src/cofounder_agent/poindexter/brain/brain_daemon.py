@@ -652,6 +652,12 @@ async def _init_sentry(pool) -> bool:
                 LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
                 AsyncioIntegration(),
             ],
+            # The list above is the whole list, as in the worker
+            # (services/sentry_integration.py). Left True, the SDK also enabled
+            # asyncpg and httpx here, and their breadcrumbs crowded out the log
+            # lines: 80% of the brain's GlitchTip breadcrumbs were SQL queries,
+            # 8.5% were log lines (14 days to 2026-09-28).
+            auto_enabling_integrations=False,
             traces_sample_rate=0.0,
         )
         logger.info(

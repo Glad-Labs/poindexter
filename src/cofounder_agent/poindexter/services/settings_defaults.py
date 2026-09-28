@@ -3892,6 +3892,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         '["[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", "<UUID>"], '
         '["\\\\d+\\\\.\\\\d+s\\\\b", "<DURATION>s"], ["\\\\d{4}-\\\\d{2}-\\\\d{2}T\\\\d{2}:\\\\d{2}:\\\\d{2}(?:\\\\.\\\\d+)?(?:Z|[+-]\\\\d{2}:\\\\d{2})?", "<TS>"]]'
     ),
+    # CSV of sentry-sdk integration identifiers enabled on top of the fixed
+    # core list in SentryIntegration.initialize. The SDK's own auto-enabling is
+    # off: its LangChain and LangGraph integrations import torch, which cost
+    # every Prefect flow run 6 s and +520 MB (2026-09-28). Empty = core only.
+    # 'asyncpg' adds SQL breadcrumbs while chasing a DB fault; the costs of
+    # each candidate are in docs/operations/glitchtip-triage.md. Read at init:
+    # the worker needs a restart, flow runs pick it up on their next run.
+    'sentry_extra_integrations': '',
     # GlitchTip org slug the brain triage probe queries — operators set it to
     # the org they created in the GlitchTip first-login setup. Lockstep with
     # the baseline seed; the operator overlay restores the operator's own slug.
@@ -7205,6 +7213,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'self_consistency_threshold': {'owner': 'self_consistency_rail', 'value_type': 'float'},
     'sentry_drop_exception_types': {'owner': 'sentry_integration', 'value_type': 'string'},
     'sentry_enabled': {'owner': 'sentry_integration', 'value_type': 'boolean'},
+    'sentry_extra_integrations': {'owner': 'sentry_integration', 'value_type': 'csv'},
     'sentry_fingerprint_scrub_patterns': {'owner': 'sentry_integration', 'value_type': 'string'},
     'seo.harvest.analyzer_enabled': {'owner': 'run_seo_opportunity_analyzer', 'value_type': 'boolean'},
     'seo.low_ctr.max_ctr': {'owner': 'run_seo_opportunity_analyzer', 'value_type': 'float'},
