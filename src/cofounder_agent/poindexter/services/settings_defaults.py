@@ -5393,7 +5393,6 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'rate_limit_remediation_select_per_ip': '30/minute',  # POST /api/remediation/select — firefighter LLM long-tail pick
     'rate_limit_topics_from_url_per_ip': '10/minute',  # POST /api/topics/from-url — outbound fetch
     'rate_limit_podcast_generate_per_ip': '5/minute',  # POST /api/podcast/generate/{id} — GPU
-    'rate_limit_video_generate_per_ip': '5/minute',    # POST /api/video/generate/{id} — GPU
 
     # ----- Experiment / variant selection (#361) -----
     # EWMA damping for the outcome→experiment-variant-weight feedback loop.
@@ -7164,7 +7163,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'rate_limit_token_per_ip': {'value_type': 'string'},
     'rate_limit_topics_from_url_per_ip': {'owner': 'topics_routes', 'value_type': 'string'},
     'rate_limit_triage_per_ip': {'owner': 'triage_routes', 'value_type': 'string'},
-    'rate_limit_video_generate_per_ip': {'value_type': 'string'},
     'research_extract_web_content': {'owner': 'research_service', 'value_type': 'boolean'},
     'research_require_fetched_source_for_citation': {'owner': 'research_service', 'value_type': 'boolean'},
     'research_web_content_chars_per_source': {'owner': 'research_service', 'value_type': 'integer'},

@@ -6,10 +6,17 @@ Covers:
 - limiter has a .limit() method
 - When slowapi is available: limiter is a real Limiter instance
 - When slowapi is absent: _NoOpLimiter is used — .limit() is a pass-through decorator
+- Every seeded rate_limit_* key has a _settings_limit reader, and every reader's
+  key is seeded with the same default (TestSeededLimitsMatchReaders)
 """
 
+import ast
+import functools
 import sys
+from pathlib import Path
 from unittest.mock import patch
+
+from tests.unit._nonempty import nonempty
 
 
 class TestRateLimiterModuleExport:
@@ -192,3 +199,107 @@ class TestSettingsLimit:
         assert mod._site_config is None
         configure_rate_limiter(sc)
         assert mod._site_config is sc
+
+
+# The backend package, anchored on this module's own file rather than a
+# parents[N] depth (CLAUDE.md: the poindexter/ move made depth walks brittle).
+_BACKEND_PKG = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "poindexter" / "utils" / "rate_limiter.py").is_file()
+) / "poindexter"
+
+# ~800 non-migration modules today. Far fewer means the scan lost its root.
+_MIN_SCANNED = 500
+
+
+@functools.cache
+def _settings_limit_calls() -> tuple[tuple[tuple[str, str | None, str], ...], int]:
+    """Every ``_settings_limit("<key>", "<default>")`` call in the backend.
+
+    Returns ``(((key, inline_default, module), ...), modules_scanned)``, cached:
+    one scan serves every test below. AST, not grep: the usage example in
+    ``rate_limiter.py``'s docstring names a key without reading it, and must
+    not count as a reader.
+    """
+    calls: list[tuple[str, str | None, str]] = []
+    scanned = 0
+    for path in sorted(_BACKEND_PKG.rglob("*.py")):
+        if "migrations" in path.relative_to(_BACKEND_PKG).parts:
+            continue
+        scanned += 1
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+            key = node.args[0]
+            if name != "_settings_limit" or not (
+                isinstance(key, ast.Constant) and isinstance(key.value, str)
+            ):
+                continue
+            default = node.args[1] if len(node.args) > 1 else None
+            calls.append((
+                key.value,
+                default.value if isinstance(default, ast.Constant) else None,
+                str(path.relative_to(_BACKEND_PKG.parent)),
+            ))
+    return tuple(calls), scanned
+
+
+class TestSeededLimitsMatchReaders:
+    """Seed and reader must agree, in both directions, for every rate limit.
+
+    ``rate_limit_video_generate_per_ip`` stayed seeded in
+    ``settings_defaults.DEFAULTS`` from 2026-07-10, when #2254 deleted its only
+    reader (the limit on ``POST /api/video/generate/{post_id}``), until
+    migration ``20260928_135025`` retired it. Nothing tied the seed to the
+    decorator that read it, so the orphan was invisible. Both sets are derived
+    from the tree here, so a deleted route whose key stays seeded fails the
+    first test, and a new limited route whose key was never seeded fails the
+    second.
+    """
+
+    def test_scan_saw_the_backend(self):
+        calls, scanned = _settings_limit_calls()
+        assert scanned >= _MIN_SCANNED, (
+            f"scanned only {scanned} modules under {_BACKEND_PKG}; the scan root "
+            "moved, so these contract tests are blind."
+        )
+        assert calls, "no _settings_limit(...) calls found; was the helper renamed?"
+
+    def test_every_seeded_rate_limit_key_has_a_reader(self):
+        from poindexter.services.settings_defaults import DEFAULTS
+
+        read = {key for key, _, _ in _settings_limit_calls()[0]}
+        seeded = sorted(k for k in DEFAULTS if k.startswith("rate_limit_"))
+        for key in nonempty(seeded, "rate_limit_* keys in DEFAULTS"):
+            assert key in read, (
+                f"{key!r} is seeded in settings_defaults.DEFAULTS but no "
+                "_settings_limit(...) call reads it, so no route is limited by "
+                "it. If its route was deleted, retire the key: drop it from "
+                "DEFAULTS and METADATA and add a DELETE migration (precedent: "
+                "20260928_135025)."
+            )
+
+    def test_every_settings_limit_key_is_seeded(self):
+        from poindexter.services.settings_defaults import DEFAULTS
+
+        for key, _, module in nonempty(_settings_limit_calls()[0], "_settings_limit calls"):
+            assert key in DEFAULTS, (
+                f"{module} limits a route with _settings_limit({key!r}, ...), "
+                "but settings_defaults.DEFAULTS does not seed it. Without a row, "
+                "the limit silently runs on its inline default, with nothing for "
+                "an operator to tune."
+            )
+
+    def test_inline_default_matches_the_seed(self):
+        from poindexter.services.settings_defaults import DEFAULTS
+
+        for key, default, module in nonempty(_settings_limit_calls()[0], "_settings_limit calls"):
+            assert default == DEFAULTS.get(key), (
+                f"{module}: _settings_limit({key!r}, {default!r}) disagrees with "
+                f"the seeded default {DEFAULTS.get(key)!r}. The inline value is "
+                "what runs whenever the row is missing or site_config is not "
+                "wired yet."
+            )

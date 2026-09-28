@@ -1,6 +1,6 @@
 # Database Migrations
 
-**Last Updated:** 2026-07-11
+**Last Updated:** 2026-09-28
 **Owner:** Glad-Labs/poindexter#378
 **Runner:** `src/cofounder_agent/poindexter/services/migrations/__init__.py`
 
@@ -272,34 +272,73 @@ assertion would fail).
 
 ## Common patterns
 
-### Seed an `app_settings` row
+### Add an `app_settings` key (not a migration)
 
-```python
-async def up(pool) -> None:
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO app_settings
-              (key, value, category, description, is_secret, is_active)
-            VALUES ($1, $2, $3, $4, false, true)
-            ON CONFLICT (key) DO NOTHING
-            """,
-            "my_setting_key",
-            "my_default_value",
-            "my_category",
-            "Description visible in the settings UI.",
-        )
-```
+A new key is a `DEFAULTS` entry in
+`src/cofounder_agent/poindexter/services/settings_defaults.py`, with a
+`METADATA` entry for its owner and value type
+(`scripts/suggest_settings_metadata.py` derives one). `seed_all_defaults` applies
+`DEFAULTS` on every boot with `INSERT ... ON CONFLICT (key) DO NOTHING`, so a
+fresh install gets the row and an operator's tuned value is never overwritten.
+Don't seed a setting from a migration: it runs once and is never re-evaluated,
+so its value drifts from what fresh installs get. If `0000_baseline.seeds.sql`
+also seeds the key, the two values must match
+(`scripts/ci/settings_seed_value_drift_lint.py`).
 
-`ON CONFLICT (key) DO NOTHING` — never blow away an operator's tuned
-value. Use `ON CONFLICT (key) DO UPDATE` only when the description /
-category changed and you want the canonical text reflected.
+Changing an existing key's default does not rewrite rows that already exist,
+since `DO NOTHING` skips them. Pair the change with a migration that updates
+only rows still holding the old default. The precedent is
+`20260928_130429_drop_org_from_research_tier1_domains.py`.
 
 Per `feedback_db_first_config`: every tunable goes in `app_settings`,
 not as a hardcoded constant. Per `feedback_no_silent_defaults`:
 required settings should fail loudly at lookup time when missing —
 seed them with sane defaults so that lookup never errors on a fresh
 DB.
+
+### Retire an orphaned `app_settings` key
+
+1. **Prove there is no reader, from the code.** Grep every tracked file:
+   Python, SQL, console JS, MCP servers, Grafana panels.
+   `app_settings.last_read_at` can back that up but can't settle it either
+   way. Raw SQL that skips `record_read`, `site_config.all()` snapshots and
+   processes that never flush all leave a live key NULL, and so does a read
+   that happens only on request: `rate_limit_podcast_generate_per_ip` is live
+   and still NULL on prod, because its limit is read only when a request
+   reaches the route. A stamp never expires, so a key whose last reader was
+   deleted keeps looking read.
+2. **Remove it from every seed source in the same commit:** `DEFAULTS` and
+   `METADATA` in `settings_defaults.py`, `0000_baseline.seeds.sql`, and
+   `poindexter/brain/seed_app_settings.json`. All three insert
+   `ON CONFLICT DO NOTHING`, so a copy left in any one re-inserts the row
+   after the migration deletes it. `scripts/ci/settings_seed_drift_lint.py`
+   fails CI when a source still carries a key a migration deletes. It checks
+   `DEFAULTS` too since 2026-09-28.
+3. **DELETE by a literal key list, never a pattern.** A `LIKE` sweep takes
+   out live keys that share the name, as `rate_limit_%` would:
+
+   ```python
+   ORPHANED_KEYS = ("my_dead_key",)  # literal; a deletion-named tuple the lint can see
+
+
+   async def up(pool) -> None:
+       async with pool.acquire() as conn:
+           deleted = await conn.fetch(
+               "DELETE FROM app_settings WHERE key = ANY($1::text[]) RETURNING key",
+               list(ORPHANED_KEYS),
+           )
+   ```
+
+   `down()` restores the row with its seeded value. The docstring records
+   what used to read the key, what removed that reader, and what the check
+   found on prod.
+
+4. **Pin it with a regression test.** It asserts the key is absent from each
+   seed source and that no module reads it, and it keeps a floor of live
+   look-alike keys a sweep must not touch. Precedents:
+   `test_drop_orphan_short_video_post_publish_delay.py` (a key seeded by the
+   baseline) and `test_drop_orphan_rate_limit_video_generate.py` (a key seeded
+   only by `DEFAULTS`), both in `tests/unit/services/migrations/`.
 
 ### Add a column safely
 
@@ -356,7 +395,7 @@ migration that writes `graph_def` without a signature-declaring `_RESEEDS`
 fails the same gate. `_RESEEDS` must be a literal (the gate reads it with
 `ast.literal_eval`, never by importing the migration). Refresh the per-atom
 snapshot too (`graph_def_contract_fingerprints.json`, see
-`test_graph_def_contract_freshness.py`) — it names *which* atom drifted, but
+`test_graph_def_contract_freshness.py`) — it names _which_ atom drifted, but
 on its own it can be made green without touching prod, which is exactly how
 #1876 and #3928 shipped.
 

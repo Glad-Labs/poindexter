@@ -85,9 +85,10 @@ jobs:
       - name: Lint migration filenames + interface
         run: python scripts/ci/migrations_lint.py
 
-      # Catches a key DELETEd by a migration but still present in a seed file
-      # (baseline.seeds.sql / poindexter/brain/seed_app_settings.json) — the every-boot
-      # reseed would resurrect it. Static, no DB needed. (2026-06-21)
+      # Catches a key DELETEd by a migration but still present in a seed source
+      # (settings_defaults.DEFAULTS / baseline.seeds.sql /
+      # poindexter/brain/seed_app_settings.json) — the next seeding pass would
+      # resurrect it. Static, no DB needed. (2026-06-21; DEFAULTS since 2026-09-28)
       - name: Lint settings seed/migration drift
         run: python scripts/ci/settings_seed_drift_lint.py
 
