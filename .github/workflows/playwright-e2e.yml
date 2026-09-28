@@ -221,6 +221,8 @@ jobs:
         # straight scheduled failures (2026-06-15 → 2026-08-24, 0 green ever)
         # and belong to the full lane below. Neither spec has a skip-gate, so
         # an unreachable production fails this step LOUD instead of skipping.
+        # tag.spec.ts also reads the R2 post index itself, to pick the tag
+        # that the most posts carry; a failure to read it fails too.
         if: ${{ env.E2E_LANE == 'public-surface' }}
         env:
           PLAYWRIGHT_TEST_BASE_URL: https://www.gladlabs.io
