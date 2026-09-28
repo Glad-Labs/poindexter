@@ -1,8 +1,10 @@
 """
 Business Probes — operator-level monitoring that runs on the brain daemon cycle.
 
-Plain ``(pool, notify_fn) -> dict`` functions called by ``run_business_probes``
-each cycle; each gates itself on its own interval.
+Plain ``(pool, notify_fn, *, info_fn=None) -> dict`` functions called by
+``run_business_probes`` each cycle; each gates itself on its own interval,
+and ``probe_severity`` decides whether its finding pages (``notify_fn``) or
+is a Discord notice (``info_fn``).
 
 Probes:
   - webhook_freshness: alert when revenue_events / subscriber_events stop
@@ -16,7 +18,7 @@ import logging
 from datetime import UTC
 from typing import Any
 
-from poindexter.brain import probe_schedule
+from poindexter.brain import probe_schedule, probe_severity
 
 logger = logging.getLogger("brain.business_probes")
 
@@ -101,13 +103,23 @@ async def _row_age_days(pool, table: str, column: str = "created_at") -> float |
     return delta.total_seconds() / 86400.0
 
 
-async def probe_webhook_freshness(pool, notify_fn) -> dict:
+async def probe_webhook_freshness(pool, notify_fn, *, info_fn=None) -> dict:
     """Check that revenue_events + subscriber_events tables are seeing fresh rows.
 
     Every ``probe_webhook_freshness_interval_minutes`` (default 24h) the
     probe queries the newest row in each table. If either is older than
     its configured threshold, send an operator notification with a
     pointer to the provider admin URL the human should verify.
+
+    A quiet webhook is a business/SEO-adjacent signal, not an outage
+    (``probe_severity.PROBE_DEFAULT_SEVERITY["webhook_freshness"]`` is the
+    default "warning") — it goes through ``info_fn`` (Discord), falling
+    back to ``notify_fn`` when ``info_fn`` is omitted, exactly like
+    ``health_probes.run_health_probes``'s notices. 31 pages in the 30 days
+    to 2026-09-25, all within 15 minutes of a brain restart: ``_is_due``'s
+    schedule was in-process until #4116 persisted it (probe_schedule.py),
+    so every restart re-ran the "daily" check. Repeats, not 31 new
+    findings.
 
     Best-effort: never raises, returns ``{"ok": False, "detail": ...}``
     on internal error so the brain cycle can keep going.
@@ -217,7 +229,8 @@ async def probe_webhook_freshness(pool, notify_fn) -> dict:
         "leaves every config surface still reading \"enabled\"."
     )
     try:
-        await _maybe_await(notify_fn(body))
+        sender = await probe_severity.sender_for(pool, "webhook_freshness", notify_fn, info_fn)
+        await _maybe_await(sender(body))
     except Exception as e:
         logger.warning("[BUSINESS_PROBE] notify_fn failed: %s", e)
     logger.warning("[BUSINESS_PROBE] webhook_freshness fired %d alert(s)", len(alerts))
@@ -246,7 +259,7 @@ async def probe_webhook_freshness(pool, notify_fn) -> dict:
 # signal: 0 alerts in a healthy system is fine; 0 alerts while probes
 # are red is a self-silencing failure.
 
-async def probe_silent_alerter(pool, notify_fn) -> dict:
+async def probe_silent_alerter(pool, notify_fn, *, info_fn=None) -> dict:
     """Page if no alert_events have arrived in N hours AND probes are red.
 
     Cadence is governed by ``silent_alerter_probe_interval_minutes``
@@ -258,6 +271,14 @@ async def probe_silent_alerter(pool, notify_fn) -> dict:
     misconfig, dead webhook target, dispatcher crash) are case-by-case
     and need a human to decide what to fix. The probe's job is to
     make sure the operator *finds out*.
+
+    Always pages ``notify_fn``. ``info_fn`` is accepted so
+    ``run_business_probes`` can pass it to every probe, and deliberately
+    unused. ``probe_severity.PROBE_DEFAULT_SEVERITY`` classifies
+    ``silent_alerter`` "critical" on purpose: it fires only when probes
+    are red and no alert has gone out for hours, so the paging path itself
+    may be broken. That is every page going missing at once, and it is
+    worth using both channels to say so.
     """
     interval_minutes = await _setting_int(
         pool, "silent_alerter_probe_interval_minutes", 60,
@@ -450,15 +471,18 @@ async def _setting_bool(pool, key: str, default: bool) -> bool:
 # RUNNER — called from brain daemon's run_cycle
 # ============================================================================
 
-async def run_business_probes(pool, notify_fn) -> dict:
+async def run_business_probes(pool, notify_fn, *, info_fn=None) -> dict:
     """Run all business probes. Called every brain cycle (5 min).
 
-    Each probe manages its own schedule internally.
+    Each probe manages its own schedule internally. ``info_fn`` is passed
+    through to each probe uniformly; ``webhook_freshness`` (warning) uses
+    it, ``silent_alerter`` (critical) ignores it and always pages — see
+    each probe's own docstring.
     """
     results = {}
 
-    results["webhook_freshness"] = await probe_webhook_freshness(pool, notify_fn)
-    results["silent_alerter"] = await probe_silent_alerter(pool, notify_fn)
+    results["webhook_freshness"] = await probe_webhook_freshness(pool, notify_fn, info_fn=info_fn)
+    results["silent_alerter"] = await probe_silent_alerter(pool, notify_fn, info_fn=info_fn)
 
     # Future probes:
     # results["email_triage"] = await probe_email_triage(pool, notify_fn)

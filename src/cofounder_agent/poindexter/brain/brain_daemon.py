@@ -2897,8 +2897,11 @@ async def run_cycle(pool):
 
     # Health probes — exercise services with real inputs (each on its own schedule)
     cycle_stage.set_stage("run_health_probes")
-    # notify pages (a probe failing, a self-heal that failed); a probe's
-    # recovery and a self-heal that worked are Discord #ops notices.
+    # notify pages the failure or crash of a probe classified
+    # critical/error, and a self-heal that failed; info_fn carries a
+    # probe's recovery, a self-heal that worked, and the failure or crash
+    # of a probe classified warning/info (the default; see
+    # poindexter.brain.probe_severity) as a Discord notice.
     probe_results = await run_health_probes(
         pool, notify_fn=notify, info_fn=notify_discord_ops,
     )
@@ -2908,7 +2911,9 @@ async def run_cycle(pool):
     if _HAS_BUSINESS_PROBES:
         try:
             cycle_stage.set_stage("run_business_probes")
-            biz_results = await run_business_probes(pool, notify_fn=notify)
+            biz_results = await run_business_probes(
+                pool, notify_fn=notify, info_fn=notify_discord_ops,
+            )
             probe_results.update(biz_results)
         except Exception as e:
             logger.warning("[BRAIN] Business probes failed: %s", e)
@@ -2918,7 +2923,9 @@ async def run_cycle(pool):
     if _HAS_POST_PERFORMANCE_PROBE:
         try:
             cycle_stage.set_stage("probe_post_performance")
-            pp_result = await probe_post_performance(pool, notify_fn=notify)
+            pp_result = await probe_post_performance(
+                pool, notify_fn=notify, info_fn=notify_discord_ops,
+            )
             probe_results["post_performance"] = pp_result
         except Exception as e:
             logger.warning("[BRAIN] post_performance_probe failed: %s", e)

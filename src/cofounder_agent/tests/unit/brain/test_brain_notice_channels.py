@@ -34,7 +34,9 @@ import pytest
 
 from poindexter.brain import alert_sync as asx
 from poindexter.brain import brain_daemon as bd
+from poindexter.brain import business_probes as bp
 from poindexter.brain import health_probes as hp
+from poindexter.brain import post_performance_probe as ppp
 from poindexter.brain import probe_schedule
 from poindexter.brain.probe_schedule import ProbeSchedule
 
@@ -464,16 +466,26 @@ async def test_psu_watchdog_info_is_an_ops_notice_and_critical_pages(channels, m
 
 
 @pytest.mark.unit
-def test_run_cycle_hands_the_probes_notify_for_pages_and_the_notice_sender_for_info():
-    """The probes can only keep recoveries off Telegram if run_cycle passes
-    them a sender that doesn't page."""
+@pytest.mark.parametrize(
+    "func_name", ["run_health_probes", "run_business_probes", "probe_post_performance"],
+)
+def test_run_cycle_hands_every_probe_runner_notify_for_pages_and_the_notice_sender_for_info(
+    func_name,
+):
+    """The probes can only keep recoveries — and, since 2026-09-25, a
+    non-critical failure — off Telegram if run_cycle passes them a sender
+    that doesn't page. Covers all three probe runners run_cycle calls:
+    health_probes' own loop, and the two single-probe callers
+    (business_probes.run_business_probes, post_performance_probe.
+    probe_post_performance) that gained the same info_fn plumbing
+    alongside the severity classification."""
     tree = ast.parse(inspect.getsource(bd.run_cycle))
     calls = [
         node
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "run_health_probes"
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == func_name
     ]
-    assert len(calls) == 1
+    assert len(calls) == 1, f"expected exactly one call to {func_name} in run_cycle"
     keywords = {kw.arg: getattr(kw.value, "id", None) for kw in calls[0].keywords}
     assert keywords == {"notify_fn": "notify", "info_fn": "notify_discord_ops"}
 
@@ -481,9 +493,20 @@ def test_run_cycle_hands_the_probes_notify_for_pages_and_the_notice_sender_for_i
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestHealthProbeNotices:
-    """``run_health_probes`` wired as ``run_cycle`` wires it."""
+    """``run_health_probes`` wired as ``run_cycle`` wires it.
 
-    async def _cycle(self, probe_result: dict, *, heal: tuple[bool, str]) -> None:
+    ``grafana_datasources`` is ``probe_severity``'s DEFAULT (non-paging)
+    classification — an observability-tooling break, not a pipeline
+    outage — so its own plain failure is now a NOTICE, not a page (it
+    paged in prod before 2026-09-25). A FAILED self-heal still pages
+    regardless: "we tried to auto-fix this and couldn't" is worth knowing
+    even for a non-critical probe, and that path is untouched by the
+    severity classification (see ``health_probes._try_remediation``).
+    """
+
+    async def _cycle(
+        self, probe_result: dict, *, heal: tuple[bool, str], probe_name="grafana_datasources",
+    ) -> None:
         async def probe(_pool):
             return probe_result
 
@@ -493,7 +516,7 @@ class TestHealthProbeNotices:
         pool.fetchval = AsyncMock(return_value=None)
         pool.execute = AsyncMock()
         with (
-            patch.dict(hp.PROBES, {"grafana_datasources": probe}, clear=True),
+            patch.dict(hp.PROBES, {probe_name: probe}, clear=True),
             patch.object(hp, "_is_due", return_value=True),
             patch.object(hp, "ALERT_AFTER_FAILURES", 1),
             patch.object(hp, "_alertmanager_healthy", new=AsyncMock(return_value=False)),
@@ -501,24 +524,114 @@ class TestHealthProbeNotices:
         ):
             await hp.run_health_probes(pool, notify_fn=bd.notify, info_fn=bd.notify_discord_ops)
 
-    async def test_failure_pages_the_heal_and_the_recovery_are_notices(self, channels):
+    async def test_a_non_critical_failure_is_a_notice_the_heal_and_recovery_too(self, channels):
         await self._cycle(
             {"ok": False, "detail": "Pyroscope: HTTP Error 400"},
             heal=(True, "Restarted poindexter-grafana"),
         )
         await self._cycle({"ok": True, "detail": "all datasources healthy"}, heal=(True, ""))
 
-        assert channels.reached("Probe 'grafana_datasources' failed") == PAGE
+        assert channels.reached("Probe 'grafana_datasources' failed") == NOTICE
         assert channels.reached("Self-heal 'grafana_datasources'") == NOTICE
         assert channels.reached("Probe 'grafana_datasources' recovered") == NOTICE
 
-    async def test_a_heal_that_failed_pages(self, channels):
+    async def test_a_heal_that_failed_pages_even_for_a_non_critical_probe(self, channels):
         await self._cycle(
             {"ok": False, "detail": "Pyroscope: HTTP Error 400"},
             heal=(False, "docker restart failed"),
         )
 
         assert channels.reached("Self-heal 'grafana_datasources': docker restart failed") == PAGE
+
+    async def test_a_critical_probes_own_failure_still_pages(self, channels):
+        """worker_error_rate is one of the small set probe_severity
+        classifies critical (100% task failure -- a genuine pipeline
+        outage, not a business signal) -- its plain failure must still
+        reach Telegram, unlike grafana_datasources above."""
+        await self._cycle(
+            {"ok": False, "detail": "0✓ 5✗ (100% errors) — CRITICAL: 100% failure"},
+            heal=(True, "Restarted poindexter-worker"),
+            probe_name="worker_error_rate",
+        )
+
+        assert channels.reached("Probe 'worker_error_rate' failed") == PAGE
+        assert channels.reached("Self-heal 'worker_error_rate'") == NOTICE
+
+    @pytest.mark.parametrize(
+        ("probe_name", "expected"),
+        [("db_ping", PAGE), ("publish_rate", NOTICE)],
+    )
+    async def test_a_covered_probe_with_alertmanager_down_goes_out_at_its_severity(
+        self, channels, probe_name, expected,
+    ):
+        """_cycle runs with Alertmanager unreachable, so a Prometheus-covered
+        probe is the brain's to report. Any delivery ends the double-blind,
+        so it goes out at the probe's own severity: publish_rate used to
+        page here just because Alertmanager was down."""
+        await self._cycle({"ok": False, "detail": "down"}, heal=(True, ""), probe_name=probe_name)
+
+        assert channels.reached("Alertmanager is unreachable") == expected
+
+
+# ---------------------------------------------------------------------------
+# Business + post-performance probes — both classified "warning" by
+# probe_severity (business/SEO signals, not outages): their findings are
+# notices. silent_alerter is the one business probe classified critical
+# and always pages, ignoring info_fn.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestBusinessAndPostPerformanceProbeNotices:
+    """``run_business_probes`` / ``probe_post_performance`` wired as
+    ``run_cycle`` wires them (see the parametrized run_cycle-wiring test
+    above)."""
+
+    async def test_webhook_freshness_finding_is_a_notice(self, channels):
+        # A bare _Pool's fetchval always answers None (see its docstring),
+        # so subscriber_events reads back as "no row, ever" — the probe
+        # fires unconditionally without needing bespoke row data.
+        await bp.run_business_probes(_Pool(), notify_fn=bd.notify, info_fn=bd.notify_discord_ops)
+
+        assert channels.reached("WEBHOOK QUIET") == NOTICE
+
+    async def test_silent_alerter_still_pages_ignoring_info_fn(self, channels):
+        pool = _Pool({
+            # No alert_events / operator_paged row (fetchval -> None, see
+            # _Pool), so the watchdog is "quiet forever" — only pages once
+            # correlated with a red probe below.
+            "severity IN ('error', 'critical')": [
+                {"event_type": "probe.worker_error_rate_failed", "severity": "error"},
+            ],
+        })
+
+        await bp.run_business_probes(pool, notify_fn=bd.notify, info_fn=bd.notify_discord_ops)
+
+        assert channels.reached("ALERTER APPEARS SILENT") == PAGE
+
+    async def test_broken_posts_finding_is_a_notice(self, channels):
+        pool = _Pool({
+            "DISTINCT ON (pp.slug)": [
+                {
+                    "slug": "a-dead-post",
+                    "views_1d": 0,
+                    "views_7d": 0,
+                    "views_30d": 0,
+                    "views_total": 12,
+                    "avg_time_on_page_seconds": 30,
+                    "measured_at": None,
+                    "published_at": None,
+                },
+            ],
+        })
+
+        result = await ppp.probe_post_performance(
+            pool, notify_fn=bd.notify, info_fn=bd.notify_discord_ops,
+        )
+
+        assert result["broken_count"] == 1
+        assert channels.reached("BROKEN POSTS") == NOTICE
 
 
 # ---------------------------------------------------------------------------

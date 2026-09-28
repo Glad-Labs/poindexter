@@ -19,7 +19,17 @@ classifies each into one of three signal buckets:
               suggesting a traffic spike worth knowing about.
 
 Alert routing:
-  - broken posts  → notify_fn (Telegram) — high-priority; needs investigation.
+  - broken posts  → a Discord notice (info_fn) — an SEO/content signal,
+    worth investigating same-day, not a page. (2026-09-25: this doc
+    previously said "notify_fn (Telegram) — high-priority"; in prod it
+    paged 120 times in the 30 days to 2026-09-25, 111 of them within 15
+    minutes of a brain restart. Its last-run time was in-process until
+    #4116 persisted it (probe_schedule.py), so every restart re-ran the
+    "daily" probe and re-sent the whole list,
+    one post until 2026-09-04 and then 78 growing to 129: repeats, not
+    120 new findings. See ``poindexter.brain.probe_severity``, whose
+    default for any probe not named "critical" — including this one — is
+    the non-paging "warning".)
   - fading posts  → debug log only; informational (not yet page-worthy).
   - performing    → debug log only; good news, no page needed.
 
@@ -35,7 +45,7 @@ App settings keys (all optional, fall back to listed defaults):
 import logging
 from typing import Any
 
-from poindexter.brain import probe_schedule
+from poindexter.brain import probe_schedule, probe_severity
 
 logger = logging.getLogger("brain.post_performance_probe")
 
@@ -63,8 +73,12 @@ async def _read_setting(pool: Any, key: str, default: str) -> str:
     return str(value).strip() or default
 
 
-async def probe_post_performance(pool: Any, notify_fn: Any) -> dict:
+async def probe_post_performance(pool: Any, notify_fn: Any, *, info_fn: Any = None) -> dict:
     """Classify post_performance snapshots and surface broken posts.
+
+    The broken-posts finding goes through ``info_fn`` (Discord), falling
+    back to ``notify_fn`` when ``info_fn`` is omitted — see the module
+    docstring's "Alert routing" section for why.
 
     Best-effort: never raises. Returns ``{"ok": False, "detail": ...}``
     on DB error so the brain cycle can keep going.
@@ -182,7 +196,8 @@ async def probe_post_performance(pool: Any, notify_fn: Any) -> dict:
             "performing_count": len(performing),
         }
 
-    # Page the operator for broken posts — these need investigation.
+    # Notify the operator of broken posts — these need investigation, but
+    # not urgently (see the module docstring's "Alert routing" section).
     broken_list = "\n".join(f"  - {s}" for s in broken[:20])
     more = f"\n  - …and {len(broken) - 20} more" if len(broken) > 20 else ""
     body = (
@@ -193,17 +208,20 @@ async def probe_post_performance(pool: Any, notify_fn: Any) -> dict:
         "redirect broken, or the Cloudflare Analytics tap has stalled.\n\n"
         "Check: poindexter analytics recent / Cloudflare dash / GSC coverage report."
     )
+    sent_via = "notify_fn"
     try:
-        await _maybe_await(notify_fn(body))
+        sender = await probe_severity.sender_for(pool, "post_performance", notify_fn, info_fn)
+        sent_via = "info_fn/notice" if sender is not notify_fn else "notify_fn/page"
+        await _maybe_await(sender(body))
     except Exception as e:
-        logger.warning("[POST_PERF_PROBE] notify_fn failed: %s", e)
+        logger.warning("[POST_PERF_PROBE] notify failed: %s", e)
 
     logger.warning(
-        "[POST_PERF_PROBE] PAGED — %d broken posts", len(broken)
+        "[POST_PERF_PROBE] sent (%s) — %d broken posts", sent_via, len(broken)
     )
     return {
         "ok": True,
-        "detail": f"paged: {len(broken)} broken posts",
+        "detail": f"sent ({sent_via}): {len(broken)} broken posts",
         "broken_count": len(broken),
         "fading_count": len(fading),
         "performing_count": len(performing),

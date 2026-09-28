@@ -21,6 +21,7 @@ import pytest
 
 from poindexter.brain import health_probes as hp
 from poindexter.brain import probe_schedule
+from poindexter.brain import probe_severity as ps
 from poindexter.brain.probe_schedule import ProbeSchedule
 
 
@@ -335,12 +336,23 @@ class TestPerProbeSpans:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestConditionalSuppressionAndCrash:
-    """#304 — PROMETHEUS_COVERED suppression is conditional on Alertmanager
-    health, and probe CRASHES always page (distinct from service-down)."""
+    """#304: PROMETHEUS_COVERED suppression is conditional on Alertmanager
+    health, and a probe CRASH is never suppressed (the monitoring code is
+    broken, which Prometheus does not cover).
+
+    Since 2026-09-25 both go out at the probe's own severity. The
+    double-blind case needs *delivery*, and any delivery ends it, so a
+    covered warning-class probe (``publish_rate``) is a Discord notice
+    rather than a page just because Alertmanager is down. A crash follows
+    the probe's severity too, the rule #4051 set for the branch-drift
+    canary. Before this, the severity of the five covered probes was
+    consulted on no path at all.
+    """
 
     async def _run_with(self, probe_fn, *, probe_name, am_healthy):
         hp._failure_counts.clear()
-        notifies: list[str] = []
+        pages: list[str] = []
+        notices: list[str] = []
         with patch.dict(hp.PROBES, {probe_name: probe_fn}, clear=True), \
                 patch.object(hp, "_is_due", return_value=True), \
                 patch.object(hp, "ALERT_AFTER_FAILURES", 1), \
@@ -349,35 +361,51 @@ class TestConditionalSuppressionAndCrash:
                     new=AsyncMock(return_value=am_healthy),
                 ):
             await hp.run_health_probes(
-                _make_pool(), notify_fn=lambda m: notifies.append(m)
+                _make_pool(), notify_fn=pages.append, info_fn=notices.append,
             )
-        return notifies
+        return pages, notices
 
     async def test_covered_probe_suppressed_when_alertmanager_healthy(self):
         async def fail(_pool):
             return {"ok": False, "detail": "db down"}
 
         # db_ping IS in PROMETHEUS_COVERED_PROBES; Alertmanager healthy => Prom owns it.
-        notifies = await self._run_with(fail, probe_name="db_ping", am_healthy=True)
-        assert notifies == []  # suppressed — Prometheus/Alertmanager pages
+        pages, notices = await self._run_with(fail, probe_name="db_ping", am_healthy=True)
+        assert pages == [] and notices == []  # Prometheus/Alertmanager delivers it
 
-    async def test_covered_probe_pages_when_alertmanager_down(self):
+    @pytest.mark.parametrize(
+        ("probe_name", "channel"),
+        [("db_ping", "page"), ("publish_rate", "notice")],
+    )
+    async def test_covered_probe_goes_out_at_its_severity_when_alertmanager_down(
+        self, probe_name, channel,
+    ):
         async def fail(_pool):
-            return {"ok": False, "detail": "db down"}
+            return {"ok": False, "detail": "down"}
 
-        notifies = await self._run_with(fail, probe_name="db_ping", am_healthy=False)
-        assert len(notifies) == 1
-        assert "Alertmanager is unreachable" in notifies[0]
+        pages, notices = await self._run_with(fail, probe_name=probe_name, am_healthy=False)
 
-    async def test_crash_always_pages_even_when_covered_and_am_healthy(self):
+        sent, other = (pages, notices) if channel == "page" else (notices, pages)
+        assert len(sent) == 1 and other == []
+        assert "Alertmanager is unreachable" in sent[0]
+
+    @pytest.mark.parametrize(
+        ("probe_name", "channel"),
+        [("db_ping", "page"), ("publish_rate", "notice")],
+    )
+    async def test_a_crash_is_never_suppressed_and_follows_severity(
+        self, probe_name, channel,
+    ):
         async def crash(_pool):
             raise RuntimeError("probe bug")
 
-        # Even a covered probe with healthy Alertmanager pages on a CRASH —
-        # the monitoring code itself is broken, which Prometheus doesn't cover.
-        notifies = await self._run_with(crash, probe_name="db_ping", am_healthy=True)
-        assert len(notifies) == 1
-        assert "ERRORED" in notifies[0]
+        # Covered probe, healthy Alertmanager: a plain failure would be
+        # suppressed, a crash is not — at the probe's own severity.
+        pages, notices = await self._run_with(crash, probe_name=probe_name, am_healthy=True)
+
+        sent, other = (pages, notices) if channel == "page" else (notices, pages)
+        assert len(sent) == 1 and other == []
+        assert "ERRORED" in sent[0]
 
 
 @pytest.mark.unit
@@ -421,11 +449,15 @@ class TestAsyncNotifyFnAwaited:
 @pytest.mark.asyncio
 class TestNoticesThatMustNotPage:
     """2026-09-25: a probe's recovery and a self-heal that worked go to
-    ``info_fn``; failures still page through ``notify_fn``. The brain passes
-    ``notify`` (Telegram + Discord) and ``notify_discord_ops`` (Discord #ops
-    only), and ``notify`` has no severity, so before ``info_fn`` every
-    "✅ recovered" reached Telegram. Without an ``info_fn`` both notices
-    fall back to ``notify_fn``, which is the old behaviour."""
+    ``info_fn``; a probe classified critical/error still pages through
+    ``notify_fn`` (this helper uses "disk_space", which
+    ``probe_severity.PROBE_DEFAULT_SEVERITY`` classifies critical). The
+    brain passes ``notify`` (Telegram + Discord) and ``notify_discord_ops``
+    (Discord #ops only), and ``notify`` has no severity, so before
+    ``info_fn`` every "✅ recovered" reached Telegram. Without an
+    ``info_fn`` both notices fall back to ``notify_fn``, which is the old
+    behaviour. See ``TestProbeFailureSeverityRouting`` below for the
+    warning/info-default case (most probes)."""
 
     async def _fail_then_recover(self, *, notify_fn, info_fn):
         results = iter([{"ok": False, "detail": "down"}, {"ok": True, "detail": "back"}])
@@ -433,7 +465,7 @@ class TestNoticesThatMustNotPage:
         async def probe(_pool):
             return next(results)
 
-        with patch.dict(hp.PROBES, {"fake_probe": probe}, clear=True), \
+        with patch.dict(hp.PROBES, {"disk_space": probe}, clear=True), \
                 patch.object(hp, "_is_due", return_value=True), \
                 patch.object(hp, "ALERT_AFTER_FAILURES", 1):
             for _ in range(2):
@@ -449,7 +481,7 @@ class TestNoticesThatMustNotPage:
 
         assert any("failed" in p for p in pages)
         assert not any("recovered" in p for p in pages)
-        assert notices == ["✅ Probe 'fake_probe' recovered: back"]
+        assert notices == ["✅ Probe 'disk_space' recovered: back"]
 
     async def test_without_info_fn_the_recovery_falls_back_to_notify_fn(self):
         pages: list[str] = []
@@ -487,6 +519,168 @@ class TestNoticesThatMustNotPage:
             )
 
         assert len(pages) == 1 and pages[0].startswith("🔧 Self-heal")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestProbeFailureSeverityRouting:
+    """2026-09-25: a probe's failure or crash pages or notices depending
+    on ``probe_severity.severity_for`` (the Prometheus-covered cases are in
+    ``TestConditionalSuppressionAndCrash``). Most probes default to
+    "warning" (Discord, via ``info_fn``); only the small
+    ``probe_severity.PROBE_DEFAULT_SEVERITY`` allowlist pages by default.
+    Fixes the shape that let ``cadence_slo`` page Telegram 8 times and
+    ``pipeline_throughput`` 6 times in the 30 days to 2026-09-25 for
+    business/quality signals, not outages."""
+
+    async def _fail_n_times(
+        self, probe_name: str, *, notify_fn, info_fn, n: int = 1, pool=None,
+        crash: bool = False,
+    ) -> None:
+        async def probe(_pool):
+            if crash:
+                raise RuntimeError("probe bug")
+            return {"ok": False, "detail": "boom"}
+
+        # REMEDIATIONS is cleared: several critical probes (worker_error_rate,
+        # ollama_models, public_site) also have a self-heal entry, which
+        # would fire its OWN notice/page as soon as ALERT_AFTER_FAILURES is
+        # hit — a real subprocess.run(["docker", "restart", ...]) with no
+        # docker socket in this test, confirmed by the 60s hang before this
+        # guard was added. These tests are isolating the plain
+        # probe-failure severity routing, not remediation (already covered
+        # by TestNoticesThatMustNotPage above).
+        with patch.dict(hp.PROBES, {probe_name: probe}, clear=True), \
+                patch.object(hp, "_is_due", return_value=True), \
+                patch.object(hp, "ALERT_AFTER_FAILURES", n), \
+                patch.object(hp, "REMEDIATIONS", {}):
+            for _ in range(n):
+                await hp.run_health_probes(
+                    pool or _make_pool(), notify_fn=notify_fn, info_fn=info_fn,
+                )
+
+    async def test_unclassified_probe_defaults_to_a_notice_not_a_page(self):
+        """A probe nobody has reconsidered (not in PROBE_DEFAULT_SEVERITY,
+        no DB override) must NOT page — the safe default direction."""
+        pages: list[str] = []
+        notices: list[str] = []
+
+        await self._fail_n_times(
+            "some_new_probe_nobody_classified", notify_fn=pages.append, info_fn=notices.append,
+        )
+
+        assert pages == []
+        assert len(notices) == 1
+        assert "Probe 'some_new_probe_nobody_classified' failed" in notices[0]
+        assert "warning" in notices[0]
+
+    async def test_unclassified_probe_falls_back_to_notify_fn_without_info_fn(self):
+        """Without an info_fn, even a non-paging severity still reaches the
+        operator somehow — falls back to notify_fn, same contract as the
+        recovery/self-heal notices."""
+        pages: list[str] = []
+
+        await self._fail_n_times("some_unclassified_probe", notify_fn=pages.append, info_fn=None)
+
+        assert len(pages) == 1
+        assert "failed" in pages[0]
+
+    @pytest.mark.parametrize("probe_name", sorted(ps.PROBE_DEFAULT_SEVERITY))
+    async def test_every_default_critical_probe_pages(self, probe_name):
+        """Every probe PROBE_DEFAULT_SEVERITY classifies critical must
+        actually page when it fails — a live check against the table
+        itself, not a hardcoded example, so a future edit to the table is
+        covered automatically."""
+        if ps.PROBE_DEFAULT_SEVERITY[probe_name] not in ps.PAGING_SEVERITIES:
+            pytest.skip(f"{probe_name} is not classified as paging")
+        pages: list[str] = []
+        notices: list[str] = []
+
+        await self._fail_n_times(probe_name, notify_fn=pages.append, info_fn=notices.append)
+
+        assert len(pages) == 1, f"{probe_name} (critical) did not page: {pages=} {notices=}"
+        assert notices == []
+
+    def _pool_with_override(self, overrides_json: str):
+        """A pool whose ``brain_probe_severity_overrides`` row answers
+        ``overrides_json``; every other app_settings read (the URL
+        resolution ``_sync_config_from_db`` runs every cycle) sees no
+        row, so it falls through to its own default rather than being
+        confused by an unrelated fixed return value."""
+        pool = _make_pool()
+
+        async def _fv(_query, *args):
+            key = args[0] if args else None
+            if key == ps.SEVERITY_OVERRIDES_SETTING_KEY:
+                return overrides_json
+            return None
+
+        pool.fetchval = AsyncMock(side_effect=_fv)
+        return pool
+
+    async def test_db_override_downgrades_a_critical_probe_to_a_notice(self):
+        """The operator can decide a normally-critical probe no longer
+        needs to page on their install."""
+        pages: list[str] = []
+        notices: list[str] = []
+
+        pool = self._pool_with_override('{"worker_error_rate": "warning"}')
+        await self._fail_n_times(
+            "worker_error_rate", notify_fn=pages.append, info_fn=notices.append, pool=pool,
+        )
+
+        assert pages == []
+        assert len(notices) == 1
+
+    async def test_db_override_promotes_a_warning_probe_to_paging(self):
+        """The operator can decide a normally-non-critical probe SHOULD
+        page on their install (e.g. cadence_slo matters more for them)."""
+        pages: list[str] = []
+        notices: list[str] = []
+
+        pool = self._pool_with_override('{"cadence_slo": "critical"}')
+        await self._fail_n_times(
+            "cadence_slo", notify_fn=pages.append, info_fn=notices.append, pool=pool,
+        )
+
+        assert len(pages) == 1
+        assert notices == []
+
+    @pytest.mark.parametrize(
+        ("probe_name", "channel"),
+        [("worker_error_rate", "page"), ("cadence_slo", "notice")],
+    )
+    async def test_a_crash_follows_the_probes_severity(self, probe_name, channel):
+        """A CRASH means the monitoring code is broken, so this check is
+        blind. Blindness to a warning-class signal is a warning (the rule
+        #4051 set for the branch-drift canary); a critical probe's crash
+        still pages."""
+        pages: list[str] = []
+        notices: list[str] = []
+
+        await self._fail_n_times(
+            probe_name, notify_fn=pages.append, info_fn=notices.append, crash=True,
+        )
+
+        sent, other = (pages, notices) if channel == "page" else (notices, pages)
+        assert len(sent) == 1 and other == []
+        assert "ERRORED" in sent[0]
+
+
+@pytest.mark.unit
+def test_default_severity_keys_are_real_probe_names():
+    """Every ``probe_severity.PROBE_DEFAULT_SEVERITY`` key must be a probe
+    that actually exists in ``health_probes.PROBES`` or one of the
+    business/post-performance probe names — catches a renamed or removed
+    probe leaving a stale severity entry behind (the exact shape CLAUDE.md
+    calls out for the qa_gates alias guard: an expectation must be
+    verified against the live source, not trusted by construction)."""
+    known = set(hp.PROBES) | {"webhook_freshness", "silent_alerter", "post_performance"}
+    unknown = set(ps.PROBE_DEFAULT_SEVERITY) - known
+    assert not unknown, (
+        f"probe_severity.PROBE_DEFAULT_SEVERITY names probes that don't "
+        f"exist: {sorted(unknown)}"
+    )
 
 
 @pytest.mark.unit

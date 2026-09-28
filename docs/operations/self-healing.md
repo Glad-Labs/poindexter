@@ -34,27 +34,72 @@ that bypass the alert dispatcher) through two senders in `brain_daemon.py`:
   `DISCORD_OPS_WEBHOOK_URL` env var) and logs a WARNING when a notice
   reaches no one.
 
-An outage, or a self-heal that failed or could not run, pages. A self-heal
-that worked, a recovery, and an informational or warning heads-up is a
-Discord notice. Alerts and findings that go through the dispatcher are
-routed by severity there instead (`alert_dispatcher._channels_for`; see
+An outage, a probe classified `critical`/`error`, or a self-heal that
+failed or could not run, pages. A self-heal that worked, a recovery, an
+informational or warning heads-up, and a probe classified `warning`/`info`
+(the default for any probe nobody has reconsidered) is a Discord notice.
+Alerts and findings that go through the dispatcher are routed by severity
+there instead (`alert_dispatcher._channels_for`; see
 [findings routing](../architecture/findings-routing.md)).
 
-| Notice                                                                                                                       | Sent by                                                                  | Channel |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------- |
-| `ALERT: <svc> is DOWN` / `🚨 <svc> DOWN (Nx)`                                                                                | `monitor_services`, a critical service with no usable response           | page    |
-| `⚠️ Service <svc> DEGRADED` / `✅ Service <svc> recovered from degraded`                                                     | `monitor_services`, the up-but-pressured transition and its end          | Discord |
-| `Auto-restarted <container>`                                                                                                 | `restart_service`, the restart worked                                    | Discord |
-| `Failed to restart …` / `Service <svc> is down. …` (Docker CLI missing, restart error, no container mapping, no host script) | `restart_service`, the heal failed or has no path                        | page    |
-| `🚨 <SERVICE> MAJOR OUTAGE`                                                                                                  | `monitor_external_services`, status page at major / critical             | page    |
-| `✅ <SERVICE> recovered`                                                                                                     | `monitor_external_services`, a paged outage back to operational          | Discord |
-| `🔧 Auto-remediation: cancelled N stuck task(s) …`                                                                           | `auto_remediate`, the stuck-`in_progress` sweep                          | Discord |
-| `🔧 Auto-remediation: pipeline idle …` / `… high failure rate …`                                                             | `auto_remediate`, once per episode                                       | Discord |
-| `🚨 No metered PSU power …`                                                                                                  | PSU watchdog in `log_electricity_cost`, critical                         | page    |
-| `✅ PSU wall-power recovered` / `↗️ PSU partial recovery` / `⚠️ Shelly meter dropped …`                                      | PSU watchdog, info                                                       | Discord |
-| `🔴 Probe '<name>' failed Nx` / `⚠️ Probe '<name>' ERRORED` / a `⚠️ Self-heal …` that failed                                 | `health_probes.run_health_probes` (`notify_fn`)                          | page    |
-| `✅ Probe '<name>' recovered` / a `🔧 Self-heal …` that worked                                                               | `health_probes.run_health_probes` (`info_fn`)                            | Discord |
-| `grafana_api_token has been empty …`                                                                                         | `alert_sync`, after 4, 8, 16 … empty cycles, never more than ~24 h apart | Discord |
+| Notice                                                                                                                       | Sent by                                                                                       | Channel |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------- |
+| `ALERT: <svc> is DOWN` / `🚨 <svc> DOWN (Nx)`                                                                                | `monitor_services`, a critical service with no usable response                                | page    |
+| `⚠️ Service <svc> DEGRADED` / `✅ Service <svc> recovered from degraded`                                                     | `monitor_services`, the up-but-pressured transition and its end                               | Discord |
+| `Auto-restarted <container>`                                                                                                 | `restart_service`, the restart worked                                                         | Discord |
+| `Failed to restart …` / `Service <svc> is down. …` (Docker CLI missing, restart error, no container mapping, no host script) | `restart_service`, the heal failed or has no path                                             | page    |
+| `🚨 <SERVICE> MAJOR OUTAGE`                                                                                                  | `monitor_external_services`, status page at major / critical                                  | page    |
+| `✅ <SERVICE> recovered`                                                                                                     | `monitor_external_services`, a paged outage back to operational                               | Discord |
+| `🔧 Auto-remediation: cancelled N stuck task(s) …`                                                                           | `auto_remediate`, the stuck-`in_progress` sweep                                               | Discord |
+| `🔧 Auto-remediation: pipeline idle …` / `… high failure rate …`                                                             | `auto_remediate`, once per episode                                                            | Discord |
+| `🚨 No metered PSU power …`                                                                                                  | PSU watchdog in `log_electricity_cost`, critical                                              | page    |
+| `✅ PSU wall-power recovered` / `↗️ PSU partial recovery` / `⚠️ Shelly meter dropped …`                                      | PSU watchdog, info                                                                            | Discord |
+| `🔴 Probe '<name>' failed Nx` / `⚠️ Probe '<name>' ERRORED` — probe classified `critical`/`error`                            | `health_probes.run_health_probes` (`notify_fn`)                                               | page    |
+| `⚠️ Probe '<name>' failed Nx (warning)` / `⚠️ Probe '<name>' ERRORED` — probe classified `warning`/`info` (the default)      | `health_probes.run_health_probes` (`info_fn`)                                                 | Discord |
+| `… failed Nx (<severity>) AND Alertmanager is unreachable …`                                                                 | `health_probes.run_health_probes`, a Prometheus-covered probe, at the probe's own severity    | either  |
+| a `⚠️ Self-heal …` that failed                                                                                               | `health_probes.run_health_probes` (`notify_fn`), whatever the probe's severity                | page    |
+| `✅ Probe '<name>' recovered` / a `🔧 Self-heal …` that worked                                                               | `health_probes.run_health_probes` (`info_fn`)                                                 | Discord |
+| `⚠️ ALERTER APPEARS SILENT …`                                                                                                | `business_probes.probe_silent_alerter` — classified `critical` (the pager may itself be dead) | page    |
+| `WEBHOOK QUIET — …`                                                                                                          | `business_probes.probe_webhook_freshness` — classified `warning`                              | Discord |
+| `BROKEN POSTS — …`                                                                                                           | `post_performance_probe.probe_post_performance` — classified `warning`                        | Discord |
+| `grafana_api_token has been empty …`                                                                                         | `alert_sync`, after 4, 8, 16 … empty cycles, never more than ~24 h apart                      | Discord |
+
+**Probe severity is a small allowlist, not a full map.**
+`poindexter/brain/probe_severity.py`'s `PROBE_DEFAULT_SEVERITY` names only
+the probes whose failure is a genuine outage or blinds the monitoring:
+`db_ping`, `ollama_models`, `worker_error_rate`, `disk_space`,
+`public_site`, `gpu_temperature` and `silent_alerter`. Every other probe,
+including `cadence_slo`, `approval_queue`, `pipeline_throughput`,
+`webhook_freshness`, `post_performance` and any probe added later, defaults
+to `warning`, a Discord notice. That is the safe direction: a probe nobody
+has classified should not page.
+
+A probe's severity decides all of its failure-side notices. A crash
+follows it: the monitoring code is broken, so the check is blind, and
+being blind to a warning-class signal is a warning (the rule #4051 set for
+the branch-drift canary). A critical probe's crash still pages, and a
+crash is never suppressed by Prometheus coverage. A Prometheus-covered
+probe's own report when Alertmanager can't deliver follows it too; that
+case needs delivery, not specifically Telegram. A failed self-heal pages
+whatever the probe's severity, because escalating when recovery fails is
+the principle this doc opens with.
+
+Two gaps to know about:
+
+- `ollama_models` is `critical`, but while Alertmanager is healthy the
+  brain defers to `PoindexterOllamaDown`, which is `warning` (unchanged
+  since the rule was written 2026-04-19). So today an unreachable Ollama
+  reaches Discord, not Telegram, while `OllamaNoModelsLoaded` ("up but
+  empty") is `critical`.
+- `disk_space` fires at 10% free of the brain container's root
+  filesystem, about 180 GB on prod's 1.8 TB Docker disk. That is well
+  ahead of Prometheus's `PoindexterDiskSpaceLow` (20 GB, warning) and
+  `PoindexterDiskSpaceCritical` (10 GB, critical).
+
+Every probe is tunable through one JSON setting,
+`app_settings.brain_probe_severity_overrides` (for example
+`{"worker_error_rate": "warning", "cadence_slo": "critical"}`), read each
+brain cycle, so changing a probe's channel needs no redeploy.
 
 Two failure modes this table exists to prevent, both seen on prod in the 30
 days to 2026-09-25:
@@ -65,7 +110,22 @@ days to 2026-09-25:
   times. Successful self-heals and probe recoveries paged too. `auto_remediate` now announces a lasting state (idle, high
   failure rate) once, when it starts, and again only after it has ended and
   come back. The state is held in memory, so a brain restart mid-episode
-  costs one repeat notice.
+  costs one repeat notice. A **third** case of the same failure mode
+  surfaced the same day: a probe _failure_ had no severity either, so a
+  business/quality signal — `cadence_slo` (missed cadence target),
+  `pipeline_throughput` (7-day dip), `approval_queue` (backlog) — paged
+  exactly like a database outage. 20 such pages in the 30 days to
+  2026-09-25 and none was an outage; all 20 are Discord notices now.
+  `business_probes.py` and
+  `post_performance_probe.py` had the identical shape:
+  `post_performance` paged 120 times and `webhook_freshness` 31 times, for
+  business/SEO signals, never outages. 111 and 31 of those came within 15
+  minutes of a brain restart. Both kept their "daily" schedule in a
+  module-level `_last_run` dict that every restart emptied, so each
+  restart re-sent the same finding (fixed; see
+  [Probe schedules survive a restart](#probe-schedules-survive-a-restart)).
+  For `post_performance` that was the whole broken-post list: one post
+  until 2026-09-04, then 78 growing to 129.
 - **Notices that went nowhere.** `send_discord(msg)` with no `webhook_url`
   resolves the public lab-logs channel (`discord_lab_logs_webhook_url`), not
   #ops, and prod does not configure it. The degraded notices and the PSU

@@ -4935,6 +4935,23 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'clock_skew_renotify_minutes': '60',
     'clock_skew_sample_retention_days': '30',
 
+    # ----- Brain probe failure-page severity (2026-09-25) -----
+    # poindexter/brain/probe_severity.py decides whether a probe's FAILURE
+    # notice (health_probes.run_health_probes, business_probes.py,
+    # post_performance_probe.py) reaches Telegram or lands as a Discord
+    # notice only. Most probes are non-paging by default
+    # (probe_severity.PROBE_DEFAULT_SEVERITY names only the handful that
+    # represent a genuine outage or a monitoring-blind condition — see its
+    # module docstring for why that list is deliberately small). This JSON
+    # object overrides any probe's severity by name, e.g.
+    # '{"worker_error_rate": "warning", "cadence_slo": "critical"}' — one
+    # entry per probe, same shape as clock_skew_severity above but for
+    # every brain probe at once rather than a single dedicated key per
+    # probe (that would mean 30+ new settings for a page-routing decision
+    # most operators never touch). '' means "use the code defaults for
+    # every probe".
+    'brain_probe_severity_overrides': '',
+
     # ----- Content-flow concurrency cap (Glad-Labs/poindexter#578) -----
     # The native Prefect work-pool concurrency limit caps how many
     # content_generation_flow runs execute simultaneously. Each run loads
@@ -6344,6 +6361,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'clock_skew_sample_retention_days': {'owner': 'clock_skew_probe', 'value_type': 'integer'},
     'clock_skew_severity': {'owner': 'clock_skew_probe', 'value_type': 'string'},
     'clock_skew_threshold_seconds': {'owner': 'clock_skew_probe', 'value_type': 'integer'},
+    'brain_probe_severity_overrides': {'owner': 'probe_severity', 'value_type': 'json'},
     'cloudflare_beacon_url': {'owner': 'probe_cloudflare_beacon'},
     'cloudflare_beacon_probe_attempts': {'owner': 'probe_cloudflare_beacon', 'value_type': 'integer'},
     'cloudflare_beacon_probe_min_consecutive_failures': {'owner': 'probe_cloudflare_beacon', 'value_type': 'integer'},

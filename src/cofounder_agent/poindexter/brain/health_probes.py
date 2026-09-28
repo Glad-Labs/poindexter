@@ -23,7 +23,7 @@ import urllib.request
 from datetime import UTC
 from typing import Any
 
-from poindexter.brain import cycle_stage, probe_schedule
+from poindexter.brain import cycle_stage, probe_schedule, probe_severity
 from poindexter.brain.docker_utils import localize_url, resolve_url
 from poindexter.brain.secret_reader import read_app_setting as _read_app_setting
 
@@ -1932,19 +1932,28 @@ async def _alertmanager_healthy() -> bool:
 async def run_health_probes(pool, notify_fn=None, info_fn=None):
     """Run all due health probes, store results in brain_knowledge, alert on failures.
 
-    ``notify_fn`` pages: a probe failing ``ALERT_AFTER_FAILURES`` times,
-    or a self-heal that did not work. ``info_fn`` carries the two notices
-    that must not page: a probe that recovered, and a self-heal that
-    worked. The brain passes ``brain_daemon.notify`` (Telegram + Discord)
-    and ``brain_daemon.notify_discord_ops`` (Discord #ops only). With no
-    ``info_fn`` those two notices fall back to ``notify_fn``, the behaviour
-    before 2026-09-25, when they reached Telegram because the brain's
-    ``notify`` has no severity.
+    ``notify_fn`` pages: a probe classified ``critical``/``error`` (see
+    ``probe_severity``) failing or crashing ``ALERT_AFTER_FAILURES`` times,
+    and a self-heal that did not work, whatever the probe's severity.
+    ``info_fn`` carries everything that must not page: a probe that
+    recovered, a self-heal that worked, and a failure or crash of a probe
+    classified ``warning``/``info`` (the default for any probe
+    ``probe_severity.PROBE_DEFAULT_SEVERITY`` doesn't name; see its module
+    docstring for why that list is deliberately small). A
+    Prometheus-covered probe is silent while Alertmanager can deliver and
+    goes out at its own severity when it can't. The brain passes ``brain_daemon.notify``
+    (Telegram + Discord) and ``brain_daemon.notify_discord_ops`` (Discord
+    #ops only). With no ``info_fn`` every notice falls back to
+    ``notify_fn``, the behaviour before 2026-09-25 (recovery/self-heal
+    notices) and before the severity classification below (a business
+    signal like ``cadence_slo`` paged the phone exactly like a database
+    outage — 20 such pages in the 30 days to 2026-09-25).
     """
     await _sync_config_from_db(pool)
     await probe_schedule.schedule.load(pool)
     results = {}
     info = info_fn or notify_fn
+    severity_overrides = await probe_severity.load_overrides(pool)
 
     # Whether Prometheus/Alertmanager can actually deliver right now. When it
     # can't, the brain must NOT suppress alerts for PROMETHEUS_COVERED probes
@@ -2025,11 +2034,11 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
         # fires and Gitea issues get filed.
         prom_covered = name in PROMETHEUS_COVERED_PROBES
         crashed = bool(result.get("crashed"))
-        # Suppress brain-side paging ONLY when Prometheus/Alertmanager truly
+        # Suppress brain-side notices ONLY when Prometheus/Alertmanager truly
         # owns this signal AND can deliver. A probe CRASH is never suppressed
         # — it means the monitoring code is broken, which Prometheus does not
         # cover. And when Alertmanager is down, suppression would be a
-        # double-blind, so we page directly (#304).
+        # double-blind, so the brain delivers it itself (#304).
         suppress = prom_covered and am_healthy and not crashed
         if ok:
             if (
@@ -2049,21 +2058,43 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
             if _failure_counts[name] == ALERT_AFTER_FAILURES:
                 detail = result.get('detail', 'unknown error')
                 if notify_fn and not suppress:
+                    # Every failure-side notice — a plain failure, a crash,
+                    # and the Alertmanager double-blind — goes out at the
+                    # probe's own severity (probe_severity). Most probes
+                    # default to a Discord notice; only the few named in
+                    # PROBE_DEFAULT_SEVERITY (or promoted through
+                    # brain_probe_severity_overrides) page. A crash follows
+                    # it too: being blind to a warning-class signal is a
+                    # warning, the rule #4051 set for the branch-drift
+                    # canary, and a critical probe's crash still pages. The
+                    # double-blind case needs delivery, not specifically
+                    # Telegram; any delivery ends the blindness.
+                    severity = probe_severity.severity_for(name, severity_overrides)
+                    pages = probe_severity.is_paging_severity(severity)
+                    send = notify_fn if pages else info
+                    mark = "🔴" if pages else "⚠️"
                     if crashed:
-                        await _maybe_await(notify_fn(
+                        await _maybe_await(send(
                             f"⚠️ Probe '{name}' ERRORED {ALERT_AFTER_FAILURES}x "
-                            f"(bug in the probe — monitoring is BLIND for this "
-                            f"check, not necessarily a service outage): {detail}"
+                            f"({severity}; a bug in the probe — monitoring is "
+                            f"BLIND for this check, not necessarily a service "
+                            f"outage): {detail}"
                         ))
                     elif prom_covered and not am_healthy:
-                        await _maybe_await(notify_fn(
-                            f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x "
-                            f"AND Alertmanager is unreachable — Prometheus "
-                            f"coverage is BLIND, brain is paging directly: {detail}"
+                        await _maybe_await(send(
+                            f"{mark} Probe '{name}' failed {ALERT_AFTER_FAILURES}x "
+                            f"({severity}) AND Alertmanager is unreachable — "
+                            f"Prometheus coverage is BLIND, the brain is "
+                            f"reporting it directly: {detail}"
+                        ))
+                    elif pages:
+                        await _maybe_await(send(
+                            f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {detail}"
                         ))
                     else:
-                        await _maybe_await(notify_fn(
-                            f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {detail}"
+                        await _maybe_await(send(
+                            f"⚠️ Probe '{name}' failed {ALERT_AFTER_FAILURES}x "
+                            f"({severity}): {detail}"
                         ))
                 # The Gitea-issue auto-create paper trail was removed when
                 # Gitea was decommissioned (2026-04-30). The notify_operator
