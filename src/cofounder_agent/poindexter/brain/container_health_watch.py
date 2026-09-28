@@ -145,14 +145,18 @@ async def _write_alert(
         logger.warning("[%s] alert_events write failed for %s: %s", PROBE_NAME.upper(), name, exc)
 
 
+# These read the summary dicts ``inspect_stack_containers()`` builds (``name``,
+# ``health``, ``failing_streak``, ``health_interval_s``, ``started_at``), NOT raw
+# ``docker inspect`` JSON. Until Glad-Labs/poindexter#1092 they read the raw
+# shape while production passed summaries, so every container looked like it had
+# no healthcheck and the probe never fired.
 def container_name(container: dict[str, Any]) -> str:
-    return str(container.get("Name") or "").lstrip("/")
+    return str(container.get("name") or "")
 
 
 def health_status(container: dict[str, Any]) -> str:
     """``healthy`` / ``unhealthy`` / ``starting``, or ``""`` without a healthcheck."""
-    health = (container.get("State") or {}).get("Health") or {}
-    return str(health.get("Status") or "")
+    return str(container.get("health") or "")
 
 
 def unhealthy_minutes(container: dict[str, Any]) -> float | None:
@@ -160,15 +164,13 @@ def unhealthy_minutes(container: dict[str, Any]) -> float | None:
     when it is not ``unhealthy`` (healthy, starting, or no healthcheck)."""
     if health_status(container) != "unhealthy":
         return None
-    health = (container.get("State") or {}).get("Health") or {}
-    streak = int(health.get("FailingStreak") or 0)
-    interval_ns = ((container.get("Config") or {}).get("Healthcheck") or {}).get("Interval") or 0
-    interval_s = interval_ns / 1e9 if interval_ns else _DEFAULT_INTERVAL_S
+    streak = int(container.get("failing_streak") or 0)
+    interval_s = float(container.get("health_interval_s") or _DEFAULT_INTERVAL_S)
     return streak * interval_s / 60.0
 
 
 def _started_at(container: dict[str, Any]) -> str:
-    return str((container.get("State") or {}).get("StartedAt") or "")
+    return str(container.get("started_at") or "")
 
 
 async def run_container_health_watch_probe(
@@ -198,6 +200,11 @@ async def run_container_health_watch_probe(
     unhealthy: list[str] = []
     firing: list[str] = []
     for container in containers:
+        if container.get("status") != "running":
+            # A stopped container keeps its last health status: the parked voice
+            # containers have read "unhealthy" since July. It is not alive-but-
+            # wedged; exits are the restart-loop probe's business.
+            continue
         name = container_name(container)
         status = health_status(container)
         if status == "healthy":

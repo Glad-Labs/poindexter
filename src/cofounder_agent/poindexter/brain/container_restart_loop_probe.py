@@ -108,16 +108,22 @@ def inspect_stack_containers() -> list[dict[str, Any]] | None:
         if not isinstance(c, dict):
             continue
         state = c.get("State") or {}
-        health = (state.get("Health") or {}).get("Status")
+        health = state.get("Health") or {}
+        config = c.get("Config") or {}
+        interval_ns = (config.get("Healthcheck") or {}).get("Interval") or 0
         out.append({
             "name": str(c.get("Name") or "").lstrip("/"),
             "status": str(state.get("Status") or ""),
             "restarting": bool(state.get("Restarting")),
             "restart_count": int(c.get("RestartCount") or 0),
-            "health": health,
+            "health": health.get("Status"),
+            # container_health_watch reads these two from this same summary
+            # (Glad-Labs/poindexter#1092): minutes unhealthy = streak x interval.
+            "failing_streak": int(health.get("FailingStreak") or 0),
+            "health_interval_s": interval_ns / 1e9 if interval_ns else None,
             "started_at": state.get("StartedAt"),
             "exit_code": state.get("ExitCode"),
-            "image": str((c.get("Config") or {}).get("Image") or ""),
+            "image": str(config.get("Image") or ""),
         })
     return out
 

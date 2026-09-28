@@ -1417,8 +1417,8 @@ quick as the container's own healthcheck. A wedge that leaves `/health`
 answering is caught late or not at all.
 
 `poindexter/brain/container_health_watch.py` detects that state. Every cycle it
-reads each `poindexter-*` container's health, reusing the restart-loop probe's
-single `docker inspect`:
+reads each running `poindexter-*` container's health from the summary that the
+restart-loop probe's `inspect_stack_containers()` builds:
 
 | Container state                                                                                                           | What the probe does                                                                                                                                                                  |
 | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1427,6 +1427,17 @@ single `docker inspect`:
 | `starting` (start period, e.g. just restarted)                                                                            | Nothing. The episode stays open.                                                                                                                                                     |
 | `healthy` after an episode                                                                                                | Writes a resolved row that says whether the container was restarted in between (its `StartedAt` moved).                                                                              |
 | no healthcheck                                                                                                            | Ignored.                                                                                                                                                                             |
+| stopped (`exited`, `created`, ...), whatever its last health status                                                       | Ignored. Docker keeps a stopped container's last status, and the parked voice containers have read `unhealthy` since July. Exits belong to the restart-loop probe.                   |
+
+**Blind until 2026-09-28 (Glad-Labs/poindexter#1092).** The probe read raw
+`docker inspect` fields (`State.Health.Status`, `FailingStreak`), but in
+production it received the summary dicts from `inspect_stack_containers()`. So
+every container looked as if it had no healthcheck. On that day it could read 0
+of the 45 health statuses there were, `alert_events` had never held a
+`container_unhealthy` row, and none of the rules below had ever run. Its tests
+passed because they gave the probe raw-shaped dicts directly. A seam test now
+drives the real docker parsing. The absence of `container_unhealthy` rows before
+that date tells you nothing.
 
 **The probe restarts nothing; a firefighter rule does.** Some containers are
 safe to bounce, such as a stateless sidecar. Others are not: a GPU renderer

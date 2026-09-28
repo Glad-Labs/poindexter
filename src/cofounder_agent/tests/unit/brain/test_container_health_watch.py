@@ -41,11 +41,11 @@ def _pool(settings: dict[str, str] | None = None):
 
 def _c(name: str, status: str = "healthy", streak: int = 0, *,
        interval_s: float = 30.0, started: str = "2026-09-24T10:00:00Z"):
+    """A container as ``inspect_stack_containers()`` summarizes it, the shape
+    production hands the probe (see the live-path test at the bottom)."""
     return {
-        "Name": f"/{name}",
-        "State": {"Status": "running", "StartedAt": started,
-                  "Health": {"Status": status, "FailingStreak": streak}},
-        "Config": {"Healthcheck": {"Interval": int(interval_s * 1e9)}},
+        "name": name, "status": "running", "started_at": started,
+        "health": status, "failing_streak": streak, "health_interval_s": interval_s,
     }
 
 
@@ -73,7 +73,7 @@ async def test_unhealthy_minutes_is_the_failing_streak_times_the_interval():
     assert chw.unhealthy_minutes(_c("x", "unhealthy", streak=3, interval_s=60)) == pytest.approx(3.0)
     assert chw.unhealthy_minutes(_c("x", "healthy")) is None
     assert chw.unhealthy_minutes(_c("x", "starting", streak=3)) is None
-    assert chw.unhealthy_minutes({"Name": "/x", "State": {}}) is None  # no healthcheck
+    assert chw.unhealthy_minutes({"name": "x", "health": None}) is None  # no healthcheck
 
 
 async def test_a_wedged_container_fires_with_the_fields_a_firefighter_rule_matches():
@@ -191,7 +191,17 @@ async def test_parse_overrides_skips_malformed_entries():
 
 async def test_containers_without_a_healthcheck_are_ignored():
     pool = _pool()
-    summary = await _run(pool, [{"Name": "/poindexter-promtail", "State": {"Status": "running"}}])
+    summary = await _run(pool, [{"name": "poindexter-promtail", "status": "running", "health": None}])
+    assert _rows(pool) == [] and summary["unhealthy"] == []
+
+
+async def test_a_stopped_container_with_a_stale_unhealthy_status_is_ignored():
+    """Docker keeps a stopped container's last health status. The parked voice
+    containers exited in July reading "unhealthy"; restarting one would revive
+    a service parked on purpose, and paging for it would be noise."""
+    pool = _pool()
+    parked = {**_c("poindexter-livekit", "unhealthy", streak=400), "status": "exited"}
+    summary = await _run(pool, [parked])
     assert _rows(pool) == [] and summary["unhealthy"] == []
 
 
@@ -213,3 +223,60 @@ async def test_a_failed_alert_write_does_not_break_the_cycle():
     pool.execute = AsyncMock(side_effect=RuntimeError("db down"))
     summary = await _run(pool, [_c("poindexter-speaches", "unhealthy", streak=40)])
     assert summary["ok"] is True and summary["firing"] == ["poindexter-speaches"]
+
+
+def _raw_inspect(name: str, health: dict | None, *, interval_ns: int | None = 30_000_000_000):
+    """One container as ``docker inspect`` prints it (the fields we read)."""
+    state = {"Status": "running", "Restarting": False, "ExitCode": 0,
+             "StartedAt": "2026-09-24T10:00:00Z"}
+    if health is not None:
+        state["Health"] = health
+    config: dict = {"Image": f"{name}:tag"}
+    if interval_ns is not None:
+        config["Healthcheck"] = {"Test": ["CMD", "true"], "Interval": interval_ns}
+    return {"Name": f"/{name}", "RestartCount": 0, "State": state, "Config": config}
+
+
+async def test_the_live_path_reads_what_inspect_stack_containers_returns(monkeypatch):
+    """Production calls the probe WITHOUT ``containers=``, so it reads the
+    summary dicts ``inspect_stack_containers()`` builds, not raw inspect JSON.
+
+    Every other test here hands the probe its containers directly, and until
+    Glad-Labs/poindexter#1092 they all used the raw ``docker inspect`` shape
+    while production passed summaries. The probe therefore saw no health
+    status on any container and never fired: 45 of 51 containers had one on
+    2026-09-28, and alert_events held no container_unhealthy row. This test
+    drives the real docker parsing so the two shapes cannot drift apart again.
+    """
+    import subprocess
+
+    from poindexter.brain import container_restart_loop_probe as crl
+
+    raw = [
+        _raw_inspect("poindexter-speaches", {"Status": "unhealthy", "FailingStreak": 40}),  # 20 min
+        _raw_inspect("poindexter-worker", {"Status": "healthy", "FailingStreak": 0}),
+        _raw_inspect("poindexter-promtail", None, interval_ns=None),  # no healthcheck
+    ]
+
+    def fake_docker(argv, **_kwargs):
+        if argv[:2] == ["docker", "ps"]:
+            return subprocess.CompletedProcess(argv, 0, stdout="a\nb\nc\n", stderr="")
+        if argv[:2] == ["docker", "inspect"]:
+            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(raw), stderr="")
+        raise AssertionError(f"unexpected docker call {argv}")
+
+    monkeypatch.setattr(crl, "_run", fake_docker)
+    pool = _pool()
+    summary = await chw.run_container_health_watch_probe(pool, log_tail_fn=lambda n: f"{n} log tail")
+
+    assert summary["checked"] == 3
+    assert summary["unhealthy"] == ["poindexter-speaches"]
+    (row,) = _rows(pool)
+    assert row["status"] == "firing"
+    assert row["fingerprint"] == "container_health_watch:poindexter-speaches"
+    assert row["title"] == "poindexter-speaches has failed its healthcheck for 20 min"
+
+    # The same seam resolves the episode once Docker reports it healthy again.
+    raw[0] = _raw_inspect("poindexter-speaches", {"Status": "healthy", "FailingStreak": 0})
+    await chw.run_container_health_watch_probe(pool, log_tail_fn=lambda n: f"{n} log tail")
+    assert [r["status"] for r in _rows(pool)] == ["firing", "resolved"]
