@@ -34,6 +34,7 @@
     "format:python": "cd src/cofounder_agent && poetry run black . && poetry run isort .",
     "lint:python": "cd src/cofounder_agent && poetry run ruff check .",
     "type:check": "cd src/cofounder_agent && poetry run python -m mypy --config-file=../../pyproject.toml",
+    "type:check:ratchet": "cd src/cofounder_agent && poetry run python ../../scripts/ci/mypy_lint.py",
     "test:python": "cd src/cofounder_agent && poetry run pytest tests/unit/ -q",
     "test:python:integration": "cd src/cofounder_agent && poetry run pytest tests/integration/ -q",
     "benchmark": "cd src/cofounder_agent && poetry run pytest tests/benchmarks/ --benchmark-only -v --benchmark-sort=mean",
@@ -49,7 +50,7 @@
     "test:e2e:report": "playwright show-report",
     "test:e2e:codegen": "playwright codegen http://localhost:3000",
     "test:all": "npm run test && npm run test:e2e",
-    "validate:all": "npm run format:check && npm run lint && npm run type:check"
+    "validate:all": "npm run format:check && npm run lint && npm run type:check:ratchet"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [

@@ -1,0 +1,110 @@
+{
+  "src/cofounder_agent/poindexter/brain/alert_sync.py": {
+    "assignment": 6,
+    "operator": 5
+  },
+  "src/cofounder_agent/poindexter/brain/brain_daemon.py": {
+    "arg-type": 2,
+    "assignment": 1,
+    "attr-defined": 1,
+    "call-overload": 1,
+    "var-annotated": 2
+  },
+  "src/cofounder_agent/poindexter/brain/container_restart_loop_probe.py": {
+    "operator": 1
+  },
+  "src/cofounder_agent/poindexter/brain/glitchtip_triage_probe.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/brain/operator_url_probe.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/brain/smart_monitor.py": {
+    "assignment": 1
+  },
+  "src/cofounder_agent/poindexter/cli/model_eval.py": {
+    "assignment": 1
+  },
+  "src/cofounder_agent/poindexter/memory/client.py": {
+    "assignment": 1
+  },
+  "src/cofounder_agent/poindexter/modules/content/atoms/_image_helpers.py": {
+    "assignment": 1
+  },
+  "src/cofounder_agent/poindexter/modules/content/atoms/content_detect_contradictions.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/modules/content/atoms/content_revise_contradictions.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/modules/content/atoms/two_pass_writer.py": {
+    "arg-type": 4,
+    "index": 1,
+    "typeddict-item": 1
+  },
+  "src/cofounder_agent/poindexter/modules/content/media_regen.py": {
+    "union-attr": 4
+  },
+  "src/cofounder_agent/poindexter/modules/content/multi_model_qa.py": {
+    "arg-type": 1,
+    "index": 1
+  },
+  "src/cofounder_agent/poindexter/modules/content/post_edit_service.py": {
+    "arg-type": 2
+  },
+  "src/cofounder_agent/poindexter/modules/content/stages/generate_media_scripts.py": {
+    "union-attr": 1
+  },
+  "src/cofounder_agent/poindexter/services/caption_align.py": {
+    "arg-type": 1,
+    "assignment": 4
+  },
+  "src/cofounder_agent/poindexter/services/chat_agent.py": {
+    "union-attr": 2
+  },
+  "src/cofounder_agent/poindexter/services/deepeval_rails.py": {
+    "operator": 1
+  },
+  "src/cofounder_agent/poindexter/services/integrations/handlers/tap_youtube_reporting.py": {
+    "var-annotated": 1
+  },
+  "src/cofounder_agent/poindexter/services/jobs/dispatch_media_pipeline.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/services/jobs/probe_retention_backlog.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/services/media_quality_service.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/services/migrations/0000_baseline.py": {
+    "arg-type": 1,
+    "index": 1
+  },
+  "src/cofounder_agent/poindexter/services/model_eval/bakeoff.py": {
+    "assignment": 2
+  },
+  "src/cofounder_agent/poindexter/services/model_eval/scorers/self_review.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/services/ragas_eval.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/services/taps/github_issues.py": {
+    "arg-type": 1
+  },
+  "src/cofounder_agent/poindexter/services/topic_dedup_semantic.py": {
+    "comparison-overlap": 2,
+    "index": 3
+  },
+  "src/cofounder_agent/poindexter/services/topic_sources/rss.py": {
+    "misc": 1
+  },
+  "src/cofounder_agent/poindexter/services/voice_agent.py": {
+    "misc": 1
+  },
+  "src/cofounder_agent/poindexter/services/youtube_thumbnail_backfill.py": {
+    "no-redef": 1,
+    "union-attr": 1
+  }
+}

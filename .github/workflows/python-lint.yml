@@ -1,10 +1,11 @@
-# Ruff gate for the Python tree.
+# Ruff + mypy gates for the Python tree.
 #
 # Until 2026-07-26 no workflow ran a Python linter at all — `npm run
 # lint:python` existed but nothing enforced it, so findings accumulated
-# silently (27 in the backend by the time #2835 cleared them).
+# silently (27 in the backend by the time #2835 cleared them). mypy had the
+# same gap until 2026-09-28: `npm run type:check` existed and nothing ran it.
 #
-# Two jobs, deliberately different in scope:
+# Three jobs, deliberately different in scope:
 #
 #   backend-lint  — the FULL configured rule set (see [tool.ruff] in
 #                   src/cofounder_agent/pyproject.toml) over the tree that
@@ -21,13 +22,22 @@
 #                   trees carry ~51 style findings that are not worth gating,
 #                   but a file that cannot be parsed is never acceptable.
 #
+#   type-check    — the mypy RATCHET (scripts/ci/mypy_lint.py). mypy reported
+#                   74 errors when it landed, so zero tolerance was not an
+#                   option. They are grandfathered per file, per error code in
+#                   scripts/ci/mypy_baseline.json, and only a NET-NEW error
+#                   fails. Same doctrine as the bandit and semgrep ratchets.
+#
 # Ruff is pinned to the same version poetry resolves (0.15.20) so CI and a
-# local `poetry run ruff` can never disagree about what is a violation.
+# local `poetry run ruff` can never disagree about what is a violation. mypy
+# needs no pin here: type-check installs it from poetry.lock with the rest of
+# the backend env.
 name: python-lint
 
-# NO `paths:` filter, deliberately — both jobs are REQUIRED status checks on
-# main. A path-filtered workflow simply does not run when nothing matches, and
-# a required check that never runs is never reported, so the PR sits on
+# NO `paths:` filter, deliberately. backend-lint and syntax-check are REQUIRED
+# status checks on main, and type-check has to stay promotable. A
+# path-filtered workflow simply does not run when nothing matches, and a
+# required check that never runs is never reported, so the PR sits on
 # "Expected — Waiting for status to be reported" forever. That would have
 # permanently blocked every docs-only PR, including the nightly CLAUDE.md sync
 # (which touches exactly one non-Python file).
@@ -56,6 +66,9 @@ permissions:
 env:
   # Keep in lockstep with `ruff = "^0.15.20"` in src/cofounder_agent/pyproject.toml.
   RUFF_VERSION: '0.15.20'
+  # The poetry that unit-tests.yml installs with. test_mypy_lint.py fails if
+  # the two drift, because type-check's baseline is measured in that env.
+  POETRY_VERSION: '2.2.1'
 
 jobs:
   backend-lint:
@@ -105,3 +118,46 @@ jobs:
         run: ruff check --select E9 --output-format=github .
       - name: pipe-to-grep classifier lint (a shape that lies on large inputs, stack#3626)
         run: python scripts/ci/pipe_to_grep_lint.py
+
+  type-check:
+    # The mypy ratchet. Blocks a NET-NEW error, files nothing, and the
+    # baseline only shrinks (the lint's docstring has the rules and the
+    # `# type: ignore[<code>]` escape hatch). Not a required check yet: it
+    # gets promoted once it has a run history, and it can be, because this
+    # workflow has no `paths:` filter.
+    #
+    # mypy has to see the backend's third-party packages. Without them every
+    # library becomes `Any`, and on the same tree it reported 203 errors
+    # instead of 74: 130 were "Class cannot subclass BaseModel (has type Any)"
+    # noise, and it missed 2 real errors at library boundaries. So this job
+    # installs the same lock and extras as unit-tests.yml (test_mypy_lint.py
+    # derives the extras from there). It installs them into its OWN in-project
+    # venv, not the runner's interpreter. The self-hosted runners keep one
+    # interpreter across jobs, and other jobs add packages to it
+    # (rerank-import-guard installs torch + sentence-transformers). That would
+    # change what mypy sees from one run to the next. The two env vars
+    # override a `virtualenvs.create false` that another job wrote into the
+    # runner's poetry config. checkout's clean removes the venv between runs.
+    if: github.repository != 'Glad-Labs/poindexter'
+    # CI_RUNNER seam, as for the two jobs above. Seam-safe: no
+    # services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: '3.13'
+      - name: Install Poetry
+        run: pip install "poetry==${POETRY_VERSION}"
+      - name: Install backend dependencies (isolated venv)
+        working-directory: src/cofounder_agent
+        env:
+          POETRY_VIRTUALENVS_CREATE: 'true'
+          POETRY_VIRTUALENVS_IN_PROJECT: 'true'
+        run: poetry install --no-root --no-interaction --extras "pipeline qa rag"
+      - name: mypy ratchet (no new type errors)
+        run: src/cofounder_agent/.venv/bin/python scripts/ci/mypy_lint.py

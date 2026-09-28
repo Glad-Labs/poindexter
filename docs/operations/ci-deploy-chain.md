@@ -191,6 +191,11 @@ the pytest suites CI runs through other workflows (`mcp-server-tests.yml`,
 - `.github/workflows/security.yml` / `grafana-panels-lint.yml` —
   non-required scans: gitleaks / trivy / sbom + path-specific lints,
   and the paths-gated Grafana panel lint, respectively.
+- `.github/workflows/python-lint.yml` — three Python gates, no `paths:`
+  filter. `backend-lint` (full ruff rule set over the backend) and
+  `syntax-check` (ruff E9 over every `.py` in the repo) are required.
+  `type-check` is the mypy ratchet described in the next section.
+  It's non-required until it has a run history.
 - `.github/workflows/rerank-import-guard.yml` — non-required, paths-gated
   to `src/cofounder_agent/{pyproject.toml,poetry.lock}`. Installs
   `--extras rerank` and imports the real cross-encoder stack
@@ -279,6 +284,83 @@ the pytest suites CI runs through other workflows (`mcp-server-tests.yml`,
   `test-backend` check runs the full backend suite (several thousand
   cases; the exact count drifts as agents add tests, so it is not
   pinned here).
+
+## Type checking: the mypy ratchet
+
+Until 2026-09-28 no workflow ran mypy. `npm run type:check` existed and
+nothing enforced it, so type errors landed silently. The first full run
+reported **74 errors in 33 files** (907 source files checked). That is
+too many to fix before gating, and a zero-tolerance gate would never
+have gone green. So mypy is gated the way bandit and semgrep are: the
+existing errors are grandfathered, only a **net-new** error fails, and
+nothing files an issue.
+
+- **What runs.** The `type-check` job runs `scripts/ci/mypy_lint.py`
+  against `scripts/ci/mypy_baseline.json`, keyed per file per mypy
+  error code: `{"src/.../alert_sync.py": {"assignment": 6, ...}}`. There
+  are no line numbers, so an edit above an old error doesn't churn the
+  baseline. Keying per code means a new `[arg-type]` can't ride in
+  behind a fixed `[assignment]` in the same file.
+- **When it fails.** It prints each file and code over its baseline and
+  lists every current error of that code in that file. At least one of
+  them is new, but a count can't say which. Fix it. If it's a false
+  positive, suppress it at its line with
+  `# type: ignore[<code>]  # <why>`, scoped to the one code. A bare
+  `# type: ignore` hides every code on the line, including the next real
+  one.
+- **When you fix errors.** The lint stays green and lists the entries
+  now below baseline. Lock the win in with
+  `python scripts/ci/mypy_lint.py --update-baseline`. That flag only
+  lowers counts and drops entries. It refuses when the tree has an
+  error the baseline doesn't allow.
+- **When growth is legitimate**, for a file move (its errors reappear
+  under a new key) or a mypy or typed-dependency bump that changes what
+  mypy reports, use `--update-baseline --allow-growth`, and say which
+  in the commit message. The baseline ships in the public mirror, so a
+  file the mirror strips must never enter it. Fix or `type: ignore` an
+  error there instead.
+- **Run it in the backend's environment.** mypy runs as
+  `sys.executable -m mypy`, so the interpreter you launch the lint with
+  is the environment it checks. Locally that's
+  `npm run type:check:ratchet`, or the backend venv's `python`. Measured
+  on the same tree:
+
+  | environment                                                         | result                                                                                                                                                                |
+  | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | backend env (`poetry install --no-root --extras "pipeline qa rag"`) | 74 errors in 33 files. A developer venv and a CI-faithful venv agree line for line.                                                                                   |
+  | mypy alone                                                          | 203 errors in 68 files. 130 are `Class cannot subclass "BaseModel" (has type "Any")`, because every missing library is `Any`, and 2 of the 74 real errors go missing. |
+
+  So the job installs `poetry.lock` with the same extras as
+  `unit-tests.yml` (a test derives them from there). It installs into its
+  **own in-project venv** (`POETRY_VIRTUALENVS_CREATE` /
+  `POETRY_VIRTUALENVS_IN_PROJECT`), not the runner's interpreter. A
+  self-hosted runner keeps one interpreter across jobs, and another job
+  adds torch and sentence-transformers to it, which would change what
+  mypy sees from run to run. Cost: about a minute on the self-hosted
+  runners. A cold mypy run is ~30 s, and on a hosted runner the install
+  adds ~30 s more.
+
+- **A run that didn't complete is a failure, never a pass.** That covers
+  mypy exit 2 (a syntax error, a module found twice, a crash), a
+  non-zero exit with nothing parseable, and an `error:` line without a
+  location or an error code. It also covers a parsed error count that
+  disagrees with mypy's own `Found N errors in M files` line, which is
+  what turns a change in mypy's output format into a red job instead of
+  a quiet undercount. The job also fails when mypy checked fewer than
+  450 files (`lib_scan_floor`). `tests/unit/scripts/test_mypy_lint.py`
+  runs the real mypy on a four-file tree, so the parser is checked
+  against what the installed mypy actually prints.
+- **One config.** The repo-root `pyproject.toml` `[tool.mypy]` is the
+  only one, and it's what `npm run type:check` and the lint both use.
+  The package's `src/cofounder_agent/pyproject.toml` used to carry a
+  stricter table that nothing invoked. mypy's config discovery picked
+  it up for any bare `mypy` run from that directory, where it stopped on
+  package-base errors. Forced past those, it reported 663 errors (427
+  `no-untyped-call`, 63 `unreachable`, 100 import errors) to the root
+  config's 74. It's gone, and a test fails if one comes back. Tightening
+  strictness is a separate decision: make it in the root config and
+  re-baseline with `--allow-growth` in the same PR. For scale,
+  `warn_unreachable` alone adds 62 errors.
 
 ## CI minutes / cost discipline
 
