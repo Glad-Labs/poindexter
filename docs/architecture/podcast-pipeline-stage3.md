@@ -143,6 +143,36 @@ delegates to the same helper (one rebuild seam, not two copies). Both the CLI
 `site_config`. Non-fatal + idempotent — a rebuild failure never breaks the
 already-committed approval.
 
+> **Update (2026-09-28): a reject rebuilds too
+> ([poindexter#1088](https://github.com/Glad-Labs/poindexter/issues/1088)).**
+> The rebuild above ran on approve only. Rejecting an item that was already
+> approved, and so already in `podcast/feed.xml` or `video/feed.xml`,
+> rebuilt nothing, from the CLI (`poindexter media reject`) and the HTTP
+> route alike. The item stayed live until `media_feed_reconciliation`
+> converged it, and that pass then reported a missed upstream rebuild
+> (`media_feed_drift`) for a removal the operator made on purpose. On
+> 2026-09-28, 7 approved videos whose renders were lost were rejected in two
+> batches (5, then 2). That is the removal the `video_r2_mirror_blocked`
+> finding (§11) recommends. The video feed kept listing 69 items while 64
+> were eligible, until it was reconciled by hand. `decide()` now rebuilds
+> after every decision when a `site_config` is passed. A pending → rejected
+> decision can't change the feed, so its rebuild re-uploads an identical
+> one. That is cheap at operator pace, and it makes re-issuing a decision a
+> retry for a rebuild that failed.
+>
+> A reject shrinks the feed, and it goes through `rebuild_feed_for_medium`
+> rather than `reconcile_feed` on purpose. Since 2026-09-27 every
+> event-driven rebuild applies the reconciler's shrink guard
+> (`media_feed_reconcile_max_shrink`, default 5), so `reconcile_feed` would
+> add no protection. The rebuild also escalates a refusal itself
+> (`media_feed_render_collapse`) and treats `video_short` as a no-op, where
+> `reconcile_feed` raises. Rebuilding per decision is also what keeps a
+> deliberate removal under the guard: each reject shrinks the feed by one.
+> Left to the reconciler, more than 5 rejects between two passes look the
+> same as a collapsed render. Every pass then refuses the shrink and pages,
+> while the rejected items stay live. The first batch above was exactly at
+> the limit.
+
 ### Feed reconciliation — state, not events (shipped 2026-07-18)
 
 The approval-time rebuild above narrowed the window but did not close the class.

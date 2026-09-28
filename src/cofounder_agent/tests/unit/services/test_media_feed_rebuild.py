@@ -1,8 +1,9 @@
 """Tests for ``services.media_feed_rebuild``.
 
 Shared, non-fatal helper that rebuilds a media RSS feed on R2 from the
-worker's feed route. ``media_approval_service.decide`` calls it on approve so
-an approval reaches Apple/Spotify/the video feed immediately, rather than
+worker's feed route. ``media_approval_service.decide`` calls it after every
+decision, so an approve (the item joins the feed) or a reject of an approved
+item (it leaves) reaches Apple/Spotify/the video feed immediately, rather than
 waiting for the next event-coupled trigger or reconciliation cycle.
 """
 from __future__ import annotations
@@ -126,6 +127,28 @@ async def test_rebuild_is_non_fatal_on_error() -> None:
     with patch("httpx.AsyncClient", side_effect=RuntimeError("worker down")):
         # Must not raise.
         await media_feed_rebuild.rebuild_podcast_feed(sc)
+
+
+@pytest.mark.asyncio
+async def test_unreachable_worker_warning_names_the_cause(caplog) -> None:
+    """``str()`` of an httpx timeout is empty, so the old ``%s`` warning read
+    ``could not render /api/podcast/feed.xml: `` with no cause at all (in prod
+    on 2026-09-10 and 09-27). The warning now names the exception type."""
+    import logging
+
+    import httpx
+
+    sc = _site_config()
+    client = _mock_httpx_client("")
+    client.get = AsyncMock(side_effect=httpx.ReadTimeout(""))
+    with patch("httpx.AsyncClient", return_value=client), caplog.at_level(
+        logging.WARNING, logger="poindexter.services.media_feed_rebuild",
+    ):
+        await media_feed_rebuild.rebuild_podcast_feed(sc)
+    assert any(
+        "could not render /api/podcast/feed.xml: ReadTimeout" in r.message
+        for r in caplog.records
+    )
 
 
 @pytest.mark.asyncio

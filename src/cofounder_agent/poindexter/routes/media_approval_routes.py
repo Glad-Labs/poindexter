@@ -86,9 +86,11 @@ async def decide(
 
     ``medium`` must be a recognised value (``podcast``, ``video``, etc.).
     ``approved=true`` clears the post for dispatch; ``approved=false`` marks
-    it rejected so it can be regenerated. On approve, ``decide()`` rebuilds the
-    matching R2 RSS feed (via ``site_config``) so the approval propagates to
-    Apple/Spotify/the video feed immediately — non-fatal.
+    it rejected so it can be regenerated. Either way ``decide()`` rebuilds the
+    matching R2 RSS feed (via ``site_config``) so the decision propagates to
+    Apple/Spotify/the video feed immediately — an approve adds the item, and
+    rejecting an already-approved item removes it (poindexter#1088).
+    Non-fatal.
     """
     from poindexter.services.media_approval_service import decide as _decide
 

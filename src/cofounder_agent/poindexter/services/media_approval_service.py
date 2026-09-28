@@ -58,6 +58,7 @@ import json
 import logging
 from typing import Any
 
+from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding  # noqa: E402 — audit observability
 
 logger = logging.getLogger(__name__)
@@ -583,17 +584,30 @@ async def decide(
     let an operator pre-approve a not-yet-generated medium, which
     bypasses the whole gate.
 
-    When ``approved`` and a ``site_config`` is supplied, the matching R2
-    RSS feed is rebuilt immediately (non-fatal) so the approval reaches
-    Apple / Spotify / the video feed right away, rather than waiting for the
-    next ``podcast_distribute`` / ``media_distribute`` cycle or the
-    ``media_feed_reconciliation`` watchdog (up to 15 min) to notice the drift
-    and converge it. Callers without a ``site_config`` (jobs, tests, legacy
-    call sites) simply skip the immediate rebuild — the reconciliation
-    watchdog still catches it, just not instantly — backcompat preserved
+    When a ``site_config`` is supplied, the matching R2 RSS feed is rebuilt
+    after EVERY decision (non-fatal), because a decision in either
+    direction can change what the feed lists: an approve adds the item to
+    ``podcast/feed.xml`` / ``video/feed.xml``, and rejecting an item that
+    was already approved takes it back out. Both then reach Apple / Spotify
+    / the video feed right away instead of waiting for the
+    ``media_feed_reconciliation`` watchdog (up to 15 min). The watchdog
+    also reports every removal it converges as a missed upstream rebuild
+    (``media_feed_drift``), which is wrong when the operator removed the
+    item on purpose. Rebuilds used to run on approve only, so every reject
+    of an approved item was left for the watchdog (poindexter#1088).
+
+    A decision that can't change the feed (pending → rejected) re-renders
+    and re-uploads an identical feed. That is cheap at operator pace, and it
+    makes re-issuing a decision a retry for a rebuild that failed.
+    ``video_short`` has no RSS surface, so its decisions rebuild nothing.
+    Callers without a ``site_config`` (jobs, tests, legacy call sites) skip
+    the rebuild; the watchdog still converges the feed, just not instantly
     (``feedback_backcompat_now_required``).
 
-    ``db`` accepts either an asyncpg Pool or Connection.
+    ``db`` accepts either an asyncpg Pool or Connection. The rebuild renders
+    the feed through the worker's feed route on its own connection, so it
+    sees this decision only once it is committed: pass a pool or an
+    autocommit connection, not one inside an open transaction.
     """
     _validate_medium(medium)
     new_status = "approved" if approved else "rejected"
@@ -619,20 +633,38 @@ async def decide(
         new_status, decided_by, medium, post_id,
     )
 
-    # Self-healing feed propagation: without this, an approval would only
-    # reach Apple/Spotify/the video feed on the next podcast_distribute /
-    # media_distribute cycle or the media_feed_reconciliation watchdog's next
-    # pass. Rebuild the matching feed now instead. Non-fatal + idempotent; the
-    # approval is already committed above, so a rebuild failure must not bubble.
-    if approved and site_config is not None:
+    # Propagate the decision to the published feed now, in both directions
+    # (see the docstring for why a reject needs it as much as an approve).
+    #
+    # A reject shrinks the feed, and the feed has a shrink guard
+    # (media_feed_reconcile_max_shrink, default 5). This goes through
+    # rebuild_feed_for_medium rather than reconcile_feed on purpose:
+    # - Both paths apply the same guard (_shrink_guard_verdict), so a render
+    #   that collapsed on a DB error is refused here exactly as the watchdog
+    #   would refuse it. reconcile_feed would add no protection.
+    # - The rebuild escalates a refusal itself (media_feed_render_collapse).
+    #   reconcile_feed only returns a verdict and leaves the finding to its
+    #   caller, the watchdog.
+    # - rebuild_feed_for_medium treats video_short as a no-op. reconcile_feed
+    #   raises for it, since there it would be a programming error.
+    # - Rebuilding per decision is what keeps a deliberate removal under the
+    #   guard: each reject shrinks the feed by one. Left to the watchdog,
+    #   more than max_shrink rejects between two passes look the same as a
+    #   collapsed render. Every pass then refuses the shrink (and pages as
+    #   media_feed_render_collapse) while the rejected items stay live.
+    #
+    # Non-fatal: the decision is already committed above, so a rebuild
+    # failure must not bubble. The watchdog converges whatever this misses.
+    if site_config is not None:
         try:
             from poindexter.services.media_feed_rebuild import rebuild_feed_for_medium
 
             await rebuild_feed_for_medium(site_config, medium)
         except Exception as e:  # noqa: BLE001 — feed rebuild is additive
             logger.warning(
-                "[media_approval] feed rebuild after approving %s for post %s "
-                "failed (non-fatal): %s", medium, post_id, e,
+                "[media_approval] feed rebuild after %s was %s for post %s "
+                "failed (non-fatal): %s",
+                medium, new_status, post_id, describe_exception(e),
             )
 
 

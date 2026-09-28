@@ -10,6 +10,7 @@ common denominator: an object with async ``fetchrow`` / ``fetch`` /
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -253,8 +254,18 @@ async def test_decide_raises_when_row_does_not_exist(
 
 
 # ---------------------------------------------------------------------------
-# decide — rebuild matching feed on approve (self-healing propagation)
+# decide — rebuild the matching feed after every decision (self-healing
+# propagation). An approve adds the item to the feed; rejecting an item that
+# was already approved takes it back out (poindexter#1088).
 # ---------------------------------------------------------------------------
+
+_DECIDE_POST = "00000000-0000-0000-0000-000000000001"
+
+
+def _rss(post_ids: list[str]) -> str:
+    """A minimal RSS body with one ``<item>`` per post, as the feed route renders."""
+    items = "".join(f"<item><guid>{p}</guid></item>" for p in post_ids)
+    return f'<?xml version="1.0"?><rss><channel>{items}</channel></rss>'
 
 
 async def test_decide_approve_rebuilds_matching_feed(mock_db: MagicMock) -> None:
@@ -274,52 +285,184 @@ async def test_decide_approve_rebuilds_matching_feed(mock_db: MagicMock) -> None
     rebuild.assert_awaited_once_with(sc, "podcast")
 
 
-async def test_decide_reject_does_not_rebuild_feed(mock_db: MagicMock) -> None:
-    """A rejection never reaches a public surface, so nothing to rebuild."""
+@pytest.mark.parametrize(
+    ("medium", "r2_path"),
+    [("podcast", "podcast/feed.xml"), ("video", "video/feed.xml")],
+)
+async def test_decide_reject_rebuilds_matching_feed(
+    mock_db: MagicMock, medium: str, r2_path: str,
+) -> None:
+    """A reject rebuilds the feed that listed the item (poindexter#1088).
+
+    Rejecting an item that was already approved takes it out of the feed.
+    Before the fix nothing rebuilt on reject: the item stayed live until the
+    reconciler converged it, and that pass reported a missed upstream
+    rebuild for a removal the operator made on purpose (7 CLI rejects of
+    approved videos on 2026-09-28). A pending item's reject rebuilds too,
+    re-uploading an identical feed, which is harmless.
+
+    Runs through the real ``rebuild_feed_for_medium`` routing, so the
+    assertion is on the feed object that gets rebuilt, not on a seam name.
+    """
+    from poindexter.services import media_feed_rebuild
+
     mock_db.fetchrow.return_value = {"status": "rejected"}
     sc = MagicMock()
-    with patch(
-        "poindexter.services.media_feed_rebuild.rebuild_feed_for_medium",
-        new=AsyncMock(),
+    with patch.object(
+        media_feed_rebuild, "_rebuild_feed", new=AsyncMock(),
     ) as rebuild:
         await media_approval_service.decide(
-            mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+            mock_db, _DECIDE_POST, medium,
             approved=False, decided_by="operator:cli", site_config=sc,
         )
-    rebuild.assert_not_awaited()
+    assert mock_db.fetchrow.call_args.args[3] == "rejected"
+    rebuild.assert_awaited_once()
+    assert rebuild.await_args.kwargs["r2_path"] == r2_path
 
 
-async def test_decide_without_site_config_does_not_rebuild(
+async def test_reject_burst_past_max_shrink_publishes_where_one_reconcile_refuses(
     mock_db: MagicMock,
+) -> None:
+    """Rejecting approved items takes each one out of the published feed,
+    and a burst larger than ``media_feed_reconcile_max_shrink`` never trips
+    the shrink guard, because every reject rebuilds and shrinks the feed by
+    one.
+
+    The counterfactual is why the reject rebuild has to be per-decision.
+    Left to one reconciler pass, the same removals are a single shrink past
+    the limit, which the guard can't tell from a collapsed render. It
+    refuses, and the rejected items stay live.
+
+    The feed route, the bucket and the upload are faked; the rebuild, the
+    shrink guard and ``reconcile_feed`` are real.
+    """
+    from poindexter.services import media_feed_rebuild
+
+    limit = 5
+    live = [f"00000000-0000-0000-0000-{i:012d}" for i in range(1, 21)]
+    eligible = list(live)  # what the feed route renders from the DB
+    bucket = {"video/feed.xml": _rss(live)}  # what subscribers read
+
+    async def _update(_sql, post_id, _medium, status, _by, _notes):
+        # decide()'s UPDATE: a rejected item leaves the feed's eligible set.
+        if status == "rejected":
+            eligible.remove(post_id)
+        return {"status": status}
+
+    async def _render(_sc, _route):
+        return media_feed_rebuild._FeedFetch(body=_rss(eligible), status_code=200)
+
+    async def _read(_sc, r2_path):
+        return bucket.get(r2_path)
+
+    async def _upload(_sc, body, *, r2_path, label):
+        bucket[r2_path] = body
+        return True
+
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d=None: {
+        "media_feed_reconcile_max_shrink": str(limit),
+    }.get(k, d)
+    mock_db.fetchrow = AsyncMock(side_effect=_update)
+    rejected = live[: limit + 1]
+
+    with patch.object(
+        media_feed_rebuild, "_fetch_rendered_feed", new=_render,
+    ), patch.object(
+        media_feed_rebuild, "_read_published_feed", new=_read,
+    ), patch.object(
+        media_feed_rebuild, "_upload_feed", new=_upload,
+    ), patch.object(
+        media_feed_rebuild, "_emit_render_collapse_finding",
+    ) as collapse:
+        for post_id in rejected:
+            await media_approval_service.decide(
+                mock_db, post_id, "video",
+                approved=False, decided_by="operator:cli", site_config=sc,
+            )
+
+        collapse.assert_not_called()
+        published = bucket["video/feed.xml"]
+        assert media_feed_rebuild.count_feed_items(published) == len(live) - len(rejected)
+        assert not any(f"<guid>{p}</guid>" in published for p in rejected)
+
+        # Counterfactual: the same six removals, left to one reconciler pass.
+        bucket["video/feed.xml"] = _rss(live)
+        res = await media_feed_rebuild.reconcile_feed(sc, "video")
+
+    assert res.refused and not res.healed
+    assert bucket["video/feed.xml"] == _rss(live)  # rejected items still live
+
+
+@pytest.mark.parametrize("approved", [True, False])
+async def test_decide_without_site_config_does_not_rebuild(
+    mock_db: MagicMock, approved: bool,
 ) -> None:
     """Backcompat: callers that don't pass site_config (existing call sites,
     jobs, tests) still work — the rebuild is simply skipped, no error."""
-    mock_db.fetchrow.return_value = {"status": "approved"}
+    mock_db.fetchrow.return_value = {
+        "status": "approved" if approved else "rejected",
+    }
     with patch(
         "poindexter.services.media_feed_rebuild.rebuild_feed_for_medium",
         new=AsyncMock(),
     ) as rebuild:
         await media_approval_service.decide(
-            mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
-            approved=True, decided_by="operator:cli",
+            mock_db, _DECIDE_POST, "podcast",
+            approved=approved, decided_by="operator:cli",
         )
     rebuild.assert_not_awaited()
 
 
-async def test_decide_rebuild_failure_is_non_fatal(mock_db: MagicMock) -> None:
-    """A feed-rebuild failure must NOT bubble out of decide() — the approval is
-    already committed to the DB; the rebuild is additive self-healing."""
-    mock_db.fetchrow.return_value = {"status": "approved"}
+@pytest.mark.parametrize("approved", [True, False])
+async def test_decide_rebuild_failure_is_non_fatal(
+    mock_db: MagicMock, approved: bool, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A feed-rebuild failure must NOT bubble out of decide(), on an approve
+    or a reject: the decision is already committed to the DB, and the rebuild
+    is additive self-healing that the reconciler backstops. The warning names
+    the exception type, because ``str()`` of a bare timeout is empty."""
+    status = "approved" if approved else "rejected"
+    mock_db.fetchrow.return_value = {"status": status}
     sc = MagicMock()
     with patch(
         "poindexter.services.media_feed_rebuild.rebuild_feed_for_medium",
-        new=AsyncMock(side_effect=RuntimeError("worker down")),
-    ):
+        new=AsyncMock(side_effect=TimeoutError()),
+    ), caplog.at_level(logging.WARNING, logger=media_approval_service.__name__):
         # Must not raise.
         await media_approval_service.decide(
-            mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
-            approved=True, decided_by="operator:cli", site_config=sc,
+            mock_db, _DECIDE_POST, "video",
+            approved=approved, decided_by="operator:cli", site_config=sc,
         )
+    assert mock_db.fetchrow.call_args.args[3] == status
+    assert any(
+        f"feed rebuild after video was {status}" in r.message
+        and "TimeoutError" in r.message
+        for r in caplog.records
+    )
+
+
+@pytest.mark.parametrize("approved", [True, False])
+async def test_decide_video_short_rebuilds_no_feed(
+    mock_db: MagicMock, approved: bool,
+) -> None:
+    """Shorts go to YouTube Shorts and have no RSS surface, so a decision on
+    one, approve or reject, rebuilds nothing. Runs through the real
+    ``rebuild_feed_for_medium`` routing down to ``_rebuild_feed``, the one
+    funnel both feeds share, so a short can't reach either feed or R2."""
+    from poindexter.services import media_feed_rebuild
+
+    mock_db.fetchrow.return_value = {
+        "status": "approved" if approved else "rejected",
+    }
+    with patch.object(
+        media_feed_rebuild, "_rebuild_feed", new=AsyncMock(),
+    ) as rebuild:
+        await media_approval_service.decide(
+            mock_db, _DECIDE_POST, "video_short",
+            approved=approved, decided_by="operator:cli", site_config=MagicMock(),
+        )
+    rebuild.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

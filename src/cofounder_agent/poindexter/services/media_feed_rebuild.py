@@ -9,8 +9,10 @@ down), leaving the feed stale between publish and approval until some
 behind the 2026-05-27→06-13 feed freeze recurring even once assets were
 seeded.
 
-``media_approval_service.decide`` calls :func:`rebuild_feed_for_medium` on
-approve so the approval reaches Apple / Spotify / the video feed immediately.
+``media_approval_service.decide`` calls :func:`rebuild_feed_for_medium` after
+every decision, so an approve reaches Apple / Spotify / the video feed
+immediately and so does a reject of an already-approved item, which takes it
+back out (poindexter#1088: until 2026-09-28 only approvals rebuilt).
 
 Lifted from ``services.jobs.podcast_distribute._rebuild_feed`` (#689) and
 generalized to podcast + video so there's one rebuild seam, not three copies
@@ -104,6 +106,8 @@ import re
 import tempfile
 from dataclasses import dataclass
 from typing import Any
+
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +238,8 @@ async def _fetch_rendered_feed(site_config: Any, route: str) -> _FeedFetch:
         return _FeedFetch(body=feed.text, status_code=feed.status_code)
     except Exception as exc:  # noqa: BLE001 — caller decides; never raise upward
         logger.warning(
-            "[MEDIA_FEED_REBUILD] could not render %s: %s", route, exc,
+            "[MEDIA_FEED_REBUILD] could not render %s: %s",
+            route, describe_exception(exc),
         )
         return _FeedFetch(body=None, status_code=None)
 
@@ -264,7 +269,8 @@ async def _upload_feed(
                 pass
     except Exception as exc:  # noqa: BLE001 — feed upload is non-fatal
         logger.warning(
-            "[MEDIA_FEED_REBUILD] %s feed upload failed (non-fatal): %s", label, exc,
+            "[MEDIA_FEED_REBUILD] %s feed upload failed (non-fatal): %s",
+            label, describe_exception(exc),
         )
         return False
 
@@ -282,7 +288,8 @@ async def _read_published_feed(site_config: Any, r2_path: str) -> str | None:
         return await R2UploadService(site_config=site_config).get_object_text(r2_path)
     except Exception as exc:  # noqa: BLE001 — absent object is a valid answer
         logger.warning(
-            "[MEDIA_FEED_REBUILD] could not read published %s: %s", r2_path, exc,
+            "[MEDIA_FEED_REBUILD] could not read published %s: %s",
+            r2_path, describe_exception(exc),
         )
         return None
 
@@ -412,7 +419,11 @@ async def rebuild_video_feed(site_config: Any) -> None:
 
 
 async def rebuild_feed_for_medium(site_config: Any, medium: str) -> None:
-    """Rebuild the R2 RSS feed that surfaces an approved ``medium``.
+    """Rebuild the R2 RSS feed that surfaces ``medium``.
+
+    Called after an approve (the item joins the feed) and after a reject
+    (an already-approved item leaves it). Either way the render is the
+    DB's current truth, under the shrink guard every rebuild shares.
 
     - ``podcast`` → podcast feed
     - ``video`` → video feed (long-form RSS)
@@ -542,11 +553,11 @@ async def reconcile_feed(site_config: Any, medium: str) -> FeedReconcileResult:
     except Exception as exc:  # noqa: BLE001 — a watchdog never crashes its cycle
         logger.warning(
             "[MEDIA_FEED_RECONCILE] %s reconcile failed (non-fatal): %s",
-            medium, exc,
+            medium, describe_exception(exc),
         )
         return FeedReconcileResult(
             medium=medium, rendered_items=0, published_items=0,
-            drifted=False, healed=False, error=str(exc),
+            drifted=False, healed=False, error=describe_exception(exc),
         )
 
 

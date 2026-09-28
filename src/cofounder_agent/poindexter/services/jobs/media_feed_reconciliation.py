@@ -9,8 +9,9 @@ that index them.
 Every podcast/video RSS rebuild is triggered by a discrete event, and each one
 swallows its own failures:
 
-* ``media_approval_service.decide`` rebuilds on approve — only when the calling
-  surface threads a ``site_config`` through, and inside a bare ``except``.
+* ``media_approval_service.decide`` rebuilds after every decision (approve,
+  and since poindexter#1088 reject too) — only when the calling surface
+  threads a ``site_config`` through, and inside a bare ``except``.
 * ``podcast_distribute`` Pass 3 rebuilds — only when that cycle delivered a
   *new* approved-and-undispatched asset. An episode whose URL was stamped by
   any other path reads as already-dispatched and never re-triggers it.

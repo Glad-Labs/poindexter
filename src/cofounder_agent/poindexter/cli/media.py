@@ -35,6 +35,7 @@ import click
 
 from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from poindexter.cli._prefix import looks_like_full_uuid, resolve_uuid_prefix
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +50,13 @@ async def _make_pool():
 
 
 async def _make_site_config(pool):
-    """Load a SiteConfig so ``decide()`` can rebuild the R2 feed on approve.
+    """Load a SiteConfig so ``decide()`` can rebuild the R2 feed.
+
+    ``decide()`` rebuilds after an approve AND a reject, since rejecting an
+    already-approved medium takes it out of the feed (poindexter#1088).
 
     Mirrors ``poindexter.cli.publish_approval._make_site_config``. The load is
-    non-fatal: an approve still succeeds on partial config (the feed rebuild
+    non-fatal: the decision still succeeds on partial config (the feed rebuild
     inside ``decide()`` is itself non-fatal — it just won't propagate).
     """
     from poindexter.services.site_config import SiteConfig
@@ -60,14 +64,16 @@ async def _make_site_config(pool):
     cfg = SiteConfig(pool=pool)
     try:
         await cfg.load(pool)
-    except Exception as e:  # noqa: BLE001 — partial config still lets approve succeed
+    except Exception as e:  # noqa: BLE001 — partial config still lets the decision succeed
         # Warn (not debug): a failed load means decide()'s R2 feed rebuild
-        # won't propagate, so the operator's approve silently won't refresh
-        # Apple/Spotify/the video feed — exactly the silent-staleness class
-        # this gate exists to surface. The approve itself still succeeds.
+        # won't propagate, so the operator's approve or reject silently won't
+        # refresh Apple/Spotify/the video feed — exactly the silent-staleness
+        # class this gate exists to surface. The decision itself still
+        # succeeds.
         logger.warning(
-            "media CLI: site_config load failed (non-fatal) — approve will "
-            "proceed but the R2 feed rebuild won't propagate: %s", e,
+            "media CLI: site_config load failed (non-fatal) — the decision "
+            "will be recorded but the R2 feed rebuild won't propagate: %s",
+            describe_exception(e),
         )
     return cfg
 
@@ -250,9 +256,10 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
                     f"No {medium} media for a post matching {post_id!r}. "
                     f"See `poindexter media pending --medium {medium}`."
                 )
-            # Load site_config so an approve rebuilds the matching R2 feed
-            # immediately (decide() rebuild is non-fatal). Only needed on
-            # approve, but cheap + harmless to build for reject too.
+            # Load site_config so the decision rebuilds the matching R2 feed
+            # immediately (decide() rebuild is non-fatal). Needed for reject
+            # as much as approve: rejecting an approved medium removes it
+            # from the feed (poindexter#1088).
             site_config = await _make_site_config(pool)
             await media_approval_service.decide(
                 pool, resolved, medium,
@@ -323,14 +330,15 @@ async def _resolve_open_path(post_id: str, medium: str) -> tuple[str, Path | Non
         if looks_like_full_uuid(post_id):
             resolved = post_id
         else:
-            resolved = await resolve_uuid_prefix(
+            matched = await resolve_uuid_prefix(
                 pool, table="posts", column="id", prefix=post_id, noun="post",
             )
-            if resolved is None:
+            if matched is None:
                 raise click.BadParameter(
                     f"no post matches {post_id!r} (need a full UUID or a known id prefix)",
                     param_hint="post_id",
                 )
+            resolved = matched
 
         storage_path = await media_approval_service.get_asset_storage_path(
             pool, resolved, medium,
