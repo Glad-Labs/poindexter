@@ -656,8 +656,9 @@ def _post_writes_on_an_existing_post(nodes: Any) -> list[str]:
     if not isinstance(nodes, list):
         return []
     atoms = [
-        (n.get("id"), n.get("atom")) for n in nodes
-        if isinstance(n, dict) and isinstance(n.get("atom"), str)
+        (n.get("id"), atom)
+        for n in nodes
+        if isinstance(n, dict) and isinstance(atom := n.get("atom"), str)
     ]
     if not any(atom == _EXISTING_POST_ENTRY for _, atom in atoms):
         return []

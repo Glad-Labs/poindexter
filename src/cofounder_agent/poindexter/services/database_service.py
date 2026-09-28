@@ -20,6 +20,7 @@ All existing methods are delegated to appropriate modules.
 
 import os
 import sys
+from collections.abc import Callable
 from typing import Any
 
 import asyncpg
@@ -119,19 +120,14 @@ class DatabaseService:
             # routing through ``brain.bootstrap.require_database_url``,
             # which calls ``notify_operator()`` then ``sys.exit(2)``.
             resolved = None
-            _require = None
-            _resolve = None
+            # Stays None only when the bootstrap import fails; the no-URL
+            # branch below then raises ValueError instead of notify + exit.
+            _require: Callable[..., str] | None = None
             try:
+                from poindexter.brain.bootstrap import require_database_url as _require
+                from poindexter.brain.bootstrap import resolve_database_url
 
-                from poindexter.brain.bootstrap import (
-                    require_database_url as _require,  # type: ignore[no-redef]
-                )
-                from poindexter.brain.bootstrap import (
-                    resolve_database_url as _resolve,  # type: ignore[no-redef]
-                )
-
-                if _resolve is not None:
-                    resolved = _resolve()
+                resolved = resolve_database_url()
             except Exception:
                 # Bootstrap module unavailable (odd — Docker test contexts
                 # without the brain mount). Fall through to env var.

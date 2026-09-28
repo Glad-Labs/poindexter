@@ -567,6 +567,25 @@ class TestExistingPostIsReadOnly:
             ["stage.verify_task", "content.generate_draft", "content.persist_task"]
         ) == []
 
+    def test_malformed_nodes_are_skipped_not_crashed_on(self):
+        """The plan is LLM output, so a node can be a bare string or carry a
+        non-string atom. _validate_spec reports those; this rule has to skip
+        them (a list atom is unhashable, so looking it up would raise) and
+        still judge the well-formed nodes."""
+        spec = _spec(
+            [
+                {"id": "load", "atom": "content.load_existing_post"},
+                "not-a-node",
+                {"id": "listed", "atom": ["content.republish_post"]},
+                {"id": "republish", "atom": "content.republish_post"},
+            ],
+            [{"from": "load", "to": "republish"}, {"from": "republish", "to": "END"}],
+        )
+        _ok, errors = pipeline_architect._validate_composed_spec(spec)
+        post_write = [e for e in errors if "writes or publishes a post" in e]
+        assert len(post_write) == 1, errors
+        assert "FIX node 'republish': remove it" in post_write[0]
+
     def test_the_post_writing_atoms_declare_it(self):
         from poindexter.services.atom_registry import discover, get_atom_meta
 

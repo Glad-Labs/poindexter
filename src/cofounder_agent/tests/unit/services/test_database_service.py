@@ -177,6 +177,44 @@ class TestDatabaseServiceInit:
                 DatabaseService(site_config=SiteConfig())
         assert excinfo.value.code == 2
 
+    def test_bootstrap_resolver_url_is_used(self, monkeypatch):
+        """The bootstrap resolver is asked first, and a URL it returns is
+        used without reaching the env-var fallback or the fail-loud path.
+
+        ``require_database_url`` is replaced too: the real one calls the
+        (patched) resolver itself, so without this a constructor that
+        skipped the resolver would still end up with the right URL.
+        """
+        _boot = _ensure_brain_bootstrap_stub(monkeypatch)
+        monkeypatch.setattr(
+            _boot, "resolve_database_url", lambda **_kw: "postgresql://boot:boot@host/bootdb"
+        )
+
+        def _require_must_not_run(**_kw):
+            raise AssertionError("require_database_url ran although a URL resolved")
+
+        monkeypatch.setattr(_boot, "require_database_url", _require_must_not_run)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        svc = DatabaseService(site_config=SiteConfig())
+        assert svc.database_url == "postgresql://boot:boot@host/bootdb"
+
+    def test_env_var_used_when_bootstrap_unimportable(self, monkeypatch):
+        """With no bootstrap module the constructor still reads DATABASE_URL."""
+        # A None entry makes the import raise ModuleNotFoundError.
+        monkeypatch.setitem(sys.modules, "poindexter.brain.bootstrap", None)
+        monkeypatch.setenv("DATABASE_URL", "postgresql://env:env@host/envdb")
+        svc = DatabaseService(site_config=SiteConfig())
+        assert svc.database_url == "postgresql://env:env@host/envdb"
+
+    def test_raises_value_error_when_bootstrap_unimportable(self, monkeypatch):
+        """#169: with no bootstrap module there is no notifier to route
+        through, but a missing URL must still fail loud (a ValueError), never
+        leave a None pool for a later caller to dereference."""
+        monkeypatch.setitem(sys.modules, "poindexter.brain.bootstrap", None)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        with pytest.raises(ValueError, match="DATABASE_URL is not configured"):
+            DatabaseService(site_config=SiteConfig())
+
     def test_pool_starts_as_none(self):
         svc = make_service()
         assert svc.pool is None
