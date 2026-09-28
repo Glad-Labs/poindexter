@@ -39,7 +39,7 @@ from typing import Literal
 # Standalone — no imports from the FastAPI codebase
 import asyncpg
 
-from poindexter.brain import cycle_stage, docker_utils
+from poindexter.brain import cycle_stage, docker_utils, sentry_scrub
 from poindexter.brain.alert_sync import sync_alert_rules
 
 # #198: the database URL resolves through the bootstrap helper, so
@@ -638,6 +638,14 @@ async def _init_sentry(pool) -> bool:
         return False
     try:
         environment = await _read_app_setting(pool, "sentry_environment", "production")
+        # Credentials stay out of GlitchTip (poindexter/brain/sentry_scrub.py).
+        # The brain pages through urllib, and the SDK's stdlib integration kept
+        # every Telegram and Discord URL, token included, as a breadcrumb;
+        # send_discord's locals held the webhook URL as well.
+        include_local_variables = sentry_scrub.setting_enabled(
+            await _read_app_setting(pool, "sentry_include_local_variables", "false")
+        )
+        extra_patterns = await _read_app_setting(pool, "sentry_secret_scrub_patterns", "")
         from poindexter import package_version
 
         sentry_sdk.init(
@@ -659,9 +667,15 @@ async def _init_sentry(pool) -> bool:
             # 8.5% were log lines (14 days to 2026-09-28).
             auto_enabling_integrations=False,
             traces_sample_rate=0.0,
+            **sentry_scrub.init_options(
+                extra_patterns=extra_patterns,
+                include_local_variables=include_local_variables,
+            ),
         )
         logger.info(
-            "[BRAIN] Sentry initialised (errors → GlitchTip, env=%s)", environment
+            "[BRAIN] Sentry initialised (errors → GlitchTip, env=%s, local variables %s)",
+            environment,
+            "on" if include_local_variables else "off",
         )
         return True
     except Exception as exc:  # noqa: BLE001 — never block boot on telemetry

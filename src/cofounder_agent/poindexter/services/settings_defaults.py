@@ -3939,6 +3939,22 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # each candidate are in docs/operations/glitchtip-triage.md. Read at init:
     # the worker needs a restart, flow runs pick it up on their next run.
     'sentry_extra_integrations': '',
+    # Ship stack-frame local variables with GlitchTip exceptions. Off: locals
+    # carried the Postgres DSN password, the R2 secret key, API keys, relay
+    # secrets and the chat webhook/bot tokens into GlitchTip (2026-09-28), and
+    # no pattern list knows every secret shape a local can hold. Turn on only
+    # while chasing a bug that needs them; secret-named locals are filtered
+    # whole and the credential patterns run over the rest. Read at init by the
+    # worker, each flow run, the brain and the MCP HTTP server.
+    'sentry_include_local_variables': 'false',
+    # JSON array of extra [regex, replacement] pairs for the credential
+    # scrubber (poindexter/brain/sentry_scrub.py) that runs on every Sentry
+    # breadcrumb, event and transaction. ADDED to its built-in patterns (bot
+    # and webhook URL tokens, secret query values, DSN passwords, bearer
+    # tokens, JWTs, GitHub and sk- keys), never instead of them. Invalid JSON
+    # or regex logs an error and adds nothing. The worker reads it live; the
+    # brain and the MCP HTTP server read it at init.
+    'sentry_secret_scrub_patterns': '[]',
     # GlitchTip org slug the brain triage probe queries — operators set it to
     # the org they created in the GlitchTip first-login setup. Lockstep with
     # the baseline seed; the operator overlay restores the operator's own slug.
@@ -7321,6 +7337,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'sentry_enabled': {'owner': 'sentry_integration', 'value_type': 'boolean'},
     'sentry_extra_integrations': {'owner': 'sentry_integration', 'value_type': 'csv'},
     'sentry_fingerprint_scrub_patterns': {'owner': 'sentry_integration', 'value_type': 'string'},
+    'sentry_include_local_variables': {'owner': 'sentry_integration', 'value_type': 'boolean'},
+    'sentry_secret_scrub_patterns': {'owner': 'sentry_integration', 'value_type': 'json'},
     'seo.harvest.analyzer_enabled': {'owner': 'run_seo_opportunity_analyzer', 'value_type': 'boolean'},
     'seo.low_ctr.max_ctr': {'owner': 'run_seo_opportunity_analyzer', 'value_type': 'float'},
     'seo.low_ctr.min_impressions': {'owner': 'run_seo_opportunity_analyzer', 'value_type': 'integer'},

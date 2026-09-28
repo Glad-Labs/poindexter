@@ -246,11 +246,27 @@ def _init_sentry() -> bool:
             read_app_setting,  # type: ignore[import-not-found]
         )
 
+        # Credentials stay out of GlitchTip: the same breadcrumb/event scrubber
+        # and local-variables switch as the worker and the brain. Imported
+        # before the SDK is initialised, so a tree without it runs without
+        # Sentry rather than with an unscrubbed one.
+        from poindexter.brain.sentry_scrub import (  # type: ignore[import-not-found]
+            init_options,
+            setting_enabled,
+        )
+
         async def _read() -> dict[str, str]:
             pool = await asyncpg.create_pool(resolve_database_url(), min_size=1, max_size=1, timeout=5)
             try:
                 out: dict[str, str] = {}
-                for key in ("sentry_dsn", "sentry_enabled", "sentry_environment", "environment"):
+                for key in (
+                    "sentry_dsn",
+                    "sentry_enabled",
+                    "sentry_environment",
+                    "environment",
+                    "sentry_include_local_variables",
+                    "sentry_secret_scrub_patterns",
+                ):
                     out[key] = (await read_app_setting(pool, key)) or ""
                 return out
             finally:
@@ -272,6 +288,10 @@ def _init_sentry() -> bool:
             release=package_version(),
             server_name="poindexter-mcp-http",
             traces_sample_rate=0.0,
+            **init_options(
+                extra_patterns=cfg.get("sentry_secret_scrub_patterns", ""),
+                include_local_variables=setting_enabled(cfg.get("sentry_include_local_variables")),
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[mcp-http] Sentry init failed: %s", exc)

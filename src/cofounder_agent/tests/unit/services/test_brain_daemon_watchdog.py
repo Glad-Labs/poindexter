@@ -129,11 +129,23 @@ class TestInitSentry:
     + alert dispatcher previously had no Sentry SDK — its crashes reached no
     error tracker."""
 
-    def _patch_read(self, monkeypatch, dsn):
+    def _patch_read(self, monkeypatch, dsn, **settings):
         async def fake_read(pool, key, default=""):
-            return dsn if key == "sentry_dsn" else (default or "production")
+            if key == "sentry_dsn":
+                return dsn
+            return settings.get(key, default)
 
         monkeypatch.setattr(bd, "_read_app_setting", fake_read)
+
+    def _fake_sdk(self, monkeypatch) -> MagicMock:
+        fake_sentry = MagicMock()
+        integ_asyncio = MagicMock()
+        integ_logging = MagicMock()
+        monkeypatch.setitem(sys.modules, "sentry_sdk", fake_sentry)
+        monkeypatch.setitem(sys.modules, "sentry_sdk.integrations", MagicMock())
+        monkeypatch.setitem(sys.modules, "sentry_sdk.integrations.asyncio", integ_asyncio)
+        monkeypatch.setitem(sys.modules, "sentry_sdk.integrations.logging", integ_logging)
+        return fake_sentry
 
     async def test_skips_when_dsn_empty(self, monkeypatch):
         self._patch_read(monkeypatch, "")
@@ -170,3 +182,41 @@ class TestInitSentry:
             integ_logging.LoggingIntegration.return_value,
             integ_asyncio.AsyncioIntegration.return_value,
         ]
+
+    async def test_scrubs_credentials_and_keeps_locals_home(self, monkeypatch):
+        """The brain pages through urllib, and GlitchTip stored the Telegram and
+        Discord tokens from those requests' breadcrumbs and from send_discord's
+        locals (2026-09-28). Every hook is the shared scrubber's."""
+        self._patch_read(monkeypatch, "https://k@glitchtip.local/1")
+        fake_sentry = self._fake_sdk(monkeypatch)
+
+        assert await bd._init_sentry(MagicMock()) is True
+        kwargs = fake_sentry.init.call_args.kwargs
+        assert kwargs["include_local_variables"] is False
+        crumb = kwargs["before_breadcrumb"](
+            {"type": "http", "data": {"url": "https://api.telegram.org/bot1:FAKE/sendMessage"}}, {}
+        )
+        assert crumb["data"]["url"] == "https://api.telegram.org/bot[Filtered]/sendMessage"
+        for hook in ("before_send", "before_send_transaction"):
+            event = kwargs[hook]({"message": "https://discord.com/api/webhooks/1/FAKE"}, {})
+            assert event["message"] == "https://discord.com/api/webhooks/1/[Filtered]"
+
+    async def test_settings_reach_the_scrubber(self, monkeypatch):
+        """sentry_include_local_variables and sentry_secret_scrub_patterns are
+        read once, at init."""
+        from poindexter.brain.sentry_scrub import compile_patterns
+
+        compile_patterns.cache_clear()
+        self._patch_read(
+            monkeypatch,
+            "https://k@glitchtip.local/1",
+            sentry_include_local_variables="true",
+            sentry_secret_scrub_patterns='[["(sess=)\\\\w+", "\\\\1<S>"]]',
+        )
+        fake_sentry = self._fake_sdk(monkeypatch)
+
+        assert await bd._init_sentry(MagicMock()) is True
+        kwargs = fake_sentry.init.call_args.kwargs
+        assert kwargs["include_local_variables"] is True
+        assert kwargs["before_send"]({"message": "sess=abc"}, {})["message"] == "sess=<S>"
+

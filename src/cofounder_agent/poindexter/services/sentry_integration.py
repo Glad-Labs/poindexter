@@ -73,6 +73,18 @@ list.
   breadcrumbs while chasing a database fault. Read at init, so the worker
   needs a restart; each Prefect flow run initialises afresh. The costs of
   the usual candidates are in docs/operations/glitchtip-triage.md.
+
+Credentials — ``poindexter/brain/sentry_scrub.py``, shared with the brain and
+the MCP HTTP server. GlitchTip held a Discord webhook token, a Telegram bot
+token, the Postgres password and API keys, carried in by http breadcrumbs and
+stack-frame locals (2026-09-28):
+
+* ``sentry_include_local_variables`` (default ``false``) — ship stack-frame
+  locals with exceptions. Read at init.
+* ``sentry_secret_scrub_patterns`` (default ``[]``) — extra
+  ``[regex, replacement]`` pairs for the credential scrubber, which runs on
+  every breadcrumb, event and transaction. Added to its built-in patterns,
+  never instead of them. Read live, like the noise-control knobs.
 """
 
 import importlib
@@ -84,6 +96,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from poindexter import package_version
+from poindexter.brain import sentry_scrub
 from poindexter.services.logger_config import get_logger
 
 try:
@@ -283,6 +296,13 @@ class SentryIntegration:
         traces_sample_rate = site_config.get_float("sentry_traces_sample_rate", 0.1)
         profiles_sample_rate = site_config.get_float("sentry_profiles_sample_rate", 0.1)
 
+        # Stack-frame locals are off unless asked for: they carried the
+        # Postgres DSN password, the R2 secret key and API keys into GlitchTip,
+        # and no pattern list knows every secret a local can hold.
+        include_local_variables = site_config.get_bool(
+            "sentry_include_local_variables", False
+        )
+
         # Skip initialization if DSN not configured or explicitly disabled.
         # Do NOT set _initialized here — lifespan re-runs this after site_config
         # loads, and if we latched to "already initialized" on the empty read
@@ -328,10 +348,13 @@ class SentryIntegration:
                 # (sentry_traces_sample_rate / sentry_profiles_sample_rate).
                 traces_sample_rate=traces_sample_rate,
                 profiles_sample_rate=profiles_sample_rate,
-                # Before sending event to Sentry (filter sensitive data)
+                # Every breadcrumb, event and transaction passes the credential
+                # scrubber (poindexter/brain/sentry_scrub.py) before it leaves.
+                before_breadcrumb=cls._before_breadcrumb,
                 before_send=cls._before_send,
-                # Include local variables in stack traces
-                include_local_variables=True,
+                before_send_transaction=cls._before_send_transaction,
+                # app_settings.sentry_include_local_variables (default false).
+                include_local_variables=include_local_variables,
                 # Error attachment configurations
                 max_value_length=4096,  # Max value length for variable inspection
                 # SDK-internal debug logging — gated by app_settings.sentry_sdk_debug
@@ -381,6 +404,9 @@ class SentryIntegration:
             logger.info("   Release: %s", release)
             logger.info("   Traces Sample Rate: %s", traces_sample_rate)
             logger.info("   Profiles Sample Rate: %s", profiles_sample_rate)
+            logger.info(
+                "   Local variables: %s", "on" if include_local_variables else "off"
+            )
             logger.info(
                 "   Integrations: %s",
                 ",".join(sorted(getattr(sentry_sdk.get_client(), "integrations", {}))),
@@ -528,16 +554,23 @@ class SentryIntegration:
                 pattern.sub(replacement, "")
                 compiled.append((pattern, replacement))
         except (ValueError, TypeError, re.error) as exc:
+            # Cache the fallback BEFORE logging. The SDK's logging integration
+            # turns this error into an event whose _before_send lands back
+            # here, and while the bad value was still uncached each of those
+            # logged again: one capture became 157 GlitchTip events
+            # (measured 2026-09-28).
+            cls._scrub_cache_key = raw
+            cls._scrub_cache = (
+                cls._compile_default_scrubbers()
+                if raw != cls.DEFAULT_FINGERPRINT_SCRUB_PATTERNS
+                else ()
+            )
             logger.error(
                 "[SENTRY] sentry_fingerprint_scrub_patterns is invalid (%s) — "
                 "falling back to built-in defaults. Fix the setting in app_settings.",
                 exc,
             )
-            if raw != cls.DEFAULT_FINGERPRINT_SCRUB_PATTERNS:
-                cls._scrub_cache_key = raw
-                cls._scrub_cache = cls._compile_default_scrubbers()
-                return cls._scrub_cache
-            compiled = []
+            return cls._scrub_cache
 
         cls._scrub_cache_key = raw
         cls._scrub_cache = tuple(compiled)
@@ -568,13 +601,37 @@ class SentryIntegration:
         return text
 
     @classmethod
+    def _secret_patterns(cls) -> sentry_scrub.Patterns:
+        """The credential scrubber's patterns: built-ins plus the live setting."""
+        return sentry_scrub.compile_patterns(
+            cls._setting("sentry_secret_scrub_patterns", "")
+        )
+
+    @classmethod
+    def _before_breadcrumb(cls, crumb: dict, hint: dict) -> dict | None:
+        """Scrub credentials out of a breadcrumb as it is recorded.
+
+        The SDK records every http.client and httpx request URL with its path
+        and query, and a chat webhook or bot API carries its token in the URL.
+        The patterns are resolved inside the scrubber's guard, so even a
+        failure reading them drops the crumb rather than let it through.
+        """
+        return sentry_scrub.scrub_breadcrumb(crumb, hint, patterns=cls._secret_patterns)
+
+    @classmethod
+    def _before_send_transaction(cls, event: dict, hint: dict) -> dict | None:
+        """Scrub credentials out of a transaction; span names carry request URLs."""
+        return sentry_scrub.scrub_event(event, hint, patterns=cls._secret_patterns)
+
+    @classmethod
     def _before_send(cls, event: dict, hint: dict) -> dict | None:
         """
         Filter events before sending to Sentry.
-        Remove sensitive data (passwords, tokens, etc.)
 
-        Also drops expected control flow and normalizes the grouping
-        fingerprint — see the noise-control knobs in the module docstring.
+        Drops expected control flow, scrubs credential-shaped text out of
+        every string in the event (``poindexter/brain/sentry_scrub.py``), and
+        normalizes the grouping fingerprint — see the noise-control and
+        credential knobs in the module docstring.
 
         Args:
             event: The event dictionary
@@ -596,6 +653,14 @@ class SentryIntegration:
             ):
                 return None
 
+        # Credentials out before anything else reads the event: the
+        # fingerprint below is built from the exception text, and it is sent
+        # too. An event that cannot be scrubbed is dropped (and logged).
+        scrubbed = sentry_scrub.scrub_event(event, hint, patterns=cls._secret_patterns)
+        if scrubbed is None:
+            return None
+        event = scrubbed
+
         # Collapse volatile text into a stable fingerprint. Only set the
         # fingerprint when scrubbing actually changed something: overriding
         # grouping for every event would merge unrelated errors, whereas a
@@ -611,14 +676,6 @@ class SentryIntegration:
                 for header in sensitive_headers:
                     if header in headers:
                         headers[header] = "[REDACTED]"
-
-            # Redact sensitive query parameters
-            if "request" in event and "url" in event["request"]:
-                url = event["request"]["url"]
-                if "api_key=" in url or "token=" in url:
-                    event["request"]["url"] = url.replace(
-                        url[url.find("api_key=") :], "api_key=[REDACTED]"
-                    )
 
         return event
 

@@ -310,5 +310,6 @@ named `poindexter.brain.probes`.
 | `seed_loader.py`         | Loads `seed_app_settings.json` defaults on first boot              |
 | `seed_app_settings.json` | Default `app_settings` rows shipped with the brain daemon          |
 | `docker_utils.py`        | URL localizing + `restart_container`, the shared docker restart    |
+| `sentry_scrub.py`        | Credential scrubber that every `sentry_sdk.init` wires in          |
 | `Dockerfile`             | Container image for `poindexter-brain-daemon`                      |
 | `hallucination-check/`   | Reference data (PyPI top-500, stdlib modules, Ollama models, etc.) |

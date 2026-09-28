@@ -1251,3 +1251,166 @@ class TestShutdownNoiseDefaults:
         repls = [r for _, r in _json.loads(SentryIntegration.DEFAULT_FINGERPRINT_SCRUB_PATTERNS)]
         assert "<TS>" in repls
         assert SentryIntegration._scrub("at 2026-09-12T21:03:33.379579Z and 2026-09-12T21:03:33+00:00") == "at <TS> and <TS>"
+
+
+class TestFingerprintScrubPatternsReentry:
+    def test_invalid_setting_logs_once_when_the_log_reenters(self):
+        """The SDK's logging integration turns this error into an event, whose
+        ``_before_send`` compiles the same bad value again. While the bad value
+        was cached only after logging, each of those logged again: one capture
+        became 157 GlitchTip events (2026-09-28)."""
+        SentryIntegration._site_config = _stub_site_config(
+            {"sentry_fingerprint_scrub_patterns": "not json"}
+        )
+        SentryIntegration._scrub_cache_key = None
+        SentryIntegration._scrub_cache = ()
+        logged = []
+
+        def reenter(*args, **kwargs):
+            logged.append(args)
+            if len(logged) < 5:  # bounded, so a regression fails instead of recursing
+                SentryIntegration._scrub_patterns()
+
+        try:
+            with patch("poindexter.services.sentry_integration.logger") as log:
+                log.error.side_effect = reenter
+                patterns = SentryIntegration._scrub_patterns()
+        finally:
+            SentryIntegration._site_config = None
+            SentryIntegration._scrub_cache_key = None
+            SentryIntegration._scrub_cache = ()
+        assert len(logged) == 1
+        assert patterns == SentryIntegration._compile_default_scrubbers()
+
+
+@pytest.mark.skipif(not _has_sentry, reason="sentry-sdk not installed")
+class TestCredentialScrubbing:
+    """Every breadcrumb, event and transaction passes the credential scrubber
+    (``poindexter/brain/sentry_scrub.py``), and stack-frame locals stay home
+    unless ``sentry_include_local_variables`` asks for them.
+
+    GlitchTip held a Discord webhook token, a Telegram bot token, the Postgres
+    password and API keys (2026-09-28). These pin the worker's wiring; the
+    check through a real client is ``tests/unit/brain/test_sentry_scrub_e2e.py``.
+    """
+
+    def setup_method(self):
+        from poindexter.brain.sentry_scrub import compile_patterns
+
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+        SentryIntegration._site_config = None
+        SentryIntegration._scrub_cache_key = None
+        SentryIntegration._scrub_cache = ()
+        compile_patterns.cache_clear()
+
+    teardown_method = setup_method
+
+    def _init_kwargs(self, mock_sentry, extra: dict | None = None) -> dict:
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "true",
+            **(extra or {}),
+        })
+        assert SentryIntegration.initialize(MagicMock(), cfg) is True
+        return mock_sentry.init.call_args.kwargs
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_every_hook_is_passed(self, mock_sentry):
+        kwargs = self._init_kwargs(mock_sentry)
+        assert kwargs["before_breadcrumb"] == SentryIntegration._before_breadcrumb
+        assert kwargs["before_send"] == SentryIntegration._before_send
+        assert kwargs["before_send_transaction"] == SentryIntegration._before_send_transaction
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_local_variables_are_off_by_default(self, mock_sentry):
+        assert self._init_kwargs(mock_sentry)["include_local_variables"] is False
+
+    @patch("poindexter.services.sentry_integration.sentry_sdk")
+    def test_local_variables_on_only_when_asked(self, mock_sentry):
+        kwargs = self._init_kwargs(mock_sentry, {"sentry_include_local_variables": "true"})
+        assert kwargs["include_local_variables"] is True
+
+    def test_seeded_defaults_match_the_code(self):
+        """Locals stay off and no extra pattern applies on a fresh install."""
+        from poindexter.services.settings_defaults import DEFAULTS, METADATA
+
+        assert DEFAULTS["sentry_include_local_variables"] == "false"
+        assert DEFAULTS["sentry_secret_scrub_patterns"] == "[]"
+        assert METADATA["sentry_include_local_variables"]["value_type"] == "boolean"
+        assert METADATA["sentry_secret_scrub_patterns"]["value_type"] == "json"
+
+    def test_breadcrumb_url_is_scrubbed(self):
+        crumb = {
+            "type": "http",
+            "category": "httplib",
+            "data": {"url": "https://api.telegram.org/bot123:FAKE/sendMessage", "http.query": "token=FAKE"},
+        }
+        out = SentryIntegration._before_breadcrumb(crumb, {})
+        assert out["data"] == {
+            "url": "https://api.telegram.org/bot[Filtered]/sendMessage",
+            "http.query": "token=[Filtered]",
+        }
+
+    def test_breadcrumb_hook_reads_the_setting_live(self):
+        """Edits land through the 1-minute site_config reload, no restart."""
+        import json
+
+        data = {"sentry_secret_scrub_patterns": "[]"}
+        SentryIntegration._site_config = _stub_site_config(data)
+        assert SentryIntegration._before_breadcrumb({"message": "sess=abc"}, {})["message"] == "sess=abc"
+        data["sentry_secret_scrub_patterns"] = json.dumps([["(sess=)\\w+", "\\1<S>"]])
+        assert SentryIntegration._before_breadcrumb({"message": "sess=abc"}, {})["message"] == "sess=<S>"
+
+    def test_breadcrumb_is_dropped_when_patterns_cannot_be_read(self):
+        """The SDK keeps the ORIGINAL crumb when before_breadcrumb raises."""
+        from poindexter.brain import sentry_scrub
+
+        crumb = {"data": {"url": "https://api.telegram.org/bot1:FAKE/x"}}
+        with patch.object(sentry_scrub, "compile_patterns", side_effect=RuntimeError("boom")):
+            assert SentryIntegration._before_breadcrumb(crumb, {}) is None
+
+    def test_event_is_scrubbed_before_its_fingerprint_is_built(self):
+        """The fingerprint is built from the exception text and ships too."""
+        import json
+
+        event = {
+            "level": "error",
+            "exception": {"values": [{
+                "type": "HTTPStatusError",
+                "value": "404 for url 'https://discord.com/api/webhooks/1/FAKE' after 1.5s",
+            }]},
+            "breadcrumbs": {"values": [{"data": {"url": "https://api.telegram.org/bot1:FAKE/x"}}]},
+        }
+        out = SentryIntegration._before_send(event, {})
+        assert "FAKE" not in json.dumps(out)
+        assert out["fingerprint"] == [
+            "HTTPStatusError",
+            "404 for url 'https://discord.com/api/webhooks/1/[Filtered]' after <DURATION>s",
+        ]
+
+    def test_query_secret_in_request_is_scrubbed(self):
+        """Replaces the old URL rewrite, which only looked for ``api_key=``: on a
+        URL with just ``token=`` it swapped every copy of the URL's last
+        character for ``api_key=[REDACTED]`` and left the token in place."""
+        event = {
+            "level": "error",
+            "request": {"url": "https://api.test/cb?token=FAKE&page=2", "headers": {}},
+        }
+        out = SentryIntegration._before_send(event, {"exc_info": True})
+        assert out["request"]["url"] == "https://api.test/cb?token=[Filtered]&page=2"
+
+    def test_transaction_spans_are_scrubbed(self):
+        event = {
+            "type": "transaction",
+            "spans": [{"description": "POST https://api.telegram.org/bot1:FAKE/sendMessage"}],
+        }
+        out = SentryIntegration._before_send_transaction(event, {})
+        assert out["spans"][0]["description"] == "POST https://api.telegram.org/bot[Filtered]/sendMessage"
+
+    def test_dropped_control_flow_still_drops(self):
+        class GpuBusyError(Exception):
+            pass
+
+        hint = {"exc_info": (GpuBusyError, GpuBusyError(), None)}
+        assert SentryIntegration._before_send({"level": "error"}, hint) is None

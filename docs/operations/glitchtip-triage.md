@@ -57,7 +57,10 @@ the 14 days to 2026-09-28:
   brain's; log lines, the part that tells the story, were 16% and 8.5%.
 - **httpx** records every request URL as a breadcrumb, path and query string
   unredacted. URLs that carry a credential in their path, like a chat
-  webhook, were stored with it.
+  webhook, were stored with it. Turning httpx off did not close that leak:
+  the default stdlib integration does the same for `http.client`, which is
+  how the brain's `urllib` pages go out. See
+  [Credentials never leave the process](#credentials-never-leave-the-process).
 
 The MCP HTTP server keeps auto-enabling on purpose. Its venv has no LangChain
 or torch, it initialises once per long-lived process (0.78 s, most of it
@@ -81,17 +84,114 @@ measured after the content flow's own modules had loaded:
 | Identifier                                     | Adds                                            | Import cost                                       |
 | ---------------------------------------------- | ----------------------------------------------- | ------------------------------------------------- |
 | `asyncpg`                                      | a breadcrumb and span per SQL query             | negligible (crowds out log breadcrumbs, as above) |
-| `httpx`                                        | a breadcrumb and span per HTTP request          | negligible (records full URLs, as above)          |
+| `httpx`                                        | a breadcrumb and span per HTTP request          | negligible (full URLs, scrubbed as below)         |
 | `aiohttp`, `redis`, `boto3`, `huggingface_hub` | per-call breadcrumbs and spans                  | ≤ 0.11 s, ≤ 6 MB                                  |
 | `sqlalchemy`                                   | query breadcrumbs (our code uses no SQLAlchemy) | 0.22 s, +15 MB                                    |
 | `openai`                                       | spans for OpenAI-client LLM calls               | 0.52 s, +28 MB                                    |
 | `langchain`, `langgraph`                       | spans for chains and graph runs                 | 4.2–4.8 s, +424–432 MB, imports torch             |
 
+## Credentials never leave the process
+
+The SDK records every outbound HTTP request as a breadcrumb with its path and
+query string (`parse_url(..., sanitize=False)`, in the stdlib integration as in
+the httpx one), and by default it ships each stack frame's local variables
+with an exception. Chat webhooks and bot APIs carry their credential in the
+URL. Measured 2026-09-28 over the 8,499 events GlitchTip held (29 June to 28
+September):
+
+| Where it was stored                                                             | Events | Last 14 days |
+| ------------------------------------------------------------------------------- | ------ | ------------ |
+| `httplib` breadcrumbs (`data.url`): the Discord webhook and Telegram bot tokens | 4,447  | 76           |
+| stack-frame locals, listed below                                                | 1,394  | 43           |
+| subprocess breadcrumbs (`message`): a DSN password, a `POSTGRES_PASSWORD=`      | 3      | 1            |
+| `http.query` and log breadcrumbs: presigned-S3 signatures                       | 2      | 0            |
+
+The breadcrumbs held the Discord token 8,981 times and the Telegram token 250.
+The locals held the same two tokens, the Postgres DSN password
+(`gpu_scheduler`, asyncpg's `dsn`), the R2 secret access key (`upload_to_r2`'s
+`secret_key`, 555 events), the Lemon Squeezy API key, a GitHub token and a
+relay secret (`pro_delivery`'s config), the newsletter relay secret and other
+bearer tokens in `headers` dicts, and a Cloudflare API token.
+
+Every `sentry_sdk.init` now gets two defences from
+[`poindexter/brain/sentry_scrub.py`](../../src/cofounder_agent/poindexter/brain/sentry_scrub.py):
+the worker and each Prefect flow run through `SentryIntegration.initialize`,
+the brain through `_init_sentry`, the MCP HTTP server through
+`http_server._init_sentry`.
+
+1. **Stack-frame locals stay home.** `sentry_include_local_variables`
+   (default `false`) sets `include_local_variables`. No pattern list can know
+   every secret shape a local variable might hold (the R2 secret key is 64
+   bare hex characters), so the complete fix for that surface is not to send
+   it. Turn it on only while chasing a bug that needs locals, and back off
+   after. While it is on, a local whose name says it holds a credential
+   (`secret_key`, `api_token`, `relay_secret`, `dsn`, `webhook_url`, …) is
+   filtered whole, and the patterns below run over the rest.
+2. **Credential-shaped text becomes `[Filtered]`** (the SDK's own marker) in
+   each breadcrumb as it is recorded (`before_breadcrumb`), and in every
+   string of an event or transaction just before it is sent (`before_send`,
+   `before_send_transaction`). The second pass runs on the serialized event,
+   so it also covers exception values, log messages, `extra`, `contexts`,
+   `request`, tags, span names and the grouping fingerprint the worker builds
+   from exception text.
+
+The built-in patterns, each matched on the shape of a credential rather than a
+variable name:
+
+| Pattern                 | Catches                                                                                         |
+| ----------------------- | ----------------------------------------------------------------------------------------------- |
+| `telegram_bot_path`     | `/bot<id>:<token>` in Bot API URLs and raw request bytes                                        |
+| `discord_webhook_path`  | `/api/webhooks/<id>/<token>`, with or without `/v10`                                            |
+| `query_secret`          | a secret-ish query value: `?key=`, `&token=`, `&access_token=`, `X-Amz-Signature=` and the like |
+| `url_userinfo_password` | `scheme://user:password@host`                                                                   |
+| `env_secret_assignment` | `POSTGRES_PASSWORD=…`, `API_TOKEN=…` on a command line                                          |
+| `authorization_header`  | `Bearer …` / `Basic …` values of 16+ characters                                                 |
+| `jwt`                   | any `eyJ….eyJ….…` token                                                                         |
+| `github_token`          | `ghp_` / `gho_` / `ghu_` / `ghs_` / `ghr_` / `github_pat_` tokens                               |
+| `sk_api_key`            | `sk-…` keys (OpenAI-compatible, `sk-ant-`, `sk-lf-`)                                            |
+| `repr_secret_kwarg`     | a secret-named keyword in a repr or call: `relay_secret='…'`, `ls_api_key="…"`                  |
+| `repr_secret_item`      | a secret-named dict item or JSON member: `'secret_key': '…'`, `"api_token": "…"`                |
+
+Replayed over all 8,506 events GlitchTip held on 2026-09-28, locals included
+as they were stored, the scrubber left no credential shape and no secret-named
+local unfiltered.
+
+**`sentry_secret_scrub_patterns`** (default `[]`) is a JSON array of extra
+`[regex, replacement]` pairs, _added_ to the built-ins and never instead of
+them, so no edited row can switch the scrubber off. An invalid value logs an
+error once and adds nothing. The worker reads it live (the 1-minute
+`reload_site_config`); the brain and the MCP HTTP server read it and
+`sentry_include_local_variables` at init, so restart them to apply.
+
+Both hooks **fail closed**. The SDK keeps the _original_ breadcrumb when
+`before_breadcrumb` raises, and silently drops the event when `before_send`
+does, so each hook catches its own failure, logs a warning, and drops what it
+could not scrub rather than let it out.
+
+A new `sentry_sdk.init` anywhere in the tree must pass
+`**sentry_scrub.init_options(...)` (or the same four options).
+`tests/unit/brain/test_sentry_scrub_init_sites.py` fails otherwise.
+
+Events stored before the fix keep what they captured until GlitchTip's 90-day
+retention (`GLITCHTIP_MAX_EVENT_LIFE_DAYS`) drops them. This query counts
+events still holding a chat-webhook or bot token, without printing any:
+
+```bash
+docker exec poindexter-glitchtip-db psql -U glitchtip -d glitchtip -Atc "
+  SELECT count(*), max(timestamp) FROM issue_events_issueevent
+  WHERE data::text ~ 'discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_.-]{20,}'
+     OR data::text ~ 'bot[0-9]{5,}:[A-Za-z0-9_-]{20,}'"
+```
+
+After a deploy, `max(timestamp)` should stop advancing.
+
 ## Layer 1 — capture-side (`_before_send`)
 
-Runs in-process before an event is sent. Two knobs, both `app_settings`-driven
-so they change without a redeploy (read through the cached `SiteConfig`, so the
-1-minute `reload_site_config` job propagates edits):
+Runs in-process before an event is sent, after the credential scrub above (so
+a fingerprint is built from text that has already had its secrets removed).
+Two knobs, both `app_settings`-driven so they change without a redeploy (read
+through the cached `SiteConfig`, so the 1-minute `reload_site_config` job
+propagates edits):
 
 - **`sentry_drop_exception_types`** — CSV of exception class names to drop
   entirely. Matched by name across the MRO, so it needs no import of the
@@ -256,6 +356,7 @@ Other traps worth knowing:
 
 - [`poindexter/brain/glitchtip_triage_probe.py`](../../src/cofounder_agent/poindexter/brain/glitchtip_triage_probe.py) — the probe
 - [`services/sentry_integration.py`](../../src/cofounder_agent/poindexter/services/sentry_integration.py) — capture-side filter
+- [`poindexter/brain/sentry_scrub.py`](../../src/cofounder_agent/poindexter/brain/sentry_scrub.py) — the credential scrubber every `sentry_sdk.init` wires in
 - [Findings dashboard](http://localhost:3000/d/findings) — the _other_ signal
   path; a condition worth an operator's attention should be a
   [finding](../architecture/anti-hallucination.md), not just a captured
