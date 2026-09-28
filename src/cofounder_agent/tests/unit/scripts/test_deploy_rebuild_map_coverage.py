@@ -32,28 +32,24 @@ REPO = next(
 SYNC = REPO / "scripts" / "linux" / "deploy-checkout-sync.sh"
 COMPOSE = REPO / "docker-compose.local.yml"
 
-# Services that legitimately need no entry: they COPY nothing from this repo
-# (voice-agent pulls node from a donor stage; voice-bot is not in the local
-# compose), so no repo change can make them stale.
+# Services that COPY nothing from this repo (voice-agent pulls node from a
+# donor stage; voice-bot is not in the local compose), so no source change can
+# make them stale. Their Dockerfile still can, and
+# test_every_built_services_dockerfile_is_matched_by_its_regex holds them to
+# that like every other built service.
 _NO_REPO_SOURCE = {"voice-agent-livekit", "voice-agent-claude-code"}
 
-# Built services that need no entry of their own because they run ANOTHER
-# service's image: rebuilding the owner re-tags the image they start from.
-# demo-recorder is a `compose run --rm` one-shot declaring
-# `image: ${COMPOSE_PROJECT_NAME}-worker` — the worker's own tag — so the
-# worker entry already refreshes it, and naming it too would build that one tag
-# twice in the same pass.
-#
-# (It was first exempted for a different reason: the recreate step named every
-# rebuilt service in `up -d --force-recreate`, and naming a profile-gated
-# service starts it whatever profiles are active. Since 2026-09-28 that step
-# leaves stopped and absent services alone — pinned by
-# TestRecreateCheck.test_a_parked_service_is_neither_recreated_nor_gated in
-# test_deploy_checkout_sync_apply.py — so profiles no longer decide this.)
-# test_image_sharing_exemptions_still_share_a_rebuilt_image fails the moment
-# one of these stops sharing its owner's image, so the exemption cannot outlive
-# its reason.
-_SHARES_A_REBUILT_IMAGE = {"demo-recorder": "worker"}
+# There is deliberately no exemption for profile-gated services, nor for ones
+# that run another service's image. demo-recorder was exempted twice: first
+# because the recreate step started every service it named (stack#4144), then
+# because it runs the worker's image tag, so the worker's build refreshes it
+# (stack#4153). Both are true; neither is a reason to leave it out. 6a-bis never
+# names a service that is not running (pinned in
+# test_deploy_checkout_sync_recreate_scope.py), so an entry costs one cached
+# build of the shared tag, and every built service's Dockerfile has an entry
+# naming it with no exceptions to keep honest. The same rule caught
+# voice-agent-claude-code, which builds voice-agent-livekit's Dockerfile into
+# the same image and was never named.
 
 
 def _rebuild_map() -> dict[str, str]:
@@ -166,8 +162,7 @@ def _baked_paths(service: str, context: str, dockerfile: str) -> list[str]:
 
 
 def _checked_services() -> dict[str, tuple[str, str]]:
-    return {s: v for s, v in _built_services().items()
-            if s not in _NO_REPO_SOURCE and s not in _SHARES_A_REBUILT_IMAGE}
+    return {s: v for s, v in _built_services().items() if s not in _NO_REPO_SOURCE}
 
 
 def _matched(service: str, path: str, rmap: dict) -> bool:
@@ -210,7 +205,7 @@ def test_the_worker_image_services_are_checked():
     """Pin the population the old resolver skipped, so a future parser change
     cannot quietly drop them from every check again."""
     checked = _checked_services()
-    for service in ("worker", "prefect-worker", "pipeline-bot", "brain-daemon"):
+    for service in ("worker", "prefect-worker", "pipeline-bot", "demo-recorder", "brain-daemon"):
         assert service in checked, f"{service} fell out of the checked set"
         ctx, df = checked[service]
         assert _baked_paths(service, ctx, df), f"{service} reads as baking nothing"
@@ -250,13 +245,17 @@ def test_each_baked_path_is_actually_matched_by_its_regex():
 
 
 @pytest.mark.unit
-def test_each_baked_services_dockerfile_is_matched_by_its_regex():
+def test_every_built_services_dockerfile_is_matched_by_its_regex():
     """Editing the Dockerfile changes the image as surely as editing what it
     COPYs. The worker-image entry named scripts/Dockerfile.worker — a path that
-    does not exist — so a Dockerfile.worker edit rebuilt none of its services."""
+    does not exist — so a Dockerfile.worker edit rebuilt none of its services.
+
+    Every built service, not only the checked ones: for a _NO_REPO_SOURCE
+    service the Dockerfile is its ONLY repo input, and voice-agent-claude-code
+    builds the same Dockerfile as voice-agent-livekit but was never named."""
     rmap = {re.compile(k): v.split() for k, v in _rebuild_map().items()}
     unmatched = []
-    for service, (ctx, df) in _checked_services().items():
+    for service, (ctx, df) in _built_services().items():
         rel = str(_dockerfile(ctx, df).relative_to(REPO))
         if not _matched(service, rel, rmap):
             unmatched.append(f"{service}: {rel}")
@@ -264,28 +263,3 @@ def test_each_baked_services_dockerfile_is_matched_by_its_regex():
         "service Dockerfile(s) not matched by a REBUILD_MAP entry naming the "
         "service:\n  " + "\n  ".join(unmatched)
     )
-
-
-def _image_tag(service: str, stanzas: dict[str, str]) -> str:
-    """The image tag compose uses for ``service``: its own `image:`, else the
-    default `<project>-<service>`, with the project name normalised."""
-    m = re.search(r"^    image:\s*(\S+)", stanzas[service], re.M)
-    ref = m.group(1) if m else f"${{COMPOSE_PROJECT_NAME}}-{service}"
-    return re.sub(r"\$\{COMPOSE_PROJECT_NAME(?::-[^}]*)?\}", "<project>", ref)
-
-
-@pytest.mark.unit
-def test_image_sharing_exemptions_still_share_a_rebuilt_image():
-    """_SHARES_A_REBUILT_IMAGE is justified only by running the owner's image —
-    if one of these gets an image of its own, rebuilding the owner no longer
-    refreshes it and it needs a REBUILD_MAP entry, not an exemption."""
-    stanzas = _service_stanzas()
-    covered = {svc for services in _rebuild_map().values() for svc in services.split()}
-    for service, owner in _SHARES_A_REBUILT_IMAGE.items():
-        assert service in _built_services(), f"{service} is no longer a built service"
-        assert owner in covered, f"{owner} lost its REBUILD_MAP entry, so nothing refreshes {service}"
-        assert _image_tag(service, stanzas) == _image_tag(owner, stanzas), (
-            f"{service} no longer runs {owner}'s image "
-            f"({_image_tag(service, stanzas)} vs {_image_tag(owner, stanzas)}) — "
-            f"give it a REBUILD_MAP entry"
-        )

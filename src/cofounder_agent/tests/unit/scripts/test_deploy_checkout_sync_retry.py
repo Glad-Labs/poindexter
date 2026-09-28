@@ -72,7 +72,11 @@ _FAKE_START_STACK = """#!/usr/bin/env bash
 echo "start-stack $*" >> "${EVENTS_FILE:-/dev/null}"
 case "${1:-}" in
   build) exit "${FAKE_BUILD_EXIT:-0}" ;;
-  ps) exit 0 ;;
+  # The stranded sweep (--status=created) finds nothing. The recreate step's
+  # liveness query (`ps -q <svc>`) gets an id: every rebuilt service here is
+  # running. Parked services have their own tests
+  # (test_deploy_checkout_sync_recreate_scope.py).
+  ps) [[ " $* " == *" -q "* ]] && echo 0123456789abcdef; exit 0 ;;
   up)
     if [[ " $* " == *" --force-recreate "* ]] && [ -n "${STARTED_DIR:-}" ]; then
       for a in "${@:2}"; do
@@ -91,6 +95,7 @@ exit 0
 _FAKE_DOCKER = """#!/usr/bin/env bash
 echo "docker $*" >> "$EVENTS_FILE"
 case "${1:-} ${2:-}" in
+  "inspect -f") echo true; exit 0 ;;  # the liveness query's {{.State.Running}}
   "container inspect")
     if [[ "$*" == *"-f"* ]]; then
       c="${@: -1}"

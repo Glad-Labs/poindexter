@@ -430,6 +430,33 @@ def test_without_since_a_stopped_container_is_compared_not_parked():
     assert action == "recreate"
 
 
+class OneOffDocker(IdentityDocker):
+    """Answers a label-only `docker ps -a` the way docker does: a `compose run`
+    container of the service carries the service label too, and is newest, so
+    it is listed first. Filtering on com.docker.compose.oneoff=False leaves it
+    out."""
+
+    def __call__(self, argv):
+        if argv[:3] == ["docker", "ps", "-a"] and "label=com.docker.compose.oneoff=False" not in argv:
+            self.calls.append(argv)
+            return 0, "glad-labs-website-brain-daemon-run-1a2b3c4d5e6f\n" + self.names, ""
+        return super().__call__(argv)
+
+
+def test_a_compose_run_one_off_is_not_the_service():
+    """Counted as the service, a one-off made the plan say "2 containers …
+    recreating to be safe" and bounce a live service for a manual `run` beside
+    it, and the gate could watch the one-off instead of the service. For
+    demo-recorder, whose bakes ARE one-offs, a bake in flight would be judged
+    as the service itself."""
+    mod = _load()
+    fake = OneOffDocker(container=_container(created="2026-09-20T08:00:00Z", manifest=V1_MANIFEST),
+                        tag_manifest=V1_MANIFEST)
+    action, why = mod.plan_recreate("brain-daemon", since=mod._epoch(APPLY_BEGAN), run=fake)
+    assert action == "skip", why
+    assert mod.find_container("brain-daemon", run=fake) == "poindexter-brain-daemon"
+
+
 def test_recreate_plan_cli_prints_one_tab_separated_line_per_service(monkeypatch, capsys):
     """The shell reads it with `IFS=$'\\t' read -r action svc why`; a reason
     must never add a field or a line."""

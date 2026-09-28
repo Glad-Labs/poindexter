@@ -65,7 +65,10 @@ def _git(cwd: Path, *args: str) -> str:
 # counter file, so a single fake covers "fails once then recovers" and "always
 # fails". ``ps`` prints STRANDED_NAMES only for the --status=created query —
 # printing for any other filter would let a test pass while the script asked
-# the wrong question.
+# the wrong question. The liveness query (``ps -q <svc>``, 6a-bis) is answered
+# by the scenario docker when there is one, else with an id: without a
+# scenario every rebuilt service reads as running. Running vs parked is
+# covered in test_deploy_checkout_sync_recreate_scope.py.
 _FAKE_START_STACK = """#!/usr/bin/env bash
 echo "start-stack $*" >> "${EVENTS_FILE:-/dev/null}"
 action="${1:-}"
@@ -83,6 +86,12 @@ if [ "$action" = "ps" ]; then
   case "$*" in
     *--status=created*) printf '%s' "${STRANDED_NAMES:-}" \
       | tr ',' '\\n' | grep -v '^$' || true ;;
+    "ps -q "*)
+      if [ -n "${FAKE_DOCKER_SCENARIO:-}" ]; then
+        docker ps -q --filter "label=com.docker.compose.service=${@: -1}"
+      else
+        echo 0123456789abcdef
+      fi ;;
   esac
   exit 0
 fi
@@ -92,6 +101,7 @@ exit 0
 _FAKE_DOCKER = """#!/usr/bin/env bash
 echo "docker $*" >> "$EVENTS_FILE"
 case "${1:-}" in
+  inspect) echo true ;;  # the liveness query's `inspect -f {{.State.Running}}`
   start) exit "${FAKE_DOCKER_START_EXIT:-0}" ;;
   # `container inspect` gates the bounce loop; fail it so the loop skips
   # every RESTART_CONTAINERS entry and leaves the sweep as the only thing
@@ -267,7 +277,7 @@ class TestRecreateRebuilt:
 #    "tags": {image ref: {"index": <image ID>, "manifest": <platform manifest>}}}
 # enough for the real deploy_health_gate.py (recreate-plan, snapshot, verify).
 _FAKE_DOCKER_PY = r"""#!/usr/bin/env python3
-import json, os, sys
+import hashlib, json, os, sys
 
 args = sys.argv[1:]
 with open(os.environ["EVENTS_FILE"], "a", encoding="utf-8") as fh:
@@ -275,6 +285,10 @@ with open(os.environ["EVENTS_FILE"], "a", encoding="utf-8") as fh:
 with open(os.environ["FAKE_DOCKER_SCENARIO"], encoding="utf-8") as fh:
     scenario = json.load(fh)
 containers = scenario.get("containers", {})
+
+
+def container_id(doc):
+    return hashlib.sha256(doc["Name"].encode()).hexdigest()
 
 
 def positional(rest):
@@ -296,11 +310,21 @@ if args[:2] == ["ps", "-a"]:
             if doc:
                 print(doc["Name"].lstrip("/"))
     sys.exit(0)
+if args[:2] == ["ps", "-q"]:  # no -a: running containers only (the liveness query)
+    for a in args:
+        if a.startswith("label=com.docker.compose.service="):
+            doc = containers.get(a.split("=", 2)[2])
+            if doc and doc["State"]["Running"]:
+                print(container_id(doc))
+    sys.exit(0)
 if args[:1] == ["inspect"]:
     wanted = positional(args[1:])[0]
     for doc in containers.values():
-        if doc["Name"].lstrip("/") == wanted:
-            print(json.dumps([doc]))
+        if wanted in (doc["Name"].lstrip("/"), container_id(doc)):
+            if "{{.State.Running}}" in args:
+                print("true" if doc["State"]["Running"] else "false")
+            else:
+                print(json.dumps([doc]))
             sys.exit(0)
     sys.exit(1)
 if args[:2] == ["image", "inspect"]:
@@ -524,7 +548,10 @@ class TestRecreateCheck:
             if "health gate" in line and "voice-agent-livekit" in line
         ]
         st = _status(rig)
-        assert st["result"] == "deployed" and "left parked: voice-agent-livekit" in st["detail"]
+        # voice-agent-claude-code builds the same Dockerfile and has no
+        # container at all: parked too.
+        assert st["result"] == "deployed"
+        assert "left parked: voice-agent-claude-code voice-agent-livekit" in st["detail"]
 
     def test_a_failed_recreate_withholds_the_marker(self, tmp_path):
         """Otherwise the pass records `deployed` over a service still on the
@@ -563,11 +590,30 @@ class TestRecreateCheck:
         marker = rig["home"] / ".poindexter" / "deploy-last-restarted-sha"
         assert marker.read_text(encoding="utf-8").strip() != head
 
-    def test_a_plan_that_cannot_run_recreates_every_rebuilt_service(self, tmp_path):
+    def test_a_plan_that_cannot_run_recreates_every_live_rebuilt_service(self, tmp_path):
         """Fail-safe in one direction: no plan means the pre-2026-09-28
-        behaviour, never "assume current"."""
+        behaviour for every service that is running, never "assume current".
+        A parked one is still never named (test_deploy_checkout_sync_recreate_scope)."""
         rig = self._rig(
-            tmp_path, {"containers": {}, "tags": {}}, gate_source="import sys\nsys.exit(3)\n"
+            tmp_path,
+            {
+                "containers": {
+                    "brain-daemon": _doc(
+                        "poindexter-brain-daemon",
+                        "glad-labs-website-brain-daemon",
+                        manifest=_M1,
+                        created=_BEFORE_THE_PASS,
+                    ),
+                    "auto-embed": _doc(
+                        "poindexter-auto-embed",
+                        "glad-labs-website-auto-embed",
+                        manifest=_M1,
+                        created=_BEFORE_THE_PASS,
+                    ),
+                },
+                "tags": {},
+            },
+            gate_source="import sys\nsys.exit(3)\n",
         )
         _advance_origin(rig, "src/cofounder_agent/poindexter/brain/probe.py")
         self._sync(rig)
@@ -648,10 +694,19 @@ class TestStrandedSweep:
         _advance_origin(rig)
         _run_sync(rig)
         ps_calls = [e for e in _events(rig) if e.startswith("start-stack ps")]
-        assert ps_calls, "the sweep must query compose for stranded containers"
-        for call in ps_calls:
+        sweep = [c for c in ps_calls if "{{.Name}}" in c]
+        assert sweep, "the sweep must query compose for stranded containers"
+        for call in sweep:
             assert "--status=created" in call
             assert "--status=exited" not in call
+        # The only other compose query is 6a-bis's liveness read. It must list
+        # RUNNING service containers only: `-a` or a status filter would count
+        # a parked service's exited container as live, and 6a-bis would then
+        # name it in a recreate, which starts it.
+        for call in (c for c in ps_calls if c not in sweep):
+            argv = call.split()
+            assert argv[:3] == ["start-stack", "ps", "-q"], call
+            assert not {"-a", "--all"} & set(argv) and "--status" not in call, call
 
     def test_sweep_runs_even_when_apply_failed(self, tmp_path):
         """The sweep is the safety net FOR a failed apply — if it only ran on

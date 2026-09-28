@@ -26,7 +26,7 @@
 #      the ps1's brain-only rebuild — restarts/rebuilds are safe by design):
 #        src/cofounder_agent/poindexter/brain/**    -> brain-daemon
 #        src/cofounder_agent/pyproject.toml|poetry.lock
-#          |src/cofounder_agent/Dockerfile.worker   -> worker prefect-worker pipeline-bot
+#          |src/cofounder_agent/Dockerfile.worker   -> worker prefect-worker pipeline-bot demo-recorder
 #        scripts/Dockerfile.gpu-exporter
 #          |scripts/nvidia-smi-exporter.py          -> gpu-exporter
 #          (the .py is bind-mounted, so a restart would suffice to reload it —
@@ -34,9 +34,11 @@
 #           that re-injects NVIDIA device nodes, which bind at container-create
 #           time. A card added after the container was created is otherwise
 #           invisible forever; that hid an RTX 3090 for 7+ days, 2026-07-26.)
-#        scripts/Dockerfile.voice-agent             -> voice-agent-livekit
+#        scripts/Dockerfile.voice-agent             -> voice-agent-livekit voice-agent-claude-code
 #        scripts/Dockerfile.backup|scripts/backup/**-> backup-daily backup-hourly backup-offsite
 #      (diff-uncomputable -> defensive brain-daemon rebuild, same as the ps1)
+#      Building never starts anything: a rebuilt service that is not running
+#      (a parked, profile-gated one) is built and left stopped — see 6a-bis.
 #   6. compose-apply: clone's `start-stack.sh up -d --no-build` — recreates
 #      services whose compose STANZA changed, AND every service whose freshly
 #      built image has different CONTENT: compose compares the platform
@@ -64,18 +66,23 @@
 #      force-recreated EVERY rebuilt service, so each one compose had just
 #      recreated started twice (16 of 48 brain starts in a week came 72-138 s
 #      after the one before — an ~80 s monitoring gap each, which also reset
-#      the brain's in-memory failure counts and alert cooldowns). A service
-#      that is stopped and was not started by this pass — a parked compose
-#      profile (voice) — is neither recreated nor health-gated: naming it in
-#      `up --force-recreate` enables its profile and starts it. Anything it
-#      cannot compare is recreated; a failed recreate withholds the marker.
+#      the brain's in-memory failure counts and alert cooldowns). Only LIVE
+#      services are ever named, recreated or gated: those running before this
+#      pass touched them, or running after compose-apply. A rebuilt service
+#      that is neither is parked (voice, demo-recorder): naming it in
+#      `up --force-recreate` enables its profile and starts it, and gating it
+#      would read `exited` as a broken image whose rollback starts it too.
+#      That holds even when the plan cannot run or compose-apply failed.
+#      Anything live the plan cannot compare is recreated; a failed recreate,
+#      or a state that cannot be read, withholds the marker.
 #   6b. stranded sweep: start any project container left in `created` state.
 #      `created` = never started, which is only ever an interrupted recreate —
 #      a deliberately-stopped service (parked voice-agent) is `exited`, so this
 #      cannot resurrect one. Runs even on a clean apply, and is reported in the
 #      status file, because a silent self-heal hides a recurring fault.
 #   6b. health gate (scripts/linux/deploy_health_gate.py, 2026-09-13): every
-#      rebuilt service is watched until it is healthy; a container that comes up
+#      live rebuilt service (6a-bis) is watched until it is healthy — a parked
+#      one is not, since its rollback would start it; a container that comes up
 #      `restarting`/`exited`/`unhealthy` is ROLLED BACK onto the image it ran
 #      before the rebuild (snapshot taken before `build`), a critical alert
 #      carries its last log lines, and the sha is recorded in
@@ -510,9 +517,18 @@ declare -A REBUILD_MAP=(
   # 2026-09-28, image a week older than its poetry.lock). The Dockerfile path
   # also read scripts/Dockerfile.worker, which does not exist — the file lives
   # in the build context — so a Dockerfile edit rebuilt none of the three.
-  ['^src/cofounder_agent/(pyproject\.toml|poetry\.lock|Dockerfile\.worker)$']="worker prefect-worker pipeline-bot"
+  # demo-recorder is the fourth: a profile-gated `compose run --rm` one-shot
+  # that builds this Dockerfile into the worker's own image tag. Naming it
+  # costs a cached second build of that tag, and it is never started here:
+  # it has no running service container, so 6a-bis leaves it parked.
+  ['^src/cofounder_agent/(pyproject\.toml|poetry\.lock|Dockerfile\.worker)$']="worker prefect-worker pipeline-bot demo-recorder"
   ['^scripts/Dockerfile\.gpu-exporter$|^scripts/nvidia-smi-exporter\.py$']="gpu-exporter"
-  ['^scripts/Dockerfile\.voice-agent$']="voice-agent-livekit"
+  # Both voice agents build this Dockerfile into one image and both are
+  # profile-gated. On the operator host both are parked (`voice` since
+  # 2026-08-19; `voice-dev` since 2026-06-21, the paid claude -p path), so a
+  # rebuild refreshes the image and 6a-bis leaves them stopped. One the
+  # operator has started by hand is live, so it is recreated onto the new image.
+  ['^scripts/Dockerfile\.voice-agent$']="voice-agent-livekit voice-agent-claude-code"
   # backup-offsite/ is a SIBLING of backup/, so '^scripts/backup/' never
   # matched it — the offsite runner could change without a rebuild.
   ['^scripts/Dockerfile\.backup$|^scripts/backup/|^scripts/backup-offsite/']="backup-daily backup-hourly backup-offsite"
@@ -576,6 +592,41 @@ if [ -n "$rebuild_services" ] && [ -f "$ROLLBACK_MARKER_FILE" ]; then
     [ -n "$gate_skipped" ] && log "Not rebuilding $gate_skipped: rolled back at $short_head (deploy-rolled-back-sha); merge a fix to retry." WARN
   fi
 fi
+
+# ---- which rebuilt services are live? (read BEFORE anything is touched) ----
+# Naming a service on `docker compose up` STARTS it, whatever its `profiles:`
+# say (verified on compose 5.5.1). So 6a-bis must never name, and the health
+# gate must never watch, a rebuilt service that is not live, and neither may
+# rest on the recreate plan alone: when the plan cannot run, or compose-apply
+# failed and there is no plan, the fallbacks would otherwise reach a parked
+# service (voice-agent-livekit, parked since 2026-08-19, is in REBUILD_MAP).
+# Building is unaffected. `build <svc>` leaves a stopped service stopped, and
+# compose moves it onto the new image the next time it starts it.
+#
+# service_state <svc> -> running | stopped | unknown. It goes through
+# start-stack.sh like every compose call here, so it queries the project the
+# apply uses and can never match a same-named service of another project.
+# `ps -q <svc>` lists that service's running containers. Naming the service
+# enables its profile for the query, so a parked one reads "stopped". It
+# leaves out `compose run` one-offs, so a demo-recorder bake in flight does
+# not count; `-a` would count that and every exited container. Each id is
+# confirmed with docker inspect in case a compose's `ps` lists stopped
+# containers. A restarting (crash-looping) container IS running to docker,
+# which is right: it is meant to be up, on the new image, in front of the gate.
+service_state() { # service_state <compose service>
+  local out id
+  out="$(bash "$DEPLOY_DIR/scripts/start-stack.sh" ps -q "$1" 2>>"$LOG_FILE")" || { echo unknown; return; }
+  while IFS= read -r id; do
+    [[ "$id" =~ ^[0-9a-f]{12,64}$ ]] || continue  # stdout is data (see the stranded sweep)
+    if [ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" = "true" ]; then
+      echo running; return
+    fi
+  done <<<"$out"
+  echo stopped
+}
+declare -A state_before=()
+for svc in $rebuild_services; do state_before[$svc]="$(service_state "$svc")"; done
+
 gate_pre_ok=0
 if [ -n "$rebuild_services" ] && [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ]; then
   # shellcheck disable=SC2086
@@ -645,28 +696,50 @@ done
 # 09-27 deploy of 49d4052c7 shows it plainly: `Container poindexter-brain-daemon
 # Recreate` in step 6, then a second recreate here.
 #
-# Parked services are left alone: a container that is stopped and was not
-# started by this pass belongs to a compose profile that is off (voice), and
-# naming it in `up --force-recreate` enables that profile and starts it. They
-# are also kept out of the health gate below, which would read "exited" as a
-# failed deploy.
+# Parked services are left alone, and that is decided from liveness
+# (service_state above) BEFORE the plan, so it holds on every path. A rebuilt
+# service is live if it was running before this pass touched it, or is running
+# after compose-apply. Either check alone loses one: "after" misses a service
+# compose-apply recreated that then died, which must still be gated; "before"
+# misses a game-mode-parked sidecar the apply started. A service that is
+# neither is parked (voice). It is never passed to the plan, never named in
+# `up --force-recreate` (which enables its profile and starts it), and never
+# gated below, where "exited" reads as a failed deploy whose rollback starts it.
+# This runs even when compose-apply failed: the gate needs it then too. A state
+# that cannot be read starts nothing and withholds the marker.
 #
-# Fail-safe in one direction only: a service the plan cannot account for is
-# recreated, exactly as before. A failed recreate withholds the marker so the
-# next pass retries — the service would otherwise sit on the old image with
+# Fail-safe in one direction only: a LIVE service the plan cannot account for
+# is recreated, exactly as before. A failed recreate withholds the marker so
+# the next pass retries — the service would otherwise sit on the old image with
 # the pass recorded as deployed.
 recreate_now=""; recreate_failed=0; parked_services=""
-if [ -n "$rebuild_services" ] && [ "$apply_failed" = "0" ]; then
+live_services=""; state_unknown=""; state_failed=0
+for svc in $rebuild_services; do
+  before="${state_before[$svc]:-unknown}"; now="(not read)"
+  [ "$before" = "running" ] || now="$(service_state "$svc")"
+  case "$before/$now" in
+    running/*|*/running) live_services="${live_services:+$live_services }$svc" ;;
+    stopped/stopped)
+      parked_services="${parked_services:+$parked_services }$svc"
+      log "  not recreating $svc: not running before this pass or after compose-apply (parked); a named recreate would start it" ;;
+    *) state_unknown="${state_unknown:+$state_unknown }$svc" ;;
+  esac
+done
+if [ -n "$state_unknown" ]; then
+  state_failed=1
+  log "could not read whether $state_unknown is running (start-stack.sh ps failed); not recreated or gated, since that could start a parked service — marker withheld, retries next cycle." ERROR
+fi
+if [ -n "$live_services" ] && [ "$apply_failed" = "0" ]; then
   plan=""
   if [ -f "$HEALTH_GATE" ]; then
     # shellcheck disable=SC2086
     if ! plan="$(python3 "$HEALTH_GATE" recreate-plan --since "$apply_started_epoch" \
-                   --services $rebuild_services 2>>"$LOG_FILE")"; then
-      log "recreate check: could not compare images; recreating every rebuilt service to be safe" WARN
+                   --services $live_services 2>>"$LOG_FILE")"; then
+      log "recreate check: could not compare images; recreating every live rebuilt service to be safe" WARN
       plan=""
     fi
   fi
-  for svc in $rebuild_services; do
+  for svc in $live_services; do
     action=""; why=""
     while IFS=$'\t' read -r p_action p_svc p_why; do
       if [ "$p_svc" = "$svc" ]; then action="$p_action"; why="$p_why"; break; fi
@@ -790,9 +863,12 @@ gate_result=""; gate_rolled_back=""
 if [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ] && { [ -n "$rebuild_services" ] || [ -n "$restarted" ]; }; then
   gate_units=""
   if [ "$build_failed" = "0" ]; then
-    # Parked services (6a-bis) are not meant to be running; gating them would
-    # read "exited" as a broken image and roll it back.
-    for svc in $rebuild_services; do
+    # Live services only (6a-bis), minus any the plan found parked. A parked
+    # service is not meant to be running: gating it would read "exited" as a
+    # broken image, and the rollback (`up --force-recreate`) would start it.
+    # Liveness is read whether or not compose-apply succeeded, so this holds
+    # on a pass with no plan too. An unreadable one is not gated either.
+    for svc in $live_services; do
       case " $parked_services " in *" $svc "*) continue ;; esac
       gate_units="${gate_units:+$gate_units }$svc"
     done
@@ -937,7 +1013,7 @@ elif [ "$mcp_changed" = "1" ]; then
 fi
 
 # ---- outcome (step independence: marker only on a fully-clean pass) --------
-if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$recreate_failed" = "0" ] && [ "$restart_failed" = "0" ] && [ "$stranded_failed" = "0" ] && [ "$mcp_failed" = "0" ]; then
+if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$recreate_failed" = "0" ] && [ "$state_failed" = "0" ] && [ "$restart_failed" = "0" ] && [ "$stranded_failed" = "0" ] && [ "$mcp_failed" = "0" ]; then
   printf '%s' "$head_sha" > "$MARKER_FILE"
   detail=""
   [ -n "$rebuild_services" ] && detail="rebuilt: $rebuild_services"
@@ -960,6 +1036,7 @@ else
   [ "$build_failed" = "1" ] && steps="${steps}image-rebuild "
   [ "$apply_failed" = "1" ] && steps="${steps}compose-apply "
   [ "$recreate_failed" = "1" ] && steps="${steps}recreate-rebuilt "
+  [ "$state_failed" = "1" ] && steps="${steps}service-state "
   [ "$restart_failed" = "1" ] && steps="${steps}container-restart "
   [ "$stranded_failed" = "1" ] && steps="${steps}stranded-start "
   [ "$mcp_failed" = "1" ] && steps="${steps}mcp-connector "

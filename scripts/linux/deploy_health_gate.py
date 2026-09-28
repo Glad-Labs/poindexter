@@ -120,6 +120,14 @@ def read_bool_setting(key: str, default: bool, run: Runner = _run) -> bool:
 
 CONTAINER_PREFIX = "container:"  # a unit named "container:<name>" is verified by container name, never rolled back
 
+# A `compose run` container carries its service's label too, with
+# com.docker.compose.oneoff=True. It is not the service: a demo-recorder bake in
+# flight (`run --rm`) must not be judged, recreated or gated as demo-recorder,
+# and a manual `run` beside a live service must not read as a second container
+# of that service. Service containers carry oneoff=False (checked on the live
+# stack, 2026-09-28).
+NOT_ONE_OFF = ("--filter", "label=com.docker.compose.oneoff=False")
+
 
 def find_container(service: str, run: Runner = _run) -> str | None:
     """The container compose created for ``service`` (label-based, name-agnostic).
@@ -130,7 +138,7 @@ def find_container(service: str, run: Runner = _run) -> str | None:
     if service.startswith(CONTAINER_PREFIX):
         return service[len(CONTAINER_PREFIX):] or None
     rc, out, _ = run(["docker", "ps", "-a", "--filter", f"label=com.docker.compose.service={service}",
-                      "--format", "{{.Names}}"])
+                      *NOT_ONE_OFF, "--format", "{{.Names}}"])
     names = [n.strip() for n in out.splitlines() if n.strip()] if rc == 0 else []
     return names[0] if names else None
 
@@ -312,7 +320,7 @@ def plan_recreate(service: str, *, since: float | None = None, run: Runner = _ru
                   profile comes back.
     """
     rc, out, err = run(["docker", "ps", "-a", "--filter", f"label=com.docker.compose.service={service}",
-                        "--format", "{{.Names}}"])
+                        *NOT_ONE_OFF, "--format", "{{.Names}}"])
     if rc != 0:
         return RECREATE, f"could not list its container ({(err.strip() or 'docker ps failed')[:120]}); recreating to be safe"
     names = [n.strip() for n in out.splitlines() if n.strip()]

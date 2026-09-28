@@ -646,6 +646,23 @@ because the gate would read `exited` as a broken image. The status file says
 `left parked: <svc>`, and compose recreates it from the fresh image when the
 profile comes back.
 
+Parked is decided from _liveness_ before the plan runs (2026-09-28), so it
+holds on every path. A rebuilt service is live if `start-stack.sh ps -q <svc>`
+showed it running before the pass touched it, or after compose-apply. That
+query is project-scoped, lists running service containers only, and leaves
+out `compose run` one-offs. Only live services reach the plan, the
+force-recreate and the gate. Before this, three fallbacks could still start a
+parked service. When the plan could not run, the step recreated every rebuilt
+service "to be safe". When a docker call failed, or two containers answered to
+the label, the plan itself said "recreate to be safe". And when compose-apply
+failed there was no plan at all, so the gate watched the parked service and
+its rollback started it. A service whose state cannot be read is neither
+recreated nor gated, and the pass fails with `service-state` and retries. This
+is also why the profile-gated services now have REBUILD_MAP entries of their
+own: `demo-recorder` with the Dockerfile.worker services, and
+`voice-agent-claude-code` with `voice-agent-livekit`. They are rebuilt and
+left parked.
+
 **Overlapping restarts coalesce instead of stacking.** The sync skips its
 bounce for any container whose current process already started _after_ the
 deploy clone reached the tree being deployed (bind-mounted code ⇒ it is already
