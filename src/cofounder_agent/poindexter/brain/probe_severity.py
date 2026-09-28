@@ -98,12 +98,14 @@ PROBE_DEFAULT_SEVERITY: dict[str, str] = {
     # the brain stays silent. This value decides how the brain delivers it
     # itself when Alertmanager can't.
     "ollama_models": "critical",
-    # The local Ollama is unreachable: no LLM call can succeed. Prometheus-
-    # covered like db_ping, but its covering rule, PoindexterOllamaDown, is
-    # severity=warning (unchanged since the rule was written 2026-04-19),
-    # so while Alertmanager is healthy an Ollama outage reaches Discord,
-    # not Telegram. This value only decides the brain's own delivery when
-    # Alertmanager is down.
+    # The local Ollama is unreachable: no LLM call routed to it can succeed.
+    # Prometheus-covered like db_ping: while Alertmanager can deliver,
+    # PoindexterOllamaDown (critical) owns the page and the brain stays
+    # silent. This value decides how the brain delivers it itself when
+    # Alertmanager can't. The rule was warning from 2026-04-19 to
+    # 2026-09-28, so an Ollama outage reached Discord only;
+    # tests/unit/brain/test_prometheus_covered_probes.py now fails if a
+    # paging probe's covering rules stop paging.
     "worker_error_rate": "critical",
     # The worker is up but its tasks are failing (the probe's own detail
     # calls a 100% rate "CRITICAL"). Not Prometheus-covered, so this probe

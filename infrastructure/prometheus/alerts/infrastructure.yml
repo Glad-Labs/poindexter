@@ -52,18 +52,55 @@ groups:
             is exhausted. Pipeline won't process tasks until fixed.
 
       # --- Ollama ---
+      # critical since 2026-09-28; it was warning from when it was written
+      # (2026-04-19). The brain's ollama_models probe is Prometheus-covered
+      # (health_probes.PROMETHEUS_COVERING_RULES), so while Alertmanager is
+      # healthy this rule is the ONLY notice of an Ollama outage, and warning
+      # is Discord-only (alert_dispatcher._channels_for). So an unreachable
+      # Ollama could not page, while "up but no models"
+      # (OllamaNoModelsLoaded, critical) could.
+      #
+      # Measured before raising it, over Prometheus's full 15-day retention
+      # (2026-09-13..28, one sample per 15 s scrape):
+      #   - 23 of 85,318 samples read 0: 12 isolated single samples and two
+      #     short episodes, about 1 min on 2026-09-21 and 2 min on 2026-09-26
+      #     (a UPS-on-battery event). The longest unbroken run was 90 s.
+      #   - The rule went pending 3 times, for 60 s at most, and never
+      #     fired. `for: 3m` has 3x headroom over that, so it stays.
+      #   - Renders don't zero it: 1 zero in 32.5 h of media_render, 22 in
+      #     the other 323 h, and 1 in the 44 h GPU 0 ran at 80%+. So there is
+      #     no GPU-busy `unless` guard: it would blind this rule during every
+      #     render to filter out nothing that was measured. The 2026-06-21
+      #     render timeout that OllamaNoModelsLoaded's guard answers was on
+      #     the old Windows host.
+      #   - For the 8 zeros the host journal still covers, Ollama's access
+      #     log has no request from the worker at that moment, while the
+      #     9,773 /api/tags it did log answered in under 1 ms at p99 and
+      #     never over 1 s. A short zero is the worker's check failing, not
+      #     Ollama, and `for:` absorbs it.
+      #   - alert_events: 9 firings, all 2026-07-13..19 on the old Windows
+      #     host (three alongside PoindexterHostMemoryThrashing), and none in
+      #     the 71 days since, which cover all of the Linux host's time
+      #     (from 2026-07-23). As critical it would have paged 0 times there.
+      # Write-up: docs/operations/self-healing.md, "Which brain notices page".
       - alert: PoindexterOllamaDown
         expr: poindexter_ollama_reachable == 0
         for: 3m
         labels:
-          severity: warning
+          severity: critical
           category: infrastructure
         annotations:
           summary: "Ollama is not reachable from the worker"
           description: |
-            `/api/tags` on Ollama hasn't returned 200 for 3 minutes.
-            All LLM calls are failing. Check `ollama list` on the host
-            and `ollama serve` status.
+            The worker's `/api/tags` check against Ollama (:11434) has
+            failed for 3 minutes, so every LLM call routed to that instance
+            (the writer and embeddings among them) is failing too. On the
+            host: `systemctl status ollama-primary` and
+            `journalctl -u ollama-primary -n 100` (or check whatever runs
+            `ollama serve`), then `curl -s localhost:11434/api/tags`. The
+            brain restarts ollama-primary through the recovery agent after
+            three failed 5-minute probes, so a restart may already be under
+            way.
 
       # --- Cloudflare page-views beacon ---
       # Static (not DB-rendered): binary up/down, no tunable threshold. The

@@ -1268,6 +1268,56 @@ class TestOllamaNoModelsLoadedRule:
         assert "unless poindexter_ollama_reachable == 0" in out
 
 
+class TestPoindexterOllamaDownStaticRule:
+    """``PoindexterOllamaDown`` pages: critical, a 3-minute debounce, no guard.
+
+    It is the only notice of an Ollama outage while Alertmanager is healthy,
+    because the brain's ``ollama_models`` probe is Prometheus-covered. It
+    shipped as ``warning`` (Discord only) from 2026-04-19 to 2026-09-28, so an
+    unreachable Ollama never reached the phone. It was raised after measuring
+    Prometheus's full 15-day retention; the numbers are in the comment above
+    the rule, and the covered-probe hand-off in general is checked by
+    ``tests/unit/brain/test_prometheus_covered_probes.py``.
+    """
+
+    @pytest.fixture
+    def rule(self) -> dict:
+        from pathlib import Path
+
+        import yaml
+
+        from tests.unit.conftest import find_repo_root
+
+        path = (
+            find_repo_root(Path(__file__))
+            / "infrastructure" / "prometheus" / "alerts" / "infrastructure.yml"
+        )
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        matches = [
+            r for g in doc["groups"] for r in g.get("rules", [])
+            if r.get("alert") == "PoindexterOllamaDown"
+        ]
+        assert len(matches) == 1, f"expected one PoindexterOllamaDown, got {len(matches)}"
+        return matches[0]
+
+    def test_severity_is_critical(self, rule):
+        assert rule["labels"]["severity"] == "critical"
+
+    def test_for_is_at_least_3m(self, rule):
+        """The debounce is what makes critical safe. The longest false zero
+        run measured was 90 s (the rule held pending 60 s at most), and every
+        zero checked against Ollama's own access log was the worker's check
+        failing, not Ollama. A shorter ``for:`` would have paged on that run."""
+        assert _for_seconds(rule["for"]) >= 180
+
+    def test_expression_has_no_guard(self, rule):
+        """No ``unless`` on GPU activity. Renders didn't zero the gauge (1
+        zero in 32.5 h of media_render, 22 in the other 323 h), so a GPU-busy
+        guard would suppress nothing that was measured while blinding the
+        rule whenever the GPU lock is held. Re-measure before adding one."""
+        assert rule["expr"].strip() == "poindexter_ollama_reachable == 0"
+
+
 # ---------------------------------------------------------------------------
 # Disk absent() guards — DB-rendered rules (poindexter#705)
 # ---------------------------------------------------------------------------

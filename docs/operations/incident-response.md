@@ -65,6 +65,7 @@ These are the active Grafana alert rules in `infrastructure/grafana/provisioning
 | Page-View Capture Dead         | warning  | [§ Page-View Capture Dead](#page-view-capture-dead)                 |
 | Pipeline Stalled               | warning  | [§ Pipeline Stalled](#pipeline-stalled)                             |
 | Ollama Unresponsive            | warning  | [§ Ollama Unresponsive](#ollama-unresponsive)                       |
+| PoindexterOllamaDown (Prom.)   | critical | [§ Ollama Unresponsive](#ollama-unresponsive)                       |
 | Zero Published Posts This Week | warning  | [§ Zero Published Posts This Week](#zero-published-posts-this-week) |
 | GPU Metrics Stale              | warning  | [§ GPU Metrics Stale](#gpu-metrics-stale)                           |
 | Disk Space Low (Prometheus)    | warning  | [§ Disk Space Low](#disk-space-low)                                 |
@@ -412,6 +413,8 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c 
 
 > **Why the predicate looks the way it does.** It keys on `cost_usd = 0` (local inference is free — `cost_guard` stamps `is_local` calls at $0), _not_ `provider = 'ollama'`. Since the 2026-05-16 LiteLLM router cutover, local inference is logged `provider='litellm'` (the real Ollama model is in the `model` column), so the old `provider = 'ollama'` literal matched zero rows and the alert false-fired on every active task. `cost_usd = 0` also means a cloud fallback through LiteLLM (`cost_usd > 0`) is deliberately excluded, so a dead Ollama masked by a paid fallback still surfaces. Do not "simplify" it back to a provider literal.
 
+**PoindexterOllamaDown (Prometheus, critical) means** the worker's `/api/tags` check against Ollama (:11434, `poindexter_ollama_reachable`) has failed for 3 minutes. It is the fast signal and the one that pages: the brain's own `ollama_models` probe stays quiet while Alertmanager is up. A single failed check is common and harmless (the worker's request not reaching Ollama, not Ollama being down), which is what the 3-minute `for:` absorbs. Over 2026-09-13 to 09-28 the rule never got past 60 s pending. So when it fires, treat it as real. The brain restarts `ollama-primary` itself after three failed 5-minute probes, so check for a `🔧 Self-heal 'ollama_models'` notice on Discord before restarting by hand. Measurements and reasoning: [self-healing.md → Which brain notices page](self-healing.md#which-brain-notices-page).
+
 **Triage.**
 
 ```bash
@@ -426,6 +429,10 @@ nvidia-smi  # Is Ollama using GPU?
 
 ```bash
 # Restart Ollama
+# Linux (systemd units in infrastructure/systemd/):
+sudo systemctl restart ollama-primary       # :11434, what the alert checks
+journalctl -u ollama-primary -n 100         # why it stopped answering
+# ollama-vision (:11435, the pinned judge) is a separate unit.
 # Windows: net stop ollama; net start ollama
 # Or just: ollama serve   (foreground)
 

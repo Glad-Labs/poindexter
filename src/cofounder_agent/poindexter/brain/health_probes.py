@@ -1890,15 +1890,29 @@ ALERT_AFTER_FAILURES = 3  # Alert on Telegram after 3 consecutive failures
 # Telegram alerts. Moving them fully out of this file is tracked as a
 # follow-up; this set is the "one source of truth for pages" boundary.
 #
-# Keep in sync with infrastructure/prometheus/alerts/infrastructure.yml
-# + app_settings prometheus.rule.* (see services/prometheus_rule_builder.py).
-PROMETHEUS_COVERED_PROBES: frozenset[str] = frozenset({
-    "db_ping",                # → PoindexterPostgresDown
-    "ollama_models",          # → PoindexterOllamaDown
-    "embeddings_freshness",   # → EmbeddingsStale
-    "cost_freshness",         # → DailySpend*/MonthlySpend*
-    "publish_rate",           # → NoPublishedPostsRecently
-})
+# Each covered probe maps to the Prometheus rule(s) that notify in its place:
+# static rules in infrastructure/prometheus/alerts/*.yml, or DB-rendered ones
+# from services/prometheus_rule_builder.DEFAULT_RULES (tunable per install
+# through app_settings prometheus.rule.*). While Alertmanager is healthy the
+# brain says nothing about these probes, so a covering rule that is gone, or
+# that doesn't page when the probe's own severity says it should, silences
+# the signal outright. PoindexterOllamaDown was warning (Discord only) from
+# 2026-04-19 to 2026-09-28 while ollama_models was critical.
+# tests/unit/brain/test_prometheus_covered_probes.py checks both.
+PROMETHEUS_COVERING_RULES: dict[str, tuple[str, ...]] = {
+    "db_ping": ("PoindexterPostgresDown",),
+    "ollama_models": ("PoindexterOllamaDown",),
+    "embeddings_freshness": ("EmbeddingsStale",),
+    # Spend-level rules. None of them fires on cost_logs going stale, which
+    # is what probe_cost_freshness checks.
+    "cost_freshness": (
+        "DailySpendApproachingLimit",
+        "DailySpendOverBudget",
+        "MonthlySpendHigh",
+    ),
+    "publish_rate": ("NoPublishedPostsRecently",),
+}
+PROMETHEUS_COVERED_PROBES: frozenset[str] = frozenset(PROMETHEUS_COVERING_RULES)
 
 
 def _alertmanager_healthy_blocking(base_url: str, timeout: float = 3.0) -> bool:

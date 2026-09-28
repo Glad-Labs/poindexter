@@ -84,17 +84,63 @@ case needs delivery, not specifically Telegram. A failed self-heal pages
 whatever the probe's severity, because escalating when recovery fails is
 the principle this doc opens with.
 
-Two gaps to know about:
+One gap to know about:
 
-- `ollama_models` is `critical`, but while Alertmanager is healthy the
-  brain defers to `PoindexterOllamaDown`, which is `warning` (unchanged
-  since the rule was written 2026-04-19). So today an unreachable Ollama
-  reaches Discord, not Telegram, while `OllamaNoModelsLoaded` ("up but
-  empty") is `critical`.
 - `disk_space` fires at 10% free of the brain container's root
   filesystem, about 180 GB on prod's 1.8 TB Docker disk. That is well
   ahead of Prometheus's `PoindexterDiskSpaceLow` (20 GB, warning) and
   `PoindexterDiskSpaceCritical` (10 GB, critical).
+
+**A Prometheus-covered probe pages through its covering rule.** While
+Alertmanager is healthy the brain says nothing about `db_ping`,
+`ollama_models`, `embeddings_freshness`, `cost_freshness` and
+`publish_rate`. The rules named for each in
+`health_probes.PROMETHEUS_COVERING_RULES` notify instead, and
+`tests/unit/brain/test_prometheus_covered_probes.py` fails if a covering
+rule is gone or if a probe classified `critical`/`error` is covered only by
+rules that don't page. The test exists because the two sides disagreed for
+five months: `PoindexterOllamaDown` was `warning` (Discord only) from
+2026-04-19 to 2026-09-28 while `ollama_models` was `critical`, so an
+unreachable Ollama never paged, while `OllamaNoModelsLoaded` ("up but
+empty") did.
+
+`PoindexterOllamaDown` is `critical` since 2026-09-28, still `for: 3m`,
+with no `unless` guard. The risk in raising it was a false page: a slow
+`/api/tags` zeroes `poindexter_ollama_reachable`, and on 2026-06-21 a render
+did exactly that. Measured first, over Prometheus's full 15-day retention
+(2026-09-13 to 09-28, one sample per 15-second scrape):
+
+- 23 of 85,318 samples read 0: 12 isolated single samples and two short
+  episodes, about a minute on 2026-09-21 and two minutes on 2026-09-26
+  (during a UPS-on-battery event). The longest unbroken run was 90 s. The
+  rule went pending 3 times, for 60 s at most, and never fired.
+- Renders don't zero it: 1 zero in 32.5 h of `media_render`, 22 in the
+  other 323 h, and 1 in the 44 h that GPU 0 ran at 80% or more. The
+  2026-06-21 timeout was on the old Windows host. A GPU-busy guard would
+  blind the rule during every render and filter out nothing that was
+  measured.
+- A zero is the worker's check failing, not Ollama. For the 8 zeros the
+  host journal still covers, Ollama's access log has no request from the
+  worker at that moment, and the 9,773 `/api/tags` requests it did log
+  answered in under 1 ms at p99 and never took over 1 s.
+- The brain doesn't cause it. All 47 RAM recycles since 2026-09-12 targeted
+  `ollama-vision` (:11435), which this gauge doesn't watch, and a recycle
+  unloads a runner through Ollama's API without stopping the server.
+  `recover_via_agent` restarts `ollama-primary` only after three failed
+  5-minute probes. In 30 days of brain logs `ollama_models` never failed
+  and `ollama_embedding` failed at most twice in a row, so it never ran,
+  and a unit restart takes about a second.
+- `alert_events` holds 9 firings, all 2026-07-13 to 07-19 on the old
+  Windows host (three alongside `PoindexterHostMemoryThrashing`), and none
+  in the 71 days since, while other Prometheus alerts arrived every week.
+  That stretch covers all of the Linux host's time (it took over
+  2026-07-23), so at `critical` the rule would never have paged there.
+
+The page goes out before the brain's own restart of `ollama-primary` would
+run (3 minutes against 10 to 15), the same order as `PoindexterWorkerDown`
+and the worker restart. The [firefighter](#deterministic-firefighter-detect--act--verify--escalate)
+can't hold it for a restart-then-verify either: its action registry
+restarts containers, and Ollama is a host unit.
 
 Every probe is tunable through one JSON setting,
 `app_settings.brain_probe_severity_overrides` (for example

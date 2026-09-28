@@ -1799,7 +1799,12 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         # no models". Without the guard it double-fired a spurious "up but no
         # models" critical during a media render (observed 2026-06-21 18:21).
         # The guard keeps ONLY the genuine up-but-empty signal (reachable=1,
-        # count=0).
+        # count=0). PoindexterOllamaDown is critical too since 2026-09-28, so
+        # the guard no longer decides whether an unreachable Ollama pages, only
+        # which alert it pages under (and after 3m rather than 2m). The
+        # measurement behind that change (on the current host the timeout case
+        # never lasted 3 minutes, and renders don't cause it) is in
+        # infrastructure/prometheus/alerts/infrastructure.yml.
         "expr": (
             "poindexter_ollama_model_count == 0 "
             "unless poindexter_ollama_reachable == 0"
