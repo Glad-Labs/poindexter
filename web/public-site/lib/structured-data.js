@@ -1,6 +1,23 @@
-// Image URL utilities for structured data
-import { getImageURL } from './url';
 import { SITE_NAME, SITE_URL } from './site.config';
+
+// The one image this site serves for itself (public/og-image.jpg). It stands
+// in for a missing cover image and is the publisher logo, matching the
+// Organization schema in components/StructuredData.tsx.
+const SITE_IMAGE_PATH = '/og-image.jpg';
+
+/**
+ * Resolve an image URL for schema.org, which wants an absolute URL.
+ *
+ * Cover images in the static export are absolute (R2, Pexels, Cloudinary)
+ * and pass through untouched. A relative path can only name a file this site
+ * serves, so it resolves against the site URL. It used to resolve against
+ * NEXT_PUBLIC_API_BASE_URL (the FastAPI worker), which the public site
+ * cannot reach, and threw in production when that variable was unset.
+ */
+function absoluteImageURL(path, siteUrl) {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${siteUrl}${path.startsWith('/') ? '' : '/'}${path}`;
+}
 
 /**
  * Format date to ISO format for schema.org
@@ -42,9 +59,10 @@ export function generateBlogPostingSchema(post, siteUrl = SITE_URL) {
   } = post;
 
   const publishDate = date || publishedAt;
-  const imageUrl = coverImage?.url
-    ? getImageURL(coverImage.url)
-    : `${siteUrl}/og-image.png`;
+  const imageUrl = absoluteImageURL(
+    coverImage?.url || SITE_IMAGE_PATH,
+    siteUrl
+  );
 
   return {
     '@context': 'https://schema.org',
@@ -69,9 +87,7 @@ export function generateBlogPostingSchema(post, siteUrl = SITE_URL) {
       name: SITE_NAME,
       logo: {
         '@type': 'ImageObject',
-        url: `${siteUrl}/logo.png`,
-        width: 250,
-        height: 60,
+        url: absoluteImageURL(SITE_IMAGE_PATH, siteUrl),
       },
     },
     mainEntityOfPage: {

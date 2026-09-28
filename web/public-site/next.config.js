@@ -18,69 +18,16 @@
 // throws again, fix the hoisting rather than re-adding the catch.
 import { withSentryConfig } from '@sentry/nextjs';
 
-// ── Build-time environment validation ──────────────────────────────────────
-// Runs when Next.js boots (`next build` and `next dev`).
-// Production builds fail fast if the API URL is missing or invalid.
-(function validateEnv() {
-  const IS_PROD = process.env.NODE_ENV === 'production';
-  const raw =
-    process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_FASTAPI_URL;
-
-  if (!raw) {
-    if (IS_PROD) {
-      throw new Error(
-        '\n[next.config] NEXT_PUBLIC_API_BASE_URL is required for production builds.\n' +
-          'Set it in your Vercel environment config or .env.local.\n'
-      );
-    }
-    return; // dev: runtime url.js will use localhost fallback
-  }
-
-  let parsed;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new Error(
-      `\n[next.config] NEXT_PUBLIC_API_BASE_URL="${raw}" is not a valid URL.\n`
-    );
-  }
-
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error(
-      `\n[next.config] NEXT_PUBLIC_API_BASE_URL="${raw}" must use http or https (got ${parsed.protocol}).\n`
-    );
-  }
-
-  const isLocalhost =
-    parsed.hostname === 'localhost' ||
-    parsed.hostname === '127.0.0.1' ||
-    parsed.hostname === '0.0.0.0';
-
-  // Allow localhost in production builds only when explicitly opted out (e.g. local `npm run build` testing)
-  const skipLocalhostCheck = process.env.SKIP_ENV_VALIDATION === 'true';
-  if (IS_PROD && isLocalhost && !skipLocalhostCheck) {
-    throw new Error(
-      `\n[next.config] NEXT_PUBLIC_API_BASE_URL="${raw}" points to localhost in production.\n` +
-        'Set a real backend URL in your environment config.\n' +
-        'To bypass this check locally, set SKIP_ENV_VALIDATION=true.\n'
-    );
-  }
-})();
-
 // Derive safe origins for the CSP connect-src directive from env vars.
 // Uses URL().origin to strip paths and reject semicolons that could inject CSP directives.
-const cspBackendOrigin = (() => {
-  const raw =
-    process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_FASTAPI_URL;
-  if (raw) {
-    try {
-      return new URL(raw).origin;
-    } catch {
-      return '';
-    }
-  }
-  return process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : '';
-})();
+//
+// There is deliberately no backend (FastAPI worker) origin here, and no
+// build-time backend URL at all. The worker is local-first with no public
+// ingress, so neither Vercel nor a visitor's browser can reach it: content
+// comes from the R2 static export, and newsletter signups go to Resend.
+// NEXT_PUBLIC_API_BASE_URL used to be required for production builds and
+// put its origin in connect-src, which on Vercel was a retired node's
+// tailnet name that no longer resolved.
 
 // Static JSON/image CDN (R2) — the search page and any other client-side
 // consumer of posts/index.json fetches from here. Without it in connect-src
@@ -265,7 +212,7 @@ const nextConfig = {
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://giscus.app",
                 "img-src 'self' data: https:",
                 "font-src 'self' data: https://fonts.gstatic.com",
-                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''}${cspStaticOrigin ? ' ' + cspStaticOrigin : ''}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com https://ep1.adtrafficquality.google`,
+                `connect-src 'self'${cspStaticOrigin ? ' ' + cspStaticOrigin : ''}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com https://ep1.adtrafficquality.google`,
                 "frame-src 'self' https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net https://giscus.app https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com",
               ].join('; ') + ';',
           },
@@ -393,19 +340,6 @@ const nextConfig = {
     ];
   },
 
-  // Rewrites for API proxy (optional)
-  rewrites: async () => {
-    return {
-      beforeFiles: [
-        // Example: proxy API calls
-        // {
-        //   source: '/api/strapi/:path*',
-        //   destination: `${process.env.NEXT_PUBLIC_STRAPI_API_URL}/:path*`,
-        // },
-      ],
-    };
-  },
-
   /*
   // Webpack configuration for additional optimizations
   webpack(config, { isServer }) {
@@ -434,7 +368,6 @@ const nextConfig = {
   // Tracks poindexter#672 (GA4 data collection was silently disabled because
   // the variable was missing from the Vercel project env).
   env: {
-    NEXT_PUBLIC_FASTAPI_URL: process.env.NEXT_PUBLIC_FASTAPI_URL,
     NEXT_PUBLIC_GA_ID: process.env.NEXT_PUBLIC_GA_ID || 'G-NJMBCYNDWN',
     // Disable Next.js telemetry to prevent trace file generation
     NEXT_TELEMETRY_DISABLED: '1',

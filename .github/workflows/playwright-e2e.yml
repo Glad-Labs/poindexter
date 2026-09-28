@@ -121,11 +121,6 @@ jobs:
       # Only install + drive Chromium to keep the run lean — the
       # frontend-only specs don't need the full browser matrix in CI.
       PLAYWRIGHT_BROWSERS: chromium
-      # next.config.js validateEnv() requires a non-localhost https API URL
-      # for production builds (Vercel sets this; CI must too). The site reads
-      # content from the R2 static fallback baked into lib/posts.ts, so this
-      # value is only the vestigial plumbing the build validation insists on.
-      NEXT_PUBLIC_API_BASE_URL: 'https://www.gladlabs.io'
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1 as of 2026-05-12

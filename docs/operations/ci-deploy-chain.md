@@ -90,11 +90,20 @@ If you see a notification that Vercel deploy failed:
 1. **Check the Vercel dashboard** — the deploy runs directly from
    the `glad-labs-stack` repo via Vercel's GitHub integration, not
    via a GitHub Actions workflow.
-2. **Common build failure:** `next.config.js` rejects localhost
-   URLs in production. Set `SKIP_ENV_VALIDATION=true` in Vercel
-   env vars, or ensure `NEXT_PUBLIC_API_BASE_URL` is set to a
-   real URL (or left empty for static-only builds).
-3. **If tests fail locally:** reproduce with
+2. **A `CANCELED` deploy is a skip, not a failure.** The
+   `ignoreCommand` in `web/public-site/vercel.json` runs
+   `git diff --quiet HEAD^ HEAD -- :/web/public-site …` and skips the
+   build when a commit touches nothing the site is built from; Vercel
+   lists that as `CANCELED`. The command needs `.git`, so
+   `web/public-site/.vercelignore` must never list it: while it did,
+   every production deploy ERRORed (glad-labs-stack#2338).
+3. **The build needs no backend URL.** The site reads the R2 static
+   export and never calls the worker, which has no public ingress.
+   `next.config.js` used to require `NEXT_PUBLIC_API_BASE_URL` for
+   production builds (`SKIP_ENV_VALIDATION` bypassed its localhost
+   check). That check is gone, and neither variable does anything if a
+   Vercel env still sets it.
+4. **If tests fail locally:** reproduce with
    `docker exec poindexter-worker python -m pytest tests/unit/ -q`.
    Frontend: `cd web/public-site && npm run test`.
 
@@ -225,9 +234,6 @@ decorators in `test_database_service.py` and
   `test-backend` check runs the full backend suite (several thousand
   cases; the exact count drifts as agents add tests, so it is not
   pinned here).
-- `web/public-site/next.config.js` — has a `validateEnv` check that
-  rejects localhost URLs in production. `SKIP_ENV_VALIDATION=true`
-  bypasses for local dev.
 
 ## CI minutes / cost discipline
 

@@ -12,16 +12,16 @@ Public content website built with Next.js 16 and Tailwind CSS.
 # From monorepo root
 npm install
 
-# Start all services (backend required for content)
+# Backend (:8002) and public site together
 npm run dev
 
-# Or public site only (needs backend running on :8002)
+# Or the public site alone. It reads the R2 static export, so it needs no backend.
 npm run dev:public
 ```
 
 ## Architecture
 
-This is a **headless content consumer** — all content is fetched from the FastAPI backend at build/request time. There are no local markdown files.
+This is a **headless content consumer**: all content comes from the static JSON export the content pipeline pushes to R2 (see Content Source below). It never calls the FastAPI worker, which is local-first with no public ingress. There are no local markdown files.
 
 ```
 web/public-site/
@@ -42,21 +42,19 @@ web/public-site/
 ├── components/                  # React components
 │   ├── AdUnit.tsx               # Google AdSense in-content ad slot
 │   ├── CookieConsentBanner.jsx  # Cookie consent (consent-gated GA + AdSense loaders)
-│   ├── GiscusComments.tsx       # GitHub Discussions comments
+│   ├── GiscusWrapper.tsx        # GitHub Discussions comments
 │   ├── NewsletterModal.tsx      # Newsletter subscription
 │   ├── StructuredData.tsx       # JSON-LD structured data
 │   └── WebVitals.tsx            # Core Web Vitals → Sentry
 ├── lib/                         # Utilities
 │   ├── posts.ts                 # Static R2 post client + types (primary)
-│   ├── url.js                   # URL helpers
 │   ├── seo.js                   # Metadata generation
 │   ├── structured-data.js       # JSON-LD generators
-│   ├── content-utils.js         # Content processing
-│   ├── error-handling.js        # Error handling
+│   ├── site.config.js           # Site name + URL
 │   └── logger.js                # Client-side logging
 ├── styles/globals.css           # Tailwind global styles
 ├── e2e/                         # Playwright E2E tests (~16 specs)
-├── next.config.js               # Next.js config (331 lines)
+├── next.config.js               # Next.js config (CSP + security headers, redirects, images)
 └── tailwind.config.cjs
 ```
 
@@ -80,14 +78,16 @@ Data flow:
 
 ## Environment Variables
 
+All optional for local dev; `.env.example` describes them.
+
 ```env
 # web/public-site/.env.local
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8002
-NEXT_PUBLIC_FASTAPI_URL=http://localhost:8002
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+# R2 static export; defaults to the Glad Labs bucket when unset
+NEXT_PUBLIC_STATIC_URL=https://<bucket>.r2.dev/static
 ```
 
-Production builds validate that `NEXT_PUBLIC_API_BASE_URL` is set and not `localhost` (enforced in `next.config.js`).
+There is no backend URL. `NEXT_PUBLIC_API_BASE_URL` (and its older name `NEXT_PUBLIC_FASTAPI_URL`) used to be required for production builds; nothing reads it now.
 
 ## Key Features
 
@@ -109,11 +109,11 @@ npm run test         # Jest unit tests
 
 ## Testing
 
-- **Unit tests:** Jest + React Testing Library (`lib/__tests__/`, `app/page.test.js`)
-- **E2E tests:** Playwright (`e2e/` — 16 spec files covering home, posts, legal, auth, tags, authors, accessibility)
+- **Unit tests:** Jest + React Testing Library (co-located `*.test.*` files and `__tests__/` dirs)
+- **E2E tests:** Playwright (`e2e/` — 15 spec files covering home, posts, legal, auth, tags, authors, accessibility)
 
 ```bash
-# E2E (requires backend + frontend running)
+# E2E against a site that is already running (the auth and task specs also need the FastAPI worker)
 SKIP_SERVER_START=true npx playwright test --project=chromium
 ```
 
