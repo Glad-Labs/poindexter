@@ -368,6 +368,33 @@ def test_container_missing_mid_recreate_is_neither_a_recycle_nor_a_failure():
     assert cw._last_recycle_monotonic is None
 
 
+def test_recently_started_container_is_neither_a_recycle_nor_a_failure():
+    """Measured and verified idle, but something restarted it moments ago
+    (deploy-sync, compose, the restart policy), so docker_utils declined. A
+    footprint this soon after a start is what the process loaded, not growth:
+    a recycle would return nothing the start did not. No failure finding (it
+    would say "check docker socket access"), no recycled finding, and no
+    cooldown stamp."""
+    executed = []
+    pool = _make_pool(executed=executed)
+
+    summary = asyncio.run(
+        cw.run_comfyui_ram_watch_probe(
+            pool,
+            queue_fn=AsyncMock(return_value=False),
+            mem_fn=MagicMock(return_value=(20.0, 9.0)),
+            restart_fn=restart_stub(status=du.RESTART_RECENTLY_STARTED),
+        )
+    )
+
+    assert summary["ok"] is True
+    assert summary["status"] == "container_recently_started"
+    assert "started" in summary["detail"] and "not restarted" in summary["detail"]
+    assert _findings(executed, "comfyui_ram_recycle_failed") == []
+    assert _findings(executed, "comfyui_ram_recycled") == []
+    assert cw._last_recycle_monotonic is None
+
+
 def test_default_restart_is_the_shared_helper_given_the_pool(monkeypatch):
     """With no ``restart_fn`` the recycle goes through
     ``docker_utils.restart_container`` with the pool, so it waits

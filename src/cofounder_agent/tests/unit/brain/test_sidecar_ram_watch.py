@@ -18,7 +18,7 @@ import pytest
 
 from poindexter.brain import docker_utils as du
 from poindexter.brain import sidecar_ram_watch as sw
-from tests.unit.brain._restart_fakes import restart_stub
+from tests.unit.brain._restart_fakes import outcome, restart_stub
 
 
 class _Pool:
@@ -390,6 +390,47 @@ def test_container_missing_mid_recreate_is_neither_a_recycle_nor_a_failure():
     assert "not found (likely mid-recreate)" in s["detail"]
     pool.execute.assert_not_awaited()
     assert sw._last_recycle_monotonic == {}
+
+
+def test_recently_started_container_is_neither_a_recycle_nor_a_failure():
+    """Measured and proven idle, but something restarted it moments ago
+    (deploy-sync, compose, the restart policy), so docker_utils declined. A
+    footprint this soon after a start is what the process loaded, not growth:
+    a recycle would return nothing the start did not. No failure finding (it
+    would say "check docker socket access"), no recycled finding, no cooldown
+    stamp."""
+    pool = _Pool({sw.TARGETS_KEY: "solo:6"})
+
+    s = _summary(pool, restart_fn=restart_stub(status=du.RESTART_RECENTLY_STARTED))
+
+    assert s["ok"] is True
+    assert s["status"] == "container_recently_started"
+    assert s["container"] == "solo"
+    assert "started" in s["detail"] and "not restarted" in s["detail"]
+    assert "over its 6 GB watermark" in s["detail"]
+    pool.execute.assert_not_awaited()
+    assert sw._last_recycle_monotonic == {}
+
+
+def test_recently_started_container_is_measured_again_next_cycle():
+    """No cooldown stamp, so the very next cycle can recycle it once the
+    guard has cleared."""
+    pool = _Pool({sw.TARGETS_KEY: "solo:6"})
+    seen: list[str] = []
+
+    async def _restart(container, *, pool=None):
+        seen.append(container)
+        return outcome(
+            container,
+            du.RESTART_RECENTLY_STARTED if len(seen) == 1 else du.RESTART_OK,
+        )
+
+    first = _summary(pool, restart_fn=_restart)
+    second = _summary(pool, restart_fn=_restart)
+
+    assert first["status"] == "container_recently_started"
+    assert second["status"] == "recycled"
+    assert seen == ["solo", "solo"]
 
 
 def test_restart_is_the_shared_helper_given_the_pool(monkeypatch):

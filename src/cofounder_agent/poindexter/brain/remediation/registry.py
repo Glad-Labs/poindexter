@@ -17,6 +17,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from poindexter.brain import docker_utils
 from poindexter.brain.remediation import host_services
 
 
@@ -131,9 +132,21 @@ async def _restart_container(params: dict[str, Any], ctx: RemediationContext) ->
     if mod is None or not hasattr(mod, "docker_restart_container"):
         return ActionResult(status="failed", detail="brain_daemon.docker_restart_container unavailable")
     started = time.monotonic()
-    ok, detail = await mod.docker_restart_container(container, pool=ctx.pool)
+    outcome = await mod.docker_restart_container(container, pool=ctx.pool)
     latency = int((time.monotonic() - started) * 1000)
-    return ActionResult(status="ok" if ok else "failed", detail=detail, latency_ms=latency)
+    if outcome.ok:
+        status = "ok"
+    elif outcome.status == docker_utils.RESTART_RECENTLY_STARTED:
+        # Not restarted because something restarted it moments ago
+        # (docker_utils' recently-started guard): a refusal, like the denylist
+        # above, not an attempt that failed. Still non-ok, so the engine pages
+        # the alert now with this detail rather than holding it for a verify of
+        # a restart that never ran, and the audit row says `skipped`. The
+        # breaker and the rate cap count the row either way.
+        status = "skipped"
+    else:
+        status = "failed"
+    return ActionResult(status=status, detail=outcome.detail, latency_ms=latency)
 
 
 async def _restart_host_service_check(

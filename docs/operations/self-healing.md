@@ -404,7 +404,7 @@ three, each wrapping a primitive the brain already owns:
 
 | `action_name`          | Params                    | Does                                                                                                                                                                                                                                                                                                                                      |
 | ---------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `restart_container`    | `{"container": "<name>"}` | `docker restart <name>` (inspect-then-restart, `brain_docker_restart_timeout_seconds`) via `brain_daemon.docker_restart_container`. Refuses the restart denylist — see Safety guardrails.                                                                                                                                                 |
+| `restart_container`    | `{"container": "<name>"}` | `docker restart <name>` (inspect-then-restart, `brain_docker_restart_timeout_seconds`) via `brain_daemon.docker_restart_container`. Refuses the restart denylist, and a container that started moments ago (`skipped`) — see Safety guardrails.                                                                                           |
 | `restart_host_service` | `{"service": "ollama"}`   | Restarts an allowlisted host systemd unit through the host Recovery Agent (`ollama` is `ollama-primary.service`), the same POST the probe path makes. Only after the brain has asked the service itself and got no answer. **Rules-only**: never offered to the LLM long-tail. See [Host services](#host-services--restart_host_service). |
 | `run_auto_remediate`   | _(none)_                  | Re-runs `brain_daemon.auto_remediate` — the stuck-`in_progress` / stale-`awaiting_approval` `pipeline_tasks` sweep.                                                                                                                                                                                                                       |
 
@@ -547,7 +547,9 @@ second-guessing). The worker has no docker.sock, so it can't act directly:
 2. `poindexter/brain/service_restart.py`'s own poll loop (`service_restart_loop`, ~10s
    cadence, mirrors `alert_dispatch_loop`) claims pending rows with
    `FOR UPDATE SKIP LOCKED` and calls `docker_restart_container` — the same
-   function the `restart_container` remediation action above uses.
+   function the `restart_container` remediation action above uses. An
+   operator's row passes `force=True`, so it skips the recently-started guard
+   too (below).
 3. The row's `status`/`detail` are written back; the console polls
    `GET /api/services/restart/{id}` and reports the real outcome.
 4. Either way, an `audit_log` row (`event_type='service_restart_completed'`)
@@ -583,6 +585,18 @@ and a `service_restart_skipped` audit row; never bounce blind. Master switch:
 `gpu_exporter_metrics_url`. Enqueue also dedups: an open (pending/claimed)
 intent for the same container is handed back (`deduped: true`) instead of a
 second row being inserted.
+
+**A second guard on the same rows: recently started (2026-09-28).**
+`docker_restart_container` refuses a container that has been running for less
+than `brain_docker_restart_min_uptime_seconds`, because a second restart lands
+mid-startup ([the restart knobs](#core-service-monitor--degraded-vs-down-monitor_services)).
+Whether a row meets it follows the same line as the footprint guard. An
+operator's row (the console button, MCP, the CLI, console chat) passes
+`force=True` and skips it, since a human clicking Restart is not the brain
+second-guessing itself. A `gpu_vram_reclaim` row is automated, so it meets it.
+One the guard refuses closes `done` with a `skipped —` detail and a
+`service_restart_skipped` audit row, as a footprint skip does: handled, not
+failed. The ladder asks again on its own cooldown if the card is still short.
 
 For the same reason — any death between claim and finalize orphans a row —
 each poll first sweeps `claimed` rows older than 10 minutes to `failed` with an
@@ -632,6 +646,18 @@ the container on a guess is worse than reporting it.
   names both containers as never-choose, which suppresses most picks at the
   source — the executor guard is the backstop for the rest.
 
+- **Recently started: a second restart lands mid-startup.** `restart_container`
+  refuses a container that has been running for less than
+  `brain_docker_restart_min_uptime_seconds` (default `120`; see
+  [the restart knobs](#core-service-monitor--degraded-vs-down-monitor_services)).
+  Docker's own start time is the clock, so a restart by deploy-sync, compose or
+  another brain path counts as well as the firefighter's own. The refusal is
+  `skipped`, not `failed`, and like the denylist it is non-`ok`, so the alert
+  **pages** now with the container's age in the reason. It is not held for a
+  verify of a restart that never ran, and the audit row does not credit the
+  firefighter with a fix. The breaker and the rate cap count the row as they do
+  any `remediation_action`. The firefighter never forces past the guard: an
+  automated caller does not get to.
 - **Host services: allowlisted, and only when down.** `restart_host_service`
   restarts only the services in `host_services.HOST_SERVICES` (today `ollama`,
   hardcoded, each with its own is-it-down check), and only after the brain has
@@ -1262,34 +1288,85 @@ case: a hung restart now holds a probe for up to 10 s of inspect plus the
 knob, where it used to be 30 s or 60 s. The cycle watchdog,
 `brain_cycle_timeout_seconds`, is 240 s.
 
-The helper runs the `docker inspect` pre-check for every caller. Only docker's
-own "no such container" counts as the compose recreate window
-(`RESTART_MISSING`), and each caller decides what it means.
-`restart_service` and the self-heal skip quietly. The self-heal's cooldown,
-stamped before the attempt, still stands and keeps its next attempt off the
-freshly recreated container. The firefighter gets
-`(False, "container … not found (likely mid-recreate)")`. For the probes it
-means nothing was restarted, never that a restart failed. None of them pages
-or notifies on it, and none waits or re-checks, because there is no restart to
-verify and the next cycle checks the replacement:
+Second knob: `brain_docker_restart_min_uptime_seconds` (default `120`; `0` turns
+it off) is how long a container must have been running before the brain
+restarts it again. Several of the paths above can restart the same container,
+usually the worker, in one 5-minute cycle: `worker_error_rate`, `stuck_tasks`
+and `public_site` each restart it on their own cooldown, `migration_drift_probe`
+and `restart_service` restart it too, and deploy-sync restarts it when the
+deploy clone's HEAD advances. The worker takes 40-90 s to come back, so a
+second restart lands mid-startup and kills it. The `docker inspect` that checks
+the container exists also reads docker's own `State.StartedAt`, and a container
+that has been `running` for less than the window comes back as
+`RESTART_RECENTLY_STARTED` without being restarted. Docker's timestamp counts
+every restart, whoever made it: deploy-sync, compose and the restart policy as
+well as the brain's own paths, which a record kept inside the brain would miss.
 
-| Probe                                                                              | A container missing mid-recreate                                                                                                                                                                                                                                        |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `migration_drift_probe`                                                            | No "FAILED to restart" page and no health wait: the replacement applies pending migrations at boot. It uses one of `migration_drift_recover_max_attempts`, so a worker that stays missing ends at the exhaustion page. Audited `probe.migration_drift_recover_skipped`. |
-| `backup_watcher`, `offsite_backup_watch`, `auto_embed_watch`, `postiz_queue_watch` | No retry-delay wait and no re-check. It uses one retry, so a container that stays missing still escalates (the offsite tier critical, as before). Status `container_missing`, audited `probe.<watch>_restart_skipped`.                                                  |
-| `docker_port_forward_probe`                                                        | No cap slot, no failed-recovery count, no alert: the replacement gets a fresh forward. A container that stays gone is the existence check's `unwatched`. Audited `docker_port_forward_container_missing`.                                                               |
-| `sidecar_ram_watch`, `comfyui_ram_watch`                                           | Neither a recycle nor a failure: no finding and no cooldown stamp. The replacement's new process returns the memory anyway.                                                                                                                                             |
+- **Only a `running` container is guarded.** One that is exited, restarting or
+  created is not mid-startup, and it is the one that needs the restart. A
+  container its restart policy keeps restarting is guarded whenever it is caught
+  `running`; the loop itself is `container_restart_loop_probe`'s to page.
+- **A guard that cannot decide restarts.** A `StartedAt` the helper cannot read,
+  or one in the future because the clock stepped, restarts the container anyway
+  and logs a WARNING. The guard is a safety net, and it must not stand between the
+  brain and a wedged container. An unusable knob value falls back to the default
+  the same way, so a typo does not switch the guard off. Only `0` does.
+- **An operator's restart is forced.** `force=True` skips the guard, and only
+  the console queue passes it, for a row an operator asked for. Every
+  automated caller meets the guard: the `RestartFn` seam the probes take does not
+  carry `force`, and the firefighter never passes it.
+- **It sees a restart that has started, not one that is still stopping.**
+  `StartedAt` moves when the start phase completes, and the stop phase of a
+  restart can run for the container's whole grace period (the worker's is 75 s).
+  So the guard covers the case it was written for: the cycle's monitor, heals and
+  probes run one after another, and each waits for its restart to return. It
+  cannot cover two brain tasks restarting the same container at the same instant.
+  The main cycle, the alert dispatcher and the console queue are separate tasks.
+- **Keep it under the 300 s brain cycle.** Over it, a restart the brain made
+  itself would also hold off the next cycle's heal.
 
-A docker daemon the brain cannot reach fails the inspect too. `restart_service`
-used to skip that as "mid-recreate"; now it pages as a failed restart. Every
-other outcome keeps each probe's own handling. A failed or timed-out restart
-is still `migration_drift_probe`'s critical page. The four watches and the
-port-forward probe write a restart-failed audit row, with a warning notify
+The helper runs the `docker inspect` pre-check for every caller, and two answers
+to it mean the container was not restarted. **Missing** (`RESTART_MISSING`) is
+docker's own "no such container", which is the compose recreate window
+(`docker compose up --force-recreate` leaves the name unbound for a second or
+two). Only that wording counts: a docker daemon the brain cannot reach fails the
+inspect too, and that is an error, not a window. **Recently started**
+(`RESTART_RECENTLY_STARTED`) is the guard above. Neither is a failed restart.
+Each caller decides what it means, and every caller names both, because a
+catch-all failure branch would page (`restart_service`, the self-heal,
+`migration_drift_probe`) or record a failed action (the firefighter) for a
+restart that was declined on purpose. A ratchet at the end of this section fails
+a caller that does not name `RESTART_RECENTLY_STARTED`.
+
+**What a restart that was not attempted means**, per caller. The monitor, the
+self-heal and the probes page or notify on neither outcome, and none of them
+waits or re-checks, because there is no restart to verify and the next cycle
+checks the container as it then is. The firefighter and the console queue report
+through their audit rows instead, and the firefighter's engine pages the alert
+itself, as it does for any action that did not run:
+
+| Caller                                                                             | Missing mid-recreate                                                                                                                                                                                                                                                    | Started moments ago                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restart_service` (this monitor's heal)                                            | Skipped quietly; an INFO log.                                                                                                                                                                                                                                           | Skipped quietly; an INFO log. Nothing is lost by waiting: the window is shorter than a cycle, so a service still down on the next pass is restarted. Not a heal (no notice) and not a failure (no page). The critical-alert path above is separate and still pages.                                                                                                                                                                                              |
+| `health_probes` self-heal                                                          | Skipped quietly. The cooldown, stamped before the attempt, still stands and keeps its next attempt off the freshly recreated container.                                                                                                                                 | Skipped quietly, and the cooldown stands the same way. The three worker heals each have their own cooldown, so one bad cycle used to run all three back to back; now the first restarts it and the other two stand down. A `restart_multiple` heal is quiet only when every container was missing or recent.                                                                                                                                                     |
+| Firefighter `restart_container`                                                    | `failed`, with `container … not found (likely mid-recreate)`; the engine pages now.                                                                                                                                                                                     | `skipped`, with the container's age in the detail. Non-`ok`, so the engine pages now, as it does for a denylist refusal. The audit row says `skipped`, not `failed`. See Safety guardrails.                                                                                                                                                                                                                                                                      |
+| Console restart request (`service_restart`)                                        | The row closes `failed` with the same detail.                                                                                                                                                                                                                           | An operator's row is forced, so the guard never applies. A `gpu_vram_reclaim` row meets it and closes `done` with a `skipped —` detail and a `service_restart_skipped` audit row.                                                                                                                                                                                                                                                                                |
+| `migration_drift_probe`                                                            | No "FAILED to restart" page and no health wait: the replacement applies pending migrations at boot. It uses one of `migration_drift_recover_max_attempts`, so a worker that stays missing ends at the exhaustion page. Audited `probe.migration_drift_recover_skipped`. | No page and no health wait: a second restart would kill the worker while it boots, and applying migrations is what its boot does. It uses one attempt too, so a worker that keeps being restarted under the probe still ends at the exhaustion page. Status `recover_worker_recently_started`, audited `probe.migration_drift_recover_skipped` with `restart_status` and `uptime_seconds`.                                                                       |
+| `backup_watcher`, `offsite_backup_watch`, `auto_embed_watch`, `postiz_queue_watch` | No retry-delay wait and no re-check. It uses one retry, so a container that stays missing still escalates (the offsite tier critical, as before). Status `container_missing`, audited `probe.<watch>_restart_skipped`.                                                  | The same, with status `container_recently_started`. It uses one retry, so the guard holds a restart off but cannot postpone the escalation for a container that keeps being restarted under the watch. That matters most for the offsite tier, whose critical alert is its only page. The audit row carries `restart_status` and `uptime_seconds`. The Postiz watch counts an unreachable API as wedged, so a Postiz still starting up is the case this catches. |
+| `docker_port_forward_probe`                                                        | No cap slot, no failed-recovery count, no alert: the replacement gets a fresh forward. A container that stays gone is the existence check's `unwatched`. Audited `docker_port_forward_container_missing`.                                                               | No cap slot, no failed-recovery count, no alert: its forward is at most seconds old. A forward that is still stuck once the window has cleared meets the ordinary cap and give-up. Audited `docker_port_forward_container_recently_started`.                                                                                                                                                                                                                     |
+| `sidecar_ram_watch`, `comfyui_ram_watch`                                           | Neither a recycle nor a failure: no finding and no cooldown stamp. The replacement's new process returns the memory anyway.                                                                                                                                             | Neither a recycle nor a failure: no finding and no cooldown stamp. A footprint this soon after a start is what the process loaded, not growth, so a recycle would return nothing the start did not. Status `container_recently_started`.                                                                                                                                                                                                                         |
+
+Every other outcome keeps each caller's own handling. A failed or timed-out
+restart is still `migration_drift_probe`'s critical page. The four watches and
+the port-forward probe write a restart-failed audit row, with a warning notify
 only when the docker CLI is missing. The RAM recycles emit their
-`sidecar_ram_recycle_failed` or `comfyui_ram_recycle_failed` finding.
+`sidecar_ram_recycle_failed` or `comfyui_ram_recycle_failed` finding. A docker
+daemon the brain cannot reach used to be skipped by `restart_service` as
+"mid-recreate"; now it pages as a failed restart.
 
-The ratchet in `tests/unit/brain/test_docker_utils_restart.py` fails if any
-other brain module runs `docker restart` itself.
+The ratchets in `tests/unit/brain/test_docker_utils_restart.py` fail if any
+other brain module runs `docker restart` itself, or calls the helper (or one of
+its seams) without naming `RESTART_RECENTLY_STARTED`.
 
 ## Liveness probes
 
@@ -1990,6 +2067,7 @@ SELECT value FROM brain_knowledge
 | ------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `brain_restart_consecutive_failures`                          | `2`                                        | Consecutive hard-down monitor cycles before `monitor_services` auto-restarts a local service (degraded never restarts).                                                                           |
 | `brain_docker_restart_timeout_seconds`                        | `90`                                       | Timeout for every brain `docker restart`, all via `docker_utils.restart_container` (monitor, firefighter, console, self-heal, probes). Must exceed the longest `stop_grace_period` (worker 75 s). |
+| `brain_docker_restart_min_uptime_seconds`                     | `120`                                      | Minimum uptime before the brain restarts a container again. A younger one comes back `RESTART_RECENTLY_STARTED`, unless an operator forced the restart from the console. `0` turns it off.        |
 | `compose_drift_host_recover_enabled`                          | `true`                                     | Auto-heal compose drift via the host agent.                                                                                                                                                       |
 | `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                                                                                        |
 | `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                                                                                                   |

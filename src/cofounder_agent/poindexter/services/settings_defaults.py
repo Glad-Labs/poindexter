@@ -4051,6 +4051,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # failed" while dockerd completed the restart anyway. (2026-08-15; every
     # brain restart path shares it since 2026-09-28)
     'brain_docker_restart_timeout_seconds': '90',
+    # Minimum uptime (seconds) before the brain will restart a container: a
+    # container docker reports as running for less than this comes back
+    # RESTART_RECENTLY_STARTED from docker_utils.restart_container and is not
+    # restarted. Several brain paths can restart the same container (usually
+    # the worker) in one 5-minute cycle, and deploy-sync and compose restart it
+    # too; the worker takes 40-90 s to come back, so a second restart kills it
+    # mid-startup. Docker's own State.StartedAt is the clock, so it counts every
+    # restart whoever made it. Console restarts an operator asked for bypass it.
+    # 0 turns it off. Keep it under the 300 s brain cycle. (2026-09-28)
+    'brain_docker_restart_min_uptime_seconds': '120',
 
     # ----- Migration-drift in-flight guard (poindexter/brain/migration_drift_probe.py, #228) -----
     # When true, the migration-drift auto-recover path defers the worker
@@ -6434,6 +6444,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'brain_restart_consecutive_failures': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'brain_boot_grace_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'brain_docker_restart_timeout_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
+    'brain_docker_restart_min_uptime_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
 
     # ----- Deprecated keys — emit warning on read (add new ones here) -----
     # nvidia_exporter_url went dead when PR #1827 moved gpu_scheduler onto

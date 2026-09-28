@@ -25,6 +25,7 @@ import json
 import sys
 import time
 import urllib.error
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -41,8 +42,13 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from poindexter.brain import brain_daemon as bd  # noqa: E402
+from poindexter.brain import docker_utils  # noqa: E402
 
 _OPS_URL = "https://discord.test/ops"
+
+# The ``monitor_env`` fixture swaps ``restart_service`` for a mock in every
+# test; the tests that want the real one put it back from here.
+_REAL_RESTART_SERVICE = bd.restart_service
 
 
 def _http_error(code: int, body: bytes, reason: str = "Service Unavailable"):
@@ -298,3 +304,70 @@ class TestBootGrace:
         await bd.monitor_services(monitor_env["pool"])
         await bd.monitor_services(monitor_env["pool"])
         monitor_env["restart"].assert_awaited_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRestartGuardedByRecentStart:
+    """The monitor's heal meets docker_utils' recently-started guard.
+
+    A worker that something else restarted moments ago (deploy-sync, another
+    probe's heal, compose) may still be booting for 40-90 s, so the failed
+    checks that led here can be reading its start-up, and restarting it again
+    would kill it. The heal skips quietly; the critical-alert path is separate
+    and still tells the operator the service is down.
+    """
+
+    async def test_a_worker_restarted_moments_ago_is_left_alone_but_the_alert_still_fires(
+        self, monkeypatch, monitor_env,
+    ):
+        monkeypatch.setattr(bd, "restart_service", _REAL_RESTART_SERVICE)
+        monkeypatch.setattr(bd, "IS_DOCKER", True)
+        notice = AsyncMock()
+        monkeypatch.setattr(bd, "notify_discord_ops", notice)
+        started = datetime.now(UTC) - timedelta(seconds=30)
+        stamp = started.strftime("%Y-%m-%dT%H:%M:%S.%f") + "000Z"
+        run = MagicMock(return_value=MagicMock(returncode=0, stdout=f"running {stamp}\n", stderr=""))
+        monkeypatch.setattr(docker_utils.subprocess, "run", run)
+        _set_services(monkeypatch, {"worker": (False, 0, "timed out")}, critical={"worker": True})
+
+        await bd.monitor_services(monitor_env["pool"])  # 1st down cycle: heal deferred
+        await bd.monitor_services(monitor_env["pool"])  # 2nd: the heal runs, and is declined
+
+        assert [c.args[0][1] for c in run.call_args_list] == ["inspect"], "no `docker restart`"
+        notice.assert_not_awaited()  # not a heal
+        # Only the critical-alert path paged, once per failing cycle. The
+        # declined heal added no page (it is not a failure either).
+        assert monitor_env["notify"].await_count == 2
+        assert all(
+            "worker is DOWN" in c.args[0] for c in monitor_env["notify"].await_args_list
+        )
+
+    async def test_the_next_cycle_restarts_it_once_it_is_past_the_window(
+        self, monkeypatch, monitor_env,
+    ):
+        """Nothing is lost by waiting: the window is shorter than a cycle, so
+        a worker that is still down on the next pass is restarted."""
+        monkeypatch.setattr(bd, "restart_service", _REAL_RESTART_SERVICE)
+        monkeypatch.setattr(bd, "IS_DOCKER", True)
+        notice = AsyncMock()
+        monkeypatch.setattr(bd, "notify_discord_ops", notice)
+
+        def _inspect_at(seconds_ago):
+            then = datetime.now(UTC) - timedelta(seconds=seconds_ago)
+            stamp = then.strftime("%Y-%m-%dT%H:%M:%S.%f") + "000Z"
+            return MagicMock(returncode=0, stdout=f"running {stamp}\n", stderr="")
+
+        run = MagicMock(side_effect=[
+            _inspect_at(30),                                # cycle 2: too soon
+            _inspect_at(330), MagicMock(returncode=0, stdout="", stderr=""),  # cycle 3
+        ])
+        monkeypatch.setattr(docker_utils.subprocess, "run", run)
+        _set_services(monkeypatch, {"worker": (False, 0, "timed out")})
+
+        for _ in range(3):
+            await bd.monitor_services(monitor_env["pool"])
+
+        assert [c.args[0][1] for c in run.call_args_list] == ["inspect", "inspect", "restart"]
+        notice.assert_awaited_once()
+        assert "Auto-restarted" in notice.await_args.args[0]

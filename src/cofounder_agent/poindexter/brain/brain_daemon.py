@@ -1691,8 +1691,10 @@ async def send_followup(
     }
 
 
-async def docker_restart_container(container: str, *, pool=None) -> tuple[bool, str]:
-    """Docker-restart a named container. Returns (ok, detail).
+async def docker_restart_container(
+    container: str, *, pool=None, force: bool = False,
+) -> docker_utils.ContainerRestart:
+    """Docker-restart a named container. Returns the helper's outcome.
 
     Used by the firefighter's ``restart_container`` action and by console
     restart requests (``service_restart``). Silent either way: those callers
@@ -1703,17 +1705,31 @@ async def docker_restart_container(container: str, *, pool=None) -> tuple[bool, 
     containers and notifies): the firefighter needs to restart an *arbitrary*
     container named in a remediation_rules row. Both go through
     ``docker_utils.restart_container``, so both inspect before restarting (a
-    container missing mid-recreate comes back ``(False, "... not found
-    (likely mid-recreate)")``), both wait
+    container missing mid-recreate comes back ``RESTART_MISSING`` with "...
+    not found (likely mid-recreate)"), both wait
     ``app_settings.brain_docker_restart_timeout_seconds`` (read via ``pool``),
     and neither blocks the event loop.
+
+    Both also refuse a container that started less than
+    ``app_settings.brain_docker_restart_min_uptime_seconds`` ago
+    (``RESTART_RECENTLY_STARTED``), so the callers read the status rather than
+    a bare ok: the firefighter records that as ``skipped``, not ``failed``, and
+    the console queue finalizes the row ``done``. ``force=True`` skips the
+    guard. Only the queue passes it, and only for a row an operator asked for.
+    The firefighter is automated, so it never does.
+
+    Not running in docker is a ``RESTART_ERROR`` outcome: nothing here can
+    reach a container.
     """
     if not IS_DOCKER:
-        return (False, "not running in docker; no container-restart path")
-    outcome = await docker_utils.restart_container(container, pool=pool)
+        return docker_utils.ContainerRestart(
+            container, docker_utils.RESTART_ERROR,
+            "not running in docker; no container-restart path", 0,
+        )
+    outcome = await docker_utils.restart_container(container, pool=pool, force=force)
     if outcome.ok:
         logger.info("[BRAIN] firefighter docker-restarted container %s", container)
-    return (outcome.ok, outcome.detail)
+    return outcome
 
 
 async def restart_service(name: str, *, pool=None):
@@ -1749,6 +1765,18 @@ async def restart_service(name: str, *, pool=None):
                     "[BRAIN] container %s not found (likely mid-recreate) — "
                     "skipping auto-restart this cycle", container,
                 )
+            elif outcome.status == docker_utils.RESTART_RECENTLY_STARTED:
+                # Something restarted it moments ago: deploy-sync, another
+                # probe's heal, compose, the restart policy. The worker takes
+                # 40-90 s to come back, so the failed checks that got us here
+                # may be reading its start-up, and restarting it again now
+                # would kill it mid-boot. Nothing is lost by waiting: the next
+                # cycle is longer than the guard window, so it checks again
+                # and restarts if the service is still down. Not a heal and
+                # not a failure, so neither a notice nor a page. The
+                # critical-alert path in monitor_services is separate and
+                # still tells the operator the service is down.
+                logger.info("[BRAIN] %s — skipping auto-restart this cycle", outcome.detail)
             elif outcome.ok:
                 logger.info("[BRAIN] Docker-restarted container %s", container)
                 # A heal that worked is a notice, not a page ("self-heal

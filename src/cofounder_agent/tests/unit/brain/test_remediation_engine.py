@@ -79,6 +79,40 @@ async def test_failed_action_pages_now_and_records_terminal_verify(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_restart_the_recently_started_guard_declines_pages_now_as_skipped(monkeypatch):
+    """The whole path, with the real ``restart_container`` executor: docker_utils
+    declines a container that started moments ago, so the firefighter did not
+    act. The page goes out now, with the container's age in the reason, and the
+    audit row says ``skipped`` rather than ``failed``. It is not held for a
+    verify of a restart that never ran, which would also credit the firefighter
+    with a fix it did not make."""
+    import poindexter.brain.remediation.registry as reg
+    from poindexter.brain import docker_utils as du
+    from tests.unit.brain._restart_fakes import outcome
+
+    class _Daemon:
+        async def docker_restart_container(self, container, *, pool=None, force=False):
+            return outcome(container, du.RESTART_RECENTLY_STARTED)
+
+    rule = {"id": 7, "action_name": "restart_container", "params": {"container": "poindexter-pyroscope"},
+            "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None}
+    monkeypatch.setattr(R, "match_rule", _acoro(rule))
+    monkeypatch.setattr(R, "circuit_breaker_tripped", _acoro(False))
+    monkeypatch.setattr(R, "global_rate_exceeded", _acoro(False))
+    monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: _Daemon())
+    pool = FakePool()
+
+    d = await E.evaluate_for_dispatch(pool, alert=ALERT, fingerprint="fp", config=CFG, logger=LOG)
+
+    assert d.acted is False  # page now
+    assert d.result.status == "skipped"
+    assert d.reason.startswith("action skipped: poindexter-pyroscope started")
+    events = [json.loads(e[1][3]) for e in pool.executed if "audit_log" in e[0]]
+    assert [ev.get("execution", {}).get("status") for ev in events if "execution" in ev] == ["skipped"]
+    assert any(ev.get("result") == "action_failed" for ev in events)  # the terminal verify row
+
+
+@pytest.mark.asyncio
 async def test_breaker_tripped_pages_no_execute(monkeypatch):
     rule = {"id": 7, "action_name": "restart_container", "params": {},
             "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None}

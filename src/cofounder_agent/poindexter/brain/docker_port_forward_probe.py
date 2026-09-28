@@ -1340,6 +1340,36 @@ async def _check_one_service(
             "external_url": external_url,
             "detail": restart.detail,
         }
+    if restart.status == docker_utils.RESTART_RECENTLY_STARTED:
+        # Something restarted the container moments ago (deploy-sync, compose,
+        # the restart policy), so its port forward is at most seconds old and a
+        # second restart would only interrupt the first. Nothing was restarted,
+        # so this counts toward neither the rolling restart cap nor the
+        # failed-recovery count, and pages nothing. The next cycle probes it
+        # again; a forward that is still stuck then is what the restart, the
+        # cap and the alert-only give-up above are for.
+        await _emit_audit_event(
+            pool,
+            "docker_port_forward_container_recently_started",
+            (
+                f"Stuck port forward detected on {container}, but "
+                f"{restart.detail}."
+            ),
+            extra={
+                "container": container,
+                "internal_url": internal_url,
+                "external_url": external_url,
+                "uptime_seconds": restart.uptime_seconds,
+            },
+        )
+        return {
+            "ok": False,
+            "status": "container_recently_started",
+            "container": container,
+            "internal_url": internal_url,
+            "external_url": external_url,
+            "detail": restart.detail,
+        }
     _record_restart(container, now=restart_started)
     retried_n = len(_restart_state.get(container, []))
     restart_msg = restart.detail

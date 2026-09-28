@@ -17,13 +17,14 @@ stubs are async and answer with a ``ContainerRestart``
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from poindexter.brain import docker_utils as du
 from poindexter.brain import migration_drift_probe as mdp
-from tests.unit.brain._restart_fakes import outcome, restart_stub
+from tests.unit.brain._restart_fakes import RECENT_UPTIME_SECONDS, outcome, restart_stub
 
 
 def _make_pool():
@@ -452,6 +453,128 @@ class TestDriftAutoRecoverEnabled:
         assert len(notifies) == 1
         assert notifies[0]["severity"] == "critical"
         assert "may still complete it" in notifies[0]["detail"]
+
+
+@pytest.mark.unit
+class TestRecoverWorkerRecentlyStarted:
+    """The worker restarted moments ago (deploy-sync, another brain path's
+    heal, compose), so docker_utils declined to restart it again.
+
+    A second restart would kill it while it is still booting, and applying
+    migrations is what that boot does. So it is neither the "FAILED to
+    restart" page nor a recovery, and there is no health wait: the next cycle
+    re-reads /api/health and sees whether that start cleared the drift.
+    """
+
+    @staticmethod
+    def _recent():
+        return restart_stub(status=du.RESTART_RECENTLY_STARTED)
+
+    @pytest.mark.asyncio
+    async def test_recently_started_worker_is_not_paged_and_skips_the_health_wait(self):
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval()
+        notifies: list[dict] = []
+        wait_fn = MagicMock(return_value=(True, _health_with_drift(0)))
+
+        summary = await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: notifies.append(k),
+            restart_fn=self._recent(),
+            wait_fn=wait_fn,
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        assert summary["ok"] is False
+        assert summary["status"] == "recover_worker_recently_started"
+        assert "started" in summary["detail"] and "not restarted" in summary["detail"]
+        assert notifies == []
+        wait_fn.assert_not_called()
+        # No page went out, so the exhaustion page is still free to fire.
+        assert mdp._last_notify_drift_count is None
+
+        events = [
+            call.args[1] for call in pool.execute.call_args_list
+            if "audit_log" in call.args[0]
+        ]
+        assert "probe.migration_drift_recover_skipped" in events
+        assert "probe.migration_drift_recover_failed" not in events
+
+    @pytest.mark.asyncio
+    async def test_the_audit_row_says_why_and_how_long_it_had_been_up(self):
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval()
+
+        await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=self._recent(),
+            wait_fn=lambda: (True, {}),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        row = next(
+            json.loads(call.args[3]) for call in pool.execute.call_args_list
+            if "audit_log" in call.args[0]
+            and call.args[1] == "probe.migration_drift_recover_skipped"
+        )
+        assert row["restart_status"] == du.RESTART_RECENTLY_STARTED
+        assert row["uptime_seconds"] == RECENT_UPTIME_SECONDS
+        assert row["attempt"] == 1
+
+    @pytest.mark.asyncio
+    async def test_recently_started_worker_uses_an_attempt_so_it_still_ends_at_the_exhaustion_page(self):
+        """The guard can hold a restart off, but it cannot postpone the
+        exhaustion page for a worker that keeps getting restarted under us."""
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            **{mdp.RECOVER_MAX_ATTEMPTS_SETTING_KEY: "1"}
+        )
+        notifies: list[dict] = []
+        kw = {
+            "notify_fn": lambda **k: notifies.append(k),
+            "restart_fn": self._recent(),
+            "wait_fn": lambda: (True, _health_with_drift(1)),
+            "health_fetcher": lambda: _health_with_drift(1),
+        }
+
+        first = await mdp.run_migration_drift_probe(pool, **kw)
+        second = await mdp.run_migration_drift_probe(pool, **kw)
+        third = await mdp.run_migration_drift_probe(pool, **kw)
+
+        assert first["status"] == "recover_worker_recently_started"
+        assert first["attempts"] == 1
+        assert second["status"] == third["status"] == "recover_exhausted"
+        assert len(notifies) == 1
+        assert notifies[0]["severity"] == "critical"
+        assert "UNRESOLVED" in notifies[0]["title"]
+
+    @pytest.mark.asyncio
+    async def test_drift_the_boot_cleared_resets_the_episode(self):
+        # The worker that started moments ago applied the migrations at boot:
+        # the next cycle reads pending=0 and the episode starts over.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval()
+
+        await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=self._recent(),
+            wait_fn=lambda: (True, {}),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+        assert mdp._recover_attempts == 1
+
+        summary = await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=restart_stub(),
+            wait_fn=lambda: (True, {}),
+            health_fetcher=lambda: _health_with_drift(0),
+        )
+
+        assert summary["status"] == "no_drift"
+        assert mdp._recover_attempts == 0
 
 
 @pytest.mark.unit

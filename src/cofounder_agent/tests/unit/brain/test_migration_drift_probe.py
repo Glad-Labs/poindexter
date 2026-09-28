@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from unittest.mock import AsyncMock, MagicMock
 
@@ -117,3 +118,41 @@ def test_default_restart_is_the_shared_helper_with_the_pool(monkeypatch):
 
     helper.assert_awaited_once_with(md.WORKER_CONTAINER, pool=pool)
     assert summary["status"] == "recovered"
+
+
+def test_a_worker_that_started_moments_ago_is_not_restarted_and_nothing_pages(monkeypatch):
+    """Through the real ``docker_utils`` helper, with only ``subprocess.run``
+    faked underneath. The worker's ``State.StartedAt`` is 30 s ago (deploy-sync,
+    another brain path's heal or compose restarted it), so ``docker restart``
+    never runs: a second restart would kill it mid-boot, and applying
+    migrations is what that boot does. No critical page and no health wait."""
+    started = datetime.now(UTC) - timedelta(seconds=30)
+    stamp = started.strftime("%Y-%m-%dT%H:%M:%S.%f") + "000Z"
+    run = MagicMock(return_value=MagicMock(returncode=0, stdout=f"running {stamp}\n", stderr=""))
+    monkeypatch.setattr(du.subprocess, "run", run)
+    settings = {
+        md.AUTO_RECOVER_SETTING_KEY: "true",
+        md.DEFER_WHILE_INFLIGHT_SETTING_KEY: "false",
+    }
+
+    async def fetchval(_query, *args):
+        return settings.get(args[0]) if args else 0
+
+    pool = _make_pool()
+    pool.fetchval = AsyncMock(side_effect=fetchval)
+    notify = MagicMock()
+    wait = MagicMock(return_value=(True, _migrations_health(0)))
+
+    summary = asyncio.run(
+        md.run_migration_drift_probe(
+            pool,
+            notify_fn=notify,
+            wait_fn=wait,
+            health_fetcher=lambda: _migrations_health(1),
+        )
+    )
+
+    assert summary["status"] == "recover_worker_recently_started"
+    assert [c.args[0][1] for c in run.call_args_list] == ["inspect"], "no `docker restart`"
+    notify.assert_not_called()
+    wait.assert_not_called()

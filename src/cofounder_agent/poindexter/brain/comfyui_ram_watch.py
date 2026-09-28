@@ -342,6 +342,18 @@ async def run_comfyui_ram_watch_probe(
         )
         logger.info("[COMFYUI_RAM] %s", detail)
         return {"ok": True, "status": "container_missing", "detail": detail}
+    if restart.status == docker_utils.RESTART_RECENTLY_STARTED:
+        # Something restarted it moments ago (deploy-sync, compose, the restart
+        # policy). A footprint this soon after a start is what the process
+        # loaded, not growth, so a recycle would return nothing the start did
+        # not already. Neither a recycle nor a failure: no cooldown stamp and
+        # no finding. The next cycle measures it again.
+        detail = (
+            f"ComfyUI at {footprint_gb:.1f} GB is over the {watermark_gb:g} GB "
+            f"watermark, but {restart.detail}"
+        )
+        logger.info("[COMFYUI_RAM] %s", detail)
+        return {"ok": True, "status": "container_recently_started", "detail": detail}
     if not restart.ok:
         msg = restart.detail
         detail = (

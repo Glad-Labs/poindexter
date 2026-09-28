@@ -448,6 +448,33 @@ async def run_postiz_queue_watch_probe(
             extra={"retries_used": _retry_count},
         )
         return {"ok": False, "status": "container_missing", "retries_used": _retry_count}
+    if restart.status == docker_utils.RESTART_RECENTLY_STARTED:
+        # Something restarted Postiz moments ago (deploy-sync, compose, the
+        # restart policy). An unreachable API counts as wedged above, so a
+        # Postiz that is still starting up would be restarted mid-start.
+        # Nothing was restarted here, so skip the wait and re-check; the next
+        # cycle queries it again. The retry still counts, so a Postiz that
+        # keeps restarting under us still reaches the escalation above.
+        detail = (
+            f"Postiz queue wedged but {restart.detail} "
+            f"(retry {_retry_count}/{max_retries})."
+        )
+        logger.info("[POSTIZ_WATCH] %s", detail)
+        await _emit_audit_event(
+            pool,
+            "probe.postiz_queue_restart_skipped",
+            detail,
+            extra={
+                "retries_used": _retry_count,
+                "restart_status": restart.status,
+                "uptime_seconds": restart.uptime_seconds,
+            },
+        )
+        return {
+            "ok": False,
+            "status": "container_recently_started",
+            "retries_used": _retry_count,
+        }
     if not restart.ok:
         msg = restart.detail
         detail = (

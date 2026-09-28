@@ -21,6 +21,7 @@ page, or a quiet skip.
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -40,6 +41,10 @@ from poindexter.brain import brain_daemon as bd  # noqa: E402
 from poindexter.brain import docker_utils  # noqa: E402
 
 pytestmark = pytest.mark.asyncio
+
+# ``docker inspect``'s answer for a container that has been up for months, so
+# the recently-started guard has nothing to say about it.
+_RUNNING_FOR_MONTHS = "running 2026-01-01T00:00:00.000000000Z\n"
 
 
 @pytest.fixture
@@ -101,7 +106,7 @@ async def test_existing_container_proceeds_with_restart(mock_notify, mock_notice
     and a Discord #ops notice confirms the auto-recovery. A heal that
     worked does not page.
     """
-    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    inspect_hit = _inspect_result(returncode=0, stdout=_RUNNING_FOR_MONTHS)
     restart_ok = _inspect_result(returncode=0)
 
     with patch.object(bd, "IS_DOCKER", True), \
@@ -148,7 +153,7 @@ async def test_restart_failure_notifies_operator(mock_notify, mock_notice):
     still be notified — this is the failure mode the inspect pre-check
     was NOT designed to catch.
     """
-    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    inspect_hit = _inspect_result(returncode=0, stdout=_RUNNING_FOR_MONTHS)
     restart_fail = _inspect_result(
         returncode=1, stderr="permission denied\n",
     )
@@ -211,7 +216,7 @@ async def test_api_alias_maps_to_worker_container(mock_notify, mock_notice):
     restarts both. This pins the alias so a future
     container-decomposition split surfaces as a test failure.
     """
-    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    inspect_hit = _inspect_result(returncode=0, stdout=_RUNNING_FOR_MONTHS)
     restart_ok = _inspect_result(returncode=0)
 
     with patch.object(bd, "IS_DOCKER", True), \
@@ -233,7 +238,7 @@ async def test_image_gen_server_alias_maps_to_image_gen_container(mock_notify, m
     Regression guard against a copy-paste mistake collapsing the alias to
     ``poindexter-worker``.
     """
-    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    inspect_hit = _inspect_result(returncode=0, stdout=_RUNNING_FOR_MONTHS)
     restart_ok = _inspect_result(returncode=0)
 
     with patch.object(bd, "IS_DOCKER", True), \
@@ -254,12 +259,14 @@ async def test_image_gen_server_alias_maps_to_image_gen_container(mock_notify, m
 
 
 async def test_inspect_command_uses_state_status_format(mock_notify, mock_notice):
-    """The inspect pre-check uses ``--format {{.State.Status}}`` so the
-    output stays cheap (one word, no JSON parse). If this drifts to a
-    full ``docker inspect`` the pre-check still works but the output
-    size balloons — pin the format so future edits stay tight.
+    """The inspect pre-check uses ``--format "{{.State.Status}}
+    {{.State.StartedAt}}"`` so the output stays cheap (one short line, no
+    JSON parse). If this drifts to a full ``docker inspect`` the pre-check
+    still works but the output size balloons — pin the format so future
+    edits stay tight. The second field is what the recently-started guard
+    reads.
     """
-    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    inspect_hit = _inspect_result(returncode=0, stdout=_RUNNING_FOR_MONTHS)
     restart_ok = _inspect_result(returncode=0)
 
     with patch.object(bd, "IS_DOCKER", True), \
@@ -271,7 +278,7 @@ async def test_inspect_command_uses_state_status_format(mock_notify, mock_notice
 
     inspect_args = run_mock.call_args_list[0].args[0]
     assert "--format" in inspect_args
-    assert "{{.State.Status}}" in inspect_args
+    assert "{{.State.Status}} {{.State.StartedAt}}" in inspect_args
     # And the timeouts are asymmetric — inspect is cheap, restart slow.
     # ``docker restart`` waits out the container's stop grace period (the
     # worker's is 75 s) before it kills and starts it: the old hardcoded
@@ -292,7 +299,7 @@ async def test_inspect_command_uses_state_status_format(mock_notify, mock_notice
 async def test_restart_timeout_is_db_tunable(mock_notify, mock_notice):
     """With a pool available, the docker-restart subprocess timeout comes
     from ``app_settings.brain_docker_restart_timeout_seconds``."""
-    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    inspect_hit = _inspect_result(returncode=0, stdout=_RUNNING_FOR_MONTHS)
     restart_ok = _inspect_result(returncode=0)
     pool = MagicMock()
     pool.fetchval = AsyncMock(return_value="120")
@@ -312,7 +319,7 @@ async def test_timed_out_restart_pages_and_says_dockerd_may_finish(mock_notify, 
     pages (the brain could not confirm the service came back), but the page
     says dockerd may still complete it rather than a bare ``Command ...
     timed out`` that reads as if the restart itself failed."""
-    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    inspect_hit = _inspect_result(returncode=0, stdout=_RUNNING_FOR_MONTHS)
     timeout_exc = docker_utils.subprocess.TimeoutExpired(
         cmd=["docker", "restart", "poindexter-worker"], timeout=90,
     )
@@ -352,6 +359,96 @@ async def test_unreachable_docker_daemon_pages_instead_of_skipping(mock_notify, 
     msg = mock_notify.call_args.args[0]
     assert "Restart failed" in msg
     assert "failed to connect to the docker API" in msg
+
+
+def _running_for(seconds: float) -> str:
+    """``docker inspect``'s answer for a container that started ``seconds`` ago."""
+    then = datetime.now(UTC) - timedelta(seconds=seconds)
+    return "running " + then.strftime("%Y-%m-%dT%H:%M:%S.%f") + "000Z\n"
+
+
+async def test_recently_started_container_is_not_restarted_and_sends_nothing(
+    mock_notify, mock_notice, caplog,
+):
+    """The worker takes 40-90 s to come back. A restart from another path,
+    deploy-sync or compose moments ago means the failed checks that led here
+    may be reading its start-up, and restarting it again would kill it
+    mid-boot. Not a heal (no notice) and not a failure (no page): the next
+    cycle is longer than the guard window, so it checks again."""
+    inspect_recent = _inspect_result(returncode=0, stdout=_running_for(30))
+
+    with patch.object(bd, "IS_DOCKER", True), \
+         patch.object(
+             docker_utils.subprocess, "run", return_value=inspect_recent,
+         ) as run_mock, \
+         caplog.at_level("INFO", logger=bd.logger.name):
+        await bd.restart_service("worker", pool=None)
+
+    assert run_mock.call_count == 1  # inspect only: no `docker restart`
+    assert run_mock.call_args.args[0][:2] == ["docker", "inspect"]
+    mock_notify.assert_not_called()
+    mock_notice.assert_not_called()
+    assert any(
+        "poindexter-worker started" in r.getMessage()
+        and "skipping auto-restart this cycle" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+@pytest.mark.parametrize("service", ["worker", "api", "site", "image_gen", "image-gen-server"])
+async def test_every_mapped_service_meets_the_recently_started_guard(
+    mock_notify, mock_notice, service,
+):
+    inspect_recent = _inspect_result(returncode=0, stdout=_running_for(10))
+
+    with patch.object(bd, "IS_DOCKER", True), \
+         patch.object(docker_utils.subprocess, "run", return_value=inspect_recent) as run_mock:
+        await bd.restart_service(service, pool=None)
+
+    assert run_mock.call_count == 1
+    mock_notify.assert_not_called()
+    mock_notice.assert_not_called()
+
+
+async def test_recently_started_window_is_db_tunable_and_zero_turns_it_off(
+    mock_notify, mock_notice,
+):
+    """``brain_docker_restart_min_uptime_seconds`` reaches ``restart_service``
+    through the pool, and 0 restores the pre-guard behaviour."""
+    inspect_recent = _inspect_result(returncode=0, stdout=_running_for(30))
+    restart_ok = _inspect_result(returncode=0)
+    pool = MagicMock()
+    pool.fetchval = AsyncMock(
+        side_effect=lambda _sql, key: "0" if key == docker_utils.DOCKER_RESTART_MIN_UPTIME_KEY else None,
+    )
+
+    with patch.object(bd, "IS_DOCKER", True), \
+         patch.object(
+             docker_utils.subprocess, "run",
+             side_effect=[inspect_recent, restart_ok],
+         ) as run_mock:
+        await bd.restart_service("worker", pool=pool)
+
+    assert run_mock.call_count == 2
+    mock_notice.assert_called_once()
+    assert "Auto-restarted" in mock_notice.call_args.args[0]
+    mock_notify.assert_not_called()
+
+
+async def test_a_container_up_past_the_window_is_restarted(mock_notify, mock_notice):
+    """The guard only covers the first ``brain_docker_restart_min_uptime_seconds``."""
+    inspect_old = _inspect_result(returncode=0, stdout=_running_for(600))
+    restart_ok = _inspect_result(returncode=0)
+
+    with patch.object(bd, "IS_DOCKER", True), \
+         patch.object(
+             docker_utils.subprocess, "run", side_effect=[inspect_old, restart_ok],
+         ) as run_mock:
+        await bd.restart_service("worker", pool=None)
+
+    assert run_mock.call_count == 2
+    mock_notice.assert_called_once()
+    mock_notify.assert_not_called()
 
 
 async def test_host_worker_without_restart_script_notifies(mock_notify):

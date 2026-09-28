@@ -17,6 +17,7 @@ import re
 import subprocess
 from collections.abc import Awaitable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -121,14 +122,34 @@ DOCKER_RESTART_TIMEOUT_KEY = "brain_docker_restart_timeout_seconds"
 #: reports a failure, and pages, while dockerd goes on to finish the restart.
 DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS = 90
 
+#: ``app_settings`` key for how long a container must have been running before
+#: the brain restarts it (again). ``0`` turns the recently-started guard off.
+DOCKER_RESTART_MIN_UPTIME_KEY = "brain_docker_restart_min_uptime_seconds"
+
+#: Used when the key is absent, unreadable, or not a non-negative number. It
+#: has to outlast a worker restart, which takes 40-90 s to come back, and it is
+#: the same 120 s as the brain's own boot allowance, ``brain_boot_grace_seconds``.
+#: Keep it under the 300 s brain cycle, or a restart the brain made itself would
+#: also hold off the next cycle's heal.
+DOCKER_RESTART_MIN_UPTIME_DEFAULT_SECONDS = 120
+
 #: ``docker inspect`` reads metadata; it only ever waits on dockerd itself.
 DOCKER_INSPECT_TIMEOUT_SECONDS = 10
+
+#: What the pre-check asks ``docker inspect`` for: the run state and when the
+#: container last started, e.g. ``running 2026-09-28T19:12:24.123456789Z``. One
+#: short line, so there is no JSON to parse and nothing to bloat the brain's logs.
+_INSPECT_FORMAT = "{{.State.Status}} {{.State.StartedAt}}"
 
 # ``ContainerRestart.status`` values.
 #: ``docker restart`` exited 0.
 RESTART_OK = "restarted"
 #: ``docker inspect`` found no such container, so nothing was restarted.
 RESTART_MISSING = "missing"
+#: The container has been running for less than
+#: ``app_settings.brain_docker_restart_min_uptime_seconds``, so it was not
+#: restarted: a second restart would land while it is still starting up.
+RESTART_RECENTLY_STARTED = "recently_started"
 #: ``docker restart`` ran and exited non-zero.
 RESTART_FAILED = "failed"
 #: ``docker restart`` outlived the timeout. dockerd may still finish the job.
@@ -164,6 +185,9 @@ class ContainerRestart:
     #: The exception text when docker could not be run at all
     #: (``RESTART_NO_DOCKER_CLI``, or a ``RESTART_ERROR`` that raised).
     error: str = ""
+    #: How long the container had been running, in seconds, for
+    #: ``RESTART_RECENTLY_STARTED``. None for every other status.
+    uptime_seconds: float | None = None
 
     @property
     def ok(self) -> bool:
@@ -176,10 +200,44 @@ class RestartFn(Protocol):
     A probe that restarts a container takes a ``restart_fn`` of this shape so
     its tests can inject a stub, defaults it to :func:`restart_container`, and
     calls it as ``await restart_fn(container, pool=pool)``. The pool is what
-    the timeout is read through.
+    the timeout and the recently-started window are read through. There is no
+    ``force`` here: a probe is automated, so it always gets the guard.
     """
 
     def __call__(self, container: str, *, pool: Any = None) -> Awaitable[ContainerRestart]: ...
+
+
+async def _seconds_setting(pool: Any, key: str, default: int, *, allow_zero: bool) -> float:
+    """``app_settings.<key>`` as a number of seconds, or ``default``.
+
+    ``default`` when ``pool`` is None or the row is absent or blank. A value
+    that is set but unusable (not a number, negative, or zero where zero is not
+    allowed) is a misconfiguration, so it is logged at WARNING rather than
+    quietly replaced.
+    """
+    if pool is None:
+        return default
+    try:
+        raw = await pool.fetchval("SELECT value FROM app_settings WHERE key = $1", key)
+    except Exception as exc:
+        logger.warning(
+            "[docker_utils] could not read app_settings.%s (%s: %s) — using %ss",
+            key, type(exc).__name__, exc, default,
+        )
+        return default
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        seconds = float(str(raw).strip())
+    except ValueError:
+        seconds = math.nan
+    if not math.isfinite(seconds) or seconds < 0 or (seconds == 0 and not allow_zero):
+        logger.warning(
+            "[docker_utils] app_settings.%s=%r is not %s number of seconds — using %ss",
+            key, raw, "a non-negative" if allow_zero else "a positive", default,
+        )
+        return default
+    return int(seconds) if seconds.is_integer() else seconds
 
 
 async def docker_restart_timeout_seconds(pool: Any = None) -> float:
@@ -190,33 +248,24 @@ async def docker_restart_timeout_seconds(pool: Any = None) -> float:
     that is set but unusable is a misconfiguration, so it is logged at WARNING
     rather than quietly replaced.
     """
-    if pool is None:
-        return DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
-    try:
-        raw = await pool.fetchval(
-            "SELECT value FROM app_settings WHERE key = $1", DOCKER_RESTART_TIMEOUT_KEY,
-        )
-    except Exception as exc:
-        logger.warning(
-            "[docker_utils] could not read app_settings.%s (%s: %s) — using %ss",
-            DOCKER_RESTART_TIMEOUT_KEY, type(exc).__name__, exc,
-            DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS,
-        )
-        return DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
-    if raw is None or not str(raw).strip():
-        return DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
-    try:
-        seconds = float(str(raw).strip())
-    except ValueError:
-        seconds = math.nan
-    if not math.isfinite(seconds) or seconds <= 0:
-        logger.warning(
-            "[docker_utils] app_settings.%s=%r is not a positive number of "
-            "seconds — using %ss",
-            DOCKER_RESTART_TIMEOUT_KEY, raw, DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS,
-        )
-        return DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
-    return int(seconds) if seconds.is_integer() else seconds
+    return await _seconds_setting(
+        pool, DOCKER_RESTART_TIMEOUT_KEY, DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS,
+        allow_zero=False,
+    )
+
+
+async def docker_restart_min_uptime_seconds(pool: Any = None) -> float:
+    """Seconds a container must have been running before the brain restarts it.
+
+    ``app_settings.brain_docker_restart_min_uptime_seconds`` when ``pool`` is
+    given and the row holds a number of zero or more, the default otherwise.
+    ``0`` turns the recently-started guard off. A value that is set but
+    unusable is logged at WARNING rather than quietly replaced.
+    """
+    return await _seconds_setting(
+        pool, DOCKER_RESTART_MIN_UPTIME_KEY, DOCKER_RESTART_MIN_UPTIME_DEFAULT_SECONDS,
+        allow_zero=True,
+    )
 
 
 def _run_docker(argv: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
@@ -245,7 +294,67 @@ def _could_not_run(container: str, step: str, timeout: float, exc: Exception) ->
     )
 
 
-async def restart_container(container: str, *, pool: Any = None) -> ContainerRestart:
+def _utcnow() -> datetime:
+    """The clock the recently-started guard reads. A function so tests can pin it."""
+    return datetime.now(UTC)
+
+
+def _parse_docker_timestamp(raw: str) -> datetime | None:
+    """docker's RFC 3339 timestamp (``2026-09-28T19:12:24.123456789Z``), or None."""
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+async def _recently_started(
+    container: str, inspect_stdout: str, pool: Any, timeout: float,
+) -> ContainerRestart | None:
+    """``RESTART_RECENTLY_STARTED`` when the pre-check finds ``container`` inside the window.
+
+    None means go ahead: the container is not running (a created, exited or
+    restarting container needs the restart), the guard is off, or it has been
+    up long enough. A ``StartedAt`` that cannot be read, or that is in the
+    future because the clock stepped, also means go ahead, with a WARNING. The
+    guard is a safety net, so a guard that cannot decide must not stand between
+    the brain and a container that needs restarting.
+    """
+    parts = (inspect_stdout or "").split()
+    if not parts or parts[0] != "running":
+        return None
+    started = _parse_docker_timestamp(parts[1]) if len(parts) > 1 else None
+    if started is None:
+        logger.warning(
+            "[docker_utils] could not read State.StartedAt for %s from docker "
+            "inspect output %r — restarting without the recently-started guard",
+            container, (inspect_stdout or "").strip()[:80],
+        )
+        return None
+    min_uptime = await docker_restart_min_uptime_seconds(pool)
+    if min_uptime <= 0:
+        return None
+    uptime = (_utcnow() - started).total_seconds()
+    if uptime < 0:
+        logger.warning(
+            "[docker_utils] %s's State.StartedAt (%s) is in the future, so the "
+            "clock has stepped — restarting without the recently-started guard",
+            container, parts[1],
+        )
+        return None
+    if uptime >= min_uptime:
+        return None
+    return ContainerRestart(
+        container, RESTART_RECENTLY_STARTED,
+        f"{container} started {uptime:.0f}s ago, inside the {min_uptime:g}s "
+        f"{DOCKER_RESTART_MIN_UPTIME_KEY} guard; not restarted",
+        timeout, uptime_seconds=uptime,
+    )
+
+
+async def restart_container(
+    container: str, *, pool: Any = None, force: bool = False,
+) -> ContainerRestart:
     """``docker inspect`` then ``docker restart`` one container, off the event loop.
 
     Every ``docker restart`` the brain runs goes through this:
@@ -266,6 +375,19 @@ async def restart_container(container: str, *, pool: Any = None) -> ContainerRes
       "No such container" about a container that is being replaced anyway, so
       absence returns ``RESTART_MISSING`` without restarting and each caller
       decides what that means for it.
+    * **Not straight after a start.** Several of those paths can restart the
+      same container, usually the worker, within one brain cycle, and
+      deploy-sync and compose restart it too. The worker takes 40-90 s to come
+      back, so a second restart lands mid-startup and kills it. The same
+      inspect reads docker's own ``State.StartedAt``, and a container that has
+      been ``running`` for less than
+      ``app_settings.brain_docker_restart_min_uptime_seconds`` (120; ``0`` turns
+      this off) returns ``RESTART_RECENTLY_STARTED`` without being restarted,
+      with its ``uptime_seconds``. Docker's timestamp counts every restart,
+      whoever made it, which a record of the brain's own restarts could not.
+      ``force=True`` skips the guard, for an explicit operator restart; an
+      automated caller never sets it, and the ``RestartFn`` seam does not carry
+      it. Each caller decides what a guarded restart means for it.
     * **One timeout, from the database.** ``docker restart`` honours the
       container's own stop grace period (the worker's is 75 s) before it
       kills and starts it, so every caller waits
@@ -274,14 +396,16 @@ async def restart_container(container: str, *, pool: Any = None) -> ContainerRes
       is one event loop, and a 90 s wait on it would freeze every probe.
 
     Never raises: every failure comes back as a ``ContainerRestart`` that is
-    not ``ok``. Logs and notifies nothing either: the callers differ on
-    that (a notice, a page, or silence plus an audit row), so it stays theirs.
+    not ``ok``. Reports no outcome either, by log or notice: the callers differ
+    on that (a notice, a page, or silence plus an audit row), so it stays
+    theirs. It logs only what it could not read or run: a setting, a timestamp,
+    or the guard itself.
     """
     timeout = await docker_restart_timeout_seconds(pool)
     try:
         inspect = await asyncio.to_thread(
             _run_docker,
-            ["docker", "inspect", "--format", "{{.State.Status}}", container],
+            ["docker", "inspect", "--format", _INSPECT_FORMAT, container],
             DOCKER_INSPECT_TIMEOUT_SECONDS,
         )
     except Exception as exc:  # noqa: BLE001 — never raises; the outcome carries it
@@ -299,6 +423,17 @@ async def restart_container(container: str, *, pool: Any = None) -> ContainerRes
             f"docker inspect {container} exited {inspect.returncode}: {stderr[:160]}",
             timeout, stderr=stderr,
         )
+    if not force:
+        try:
+            recent = await _recently_started(container, inspect.stdout, pool, timeout)
+        except Exception as exc:  # noqa: BLE001 — never raises; a broken guard must not block the restart
+            logger.warning(
+                "[docker_utils] recently-started guard failed for %s (%s: %s) — "
+                "restarting without it", container, type(exc).__name__, exc,
+            )
+            recent = None
+        if recent is not None:
+            return recent
     try:
         result = await asyncio.to_thread(_run_docker, ["docker", "restart", container], timeout)
     except subprocess.TimeoutExpired:

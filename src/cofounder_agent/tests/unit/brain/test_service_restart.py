@@ -8,12 +8,15 @@ audit-log shape, and the brain_daemon-unavailable degrade path.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
 import pytest
 
+from poindexter.brain import docker_utils as du
 from poindexter.brain import service_restart as sr
+from tests.unit.brain._restart_fakes import outcome
 
 pytestmark = pytest.mark.asyncio
 
@@ -86,13 +89,27 @@ class _FakePool:
 
 
 class _FakeBrainDaemon:
-    def __init__(self, result: tuple[bool, str]):
-        self._result = result
-        self.calls: list[tuple[str, Any]] = []
+    """Answers like ``brain_daemon.docker_restart_container``: the shared
+    helper's ``ContainerRestart`` outcome.
 
-    async def docker_restart_container(self, container: str, *, pool=None):
+    ``result`` is the ``(ok, detail)`` a test wants. ``too_recent`` makes it
+    decline with ``RESTART_RECENTLY_STARTED`` unless the caller forces the
+    restart, as the helper's recently-started guard does.
+    """
+
+    def __init__(self, result: tuple[bool, str], *, too_recent: bool = False):
+        self._result = result
+        self._too_recent = too_recent
+        self.calls: list[tuple[str, Any]] = []
+        self.forced: list[bool] = []
+
+    async def docker_restart_container(self, container: str, *, pool=None, force=False):
         self.calls.append((container, pool))
-        return self._result
+        self.forced.append(force)
+        if self._too_recent and not force:
+            return outcome(container, du.RESTART_RECENTLY_STARTED)
+        ok, detail = self._result
+        return outcome(container, du.RESTART_OK if ok else du.RESTART_FAILED, detail)
 
 
 async def test_empty_queue_is_a_noop(monkeypatch):
@@ -267,9 +284,12 @@ class TestStaleClaimSweep:
 _RECLAIM_ROW = {"id": uuid.uuid4(), "container": "poindexter-wan-server", "requested_by": "gpu_vram_reclaim"}
 
 
-async def _run_with_footprint(monkeypatch, footprint, *, row=None, settings=None, daemon_result=(True, "restarted")):
+async def _run_with_footprint(
+    monkeypatch, footprint, *, row=None, settings=None, daemon_result=(True, "restarted"),
+    too_recent=False,
+):
     pool = _FakePool(claim_rows=[dict(row or _RECLAIM_ROW)], settings=settings)
-    daemon = _FakeBrainDaemon(daemon_result)
+    daemon = _FakeBrainDaemon(daemon_result, too_recent=too_recent)
     monkeypatch.setattr(sr, "_resolve_brain_daemon_module", lambda: daemon)
 
     async def _fake_footprint(_container, _pool):
@@ -349,6 +369,91 @@ async def test_guard_raising_skips_rather_than_bouncing_or_stranding(monkeypatch
     assert daemon.calls == []
     assert pool.pool_executed[0][1][0] == "done"
     assert "guard raised" in pool.pool_executed[0][1][1]
+
+
+# --- the recently-started guard (2026-09-28) ---------------------------------
+#
+# docker_utils.restart_container refuses a container that started less than
+# brain_docker_restart_min_uptime_seconds ago: a second restart lands
+# mid-startup. An operator's click is deliberate and passes force=True. The
+# reclaim ladder's rows are automated, so they meet the guard, and one it
+# refuses is finalized like a footprint skip.
+
+
+@pytest.mark.parametrize("requested_by", ["console", "console_chat", "mcp", "cli", None])
+async def test_operator_requests_are_forced_past_the_recently_started_guard(
+    monkeypatch, requested_by,
+):
+    row = {"id": uuid.uuid4(), "container": "poindexter-worker", "requested_by": requested_by}
+    pool = _FakePool(claim_rows=[row])
+    daemon = _FakeBrainDaemon((True, "restarted poindexter-worker"), too_recent=True)
+    monkeypatch.setattr(sr, "_resolve_brain_daemon_module", lambda: daemon)
+
+    await sr.poll_and_execute_restart_requests(pool)
+
+    assert daemon.forced == [True]
+    _sql, args = pool.pool_executed[0]
+    assert args[0] == "done" and args[1] == "restarted poindexter-worker"
+    assert pool.pool_executed[1][1][0] == "service_restart_completed"
+
+
+async def test_a_row_without_a_requester_key_is_an_operators(monkeypatch):
+    """The claim query selects requested_by, but a row shaped without it (the
+    older fakes above) reads as the console default, so it is forced too."""
+    pool = _FakePool(claim_rows=[{"id": uuid.uuid4(), "container": "poindexter-worker"}])
+    daemon = _FakeBrainDaemon((True, "restarted"), too_recent=True)
+    monkeypatch.setattr(sr, "_resolve_brain_daemon_module", lambda: daemon)
+
+    await sr.poll_and_execute_restart_requests(pool)
+
+    assert daemon.forced == [True]
+
+
+async def test_a_reclaim_ladder_row_is_not_forced(monkeypatch):
+    pool, daemon = await _run_with_footprint(monkeypatch, 10.96)
+
+    assert daemon.forced == [False]
+
+
+async def test_a_reclaim_row_the_recently_started_guard_declines_is_skipped_not_failed(monkeypatch):
+    """A confirmed squatter that started moments ago: the ladder asked for a
+    restart, docker_utils declined. Handled, so the row closes ``done`` (the
+    status CHECK has no 'skipped') with a ``skipped —`` detail and a
+    ``service_restart_skipped`` audit row, exactly as the footprint guard's
+    skip is. Not ``failed``: nothing went wrong."""
+    pool, daemon = await _run_with_footprint(monkeypatch, 10.96, too_recent=True)
+
+    assert daemon.calls == [("poindexter-wan-server", pool)]
+    outcome_sql, outcome_args = pool.pool_executed[0]
+    assert "status = $1" in outcome_sql
+    assert outcome_args[0] == "done"
+    assert outcome_args[1].startswith("skipped — poindexter-wan-server started")
+    assert "not restarted" in outcome_args[1]
+    audit_sql, audit_args = pool.pool_executed[1]
+    assert "INSERT INTO audit_log" in audit_sql
+    assert audit_args[0] == "service_restart_skipped"
+    assert audit_args[4] == "info"
+    details = json.loads(audit_args[3])
+    assert details["requested_by"] == "gpu_vram_reclaim"
+    assert details["container"] == "poindexter-wan-server"
+    assert details["detail"] == outcome_args[1]
+    assert len(pool.pool_executed) == 2, "no service_restart_completed row on top"
+
+
+async def test_the_footprint_guard_still_decides_before_docker_is_asked(monkeypatch):
+    """Two guards on the ladder's rows, in order: the footprint one first, so a
+    sidecar below the squat floor never reaches the restart helper at all."""
+    pool, daemon = await _run_with_footprint(monkeypatch, 0.2, too_recent=True)
+
+    assert daemon.calls == []
+    assert pool.pool_executed[0][1][1].startswith("skipped —")
+    assert "GPU" in pool.pool_executed[0][1][1]
+
+
+async def test_only_the_reclaim_ladder_is_not_an_operator():
+    assert sr._is_operator_request("gpu_vram_reclaim") is False
+    for requester in ("console", "console_chat", "mcp", "cli", "", None):
+        assert sr._is_operator_request(requester) is True
 
 
 # async only because the module-level pytestmark marks every test asyncio;

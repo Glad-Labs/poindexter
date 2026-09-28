@@ -30,8 +30,8 @@ Probe behavior every 5-min cycle:
       report healthy via /api/health and re-check drift. If it cleared,
       emit ``probe.migration_drift_recovered`` and stop. If it didn't,
       escalate via :func:`brain.operator_notifier.notify_operator`. A
-      worker missing mid-recreate is not restarted and not paged; see
-      ``run_migration_drift_probe``.
+      worker missing mid-recreate, or restarted moments ago, is not
+      restarted and not paged; see ``run_migration_drift_probe``.
    c. If auto-recover is disabled — fire a single ``notify_operator()``
       so the operator knows there's drift, capped at one per cycle so a
       stuck restart-loop can't blast Telegram.
@@ -1045,10 +1045,11 @@ async def run_migration_drift_probe(
     logger.info(
         "[MIGRATION_DRIFT] Restarting %s to apply migrations", WORKER_CONTAINER,
     )
-    # Inspects first, waits app_settings.brain_docker_restart_timeout_seconds
-    # (read through the pool) and runs off the event loop. The worker's stop
-    # grace is 75 s; the hardcoded 30 s this probe used before could page a
-    # restart dockerd went on to finish.
+    # Inspects first, refuses a worker that started moments ago, waits
+    # app_settings.brain_docker_restart_timeout_seconds (read through the pool)
+    # and runs off the event loop. The worker's stop grace is 75 s; the
+    # hardcoded 30 s this probe used before could page a restart dockerd went
+    # on to finish.
     restart = await restart_fn(WORKER_CONTAINER, pool=pool)
     if restart.status == docker_utils.RESTART_MISSING:
         # ``docker compose up --force-recreate`` leaves the name unbound for a
@@ -1071,6 +1072,36 @@ async def run_migration_drift_probe(
             "ok": False,
             "status": "recover_worker_missing",
             "detail": missing_detail,
+            "pending": pending,
+            "auto_recover_enabled": True,
+            "attempts": _recover_attempts,
+        }
+    if restart.status == docker_utils.RESTART_RECENTLY_STARTED:
+        # Something restarted the worker moments ago: deploy-sync, another
+        # brain path's heal, compose. A second restart now would kill it while
+        # it is still booting, and applying migrations is what that boot does.
+        # So there is no failure page and no health wait: the next cycle
+        # re-reads /api/health and sees whether that start cleared the drift.
+        # The attempt still counts, as a missing worker's does, so a worker
+        # that keeps getting restarted under us still ends at the exhaustion
+        # page.
+        recent_detail = f"{detected_detail} — {restart.detail}"
+        logger.info("[MIGRATION_DRIFT] %s", recent_detail)
+        await _emit_audit_event(
+            pool,
+            "probe.migration_drift_recover_skipped",
+            recent_detail,
+            pending=pending,
+            extra={
+                "attempt": _recover_attempts,
+                "restart_status": restart.status,
+                "uptime_seconds": restart.uptime_seconds,
+            },
+        )
+        return {
+            "ok": False,
+            "status": "recover_worker_recently_started",
+            "detail": recent_detail,
             "pending": pending,
             "auto_recover_enabled": True,
             "attempts": _recover_attempts,

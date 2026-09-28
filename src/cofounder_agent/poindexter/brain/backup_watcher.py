@@ -849,6 +849,41 @@ async def _check_one_tier(
             "age_seconds": age,
             "retries_used": _retry_state[tier],
         }
+    if restart.status == docker_utils.RESTART_RECENTLY_STARTED:
+        # Something restarted it moments ago (deploy-sync, compose, the restart
+        # policy). It takes a dump as soon as it starts, and the freshness
+        # check that found the tier stale was reading the dump from before
+        # that start, so another restart would only interrupt the first.
+        # Nothing was restarted here, so skip the retry-delay wait and
+        # re-stat; the next cycle's check sees the new dump. The retry still
+        # counts, so a container that keeps restarting under us still
+        # escalates.
+        detail = (
+            f"Backup tier={tier} stale but {restart.detail}. "
+            f"Retry attempt {_retry_state[tier]}/{max_retries}."
+        )
+        logger.info("[BACKUP_WATCHER] %s", detail)
+        await _emit_audit_event(
+            pool,
+            "probe.backup_watcher_restart_skipped",
+            detail,
+            extra={
+                "tier": tier,
+                "container": container,
+                "age_seconds": age,
+                "retries_used": _retry_state[tier],
+                "restart_status": restart.status,
+                "uptime_seconds": restart.uptime_seconds,
+            },
+        )
+        return {
+            "ok": False,
+            "status": "container_recently_started",
+            "tier": tier,
+            "container": container,
+            "age_seconds": age,
+            "retries_used": _retry_state[tier],
+        }
     if not restart.ok:
         restart_msg = restart.detail
         detail = (

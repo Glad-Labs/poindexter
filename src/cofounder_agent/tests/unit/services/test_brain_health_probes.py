@@ -197,6 +197,24 @@ def _restart_outcome(
     return docker_utils.ContainerRestart(container, status, detail, 90)
 
 
+class _StatefulDocker:
+    """A ``subprocess.run`` stand-in for a docker whose container starts when
+    it is restarted: ``docker inspect`` answers with its start time, and
+    ``docker restart`` moves that to now. Every argv is recorded."""
+
+    def __init__(self, *, started_seconds_ago: float) -> None:
+        self.started = datetime.now(UTC) - timedelta(seconds=started_seconds_ago)
+        self.argvs: list[list[str]] = []
+
+    def __call__(self, argv, **_kwargs):
+        self.argvs.append(list(argv))
+        if argv[1] == "inspect":
+            stamp = self.started.strftime("%Y-%m-%dT%H:%M:%S.%f") + "000Z"
+            return MagicMock(returncode=0, stdout=f"running {stamp}\n", stderr="")
+        self.started = datetime.now(UTC)
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+
 @pytest.mark.unit
 def test_the_self_heal_restarts_through_the_shared_helper():
     assert hp._restart_container is docker_utils.restart_container
@@ -229,7 +247,7 @@ class TestSelfHealRestart:
         pool = _make_pool()
         pool.fetchval = AsyncMock(return_value="120")
         run = MagicMock(side_effect=[
-            MagicMock(returncode=0, stdout="running\n", stderr=""),
+            MagicMock(returncode=0, stdout="running 2026-01-01T00:00:00.000000000Z\n", stderr=""),
             MagicMock(returncode=0, stdout="", stderr=""),
         ])
         notices: list[str] = []
@@ -271,6 +289,84 @@ class TestSelfHealRestart:
             "grafana_datasources", hp.REMEDIATION_COOLDOWN,
         )
 
+    async def test_recently_started_container_sends_nothing_but_keeps_its_cooldown(self):
+        """Something restarted the worker moments ago (another path's heal,
+        deploy-sync, compose), so the restart this heal wanted has effectively
+        happened and a second one would kill it mid-boot. Nothing to restart,
+        nothing to report. The cooldown stamped before the attempt stands, so
+        the next attempt waits it out."""
+        pages: list[str] = []
+        notices: list[str] = []
+        restart = AsyncMock(return_value=_restart_outcome(
+            False,
+            "poindexter-worker started 30s ago, inside the 120s "
+            "brain_docker_restart_min_uptime_seconds guard; not restarted",
+            status=docker_utils.RESTART_RECENTLY_STARTED, container="poindexter-worker",
+        ))
+
+        with patch.object(hp, "_restart_container", new=restart):
+            for _ in range(2):
+                await hp._try_remediation(
+                    "worker_error_rate", {"detail": "100% errors"},
+                    pages.append, pool=_make_pool(), info_fn=notices.append,
+                )
+
+        assert pages == [] and notices == []
+        assert restart.await_count == 1
+        assert not probe_failure_state.state.remediation_due(
+            "worker_error_rate", hp.REMEDIATION_COOLDOWN,
+        )
+
+    async def test_recently_started_is_logged_not_sent(self, caplog):
+        restart = AsyncMock(return_value=_restart_outcome(
+            False, "poindexter-worker started 30s ago, inside the 120s guard; not restarted",
+            status=docker_utils.RESTART_RECENTLY_STARTED, container="poindexter-worker",
+        ))
+
+        with patch.object(hp, "_restart_container", new=restart), \
+                caplog.at_level("INFO", logger=hp.logger.name):
+            await hp._try_remediation(
+                "worker_error_rate", {"detail": "100% errors"}, MagicMock(), pool=_make_pool(),
+            )
+
+        assert any(
+            "Skipped remediation for 'worker_error_rate'" in r.getMessage()
+            and "started 30s ago" in r.getMessage()
+            and "nothing restarted" in r.getMessage()
+            for r in caplog.records
+        )
+
+    async def test_three_probes_that_restart_the_worker_in_one_cycle_restart_it_once(self):
+        """``worker_error_rate``, ``stuck_tasks`` and ``public_site`` all
+        restart ``poindexter-worker``, each on its own cooldown, so one bad
+        cycle can run all three within seconds. The worker takes 40-90 s to
+        come back: the second and third used to kill the worker the first had
+        just started. Through the real helper, on a docker whose container
+        starts when it is restarted."""
+        docker = _StatefulDocker(started_seconds_ago=3600)
+        pages: list[str] = []
+        notices: list[str] = []
+        probes = ("worker_error_rate", "stuck_tasks", "public_site")
+
+        with patch.object(docker_utils.subprocess, "run", docker):
+            for probe in probes:
+                pool = _make_pool()
+                pool.fetchval = AsyncMock(return_value=None)
+                await hp._try_remediation(
+                    probe, {"detail": "the worker is failing"},
+                    pages.append, pool=pool, info_fn=notices.append,
+                )
+
+        restarts = [argv for argv in docker.argvs if argv[1] == "restart"]
+        assert restarts == [["docker", "restart", "poindexter-worker"]]
+        assert [argv[1] for argv in docker.argvs].count("inspect") == 3
+        # The one restart that happened is the one notice; the two that were
+        # declined are neither a notice nor a page.
+        assert len(notices) == 1 and "restarted poindexter-worker" in notices[0]
+        assert pages == []
+        for probe in probes:
+            assert not probe_failure_state.state.remediation_due(probe, hp.REMEDIATION_COOLDOWN)
+
     async def test_a_restart_that_timed_out_pages(self):
         pages: list[str] = []
         notices: list[str] = []
@@ -298,6 +394,11 @@ class TestSelfHealRestart:
             ((docker_utils.RESTART_OK, docker_utils.RESTART_MISSING), "notice"),
             ((docker_utils.RESTART_FAILED, docker_utils.RESTART_MISSING), "page"),
             ((docker_utils.RESTART_MISSING, docker_utils.RESTART_MISSING), "nothing"),
+            ((docker_utils.RESTART_OK, docker_utils.RESTART_RECENTLY_STARTED), "notice"),
+            ((docker_utils.RESTART_FAILED, docker_utils.RESTART_RECENTLY_STARTED), "page"),
+            ((docker_utils.RESTART_RECENTLY_STARTED, docker_utils.RESTART_RECENTLY_STARTED), "nothing"),
+            # Neither was restarted and neither failed: still nothing to report.
+            ((docker_utils.RESTART_MISSING, docker_utils.RESTART_RECENTLY_STARTED), "nothing"),
         ],
     )
     async def test_restart_multiple_reports_every_container(self, statuses, expected):

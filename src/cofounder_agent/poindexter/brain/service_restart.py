@@ -27,6 +27,15 @@ finalized ``done`` with a ``skipped —`` detail and a
 ``service_restart_skipped`` audit row instead. Unknown footprint (exporter
 down, pids unresolvable) also skips — never bounce blind. Console/MCP requests
 are unconditional, exactly as before.
+
+**The recently-started guard (2026-09-28).** ``docker_utils.restart_container``
+refuses a container that started less than
+``brain_docker_restart_min_uptime_seconds`` ago, since a second restart lands
+mid-startup. That is a second guard on the same automated rows: an operator's
+click passes ``force=True`` and bypasses it, a reclaim-ladder row does not, and
+one it refuses is finalized exactly like a footprint skip (``done``, a
+``skipped —`` detail and a ``service_restart_skipped`` audit row). The ladder
+asks again on its own cooldown if the card is still short.
 """
 
 from __future__ import annotations
@@ -42,6 +51,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
+
+from poindexter.brain import docker_utils
 
 logger = logging.getLogger("brain.service_restart")
 
@@ -197,11 +208,21 @@ async def container_gpu_footprint_gb(container: str, pool: Any) -> float | None:
     return sum(by_pid.get(pid, 0.0) for pid in pids) / 1024.0
 
 
+def _is_operator_request(requested_by: str | None) -> bool:
+    """True for a row someone asked for; False for the reclaim ladder's.
+
+    An operator (console button, MCP, CLI, console chat) is deliberate, so its
+    restart bypasses the recently-started guard. The ladder is automated, so
+    its rows meet every guard.
+    """
+    return (requested_by or "") != _RECLAIM_REQUESTER
+
+
 async def _reclaim_request_verdict(
     container: str, requested_by: str | None, pool: Any,
 ) -> str | None:
     """None = restart; else the ``skipped —`` detail explaining why not."""
-    if (requested_by or "") != _RECLAIM_REQUESTER:
+    if _is_operator_request(requested_by):
         return None
     if not await _setting_bool(pool, _GUARD_ENABLED_KEY, True):
         return None
@@ -300,6 +321,31 @@ async def _sweep_stale_claims(pool: Any) -> None:
         )
 
 
+async def _finalize_skipped(
+    pool: Any, request_id: Any, container: str, requested_by: str | None, detail: str,
+) -> None:
+    """Close a request the brain judged unnecessary or unsafe, without a restart.
+
+    Terminal `done`, not `failed`: the request was handled — the remedy was
+    judged unnecessary. The status CHECK has no 'skipped'.
+    """
+    await pool.execute(
+        "UPDATE service_restart_requests "
+        "SET status = $1, detail = $2, completed_at = now() WHERE id = $3",
+        "done", detail[:400], request_id,
+    )
+    await _write_audit(
+        pool,
+        event_type="service_restart_skipped",
+        severity="info",
+        details={
+            "request_id": str(request_id), "container": container,
+            "requested_by": requested_by, "detail": detail,
+        },
+    )
+    logger.info("[service_restart] %s -> %s", container, detail)
+
+
 async def poll_and_execute_restart_requests(pool: Any) -> None:
     """Claim + execute pending operator-triggered container restarts.
 
@@ -347,28 +393,22 @@ async def poll_and_execute_restart_requests(pool: Any) -> None:
         except Exception as e:  # noqa: BLE001 — the guard must never turn into a bounce OR a stuck row
             skip_detail = f"skipped — footprint guard raised ({e})"[:400]
         if skip_detail is not None:
-            # Terminal `done`, not `failed`: the request was handled — the
-            # remedy was judged unnecessary. The status CHECK has no 'skipped'.
-            await pool.execute(
-                "UPDATE service_restart_requests "
-                "SET status = $1, detail = $2, completed_at = now() WHERE id = $3",
-                "done", skip_detail[:400], request_id,
-            )
-            await _write_audit(
-                pool,
-                event_type="service_restart_skipped",
-                severity="info",
-                details={
-                    "request_id": str(request_id), "container": container,
-                    "requested_by": requested_by, "detail": skip_detail,
-                },
-            )
-            logger.info("[service_restart] %s -> %s", container, skip_detail)
+            await _finalize_skipped(pool, request_id, container, requested_by, skip_detail)
             continue
         try:
-            ok, detail = await mod.docker_restart_container(container, pool=pool)
+            outcome = await mod.docker_restart_container(
+                container, pool=pool, force=_is_operator_request(requested_by),
+            )
+            ok, detail = outcome.ok, outcome.detail
+            recently_started = outcome.status == docker_utils.RESTART_RECENTLY_STARTED
         except Exception as e:  # noqa: BLE001 — one bad row must not kill the batch
             ok, detail = False, f"docker_restart_container raised: {e}"[:400]
+            recently_started = False
+        if recently_started:
+            # Only a reclaim-ladder row gets here: an operator's row is forced
+            # past the guard. Same handling as the footprint guard's skip.
+            await _finalize_skipped(pool, request_id, container, requested_by, f"skipped — {detail}")
+            continue
         final_status = "done" if ok else "failed"
         await pool.execute(
             "UPDATE service_restart_requests "

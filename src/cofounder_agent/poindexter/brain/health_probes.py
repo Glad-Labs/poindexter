@@ -2318,6 +2318,11 @@ async def _call_agent_recovery(pool, service: str, *, timeout: float = 15.0) -> 
 # bound under the name the self-heal below calls so tests can stub it here.
 _restart_container = docker_utils.restart_container
 
+# Outcomes where the container was neither restarted nor failed to restart, so a
+# self-heal that got nothing else has nothing to report: the container is
+# mid-recreate, or it started too recently to restart again.
+_NOTHING_RESTARTED = (docker_utils.RESTART_MISSING, docker_utils.RESTART_RECENTLY_STARTED)
+
 
 async def _try_remediation(
     probe_name: str, result: dict, notify_fn=None, *, pool=None, info_fn=None,
@@ -2335,6 +2340,12 @@ async def _try_remediation(
     an error-rate probe can still be counting failures from before it. The
     probe's failure has already been reported, and a container that stays
     missing is ``compose_drift_probe``'s to report.
+
+    A container that was restarted moments ago (``RESTART_RECENTLY_STARTED``:
+    another path's heal, deploy-sync, compose) is treated the same way. The
+    restart this heal wanted has effectively happened, the container may still
+    be starting, and a second one would kill it mid-boot. Its cooldown stands
+    too, so the next attempt waits out ``REMEDIATION_COOLDOWN`` from this one.
     """
     failure_state = probe_failure_state.state
     if not failure_state.remediation_due(probe_name, REMEDIATION_COOLDOWN):
@@ -2360,7 +2371,7 @@ async def _try_remediation(
             else list(action["containers"])
         )
         outcomes = [await _restart_container(c, pool=pool) for c in containers]
-        if all(o.status == docker_utils.RESTART_MISSING for o in outcomes):
+        if all(o.status in _NOTHING_RESTARTED for o in outcomes):
             logger.info(
                 "[SELF-HEAL] Skipped remediation for '%s': %s — nothing restarted; "
                 "the next attempt waits out the cooldown",

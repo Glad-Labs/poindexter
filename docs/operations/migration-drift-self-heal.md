@@ -50,7 +50,9 @@ On each 5-minute brain cycle, when drift is detected **and**
      through the brain's shared `docker_utils.restart_container`: it inspects
      first and waits `brain_docker_restart_timeout_seconds` (default 90), which
      must outlast the worker's 75 s stop grace. The probe used to wait a
-     hardcoded 30 s and could page a restart dockerd went on to finish.
+     hardcoded 30 s and could page a restart dockerd went on to finish. It also
+     refuses a worker that started less than
+     `brain_docker_restart_min_uptime_seconds` (default 120) ago; see below.
 5. **Re-check.** Worker healthy + `pending == 0` → audit
    `probe.migration_drift_recovered`, reset counters, done. Drift persists →
    audit `probe.migration_drift_recover_attempt_failed` and let the next cycle's
@@ -68,6 +70,17 @@ the next cycle re-read drift. The attempt still counts, so a worker that keeps
 going missing ends at the exhaustion page like any other attempt that did not
 clear drift. Before the shared restart helper, `docker restart` hit the missing
 name, failed with "No such container", and paged critical.
+
+A worker that **started moments ago** is not a failed restart either. Something else
+restarted it (deploy-sync when the deploy clone advances, another brain path's
+heal, compose), and it takes 40-90 s to come back, so a second restart now would
+kill it mid-boot, and applying migrations is what that boot does. The helper
+reads docker's own start time in the same inspect and declines, so the probe does
+not page and skips the health wait. It audits `probe.migration_drift_recover_skipped`
+with `restart_status` and `uptime_seconds`, returns status
+`recover_worker_recently_started`, and lets the next cycle re-read drift. The
+attempt counts here too, so the guard can hold a restart off but cannot postpone
+the exhaustion page for a worker that keeps being restarted under the probe.
 
 ### Why a _dedicated_ deploy checkout
 

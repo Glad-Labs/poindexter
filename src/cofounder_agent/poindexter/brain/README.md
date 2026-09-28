@@ -108,17 +108,23 @@ The rule: **inside an `async def`, never call a blocking primitive directly.**
 
 `docker_utils.restart_container` is the brain's shared `docker restart`: it runs
 `docker inspect` first (a container missing mid-recreate comes back
-`RESTART_MISSING`, not restarted), waits
+`RESTART_MISSING`, not restarted; one that started less than
+`app_settings.brain_docker_restart_min_uptime_seconds` ago, by docker's own
+`State.StartedAt`, comes back `RESTART_RECENTLY_STARTED`, because a second
+restart lands mid-startup), waits
 `app_settings.brain_docker_restart_timeout_seconds` (the worker's stop grace
 alone is 75 s), and returns a `ContainerRestart` instead of raising. What an
-outcome means (a notice, a page, silence) stays with the caller. A probe that
-restarts what it watches takes it as a `restart_fn` seam typed
-`docker_utils.RestartFn` and awaits `restart_fn(container, pool=pool)`: the
-pool is how the timeout is read. Its tests stub the seam with
-`tests/unit/brain/_restart_fakes.restart_stub`, which is awaitable; a sync
-`lambda c: (True, "")` from the old `(ok, msg)` seam fails when awaited. A
-ratchet in `tests/unit/brain/test_docker_utils_restart.py` fails if any module
-other than `docker_utils` shells out `docker restart` itself.
+outcome means (a notice, a page, silence) stays with the caller, and every
+caller names `RESTART_RECENTLY_STARTED`, so it never lands in a catch-all
+failure branch. A probe that restarts what it watches takes it as a `restart_fn`
+seam typed `docker_utils.RestartFn` and awaits `restart_fn(container, pool=pool)`:
+the pool is how the timeout and the window are read. There is no `force` on the
+seam: only an operator's console restart passes `force=True` to skip the guard.
+Its tests stub the seam with `tests/unit/brain/_restart_fakes.restart_stub`,
+which is awaitable; a sync `lambda c: (True, "")` from the old `(ok, msg)` seam
+fails when awaited. Ratchets in `tests/unit/brain/test_docker_utils_restart.py`
+fail if any module other than `docker_utils` shells out `docker restart`
+itself, or calls the helper without naming `RESTART_RECENTLY_STARTED`.
 
 For an injectable wait seam (`sleep_fn`), default it to `asyncio.sleep` and
 `await` it — mirror `alert_dispatcher.py`, not the pre-2026-07 watch probes that

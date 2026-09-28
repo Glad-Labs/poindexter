@@ -56,6 +56,10 @@ pytestmark = [
 from poindexter.brain import brain_daemon as bd  # noqa: E402
 from poindexter.brain import docker_utils  # noqa: E402
 
+# ``docker inspect``'s answer for a container that has been up for months, so
+# the recently-started guard has nothing to say about it.
+_RUNNING_FOR_MONTHS = "running 2026-01-01T00:00:00.000000000Z\n"
+
 
 @pytest.fixture
 def mock_notify():
@@ -102,7 +106,7 @@ async def test_container_aliases_resolve_to_correct_container(
     these short names, so the map must keep them aligned with the
     actual Docker container names.
     """
-    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    inspect_hit = _inspect_result(returncode=0, stdout=_RUNNING_FOR_MONTHS)
     restart_ok = _inspect_result(returncode=0)
 
     with patch.object(bd, "IS_DOCKER", True), \
@@ -258,14 +262,16 @@ async def test_host_openclaw_restart_spawns_gateway_restart_command(
 
 
 async def test_inspect_uses_state_status_format(mock_notify, mock_notice):
-    """The inspect pre-check uses ``--format {{.State.Status}}``.
+    """The inspect pre-check uses ``--format "{{.State.Status}}
+    {{.State.StartedAt}}"``.
     That's load-bearing: without the format flag, ``docker inspect``
     dumps the full container JSON to stdout (megabytes for a healthy
     container), which would bloat brain logs and slow the cycle. Pin
     the exact command shape so a future "simplification" doesn't
-    silently drop the format flag.
+    silently drop the format flag. ``StartedAt`` is what the
+    recently-started guard reads.
     """
-    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    inspect_hit = _inspect_result(returncode=0, stdout=_RUNNING_FOR_MONTHS)
     restart_ok = _inspect_result(returncode=0)
 
     with patch.object(bd, "IS_DOCKER", True), \
@@ -277,7 +283,9 @@ async def test_inspect_uses_state_status_format(mock_notify, mock_notice):
 
     inspect_kwargs = run_mock.call_args_list[0]
     cmd = inspect_kwargs.args[0]
-    assert cmd[:4] == ["docker", "inspect", "--format", "{{.State.Status}}"]
+    assert cmd[:4] == [
+        "docker", "inspect", "--format", "{{.State.Status}} {{.State.StartedAt}}",
+    ]
     # capture_output + text → we read stdout/stderr as strings.
     assert inspect_kwargs.kwargs.get("capture_output") is True
     assert inspect_kwargs.kwargs.get("text") is True

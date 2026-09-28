@@ -2,12 +2,14 @@ import logging
 
 import pytest
 
+from poindexter.brain import docker_utils as du
 from poindexter.brain.remediation.registry import (
     ACTION_REGISTRY,
     ActionResult,
     RemediationContext,
     execute,
 )
+from tests.unit.brain._restart_fakes import outcome
 
 
 def _ctx():
@@ -134,14 +136,21 @@ def test_describe_catalog_ignores_unknown_allowlist_entries():
 
 
 class _SpyDaemon:
-    """Stand-in for brain_daemon that records whether a restart was attempted."""
+    """Stand-in for brain_daemon that records whether a restart was attempted.
 
-    def __init__(self) -> None:
+    Answers like the real ``docker_restart_container``: the shared helper's
+    ``ContainerRestart`` outcome, of whatever ``status`` the test asks for.
+    """
+
+    def __init__(self, status: str = du.RESTART_OK) -> None:
         self.calls: list[str] = []
+        self.forced: list[bool] = []
+        self._status = status
 
-    async def docker_restart_container(self, container, *, pool=None):
+    async def docker_restart_container(self, container, *, pool=None, force=False):
         self.calls.append(container)
-        return True, f"restarted {container}"
+        self.forced.append(force)
+        return outcome(container, self._status)
 
 
 def _pool_with_setting(value):
@@ -208,6 +217,77 @@ async def test_allowed_container_still_restarts(monkeypatch):
 
     assert result.status == "ok"
     assert spy.calls == ["poindexter-pyroscope"]
+    assert result.detail == "restarted poindexter-pyroscope"
+
+
+# ---------------------------------------------------------------------------
+# What each restart outcome means to the firefighter
+# ---------------------------------------------------------------------------
+#
+# docker_utils refuses a container that started moments ago (a second restart
+# lands mid-startup). The firefighter is automated, so it meets that guard, and
+# a refusal is not an attempt that went wrong: the audit row must say
+# `skipped`, not `failed`, the way the denylist's refusals do.
+
+
+@pytest.mark.asyncio
+async def test_a_restart_the_guard_declines_is_skipped_not_failed(monkeypatch):
+    import poindexter.brain.remediation.registry as reg
+
+    spy = _SpyDaemon(du.RESTART_RECENTLY_STARTED)
+    monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: spy)
+
+    result = await reg._restart_container(
+        {"container": "poindexter-pyroscope"}, _ctx_with(_pool_with_setting(None)),
+    )
+
+    assert result.status == "skipped"
+    assert result.status != "ok", "the engine holds a page only on ok; a refusal pages now"
+    assert result.detail == outcome("poindexter-pyroscope", du.RESTART_RECENTLY_STARTED).detail
+    assert "poindexter-pyroscope started" in result.detail
+    assert spy.calls == ["poindexter-pyroscope"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (du.RESTART_OK, "ok"),
+        (du.RESTART_RECENTLY_STARTED, "skipped"),
+        (du.RESTART_MISSING, "failed"),
+        (du.RESTART_FAILED, "failed"),
+        (du.RESTART_TIMED_OUT, "failed"),
+        (du.RESTART_NO_DOCKER_CLI, "failed"),
+        (du.RESTART_ERROR, "failed"),
+    ],
+)
+async def test_each_restart_outcome_maps_to_one_action_status(monkeypatch, status, expected):
+    import poindexter.brain.remediation.registry as reg
+
+    monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: _SpyDaemon(status))
+
+    result = await reg._restart_container(
+        {"container": "poindexter-pyroscope"}, _ctx_with(_pool_with_setting(None)),
+    )
+
+    assert result.status == expected
+    assert result.detail == outcome("poindexter-pyroscope", status).detail
+
+
+@pytest.mark.asyncio
+async def test_the_firefighter_never_forces_past_the_guard(monkeypatch):
+    """Only an operator's explicit restart is forced, and that goes through the
+    console queue. A rule or the LLM picking a restart is automated."""
+    import poindexter.brain.remediation.registry as reg
+
+    spy = _SpyDaemon()
+    monkeypatch.setattr(reg, "_resolve_brain_daemon", lambda: spy)
+
+    await reg._restart_container(
+        {"container": "poindexter-pyroscope"}, _ctx_with(_pool_with_setting(None)),
+    )
+
+    assert spy.forced == [False]
 
 
 @pytest.mark.asyncio

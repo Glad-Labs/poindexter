@@ -28,7 +28,7 @@ import pytest
 # the same way the auto_embed_watch tests import it.
 from poindexter.brain import docker_utils as du
 from poindexter.brain import postiz_queue_watch as pz
-from tests.unit.brain._restart_fakes import restart_stub
+from tests.unit.brain._restart_fakes import RECENT_UPTIME_SECONDS, restart_stub
 
 
 def _make_pool(*, setting_values=None, api_key="pz-key", firing=None, executed=None):
@@ -349,6 +349,84 @@ def test_a_postiz_that_stays_missing_still_escalates():
     ]
 
     assert statuses == ["container_missing", "container_missing", "escalated"]
+    assert any(
+        "alert_events" in q and pz._ALERTNAME in a and "firing" in a for q, a in executed
+    )
+
+
+def test_recently_started_container_skips_the_wait_and_notifies_nothing():
+    """Postiz was restarted moments ago (deploy-sync, compose, the restart
+    policy), so docker_utils declined to restart it again: nothing was
+    restarted, so there is no retry-delay wait, no re-check and no notify. The
+    API is unreachable here, which counts as wedged, so this is the case where
+    the watch would otherwise restart Postiz while it is still starting."""
+    executed: list = []
+    pool = _make_pool(executed=executed)
+    check = AsyncMock(return_value=None)  # API unreachable counts as wedged
+    sleep_fn = AsyncMock()
+    notify = MagicMock()
+
+    summary = asyncio.run(
+        pz.run_postiz_queue_watch_probe(
+            pool, check_fn=check,
+            restart_fn=restart_stub(status=du.RESTART_RECENTLY_STARTED),
+            sleep_fn=sleep_fn, notify_fn=notify,
+        )
+    )
+
+    assert summary == {"ok": False, "status": "container_recently_started", "retries_used": 1}
+    sleep_fn.assert_not_awaited()
+    assert check.await_count == 1
+    notify.assert_not_called()
+    events = _audit_events(executed)
+    assert "probe.postiz_queue_restart_skipped" in events
+    assert "probe.postiz_queue_restart_failed" not in events
+
+
+def test_the_recently_started_audit_row_says_why_and_how_long_it_had_been_up():
+    executed: list = []
+    pool = _make_pool(executed=executed)
+
+    asyncio.run(
+        pz.run_postiz_queue_watch_probe(
+            pool, check_fn=AsyncMock(return_value=None),
+            restart_fn=restart_stub(status=du.RESTART_RECENTLY_STARTED),
+            sleep_fn=AsyncMock(), notify_fn=MagicMock(),
+        )
+    )
+
+    row = next(
+        json.loads(a[2]) for q, a in executed
+        if "audit_log" in q and a[0] == "probe.postiz_queue_restart_skipped"
+    )
+    assert row["restart_status"] == du.RESTART_RECENTLY_STARTED
+    assert row["uptime_seconds"] == RECENT_UPTIME_SECONDS
+    assert row["retries_used"] == 1
+    assert "started" in row["detail"] and "not restarted" in row["detail"]
+
+
+def test_a_postiz_that_keeps_restarting_still_escalates():
+    """Each guarded cycle uses a retry, as a missing container's does: the
+    guard can hold a restart off, but it cannot postpone the firing
+    postiz_queue_wedged alert for a Postiz that keeps getting restarted under
+    the watch."""
+    executed: list = []
+    pool = _make_pool(executed=executed)
+    kw = {
+        "check_fn": AsyncMock(return_value=None),
+        "restart_fn": restart_stub(status=du.RESTART_RECENTLY_STARTED),
+        "sleep_fn": AsyncMock(),
+        "notify_fn": MagicMock(),
+    }
+
+    statuses = [
+        asyncio.run(pz.run_postiz_queue_watch_probe(pool, **kw))["status"]
+        for _ in range(3)
+    ]
+
+    assert statuses == [
+        "container_recently_started", "container_recently_started", "escalated",
+    ]
     assert any(
         "alert_events" in q and pz._ALERTNAME in a and "firing" in a for q, a in executed
     )

@@ -13,18 +13,27 @@ from unittest.mock import AsyncMock
 
 from poindexter.brain import docker_utils as du
 
+#: How long a stubbed ``RESTART_RECENTLY_STARTED`` container "has been running".
+RECENT_UPTIME_SECONDS = 45
+
 
 def outcome(
     container: str, status: str = du.RESTART_OK, detail: str | None = None,
 ) -> du.ContainerRestart:
     """What ``restart_container`` returns for ``container``.
 
-    ``detail`` defaults to the helper's own wording for ``status``.
+    ``detail`` defaults to the helper's own wording for ``status``. A
+    ``RESTART_RECENTLY_STARTED`` outcome carries the uptime the helper reports
+    (``RECENT_UPTIME_SECONDS``).
     """
     if detail is None:
         detail = {
             du.RESTART_OK: f"restarted {container}",
             du.RESTART_MISSING: f"container {container} not found (likely mid-recreate)",
+            du.RESTART_RECENTLY_STARTED: (
+                f"{container} started {RECENT_UPTIME_SECONDS}s ago, inside the 120s "
+                f"{du.DOCKER_RESTART_MIN_UPTIME_KEY} guard; not restarted"
+            ),
             du.RESTART_FAILED: f"docker restart failed for {container}: permission denied",
             du.RESTART_TIMED_OUT: (
                 f"docker restart {container} did not return within 90s "
@@ -37,7 +46,12 @@ def outcome(
                 f"docker API at unix:///var/run/docker.sock"
             ),
         }[status]
-    return du.ContainerRestart(container, status, detail, 90)
+    return du.ContainerRestart(
+        container, status, detail, 90,
+        uptime_seconds=(
+            float(RECENT_UPTIME_SECONDS) if status == du.RESTART_RECENTLY_STARTED else None
+        ),
+    )
 
 
 def restart_stub(

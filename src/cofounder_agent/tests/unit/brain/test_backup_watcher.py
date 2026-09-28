@@ -20,6 +20,7 @@ seed app_settings reads via the ``setting_values`` dict passed to
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -29,7 +30,7 @@ import pytest
 # resolves the same way the migration_drift_probe tests import it.
 from poindexter.brain import backup_watcher as bw
 from poindexter.brain import docker_utils as du
-from tests.unit.brain._restart_fakes import outcome, restart_stub
+from tests.unit.brain._restart_fakes import RECENT_UPTIME_SECONDS, outcome, restart_stub
 
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned config
@@ -506,6 +507,112 @@ class TestEdgeCases:
         sleep_fn.assert_not_awaited()
         assert "probe.backup_watcher_restart_failed" in _executed_audit_events(pool)
         assert bw._retry_state["hourly"] == 1
+
+
+@pytest.mark.unit
+class TestContainerRecentlyStarted:
+    """The backup container restarted moments ago (deploy-sync, compose, the
+    restart policy), so docker_utils declined to restart it again. It takes a
+    dump as soon as it starts, and the stale reading is of the dump from
+    before that start, so there is nothing to restart and no fresh dump to
+    wait for yet."""
+
+    @pytest.mark.asyncio
+    async def test_recently_started_container_skips_the_wait_and_notifies_nothing(
+        self, _reset_module_state,
+    ):
+        pool = _make_pool(setting_values={bw.BACKUP_DIR_KEY: _reset_module_state})
+        notify_calls: list[dict] = []
+        stat_calls: list[str] = []
+        sleep_fn = AsyncMock()
+
+        def fake_stat(_dir, tier):
+            stat_calls.append(tier)
+            return 10_000.0 if tier == "hourly" else 60.0
+
+        summary = await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=fake_stat,
+            restart_fn=restart_stub(status=du.RESTART_RECENTLY_STARTED),
+            sleep_fn=sleep_fn,
+            notify_fn=lambda **k: notify_calls.append(k),
+        )
+
+        hourly = summary["tiers"]["hourly"]
+        assert hourly["status"] == "container_recently_started"
+        assert hourly["ok"] is False
+        assert hourly["retries_used"] == 1
+        sleep_fn.assert_not_awaited()
+        # One freshness stat per tier; no post-restart re-stat.
+        assert stat_calls == ["hourly", "daily"]
+        assert notify_calls == []
+        events = _executed_audit_events(pool)
+        assert "probe.backup_watcher_restart_skipped" in events
+        assert "probe.backup_watcher_restart_failed" not in events
+
+    @pytest.mark.asyncio
+    async def test_the_audit_row_says_why_and_how_long_it_had_been_up(self, _reset_module_state):
+        pool = _make_pool(setting_values={bw.BACKUP_DIR_KEY: _reset_module_state})
+
+        await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=lambda _dir, tier: 10_000.0 if tier == "hourly" else 60.0,
+            restart_fn=restart_stub(status=du.RESTART_RECENTLY_STARTED),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+        )
+
+        row = next(
+            json.loads(c.args[3]) for c in pool.execute.call_args_list
+            if "INSERT INTO audit_log" in c.args[0]
+            and c.args[1] == "probe.backup_watcher_restart_skipped"
+        )
+        assert row["restart_status"] == du.RESTART_RECENTLY_STARTED
+        assert row["uptime_seconds"] == RECENT_UPTIME_SECONDS
+        assert row["tier"] == "hourly" and row["retries_used"] == 1
+        assert "started" in row["detail"] and "not restarted" in row["detail"]
+
+    @pytest.mark.asyncio
+    async def test_a_container_that_keeps_restarting_still_escalates(self, _reset_module_state):
+        """Each guarded cycle uses a retry, as a missing container's does: the
+        guard can hold a restart off, but it cannot postpone the escalation
+        for a container that keeps getting restarted under the watcher."""
+        pool = _make_pool(
+            setting_values={bw.BACKUP_DIR_KEY: _reset_module_state, bw.MAX_RETRIES_KEY: "2"},
+        )
+        kw = {
+            "stat_fn": lambda _dir, tier: 10_000.0 if tier == "hourly" else 60.0,
+            "restart_fn": restart_stub(status=du.RESTART_RECENTLY_STARTED),
+            "sleep_fn": AsyncMock(),
+            "notify_fn": lambda **k: None,
+        }
+
+        statuses = [
+            (await bw.run_backup_watcher_probe(pool, **kw))["tiers"]["hourly"]["status"]
+            for _ in range(3)
+        ]
+
+        assert statuses == [
+            "container_recently_started", "container_recently_started", "escalated",
+        ]
+        assert "probe.backup_watcher_escalate" in _executed_audit_events(pool)
+
+    @pytest.mark.asyncio
+    async def test_the_probe_never_asks_for_a_forced_restart(self, _reset_module_state, monkeypatch):
+        """A probe is automated, so it calls the helper the way the
+        ``RestartFn`` seam says: ``(container, pool=pool)``, no ``force``."""
+        helper = restart_stub(status=du.RESTART_RECENTLY_STARTED)
+        monkeypatch.setattr(du, "restart_container", helper)
+        pool = _make_pool(setting_values={bw.BACKUP_DIR_KEY: _reset_module_state})
+
+        await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=lambda _dir, tier: 10_000.0 if tier == "hourly" else 60.0,
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+        )
+
+        helper.assert_awaited_once_with("poindexter-backup-hourly", pool=pool)
 
 
 @pytest.mark.unit

@@ -332,6 +332,33 @@ async def run_auto_embed_watch_probe(
             extra={"retries_used": _retry_count},
         )
         return {"ok": False, "status": "container_missing", "retries_used": _retry_count}
+    if restart.status == docker_utils.RESTART_RECENTLY_STARTED:
+        # Something restarted the embedder moments ago (deploy-sync, compose,
+        # the restart policy), and another restart now would only interrupt
+        # it. Nothing was restarted here, so skip the wait and re-read; the
+        # next cycle reads the heartbeat again. The retry still counts, so a
+        # container that keeps restarting under us still reaches the
+        # escalation above.
+        detail = (
+            f"Auto-embed stale but {restart.detail} "
+            f"(retry {_retry_count}/{max_retries})."
+        )
+        logger.info("[AUTO_EMBED_WATCH] %s", detail)
+        await _emit_audit_event(
+            pool,
+            "probe.auto_embed_restart_skipped",
+            detail,
+            extra={
+                "retries_used": _retry_count,
+                "restart_status": restart.status,
+                "uptime_seconds": restart.uptime_seconds,
+            },
+        )
+        return {
+            "ok": False,
+            "status": "container_recently_started",
+            "retries_used": _retry_count,
+        }
     if not restart.ok:
         msg = restart.detail
         detail = (

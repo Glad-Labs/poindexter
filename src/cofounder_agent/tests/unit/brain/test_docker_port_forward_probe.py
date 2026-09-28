@@ -45,7 +45,7 @@ import pytest
 # resolves the same way the backup_watcher tests import it.
 from poindexter.brain import docker_port_forward_probe as pf
 from poindexter.brain import docker_utils as du
-from tests.unit.brain._restart_fakes import restart_stub
+from tests.unit.brain._restart_fakes import RECENT_UPTIME_SECONDS, restart_stub
 
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned config
@@ -2054,6 +2054,66 @@ class TestRestartThroughTheSharedHelper:
         events = _executed_audit_events(pool)
         assert "docker_port_forward_container_missing" in events
         assert "docker_port_forward_restart_failed" not in events
+
+    @pytest.mark.asyncio
+    async def test_container_recently_started_is_not_a_restart(self):
+        """Something restarted the container moments ago (deploy-sync,
+        compose, the restart policy), so its port forward is at most seconds
+        old and docker_utils declined to restart it again. Nothing was
+        restarted, so no cap slot, no failed recovery, no recovery wait, no
+        alert and no notify."""
+        pool = self._pool()
+        sleep_fn = AsyncMock()
+        notify = MagicMock()
+
+        svc = await self._run(
+            pool, restart_fn=restart_stub(status=du.RESTART_RECENTLY_STARTED),
+            sleep_fn=sleep_fn, notify_fn=notify,
+        )
+
+        assert svc["status"] == "container_recently_started"
+        assert svc["ok"] is False
+        assert "started" in svc["detail"] and "not restarted" in svc["detail"]
+        sleep_fn.assert_not_awaited()
+        notify.assert_not_called()
+        assert _executed_alertnames(pool) == []
+        assert pf._restart_state.get("poindexter-pyroscope", []) == []
+        assert "poindexter-pyroscope" not in pf._consecutive_recovery_failures
+        events = _executed_audit_events(pool)
+        assert "docker_port_forward_container_recently_started" in events
+        assert "docker_port_forward_restart_failed" not in events
+        assert "docker_port_forward_container_missing" not in events
+
+    @pytest.mark.asyncio
+    async def test_the_recently_started_audit_row_says_how_long_it_had_been_up(self):
+        pool = self._pool()
+
+        await self._run(pool, restart_fn=restart_stub(status=du.RESTART_RECENTLY_STARTED))
+
+        row = next(
+            p["payload"] for p in _executed_audit_payloads(pool)
+            if p["event"] == "docker_port_forward_container_recently_started"
+        )
+        assert row["uptime_seconds"] == RECENT_UPTIME_SECONDS
+        assert row["container"] == "poindexter-pyroscope"
+        assert "started" in row["detail"] and "not restarted" in row["detail"]
+
+    @pytest.mark.asyncio
+    async def test_container_recently_started_never_uses_up_the_restart_cap(self):
+        """Nothing was restarted, so it is not a restart the cap counts. The
+        next cycle probes it again, and a forward that is still stuck once the
+        guard has cleared meets the ordinary cap, restart and give-up logic."""
+        pool = self._pool()
+        restart_fn = restart_stub(status=du.RESTART_RECENTLY_STARTED)
+
+        statuses = [
+            (await self._run(pool, restart_fn=restart_fn))["status"] for _ in range(5)
+        ]
+
+        assert statuses == ["container_recently_started"] * 5
+        assert restart_fn.await_count == 5
+        assert "docker_port_forward_restart_capped" not in _executed_alertnames(pool)
+        assert "poindexter-pyroscope" not in pf._consecutive_recovery_failures
 
     @pytest.mark.asyncio
     async def test_container_missing_never_uses_up_the_restart_cap(self):
