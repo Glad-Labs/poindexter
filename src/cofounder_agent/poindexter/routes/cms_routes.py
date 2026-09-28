@@ -15,6 +15,7 @@ from middleware.api_token_auth import verify_api_token, verify_api_token_optiona
 from poindexter.modules.content.api import PostsService
 from poindexter.services.image_markers import strip_unresolved_image_markers
 from poindexter.services.logger_config import get_logger
+from poindexter.services.media_approval_service import get_preview_media
 from poindexter.utils.content_formatting import (
     convert_markdown_to_html,  # still used by preview_post
 )
@@ -106,6 +107,32 @@ async def list_posts(
         raise await handle_route_error(e, "list_posts", logger) from e
 
 
+async def _attach_preview_media(
+    conn: Any,
+    target: dict[str, Any],
+    site_config: Any,
+    *,
+    post_id: str | None = None,
+    task_id: str | None = None,
+) -> None:
+    """Fill a preview's media fields from ``media_assets``.
+
+    ``has_podcast`` / ``has_video`` say an asset is recorded. ``podcast_url`` /
+    ``video_url`` are set only when a published copy exists to play: see
+    ``media_approval_service.get_preview_media``. Both preview pages, this
+    router's HTML one and the public site's, read exactly these four fields.
+    """
+    media = await get_preview_media(
+        conn, site_config=site_config, post_id=post_id, task_id=task_id,
+    )
+    target["has_podcast"] = "podcast" in media
+    target["has_video"] = "video" in media
+    if media.get("podcast"):
+        target["podcast_url"] = media["podcast"]
+    if media.get("video"):
+        target["video_url"] = media["video"]
+
+
 @router.get("/api/posts/preview/{preview_token}")
 async def preview_post(
     preview_token: str,
@@ -138,24 +165,10 @@ async def preview_post(
                 for dt_field in ("published_at", "created_at", "updated_at"):
                     if post.get(dt_field):
                         post[dt_field] = post[dt_field].isoformat()
-                # Include podcast/video availability
-                from poindexter.services.podcast_service import PODCAST_DIR
-                from poindexter.services.video_service import VIDEO_DIR
-                post_id = str(post["id"])
-                post["has_podcast"] = (PODCAST_DIR / f"{post_id}.mp3").exists()
-                post["has_video"] = (VIDEO_DIR / f"{post_id}.mp4").exists()
+                await _attach_preview_media(
+                    conn, post, site_config_dep, post_id=str(post["id"]),
+                )
                 post["is_preview"] = True
-                # Include direct media URLs for preview players. 2026-05-12
-                # (poindexter#485): removed the hardcoded R2 bucket fallback —
-                # when storage_public_url isn't configured, omit the URLs so
-                # the preview UI just hides the media section rather than
-                # serving broken links to Matt's bucket.
-                _r2_url = (site_config_dep.get("storage_public_url", "") or "").rstrip("/")
-                if _r2_url:
-                    if post["has_podcast"]:
-                        post["podcast_url"] = f"{_r2_url}/podcast/{post_id}.mp3"
-                    if post["has_video"]:
-                        post["video_url"] = f"{_r2_url}/video/{post_id}.mp4"
 
                 # Render content the SAME way as the task path (and the
                 # published page): unwrap any leaked writer JSON envelope, then
@@ -206,8 +219,13 @@ async def preview_post(
             task["is_preview"] = True
             task["is_task_preview"] = True  # Flag: this is a task, not a published post
             task["slug"] = None
-            task["has_podcast"] = False
-            task["has_video"] = False
+            # Media renders once the task clears Gate 1, so an approved or
+            # published task's preview has some; an awaiting-approval one has
+            # none yet. This branch serves nearly every preview link: the
+            # pipeline no longer writes posts.preview_token.
+            await _attach_preview_media(
+                conn, task, site_config_dep, task_id=task["task_id"],
+            )
             return task
     except HTTPException:
         raise

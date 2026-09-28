@@ -58,6 +58,7 @@ import json
 import logging
 from typing import Any
 
+from poindexter.services.r2_upload_service import podcast_episode_key, video_episode_key
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding  # noqa: E402 — audit observability
 
@@ -842,3 +843,89 @@ async def get_thumbnail_storage_path(db: Any, post_id: str) -> str | None:
         post_id,
     )
     return row["storage_path"] if row is not None else None
+
+
+async def get_preview_media(
+    db: Any,
+    *,
+    site_config: Any,
+    post_id: str | None = None,
+    task_id: str | None = None,
+) -> dict[str, str | None]:
+    """The podcast and long-form video a draft preview can show.
+
+    Returns ``{medium: url}``, with a key for ``podcast`` / ``video`` when an
+    asset of that type is recorded (with a URL or a local file). The value is
+    the URL of the copy the RSS feed publishes, or ``None`` when there is none.
+
+    Backs both branches of ``routes/cms_routes.py::preview_post``: a legacy
+    post carrying ``posts.preview_token`` (pass ``post_id``), and a pipeline
+    task carrying the token in its metadata (pass ``task_id``). Either key is
+    followed across the ``posts.metadata->>'pipeline_task_id'`` seam. A render
+    is recorded against its task, with ``post_id`` NULL until the distribute
+    jobs link it; pre-cutover rows carry only the post.
+
+    Only an approved medium has a URL, by the feed's own rule: the stamped
+    ``media_assets.url``, else the delivery key under ``storage_public_url``
+    (26 approved podcast rows had no URL on 2026-09-28; see
+    Glad-Labs/poindexter#1090). Either way the preview plays the file the feed
+    serves. A pending or rejected medium has no public copy, so the preview
+    shows that it exists and plays nothing; Gate 2 decides whether it leaves
+    the machine.
+    The preview used to build both URLs from post-keyed file names, which match
+    no render since the task-keyed cutover (Glad-Labs/poindexter#1089).
+
+    ``db`` accepts either an asyncpg Pool or Connection.
+    """
+    if not post_id and not task_id:
+        return {}
+    rows = await db.fetch(
+        """
+        SELECT ma.type, ma.post_id::text AS post_id, ma.url,
+               apr.status AS approval
+          FROM media_assets ma
+          LEFT JOIN media_approvals apr
+                 ON apr.post_id = ma.post_id AND apr.medium = ma.type
+         WHERE ma.type IN ('podcast', 'video')
+           AND (COALESCE(ma.url, '') <> '' OR COALESCE(ma.storage_path, '') <> '')
+           AND (
+                ma.post_id = $1::uuid
+             OR ma.task_id = $2::text
+             OR ma.task_id = (
+                    SELECT p.metadata->>'pipeline_task_id' FROM posts p WHERE p.id = $1::uuid
+                )
+             OR ma.post_id IN (
+                    SELECT p.id FROM posts p WHERE p.metadata->>'pipeline_task_id' = $2::text
+                )
+           )
+         ORDER BY ma.created_at DESC NULLS LAST
+        """,
+        post_id,
+        task_id,
+    )
+    base = (site_config.get("storage_public_url", "") or "").rstrip("/")
+    cdn_version = site_config.get("podcast_cdn_version", "v2")
+    media: dict[str, str | None] = {}
+    for row in rows:  # newest first, so the newest approved asset wins
+        medium = row["type"]
+        media.setdefault(medium, None)
+        if media[medium] is None and row["approval"] == "approved":
+            media[medium] = _feed_url(
+                medium, row["post_id"], row["url"],
+                base=base, cdn_version=cdn_version,
+            )
+    return media
+
+
+def _feed_url(
+    medium: str, post_id: str | None, url: str | None, *, base: str, cdn_version: str,
+) -> str | None:
+    """The URL the RSS feed gives an approved asset: its stamped ``url``, else
+    the delivery key under ``base``. ``None`` when neither can be formed."""
+    if url:
+        return url
+    if not base or not post_id:
+        return None
+    if medium == "podcast":
+        return f"{base}/{podcast_episode_key(post_id, cdn_version)}"
+    return f"{base}/{video_episode_key(post_id)}"

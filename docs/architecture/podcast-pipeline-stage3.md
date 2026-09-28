@@ -457,6 +457,9 @@ Reject → dump = status stays `rejected`, no re-dispatch (optional R2/asset pur
 ## 9. Issues
 
 - **Closes with the podcast PR:** #746 (podcast `/episodes` pagination part).
+- **Later removed:** the paginated `/episodes` list (Glad-Labs/poindexter#1089).
+  It kept scanning the podcast directory after the feed moved to
+  `media_assets`, so it labelled task-keyed files as post ids.
 - **Closed by the §11 video-side cutover (#1460):** #573 (`video_long` rows), #668
   (delete backfill jobs), #569 (`video_long` strings).
 - **References (deferred):** #685/#686/#687/#688/#669/#1193/#531/#449/#1343.

@@ -43,7 +43,7 @@ logger = get_logger(__name__)
 # LEAST PRIVILEGE: only endpoints the public site actually calls
 _COORDINATOR_ROUTES = [
     ("poindexter.routes.cms_routes", "router", "cms_router", "CMS (posts, categories, tags, search, beacon)"),
-    ("poindexter.routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
+    ("poindexter.routes.podcast_routes", "router", "podcast_router", "podcast RSS feed, task-render stream & manual generation"),
     ("poindexter.routes.revalidate_routes", "router", "revalidate_router", "ISR cache invalidation"),
     ("poindexter.routes.newsletter_routes", "router", "newsletter_router", "newsletter subscribe/unsubscribe"),
 ]
@@ -71,7 +71,7 @@ _WORKER_ROUTES = [
     ("poindexter.routes.cms_routes", "router", "cms_router", "CMS (posts, preview, categories)"),
     ("poindexter.routes.newsletter_routes", "router", "newsletter_router", "newsletter subscribe/unsubscribe"),
     ("poindexter.routes.revalidate_routes", "router", "revalidate_router", "ISR cache invalidation"),
-    ("poindexter.routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
+    ("poindexter.routes.podcast_routes", "router", "podcast_router", "podcast RSS feed, task-render stream & manual generation"),
     ("poindexter.routes.video_routes", "router", "video_router", "video RSS feed"),
     ("poindexter.routes.settings_routes", "router", "settings_router", "settings read/write"),
     ("poindexter.routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),

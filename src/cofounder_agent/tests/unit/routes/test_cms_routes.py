@@ -486,13 +486,30 @@ class TestConvertMarkdownToHtml:
         assert 'src="https://r2/image-gen/pic.png"' in html
         assert "<em>" in html
 
+    def test_lists_convert(self):
+        from poindexter.routes.cms_routes import convert_markdown_to_html
+        html = convert_markdown_to_html("- item one\n- item two\n- item three")
+        assert "<ul>" in html
+        assert "<li>" in html
+
+    def test_error_falls_back_to_original(self):
+        """If markdown library raises, return the raw content unchanged."""
+        from unittest.mock import patch
+
+        from poindexter.routes.cms_routes import convert_markdown_to_html
+        with patch("markdown.markdown", side_effect=RuntimeError("parser broke")):
+            result = convert_markdown_to_html("# Title\n\nBody.")
+        assert result == "# Title\n\nBody."
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestPreviewHtmlForwardsSiteConfig:
     """#540 regression: preview_post_html must FORWARD the resolved SiteConfig
     to preview_post. Calling it bare left site_config_dep as an unresolved
-    Depends sentinel and 500'd the posts path at the storage_public_url read."""
+    Depends sentinel and 500'd the posts path at the storage_public_url read.
+    That read now lives in the media lookup, which both branches run
+    (Glad-Labs/poindexter#1089)."""
 
     async def test_preview_html_passes_site_config_to_preview_post(self):
         import poindexter.routes.cms_routes as cms
@@ -510,21 +527,6 @@ class TestPreviewHtmlForwardsSiteConfig:
         assert pp.await_args.args[0] == "a" * 32
         # The rendered page came back (not a 500).
         assert resp.status_code == 200
-
-    def test_lists_convert(self):
-        from poindexter.routes.cms_routes import convert_markdown_to_html
-        html = convert_markdown_to_html("- item one\n- item two\n- item three")
-        assert "<ul>" in html
-        assert "<li>" in html
-
-    def test_error_falls_back_to_original(self):
-        """If markdown library raises, return the raw content unchanged."""
-        from unittest.mock import patch
-
-        from poindexter.routes.cms_routes import convert_markdown_to_html
-        with patch("markdown.markdown", side_effect=RuntimeError("parser broke")):
-            result = convert_markdown_to_html("# Title\n\nBody.")
-        assert result == "# Title\n\nBody."
 
 
 # ---------------------------------------------------------------------------
@@ -1211,3 +1213,125 @@ class TestPreviewPostHtmlSecurity:
             f"Preview URLs leak the secret token in browser history "
             f"caches unless no-store is set; got Cache-Control={cache!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Preview media (Glad-Labs/poindexter#1089)
+#
+# Both preview branches read their media from media_assets through
+# media_approval_service.get_preview_media. They used to check post-keyed files
+# ({post_id}.mp3 / .mp4), which match no render since the task-keyed cutover
+# (#1460), and the task branch hard-coded "no media" — the branch nearly every
+# preview link hits.
+# ---------------------------------------------------------------------------
+
+_PREVIEW_TOKEN = "b" * 32
+
+_TASK_PREVIEW_ROW = {
+    "task_id": "task-1089",
+    "title": "Draft",
+    "content": "# Draft\n\nBody.",
+    "excerpt": "",
+    "featured_image_url": None,
+    "seo_title": None,
+    "seo_description": None,
+    "seo_keywords": None,
+    "category": None,
+    "quality_score": 88,
+    "status": "published",
+    "created_at": NOW,
+    "updated_at": NOW,
+    "metadata": {},
+}
+
+_POST_PREVIEW_ROW = {
+    **SAMPLE_POST_ROW,
+    "id": POST_UUID,
+    "preview_token": _PREVIEW_TOKEN,
+    "metadata": {},
+}
+
+
+def _preview_client(fetchrow_side_effect, media):
+    """TestClient over the real preview_post with the DB and the media lookup
+    faked. Returns (client, patches, media_mock)."""
+    pool, conn = _make_pool_mock()
+    conn.fetchrow = AsyncMock(side_effect=fetchrow_side_effect)
+    media_mock = AsyncMock(return_value=media)
+    patches = (
+        patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)),
+        patch("poindexter.routes.cms_routes.get_preview_media", new=media_mock),
+    )
+    return TestClient(_build_app()), patches, media_mock
+
+
+@pytest.mark.unit
+class TestPreviewMedia:
+    def test_task_preview_reads_media_by_task_id(self):
+        client, patches, media_mock = _preview_client(
+            [None, dict(_TASK_PREVIEW_ROW)],  # no posts row → the task branch
+            {"podcast": "https://cdn.example/podcast/v2/p.mp3", "video": None},
+        )
+        with patches[0], patches[1]:
+            resp = client.get(f"/api/posts/preview/{_PREVIEW_TOKEN}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["is_task_preview"] is True
+        assert body["has_podcast"] is True
+        assert body["podcast_url"] == "https://cdn.example/podcast/v2/p.mp3"
+        # A rendered video that isn't approved yet: shown as present, no player.
+        assert body["has_video"] is True
+        assert "video_url" not in body
+        kwargs = media_mock.await_args.kwargs
+        assert kwargs["task_id"] == "task-1089"
+        assert kwargs["post_id"] is None
+
+    def test_post_preview_reads_media_by_post_id(self):
+        client, patches, media_mock = _preview_client(
+            [dict(_POST_PREVIEW_ROW)],
+            {"video": "https://cdn.example/video/p.mp4"},
+        )
+        with patches[0], patches[1]:
+            resp = client.get(f"/api/posts/preview/{_PREVIEW_TOKEN}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["has_podcast"] is False
+        assert "podcast_url" not in body
+        assert body["has_video"] is True
+        assert body["video_url"] == "https://cdn.example/video/p.mp4"
+        assert media_mock.await_args.kwargs["post_id"] == POST_UUID
+
+    def test_preview_without_media_has_no_players(self):
+        client, patches, _ = _preview_client([None, dict(_TASK_PREVIEW_ROW)], {})
+        with patches[0], patches[1]:
+            body = client.get(f"/api/posts/preview/{_PREVIEW_TOKEN}").json()
+        assert body["has_podcast"] is False and body["has_video"] is False
+        assert "podcast_url" not in body and "video_url" not in body
+
+    def test_preview_never_stats_post_keyed_files(self):
+        """The lookup is media_assets only; the old post-keyed file checks
+        must not come back."""
+        import inspect
+
+        import poindexter.routes.cms_routes as cms
+
+        source = inspect.getsource(cms.preview_post)
+        assert "PODCAST_DIR" not in source
+        assert "VIDEO_DIR" not in source
+
+    async def test_html_page_renders_the_players(self):
+        import poindexter.routes.cms_routes as cms
+
+        post = {
+            "title": "T", "content": "body", "status": "published",
+            "quality_score": 90, "excerpt": "", "featured_image_url": "",
+            "has_podcast": True, "has_video": True,
+            "podcast_url": "https://cdn.example/podcast/v2/p.mp3",
+            "video_url": "https://cdn.example/video/p.mp4",
+        }
+        with patch.object(cms, "preview_post", new=AsyncMock(return_value=post)):
+            resp = await cms.preview_post_html(_PREVIEW_TOKEN)
+        html = resp.body.decode()
+        assert '<source src="https://cdn.example/podcast/v2/p.mp3" type="audio/mpeg">' in html
+        assert '<source src="https://cdn.example/video/p.mp4" type="video/mp4">' in html
+        assert "Podcast Ready" in html and "Video Ready" in html

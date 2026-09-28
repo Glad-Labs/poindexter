@@ -770,3 +770,55 @@ class TestUploadRunsOffTheEventLoop:
             assert await svc.upload_to_r2(str(mp4), "video/p.mp4") is not None
         assert seen["thread"] is not threading.main_thread()
         assert seen["loop"] is False
+
+
+class TestPodcastEpisodeKey:
+    def test_podcast_episode_key_carries_the_cdn_version(self):
+        from poindexter.services.r2_upload_service import podcast_episode_key
+
+        assert podcast_episode_key("post-1", "v2") == "podcast/v2/post-1.mp3"
+
+    def test_no_other_module_spells_an_episode_key_by_hand(self):
+        """``podcast_episode_key`` / ``video_episode_key`` are the only
+        spellings of the two object keys. The draft preview built
+        ``podcast/{post_id}.mp3`` by hand, without the version segment, so
+        every podcast link it made pointed at an object nothing wrote
+        (Glad-Labs/poindexter#1089); the video feed's hand-spelled key had the
+        same fate (poindexter#1085).
+
+        Flags any f-string under ``poindexter/`` with a literal ``podcast/`` or
+        ``video/`` directly before an interpolation. Docstrings and comments
+        are not f-strings, so prose describing the key is not flagged.
+        """
+        import ast
+        from itertools import pairwise
+        from pathlib import Path
+
+        import poindexter
+
+        root = Path(poindexter.__file__).parent
+        offenders: list[str] = []
+        scanned = 0
+        for path in sorted(root.rglob("*.py")):
+            if path.name == "r2_upload_service.py":
+                continue
+            scanned += 1
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.JoinedStr):
+                    continue
+                parts = node.values
+                for part, nxt in pairwise(parts):
+                    if (
+                        isinstance(part, ast.Constant)
+                        and isinstance(part.value, str)
+                        and part.value.endswith(("podcast/", "video/"))
+                        and isinstance(nxt, ast.FormattedValue)
+                    ):
+                        offenders.append(f"{path.relative_to(root)}:{node.lineno}")
+        # A scan that walked nothing has not passed (a moved package root).
+        assert scanned > 500, f"scanned only {scanned} files under {root}"
+        assert offenders == [], (
+            "spell episode keys with podcast_episode_key / video_episode_key "
+            f"(services/r2_upload_service.py): {offenders}"
+        )

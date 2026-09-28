@@ -40,13 +40,31 @@ def video_episode_key(post_id: str) -> str:
     advertising a key that nothing wrote any more: every enclosure rendered
     since then 404ed (Glad-Labs/poindexter#1085).
 
-    Unversioned, unlike ``podcast/{cdn_ver}/…``: a post holds one long-form
+    Unversioned, unlike :func:`podcast_episode_key`: a post holds one long-form
     video (``uniq_media_assets_post_video_type``), so the object is written
     once and there is no stale render to bust. It is also the key the 59
     pre-cutover rows were stamped with, so every enclosure URL a subscriber
     already holds stays valid.
     """
     return f"video/{post_id}.mp4"
+
+
+def podcast_episode_key(post_id: str, cdn_version: str) -> str:
+    """The object key a post's podcast episode lives at: ``podcast/{cdn_version}/{post_id}.mp3``.
+
+    The one place this key is spelled, the podcast twin of
+    :func:`video_episode_key`. ``podcast_distribute`` uploads each approved
+    episode here and stamps the URL. ``media_reconciliation`` checks the object
+    and re-uploads it. The podcast RSS feed and the draft preview fall back to
+    it for an approved episode whose row has no URL. The preview used to spell
+    it by hand, without the version segment, so every podcast link it built
+    pointed at an object nothing wrote (Glad-Labs/poindexter#1089).
+
+    ``cdn_version`` is ``app_settings.podcast_cdn_version``. Bumping it moves
+    every episode to a new key, which makes podcast apps re-download episodes
+    that were re-recorded.
+    """
+    return f"podcast/{cdn_version}/{post_id}.mp3"
 
 
 class ObjectStoreUnavailable(RuntimeError):

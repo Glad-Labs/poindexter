@@ -952,7 +952,6 @@ class TestRecordMediaAssetSeedsApprovalGate:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 class TestVideoRedispatch:
     """#1460: video drift self-heals by re-dispatching Stage-2 — clearing the
     source task's media_pipeline_dispatched_at, capped by
@@ -1100,7 +1099,6 @@ class TestVideoRedispatch:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 class TestVideoCapReset:
     """Bounded cap-reset self-heal (2026-07-03,
     feedback_self_heal_not_suppress): a task wedged AT

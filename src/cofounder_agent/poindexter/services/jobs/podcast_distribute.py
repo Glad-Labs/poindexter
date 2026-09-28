@@ -135,10 +135,10 @@ async def _deliver_podcast(pool: Any, site_config: Any, row: dict[str, Any]) -> 
         return False
 
     cdn_ver = site_config.get("podcast_cdn_version", "v2")
-    key = f"podcast/{cdn_ver}/{post_id}.mp3"
     try:
-        from poindexter.services.r2_upload_service import R2UploadService
+        from poindexter.services.r2_upload_service import R2UploadService, podcast_episode_key
 
+        key = podcast_episode_key(post_id, cdn_ver)
         r2_svc = R2UploadService(site_config=site_config)
         url = await r2_svc.upload_to_r2(storage_path, key, "audio/mpeg")
     except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass

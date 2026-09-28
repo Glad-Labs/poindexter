@@ -140,7 +140,8 @@ gated feed silently excluded them (the approval gate covering every medium).
   against the bucket before anything is re-uploaded. None when neither
   config nor app_setting is set.
 - ``config.podcast_cdn_version`` (default ``v2``) — path prefix on R2.
-  Mirrors the podcast delivery R2 key (``podcast/{ver}/{post_id}.mp3``).
+  Mirrors the podcast delivery R2 key (``podcast/{ver}/{post_id}.mp3``,
+  spelled once in ``r2_upload_service.podcast_episode_key``).
 """
 
 from __future__ import annotations
@@ -154,6 +155,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from poindexter.plugins.job import JobResult
+from poindexter.services.r2_upload_service import podcast_episode_key
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
@@ -907,7 +909,7 @@ class MediaReconciliationJob:
         existing_pairs = existing_pairs or set()
         existing_assets = existing_assets or {}
         post_id = row["id"]
-        podcast_key = f"podcast/{cdn_ver}/{post_id}.mp3"
+        podcast_key = podcast_episode_key(post_id, cdn_ver)
         podcast_url = f"{r2_base}/{podcast_key}"
 
         async def _exists(url: str) -> bool:
@@ -1192,7 +1194,7 @@ class MediaReconciliationJob:
             return False  # nothing local to reuse → re-dispatch fallback
         post_id = post_row["id"]
         cdn_ver = sc.get("podcast_cdn_version", "v2") or "v2"
-        key = f"podcast/{cdn_ver}/{post_id}.mp3"
+        key = podcast_episode_key(post_id, cdn_ver)
         try:
             from poindexter.services.r2_upload_service import R2UploadService
 

@@ -1,24 +1,37 @@
 """
-Podcast Routes — Serve podcast RSS feed and MP3 episode files.
+Podcast Routes — the podcast RSS feed, one render's MP3, and manual generation.
 
 Endpoints:
-    GET /api/podcast/feed.xml     — Podcast RSS feed (Apple/Spotify compatible)
-    GET /api/podcast/episodes     — JSON list of all episodes
-    GET /api/podcast/episodes/{post_id}.mp3 — Stream an episode MP3
-    POST /api/podcast/generate/{post_id} — Manually trigger episode generation
+    GET /api/podcast/feed.xml               — Podcast RSS feed (Apple/Spotify compatible)
+    GET /api/podcast/episodes/{task_id}.mp3 — Stream the MP3 a pipeline task rendered
+    POST /api/podcast/generate/{post_id}    — Render an episode for a published post
+
+``GET /api/podcast/episodes`` was removed (Glad-Labs/poindexter#1089). It listed
+the podcast directory and labelled each file stem ``post_id``. Since the
+task-keyed cutover (#1460), ``podcast.persist`` names renders ``{task_id}.mp3``,
+so the list mixed task ids with pre-cutover post ids and the
+``{post_id}-narration.mp3`` video-narration siblings. Nothing called it. Two
+surfaces cover it, both keyed through ``media_assets``:
+
+- the feed, which lists every approved episode with its public URL; and
+- ``GET /api/media-approval/{post_id}/podcast/preview``, the operator console's
+  authenticated stream of a local render awaiting review.
+
+A new podcast endpoint should read ``media_assets`` the way the feed does, not
+scan the directory.
 """
 
 from datetime import datetime, timezone
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from middleware.api_token_auth import verify_api_token
-from poindexter.schemas.media_schemas import PodcastEpisodeListResponse
 from poindexter.services.logger_config import get_logger
 from poindexter.services.podcast_service import PODCAST_DIR, PodcastService
+from poindexter.services.r2_upload_service import podcast_episode_key
 from poindexter.utils.rate_limiter import _settings_limit, limiter
 from poindexter.utils.route_utils import get_site_config_dependency
 
@@ -52,7 +65,6 @@ def _r2_url_or_503(site_config: Any) -> str:
     this in feed/route handlers where the URL is mandatory."""
     url = _r2_url(site_config)
     if not url:
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=503,
             detail=(
@@ -268,12 +280,14 @@ def _build_rss_xml(episodes: list[dict], site_config: Any) -> str:
             SubElement(item, "pubDate").text = _rfc2822(pub_date)
 
         # Enclosure (the MP3 file). Prefer the media_assets R2 URL (#689
-        # Stage-3 source of truth); fall back to the deterministic CDN path for
-        # callers that build episodes without an asset row (legacy/tests).
+        # Stage-3 source of truth); fall back to the deterministic delivery key
+        # for an approved episode whose row carries no URL (26 on 2026-09-28,
+        # Glad-Labs/poindexter#1090) and for callers that build episodes
+        # without an asset row.
         enclosure = SubElement(item, "enclosure")
         enclosure.set(
             "url",
-            ep.get("enclosure_url") or f"{_r2}/podcast/{_cdn_ver}/{ep['post_id']}.mp3",
+            ep.get("enclosure_url") or f"{_r2}/{podcast_episode_key(ep['post_id'], _cdn_ver)}",
         )
         enclosure.set("length", str(ep.get("file_size_bytes", 0)))
         enclosure.set("type", "audio/mpeg")
@@ -300,11 +314,26 @@ def _build_rss_xml(episodes: list[dict], site_config: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/episodes/{post_id}.mp3")
-async def stream_episode(post_id: str):
-    """Stream a podcast episode MP3 file."""
-    # Sanitize post_id to prevent path traversal
-    safe_id = post_id.replace("/", "").replace("\\", "").replace("..", "")
+@router.get("/episodes/{task_id}.mp3")
+async def stream_episode(task_id: str):
+    """Stream the MP3 that pipeline task ``task_id`` rendered.
+
+    ``podcast.persist`` names each render ``{task_id}.mp3`` (#1460). The
+    operator console plays a podcast-type task's render from here: it is what
+    that task asks the operator to approve.
+
+    This is a file lookup, not a ``media_assets`` one, on purpose. A post
+    holds one podcast row (``uniq_media_assets_post_podcast_type``). When a
+    second task renders the same post, the row keeps the first task's
+    ``task_id``, so it can't say which file a given task rendered. The file
+    name can.
+
+    Pre-cutover files, and those ``POST /generate/{post_id}`` writes, are named
+    by post id. Those episodes reach listeners through the feed, not this
+    route.
+    """
+    # Sanitize task_id to prevent path traversal
+    safe_id = task_id.replace("/", "").replace("\\", "").replace("..", "")
     path = PODCAST_DIR / f"{safe_id}.mp3"
 
     # Defense-in-depth: verify resolved path is under PODCAST_DIR
@@ -326,34 +355,6 @@ async def stream_episode(post_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Episode listing (JSON)
-# ---------------------------------------------------------------------------
-
-
-@router.get("/episodes", response_model=PodcastEpisodeListResponse)
-async def list_episodes(
-    site_config: Any = Depends(get_site_config_dependency),
-    limit: int = Query(50, ge=1, le=200, description="Max episodes to return"),
-    offset: int = Query(0, ge=0, description="Episodes to skip"),
-) -> PodcastEpisodeListResponse:
-    """List podcast episodes as JSON, paginated (closes #746 — the endpoint was
-    previously unbounded and grew linearly with content volume forever)."""
-    svc = PodcastService(site_config=site_config)
-    all_episodes = svc.list_episodes()
-    total = len(all_episodes)
-    page = all_episodes[offset : offset + limit]
-    # Canonical offset envelope (poindexter#745): `episodes` → `items`, drop the
-    # redundant `count` (recoverable as len(items)). Pydantic validates each row
-    # into a PodcastEpisodeItem.
-    return PodcastEpisodeListResponse(
-        items=page,  # type: ignore[arg-type]
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Manual generation trigger
 # ---------------------------------------------------------------------------
 
@@ -365,7 +366,15 @@ async def generate_episode(
     post_id: str,
     site_config: Any = Depends(get_site_config_dependency),
 ):
-    """Manually trigger podcast episode generation for a published post."""
+    """Render a podcast episode for a published post, on demand.
+
+    The one working media path for a hand-written post
+    (``poindexter posts create``), which has no pipeline task for the media
+    pipeline to render from (stack#4099). Keyed by post id for that reason:
+    ``PodcastService.generate_episode`` writes ``{post_id}.mp3`` and records
+    the post's ``media_assets`` podcast row. ``podcast_distribute`` then seeds
+    the Gate-2 approval, and delivers the episode once it is approved.
+    """
     from poindexter.utils.route_utils import get_services
 
     db = get_services().get_database()

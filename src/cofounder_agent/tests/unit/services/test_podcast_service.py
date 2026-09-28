@@ -169,21 +169,6 @@ class TestPodcastService:
             ep_path.write_bytes(b"fake audio data")
             assert svc.episode_exists("abc")
 
-    def test_list_episodes_empty(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp), site_config=_TEST_SC)
-            assert svc.list_episodes() == []
-
-    def test_list_episodes_with_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp), site_config=_TEST_SC)
-            (Path(tmp) / "ep1.mp3").write_bytes(b"data1")
-            (Path(tmp) / "ep2.mp3").write_bytes(b"data2")
-            episodes = svc.list_episodes()
-            assert len(episodes) == 2
-            ids = {ep["post_id"] for ep in episodes}
-            assert ids == {"ep1", "ep2"}
-
     @pytest.mark.asyncio
     async def test_generate_skips_existing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -345,45 +330,6 @@ class TestGenerateEpisode:
 
             assert result.success is False
             assert result.error is not None and "All voices failed" in result.error
-
-
-# ---------------------------------------------------------------------------
-# list_episodes
-# ---------------------------------------------------------------------------
-
-
-class TestListEpisodes:
-    """Test list_episodes returns the correct format."""
-
-    def test_list_episodes_returns_correct_keys(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp), site_config=_TEST_SC)
-            (Path(tmp) / "post-a.mp3").write_bytes(b"audio a")
-            episodes = svc.list_episodes()
-            assert len(episodes) == 1
-            ep = episodes[0]
-            assert ep["post_id"] == "post-a"
-            assert ep["file_path"] == str(Path(tmp) / "post-a.mp3")
-            assert ep["file_size_bytes"] == 7
-            assert "created_at" in ep
-
-    def test_list_episodes_sorted_by_name(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp), site_config=_TEST_SC)
-            (Path(tmp) / "b-episode.mp3").write_bytes(b"b")
-            (Path(tmp) / "a-episode.mp3").write_bytes(b"a")
-            episodes = svc.list_episodes()
-            assert episodes[0]["post_id"] == "a-episode"
-            assert episodes[1]["post_id"] == "b-episode"
-
-    def test_list_episodes_ignores_non_mp3(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp), site_config=_TEST_SC)
-            (Path(tmp) / "notes.txt").write_text("not audio")
-            (Path(tmp) / "real.mp3").write_bytes(b"audio")
-            episodes = svc.list_episodes()
-            assert len(episodes) == 1
-            assert episodes[0]["post_id"] == "real"
 
 
 # ===========================================================================
@@ -2040,7 +1986,6 @@ class TestSelectVoicePersona:
         sc = self._sc(**{"tts_voice_rotation_enabled": "true", "niche.dev-diary.media.persona": "host"})
         picks = {_select_voice(sc, f"post-{i}", niche_slug="dev-diary") for i in range(50)}
         assert picks <= set(VOICE_POOL) and len(picks) > 1
-
 
 
 class TestPersonaDrivenEngine:

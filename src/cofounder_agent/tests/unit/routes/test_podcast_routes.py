@@ -1,7 +1,8 @@
 """
 Podcast Routes — Unit Tests
 
-Tests for RSS feed generation, episode streaming, listing, and manual generation.
+Tests for RSS feed generation, streaming a task's render, manual generation,
+and the removal of the episode list route (Glad-Labs/poindexter#1089).
 """
 
 from datetime import datetime, timezone
@@ -206,6 +207,31 @@ class TestBuildRssXml:
         xml = _build_rss_xml(episodes, _test_site_config)
         assert xml.count("<item>") == 3
 
+    def test_enclosure_uses_the_stamped_asset_url(self):
+        episodes = [{
+            "post_id": "123", "title": "T", "slug": "t", "description": "",
+            "published_at": None, "file_size_bytes": 1, "duration_seconds": 0,
+            "enclosure_url": "https://cdn.example/podcast/v2/123.mp3",
+        }]
+        xml = _build_rss_xml(episodes, _test_site_config)
+        assert 'url="https://cdn.example/podcast/v2/123.mp3"' in xml
+
+    def test_enclosure_falls_back_to_the_delivery_key(self):
+        """An approved episode whose row has no URL is served from the key
+        podcast_distribute uploads to, spelled once in ``podcast_episode_key``
+        (podcast_cdn_version defaults to v2)."""
+        from poindexter.services.r2_upload_service import podcast_episode_key
+
+        episodes = [{
+            "post_id": "123", "title": "T", "slug": "t", "description": "",
+            "published_at": None, "file_size_bytes": 1, "duration_seconds": 0,
+            "enclosure_url": "",
+        }]
+        xml = _build_rss_xml(episodes, _test_site_config)
+        expected = f"https://pub-test-bucket.r2.dev/{podcast_episode_key('123', 'v2')}"
+        assert f'url="{expected}"' in xml
+        assert expected.endswith("/podcast/v2/123.mp3")
+
 
 class TestBuildRssXmlWithoutStoragePublicUrl:
     """poindexter#485: the feed never guesses a bucket. With an episode to list
@@ -245,24 +271,17 @@ class TestBuildRssXmlWithoutStoragePublicUrl:
 
 
 class TestPodcastFeed:
-    @patch("poindexter.routes.podcast_routes.PodcastService")
     @patch("poindexter.utils.route_utils.get_services")
-    def test_empty_feed_when_no_episodes(self, mock_get_services, mock_svc_cls):
-        # Mock the lazy import
-        with patch("poindexter.routes.podcast_routes.get_services", create=True) as mock_gs:
-            mock_db = MagicMock()
-            mock_db.pool = None
-            mock_db.cloud_pool = None
-            mock_gs.return_value.get_database.return_value = mock_db
+    def test_empty_feed_when_no_episodes(self, mock_gs):
+        mock_db = MagicMock()
+        mock_db.pool = None
+        mock_db.cloud_pool = None
+        mock_gs.return_value.get_database.return_value = mock_db
 
-            mock_svc = MagicMock()
-            mock_svc.list_episodes.return_value = []
-            mock_svc_cls.return_value = mock_svc
-
-            resp = client.get("/api/podcast/feed.xml")
-            assert resp.status_code == 200
-            assert "application/rss+xml" in resp.headers["content-type"]
-            assert "<item>" not in resp.text
+        resp = client.get("/api/podcast/feed.xml")
+        assert resp.status_code == 200
+        assert "application/rss+xml" in resp.headers["content-type"]
+        assert "<item>" not in resp.text
 
     @patch("poindexter.utils.route_utils.get_services")
     def test_feed_lists_episode_from_media_assets(self, mock_gs):
@@ -369,14 +388,24 @@ class TestPodcastFeed:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/podcast/episodes/{post_id}.mp3
+# GET /api/podcast/episodes/{task_id}.mp3
 # ---------------------------------------------------------------------------
+
+# A pipeline task id: podcast.persist names every render ``{task_id}.mp3``.
+TASK_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 
 
 class TestStreamEpisode:
+    def test_route_is_keyed_by_task_id(self):
+        """The URL shape the operator console builds from ``t.task_id``
+        (console/js/app.jsx) — the parameter says what the file name is."""
+        paths = [route.path for route in router.routes]
+        assert "/api/podcast/episodes/{task_id}.mp3" in paths
+        assert "/api/podcast/episodes/{post_id}.mp3" not in paths
+
     def test_missing_episode_returns_404(self):
         with patch("poindexter.routes.podcast_routes.PODCAST_DIR", Path("/nonexistent/path")):
-            resp = client.get("/api/podcast/episodes/abc123.mp3")
+            resp = client.get(f"/api/podcast/episodes/{TASK_ID}.mp3")
             assert resp.status_code == 404
 
     def test_path_traversal_blocked(self):
@@ -384,56 +413,55 @@ class TestStreamEpisode:
             resp = client.get("/api/podcast/episodes/..%2F..%2Fetc%2Fpasswd.mp3")
             assert resp.status_code == 404
 
-    def test_valid_episode_served(self, tmp_path):
-        mp3_file = tmp_path / "test123.mp3"
+    def test_serves_the_file_the_task_rendered(self, tmp_path):
+        mp3_file = tmp_path / f"{TASK_ID}.mp3"
         mp3_file.write_bytes(b"\xff\xfb\x90\x00" * 100)
 
         with patch("poindexter.routes.podcast_routes.PODCAST_DIR", tmp_path):
-            resp = client.get("/api/podcast/episodes/test123.mp3")
+            resp = client.get(f"/api/podcast/episodes/{TASK_ID}.mp3")
             assert resp.status_code == 200
             assert resp.headers["content-type"] == "audio/mpeg"
+            assert resp.content == mp3_file.read_bytes()
 
-
-# ---------------------------------------------------------------------------
-# GET /api/podcast/episodes
-# ---------------------------------------------------------------------------
-
-
-class TestListEpisodes:
-    @patch("poindexter.routes.podcast_routes.PodcastService")
-    def test_returns_json_list(self, mock_svc_cls):
-        mock_svc = MagicMock()
-        mock_svc.list_episodes.return_value = [
-            {"post_id": "1", "file_path": "/tmp/1.mp3", "file_size_bytes": 5000},
-            {"post_id": "2", "file_path": "/tmp/2.mp3", "file_size_bytes": 3000},
-        ]
-        mock_svc_cls.return_value = mock_svc
-
-        resp = client.get("/api/podcast/episodes")
+    def test_file_lookup_does_not_consult_media_assets(self, tmp_path):
+        """A second render of the same post leaves the post's one podcast row
+        carrying the FIRST task's id, so only the file name says which file a
+        task rendered. Serving it must not need the DB at all."""
+        (tmp_path / f"{TASK_ID}.mp3").write_bytes(b"\xff\xfb\x90\x00" * 10)
+        with patch("poindexter.routes.podcast_routes.PODCAST_DIR", tmp_path), \
+             patch("poindexter.utils.route_utils.get_services") as mock_gs:
+            resp = client.get(f"/api/podcast/episodes/{TASK_ID}.mp3")
         assert resp.status_code == 200
-        data = resp.json()
-        # Canonical offset envelope (poindexter#745): items, not the legacy
-        # episodes/count keys. `count` is recoverable as len(items).
-        assert data["total"] == 2
-        assert data["limit"] == 50  # default limit
-        assert data["offset"] == 0
-        assert "episodes" not in data
-        assert "count" not in data
-        assert len(data["items"]) == 2
-        assert data["items"][0]["post_id"] == "1"
-        # #636 parity: the response_model filters the service's absolute
-        # file_path out of the public body (the mock input includes it).
-        assert "file_path" not in data["items"][0]
+        mock_gs.assert_not_called()
 
-    @patch("poindexter.routes.podcast_routes.PodcastService")
-    def test_empty_list(self, mock_svc_cls):
-        mock_svc = MagicMock()
-        mock_svc.list_episodes.return_value = []
-        mock_svc_cls.return_value = mock_svc
 
-        resp = client.get("/api/podcast/episodes")
-        data = resp.json()
-        assert data == {"items": [], "total": 0, "limit": 50, "offset": 0}
+# ---------------------------------------------------------------------------
+# Retired: GET /api/podcast/episodes
+# ---------------------------------------------------------------------------
+
+
+class TestRetiredEpisodeList:
+    """Glad-Labs/poindexter#1089: the list scanned the podcast dir and labelled
+    each file stem ``post_id``. Since the task-keyed cutover (#1460) the stems
+    are task ids, mixed with pre-cutover post ids and ``{post_id}-narration``
+    siblings. Nothing called it. The feed lists approved episodes and the
+    console's ``/api/media-approval/{post_id}/podcast/preview`` streams pending
+    ones, both through ``media_assets``. Don't bring it back as a directory
+    scan.
+
+    Asserted on the router: a GET of the bare path could otherwise be taken
+    for a missing-file 404 from a route that still exists.
+    """
+
+    def test_no_list_route_is_registered(self):
+        paths = [route.path for route in router.routes]
+        assert "/api/podcast/feed.xml" in paths
+        assert "/api/podcast/episodes" not in paths, paths
+
+    def test_the_service_no_longer_lists_the_directory(self):
+        from poindexter.services.podcast_service import PodcastService
+
+        assert not hasattr(PodcastService, "list_episodes")
 
 
 # ---------------------------------------------------------------------------

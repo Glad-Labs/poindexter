@@ -1369,3 +1369,115 @@ async def test_eval_still_runs_on_a_row_an_AUTO_tier_decided(
         )
 
     eval_podcast.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# get_preview_media — the draft preview's media (Glad-Labs/poindexter#1089)
+#
+# The SQL (both sides of the post <-> task seam, the approval join) runs on
+# the real schema in tests/integration_db/test_preview_media_sql.py. These pin
+# what the Python does with the rows it gets back.
+# ---------------------------------------------------------------------------
+
+_PREVIEW_SC = MagicMock()
+_PREVIEW_SC.get.side_effect = lambda key, default="": {
+    "storage_public_url": "https://cdn.example/",
+    "podcast_cdn_version": "v7",
+}.get(key, default)
+
+
+def _asset_row(kind: str, *, post_id: str | None = "p1", url: str | None = None,
+               approval: str | None = "approved") -> dict:
+    return {"type": kind, "post_id": post_id, "url": url, "approval": approval}
+
+
+async def test_preview_media_needs_a_key(mock_db: MagicMock) -> None:
+    assert await media_approval_service.get_preview_media(
+        mock_db, site_config=_PREVIEW_SC,
+    ) == {}
+    mock_db.fetch.assert_not_awaited()
+
+
+async def test_preview_media_binds_post_then_task(mock_db: MagicMock) -> None:
+    await media_approval_service.get_preview_media(
+        mock_db, site_config=_PREVIEW_SC, task_id="t1",
+    )
+    sql, post_arg, task_arg = mock_db.fetch.await_args.args
+    assert (post_arg, task_arg) == (None, "t1")
+    # Both preview branches depend on following the canonical seam both ways.
+    assert sql.count("metadata->>'pipeline_task_id'") == 2
+    assert "LEFT JOIN media_approvals" in sql
+    assert "'video_short'" not in sql
+
+
+async def test_preview_media_plays_the_stamped_url(mock_db: MagicMock) -> None:
+    mock_db.fetch.return_value = [
+        _asset_row("video", url="https://cdn.example/video/p1.mp4"),
+    ]
+    media = await media_approval_service.get_preview_media(
+        mock_db, site_config=_PREVIEW_SC, post_id="p1",
+    )
+    assert media == {"video": "https://cdn.example/video/p1.mp4"}
+
+
+async def test_preview_media_falls_back_to_the_delivery_keys(mock_db: MagicMock) -> None:
+    """An approved asset delivered without a stamped URL plays from the key the
+    feed advertises: the podcast's carries podcast_cdn_version."""
+    mock_db.fetch.return_value = [_asset_row("podcast"), _asset_row("video")]
+    media = await media_approval_service.get_preview_media(
+        mock_db, site_config=_PREVIEW_SC, post_id="p1",
+    )
+    assert media == {
+        "podcast": "https://cdn.example/podcast/v7/p1.mp3",
+        "video": "https://cdn.example/video/p1.mp4",
+    }
+
+
+async def test_preview_media_never_links_unapproved_media(mock_db: MagicMock) -> None:
+    """Pending, rejected and unlinked (no approval row yet) media is shown as
+    present but gets no URL, stamped or not."""
+    mock_db.fetch.return_value = [
+        _asset_row("podcast", approval="pending"),
+        _asset_row("video", url="https://cdn.example/video/p1.mp4", approval="rejected"),
+    ]
+    media = await media_approval_service.get_preview_media(
+        mock_db, site_config=_PREVIEW_SC, task_id="t1",
+    )
+    assert media == {"podcast": None, "video": None}
+
+    mock_db.fetch.return_value = [_asset_row("video", post_id=None, approval=None)]
+    media = await media_approval_service.get_preview_media(
+        mock_db, site_config=_PREVIEW_SC, task_id="t1",
+    )
+    assert media == {"video": None}
+
+
+async def test_preview_media_takes_the_newest_approved_asset(mock_db: MagicMock) -> None:
+    """Rows arrive newest first. A newer render still awaiting approval must not
+    hide the approved one the feed publishes."""
+    mock_db.fetch.return_value = [
+        _asset_row("podcast", post_id="p1", approval="pending"),
+        _asset_row("podcast", post_id="p1", url="https://cdn.example/new.mp3"),
+        _asset_row("podcast", post_id="p1", url="https://cdn.example/old.mp3"),
+    ]
+    media = await media_approval_service.get_preview_media(
+        mock_db, site_config=_PREVIEW_SC, post_id="p1",
+    )
+    assert media == {"podcast": "https://cdn.example/new.mp3"}
+
+
+async def test_preview_media_does_not_guess_without_a_public_base(
+    mock_db: MagicMock,
+) -> None:
+    """With no storage_public_url there is no key to fall back to: omit the
+    link rather than build a broken one. A stamped URL still plays."""
+    sc = MagicMock()
+    sc.get.side_effect = lambda key, default="": default
+    mock_db.fetch.return_value = [
+        _asset_row("podcast"),
+        _asset_row("video", url="https://cdn.example/video/p1.mp4"),
+    ]
+    media = await media_approval_service.get_preview_media(
+        mock_db, site_config=sc, post_id="p1",
+    )
+    assert media == {"podcast": None, "video": "https://cdn.example/video/p1.mp4"}

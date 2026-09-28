@@ -11,9 +11,14 @@ Each episode includes:
 - Body: The blog post content (markdown stripped to plain text)
 - Outro: "Thanks for listening. Visit {site_domain} for more."
 
-Audio files are saved to ~/.poindexter/podcast/ and served via the FastAPI
-podcast routes. A valid podcast RSS feed is generated for Apple Podcasts /
-Spotify distribution.
+Audio files land in ``PODCAST_DIR`` (~/.poindexter/podcast/). Pipeline renders
+there are named by task id: the ``podcast.render`` atom synthesizes through
+:meth:`PodcastService.synthesize`, and ``podcast.persist`` moves the file to
+``{task_id}.mp3`` (#1460). :meth:`PodcastService.generate_episode` is the
+post-keyed manual path (``POST /api/podcast/generate/{post_id}``) and writes
+``{post_id}.mp3``. Either way the episode is recorded in ``media_assets``;
+``podcast_distribute`` uploads approved episodes to object storage, and the RSS
+feed lists them from there for Apple Podcasts / Spotify.
 
 Usage:
     from poindexter.services.podcast_service import PodcastService
@@ -24,7 +29,7 @@ Usage:
         title="Why Local LLMs Beat Cloud APIs",
         content="# Why Local LLMs...\\n\\nMarkdown body here...",
     )
-    # result = {"file_path": "~/.poindexter/podcast/abc123.mp3", "duration_seconds": 312}
+    # result.file_path == "~/.poindexter/podcast/abc123.mp3"; result.duration_seconds == 312
 """
 
 import hashlib
@@ -1430,7 +1435,7 @@ def _wrap_with_intro_outro(
 
     For the video composer's narration sibling, use
     ``_unwrap_intro_outro`` (or build the body-only script directly and
-    feed it to a second edge_tts pass via ``PodcastService.generate_episode``,
+    feed it to a second TTS pass via ``PodcastService.generate_episode``,
     which writes ``{post_id}-narration.mp3`` alongside the main file when
     ``podcast_video_narration_sibling_enabled='true'``).
     """
@@ -1517,7 +1522,7 @@ class EpisodeResult:
 
 
 class PodcastService:
-    """Generate podcast MP3 episodes from blog post content using Edge TTS."""
+    """Generate podcast MP3 episodes from blog post content via the configured TTS engine."""
 
     def __init__(
         self,
@@ -1538,19 +1543,6 @@ class PodcastService:
         """Check if an episode already exists for a post."""
         path = self.get_episode_path(post_id)
         return path.exists() and path.stat().st_size > 0
-
-    def list_episodes(self) -> list[dict]:
-        """List all generated episode files with metadata."""
-        episodes = []
-        for mp3 in sorted(self.output_dir.glob("*.mp3")):
-            stat = mp3.stat()
-            episodes.append({
-                "post_id": mp3.stem,
-                "file_path": str(mp3),
-                "file_size_bytes": stat.st_size,
-                "created_at": stat.st_ctime,
-            })
-        return episodes
 
     async def synthesize(
         self,
@@ -1636,7 +1628,10 @@ class PodcastService:
         """Generate a podcast episode MP3 from blog post content.
 
         Args:
-            post_id: Unique post identifier (used as filename).
+            post_id: The post's id. Names the file ``{post_id}.mp3`` and keys
+                the ``media_assets`` row: this is the manual path for a post
+                with no pipeline task. Pipeline renders are task-keyed and go
+                through :meth:`synthesize` instead.
             title: Post title (used in the intro).
             content: Full post content (markdown — will be stripped).
             force: Regenerate even if the episode already exists.
@@ -1885,7 +1880,7 @@ class PodcastService:
         article body without the "Welcome to {name}" intro / "Visit
         {site} for more" outro.
 
-        Cheap: edge-tts is local, so this is a second local TTS pass on
+        Cheap: the TTS engine is local, so this is a second local TTS pass on
         already-normalized text. Same voice as the main episode to keep
         the audio identity consistent (the video isn't a different show,
         just a different framing of the same content).
