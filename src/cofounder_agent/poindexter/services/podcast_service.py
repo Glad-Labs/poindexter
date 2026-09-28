@@ -1078,7 +1078,7 @@ async def _build_script_with_llm(
         )
         return _build_script_fallback(title, content, site_config=_sc)
 
-    model = (_sc.get("podcast_script_model") or "").removeprefix("ollama/")
+    model = _sc.get("podcast_script_model") or ""
     if not model or model == "auto":
         # Per-step pin unset or left at the "auto" sentinel — fall back to
         # default_ollama_model; page + use the regex script if that's empty too.
@@ -1093,7 +1093,7 @@ async def _build_script_with_llm(
                 site_config=_sc,
             )
             return _build_script_fallback(title, content, site_config=_sc)
-        model = fallback.removeprefix("ollama/")
+        model = fallback
 
     from poindexter.services.prompt_manager import get_prompt_manager
     prompt = get_prompt_manager().get_prompt(

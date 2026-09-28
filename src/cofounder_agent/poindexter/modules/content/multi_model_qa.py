@@ -683,8 +683,10 @@ class MultiModelQA:
             cfg = self._site_config
             if cfg is None:
                 return
+            # bare-model: normalizes spelling for the writer/critic family-collision check
             norm = critic_model.strip().removeprefix("ollama/").lower()
             for key in _WRITER_FAMILY_PINS:
+                # bare-model: same normalization as the critic model above
                 pin = (cfg.get(key, "") or "").strip().removeprefix("ollama/").lower()
                 if not pin or pin != norm:
                     continue
@@ -1396,6 +1398,7 @@ class MultiModelQA:
                     setting_key="qa_fallback_critic_model",
                     site="critic_fallback",
                 )
+            # bare-model: normalizes spelling for the model_override != fallback_model check
             ).removeprefix("ollama/")
         except Exception as _cfg_exc:
             logger.warning(
@@ -1610,6 +1613,7 @@ class MultiModelQA:
                     setting_key="qa_fallback_critic_model",
                     site="critic",
                 )
+            # bare-model: recorded as the review's "model" below (identity)
             ollama_model = resolved_model.removeprefix("ollama/")
             from poindexter.services.llm_providers.thinking_models import (
                 is_thinking_model as _is_thinking_model,
@@ -1762,13 +1766,12 @@ class MultiModelQA:
                 setting_key="qa_fallback_critic_model",
                 site=f"gate:{reviewer_name}",
             )
-            ollama_model = resolved_model.removeprefix("ollama/")
 
             _gate_max = self._platform.config.get_int("qa_gate_max_tokens", 600) if self._platform else 600
             _gate_timeout = self._platform.config.get_int("qa_gate_timeout_seconds", 60) if self._platform else 60
             completion = await self._dispatch_llm(
                 prompt,
-                ollama_model,
+                resolved_model,
                 temperature=temperature,
                 max_tokens=_gate_max,
                 timeout_s=float(_gate_timeout),
@@ -2779,6 +2782,7 @@ class MultiModelQA:
                 model = (
                     await self.settings.get("qa_vision_model") or ""
                 )
+                # bare-model: logged as extra["model"] below (identity)
                 model = model.removeprefix("ollama/")
                 max_images = int(
                     await self.settings.get("qa_vision_max_images") or 3
@@ -3180,7 +3184,6 @@ class MultiModelQA:
                 model = (
                     await self.settings.get("qa_preview_vision_model") or ""
                 )
-                model = model.removeprefix("ollama/")
                 pass_threshold = int(
                     await self.settings.get("qa_preview_pass_threshold") or 70
                 )

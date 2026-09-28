@@ -30,7 +30,7 @@ import pytest
 
 class TestRetentionResolveSummaryModel:
     @pytest.mark.asyncio
-    async def test_returns_pin_strips_prefix(self):
+    async def test_returns_pin_verbatim(self):
         from poindexter.services.integrations.handlers import retention_summarize_to_table as mod
 
         with patch(
@@ -38,7 +38,9 @@ class TestRetentionResolveSummaryModel:
             AsyncMock(return_value="ollama/gemma3:27b-it-qat"),
         ):
             model = await mod._resolve_summary_model(MagicMock())
-        assert model == "gemma3:27b-it-qat"
+        # Verbatim: build_summary_text_via_llm goes through dispatch_complete,
+        # which re-applies the prefix (poindexter#1030).
+        assert model == "ollama/gemma3:27b-it-qat"
 
     @pytest.mark.asyncio
     async def test_raises_and_notifies_when_pin_unset(self):

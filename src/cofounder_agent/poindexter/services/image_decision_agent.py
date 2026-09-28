@@ -142,7 +142,7 @@ async def plan_images(
     pool = getattr(_sc, "_pool", None)
     # Per-step model pin (model_role_image_decision) — a small JSON-shaped
     # task. Empty → page (advisory) and return an empty plan.
-    model = (_sc.get("model_role_image_decision") or "").removeprefix("ollama/")
+    model = _sc.get("model_role_image_decision") or ""
     if not model:
         from poindexter.services.integrations.operator_notify import notify_operator
         await notify_operator(

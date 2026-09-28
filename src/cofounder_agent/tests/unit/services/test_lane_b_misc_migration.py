@@ -52,14 +52,15 @@ class TestSocialPosterResolveModel:
 
 class TestAIContentGeneratorResolveRAGModel:
     @pytest.mark.asyncio
-    async def test_returns_pipeline_writer_model_stripped(self):
+    async def test_returns_pipeline_writer_model_verbatim(self):
         from poindexter.modules.content.ai_content_generator import _resolve_rag_writer_model
 
         sc = MagicMock()
         sc.get = MagicMock(return_value="ollama/glm-4.7-5090:latest")
         model = await _resolve_rag_writer_model(site_config=sc)
-        # Bare model name (ollama/ stripped) per provider contract.
-        assert model == "glm-4.7-5090:latest"
+        # Verbatim: the one consumer, ollama_chat_text, strips ollama/ itself
+        # before its direct fallback, and dispatch re-applies it (poindexter#1030).
+        assert model == "ollama/glm-4.7-5090:latest"
 
     @pytest.mark.asyncio
     async def test_raises_when_pin_unset(self):

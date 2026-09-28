@@ -537,7 +537,7 @@ async def embeddings_collapse(
     # empty). Changing one path does not change the other.
     summary_model = str(
         config.get("summary_model") or "phi4:14b"
-    ).strip().removeprefix("ollama/")
+    ).strip()
 
     # Per-policy-row prompt override; None → the SKILL.md catalog default
     # (memory.collapse_old_embeddings.summary) resolved downstream.

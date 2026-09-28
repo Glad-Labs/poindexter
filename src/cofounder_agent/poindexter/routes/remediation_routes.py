@@ -104,6 +104,7 @@ class _SelectorModelRouter:
         # pipeline_writer_model is pinned to a paid model for a writer experiment
         # (the 2026-07-07 Sonnet-canary, Glad-Labs/poindexter#866).
         model_name = (
+            # bare-model: re-added as f"ollama/{model_name}" in the response — keep bare
             configured.removeprefix("ollama/")
             if configured
             else resolve_local_writer_model(None, site_config=self._site_config)

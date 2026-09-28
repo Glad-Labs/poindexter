@@ -926,6 +926,7 @@ class AIContentGenerator:
         def _push(candidate: str | None) -> None:
             if not candidate:
                 return
+            # bare-model: dedup key — "ollama/X" and "X" are one candidate
             clean = candidate.removeprefix("ollama/")
             if clean and clean not in ordered:
                 ordered.append(clean)
@@ -1540,7 +1541,9 @@ async def _resolve_rag_writer_model(
     See glad-labs-stack#1281: the order below was previously inverted,
     causing the cost-tier model to silently override ``pipeline_writer_model``.
 
-    Returns the bare model name (``ollama/`` prefix stripped).
+    Returns the configured name verbatim. Its one consumer is
+    ``ollama_chat_text``, which strips ``ollama/`` itself before its direct
+    Ollama fallback, and dispatch re-applies the prefix (poindexter#1030).
 
     Note: the model-class detection at lines 607 + 776
     (``is_thinking_model = any(t in model.lower() for t in ...)``) is
@@ -1556,7 +1559,7 @@ async def _resolve_rag_writer_model(
     # 1. pipeline_writer_model — primary (operator-pinned).
     primary = (_sc.get("pipeline_writer_model") or "").strip()
     if primary:
-        return primary.removeprefix("ollama/")
+        return primary
 
     # 2. No writer model resolvable — fail loud. The cost_tier.* fallback was
     #    removed; pipeline_writer_model is the single source for the writer.

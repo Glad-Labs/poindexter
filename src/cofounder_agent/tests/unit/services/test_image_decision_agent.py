@@ -425,12 +425,14 @@ class TestPlanImagesModelPinResolution:
 
         # dispatch_complete received the pin (ollama/ prefix stripped).
         call_model = mock_dispatch.await_args.kwargs.get("model")
-        assert call_model == "image-decider"
+        assert call_model == "ollama/image-decider"
         assert result.featured_image is not None
 
     @pytest.mark.asyncio
-    async def test_pin_with_prefix_is_stripped(self):
-        """The ollama/ prefix on the pin is stripped before dispatch."""
+    async def test_prefixed_pin_reaches_dispatch_verbatim(self):
+        """The pin is passed through as configured — dispatch_complete re-applies
+        the provider prefix itself, so stripping it here was a no-op round trip
+        (poindexter#1030)."""
         plan_json = {
             "featured": {"source": "image_gen", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [],
@@ -446,7 +448,7 @@ class TestPlanImagesModelPinResolution:
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         call_model = mock_dispatch.await_args.kwargs.get("model")
-        assert call_model == "per-site-model"
+        assert call_model == "ollama/per-site-model"
         assert result.featured_image is not None
 
     @pytest.mark.asyncio

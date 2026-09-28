@@ -181,6 +181,7 @@ async def build_semantic_pexels_query(topic: str, *, site_config: SiteConfig) ->
     _client_timeout = _sc.get_int("image_ollama_client_timeout_seconds", 30)
     # Per-step model pin (image_search_query_model). Empty → page (advisory)
     # and return None so the caller falls back to the raw topic.
+    # bare-model: no-pool fallback uses the ollama_native provider (direct)
     _model = (_sc.get("image_search_query_model") or "").removeprefix("ollama/")
     if not _model:
         from poindexter.services.integrations.operator_notify import notify_operator

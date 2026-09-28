@@ -119,7 +119,7 @@ def _resolve_model(site_config: Any) -> str | None:
         except Exception:  # noqa: BLE001 — stubbed site_config
             value = ""
         if value:
-            return value.removeprefix("ollama/")
+            return value
     return None
 
 

@@ -201,6 +201,7 @@ class _DefaultModelRouter:
         except Exception:
             triage_model = ""
         if triage_model:
+            # bare-model: re-added as f"ollama/{model_name}" in the response — keep bare
             model_name = triage_model.removeprefix("ollama/")
         else:
             # Alert triage is a SATELLITE phase (it diagnoses an alert; it is

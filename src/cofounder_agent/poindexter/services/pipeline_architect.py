@@ -330,7 +330,7 @@ async def compose(
         _sc.get("pipeline_architect_model") or ""
     ).strip()
     if architect_override:
-        model = architect_override.removeprefix("ollama/")
+        model = architect_override
     else:
         from poindexter.services.llm_text import resolve_local_writer_model
         model = resolve_local_writer_model(site_config=_sc)

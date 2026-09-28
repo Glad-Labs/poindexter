@@ -171,8 +171,10 @@ async def _resolve_summary_model(pool: Any) -> str:
     ``cost_tier='budget'`` indirection was removed in favour of the per-step
     pin. The caller catches the raise and falls back to a joined preview.
 
-    The returned string is the bare model name (``ollama/`` prefix
-    stripped) since :class:`OllamaClient` consumes ``model`` directly.
+    Returned verbatim: the one consumer, ``build_summary_text_via_llm``, goes
+    through ``dispatch_complete`` (which re-applies the provider prefix) and
+    skips the LLM step without a pool — the OllamaClient path that needed a
+    bare name is gone (poindexter#1030).
     """
     model = (
         await _get_setting(pool, "memory_compression_summary_model", "")
@@ -187,7 +189,7 @@ async def _resolve_summary_model(pool: Any) -> str:
             "retention.summarize_to_table: no summary model — set "
             "memory_compression_summary_model"
         )
-    return model.removeprefix("ollama/")
+    return model
 
 
 # ---------------------------------------------------------------------------

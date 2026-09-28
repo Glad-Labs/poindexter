@@ -406,6 +406,7 @@ async def _build_ragas_models(
                 type(exc).__name__, exc, base_url,
             )
 
+    # bare-model: the no-pool path hands this to ChatOllama (direct Ollama)
     judge_model = (await _resolve_judge_model(site_config)).removeprefix("ollama/")
     embed_model = "nomic-embed-text"
     if site_config is not None:

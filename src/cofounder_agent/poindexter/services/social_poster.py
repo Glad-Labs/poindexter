@@ -393,6 +393,7 @@ async def _generate_social_text(
             platform, exc,
         )
         return ""
+    # bare-model: the no-pool fallback hands this to OllamaClient as-is
     model = resolved.removeprefix("ollama/")  # bare model name for both paths
 
     pool = getattr(_sc, "_pool", None)

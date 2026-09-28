@@ -207,9 +207,11 @@ async def _prepare(
     # ``revise_model`` writes the text that ships, so it keeps the historical
     # key name (and its seat in multi_model_qa._WRITER_FAMILY_PINS). The detect
     # call may use a different model — see _resolve_review_model.
+    # bare-model: normalizes spelling for the review_model != revise_model check
     revise_model = str(resolved_model).removeprefix("ollama/")
     review_model = _resolve_review_model(
         revise_model, site_config=_sc
+    # bare-model: normalizes spelling for the review_model != revise_model check
     ).removeprefix("ollama/")
     if review_model != revise_model:
         logger.info(

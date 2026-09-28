@@ -87,6 +87,7 @@ def resolve_writer_model(model: str | None = None, *, site_config: Any = None) -
         mid-stage.
     """
     if model:
+        # bare-model: returns bare — ollama_chat_text's httpx fallback POSTs it to Ollama
         return model.removeprefix("ollama/")
     if site_config is None:
         raise ValueError(
@@ -96,6 +97,7 @@ def resolve_writer_model(model: str | None = None, *, site_config: Any = None) -
         )
     writer = (site_config.get("pipeline_writer_model", "") or "").strip()
     if writer:
+        # bare-model: returns bare — ollama_chat_text's httpx fallback POSTs it to Ollama
         return writer.removeprefix("ollama/")
     raise ValueError(
         "llm_text: no writer model resolvable from app_settings — set "
@@ -151,6 +153,7 @@ def resolve_local_writer_model(
             paid/unset while ``pipeline_local_writer_model`` is empty.
     """
     if model:
+        # bare-model: returns bare — ollama_chat_text's httpx fallback POSTs it to Ollama
         return model.strip().removeprefix("ollama/")
     if site_config is None:
         raise ValueError(
@@ -159,6 +162,7 @@ def resolve_local_writer_model(
         )
     local_pin = (site_config.get("pipeline_local_writer_model", "") or "").strip()
     if local_pin:
+        # bare-model: returns bare — ollama_chat_text's httpx fallback POSTs it to Ollama
         return local_pin.removeprefix("ollama/")
     # Self-adjust: an all-local install has no reason to configure a separate
     # pin — reuse pipeline_writer_model, but ONLY when it is itself local.
@@ -167,6 +171,7 @@ def resolve_local_writer_model(
         from poindexter.services.llm_providers.dispatcher import _is_paid_llm_call
 
         if not _is_paid_llm_call(writer, None):
+            # bare-model: returns bare — ollama_chat_text's httpx fallback POSTs it to Ollama
             return writer.removeprefix("ollama/")
     raise ValueError(
         "llm_text.resolve_local_writer_model: no LOCAL writer-grade model "
@@ -201,6 +206,7 @@ def resolve_structured_model(
     ``feedback_no_silent_defaults``; the ``cost_tier.*`` fallback was removed).
     """
     if model:
+        # bare-model: returns bare — ollama_chat_text's httpx fallback POSTs it to Ollama
         return model.removeprefix("ollama/")
     if site_config is None:
         raise ValueError(
@@ -209,6 +215,7 @@ def resolve_structured_model(
         )
     val = (site_config.get("structured_extraction_model", "") or "").strip()
     if val:
+        # bare-model: returns bare — ollama_chat_text's httpx fallback POSTs it to Ollama
         return val.removeprefix("ollama/")
     raise ValueError(
         "llm_text: no structured-extraction model resolvable — set "

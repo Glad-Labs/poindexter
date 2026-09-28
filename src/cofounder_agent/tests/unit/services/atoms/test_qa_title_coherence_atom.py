@@ -188,11 +188,12 @@ class TestModelResolution:
     def test_own_pin_wins(self):
         cfg = _Cfg(**{"qa_title_coherence_model": "ollama/judge-model:1b",
                       "pipeline_seo_model": "seo-model"})
-        assert qa_title_coherence._resolve_model(cfg) == "judge-model:1b"
+        # Verbatim: ollama_chat_text strips ollama/ itself (poindexter#1030).
+        assert qa_title_coherence._resolve_model(cfg) == "ollama/judge-model:1b"
 
     def test_falls_back_to_seo_then_local_writer(self):
         cfg = _Cfg(**{"pipeline_seo_model": "ollama/gemma-4-31B-it-qat:latest"})
-        assert qa_title_coherence._resolve_model(cfg) == "gemma-4-31B-it-qat:latest"
+        assert qa_title_coherence._resolve_model(cfg) == "ollama/gemma-4-31B-it-qat:latest"
         cfg = _Cfg(**{"pipeline_local_writer_model": "local-writer"})
         assert qa_title_coherence._resolve_model(cfg) == "local-writer"
 

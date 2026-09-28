@@ -680,8 +680,10 @@ async def generate_canonical_title(
         # titles from a writer experiment. Both empty → page the operator and
         # abort the regen (no silent default). The cost_tier.standard.model
         # indirection was removed.
+        # bare-model: the no-pool fallback hands this to the ollama_native provider as-is
         model = (_sc.get("pipeline_title_model") or "").strip().removeprefix("ollama/")
         if not model:
+            # bare-model: the no-pool fallback hands this to the ollama_native provider as-is
             model = (_sc.get("pipeline_writer_model") or "").removeprefix("ollama/")
         if not model:
             from poindexter.services.integrations.operator_notify import notify_operator

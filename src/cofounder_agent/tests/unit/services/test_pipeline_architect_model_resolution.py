@@ -78,7 +78,9 @@ async def test_dedicated_architect_model_override_still_wins(monkeypatch):
 
     await pipeline_architect.compose("compose a pipeline", site_config=sc, max_attempts=1)
 
-    assert captured["model"] == "qwen3:14b"
+    # Handed to ollama_chat_text as configured; it strips ollama/ itself
+    # before its direct fallback (poindexter#1030).
+    assert captured["model"] == "ollama/qwen3:14b"
 
 
 @pytest.mark.asyncio
