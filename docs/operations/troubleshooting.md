@@ -184,6 +184,43 @@ The fallback (gemma3:27b) works cleanly. No task is lost. But every primary crit
 
 ---
 
+## Boot warning: `Ollama model validation warning at startup: Missing (not installed)`
+
+**Symptom.** The worker logs this at startup and sends it to the operator channel:
+
+```
+[model_validator] MISSING: key='<key>' references model '<name>' which is not installed in Ollama
+[model_validator] **Ollama model validation warning at startup:**
+Missing (not installed): <name>
+```
+
+A clean boot logs `All N configured model(s) validated OK` instead.
+
+**What it checks.** `StartupManager._validate_ollama_model_settings` (`src/cofounder_agent/poindexter/utils/startup_manager.py`) reads every `app_settings` key ending in `_model` and looks each Ollama model up in `GET <ollama_base_url>/api/tags`. Many `*_model` keys configure other backends, so it classifies each value first, in this order (poindexter#941):
+
+1. **Sentinels** (`auto`, `default`, `none`) and empty values are skipped.
+2. **A value containing `/` names its own namespace.** `ollama/…` and `ollama_chat/…` are both Ollama: the second prefix is the `/api/chat` endpoint on the same server, which tool-calling pins need. These values are checked with the prefix removed. Any other namespace is skipped: another provider (`anthropic/…`) or a HuggingFace repo (`cross-encoder/ms-marco-MiniLM-L-6-v2`).
+3. **A weights-file suffix** (`.safetensors`, `.ckpt`, `.gguf`, `.pt`, `.pth`, `.bin`) names a checkpoint on a sidecar's disk, so the value is skipped.
+4. **A `<key>_revision` row** pins the key to a HuggingFace commit (poindexter#879), so its value is a Hub model. That is how `topic_dedup_embedding_model` = `all-MiniLM-L6-v2` is skipped.
+5. **Any other bare value is ambiguous**: `all-MiniLM-L6-v2` looks like an Ollama tag. So the key decides. Keys in `_NON_OLLAMA_MODEL_KEYS` (in that file) or in the `ollama_model_validation_skip_keys` setting are skipped, and every other key is checked.
+
+**Real miss or a misclassified key?** Find the code that reads the key:
+
+```bash
+grep -rn "'<key>'" src/cofounder_agent/poindexter
+```
+
+If the value ends up at Ollama, the model really is missing. That covers `dispatch_complete` and `dispatch_embed` (LiteLLM gives a bare name the `ollama/` prefix), `ollama_chat_text`, and the Ollama provider. Run `ollama pull <name>` or point the key at an installed model. If the value goes to another backend, such as sentence-transformers, a sidecar or a cloud SDK, the key is misclassified.
+
+**Fixing a misclassified key.**
+
+- On one install, today: `poindexter settings set ollama_model_validation_skip_keys "<key>,<other_key>"`. The list is comma-separated and read at boot.
+- In code, when the key ships in a seed: add it to `_NON_OLLAMA_MODEL_KEYS` with a one-line comment naming its backend. `TestSeededModelKeysAreClassified` in `tests/unit/services/test_ollama_model_validator.py` requires this decision (poindexter#1098). It takes every seeded `*_model` value that only its key can classify from all three seed sources, and fails until each key is in `_NON_OLLAMA_MODEL_KEYS` or in the test's `_BARE_OLLAMA_KEYS` (bare values that really are Ollama tags, each with its reader). It also fails on stale entries in either list.
+
+A value that says it is Ollama (`ollama/…`, `ollama_chat/…`) is always checked, whatever its key: failing to report a model that really is missing is worse than one false alarm. Until poindexter#1098, `ollama_chat/` counted as a foreign provider, so a missing model behind a pin like `console_chat_model` was never reported.
+
+---
+
 ## Approval queue is full, pipeline stops generating new content
 
 **Symptom.** You queue a new content task with `topic: "auto"` and get an error "No fresh topics found" or the executor logs `[THROTTLE] Approval queue full (3/3) — skipping generation`. No new content is being produced even though the pipeline looks healthy.

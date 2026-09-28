@@ -47,12 +47,24 @@ _MODEL_SENTINELS = frozenset({"auto", "default", "none"})
 # HuggingFace revision pin by `_hf_revision_pinned_keys`, so only the remaining
 # ambiguous bare ones need naming. Operators extend this via
 # `ollama_model_validation_skip_keys` rather than editing code.
+# test_ollama_model_validator.py derives every seeded bare `*_model` value and
+# fails until its key is named here or in the test's list of bare Ollama keys.
 _NON_OLLAMA_MODEL_KEYS = frozenset({
     "gpu_model",                 # hardware description, e.g. "NVIDIA RTX 5090 (32GB VRAM)"
     "image_generation_model",    # image-gen server REGISTRY name, e.g. "z_image_turbo"
     "voice_agent_whisper_model",  # faster-whisper size, e.g. "medium"
     "voice_bridge_stt_model",    # faster-whisper size, e.g. "base.en"
+    # Gemini plugin: bare names handed to google.genai, e.g. "gemini-2.5-flash"
+    "plugin.llm_provider.gemini.default_model",
+    "plugin.llm_provider.gemini.embed_model",  # e.g. "text-embedding-004"
 })
+
+# LiteLLM's two spellings of the local Ollama engine: `ollama/` dispatches to
+# /api/generate and `ollama_chat/` to /api/chat, which agentic pins need for
+# tool calls. Two endpoints of one server with one /api/tags list, so a value
+# under either prefix names a model this validator must find. The dispatch
+# side treats the same pair as local (llm_providers/coldload_guard.py).
+_OLLAMA_PREFIXES = ("ollama/", "ollama_chat/")
 
 # Weights-file suffixes. A value ending in one of these names a checkpoint FILE
 # on a sidecar's disk (ComfyUI's `wan2.2_i2v_high_noise_14B_fp8_scaled.
@@ -81,6 +93,19 @@ def _hf_revision_pinned_keys(keys: Iterable[str]) -> frozenset[str]:
         for key in keys
         if key.endswith("_model" + _REVISION_SUFFIX)
     )
+
+
+def _strip_ollama_prefix(value: str) -> str | None:
+    """``value`` without its local-Ollama prefix; ``None`` if it has none.
+
+    ``ollama_chat/qwen2.5:7b`` -> ``qwen2.5:7b``. A bare value and another
+    provider's namespace (``anthropic/…``) both return ``None``.
+    """
+    lowered = value.lower()
+    for prefix in _OLLAMA_PREFIXES:
+        if lowered.startswith(prefix):
+            return value[len(prefix):]
+    return None
 
 
 def _ollama_name_variants(name: str) -> set[str]:
@@ -112,12 +137,14 @@ def _is_ollama_model_value(
     Five rules, cheapest first:
 
     1. Sentinels (``auto``) select a model at runtime; there is nothing to look up.
-    2. A value containing ``/`` declares its own namespace. ``ollama/…`` is
-       ours; anything else is another provider (``anthropic/claude-sonnet-5``)
-       or a HuggingFace repo (``Systran/faster-whisper-medium``,
-       ``Wan-AI/Wan2.2-TI2V-5B``, ``cross-encoder/ms-marco-MiniLM-L-6-v2``).
-       This replaces an allowlist of cloud prefixes that could only ever
-       recognise the providers someone had already been bitten by.
+    2. A value containing ``/`` declares its own namespace. ``ollama/…`` and
+       ``ollama_chat/…`` are ours (see ``_OLLAMA_PREFIXES``); anything else is
+       another provider (``anthropic/claude-sonnet-5``) or a HuggingFace repo
+       (``Systran/faster-whisper-medium``, ``Wan-AI/Wan2.2-TI2V-5B``,
+       ``cross-encoder/ms-marco-MiniLM-L-6-v2``). This replaces an allowlist
+       of cloud prefixes that could only ever recognise the providers someone
+       had already been bitten by. Until 2026-09-28 only ``ollama/`` counted,
+       so every ``ollama_chat/`` pin went unchecked.
     3. A value ending in a weights-file suffix is a checkpoint file on a
        sidecar's disk, not an Ollama tag (see ``_CHECKPOINT_SUFFIXES``).
     4. A bare value under a key with a HuggingFace revision pin names a Hub
@@ -128,7 +155,7 @@ def _is_ollama_model_value(
     if not raw or raw.lower() in _MODEL_SENTINELS:
         return False
     if "/" in raw:
-        return raw.lower().startswith("ollama/")
+        return _strip_ollama_prefix(raw) is not None
     if raw.lower().endswith(_CHECKPOINT_SUFFIXES):
         return False
     if key in hf_pinned_keys:
@@ -851,9 +878,9 @@ class StartupManager:
         Reads every ``app_settings`` key matching ``*_model``, then:
 
         1. Fetches the installed model list from Ollama (``GET /api/tags``).
-        2. For each configured model value: strips an ``ollama/`` prefix if
-           present (the DB stores ``ollama/gemma3:27b``; Ollama reports
-           ``gemma3:27b``).
+        2. For each configured model value: strips an ``ollama/`` or
+           ``ollama_chat/`` prefix if present (the DB stores
+           ``ollama/gemma3:27b``; Ollama reports ``gemma3:27b``).
         3. Warns if the model is not in the installed list.
         4. Fetches ``POST /api/show`` for installed models and checks for
            suspicious chat-template tokens (``<|turn>``, ``<turn|>``,
@@ -1051,12 +1078,14 @@ class StartupManager:
         checked_models: set[str] = set()
 
         for key, raw_value in configured.items():
-            # Strip the ollama/ prefix that the DB uses but Ollama itself does
-            # not. Non-Ollama values never reach here — _is_ollama_model_value
-            # filtered them out when `configured` was built.
+            # Strip the ollama/ or ollama_chat/ prefix that the DB uses but
+            # Ollama itself does not. Non-Ollama values never reach here —
+            # _is_ollama_model_value filtered them out when `configured` was
+            # built.
             model_name = raw_value.strip()
-            if model_name.lower().startswith("ollama/"):
-                model_name = model_name[len("ollama/"):]
+            bare = _strip_ollama_prefix(model_name)
+            if bare is not None:
+                model_name = bare
 
             if not model_name or model_name in checked_models:
                 continue

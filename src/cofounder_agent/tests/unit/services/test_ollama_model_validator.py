@@ -13,6 +13,9 @@ fully offline.
 
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -402,6 +405,31 @@ class TestOllamaValueClassification:
             skip_keys=frozenset(),
         )
 
+    def test_ollama_chat_prefixed_values_are_checked(self):
+        """LiteLLM's ``ollama_chat/`` reaches the same Ollama server as
+        ``ollama/`` (its /api/chat endpoint, which tool calls need), so the
+        namespace is ours, not another provider's."""
+        from poindexter.utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
+
+        for value in ("ollama_chat/qwen3-vl:30b-a3b-instruct", "OLLAMA_CHAT/phi4:14b"):
+            assert _is_ollama_model_value(
+                "console_chat_model", value, skip_keys=_NON_OLLAMA_MODEL_KEYS,
+            ), value
+
+    def test_gemini_plugin_keys_are_skipped(self):
+        """The Gemini provider hands these to google.genai as bare names. Both
+        seed empty, so they stay quiet until an operator enables Gemini with
+        an explicit model, which would then be reported MISSING every boot."""
+        from poindexter.utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
+
+        for key, value in (
+            ("plugin.llm_provider.gemini.default_model", "gemini-2.5-flash"),
+            ("plugin.llm_provider.gemini.embed_model", "text-embedding-004"),
+        ):
+            assert not _is_ollama_model_value(
+                key, value, skip_keys=_NON_OLLAMA_MODEL_KEYS,
+            ), key
+
     def test_other_provider_namespaces_are_skipped(self):
         """A namespaced value declares its own backend. The old code carried an
         allowlist of cloud prefixes, which could only ever recognise providers
@@ -553,7 +581,9 @@ class TestValidatorNoiseSuppression:
     @pytest.mark.asyncio
     async def test_non_ollama_values_are_not_reported_missing(self):
         """The regression this all exists for: a boot where every non-Ollama
-        backend is configured must produce NO warning."""
+        backend is configured must produce NO warning. The sentence-transformers
+        model rides in with its revision pin, the way every seed source stores
+        it; the pin is what marks it (``_hf_revision_pinned_keys``)."""
         notify = await _run_validator(
             model_rows=[
                 {"key": "gpu_model", "value": "NVIDIA RTX 5090 (32GB VRAM)"},
@@ -564,8 +594,40 @@ class TestValidatorNoiseSuppression:
                 {"key": "voice_agent_stt_model", "value": "Systran/faster-whisper-medium"},
                 {"key": "default_ollama_model", "value": "auto"},
                 {"key": "pipeline_writer_model", "value": "anthropic/claude-sonnet-5"},
+                {"key": "topic_dedup_embedding_model", "value": "all-MiniLM-L6-v2"},
+                {
+                    "key": "topic_dedup_embedding_model_revision",
+                    "value": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+                },
+                {"key": "plugin.llm_provider.gemini.default_model", "value": "gemini-2.5-flash"},
+                {"key": "plugin.llm_provider.gemini.embed_model", "value": "text-embedding-004"},
             ],
             tags_data={"models": [{"name": "llama3.2:3b"}]},
+        )
+        notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_missing_ollama_chat_model_is_reported(self):
+        """``ollama_chat/`` is Ollama's /api/chat endpoint, not another
+        provider. Read as a foreign namespace, a pin like console_chat_model's
+        went unchecked however missing its model was."""
+        notify = await _run_validator(
+            model_rows=[{"key": "console_chat_model", "value": "ollama_chat/ghost:latest"}],
+            tags_data={"models": [{"name": "llama3.2:3b"}]},
+        )
+        notify.assert_called_once()
+        msg = notify.call_args[0][0]
+        assert "ghost:latest" in msg
+        assert "ollama_chat/" not in msg, "report the name Ollama lists, not the pin"
+
+    @pytest.mark.asyncio
+    async def test_an_installed_ollama_chat_model_is_found_by_its_bare_name(self):
+        notify = await _run_validator(
+            model_rows=[
+                {"key": "console_chat_model", "value": "ollama_chat/qwen3-vl:30b-a3b-instruct"},
+            ],
+            tags_data={"models": [{"name": "qwen3-vl:30b-a3b-instruct"}]},
+            show_data={"template": _GOOD_TEMPLATE},
         )
         notify.assert_not_called()
 
@@ -660,3 +722,144 @@ class TestValidatorNoiseSuppression:
         notify.assert_called_once()
         msg = notify.call_args[0][0]
         assert msg.count("ghost:latest") == 1, msg
+
+
+# ---------------------------------------------------------------------------
+# Every seeded bare *_model value has a classified key (Glad-Labs/poindexter#1098)
+#
+# A bare value (`all-MiniLM-L6-v2`, `nomic-embed-text`) says nothing about its
+# backend, so the validator falls back to the KEY: a key in
+# _NON_OLLAMA_MODEL_KEYS is skipped and any other is checked against Ollama.
+# topic_dedup_embedding_model was seeded with a bare sentence-transformers name
+# and reported MISSING on every boot until the revision-pin rule, because
+# nothing asked whoever seeded it which backend reads it. These tests take the
+# values from the three seed sources, so a newly seeded bare value fails here
+# until its key is classified one way or the other.
+# ---------------------------------------------------------------------------
+
+# Seeded keys whose bare value really is an Ollama tag, each with the reader
+# that proves it. The validator checks every unlisted bare key anyway; this
+# list records that someone chose the check rather than inheriting it.
+_BARE_OLLAMA_KEYS: dict[str, str] = {
+    "console_chat_model": "chat_agent -> dispatch_complete; LiteLLM prefixes a bare name ollama/",
+    "embed_model": "self_consistency_rail -> dispatch_embed, and the taps runner's embeddings",
+    "embedding_model": "rag_engine / ragas_eval / publish_service embed via local Ollama",
+    "niche_embedding_model": "topic_ranking -> the ollama_native provider's embed()",
+    "preferred_ollama_model": "ollama_client matches it against /api/tags",
+    "retrieval_eval_question_model": "model_eval's retrieval golden set -> ollama_chat_text",
+    "video_scene_model": "generate_media_scripts / the shot-list director's LLM",
+    "voice_agent_llm_model": "voice_agent -> Ollama's OpenAI-compatible /v1, bare tag",
+}
+
+# One app_settings seed row: VALUES ('key', 'value', ... ('' is an escaped ').
+_BASELINE_ROW_RE = re.compile(
+    r"INSERT INTO app_settings \(key, value,.*?VALUES \('([^']+)', '((?:[^']|'')*)'",
+    re.S,
+)
+
+
+def _seed_sources() -> dict[str, dict[str, str]]:
+    """key -> value for each of the three sources that seed app_settings.
+
+    All three insert ON CONFLICT DO NOTHING and which one writes first depends
+    on the install path, so any of them can be the value a fresh install boots
+    with, and the validator reads the table rather than any one source.
+    """
+    from poindexter import brain
+    from poindexter.services import settings_defaults
+
+    baseline_sql = (
+        Path(settings_defaults.__file__).parent / "migrations" / "0000_baseline.seeds.sql"
+    ).read_text(encoding="utf-8")
+    brain_seed = json.loads(
+        (Path(brain.__file__).parent / "seed_app_settings.json").read_text(encoding="utf-8")
+    )
+    return {
+        "settings_defaults.DEFAULTS": dict(settings_defaults.DEFAULTS),
+        "0000_baseline.seeds.sql": {
+            key: value.replace("''", "'")
+            for key, value in _BASELINE_ROW_RE.findall(baseline_sql)
+        },
+        "brain/seed_app_settings.json": {
+            row["key"]: str(row["value"]) for row in brain_seed["settings"]
+        },
+    }
+
+
+def _bare_seeded_values() -> dict[str, set[str]]:
+    """Seeded ``*_model`` values that only their KEY can classify, by key.
+
+    Computed with the validator's own rules and an empty skip list, so a value
+    lands here only if it is not a sentinel, has no namespace, no weights-file
+    suffix and no revision pin. A new structural rule shrinks this set without
+    anyone editing the test.
+    """
+    from poindexter.utils.startup_manager import _hf_revision_pinned_keys, _is_ollama_model_value
+
+    sources = _seed_sources()
+    pinned = _hf_revision_pinned_keys(key for rows in sources.values() for key in rows)
+    bare: dict[str, set[str]] = {}
+    for rows in sources.values():
+        for key, value in rows.items():
+            if (
+                key.endswith("_model")
+                and "/" not in value
+                and _is_ollama_model_value(
+                    key, value, skip_keys=frozenset(), hf_pinned_keys=pinned,
+                )
+            ):
+                bare.setdefault(key, set()).add(value)
+    return bare
+
+
+@pytest.mark.unit
+class TestSeededModelKeysAreClassified:
+    def test_every_seed_source_was_read(self):
+        """A guard that parsed nothing would pass everything."""
+        unread = sorted(
+            source
+            for source, rows in _seed_sources().items()
+            if not any(key.endswith("_model") for key in rows)
+        )
+        assert not unread, f"no *_model keys parsed from {unread}, so nothing checked them"
+
+    def test_every_bare_seeded_value_has_a_classified_key(self):
+        from poindexter.utils.startup_manager import _NON_OLLAMA_MODEL_KEYS
+
+        unclassified = {
+            key: sorted(values)
+            for key, values in _bare_seeded_values().items()
+            if key not in _NON_OLLAMA_MODEL_KEYS and key not in _BARE_OLLAMA_KEYS
+        }
+        assert not unclassified, (
+            "These seeded *_model values are bare, so only their key tells the "
+            f"boot validator whether to look them up in Ollama: {unclassified}. "
+            "Read each key's reader. A non-Ollama backend (sentence-transformers, "
+            "a sidecar, a cloud SDK) goes in startup_manager._NON_OLLAMA_MODEL_KEYS, "
+            "or it is reported MISSING on every boot. An Ollama tag goes in "
+            "_BARE_OLLAMA_KEYS here, with its reader."
+        )
+
+    def test_no_key_is_classified_both_ways(self):
+        from poindexter.utils.startup_manager import _NON_OLLAMA_MODEL_KEYS
+
+        assert not _NON_OLLAMA_MODEL_KEYS & _BARE_OLLAMA_KEYS.keys()
+
+    def test_bare_ollama_list_has_no_stale_entries(self):
+        stale = _BARE_OLLAMA_KEYS.keys() - _bare_seeded_values().keys()
+        assert not stale, (
+            f"{sorted(stale)} no longer seed a bare value; drop them from _BARE_OLLAMA_KEYS"
+        )
+
+    def test_skip_list_names_only_seeded_keys(self):
+        """The retire-a-key runbook (docs/operations/migrations.md) used to
+        leave this list to be checked by hand. A retired key left in it would
+        silently exempt whatever key is given that name next."""
+        from poindexter.utils.startup_manager import _NON_OLLAMA_MODEL_KEYS
+
+        seeded = {key for rows in _seed_sources().values() for key in rows}
+        orphaned = _NON_OLLAMA_MODEL_KEYS - seeded
+        assert not orphaned, (
+            f"_NON_OLLAMA_MODEL_KEYS names {sorted(orphaned)}, which no seed "
+            "source carries; remove the entry along with the key"
+        )

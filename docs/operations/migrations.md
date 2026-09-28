@@ -316,8 +316,10 @@ DB.
    `DEFAULTS` too since 2026-09-28. Three more places name keys and no lint
    reads them, so check them by hand: the `settings_categories.py` override
    map, `scripts/settings_defaults_extract.json` (the #379 extract), and
-   hand-kept key lists in code such as `StartupManager`'s
-   `_NON_OLLAMA_MODEL_KEYS`.
+   other hand-kept key lists in code. `StartupManager`'s
+   `_NON_OLLAMA_MODEL_KEYS` is checked now:
+   `tests/unit/services/test_ollama_model_validator.py` fails while it names a
+   key that no seed source carries.
 3. **DELETE by a literal key list, never a pattern.** A `LIKE` sweep takes
    out live keys that share the name, as `rate_limit_%` would:
 
