@@ -163,20 +163,46 @@ class TestScoreDomainCredibility:
     def test_wikipedia_and_arxiv_stay_credible_through_tier2(self, service, host):
         assert service._score_domain_credibility(host) == pytest.approx(0.85)
 
-    def test_github_com_tier2(self, service):
-        assert service._score_domain_credibility("github.com") == pytest.approx(0.85)
+    def test_stackoverflow_com_tier2(self, service):
+        assert service._score_domain_credibility("stackoverflow.com") == pytest.approx(0.85)
 
-    def test_medium_com_tier2(self, service):
-        assert service._score_domain_credibility("medium.com") == pytest.approx(0.85)
+    @pytest.mark.parametrize(
+        "host", ["github.com", "medium.com", "someone.medium.com", "dev.to"]
+    )
+    def test_user_content_platforms_are_neutral(self, service, host):
+        """Dropped from tier 2 on 2026-09-28: they host anyone's writing, and
+        their promotions were a coin flip (dev.to over bun.com's own site; a
+        GitHub page mirroring Hacker News over the Authors Guild's own post)."""
+        assert service._score_domain_credibility(host) == pytest.approx(0.65)
 
-    @pytest.mark.parametrize("host", ["docs.github.com", "learn.microsoft.com"])
+    @pytest.mark.parametrize(
+        "host",
+        [
+            # .org hosts that appeared in the stored research corpora
+            "genai.owasp.org", "dl.acm.org", "developer.mozilla.org",
+            "wiki.postgresql.org", "cran.r-project.org", "dblp.org", "hbr.org",
+            "npr.org", "propublica.org", "mlcommons.org", "opensource.org",
+            # and core bodies tech topics cite
+            "docs.python.org", "datatracker.ietf.org", "www.rfc-editor.org",
+            "aclanthology.org", "data.worldbank.org",
+        ],
+    )
+    def test_authoritative_org_hosts_are_tier2(self, service, host):
+        """Added 2026-09-28, once "org" had left tier 1: authoritative sources
+        that would otherwise score as neutral as the content farms that share
+        their suffix. The domain passes through _extract_domain first, as it
+        does in filter_and_score, so a leading www. is stripped."""
+        domain = service._extract_domain(f"https://{host}/x")
+        assert service._score_domain_credibility(domain) == pytest.approx(0.85)
+
+    @pytest.mark.parametrize("host", ["docs.python.org", "learn.microsoft.com"])
     def test_subdomain_of_a_tier2_domain_is_tier2(self, service, host):
-        """Tier 2 used to match exactly, so docs.github.com scored as a
-        generic .com (0.65) while github.com scored 0.85."""
+        """Tier 2 used to match exactly, so learn.microsoft.com scored as a
+        generic host (0.65) while microsoft.com scored 0.85."""
         assert service._score_domain_credibility(host) == pytest.approx(0.85)
 
     def test_lookalike_of_a_tier2_domain_is_not_tier2(self, service):
-        assert service._score_domain_credibility("notgithub.com") == pytest.approx(0.65)
+        assert service._score_domain_credibility("notpython.org") == pytest.approx(0.65)
 
     def test_tier1_setting_accepts_a_full_domain(self):
         """Tier 1 once matched suffixes only, so a full domain there could never
@@ -793,13 +819,14 @@ class TestSearchRank:
         ]
 
     def test_a_curated_host_alone_does_not_displace_an_adjacent_result(self, service):
-        """Tier 2 lists github.com. On 2026-09-28's run a GitHub page mirroring
-        Hacker News sat right behind the Authors Guild's own post about its
-        lawsuit, and at weight 0.3 it took that slot by 0.005."""
-        hosts = ["a.example.com", "github.com", "c.example.com", "d.example.com", "e.example.com"]
+        """On 2026-09-28's run a GitHub page mirroring Hacker News (github.com
+        was tier 2 then) sat right behind the Authors Guild's own post about its
+        lawsuit, and at weight 0.3 it took that slot by 0.005. Any tier-2 host
+        alone stays behind an adjacent result at the default weight."""
+        hosts = ["a.example.com", "stackoverflow.com", "c.example.com", "d.example.com", "e.example.com"]
         sources = service.filter_and_score(_five(hosts))
         assert [s.url for s in sources][:2] == [
-            "https://a.example.com/x", "https://github.com/x",
+            "https://a.example.com/x", "https://stackoverflow.com/x",
         ]
 
     def test_credibility_does_not_leapfrog_far_down_the_list(self, service):

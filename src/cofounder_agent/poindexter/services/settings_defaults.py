@@ -5768,15 +5768,29 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # migration 20260928_130429_drop_org_from_research_tier1_domains.py
     # rewrites a prod row still at the old default.
     'research_tier1_domains': 'edu,gov,ac.uk',
+    # Curated 2026-09-28: github.com, medium.com and dev.to dropped (they host
+    # anyone's writing), authoritative .org hosts added now that "org" is out of
+    # tier 1. Migration
+    # 20260928_141243_curate_research_tier2_domains.py rewrites a prod row
+    # still at the previous default.
     'research_tier2_domains': (
-        'medium.com,dev.to,github.com,stackoverflow.com,wikipedia.org,'
-        'arxiv.org,research.google.com,aws.amazon.com,cloud.google.com,'
-        'microsoft.com,apple.com'
+        'stackoverflow.com,wikipedia.org,arxiv.org,research.google.com,'
+        'aws.amazon.com,cloud.google.com,microsoft.com,apple.com,'
+        'python.org,pypi.org,postgresql.org,mozilla.org,rust-lang.org,pytorch.org,'
+        'nodejs.org,apache.org,r-project.org,'
+        'w3.org,ietf.org,rfc-editor.org,owasp.org,opensource.org,'
+        'linuxfoundation.org,eff.org,'
+        'acm.org,aclanthology.org,dblp.org,semanticscholar.org,jstor.org,nber.org,'
+        'mlcommons.org,'
+        'imf.org,oecd.org,worldbank.org,'
+        'hbr.org,npr.org,propublica.org'
     ),
     # The four source-scoring weights, added 2026-09-27: _weight() reads them as
     # f"research_{key}_weight", which the literal-key phantom-read lint cannot
-    # see, so the audit above missed them. Values are the class constants; they
-    # sum to 1.0 because overall_score is their weighted sum.
+    # see, so the audit above missed them. Values are the class constants. They
+    # summed to 1.0 while overall_score was their weighted sum; since
+    # 2026-09-28 it is a weighted average over five components (with
+    # research_search_rank_weight below), so they no longer need to.
     'research_credibility_weight': '0.4',
     'research_snippet_quality_weight': '0.3',
     'research_recency_weight': '0.2',

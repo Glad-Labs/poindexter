@@ -214,10 +214,14 @@ class ResearchQualityService:
         "gov",  # Government
         "ac.uk",  # UK academic
     })
+    # Tier 2 is curated hosts, not platforms. github.com, medium.com and dev.to
+    # were here until 2026-09-28: they host anyone's writing, and their
+    # promotions were a coin flip (dev.to over bun.com's own site; a GitHub page
+    # mirroring Hacker News over the Authors Guild's own post). The .org entries
+    # arrived the same day, once "org" had left tier 1: authoritative sources
+    # that would otherwise score as neutral as the content farms sharing their
+    # suffix.
     _DEFAULT_TIER_2_DOMAINS = frozenset({
-        "medium.com",
-        "dev.to",
-        "github.com",
         "stackoverflow.com",
         "wikipedia.org",
         "arxiv.org",  # Academic papers
@@ -226,6 +230,19 @@ class ResearchQualityService:
         "cloud.google.com",
         "microsoft.com",
         "apple.com",
+        # Official docs and projects
+        "python.org", "pypi.org", "postgresql.org", "mozilla.org", "rust-lang.org",
+        "pytorch.org", "nodejs.org", "apache.org", "r-project.org",
+        # Standards, security and open-source bodies
+        "w3.org", "ietf.org", "rfc-editor.org", "owasp.org", "opensource.org",
+        "linuxfoundation.org", "eff.org",
+        # Scholarly indexes and research
+        "acm.org", "aclanthology.org", "dblp.org", "semanticscholar.org",
+        "jstor.org", "nber.org", "mlcommons.org",
+        # Economic data
+        "imf.org", "oecd.org", "worldbank.org",
+        # Nonprofit publishers and newsrooms
+        "hbr.org", "npr.org", "propublica.org",
     })
 
     def __init__(self, *, site_config: SiteConfig):
@@ -509,10 +526,12 @@ class ResearchQualityService:
         DuckDuckGo's first result in 102 of 181 replayed tiers, half of them by
         a margin under 0.03. At the default weight a tier-1 host right behind a
         result can pass it, and so can a combination of signals; a tier-2 host
-        alone cannot. Tier 2 lists user-generated platforms (github.com,
-        medium.com, dev.to), and in the evidence its promotions were a coin
-        flip: dev.to over bun.com's own site, a GitHub page mirroring Hacker
-        News over the Authors Guild's post about its own lawsuit.
+        alone cannot. The weight was set while tier 2 still listed
+        user-generated platforms (github.com, medium.com, dev.to), whose
+        promotions were a coin flip: dev.to over bun.com's own site, a GitHub
+        page mirroring Hacker News over the Authors Guild's post about its own
+        lawsuit. Tier 2 was curated the same day, so a lower weight may now be
+        safe; re-measure before lowering it.
         """
         last = max(1, searched - 1)
         for source in sources:

@@ -71,15 +71,16 @@ on prod (2026-06-23 → 09-26) were replayed through it, after the fetch gate as
 | --------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Duplicate collapsed         | 13 sources in 10 tiers | arXiv html + abs + a Hugging Face papers page; a Springer PDF + article + RePEc; book blurbs on author, publisher and Amazon pages; posts syndicated to LinkedIn or Substack |
 | Thin snippet dropped        | 8 sources              | a Telegram channel preview, a cookie banner, a YouTube footer, an aggregator's "Visit the post for more."                                                                    |
-| First-listed source changed | 1 tier                 | a `.edu` page that sat right behind a Medium post                                                                                                                            |
-| Order changed further down  | 6 more tiers           |                                                                                                                                                                              |
+| First-listed source changed | 2 tiers                | a `.edu` page that sat right behind a Medium post (one pair, two re-run tiers)                                                                                               |
+| Order changed further down  | 4 more tiers           |                                                                                                                                                                              |
 | Tier emptied by the filter  | 0                      | `research_web_sources_all_filtered` would never have fired                                                                                                                   |
 
 The replay reads the render's 100-character snippet teasers. Live DuckDuckGo
 snippets run 27-57 words, which matters most for the thin-snippet filter (fewer
 drops) and snippet-length scoring. A live check of 19 real topics on
-2026-09-28 agreed with the replay: 1 thin page, and 1 changed first slot
-(github.com, a fresher page, over the daily.dev aggregator above it).
+2026-09-28 agreed with the replay: 1 thin page, and no changed first slot.
+(Before tier 2 was curated, github.com, a fresher page, took one from the
+daily.dev aggregator.)
 
 **Why the search order is in the score.** Ranked on its other four components
 alone, the service replaced DuckDuckGo's first result in 102 of the 181
@@ -94,7 +95,9 @@ several signals together, but a tier-2 host alone cannot. Tier 2's promotions
 were a coin flip in the evidence: two good (github.com over aggregators), two
 bad (dev.to over bun.com's own site; a GitHub page mirroring Hacker News over
 the Authors Guild's post about its own lawsuit). At 0.3 both bad ones happened;
-at 0.4 neither does.
+at 0.4 neither does. Tier 2 has since dropped github.com, medium.com and dev.to
+(see Configuration), so its promotions now come from curated sources. The
+weight stays at 0.4 until there is evidence for lowering it.
 
 Scoring, each component 0.0-1.0, combined as a weighted **average** (so the
 weights are relative and need not sum to 1):
@@ -192,10 +195,22 @@ All from `app_settings` via `site_config`.
   a snippet under either is too thin to be a source.
 - `research_dedup_similarity_threshold` (`0.7`): word-level similarity at which
   two snippets are one source.
-- `research_tier1_domains` (`edu,gov,ac.uk`) / `research_tier2_domains`
-  (`medium.com,dev.to,github.com,stackoverflow.com,wikipedia.org,arxiv.org,…`):
+- `research_tier1_domains` (`edu,gov,ac.uk`) / `research_tier2_domains`:
   comma-separated; an entry matches that host and its subdomains; a non-empty
-  value replaces the defaults.
+  value replaces the defaults. Tier 2 ships `stackoverflow.com`,
+  `wikipedia.org`, `arxiv.org`, five vendor hosts (research.google.com,
+  aws.amazon.com, cloud.google.com, microsoft.com, apple.com), and 29
+  authoritative `.org` hosts:
+  - official docs: python.org, pypi.org, postgresql.org, mozilla.org, …
+  - standards and security bodies: w3.org, ietf.org, rfc-editor.org,
+    owasp.org, …
+  - scholarly indexes: acm.org, aclanthology.org, dblp.org, jstor.org, …
+  - economic data: imf.org, oecd.org, worldbank.org
+  - nonprofit newsrooms: hbr.org, npr.org, propublica.org
+
+  github.com, medium.com and dev.to were dropped on 2026-09-28 because they
+  host anyone's writing.
+
 - `research_credibility_weight` (`0.4`), `research_snippet_quality_weight`
   (`0.3`), `research_recency_weight` (`0.2`), `research_uniqueness_weight`
   (`0.1`), `research_search_rank_weight` (`0.4`): relative weights of a
@@ -294,16 +309,12 @@ All read at call time through `_web_research_int(key, default)`:
 
 ## Known limits
 
-- **Authoritative `.org` hosts now score neutral**, python.org, owasp.org,
-  jstor.org and imf.org among them. List the ones a niche relies on in
-  `research_tier2_domains`. Official documentation for known tools already
-  reaches the writer through `VERIFIED REFERENCE LINKS`, independent of
-  ranking.
-- **Tier 2's defaults include user-generated platforms** (github.com,
-  medium.com, dev.to), which score like established publishers. At the default
-  weight that alone does not reorder adjacent results, but it still decides
-  which copy of a duplicate survives and adds up with other signals. Edit the
-  list per niche.
+- **Tier 2 is a judgment call, curated for a tech / AI / business blog.**
+  Of the 54 distinct `.org` hosts in the stored corpora, most were content
+  farms and small blogs, so `.org` is not trusted as a suffix. Only the listed
+  hosts are. Any other `.org`, like any other host, scores neutral.
+  stackoverflow.com stays although it is user-written, because its answers
+  are vote-moderated. Other niches should edit the list.
 - **Relevance beyond the search order is word overlap with the topic.** It
   matches whole significant words, so "compiler" does not match "compilers".
 
