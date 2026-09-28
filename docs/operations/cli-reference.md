@@ -1,11 +1,21 @@
 # Poindexter CLI Reference
 
-**Last Updated:** 2026-06-21
+**Last Updated:** 2026-09-28
 
 The `poindexter` command is installed as a console script when you
 `pip install -e src/cofounder_agent`. It's the primary operator
 interface for everything you'd otherwise do by hand with `psql` or
 `curl`.
+
+> **Operator hosts that run the stack from a deploy clone (Linux)** install
+> the CLI with `bash ~/.poindexter/deploy/glad-labs-stack/scripts/linux/install-host-cli.sh`
+> instead. That makes `poindexter` run the **deployed** code, the same tree
+> the worker bind-mounts, and keeps its dependencies on the deployed
+> `poetry.lock`. An editable install of a working checkout runs that
+> checkout's code. That's right for developing the CLI and wrong for
+> operating the stack: many commands call service code in-process, so a
+> checkout that has fallen behind `main` quietly runs old behaviour. See
+> [the host CLI surface](ci-deploy-chain.md#the-host-cli-is-a-fifth-surface-and-it-runs-the-deploy-clone).
 
 All commands take `--help` for inline documentation. This page is the
 consolidated reference.

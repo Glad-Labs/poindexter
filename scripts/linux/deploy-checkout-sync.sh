@@ -126,6 +126,23 @@
 #      redoes only what did not complete: the bounce and the connector restart
 #      remember the tree they last finished for (see 7 and 8) and are skipped
 #      while HEAD is unchanged -- restarting a healthy container is NOT a no-op.
+#  10. host CLI environment (stack#4156): the host `poindexter` command runs out
+#      of ~/.poindexter/cli-venv, whose package is editable-installed from THIS
+#      clone (scripts/linux/cli-venv-sync.sh, poindexter-cli.sh). Code needs
+#      nothing, because each CLI call is a fresh process. A poetry.lock change
+#      does have to reach the venv, so every pass that reaches a deploy decision
+#      runs the clone's cli-venv-sync.sh (all but a deferral or a fetch/reset
+#      failure), no-change passes included: that is how a failed sync heals.
+#      On a deploy pass it runs LAST, after the marker and status are written.
+#      A lockfile change rebuilds the worker images AND needs this sync, and
+#      the unit kills the whole pass at TimeoutStartSec, so running it any
+#      earlier could cost the marker and trigger a second round of rebuilds and
+#      force-recreates. Its timeout, SYNC_CLI_VENV_TIMEOUT_SEC (300s), plus the
+#      longest pass seen (~400s) stays inside the unit's 900s. A failure never
+#      withholds the marker: PyPI being unreachable is not a failed container
+#      deploy. It amends the status detail instead, and the launcher retries on
+#      the operator's next command. A host that never installed the host CLI
+#      has no venv: the script exits 3 and the step is silent.
 #
 # Marker  : ~/.poindexter/deploy-last-restarted-sha   (outside the clone; a fully clean pass)
 #           ~/.poindexter/deploy-last-bounced-sha     (tree the app containers were last restarted onto)
@@ -161,6 +178,13 @@ APPLY_RETRY_SETTLE_SEC="${SYNC_APPLY_RETRY_SETTLE_SEC:-15}"
 # the step without config. SYNC_UV_BIN overrides uv discovery (systemd PATH
 # doesn't include ~/.local/bin, so we probe the standard install dirs).
 MCP_UNIT="${SYNC_MCP_UNIT:-poindexter-mcp-http.service}"
+# Host CLI environment (step 10). The script is read from the CLONE, like the
+# health gate, so its logic deploys itself; only these call sites ride the
+# operator checkout. CLI_ENV_NOTE carries a failure into write_status.
+CLI_VENV_SYNC="$DEPLOY_DIR/scripts/linux/cli-venv-sync.sh"
+CLI_VENV_TIMEOUT_SEC="${SYNC_CLI_VENV_TIMEOUT_SEC:-300}"
+CLI_ENV_NOTE=""
+STATUS_AMEND=0
 
 POINDEXTER_HOME="$HOME/.poindexter"
 LOG_FILE="$POINDEXTER_HOME/deploy-checkout-sync.log"
@@ -186,6 +210,7 @@ for arg in "$@"; do
       [ -f "$BOUNCE_MARKER_FILE" ] && echo "  containers last bounced onto: $(cut -c1-9 "$BOUNCE_MARKER_FILE")"
       [ -f "$STATUS_FILE" ] && { echo "  --- last status ---"; cat "$STATUS_FILE"; echo; }
       [ -f "$LOG_FILE" ] && { echo "  --- last 15 log lines ---"; tail -15 "$LOG_FILE"; }
+      [ -f "$CLI_VENV_SYNC" ] && { echo "  --- host CLI env ---"; bash "$CLI_VENV_SYNC" --status 2>&1 | sed 's/^/  /'; }
       exit 0 ;;
     --no-restart) NO_RESTART=1 ;;
     --no-flow-check) NO_FLOW_CHECK=1 ;;
@@ -201,11 +226,15 @@ log() { # log <msg> [LEVEL]
 }
 
 write_status() { # write_status <result> <head> <prev> <restarted-csv> <detail>
+  # Step 10 never changes the result; a failure there rides along in the detail.
+  local detail="${5:-}"
+  [ -n "${CLI_ENV_NOTE:-}" ] && detail="${detail:+$detail; }$CLI_ENV_NOTE"
   printf '{"timestamp":"%s","result":"%s","head":"%s","previousHead":"%s","restarted":[%s],"detail":"%s","host":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" \
     "$(echo "${4:-}" | sed 's/[^,]\+/"&"/g')" \
-    "$(echo "${5:-}" | tr '"' "'")" "$(hostname)" > "$STATUS_FILE" 2>/dev/null || true
-  emit_run_heartbeat "$@"
+    "$(echo "$detail" | tr '"' "'")" "$(hostname)" > "$STATUS_FILE" 2>/dev/null || true
+  # One heartbeat per pass: step 10's late amendment rewrites only the file.
+  [ "$STATUS_AMEND" = "1" ] || emit_run_heartbeat "$1" "$2" "$3" "${4:-}" "$detail"
 }
 
 # Mirror the status into audit_log so the deploy path has a LIVENESS signal
@@ -359,6 +388,22 @@ wait_for_gap_or_defer() { # wait_for_gap_or_defer <what>
   fi
 }
 
+# Step 10 (see header). Never fails the pass: a failure sets CLI_ENV_NOTE, which
+# write_status appends to whatever this pass reports. rc 3 = this host never
+# installed the host CLI.
+sync_host_cli_env() {
+  [ -f "$CLI_VENV_SYNC" ] || return 0
+  local rc=0
+  timeout "$CLI_VENV_TIMEOUT_SEC" bash "$CLI_VENV_SYNC" >>"$LOG_FILE" 2>&1 || rc=$?
+  case "$rc" in
+    0|3) return 0 ;;
+    124) CLI_ENV_NOTE="host CLI env sync timed out after ${CLI_VENV_TIMEOUT_SEC}s" ;;
+    *) CLI_ENV_NOTE="host CLI env sync failed (rc=$rc)" ;;
+  esac
+  log "$CLI_ENV_NOTE — the CLI still runs this clone's code on its previous dependency set, and the launcher retries on the next command. Log: ~/.poindexter/cli-venv-sync.log" ERROR
+  return 0
+}
+
 reset_at_epoch=""
 if [ "$need_reset" = "1" ]; then
   wait_for_gap_or_defer "reset ($behind_raw commit(s) behind)"
@@ -377,6 +422,7 @@ log "Deploy checkout now at $short_head ($SOURCE_REMOTE/$SYNC_BRANCH)."
 
 if [ "$NO_RESTART" = "1" ]; then
   log "--no-restart set; code synced on disk, containers left as-is."
+  sync_host_cli_env
   write_status synced-norestart "$head_sha" "" "" ""
   exit 0
 fi
@@ -385,11 +431,13 @@ last_deployed="$(cat "$MARKER_FILE" 2>/dev/null | tr -d '[:space:]')"
 if [ -z "$last_deployed" ]; then
   printf '%s' "$head_sha" > "$MARKER_FILE"
   log "No prior deploy marker; recorded baseline $short_head without restarting."
+  sync_host_cli_env
   write_status baseline-recorded "$head_sha" "" "" ""
   exit 0
 fi
 if [ "$last_deployed" = "$head_sha" ]; then
   log "Containers already on $short_head; nothing to restart."
+  sync_host_cli_env
   write_status synced-no-change "$head_sha" "" "" ""
   exit 0
 fi
@@ -883,4 +931,14 @@ else
   log "Deploy pass incomplete (failed: $steps); NOT recording marker — retries next cycle$note." ERROR
   write_status error "$head_sha" "$last_deployed" "$restarted" "failed steps: $steps$note"
   exit 1
+fi
+
+# ---- host CLI environment (step 10) ---------------------------------------
+# Last, once the pass is recorded: this step can neither delay a container step
+# nor cost the marker if the unit's TimeoutStartSec cuts it short. A pass with a
+# failed step (exit 1 above) leaves it to the next pass and to the launcher.
+sync_host_cli_env
+if [ -n "$CLI_ENV_NOTE" ]; then
+  STATUS_AMEND=1
+  write_status deployed "$head_sha" "$last_deployed" "$restarted" "$detail"
 fi

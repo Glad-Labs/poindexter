@@ -720,17 +720,18 @@ Deploying the canary itself requires a brain image rebuild
 
 ## The ops-session wrapper is a third deploy surface
 
-"Deployed" means four surfaces across three trees on this host, each with its
+"Deployed" means five surfaces across three trees on this host, each with its
 own sync mechanism:
 
-| Surface                                           | Tree                                                                          | Synced by                                                                                                       |
-| ------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Public site                                       | Vercel build of `glad-labs-stack`                                             | Vercel, on push to `main`                                                                                       |
-| Worker / brain / pipeline containers              | `~/.poindexter/deploy/glad-labs-stack`                                        | `deploy-checkout-sync.sh` (10-min timer; `reset --hard` + `clean -fd`)                                          |
-| claude.ai phone connector (`poindexter-mcp-http`) | `~/.poindexter/deploy/glad-labs-stack` (`mcp-server/` + its in-clone `.venv`) | same `deploy-checkout-sync.sh` pass (2026-08-16): unit restart on `mcp-server/**`, `uv sync` on lockfile change |
-| Ops-session wrapper + shared payload              | `~/glad-labs-website` (the working checkout)                                  | `run-session.sh`'s own ff-only pre-flight (2026-08-15)                                                          |
+| Surface                                           | Tree                                                                              | Synced by                                                                                                                                   |
+| ------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public site                                       | Vercel build of `glad-labs-stack`                                                 | Vercel, on push to `main`                                                                                                                   |
+| Worker / brain / pipeline containers              | `~/.poindexter/deploy/glad-labs-stack`                                            | `deploy-checkout-sync.sh` (10-min timer; `reset --hard` + `clean -fd`)                                                                      |
+| claude.ai phone connector (`poindexter-mcp-http`) | `~/.poindexter/deploy/glad-labs-stack` (`mcp-server/` + its in-clone `.venv`)     | same `deploy-checkout-sync.sh` pass (2026-08-16): unit restart on `mcp-server/**`, `uv sync` on lockfile change                             |
+| Host `poindexter` CLI                             | `~/.poindexter/deploy/glad-labs-stack`, via the editable `~/.poindexter/cli-venv` | code: nothing to sync (each call imports the clone); deps: `poetry sync` on lockfile change, by the launcher and the same pass (2026-09-28) |
+| Ops-session wrapper + shared payload              | `~/glad-labs-website` (the working checkout)                                      | `run-session.sh`'s own ff-only pre-flight (2026-08-15)                                                                                      |
 
-The third row was the gap: the systemd session units exec `run-session.sh`
+The ops-session row was the gap: the systemd session units exec `run-session.sh`
 out of the **working checkout**, and until 2026-08-15 nothing auto-updated it —
 PR #3228's fetch retry merged but the deployed wrapper kept running the old
 code, 3 commits behind, until a human fast-forwarded it. The worktree-session
@@ -786,6 +787,113 @@ at the working checkout:
 Unit-template changes for the connector remain manual, same as the session
 units: copy the rendered template to `/etc/systemd/system`, then
 `sudo systemctl daemon-reload && sudo systemctl restart poindexter-mcp-http`.
+
+## The host CLI is a fifth surface, and it runs the deploy clone
+
+The `poindexter` command on the operator host is not a container, so none of the
+surfaces above covered it until 2026-09-28 (Glad-Labs/glad-labs-stack#4156).
+It ran out of a poetry venv editable-installed against the **working
+checkout**: `~/.local/bin/poindexter` was a hand-written launcher that exec'd
+the newest `~/.cache/pypoetry/virtualenvs/poindexter-*/bin/poindexter`, and
+that venv's `poindexter.pth` pointed at `~/glad-labs-website/src/cofounder_agent`.
+CLI groups that open their own DB pool and call service code in-process
+(`media approve/reject`, `settings`, `tasks`, …) therefore ran whatever that
+working tree held. On 2026-09-28 it held 2026-09-23's `main`, 148 commits
+behind. That meant `media approve/reject` rebuilt the RSS feed without #4108's
+shrink guard, and #4148's reject-rebuild would never have reached the operator
+at all. The only thing that ever advances that tree is `run-session.sh`'s
+ff-only pre-flight. It had skipped 34 runs in a row because the tree had
+uncommitted edits, which is its correct behaviour, and that is why the fix
+cannot depend on it.
+
+**How it works now.**
+
+- `~/.local/bin/poindexter` is a **symlink** to the deploy clone's
+  `scripts/linux/poindexter-cli.sh`. The launcher, the sync logic it calls and
+  the CLI code are all read from the clone on each call. A merged change to any
+  of them reaches the operator on the next sync pass, and nothing needs
+  reinstalling.
+- The launcher execs `~/.poindexter/cli-venv/bin/poindexter`. That venv's
+  `poindexter` package is editable-installed from
+  `~/.poindexter/deploy/glad-labs-stack/src/cofounder_agent`, so **code** needs
+  no sync step: every CLI call is a fresh process importing the clone's current
+  files.
+- **Dependencies** are what `scripts/linux/cli-venv-sync.sh` manages. It
+  fingerprints `(pyproject.toml, poetry.lock, extras, project dir)` and runs
+  `poetry sync --only main --extras "pipeline qa rag youtube"` into the venv
+  when the fingerprint moves. It stamps the new fingerprint only after the
+  synced env imports `poindexter` from the clone and `poindexter --help` exits 0. The extras are the worker image's set minus `rerank` (≈3 GB of CUDA torch)
+  and `profiling`. With a warm poetry cache a lockfile bump syncs in seconds,
+  and a full build takes about 10 s.
+- Two callers keep it current, serialised on `flock(~/.poindexter/cli-venv.lock)`:
+  - The **launcher** runs `--ensure` before every command, which costs about
+    5 ms when the venv is current.
+  - The **deploy-sync pass** runs the default mode as its step 10, on
+    no-change passes too. On a deploy pass it runs **last**, after the marker
+    and status are written. A `poetry.lock` change triggers both a worker-image
+    rebuild and this sync, and the unit kills the whole pass at
+    `TimeoutStartSec=900`, so an earlier slot could cost the marker and a second
+    round of rebuilds and force-recreates. It is bounded by
+    `SYNC_CLI_VENV_TIMEOUT_SEC` (300 s; the longest recent pass took ~400 s).
+
+  A failed sync never fails the pass or withholds the marker: PyPI being
+  unreachable is not a failed container deploy. It amends the status `detail`
+  (`host CLI env sync failed (rc=N)`) without a second heartbeat, and the CLI
+  keeps running the clone's code on its previous dependency set until a sync
+  succeeds. After a failure
+  the launcher backs off for 15 minutes per lockfile, so a box that cannot
+  reach PyPI doesn't pay a failing sync on every command. The deploy-sync pass
+  does not back off.
+
+- It never runs another tree quietly. A missing clone or venv exits 127 with
+  the fix in the message. A `PYTHONPATH` entry holding a `poindexter` package
+  is honoured, because `PYTHONPATH=<worktree>/src/cofounder_agent poindexter …`
+  is how you try a branch's CLI code, but the launcher names it on stderr.
+
+**Why not the other two shapes.**
+
+- **`docker exec poindexter-worker python -m poindexter …` for everything.**
+  That ties the CLI to worker liveness. The worker restarts on every deploy,
+  the CLI is the tool you recover it with, and an exec'd job dies with the
+  worker. Several commands also need the host: `media open` (xdg-open), `game`
+  and `backup` (the docker CLI), `setup` and `auth … --bootstrap` (they write
+  `~/.poindexter/bootstrap.toml`), and every interactive prompt. The container
+  is still the right place for commands that call the Ollama fleet or write
+  embeddings, because app_settings points them at `host.docker.internal`, which
+  resolves only there. That is a URL problem, not a staleness one.
+- **Fast-forward the working checkout when it is clean.** That mechanism
+  already exists in `run-session.sh`, and it is exactly what had been skipping
+  for five days. A working tree is legitimately dirty for days. The CLI's
+  behaviour must not depend on whether the operator is mid-edit, and the working
+  checkout must never receive more than an ff-only merge.
+
+**Install and operate.**
+
+```bash
+# one-time; the launcher it replaces is kept as ~/.local/bin/poindexter.pre-host-cli-<ts>
+bash ~/.poindexter/deploy/glad-labs-stack/scripts/linux/install-host-cli.sh
+# where does the CLI run from, and is it current?
+bash ~/.poindexter/deploy/glad-labs-stack/scripts/linux/cli-venv-sync.sh --status
+# retry a failed sync now, ignoring the launcher's backoff
+bash ~/.poindexter/deploy/glad-labs-stack/scripts/linux/cli-venv-sync.sh --force
+```
+
+`deploy-checkout-sync.sh --status` includes the same report. Log:
+`~/.poindexter/cli-venv-sync.log`. Env seams: `POINDEXTER_CLI_VENV`,
+`POINDEXTER_CLI_EXTRAS`, `POINDEXTER_CLI_PYTHON` (default `python3.13`),
+`POINDEXTER_POETRY_BIN` (systemd's PATH has no `~/.local/bin`, so the standard
+install dirs are probed), and `POINDEXTER_CLI_NO_SYNC=1` (the launcher skips
+the dependency check; emergencies only).
+
+The working checkout's own poetry venv is untouched. It is still the one to run
+tests with, and its `bin/poindexter` still runs the working tree's CLI when that
+is what you want.
+
+**Activation caveat.** Step 10's call sites live in `deploy-checkout-sync.sh`.
+The unit runs that script out of the working checkout on purpose (see the unit
+file: a broken merge must not brick the syncer that would fix it), so the
+pre-warm starts only once that checkout has been fast-forwarded. The launcher's
+own `--ensure` does not wait for that; it covers the gap.
 
 ## Automatic rollback: the post-deploy health gate
 
