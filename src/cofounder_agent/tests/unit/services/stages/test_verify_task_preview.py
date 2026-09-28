@@ -1,11 +1,14 @@
 """verify_task mints preview_token/preview_url early (Glad-Labs/poindexter#563).
 
-The qa.vision rendered-preview rail runs BEFORE finalize_task, so the preview
-token must be minted at the top of the pipeline and surfaced in
+The token is minted at the top of the pipeline and surfaced in
 StageResult.context_updates (the only thing make_stage_node merges back into
-the graph_def state). Without this echo the rail would have no URL to
-screenshot — the exact cold state #563 flagged. finalize_task then reuses the
-token rather than minting a second one.
+the graph_def state), so every node shares one token for the run;
+compile_meta / finalize_task reuse it rather than minting a second one.
+
+``preview_url`` is the OPERATOR's link (services.preview_links): the base is
+``preview_base_url``, else ``http://{operator_service_host}:8002``. The
+qa.vision rendered-preview leg does not screenshot it (the draft is not
+persisted at QA time); it renders the draft in-process instead.
 """
 
 from __future__ import annotations
@@ -82,10 +85,26 @@ class TestVerifyTaskPreviewMint:
         assert url.startswith("https://preview.example.com/preview/")
         assert "//preview" not in url.replace("https://", "")
 
+    async def test_empty_base_derives_from_operator_service_host(self):
+        """An unset preview_base_url is not "no link": the link follows the
+        host the operator's browser already uses for the Grafana links."""
+        class _HostCfg:
+            def get(self, key, default=None):
+                return {
+                    "preview_base_url": "",
+                    "operator_service_host": "box.example.ts.net",
+                }.get(key, default)
+
+        ctx = {"task_id": "t1", "database_service": _Db(), "platform": _Platform(_HostCfg())}
+        result = await VerifyTaskStage().execute(ctx, {})
+        token = result.context_updates["preview_token"]
+        assert result.context_updates["preview_url"] == (
+            f"http://box.example.ts.net:8002/preview/{token}"
+        )
+
     async def test_falls_back_to_default_base_when_no_platform(self):
-        """No platform handle (tests / ad-hoc CLI) → default base URL, mirroring
-        the prior site_config-None seam. Config is None-tolerant: the preview
-        still mints, just against the in-container default address."""
+        """No platform handle (tests / ad-hoc CLI) → the derived localhost base.
+        Config is None-tolerant: the preview still mints."""
         ctx = {"task_id": "t1", "database_service": _Db()}
         result = await VerifyTaskStage().execute(ctx, {})
         assert result.ok is True

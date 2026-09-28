@@ -397,22 +397,23 @@ class TestCmsStatus:
 
 
 # ---------------------------------------------------------------------------
-# convert_markdown_to_html — pure helper
+# convert_markdown_to_html — pure helper (utils.content_formatting; the preview
+# route reaches it through services.preview_page.preview_content_html)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestConvertMarkdownToHtml:
     def test_empty_returns_empty(self):
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         assert convert_markdown_to_html("") == ""
 
     def test_none_returns_empty(self):
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         assert convert_markdown_to_html(None) == ""  # type: ignore[arg-type]
 
     def test_headings_convert_to_h_tags(self):
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         html = convert_markdown_to_html("# Title\n\nParagraph.")
         assert "<h1>" in html
         assert "</h1>" in html
@@ -420,19 +421,19 @@ class TestConvertMarkdownToHtml:
         assert "<p>" in html
 
     def test_bold_and_italic(self):
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         html = convert_markdown_to_html("**bold** and *italic*.")
         assert "<strong>" in html or "<b>" in html
         assert "<em>" in html or "<i>" in html
 
     def test_code_fence(self):
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         html = convert_markdown_to_html("```python\nprint('hi')\n```")
         assert "<code" in html or "<pre" in html
 
     def test_already_html_passed_through(self):
         """Content that is pure HTML (no markdown markers) passes through unchanged."""
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         already_html = "<article><p>Hello</p></article>"
         result = convert_markdown_to_html(already_html)
         assert result == already_html
@@ -441,7 +442,7 @@ class TestConvertMarkdownToHtml:
         """#198 regression: posts with leading <img> + markdown body now
         convert instead of being returned raw. The old early-return
         shipped `## Heading` and `**bold**` markers to the live site."""
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         mixed = (
             '<img src="x"/>\n\n'
             "## Heading\n\nSome **bold** text.\n\n"
@@ -455,7 +456,7 @@ class TestConvertMarkdownToHtml:
 
     def test_comment_block_not_treated_as_html(self):
         """Content starting with <![ is markdown (CDATA), not HTML."""
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         # This should still get markdown processing because it starts with <!
         content = "<![CDATA[stuff]]> after the cdata"
         result = convert_markdown_to_html(content)
@@ -465,7 +466,7 @@ class TestConvertMarkdownToHtml:
     def test_markdown_inline_image_renders_img_tag(self):
         """#540: a markdown image must become an <img> so the preview shows
         it (not literal ![alt](url) text)."""
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         html = convert_markdown_to_html("Intro.\n\n![a chart](https://x/y.png)\n\nMore.")
         assert "<img" in html
         assert "https://x/y.png" in html
@@ -475,7 +476,7 @@ class TestConvertMarkdownToHtml:
         """#540: published posts carry inline images as raw <img> between
         markdown blocks (replace_inline_images output). They must survive +
         the surrounding markdown must still render."""
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         mixed = (
             "## Section\n\nText before.\n\n"
             '<img src="https://r2/image-gen/pic.png" alt="diagram" width="1024" loading="lazy" />\n\n'
@@ -487,7 +488,7 @@ class TestConvertMarkdownToHtml:
         assert "<em>" in html
 
     def test_lists_convert(self):
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         html = convert_markdown_to_html("- item one\n- item two\n- item three")
         assert "<ul>" in html
         assert "<li>" in html
@@ -496,7 +497,7 @@ class TestConvertMarkdownToHtml:
         """If markdown library raises, return the raw content unchanged."""
         from unittest.mock import patch
 
-        from poindexter.routes.cms_routes import convert_markdown_to_html
+        from poindexter.utils.content_formatting import convert_markdown_to_html
         with patch("markdown.markdown", side_effect=RuntimeError("parser broke")):
             result = convert_markdown_to_html("# Title\n\nBody.")
         assert result == "# Title\n\nBody."

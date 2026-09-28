@@ -3138,22 +3138,54 @@ class MultiModelQA:
             )
         return judged, _COVERAGE_JUDGED
 
-    @observe(as_type="generation", name="multi_model_qa._check_rendered_preview")
     async def _check_rendered_preview(
         self, title: str, topic: str, preview_url: str
     ) -> ReviewerResult | None:
+        """Legacy shape of :meth:`_check_rendered_preview_outcome`: the review or None.
+
+        Kept for :meth:`review` (the pre-#355 monolith), which screenshots a
+        URL. The live ``qa.vision`` leg calls the outcome method with the
+        in-flight draft's HTML, and reports why there is no review.
+        """
+        review, _status, _detail = await self._check_rendered_preview_outcome(
+            title, topic, preview_url=preview_url,
+        )
+        return review
+
+    @observe(as_type="generation", name="multi_model_qa._check_rendered_preview")
+    async def _check_rendered_preview_outcome(
+        self,
+        title: str,
+        topic: str,
+        *,
+        preview_url: str | None = None,
+        preview_html: str | None = None,
+    ) -> tuple[ReviewerResult | None, str, str]:
         """Gate: does the rendered preview page look like a real blog post?
 
-        Captures a screenshot of ``preview_url`` via headless chromium
-        and sends it to the vision model for a holistic layout/quality
-        check. Catches issues that no text-only QA can see: overflowing
-        tables, missing CSS, broken images, empty sections, mangled
-        blockquotes, and general "this looks amateur" vibes.
+        Screenshots the preview page in headless chromium and sends the PNG to
+        the vision model for a holistic layout/quality check. Catches issues
+        that no text-only QA can see: overflowing tables, missing CSS, broken
+        images, empty sections, mangled blockquotes, and general "this looks
+        amateur" vibes.
 
-        Opt-in via qa_preview_screenshot_enabled (default false). The
-        reviewer returns None — skipped, no veto — when the flag is off,
-        when Playwright isn't installed, when the screenshot fails, or
-        when the vision model is unreachable.
+        Give it ``preview_html`` (a document from
+        ``services.preview_page.render_preview_page``) to screenshot a page
+        rendered in-process; that is how ``qa.vision`` screenshots the in-flight
+        draft, which is not in the database yet. ``preview_url`` navigates to a
+        served page instead (the legacy :meth:`review` path).
+
+        Returns ``(review, status, detail)``:
+
+        - ``"reviewed"``: ``review`` is set.
+        - ``"disabled"``: ``qa_preview_screenshot_enabled`` is off, or there is
+          no settings service to read it from. Not a fault.
+        - ``"failed"``: the leg is on but produced no verdict. ``detail`` names
+          the cause (config unreadable, no vision model, nothing to render, the
+          screenshot failed, or the model's answer was empty or unparseable).
+          These used to share a bare ``None`` with "disabled", which is how
+          the leg sat dark for months behind a dead URL with nobody told
+          (``docs/architecture/preview-links.md``).
 
         Settings:
             qa_preview_screenshot_enabled  — default "false"
@@ -3166,62 +3198,55 @@ class MultiModelQA:
         import json
         import re
 
-        enabled = False
+        if not self.settings:
+            return None, "disabled", "no settings service to read qa_preview_screenshot_enabled from"
+
         # poindexter#716 — no hardcoded fallback; qa_preview_vision_model is
         # seeded in settings_defaults.py so the DB always has a value.
-        model = ""
-        pass_threshold = 70
-        viewport_width = 1280
-        viewport_height = 1024
         # Same thinking-budget headroom as the image-relevance leg (shared knob);
         # qwen3-vl's <think> trace would otherwise truncate the JSON verdict (#563).
-        num_predict = 1024
-        if self.settings:
-            try:
-                enabled = str(
-                    await self.settings.get("qa_preview_screenshot_enabled") or "false"
-                ).lower() == "true"
-                model = (
-                    await self.settings.get("qa_preview_vision_model") or ""
-                )
-                pass_threshold = int(
-                    await self.settings.get("qa_preview_pass_threshold") or 70
-                )
-                viewport_width = int(
-                    await self.settings.get("qa_preview_viewport_width") or 1280
-                )
-                viewport_height = int(
-                    await self.settings.get("qa_preview_viewport_height") or 1024
-                )
-                num_predict = int(
-                    await self.settings.get("qa_vision_num_predict") or 1024
-                )
-            except Exception as exc:
-                # poindexter#455 — symmetric to the qa_vision config-read
-                # warning. Operator may have set
-                # qa_preview_screenshot_enabled=true in DB but the read
-                # raised — preview QA would silently stay disabled.
-                logger.warning(
-                    "[multi_model_qa] qa_preview config read failed: %s: %s — "
-                    "preview screenshot QA stays disabled with defaults "
-                    "(model=%s, pass_threshold=%d, viewport=%dx%d)",
-                    type(exc).__name__, exc, model, pass_threshold,
-                    viewport_width, viewport_height,
-                )
-
-        if not enabled or not preview_url:
-            return None
-        if not model:
-            # poindexter#716: no vision model configured
-            # (qa_preview_vision_model unset) — skip rather than crash.
-            logger.debug(
-                "[multi_model_qa] qa_preview_vision_model not set; "
-                "preview screenshot QA skipped"
+        try:
+            enabled = str(
+                await self.settings.get("qa_preview_screenshot_enabled") or "false"
+            ).lower() == "true"
+            model = await self.settings.get("qa_preview_vision_model") or ""
+            pass_threshold = int(
+                await self.settings.get("qa_preview_pass_threshold") or 70
             )
-            return None
+            viewport_width = int(
+                await self.settings.get("qa_preview_viewport_width") or 1280
+            )
+            viewport_height = int(
+                await self.settings.get("qa_preview_viewport_height") or 1024
+            )
+            num_predict = int(
+                await self.settings.get("qa_vision_num_predict") or 1024
+            )
+        except Exception as exc:
+            # poindexter#455 — symmetric to the qa_vision config-read warning.
+            # The operator may have set qa_preview_screenshot_enabled=true and
+            # the read raised; say so instead of reading as "switched off".
+            logger.warning(
+                "[multi_model_qa] qa_preview config read failed: %s — "
+                "no rendered-preview verdict this run",
+                describe_exception(exc),
+            )
+            return None, "failed", f"qa_preview config read failed: {describe_exception(exc)}"
+
+        if not enabled:
+            return None, "disabled", "qa_preview_screenshot_enabled is off"
+        if not (preview_html or preview_url):
+            return None, "failed", "nothing to render: no preview_html or preview_url given"
+        if not model:
+            # poindexter#716: enabled, but no vision model to judge with.
+            return None, "failed", "qa_preview_vision_model is not set"
 
         try:
-            from poindexter.services.preview_screenshot import capture_preview_screenshot
+            from poindexter.services.preview_screenshot import (
+                PreviewScreenshotError,
+                capture_html_screenshot,
+                capture_preview_screenshot,
+            )
         except Exception as e:
             from poindexter.utils.findings import emit_finding
 
@@ -3236,16 +3261,31 @@ class MultiModelQA:
                 ),
                 dedup_key="preview_screenshot_service_unavailable",
             )
-            return None
+            return None, "failed", f"services.preview_screenshot import failed: {describe_exception(e)}"
 
-        png_bytes = await capture_preview_screenshot(
-            preview_url,
-            viewport_width=viewport_width,
-            viewport_height=viewport_height,
-            full_page=True,
-        )
-        if not png_bytes:
-            return None
+        png_bytes: bytes | None
+        if preview_html:
+            try:
+                png_bytes = await capture_html_screenshot(
+                    preview_html,
+                    viewport_width=viewport_width,
+                    viewport_height=viewport_height,
+                    full_page=True,
+                )
+            except PreviewScreenshotError as exc:
+                return None, "failed", f"screenshot of the rendered draft failed: {exc}"
+        else:
+            png_bytes = await capture_preview_screenshot(
+                preview_url or "",
+                viewport_width=viewport_width,
+                viewport_height=viewport_height,
+                full_page=True,
+            )
+            if not png_bytes:
+                return None, "failed", (
+                    f"screenshot of {preview_url} failed; the [preview_screenshot] "
+                    "warning in the worker log names the cause"
+                )
 
         b64 = base64.b64encode(png_bytes).decode("ascii")
 
@@ -3271,7 +3311,10 @@ class MultiModelQA:
             timeout_s=200.0,
         )
         if not text:
-            return None
+            return None, "failed", (
+                f"vision model {model} returned no text for the screenshot; the "
+                "[VISION_QA] lines in the worker log name the cause"
+            )
 
         # Parse JSON
         json_text = text
@@ -3285,17 +3328,17 @@ class MultiModelQA:
             m = re.search(r"\{[^{}]*\"score\".*?\}", text, re.DOTALL)
             if not m:
                 logger.warning("[PREVIEW_QA] unparseable response: %s", text[:200])
-                return None
+                return None, "failed", f"unparseable vision verdict: {text[:120]!r}"
             try:
                 parsed = json.loads(m.group(0))
             except json.JSONDecodeError:
-                return None
+                return None, "failed", f"unparseable vision verdict: {text[:120]!r}"
 
         try:
             score = float(parsed.get("score", 0))
         except Exception as exc:
             logger.warning("[PREVIEW_QA] score coercion failed; skipping preview verdict: %s", exc)
-            return None
+            return None, "failed", f"vision verdict score was not a number: {describe_exception(exc)}"
         issues = parsed.get("issues") or []
         if not isinstance(issues, list):
             issues = [str(issues)]
@@ -3316,7 +3359,7 @@ class MultiModelQA:
             score=score,
             feedback=feedback,
             provider="vision_gate",
-        )
+        ), "reviewed", ""
 
     async def _web_fact_check(
         self,

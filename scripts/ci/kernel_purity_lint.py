@@ -92,9 +92,11 @@ KERNEL_PURITY_BASELINE: dict[str, int] = {
     # from here at all. Do not re-add: a hand-coded factory in the kernel is
     # what made this entry necessary.
     # post_pipeline_actions reaches modules.content.api (the module's public
-    # surface) lazily from three sites: the auto-publish gate evaluation, the
-    # auto-publish task itself, and MultiModelQA.
-    "poindexter/services/post_pipeline_actions.py::modules.content.api": 3,
+    # surface) lazily from two sites: the auto-publish gate evaluation and the
+    # auto-publish task itself. (A third, MultiModelQA for a post-pipeline
+    # preview screenshot, left with that dead pass on 2026-09-28: qa.vision
+    # renders and judges the preview in-graph.)
+    "poindexter/services/post_pipeline_actions.py::modules.content.api": 2,
     # publish_service calls record_post_approve_metrics lazily via the
     # modules/content/api public seam — same pattern as post_pipeline_actions.
     "poindexter/services/publish_service.py::modules.content.api": 1,

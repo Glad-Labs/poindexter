@@ -25,8 +25,9 @@ operator-visible side-effects to run:
    :func:`modules.content.auto_publish.auto_publish_task` so trusted niches
    ship without manual approval.
 4. Operator notification — a single Discord-or-Telegram message
-   that links to the rendered preview, plus the opt-in
-   ``qa_preview_screenshot_enabled`` vision-model QA pass.
+   that links to the rendered preview (``services.preview_links``, the
+   operator's tailnet URL) and quotes the in-graph ``rendered_preview``
+   vision verdict when ``qa.vision`` produced one.
 
 These steps used to live inline in
 ``services/task_executor.py::_process_loop`` (lines 678-810 before
@@ -55,9 +56,9 @@ Design notes:
   in Grafana / Loki. Honours the ``feedback_no_silent_defaults``
   rule from MEMORY.md.
 - **DB-first config.** Thresholds (``min_curation_score``,
-  ``require_human_approval``, ``auto_publish_threshold``,
-  ``preview_base_url``, ``qa_preview_screenshot_enabled``) are
-  read via the injected ``settings_service`` / ``site_config``,
+  ``require_human_approval``, ``auto_publish_threshold``) and the
+  preview link's base (``preview_base_url`` / ``operator_service_host``)
+  are read via the injected ``settings_service`` / ``site_config``,
   never hardcoded. Honours ``feedback_db_first_config``.
 
 See Glad-Labs/poindexter#478 for the full incident write-up.
@@ -69,8 +70,6 @@ import json
 import logging
 import re
 from typing import Any
-
-from poindexter.utils.exception_format import describe_exception
 
 from .webhook_delivery_service import emit_webhook_event
 
@@ -96,7 +95,6 @@ _DECIDED_NON_REJECTED_STATUSES = frozenset(
 _DEFAULT_MIN_CURATION_SCORE = "70"
 _DEFAULT_REQUIRE_HUMAN_APPROVAL = "true"
 _DEFAULT_AUTO_PUBLISH_THRESHOLD = "0"
-_DEFAULT_PREVIEW_BASE_URL = "http://localhost:8002"
 
 
 async def _get_setting(
@@ -507,171 +505,73 @@ async def _maybe_auto_publish(
         return False
 
 
-async def _maybe_run_preview_qa(
-    *,
-    database_service: Any,
-    settings_service: Any | None,
-    site_config: Any,
-    task_id: str,
-    topic: str,
-    preview_token: str,
-) -> str:
-    """Opt-in vision-model QA pass against the rendered preview.
+def _rendered_preview_note(result: dict[str, Any] | None) -> str:
+    """The approval message's "Visual QA" line, from the in-graph verdict.
 
-    Gated on ``app_settings.qa_preview_screenshot_enabled``
-    (default ``false``). When enabled the helper screenshots the
-    preview page, runs it through the vision QA reviewer, persists
-    the score + verdict to ``content_tasks.metadata``, and returns
-    a one-line note that the notification message embeds.
+    ``qa.vision`` screenshots the draft during QA (reviewer
+    ``rendered_preview``), and ``qa.aggregate`` hands the final pass's reviews
+    back in ``result["qa_reviews"]``. This reads that verdict; it runs no
+    vision call of its own. A post-pipeline screenshot pass used to live here.
+    It had been dark since the Prefect cutover (2026-05-10): the flow passes no
+    settings service, so it read its own switch as off, and its
+    ``localhost:8002`` URL is refused inside the prefect-worker. The in-graph
+    leg replaced it (``docs/architecture/preview-links.md``).
 
-    Returns the empty string when the gate is off or when any step
-    failed (preview QA is opt-in + non-critical — we never block
-    the notification on a preview-screenshot hiccup).
+    Returns ``""`` when there is no verdict (leg off, failed, or a graph with
+    no QA rails); a failed leg already raised a ``qa_rail_degraded``
+    finding (``rail="rendered_preview"``).
     """
-    # Lazy resolution of the gate so a missing settings service
-    # defaults to "off" — matches the pre-extraction behaviour.
-    try:
-        enabled_raw = await _get_setting(
-            settings_service=settings_service,
-            database_service=database_service,
-            key="qa_preview_screenshot_enabled",
-            default="false",
-        )
-    except Exception:
-        enabled_raw = "false"
-    if (enabled_raw or "false").strip().lower() not in ("true", "1", "yes"):
+    if not isinstance(result, dict):
         return ""
-
-    try:
-        # The container lookup matches the inline block's pattern;
-        # MultiModelQA needs a settings_service kwarg so we resolve
-        # one if the caller didn't pass it in.
-        from poindexter.modules.content.api import MultiModelQA
-        from poindexter.services.container import get_service
-
-        _settings_svc = settings_service or get_service("settings")
-        # Resolve preview URL to one reachable from inside the worker
-        # container. The external preview_base_url may be a Tailscale
-        # hostname that isn't resolvable here.
-        internal_preview_url = f"http://localhost:8002/preview/{preview_token}"
-        pool = getattr(database_service, "pool", None)
-        # DI (#272): MultiModelQA requires a SiteConfig — threaded down from
-        # ``_notify_operator`` (the wired lifespan-bound instance).
-        pqa = MultiModelQA(
-            pool=pool, settings_service=_settings_svc, site_config=site_config,
-        )
-        review = await pqa._check_rendered_preview(
-            title=topic, topic=topic, preview_url=internal_preview_url,
-        )
-    except Exception as exc:  # noqa: BLE001
-        # silent-ok: already explicitly non-critical per the log message —
-        # one advisory visual-QA note among several QA rails, not a gate
-        # or a control. Worst case is one fewer note on the gate history.
-        logger.debug("[PREVIEW_QA] skipped (non-critical): %s", exc)
-        return ""
-
-    if review is None:
-        return ""
-
-    qa_note = (
-        f"Visual QA: {int(review.score)}/100 — " + (review.feedback or "")[:200]
-    )
-    try:
-        qa_pool = (
-            getattr(database_service, "cloud_pool", None)
-            or getattr(database_service, "pool", None)
-        )
-        if qa_pool is None:
-            raise RuntimeError("preview QA: no DB pool available")
-        await qa_pool.execute(
-            """UPDATE content_tasks
-               SET metadata = COALESCE(metadata, '{}'::jsonb)
-                   || jsonb_build_object(
-                       'preview_qa_score', $1::numeric,
-                       'preview_qa_approved', $2::boolean,
-                       'preview_qa_feedback', $3::text
-                   )
-               WHERE task_id = $4""",
-            float(review.score),
-            bool(review.approved),
-            (review.feedback or "")[:500],
-            task_id,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("[PREVIEW_QA] persist failed: %s", exc)
-        # The logger.info below reports the score whether or not this write
-        # landed, so the log alone is no signal that the verdict was lost —
-        # whatever reads content_tasks.metadata (preview gate / console) just
-        # never sees it. This handler also wraps the deliberate fail-loud
-        # `raise RuntimeError("preview QA: no DB pool available")` above, so the
-        # finding is what keeps that guard from being silently neutralised.
-        # content_tasks is not audit_log, so a finding is the right signal.
-        from poindexter.utils.findings import emit_finding
-
-        emit_finding(
-            source="services.post_pipeline_actions",
-            kind="preview_qa_persist_failed",
-            title="preview QA verdict not persisted",
-            body=(
-                f"Persisting the visual-QA verdict onto content_tasks.metadata "
-                f"for task {task_id} raised {describe_exception(exc)}. The "
-                f"preview gate and console read preview_qa_score / "
-                f"preview_qa_approved from that row, so a persistent failure "
-                f"leaves them blind to every visual-QA result."
-            ),
-            severity="info",
-            dedup_key="preview_qa_persist_failed",
-        )
-
-    logger.info(
-        "[PREVIEW_QA] Task %s visual score=%s approved=%s",
-        task_id[:8], review.score, review.approved,
-    )
-    return qa_note
+    for key in ("qa_reviews", "qa_rail_reviews"):
+        reviews = result.get(key)
+        if not isinstance(reviews, list):
+            continue
+        # Latest first: a preview_gate regen can run the QA block again, and
+        # the qa_reviews reducer appends.
+        for review in reversed(reviews):
+            if not isinstance(review, dict) or review.get("reviewer") != "rendered_preview":
+                continue
+            if review.get("not_applicable"):
+                continue
+            try:
+                score = int(float(review.get("score") or 0))
+            except (TypeError, ValueError):
+                continue
+            note = f"Visual QA: {score}/100"
+            feedback = str(review.get("feedback") or "")
+            if "Issues: " in feedback:
+                note += " — " + feedback.split("Issues: ", 1)[1][:200]
+            return note
+    return ""
 
 
 async def _notify_operator(
     *,
     database_service: Any,
-    settings_service: Any | None,
     site_config: Any,
     task_id: str,
     topic: str,
     quality_score: float,
+    result: dict[str, Any] | None = None,
 ) -> None:
     """Build the awaiting-approval Discord/Telegram message and send it.
 
-    Includes the preview link (read from the finalize stage's
-    ``pipeline_versions.stage_data->metadata->>'preview_token'``
-    write), the QA score, and the optional preview-screenshot QA
-    note. Critical=True so Telegram pages the operator — the
-    awaiting_approval signal is the operator's queue indicator.
+    Includes the preview link (the token read from the finalize stage's
+    ``pipeline_versions.stage_data->metadata->>'preview_token'`` write, the
+    base from ``services.preview_links``: the operator's device opens it),
+    the QA score, and the in-graph rendered-preview verdict when there is
+    one. Critical=True so Telegram pages the operator — the awaiting_approval
+    signal is the operator's queue indicator.
     """
-    preview_token = await _read_preview_token(database_service, task_id)
-    preview_url = ""
-    if preview_token:
-        # ``site_config.get`` is sync — no DB hit, reads from in-memory
-        # cache. Honours the DI seam: callers thread the wired
-        # SiteConfig instance through so Prefect subprocesses + the
-        # legacy worker share the same configured base URL.
-        try:
-            base = site_config.get(
-                "preview_base_url", _DEFAULT_PREVIEW_BASE_URL,
-            )
-        except Exception:
-            base = _DEFAULT_PREVIEW_BASE_URL
-        preview_url = f"{base}/preview/{preview_token}"
+    from poindexter.services.preview_links import operator_preview_url
 
-    preview_qa_note = ""
-    if preview_token:
-        preview_qa_note = await _maybe_run_preview_qa(
-            database_service=database_service,
-            settings_service=settings_service,
-            site_config=site_config,
-            task_id=task_id,
-            topic=topic,
-            preview_token=preview_token,
-        )
+    preview_token = await _read_preview_token(database_service, task_id)
+    # ``site_config.get`` is sync — no DB hit, reads from in-memory cache.
+    # Honours the DI seam: callers thread the wired SiteConfig instance
+    # through so Prefect subprocesses + the worker share the same base URL.
+    preview_url = operator_preview_url(site_config, preview_token)
+    preview_qa_note = _rendered_preview_note(result)
 
     msg = f"Awaiting approval: \"{topic}\"\n"
     msg += f"Score: {quality_score:.0f}/100\n"
@@ -916,11 +816,11 @@ async def run_post_pipeline_actions(
         return
     await _notify_operator(
         database_service=database_service,
-        settings_service=settings_service,
         site_config=site_config,
         task_id=task_id,
         topic=topic,
         quality_score=quality_score,
+        result=result if isinstance(result, dict) else None,
     )
 
 

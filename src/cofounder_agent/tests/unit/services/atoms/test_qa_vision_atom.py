@@ -2,9 +2,13 @@
 
 Pins the contract that the vision/preview gate runs on the live graph_def
 path: the image-relevance check restores the cold ``vision_gate`` score, and
-``preview_url`` is threaded through to ``_check_rendered_preview`` so the
-rendered-preview screenshot gate actually runs (it was permanently skipped on
-the live path because no ``preview_url`` reached it).
+the rendered-preview leg screenshots THIS draft, rendered in-process through
+the same renderer ``GET /preview/{token}`` serves. It never fetches a URL:
+at QA time the draft is not persisted, so the served page is "Post not found"
+(33 of 34 reviews from 2026-07-08..18 scored that 404 page), and afterwards the
+operator's tailnet URL was unreachable from the container and the leg returned
+a silent None for months. A leg that produces no verdict now emits the shared
+``qa_rail_degraded`` finding with ``rail="rendered_preview"``.
 """
 
 from __future__ import annotations
@@ -23,6 +27,14 @@ class _Cfg:
         if key == "preview_base_url":
             return self._base
         return default
+
+
+class _PreviewOn:
+    """settings_service with the rendered-preview leg switched on."""
+
+    @staticmethod
+    async def get(key):
+        return "true" if key == "qa_preview_screenshot_enabled" else None
 
 
 def _state(**over):
@@ -67,13 +79,13 @@ class TestQaVisionAtom:
         async def img(self, title, topic, content, featured_image_url=None):
             return ReviewerResult("image_relevance", True, 88.0, "ok", "vision_gate")
 
-        async def no_preview(self, title, topic, preview_url):  # pragma: no cover
-            raise AssertionError("preview check ran without a preview_url")
+        async def no_preview(self, *a, **kw):  # pragma: no cover
+            raise AssertionError("preview leg ran with qa_preview_screenshot_enabled off")
 
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
-        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview", no_preview)
+        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview_outcome", no_preview)
 
-        out = await qa_vision.run(_state())  # no preview_url/token in state
+        out = await qa_vision.run(_state())  # no settings service → preview leg off
         reviewers = [r["reviewer"] for r in out["qa_rail_reviews"]]
         assert "image_relevance" in reviewers
         assert "rendered_preview" not in reviewers
@@ -95,44 +107,84 @@ class TestQaVisionAtom:
         assert seen.get("featured") == hero
         assert any(r["reviewer"] == "image_relevance" for r in out["qa_rail_reviews"])
 
-    async def test_preview_url_threaded_to_rendered_preview(self, monkeypatch):
-        """THE #563 contract: an explicit preview_url reaches _check_rendered_preview."""
+    async def test_preview_leg_renders_the_draft_in_process(self, monkeypatch):
+        """The leg screenshots THIS draft: the HTML handed to the vision check
+        is the operator's preview page rendered from graph state, with the
+        draft's title, body and hero image, and no URL is involved."""
         seen = {}
 
         async def img(self, title, topic, content, featured_image_url=None):
             return None  # isolate the preview leg
 
-        async def preview(self, title, topic, preview_url):
+        async def outcome(self, title, topic, *, preview_url=None, preview_html=None):
             seen["preview_url"] = preview_url
-            return ReviewerResult("rendered_preview", True, 91.0, "looks good", "vision_gate")
+            seen["preview_html"] = preview_html
+            return (
+                ReviewerResult("rendered_preview", True, 91.0, "looks good", "vision_gate"),
+                "reviewed", "",
+            )
 
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
-        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview", preview)
+        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview_outcome", outcome)
 
-        url = "http://localhost:8002/preview/deadbeef"
-        out = await qa_vision.run(_state(preview_url=url))
-        assert seen.get("preview_url") == url
+        out = await qa_vision.run(_state(
+            settings_service=_PreviewOn(),
+            title="Tuning FastAPI for real traffic",
+            content="## Intro\n\nA **sufficiently** long blog body to review.",
+            featured_image_url="https://r2.dev/hero.webp",
+        ))
+        html = seen["preview_html"]
+        assert seen["preview_url"] is None
+        assert html.startswith("<!DOCTYPE html>")
+        assert "[PREVIEW] Tuning FastAPI for real traffic" in html
+        assert "<strong>sufficiently</strong>" in html  # markdown rendered, not raw
+        assert 'src="https://r2.dev/hero.webp"' in html
         reviewers = [r["reviewer"] for r in out["qa_rail_reviews"]]
         assert "rendered_preview" in reviewers
 
-    async def test_preview_url_built_from_token(self, monkeypatch):
-        """When only a preview_token is present, qa.vision builds the URL from
-        preview_base_url + token (the verify_task → qa.vision seam)."""
+    async def test_preview_leg_never_uses_the_preview_url(self, monkeypatch):
+        """verify_task puts the OPERATOR's link (a tailnet URL) on the
+        preview_url channel. The leg must not screenshot it: containers can't
+        reach it, and at QA time the page it serves is "Post not found"."""
         seen = {}
 
         async def img(self, title, topic, content, featured_image_url=None):
             return None
 
-        async def preview(self, title, topic, preview_url):
+        async def outcome(self, title, topic, *, preview_url=None, preview_html=None):
             seen["preview_url"] = preview_url
-            return ReviewerResult("rendered_preview", True, 80.0, "ok", "vision_gate")
+            seen["has_html"] = bool(preview_html)
+            return (
+                ReviewerResult("rendered_preview", True, 80.0, "ok", "vision_gate"),
+                "reviewed", "",
+            )
 
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
-        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview", preview)
+        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview_outcome", outcome)
 
-        out = await qa_vision.run(_state(preview_token="cafef00d"))
-        assert seen.get("preview_url") == "http://localhost:8002/preview/cafef00d"
-        assert any(r["reviewer"] == "rendered_preview" for r in out["qa_rail_reviews"])
+        await qa_vision.run(_state(
+            settings_service=_PreviewOn(),
+            preview_token="cafef00d",
+            preview_url="http://box.example.ts.net:8002/preview/cafef00d",
+        ))
+        assert seen == {"preview_url": None, "has_html": True}
+
+    async def test_rendered_preview_review_follows_gate_advisory_state(self, monkeypatch):
+        async def img(self, title, topic, content, featured_image_url=None):
+            return None
+
+        async def outcome(self, title, topic, *, preview_url=None, preview_html=None):
+            return (
+                ReviewerResult("rendered_preview", False, 40.0, "broken layout", "vision_gate"),
+                "reviewed", "",
+            )
+
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview_outcome", outcome)
+
+        out = await qa_vision.run(_state(settings_service=_PreviewOn()))
+        review = next(r for r in out["qa_rail_reviews"] if r["reviewer"] == "rendered_preview")
+        assert review["advisory"] is True  # vision_gate is advisory in _GATE_STATES
 
     async def test_advisory_flag_from_gate_state(self, monkeypatch):
         """vision_gate is advisory in prod baseline → review.advisory=True."""
@@ -144,21 +196,20 @@ class TestQaVisionAtom:
         review = next(r for r in out["qa_rail_reviews"] if r["reviewer"] == "image_relevance")
         assert review["advisory"] is True
 
-    async def test_fail_loud_when_enabled_but_no_preview_url(self, monkeypatch):
-        """feedback_no_silent_defaults: preview screenshot enabled but no URL
-        → the atom pages the operator. It now ALSO emits a deliberate advisory
-        PASS (never a silent {}) so a required vision_gate isn't failed closed
-        on this vacuous run (#563)."""
+    async def test_failed_preview_leg_emits_finding_and_passes_open(self, monkeypatch):
+        """feedback_no_silent_defaults: the leg is on but gives no verdict →
+        a qa_rail_degraded finding (rail=rendered_preview) names the cause, and (with no
+        images either) the atom still emits a deliberate advisory PASS rather
+        than a silent {} (#563). The finding is the page, so no second
+        notify_operator call."""
         async def img(self, title, topic, content, featured_image_url=None):
-            return None  # no image review either → reviews empty
+            return None
+
+        async def outcome(self, title, topic, *, preview_url=None, preview_html=None):
+            return None, "failed", "screenshot of the rendered draft failed: chromium crashed"
 
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
-
-        async def settings_get(key):
-            return "true" if key == "qa_preview_screenshot_enabled" else None
-
-        class _Settings:
-            get = staticmethod(settings_get)
+        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview_outcome", outcome)
 
         notified = {}
 
@@ -168,15 +219,92 @@ class TestQaVisionAtom:
         monkeypatch.setattr(
             "poindexter.services.integrations.operator_notify.notify_operator", fake_notify,
         )
+        findings = []
+        monkeypatch.setattr(
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        )
 
-        # No images + preview enabled + no preview_url/token.
-        out = await qa_vision.run(_state(settings_service=_Settings(), task_id="abc123"))
+        out = await qa_vision.run(_state(settings_service=_PreviewOn(), task_id="abc12345xyz"))
         reviews = out["qa_rail_reviews"]
         assert len(reviews) == 1
         assert reviews[0]["reviewer"] == "image_relevance"  # aliases to vision_gate
         assert reviews[0]["approved"] is True
         assert reviews[0]["advisory"] is True  # deliberate pass, never gates
-        assert "no preview_url" in notified.get("message", "")  # operator still paged
+        assert "rendered-preview leg produced no verdict" in reviews[0]["feedback"]
+        assert "chromium crashed" in reviews[0]["feedback"]
+        assert "message" not in notified
+        f = next(f for f in findings if f["kind"] == "qa_rail_degraded")
+        assert f["severity"] == "warn"
+        assert f["source"] == "qa.vision"
+        assert f["title"] == "rendered_preview rail could not run"
+        # One key per rail (the web_factcheck / title_coherence convention):
+        # the dispatcher collapses a dark leg's repeats across posts.
+        assert f["dedup_key"] == "qa_rail_degraded:rendered_preview"
+        assert "chromium crashed" in f["body"]
+        assert f["extra"]["rail"] == "rendered_preview"
+        assert "chromium crashed" in f["extra"]["reason"]
+        assert f["extra"]["task_id"] == "abc12345xyz"
+
+    async def test_failed_preview_leg_alongside_an_image_review(self, monkeypatch):
+        """The failure is reported even when the image leg scored, which is
+        exactly the state prod sat in: 53 of 53 runs carried an image review
+        and no rendered_preview one, and nothing said so."""
+        async def img(self, title, topic, content, featured_image_url=None):
+            return ReviewerResult("image_relevance", True, 88.0, "ok", "vision_gate")
+
+        async def outcome(self, title, topic, *, preview_url=None, preview_html=None):
+            return None, "failed", "vision model x returned no text for the screenshot"
+
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview_outcome", outcome)
+        findings = []
+        monkeypatch.setattr(
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        )
+
+        out = await qa_vision.run(_state(settings_service=_PreviewOn(), task_id="t1"))
+        assert [r["reviewer"] for r in out["qa_rail_reviews"]] == ["image_relevance"]
+        assert [(f["kind"], f["extra"]["rail"]) for f in findings] == [
+            ("qa_rail_degraded", "rendered_preview"),
+        ]
+
+    async def test_disabled_verdict_from_the_check_is_not_a_failure(self, monkeypatch):
+        """'disabled' (the flag flipped between the atom's read and the
+        check's) is a legitimate skip: no finding."""
+        async def img(self, title, topic, content, featured_image_url=None):
+            return ReviewerResult("image_relevance", True, 88.0, "ok", "vision_gate")
+
+        async def outcome(self, title, topic, *, preview_url=None, preview_html=None):
+            return None, "disabled", "qa_preview_screenshot_enabled is off"
+
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+        monkeypatch.setattr(MultiModelQA, "_check_rendered_preview_outcome", outcome)
+        findings = []
+        monkeypatch.setattr(
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        )
+
+        await qa_vision.run(_state(settings_service=_PreviewOn()))
+        assert findings == []
+
+    async def test_page_render_error_is_reported(self, monkeypatch):
+        async def img(self, title, topic, content, featured_image_url=None):
+            return ReviewerResult("image_relevance", True, 88.0, "ok", "vision_gate")
+
+        def boom(state, content):
+            raise ValueError("renderer exploded")
+
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+        monkeypatch.setattr(qa_vision, "_render_draft_preview", boom)
+        findings = []
+        monkeypatch.setattr(
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        )
+
+        await qa_vision.run(_state(settings_service=_PreviewOn(), task_id="t2"))
+        f = next(f for f in findings if f["kind"] == "qa_rail_degraded")
+        assert "could not render the draft's preview page" in f["body"]
+        assert "renderer exploded" in f["body"]
 
     async def test_no_fail_loud_when_preview_disabled(self, monkeypatch):
         """When the screenshot flag is off and there are no inline images, an

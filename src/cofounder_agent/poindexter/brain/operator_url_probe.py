@@ -38,9 +38,18 @@ more than once per surface per cycle, and we cap operator notifications at 1 per
 surface per cycle to avoid blasting Telegram when (e.g.) the whole observability
 stack is down at the same time.
 
-Standalone module — only depends on stdlib + ``httpx`` (already a project dep).
-The brain image ships only ``poindexter/brain/``; ``scripts/ci/brain_import_isolation_lint.py``
-keeps worker imports out of here.
+Tailnet names (MagicDNS, ``*.ts.net``) are resolved through the tailnet's own
+resolver (``operator_url_probe_tailnet_resolver``, Tailscale's 100.100.100.100)
+rather than the container's public DNS, which answers them with the Funnel
+ingress. A MagicDNS link is therefore probed at the address the operator's
+phone reaches, and never has to be muted to stop false pages (the mute on
+``preview_base_url`` hid a dead link for months; see
+``docs/architecture/preview-links.md``).
+
+Standalone module: depends on stdlib, ``httpx`` and (for tailnet names only)
+``dnspython``, all brain-image deps. The brain image ships only
+``poindexter/brain/``; ``scripts/ci/brain_import_isolation_lint.py`` keeps
+worker imports out of here.
 ``tailscale`` CLI is optional; if it's missing we skip drift detection without
 failing the probe.
 """
@@ -53,8 +62,10 @@ import logging
 import os
 import subprocess
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
     import httpx
@@ -463,6 +474,138 @@ async def collect_app_setting_urls(
 
 
 # ---------------------------------------------------------------------------
+# Tailnet (MagicDNS) names
+# ---------------------------------------------------------------------------
+
+# The operator's own links (``preview_base_url``, a MagicDNS
+# ``operator_service_host``) use tailnet names that only the tailnet's resolver
+# answers. This container resolves with public DNS (compose pins 1.1.1.1 /
+# 8.8.8.8), where a ``*.ts.net`` name lands on the Tailscale Funnel ingress and
+# a port like :8002 is unreachable, so such a link failed every probe. Muting
+# it in ``operator_url_probe_skip_keys`` was the only way to stop the pages,
+# and a mute is blind: the one on ``preview_base_url`` hid a dead link for
+# about ten weeks (found 2026-09-28). A host that
+# matches a tailnet suffix is resolved through the tailnet's resolver instead,
+# and probed at the address the operator's phone reaches. Both knobs are
+# app_settings; these are the fallbacks when the rows are absent.
+DEFAULT_TAILNET_RESOLVER = "100.100.100.100"
+DEFAULT_TAILNET_SUFFIXES: tuple[str, ...] = (".ts.net",)
+TAILNET_DNS_TIMEOUT_S = 3.0
+
+
+@dataclass(frozen=True)
+class TailnetDNS:
+    """Which hosts resolve through the tailnet, and the resolver that answers them."""
+
+    resolver: str
+    suffixes: tuple[str, ...]
+
+    def covers(self, host: str | None) -> bool:
+        name = (host or "").strip().lower().rstrip(".")
+        return bool(self.resolver and name) and any(
+            name.endswith(suffix) for suffix in self.suffixes
+        )
+
+
+class TailnetResolveError(RuntimeError):
+    """A tailnet name did not resolve; ``str()`` names the host and resolver."""
+
+
+def _parse_suffixes(raw: str | None) -> tuple[str, ...]:
+    """CSV of DNS suffixes, each normalized to lower case with a leading dot."""
+    out: list[str] = []
+    for part in (raw or "").split(","):
+        part = part.strip().lower().rstrip(".")
+        if not part:
+            continue
+        out.append(part if part.startswith(".") else f".{part}")
+    return tuple(out)
+
+
+async def _load_tailnet_dns(pool) -> TailnetDNS:
+    """Read ``operator_url_probe_tailnet_resolver`` / ``_tailnet_suffixes``.
+
+    Missing rows use the defaults above. An EMPTY resolver turns tailnet
+    resolution off, so every host resolves publicly again. A DB error also
+    uses the defaults and logs a WARNING; the probe still runs.
+    """
+    values: dict[str, str | None] = {}
+    for key in ("operator_url_probe_tailnet_resolver", "operator_url_probe_tailnet_suffixes"):
+        try:
+            values[key] = await pool.fetchval(
+                "SELECT value FROM app_settings WHERE key = $1", key,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[OPERATOR_URL_PROBE] %s read failed (%s); using the default", key, exc,
+            )
+            values[key] = None
+    resolver_raw = values["operator_url_probe_tailnet_resolver"]
+    resolver = (
+        DEFAULT_TAILNET_RESOLVER if resolver_raw is None else str(resolver_raw).strip()
+    )
+    suffixes_raw = values["operator_url_probe_tailnet_suffixes"]
+    suffixes = (
+        DEFAULT_TAILNET_SUFFIXES if suffixes_raw is None else _parse_suffixes(str(suffixes_raw))
+    )
+    return TailnetDNS(resolver=resolver, suffixes=suffixes)
+
+
+async def _resolve_tailnet_host(host: str, resolver: str) -> str:
+    """IPv4 address of ``host`` according to the tailnet resolver ``resolver``.
+
+    Raises :class:`TailnetResolveError` naming the host, the resolver and the
+    cause. ``dnspython`` is imported here so a brain image built without it
+    fails this one check loudly instead of the whole probe at import.
+    """
+    try:
+        import dns.asyncresolver
+    except ImportError as exc:
+        raise TailnetResolveError(
+            f"cannot resolve {host} through the tailnet: dnspython is not "
+            "installed in the brain image"
+        ) from exc
+    resolver_obj = dns.asyncresolver.Resolver(configure=False)
+    resolver_obj.nameservers = [resolver]
+    resolver_obj.lifetime = TAILNET_DNS_TIMEOUT_S
+    try:
+        answer = await resolver_obj.resolve(host, "A")
+    except Exception as exc:
+        raise TailnetResolveError(
+            f"tailnet DNS ({resolver}) did not resolve {host}: "
+            f"{type(exc).__name__}: {str(exc)[:160]}"
+        ) from exc
+    records = list(answer)
+    if not records:
+        raise TailnetResolveError(f"tailnet DNS ({resolver}) returned no A record for {host}")
+    return records[0].to_text()
+
+
+async def _route_via_tailnet(
+    url: str, tailnet: TailnetDNS | None,
+) -> tuple[str, dict[str, str], dict[str, Any] | None, str]:
+    """Where to send the request for ``url``.
+
+    Returns ``(request_url, extra_headers, extensions, via)``. For a host the
+    tailnet covers, the request goes to the resolved tailnet address with the
+    original ``Host`` header (and TLS SNI, for https) so the server sees the
+    name the operator uses. ``via`` then names the route for the result detail.
+    Anything else goes out unchanged, with ``via == ""``. Raises
+    :class:`TailnetResolveError` when a covered name does not resolve.
+    """
+    parts = urlsplit(url)
+    host = parts.hostname
+    if tailnet is None or not host or not tailnet.covers(host):
+        return url, {}, None, ""
+    ip = await _resolve_tailnet_host(host, tailnet.resolver)
+    host_header = host if parts.port is None else f"{host}:{parts.port}"
+    netloc = ip if parts.port is None else f"{ip}:{parts.port}"
+    request_url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    extensions = {"sni_hostname": host} if parts.scheme == "https" else None
+    return request_url, {"Host": host_header}, extensions, f"{host} -> {ip} via tailnet DNS {tailnet.resolver}"
+
+
+# ---------------------------------------------------------------------------
 # HTTP probing
 # ---------------------------------------------------------------------------
 
@@ -542,6 +685,8 @@ async def _probe_one_url(
     surface: str,
     url: str,
     override: dict[str, Any] | None = None,
+    *,
+    tailnet: TailnetDNS | None = None,
 ) -> dict[str, Any]:
     """HEAD an URL; if HEAD isn't supported, retry with GET. Always returns a
     dict, never raises — surface name is preserved for downstream notify.
@@ -556,6 +701,11 @@ async def _probe_one_url(
       - ``alive_codes`` — widen the alive range (e.g. include 4xx for
         outbound-only APIs).
       - ``method`` — override the HTTP verb.
+
+    ``tailnet`` routes a request whose host is a tailnet (MagicDNS) name to
+    the address the tailnet resolver gives it; see :func:`_route_via_tailnet`.
+    Such a request does not follow redirects: a redirect's target would be
+    resolved publicly again, and a 3xx already proves the host answered.
     """
     method = (override or {}).get("method", "HEAD").upper()
     # Use probe_url when the setting value points at a non-probeable path
@@ -569,17 +719,29 @@ async def _probe_one_url(
     # names), so existing overrides are unaffected.
     override_probe_url = (override or {}).get("probe_url")
     probe_url = _localize(override_probe_url) if override_probe_url else url
+    via = ""
     async with semaphore:
         try:
+            request_url, extra_headers, extensions, via = await _route_via_tailnet(
+                probe_url, tailnet,
+            )
+            follow = not via
+            range_headers = {"Range": "bytes=0-64", **extra_headers}
             if method == "GET":
                 resp = await client.get(
-                    probe_url, follow_redirects=True,
-                    headers={"Range": "bytes=0-64"},
+                    request_url, follow_redirects=follow,
+                    headers=range_headers, extensions=extensions,
                 )
             elif method == "OPTIONS":
-                resp = await client.options(probe_url, follow_redirects=True)
+                resp = await client.options(
+                    request_url, follow_redirects=follow,
+                    headers=extra_headers, extensions=extensions,
+                )
             else:
-                resp = await client.head(probe_url, follow_redirects=True)
+                resp = await client.head(
+                    request_url, follow_redirects=follow,
+                    headers=extra_headers, extensions=extensions,
+                )
                 # Some servers return 405 for HEAD even when GET works. Retry
                 # once with a small range request to avoid pulling a full body.
                 # Skipped when 405/501 already count as alive — which is now
@@ -588,24 +750,40 @@ async def _probe_one_url(
                 if resp.status_code in (405, 501):
                     if not _is_alive_per_override(resp.status_code, override):
                         resp = await client.get(
-                            probe_url, headers={"Range": "bytes=0-64"},
+                            request_url, headers=range_headers, extensions=extensions,
                         )
+            detail = f"HTTP {resp.status_code}"
+            if via:
+                detail += f" ({via})"
             return {
                 "surface": surface,
                 "url": url,
                 "ok": _is_alive_per_override(resp.status_code, override),
                 "status": resp.status_code,
-                "detail": f"HTTP {resp.status_code}",
+                "detail": detail,
                 "override_applied": bool(override),
                 "override_reason": (override or {}).get("reason", ""),
             }
-        except Exception as exc:
+        except TailnetResolveError as exc:
             return {
                 "surface": surface,
                 "url": url,
                 "ok": False,
                 "status": 0,
-                "detail": f"{type(exc).__name__}: {str(exc)[:160]}",
+                "detail": str(exc),
+                "override_applied": False,
+                "override_reason": "",
+            }
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {str(exc)[:160]}"
+            if via:
+                detail += f" ({via})"
+            return {
+                "surface": surface,
+                "url": url,
+                "ok": False,
+                "status": 0,
+                "detail": detail,
                 "override_applied": False,
                 "override_reason": "",
             }
@@ -656,6 +834,7 @@ async def probe_urls(
     *,
     concurrency: int = DEFAULT_CONCURRENCY,
     overrides: dict[str, dict[str, Any]] | None = None,
+    tailnet: TailnetDNS | None = None,
 ) -> list[dict[str, Any]]:
     """Probe ``targets`` (list of {surface, url, key?, ...}) and return per-URL results.
 
@@ -670,6 +849,10 @@ async def probe_urls(
     Targets carrying a ``key`` field (i.e. those collected from
     ``app_settings``) get override lookup; dashboard-extracted targets
     keep the strict default.
+
+    ``tailnet`` (loaded by ``_load_tailnet_dns``) sends a target whose host is
+    a tailnet name to the address the tailnet resolver gives it, instead of
+    wherever public DNS points (the Funnel ingress, for ``*.ts.net``).
     """
     if not targets:
         return []
@@ -704,6 +887,7 @@ async def probe_urls(
             _probe_one_url(
                 client, semaphore, t["surface"], t["url"],
                 override=overrides.get(t.get("key", "")),
+                tailnet=tailnet,
             )
             for t in targets
         ]
@@ -831,8 +1015,12 @@ async def run_operator_url_probe(
     )
 
     # ---- 2) HTTP probe everything in parallel -----------------------------
+    # Tailnet names (a MagicDNS preview_base_url, say) resolve through the
+    # tailnet's resolver, the way the operator's phone resolves them.
+    tailnet = await _load_tailnet_dns(pool)
     url_results = await probe_urls(
         all_targets, concurrency=concurrency, overrides=overrides,
+        tailnet=tailnet,
     )
 
     # ---- 3) Tailscale drift detection -------------------------------------

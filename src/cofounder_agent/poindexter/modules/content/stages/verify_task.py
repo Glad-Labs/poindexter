@@ -13,11 +13,13 @@ Context reads:
 Context writes:
 - ``stages["1_content_task_created"]`` (bool)
 - ``content_task_id`` (str, echoed)
-- ``preview_token`` / ``preview_url`` (str) — minted here so the rendered-
-  preview QA rail (``qa.vision``) has a URL to screenshot. The qa.* block runs
-  BEFORE ``finalize_task``, which is where the token used to be minted, so
-  generating it at the top of the pipeline is what lets the gate run at all
-  (Glad-Labs/poindexter#563). ``finalize_task`` reuses this token.
+- ``preview_token`` / ``preview_url`` (str) — minted at the top of the
+  pipeline (Glad-Labs/poindexter#563) so the token is stable for the whole run:
+  ``content.compile_meta`` / ``finalize_task`` reuse it rather than minting a
+  second one. ``preview_url`` is the OPERATOR's link
+  (``services.preview_links``), the one approval-gate artifacts surface. The
+  ``qa.vision`` rendered-preview leg does not fetch it: at QA time the draft is
+  not persisted yet, so the leg renders the draft in-process instead.
 
 Phase E migration notes:
 - Replaces ``_stage_verify_task`` in services/content_router_service.py
@@ -34,32 +36,26 @@ from poindexter.plugins.stage import StageResult
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_PREVIEW_BASE_URL = "http://localhost:8002"
-
 
 def _mint_preview(context: dict[str, Any]) -> dict[str, Any]:
-    """Mint a preview token + URL early so the qa.vision rail can screenshot
-    the rendered page. Returns the two channels for ``context_updates``.
+    """Mint the run's preview token and the operator's link to it.
 
-    Reuses an existing ``preview_token`` if a caller already seeded one (so a
-    retry / replay keeps a stable URL). The base URL comes from the kernel via
-    the capability handle (``platform.config.get("preview_base_url")``, Seam 1
-    Wave 3e #667) so the screenshot hits an address reachable from inside the
-    worker container. None-tolerant: a missing handle (tests / ad-hoc CLI) falls
-    back to the default, exactly as the prior ``site_config``-None seam did.
+    Returns the two channels for ``context_updates``. Reuses an existing
+    ``preview_token`` if a caller already seeded one, so a retry or replay
+    keeps a stable link. The link is built by ``services.preview_links`` from
+    the capability handle's config (``platform.config``, Seam 1 Wave 3e #667):
+    ``preview_base_url``, else ``http://{operator_service_host}:8002``. It is
+    for the operator's device, not for anything inside the stack. A missing
+    handle (tests, ad-hoc CLI) derives the ``localhost`` default.
     """
-    token = (context.get("preview_token") or "").strip() or secrets.token_hex(16)
+    from poindexter.services.preview_links import operator_preview_url
 
-    base = _DEFAULT_PREVIEW_BASE_URL
+    token = (context.get("preview_token") or "").strip() or secrets.token_hex(16)
     platform = context.get("platform")
-    if platform is not None:
-        try:
-            base = platform.config.get("preview_base_url", _DEFAULT_PREVIEW_BASE_URL)
-        except Exception:  # noqa: BLE001
-            base = _DEFAULT_PREVIEW_BASE_URL
+    config = platform.config if platform is not None else None
     return {
         "preview_token": token,
-        "preview_url": f"{str(base).rstrip('/')}/preview/{token}",
+        "preview_url": operator_preview_url(config, token),
     }
 
 
@@ -113,10 +109,10 @@ class VerifyTaskStage:
                 "content_task_id": task_id,
                 "stages": stages,
             }
-            # Mint the preview token/URL early so the qa.vision rendered-preview
-            # rail (which runs before finalize_task) has a URL to screenshot
+            # Mint the preview token early so every node shares one token for
+            # the run, and the operator's link rides the preview_url channel
             # (Glad-Labs/poindexter#563). Best-effort: a failure here must not
-            # halt the pipeline, so the screenshot gate just stays skipped.
+            # halt the pipeline; compile_meta mints a token if none exists.
             try:
                 updates.update(_mint_preview(context))
             except Exception as exc:  # noqa: BLE001

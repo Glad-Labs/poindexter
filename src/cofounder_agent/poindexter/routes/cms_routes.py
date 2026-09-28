@@ -13,11 +13,12 @@ from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 from poindexter.modules.content.api import PostsService
-from poindexter.services.image_markers import strip_unresolved_image_markers
 from poindexter.services.logger_config import get_logger
 from poindexter.services.media_approval_service import get_preview_media
-from poindexter.utils.content_formatting import (
-    convert_markdown_to_html,  # still used by preview_post
+from poindexter.services.preview_page import (
+    PREVIEW_PAGE_CSP,
+    preview_content_html,
+    render_preview_page,
 )
 from poindexter.utils.error_handler import handle_route_error
 from poindexter.utils.rate_limiter import limiter
@@ -49,9 +50,11 @@ async def serve_generated_image(filename: str):
     return FileResponse(path, media_type="image/png")
 
 
-# convert_markdown_to_html, generate_excerpt_from_content, and
-# map_featured_image_to_coverimage are imported from utils.content_formatting
-# (Glad-Labs/poindexter#1341 — shared with PostsService to avoid duplication).
+# generate_excerpt_from_content and map_featured_image_to_coverimage live in
+# utils.content_formatting (Glad-Labs/poindexter#1341 — shared with PostsService
+# to avoid duplication). The preview page's markdown -> HTML step and its HTML
+# document live in services.preview_page, shared with the qa.vision
+# rendered-preview screenshot so both render the same page.
 
 
 async def get_db_pool():
@@ -178,10 +181,7 @@ async def preview_post(
                 # markdown images never appear. This is what made the preview
                 # diverge from the published output. (#540)
                 if post.get("content"):
-                    from poindexter.services.llm_text import maybe_unwrap_json
-                    post["content"] = convert_markdown_to_html(
-                        maybe_unwrap_json(post["content"])
-                    )
+                    post["content"] = preview_content_html(post["content"])
 
                 return post
 
@@ -211,10 +211,7 @@ async def preview_post(
             # the article — not a raw JSON code block — matching the published
             # output. Then convert markdown to HTML for frontend rendering.
             if task.get("content"):
-                from poindexter.services.llm_text import maybe_unwrap_json
-                task["content"] = convert_markdown_to_html(
-                    maybe_unwrap_json(task["content"])
-                )
+                task["content"] = preview_content_html(task["content"])
             task["id"] = task.get("task_id", "")  # Frontend expects 'id'
             task["is_preview"] = True
             task["is_task_preview"] = True  # Flag: this is a task, not a published post
@@ -259,135 +256,16 @@ async def preview_post_html(
         import json as _json
         post = _json.loads(post.body)
 
-    # dict.get(key, default) returns None when the key exists with a None value,
-    # so coerce to fallback strings explicitly with `or` before any string ops.
-    title = post.get("title") or "Untitled"
-    content = post.get("content") or ""
-    status = post.get("status") or "unknown"
-    quality = post.get("quality_score") if post.get("quality_score") is not None else "?"
-    excerpt = post.get("excerpt") or ""
-    from html import escape as _esc
-    featured_img = _esc(post.get("featured_image_url") or "")
-    has_podcast = post.get("has_podcast", False)
-    has_video = post.get("has_video", False)
-    podcast_url = _esc(post.get("podcast_url") or "")
-    video_url = _esc(post.get("video_url") or "")
-    safe_title = _esc(title)
-    # 2026-05-12 security audit P0 #6: title/excerpt/status are operator-
-    # facing strings derived from LLM output (via research_service) which
-    # an attacker-controlled web page could poison through a prompt-
-    # injection vector. They flowed into the HTML body raw pre-fix.
-    # Escape them explicitly before any string interpolation below.
-    safe_excerpt = _esc(excerpt)
-    safe_status = _esc(status)
-    safe_quality = _esc(str(quality))
+    # One renderer for the operator's page and the qa.vision screenshot of
+    # the in-flight draft (services/preview_page.py), so the vision verdict
+    # is about the page this route serves.
+    html = render_preview_page(post)
 
-    # Build podcast/video players
-    media_html = ""
-    if podcast_url:
-        media_html += f'<div style="margin:16px 0;padding:12px;background:#1a2332;border:1px solid #22c55e44;border-radius:8px"><h3 style="color:#22c55e;font-size:12px;text-transform:uppercase;margin:0 0 8px">Podcast</h3><audio controls style="width:100%" preload="metadata"><source src="{podcast_url}" type="audio/mpeg"></audio></div>'
-    if video_url:
-        media_html += f'<div style="margin:16px 0;padding:12px;background:#1a2332;border:1px solid #3b82f644;border-radius:8px"><h3 style="color:#3b82f6;font-size:12px;text-transform:uppercase;margin:0 0 8px">Video</h3><video controls style="width:100%;border-radius:6px" preload="metadata" playsinline><source src="{video_url}" type="video/mp4"></video></div>'
-
-    img_html = ""
-    if featured_img:
-        img_html = f'<img src="{featured_img}" style="width:100%;border-radius:12px;margin:16px 0" alt="{safe_title}">'
-
-    # Clean up preview content — strip the same junk the publish pipeline removes
-    import re as _clean_re
-    # Remove "External Resources" / "Further Reading" sections with empty links
-    content = _clean_re.sub(
-        r'(?:^|\n)#{1,4}\s*(?:External\s+Resources|Further\s+Reading|References|Suggested\s+Resources)[^\n]*\n(?:\s*[-*]\s+[^\n]*\n)*',
-        '\n', content, flags=_clean_re.IGNORECASE,
-    )
-    # Remove bullet items that are just labels with colons but no URLs
-    content = _clean_re.sub(r'^\s*[-*]\s+[^(\[]*:\s*$', '', content, flags=_clean_re.MULTILINE)
-    # Remove leaked image-gen prompts after images
-    content = _clean_re.sub(r'(!\[[^\]]*\]\([^\)]+\))\s*\n\s*:\s+[^\n]+', r'\1', content)
-    # Remove unresolved placeholders
-    # Every writer marker form, not just [IMAGE-N] — a dev_diary draft
-    # (no plan_image_markers in its graph) reaches here with raw
-    # [IMAGE:] / [SCREENSHOT:] markers the operator would otherwise
-    # read as literal text in the preview.
-    content = strip_unresolved_image_markers(content)
-    # Remove dead link references (title with colon but no URL following)
-    content = _clean_re.sub(r'^\s*[-*]\s+\[[^\]]+\]\s*$', '', content, flags=_clean_re.MULTILINE)
-    # Strip photo attribution lines
-    content = _clean_re.sub(r'\n\s*\*?Photo by [^\n]+(?:Pexels|Unsplash|Pixabay)\*?\s*\n', '\n', content, flags=_clean_re.IGNORECASE)
-    # Strip empty "External Resources" / "Suggested Resources" sections with no URLs
-    content = _clean_re.sub(
-        r'(?:^|\n)#{1,4}\s*(?:Suggested\s+)?(?:External\s+)?(?:Resources?|References?|Further\s+Reading)[^\n]*\n(?:\s*[-*]\s+[^\n]*\n)*',
-        '\n', content, flags=_clean_re.IGNORECASE,
-    )
-
-    html = f"""<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow">
-<title>[PREVIEW] {safe_title}</title>
-<style>
-body{{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#cbd5e1;margin:0;padding:0}}
-.banner{{background:#f59e0b;color:#000;text-align:center;padding:8px;font-weight:bold;font-size:13px;position:sticky;top:0;z-index:50}}
-.banner small{{font-weight:normal;opacity:.7;margin-left:8px}}
-.container{{max-width:720px;margin:0 auto;padding:16px}}
-h1{{color:#fff;font-size:28px;line-height:1.3;margin:16px 0 8px}}
-.excerpt{{color:#94a3b8;font-size:16px;line-height:1.6;margin-bottom:16px}}
-.badges span{{display:inline-block;padding:4px 10px;border-radius:20px;font-size:12px;margin:0 4px 8px 0}}
-.badge-status{{background:#f59e0b33;color:#fbbf24;border:1px solid #f59e0b44}}
-.badge-quality{{background:#22c55e33;color:#4ade80;border:1px solid #22c55e44}}
-.badge-podcast{{background:#22c55e22;color:#22c55e;border:1px solid #22c55e33}}
-.badge-video{{background:#3b82f622;color:#3b82f6;border:1px solid #3b82f633}}
-article{{color:#e2e8f0;line-height:1.8;font-size:16px}}
-article h1,article h2,article h3{{color:#fff}}
-article h2{{font-size:22px;margin:24px 0 12px;border-bottom:1px solid #334155;padding-bottom:8px}}
-article h3{{font-size:18px;margin:20px 0 8px}}
-article a{{color:#22d3ee}}
-article code{{background:#1e293b;padding:2px 6px;border-radius:4px;font-size:14px;color:#67e8f9}}
-article pre{{background:#1e293b;padding:16px;border-radius:8px;overflow-x:auto;border:1px solid #334155}}
-article blockquote{{border-left:3px solid #22d3ee55;background:#1e293b44;padding:8px 16px;margin:16px 0;border-radius:0 8px 8px 0}}
-article ul,article ol{{padding-left:24px}}
-article li{{margin:4px 0}}
-article img{{max-width:100%;height:auto;aspect-ratio:auto;border-radius:8px;margin:12px 0}}
-.approve{{margin:24px 0;padding:16px;background:#1e293b;border-radius:12px;text-align:center}}
-.approve a{{display:inline-block;padding:12px 32px;background:#22c55e;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;font-size:16px}}
-</style></head><body>
-<div class="banner">PREVIEW MODE<small>{safe_status.upper()} | Q: {safe_quality}</small></div>
-<div class="container">
-{img_html}
-<h1>{safe_title}</h1>
-{"<p class='excerpt'>" + safe_excerpt + "</p>" if excerpt else ""}
-<div class="badges">
-<span class="badge-status">{safe_status.upper()}</span>
-<span class="badge-quality">Quality: {safe_quality}</span>
-{"<span class='badge-podcast'>Podcast Ready</span>" if has_podcast else ""}
-{"<span class='badge-video'>Video Ready</span>" if has_video else ""}
-</div>
-{media_html}
-<article>{content}</article>
-</div></body></html>"""
-
-    # 2026-05-12 security audit P0 #6: strict Content-Security-Policy
-    # blocks every script execution path even if an attacker manages
-    # to inject markup through the markdown body (the LLM writer reads
-    # from web research and could echo back attacker-controlled
-    # `<script>` tags). The preview page doesn't need any JS, so the
-    # policy can be aggressively narrow: no scripts at all (no
-    # 'unsafe-inline' or 'unsafe-eval'), no fonts, no XHR. Style stays
-    # inline-allowed because the page CSS lives in a <style> block.
-    csp = (
-        "default-src 'none'; "
-        "style-src 'unsafe-inline'; "
-        "img-src https: data:; "
-        "media-src https: blob:; "
-        "base-uri 'none'; "
-        "form-action 'none'; "
-        "frame-ancestors 'none'"
-    )
     return Response(
         content=html,
         media_type="text/html; charset=utf-8",
         headers={
-            "Content-Security-Policy": csp,
+            "Content-Security-Policy": PREVIEW_PAGE_CSP,
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "no-referrer",
             # No-cache so a rotated/revoked preview token doesn't sit

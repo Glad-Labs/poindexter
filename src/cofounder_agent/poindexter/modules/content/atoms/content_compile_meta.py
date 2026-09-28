@@ -132,28 +132,30 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # Preview token: reuse from verify_task when available (#563).
     preview_token = (state.get("preview_token") or "").strip() or secrets.token_hex(16)
 
-    # Preview URL.
+    # Preview URL: the OPERATOR's link (services.preview_links), the one the
+    # approval notification and gate artifacts carry. An unset
+    # preview_base_url is not "previews off": every post needs per-post
+    # sign-off through this link, so it derives from operator_service_host.
     preview_url = ""
     try:
+        from poindexter.services.preview_links import operator_preview_url
+
         site_config = state.get("site_config")
         if site_config is not None:
-            base = (site_config.get("preview_base_url") or "").rstrip("/")
+            config = site_config
         elif platform is not None:
-            base = (platform.config.get("preview_base_url") or "").rstrip("/")
+            config = platform.config
         else:
-            base = ""
-        if base:
-            preview_url = f"{base}/preview/{preview_token}"
+            config = None
+        preview_url = operator_preview_url(config, preview_token)
     except Exception as _preview_err:
-        # Note the asymmetry with an UNSET preview_base_url: that yields an
-        # empty base with no exception and is a legitimate "previews off"
-        # configuration. Reaching this handler means the read itself raised,
-        # so previews are configured and broken. Every post needs per-post
-        # sign-off, and this is the link the operator reviews it through.
+        # Reaching this handler means building the link itself raised. Every
+        # post needs per-post sign-off, and this is the link the operator
+        # reviews it through.
         logger.warning(
             "[content.compile_meta] preview URL could not be built (%s: %s) — "
             "this post reaches the approval queue with no preview link. The "
-            "preview token itself is still valid; only the URL is missing.",
+            "preview itself still renders; only the link is missing.",
             type(_preview_err).__name__, _preview_err,
         )
 

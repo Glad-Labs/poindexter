@@ -105,7 +105,6 @@
     "postgres_checkpointer_flag_read_failed",
     "presenter_render_fallback",
     "presenter_unavailable",
-    "preview_qa_persist_failed",
     "preview_screenshot_service_unavailable",
     "publish_schedule_rail_open",
     "publishing_adapters_lookup_failed",

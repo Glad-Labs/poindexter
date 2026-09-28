@@ -2,6 +2,9 @@
 Unit tests for services/preview_screenshot.py.
 
 Tests cover:
+- capture_html_screenshot: renders a given document with JavaScript off,
+  tolerates a slow sub-resource, and raises PreviewScreenshotError naming the
+  cause instead of returning None
 - Successful screenshot capture (mocked playwright)
 - Correct arguments passed to browser, context, page, and screenshot calls
 - Custom viewport / timeout / wait parameters
@@ -271,10 +274,126 @@ class TestCapturePreviewScreenshot:
         assert "--disable-gpu" in call_kwargs["args"]
 
 
+    async def test_url_capture_keeps_javascript_on(self):
+        """The URL path serves the brand hero / thumbnail / screenshot provider,
+        some of which render JS-driven pages: JavaScript stays enabled."""
+        mock_pw_cm, mock_browser, _, _, _ = _build_playwright_mocks()
+        with patch.dict(
+            "sys.modules",
+            {"playwright": MagicMock(), "playwright.async_api": MagicMock()},
+        ):
+            with patch(
+                "playwright.async_api.async_playwright",
+                return_value=mock_pw_cm,
+            ):
+                import poindexter.services.preview_screenshot as mod
+                await mod.capture_preview_screenshot(PREVIEW_URL)
+        assert mock_browser.new_context.call_args[1]["java_script_enabled"] is True
+
+
+PREVIEW_HTML = "<!DOCTYPE html><html><body><h1>Draft</h1></body></html>"
+
+
+async def _html_capture(mock_pw_cm, html=PREVIEW_HTML, **kwargs):
+    with patch.dict(
+        "sys.modules",
+        {"playwright": MagicMock(), "playwright.async_api": MagicMock()},
+    ):
+        with patch(
+            "playwright.async_api.async_playwright",
+            return_value=mock_pw_cm,
+        ):
+            import poindexter.services.preview_screenshot as mod
+            return await mod.capture_html_screenshot(html, **kwargs)
+
+
+@pytest.mark.asyncio
+class TestCaptureHtmlScreenshot:
+    """capture_html_screenshot renders a document handed to it (the qa.vision
+    rendered-preview leg's in-process draft page) and RAISES a described
+    error instead of returning a bare None."""
+
+    async def test_renders_the_html_it_is_given(self):
+        mock_pw_cm, _, mock_page, _, _ = _build_playwright_mocks()
+        result = await _html_capture(mock_pw_cm)
+        assert result == FAKE_PNG
+        mock_page.set_content.assert_awaited_once()
+        assert mock_page.set_content.call_args[0][0] == PREVIEW_HTML
+        mock_page.goto.assert_not_awaited()
+
+    async def test_javascript_is_disabled_by_default(self):
+        """The served page forbids scripts by CSP header; a string-rendered
+        page has no header, so the browser context enforces the rule."""
+        mock_pw_cm, mock_browser, _, _, _ = _build_playwright_mocks()
+        await _html_capture(mock_pw_cm)
+        assert mock_browser.new_context.call_args[1]["java_script_enabled"] is False
+
+    async def test_slow_subresource_still_screenshots(self):
+        """A hung image outlasting the wait is not fatal: the DOM is in place,
+        and a broken image is what the vision judge is there to see."""
+        mock_pw_cm, _, mock_page, _, _ = _build_playwright_mocks()
+        mock_page.set_content = AsyncMock(side_effect=TimeoutError("Timeout 30000ms exceeded"))
+        result = await _html_capture(mock_pw_cm)
+        assert result == FAKE_PNG
+        mock_page.screenshot.assert_awaited_once()
+
+    async def test_other_render_errors_raise_with_the_cause(self):
+        mock_pw_cm, mock_browser, mock_page, _, _ = _build_playwright_mocks()
+        mock_page.set_content = AsyncMock(side_effect=RuntimeError("target crashed"))
+        import poindexter.services.preview_screenshot as mod
+        with pytest.raises(mod.PreviewScreenshotError, match="target crashed"):
+            await _html_capture(mock_pw_cm)
+        mock_browser.close.assert_awaited_once()
+
+    async def test_launch_failure_raises_with_the_cause(self):
+        mock_pw_cm, _, _, _, _ = _build_playwright_mocks(
+            launch_side_effect=RuntimeError("chromium not found")
+        )
+        import poindexter.services.preview_screenshot as mod
+        with pytest.raises(mod.PreviewScreenshotError, match="chromium not found"):
+            await _html_capture(mock_pw_cm)
+
+    async def test_empty_html_raises(self):
+        import poindexter.services.preview_screenshot as mod
+        with pytest.raises(mod.PreviewScreenshotError, match="no HTML"):
+            await mod.capture_html_screenshot("   ")
+
+    async def test_empty_screenshot_raises(self):
+        mock_pw_cm, _, _, _, _ = _build_playwright_mocks(screenshot_result=b"")
+        import poindexter.services.preview_screenshot as mod
+        with pytest.raises(mod.PreviewScreenshotError, match="empty screenshot"):
+            await _html_capture(mock_pw_cm)
+
+    async def test_playwright_missing_raises_named_error(self):
+        import builtins
+        import sys
+
+        saved = {k: sys.modules.pop(k) for k in list(sys.modules) if k.startswith("playwright")}
+        original_import = builtins.__import__
+
+        def _fail_playwright(name, *args, **kwargs):
+            if name.startswith("playwright"):
+                raise ImportError("No module named 'playwright'")
+            return original_import(name, *args, **kwargs)
+
+        try:
+            builtins.__import__ = _fail_playwright
+            import poindexter.services.preview_screenshot as mod
+            with pytest.raises(mod.PreviewScreenshotError, match="playwright is not installed"):
+                await mod.capture_html_screenshot(PREVIEW_HTML)
+        finally:
+            builtins.__import__ = original_import
+            sys.modules.update(saved)
+
+
 @pytest.mark.asyncio
 class TestModuleExports:
     """Verify __all__ is correct."""
 
     async def test_all_exports(self):
         import poindexter.services.preview_screenshot as mod
-        assert mod.__all__ == ["capture_preview_screenshot"]
+        assert mod.__all__ == [
+            "PreviewScreenshotError",
+            "capture_html_screenshot",
+            "capture_preview_screenshot",
+        ]

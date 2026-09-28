@@ -11,21 +11,29 @@ but NOT the vision legs, so both went cold (Glad-Labs/poindexter#563):
    aliased to the ``vision_gate`` qa_gates row). Checks the featured/hero image
    (``state['featured_image_url']``) plus the inline body images actually
    match the content. Opt-in via ``qa_vision_check_enabled``; needs no preview.
-2. **Rendered-preview screenshot** (``_check_rendered_preview`` → reviewer
-   ``rendered_preview``). Screenshots the post's ``/preview/{token}`` URL and
-   feeds the PNG to a vision model to catch layout breaks, missing CSS,
-   overflowing tables, broken images. Opt-in via ``qa_preview_screenshot_enabled``;
-   needs a ``preview_url``.
+2. **Rendered-preview screenshot** (``_check_rendered_preview_outcome`` →
+   reviewer ``rendered_preview``). Renders THIS draft as the operator's preview
+   page (``services.preview_page``, the renderer ``GET /preview/{token}``
+   serves) and feeds a screenshot to a vision model to catch layout breaks,
+   missing CSS, overflowing tables, broken images. Opt-in via
+   ``qa_preview_screenshot_enabled``.
+
+   The leg renders in-process and never fetches the page. This rail runs
+   before ``content.persist_task`` writes the draft or its ``preview_token``,
+   so the served URL answers "Post not found" here. From 2026-07-08 to 07-18,
+   when the URL was reachable, 33 of 34 reviews scored that 404 page. After
+   that, the URL (``preview_base_url``, the operator's tailnet link) was
+   unreachable from the container and the leg returned a silent ``None`` on
+   every run. A leg that produces no verdict now emits the shared
+   ``qa_rail_degraded`` finding with ``rail="rendered_preview"`` (see
+   ``docs/architecture/preview-links.md``).
 
 This atom mirrors ``qa.programmatic`` (which restored the dropped
 ``programmatic_validator`` gate the same way) and ``qa.ragas`` (which reads a
-soft ``research_context`` input). The ``preview_url`` is a soft input read off
-the shared state — produced early by ``stage.verify_task`` (the preview token
-is generated at the top of the pipeline and surfaced as ``preview_url`` so it
-reaches this rail, which runs BEFORE ``finalize_task``). The two vision
-reviews are appended to the ``qa_rail_reviews`` channel; both carry
-``provider='vision_gate'`` so ``_qa_rail_common`` weights them at
-``gate_weight`` and a non-advisory failing review vetoes in ``qa.aggregate``.
+soft ``research_context`` input). The two vision reviews are appended to the
+``qa_rail_reviews`` channel; both carry ``provider='vision_gate'`` so
+``_qa_rail_common`` weights them at ``gate_weight`` and a non-advisory failing
+review vetoes in ``qa.aggregate``.
 
 Always emits a review (``feedback_no_silent_defaults``; #563): when neither leg
 produces one, the atom returns a DELIBERATE, advisory, non-vetoing pass via
@@ -48,23 +56,26 @@ from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-_DEFAULT_PREVIEW_BASE_URL = "http://localhost:8002"
-
 ATOM_META = AtomMeta(
     name="qa.vision",
     type="atom",
-    version="1.0.0",
+    version="1.1.0",
     description=(
         "Vision/preview QA rail — image-relevance + rendered-preview "
         "screenshot checks via a vision model; advisory is DB-driven via "
-        "qa_gates.vision_gate.required_to_pass. Reads a soft preview_url."
+        "qa_gates.vision_gate.required_to_pass. The preview leg renders the "
+        "in-flight draft in-process."
     ),
     inputs=(
         FieldSpec(name="content", type="str", description="draft to review"),
         FieldSpec(
             name="preview_url",
             type="str",
-            description="rendered /preview/{token} URL (soft — built from preview_token if absent)",
+            description=(
+                "unused: the preview leg renders the draft in-process because "
+                "the served /preview/{token} page does not exist yet at QA "
+                "time. Kept declared so stored graph_defs keep their contract."
+            ),
             required=False,
         ),
     ),
@@ -74,55 +85,145 @@ ATOM_META = AtomMeta(
     capability_tier="cheap_critic",
     cost_class="compute",
     idempotent=False,
-    side_effects=("calls a vision-capable ollama model; screenshots preview via chromium",),
+    side_effects=(
+        "calls a vision-capable ollama model; renders the draft's preview page "
+        "and screenshots it via chromium",
+    ),
     parallelizable=True,
 )
 
 
-def _resolve_preview_url(state: dict[str, Any], site_config: Any) -> str | None:
-    """Resolve a preview URL from state.
-
-    Prefers an explicit ``preview_url`` channel; falls back to building one
-    from ``preview_token`` + the operator-configured ``preview_base_url``.
-    Returns None when neither is present (no token has been minted yet).
-    """
-    explicit = (state.get("preview_url") or "").strip()
-    if explicit:
-        return explicit
-
-    token = (state.get("preview_token") or "").strip()
-    if not token:
-        return None
-
-    base = _DEFAULT_PREVIEW_BASE_URL
-    if site_config is not None:
-        try:
-            base = site_config.get("preview_base_url", _DEFAULT_PREVIEW_BASE_URL)
-        except Exception:  # noqa: BLE001
-            base = _DEFAULT_PREVIEW_BASE_URL
-    return f"{str(base).rstrip('/')}/preview/{token}"
-
-
 async def _preview_screenshot_enabled(settings_service: Any) -> bool:
-    """Read qa_preview_screenshot_enabled (default false) — used only to
-    decide whether an absent preview_url is a fail-loud condition."""
+    """Read qa_preview_screenshot_enabled (default false): whether the
+    rendered-preview leg runs at all."""
     if settings_service is None:
         return False
     try:
         raw = await settings_service.get("qa_preview_screenshot_enabled")
     except Exception:  # noqa: BLE001 - silent-ok: False matches this
-        # setting's own default, and it is read ONLY to decide whether an
-        # absent preview_url is fail-loud. A failed read therefore lands on
-        # the same behaviour as the unset case.
+        # setting's own default. A failed read skips the leg for this run,
+        # exactly like the unset case; the image leg still runs.
         return False
     return str(raw or "false").strip().lower() in ("true", "1", "yes")
+
+
+def _render_draft_preview(state: dict[str, Any], content: str) -> str:
+    """The operator's preview page for the draft in ``state``, as HTML.
+
+    Built from the same fields ``GET /api/posts/preview/{token}`` returns for a
+    task (``COALESCE(title, topic)``, the stored content, excerpt, hero image,
+    quality score), through the same renderer, so the screenshot is the page
+    the operator will open once the draft is persisted.
+    """
+    from poindexter.services.preview_page import draft_preview_post, render_preview_page
+
+    return render_preview_page(
+        draft_preview_post(
+            title=str(state.get("title") or state.get("topic") or ""),
+            content_markdown=content,
+            excerpt=str(state.get("excerpt") or ""),
+            featured_image_url=str(state.get("featured_image_url") or ""),
+            quality_score=state.get("quality_score"),
+        )
+    )
+
+
+def _report_preview_failure(state: dict[str, Any], detail: str) -> None:
+    """Make a rendered-preview leg that produced no verdict VISIBLE.
+
+    Before this, every failure mode (dead URL, 404 page, capture error, empty
+    model answer) returned the same silent ``None`` as "switched off", and the
+    leg recorded 0 reviews in 53 runs over 30 days with nobody told. The draft
+    still proceeds on the other rails. Same convention as the other rails that
+    cannot measure (``qa.web_factcheck``, ``qa.title_coherence``): no review of
+    its own (``_qa_rail_common.not_applicable_review`` is for rails that ran
+    and found nothing to judge), plus the shared ``qa_rail_degraded`` finding
+    with ``rail="rendered_preview"``.
+    """
+    task_id = str(state.get("task_id") or "")
+    short = task_id[:8] or "?"
+    logger.warning(
+        "[qa.vision] rendered-preview leg produced no verdict for task %s: %s",
+        short, detail,
+    )
+    try:
+        from poindexter.utils.findings import emit_finding
+
+        emit_finding(
+            source="qa.vision",
+            kind="qa_rail_degraded",
+            title="rendered_preview rail could not run",
+            body=(
+                "qa_preview_screenshot_enabled is on, but the rendered-preview "
+                f"check gave no verdict for task {short}: {detail}\n\n"
+                "No rendered_preview review was appended, so nothing looked at "
+                "how the draft renders; every other rail still judged it. The "
+                "leg screenshots the draft rendered in-process "
+                "(services.preview_page), so the cause is in chromium, the "
+                "vision model (qa_preview_vision_model) or its answer, never "
+                "in a URL."
+            ),
+            severity="warn",
+            dedup_key="qa_rail_degraded:rendered_preview",
+            extra={"rail": "rendered_preview", "reason": detail[:500], "task_id": task_id},
+        )
+    except Exception as exc:  # noqa: BLE001 — finding emission must not gate QA
+        logger.warning("[qa.vision] finding emission failed: %s", exc)
+
+
+async def _run_rendered_preview_leg(
+    qa: Any,
+    state: dict[str, Any],
+    *,
+    content: str,
+    title: str,
+    topic: str,
+    gate_states: Any,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Run the rendered-preview leg. Returns ``(review_dict, failure_detail)``.
+
+    ``(review, None)`` when the model gave a verdict, ``(None, detail)`` when
+    the leg is on but produced none (already reported), and ``(None, None)``
+    when the leg is off.
+    """
+    from poindexter.modules.content.multi_model_qa import MultiModelQA
+
+    if not await _preview_screenshot_enabled(state.get("settings_service")):
+        return None, None
+
+    try:
+        html = _render_draft_preview(state, content)
+    except Exception as exc:  # noqa: BLE001 — reported below, never swallowed
+        from poindexter.utils.exception_format import describe_exception
+
+        detail = f"could not render the draft's preview page: {describe_exception(exc)}"
+        _report_preview_failure(state, detail)
+        return None, detail
+
+    try:
+        review, status, detail = await qa._check_rendered_preview_outcome(
+            title, topic, preview_html=html,
+        )
+    except Exception as exc:  # noqa: BLE001 — reported below, never swallowed
+        from poindexter.utils.exception_format import describe_exception
+
+        review, status, detail = None, "failed", f"check raised {describe_exception(exc)}"
+
+    if review is not None:
+        MultiModelQA._mark_advisory_if_configured(review, gate_states, "vision_gate")
+        return reviewer_to_dict(review), None
+    if status == "disabled":
+        return None, None
+    detail = detail or "no verdict and no reason given"
+    _report_preview_failure(state, detail)
+    return None, detail
 
 
 async def _emit_deliberate_pass(
     state: dict[str, Any],
     content: str,
     site_config: Any,
-    settings_service: Any,
+    preview_failure: str | None = None,
 ) -> dict[str, Any]:
     """Emit a deliberate, advisory, non-vetoing vision review when neither leg
     produced one — so a REQUIRED ``vision_gate`` is satisfied by presence
@@ -135,9 +236,10 @@ async def _emit_deliberate_pass(
     was nothing to score:
 
     - **No inline images** (case C): genuinely nothing to assess → pass by
-      vacuity, no page. (If preview-screenshot QA is enabled yet no preview_url
-      reached the rail, page about the broken wiring — the only operator-
-      actionable signal in this branch.)
+      vacuity, no page. When the rendered-preview leg is on and produced no
+      verdict, the reason says so; that failure was already reported as a
+      ``qa_rail_degraded`` finding (``rail="rendered_preview"``), so there is
+      no second page.
     - **Images present** (case D): the image-relevance leg couldn't assess them
       (vision model unreachable / unparseable). Operator policy is fail-open +
       page — the post proceeds, the operator is alerted to fix the model.
@@ -148,10 +250,6 @@ async def _emit_deliberate_pass(
     )
 
     image_urls = extract_inline_image_urls(content)
-    preview_unavailable = (
-        not _resolve_preview_url(state, site_config)
-        and await _preview_screenshot_enabled(settings_service)
-    )
     task_id = str(state.get("task_id") or "?")[:8]
 
     page_msg = ""
@@ -200,16 +298,10 @@ async def _emit_deliberate_pass(
             )
         except Exception as exc:  # noqa: BLE001 — finding emission must not gate QA
             logger.warning("[qa.vision] finding emission failed: %s", exc)
-    elif preview_unavailable:
+    elif preview_failure:
         reason = (
-            "no inline images, and preview-screenshot QA is enabled but no "
-            "preview_url reached the rail; passing open"
-        )
-        page_msg = (
-            "qa.vision: qa_preview_screenshot_enabled=true but no preview_url "
-            f"reached the QA rail for task {task_id} — the rendered-preview "
-            "screenshot gate is skipping. Ensure stage.verify_task surfaces "
-            "preview_url (preview_token + preview_base_url) before the qa.* block."
+            "no inline images to assess, and the rendered-preview leg produced "
+            f"no verdict ({preview_failure[:160]}); passing open"
         )
     else:
         reason = "no inline images to assess — vision gate satisfied by vacuity"
@@ -283,19 +375,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         MultiModelQA._mark_advisory_if_configured(image_review, gate_states, "vision_gate")
         reviews.append(reviewer_to_dict(image_review))
 
-    # 2. Rendered-preview screenshot — needs a preview_url threaded into state.
-    preview_url = _resolve_preview_url(state, site_config)
-    if preview_url:
-        try:
-            preview_review = await qa._check_rendered_preview(title, topic, preview_url)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[qa.vision] rendered-preview check raised: %s", exc)
-            preview_review = None
-        if preview_review is not None:
-            MultiModelQA._mark_advisory_if_configured(
-                preview_review, gate_states, "vision_gate",
-            )
-            reviews.append(reviewer_to_dict(preview_review))
+    # 2. Rendered-preview screenshot of THIS draft, rendered in-process.
+    preview_review, preview_failure = await _run_rendered_preview_leg(
+        qa, state, content=content, title=title, topic=topic, gate_states=gate_states,
+    )
+    if preview_review is not None:
+        reviews.append(preview_review)
 
     if reviews:
         return {"qa_rail_reviews": reviews}
@@ -305,7 +390,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # presence rather than failed closed on a vacuous run — that empty-{} return
     # is exactly how the gate stayed cold and became un-graduatable
     # (feedback_no_silent_defaults; Glad-Labs/poindexter#563).
-    return await _emit_deliberate_pass(state, content, site_config, settings_service)
+    return await _emit_deliberate_pass(state, content, site_config, preview_failure)
 
 
 __all__ = ["ATOM_META", "run"]

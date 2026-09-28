@@ -398,7 +398,7 @@ class TestRunOperatorUrlProbe:
         def fake_notify(**kwargs):
             notifies.append(kwargs)
 
-        async def fake_probe(targets, *, concurrency=10, overrides=None):
+        async def fake_probe(targets, *, concurrency=10, overrides=None, tailnet=None):
             return [
                 {"surface": t["surface"], "url": t["url"], "ok": False,
                  "status": 0, "detail": "ConnectError"}
@@ -423,7 +423,7 @@ class TestRunOperatorUrlProbe:
         pool = _make_pool([])
         notifies = []
 
-        async def fake_probe(targets, *, concurrency=10, overrides=None):
+        async def fake_probe(targets, *, concurrency=10, overrides=None, tailnet=None):
             return [
                 {"surface": t["surface"], "url": t["url"], "ok": True,
                  "status": 200, "detail": "HTTP 200"}
@@ -455,7 +455,7 @@ class TestRunOperatorUrlProbe:
         pool.execute = AsyncMock()
         notifies = []
 
-        async def fake_probe(targets, *, concurrency=10, overrides=None):
+        async def fake_probe(targets, *, concurrency=10, overrides=None, tailnet=None):
             return []
 
         with patch.object(oup, "probe_urls", side_effect=fake_probe), \
@@ -481,7 +481,7 @@ class TestProbeCompletedAuditLog:
     async def test_writes_probe_completed_row_on_success(self, tmp_path: Path):
         pool = _make_pool([])
 
-        async def fake_probe(targets, *, concurrency=10, overrides=None):
+        async def fake_probe(targets, *, concurrency=10, overrides=None, tailnet=None):
             return []  # zero targets → zero failures → success path
 
         with patch.object(oup, "probe_urls", side_effect=fake_probe), \
@@ -525,7 +525,7 @@ class TestProbeCompletedAuditLog:
         (tmp_path / "d.json").write_text(json.dumps(dash))
         pool = _make_pool([])
 
-        async def fake_probe(targets, *, concurrency=10, overrides=None):
+        async def fake_probe(targets, *, concurrency=10, overrides=None, tailnet=None):
             return [
                 {"surface": t["surface"], "url": t["url"], "ok": False,
                  "status": 0, "detail": "broken"}
@@ -566,7 +566,7 @@ class TestProbeCompletedAuditLog:
 
         pool.execute = AsyncMock(side_effect=execute_with_audit_failure)
 
-        async def fake_probe(targets, *, concurrency=10, overrides=None):
+        async def fake_probe(targets, *, concurrency=10, overrides=None, tailnet=None):
             return []
 
         with patch.object(oup, "probe_urls", side_effect=fake_probe), \
@@ -733,7 +733,7 @@ class TestProbeUrlsHonorsOverrides:
         # override is what makes it alive (not the default).
         captured = []
 
-        async def fake_probe_one(client, sem, surface, url, override=None):
+        async def fake_probe_one(client, sem, surface, url, override=None, *, tailnet=None):
             captured.append((url, override))
             # 400 is dead-by-default but alive under the 200-499 override,
             # so it cleanly shows the override (not the gated-by-default
@@ -774,7 +774,7 @@ class TestProbeUrlsHonorsOverrides:
 
     @pytest.mark.asyncio
     async def test_no_overrides_uses_strict_default(self):
-        async def fake_probe_one(client, sem, surface, url, override=None):
+        async def fake_probe_one(client, sem, surface, url, override=None, *, tailnet=None):
             return {
                 "surface": surface,
                 "url": url,
@@ -815,7 +815,7 @@ class TestProbeUrlRedirect:
         but result.url stays as the original setting value."""
         probed_urls: list[str] = []
 
-        async def fake_probe_one(client, sem, surface, url, override=None):
+        async def fake_probe_one(client, sem, surface, url, override=None, *, tailnet=None):
             probe_url = (override or {}).get("probe_url") or url
             probed_urls.append(probe_url)
             return {
@@ -854,7 +854,7 @@ class TestProbeUrlRedirect:
         """Empty string probe_url must behave as if probe_url were absent."""
         probed_urls: list[str] = []
 
-        async def fake_probe_one(client, sem, surface, url, override=None):
+        async def fake_probe_one(client, sem, surface, url, override=None, *, tailnet=None):
             probe_url = (override or {}).get("probe_url") or url
             probed_urls.append(probe_url)
             return {"surface": surface, "url": url, "ok": True, "status": 200,
@@ -1068,7 +1068,7 @@ class TestShadowedOverrideRegression:
         # Status 400 is dead-by-default but alive under the 200-499
         # override — so this isolates the key-propagation fix, independent
         # of the gated-by-default change (405 would pass either way).
-        async def fake_probe_one(client, sem, surface, url_, override=None):
+        async def fake_probe_one(client, sem, surface, url_, override=None, *, tailnet=None):
             return {
                 "surface": surface, "url": url_,
                 "ok": oup._is_alive_per_override(400, override),
@@ -1119,3 +1119,299 @@ class TestDefaultHeadProbeBehavior:
         assert result["ok"] is True
         assert result["status"] == 405
         assert "HEAD" in methods
+
+
+# ---------------------------------------------------------------------------
+# Tailnet (MagicDNS) names — resolved the way the operator's phone resolves
+# them, not through the container's public DNS (which answers *.ts.net with
+# the Funnel ingress). Before this, a MagicDNS link failed every probe and had
+# to be muted, and the mute on preview_base_url hid a dead link for months.
+# ---------------------------------------------------------------------------
+
+_TAILNET = oup.TailnetDNS(resolver="100.100.100.100", suffixes=(".ts.net",))
+_TAILNET_HOST = "box.tail1234.ts.net"
+_TAILNET_IP = "100.64.0.42"
+
+
+def _resolve_to(ip: str = _TAILNET_IP, seen: list | None = None):
+    async def fake_resolve(host, resolver):
+        if seen is not None:
+            seen.append((host, resolver))
+        return ip
+
+    return fake_resolve
+
+
+@pytest.mark.unit
+class TestTailnetDNS:
+    def test_covers_matching_suffix_case_insensitively(self):
+        assert _TAILNET.covers(_TAILNET_HOST)
+        assert _TAILNET.covers("BOX.Tail1234.TS.NET.")
+        assert not _TAILNET.covers("www.gladlabs.io")
+        assert not _TAILNET.covers("worker")
+        assert not _TAILNET.covers(None)
+        assert not _TAILNET.covers("")
+
+    def test_empty_resolver_covers_nothing(self):
+        assert not oup.TailnetDNS(resolver="", suffixes=(".ts.net",)).covers(_TAILNET_HOST)
+
+    def test_parse_suffixes_normalizes(self):
+        assert oup._parse_suffixes(" ts.net, .Example.COM. ,,") == (".ts.net", ".example.com")
+        assert oup._parse_suffixes("") == ()
+        assert oup._parse_suffixes(None) == ()
+
+
+@pytest.mark.unit
+class TestLoadTailnetDNS:
+    @pytest.mark.asyncio
+    async def test_defaults_when_rows_are_missing(self):
+        tailnet = await oup._load_tailnet_dns(_make_pool())
+        assert tailnet == oup.TailnetDNS(
+            resolver=oup.DEFAULT_TAILNET_RESOLVER, suffixes=oup.DEFAULT_TAILNET_SUFFIXES,
+        )
+        assert tailnet.resolver == "100.100.100.100"
+
+    @pytest.mark.asyncio
+    async def test_values_from_app_settings(self):
+        pool = _make_pool()
+        values = {
+            "operator_url_probe_tailnet_resolver": " 100.100.100.100 ",
+            "operator_url_probe_tailnet_suffixes": "ts.net,corp.example",
+        }
+        pool.fetchval = AsyncMock(side_effect=lambda _sql, key: values.get(key))
+        tailnet = await oup._load_tailnet_dns(pool)
+        assert tailnet == oup.TailnetDNS("100.100.100.100", (".ts.net", ".corp.example"))
+
+    @pytest.mark.asyncio
+    async def test_empty_resolver_turns_it_off(self):
+        pool = _make_pool()
+        values = {"operator_url_probe_tailnet_resolver": ""}
+        pool.fetchval = AsyncMock(side_effect=lambda _sql, key: values.get(key))
+        tailnet = await oup._load_tailnet_dns(pool)
+        assert not tailnet.covers(_TAILNET_HOST)
+
+    @pytest.mark.asyncio
+    async def test_db_error_uses_defaults(self):
+        pool = _make_pool()
+        pool.fetchval = AsyncMock(side_effect=RuntimeError("db down"))
+        tailnet = await oup._load_tailnet_dns(pool)
+        assert tailnet.covers(_TAILNET_HOST)
+
+
+@pytest.mark.unit
+class TestRouteViaTailnet:
+    @pytest.mark.asyncio
+    async def test_http_goes_to_the_tailnet_address_with_the_original_host(self, monkeypatch):
+        seen: list = []
+        monkeypatch.setattr(oup, "_resolve_tailnet_host", _resolve_to(seen=seen))
+        url, headers, extensions, via = await oup._route_via_tailnet(
+            f"http://{_TAILNET_HOST}:8002/preview/x?a=1", _TAILNET,
+        )
+        assert seen == [(_TAILNET_HOST, "100.100.100.100")]
+        assert url == f"http://{_TAILNET_IP}:8002/preview/x?a=1"
+        assert headers == {"Host": f"{_TAILNET_HOST}:8002"}
+        assert extensions is None
+        assert _TAILNET_IP in via and "tailnet DNS" in via
+
+    @pytest.mark.asyncio
+    async def test_https_keeps_the_name_for_tls(self, monkeypatch):
+        monkeypatch.setattr(oup, "_resolve_tailnet_host", _resolve_to())
+        url, headers, extensions, _via = await oup._route_via_tailnet(
+            f"https://{_TAILNET_HOST}/voice/join", _TAILNET,
+        )
+        assert url == f"https://{_TAILNET_IP}/voice/join"
+        assert headers == {"Host": _TAILNET_HOST}
+        assert extensions == {"sni_hostname": _TAILNET_HOST}
+
+    @pytest.mark.asyncio
+    async def test_other_hosts_and_no_tailnet_are_untouched(self, monkeypatch):
+        async def must_not_resolve(host, resolver):  # pragma: no cover
+            raise AssertionError(f"resolved {host} through the tailnet")
+
+        monkeypatch.setattr(oup, "_resolve_tailnet_host", must_not_resolve)
+        assert await oup._route_via_tailnet("https://www.gladlabs.io/x", _TAILNET) == (
+            "https://www.gladlabs.io/x", {}, None, "",
+        )
+        assert await oup._route_via_tailnet(f"http://{_TAILNET_HOST}/x", None) == (
+            f"http://{_TAILNET_HOST}/x", {}, None, "",
+        )
+
+
+@pytest.mark.unit
+class TestProbeOneUrlViaTailnet:
+    @staticmethod
+    async def _probe(handler, url, **kwargs):
+        import asyncio
+
+        import httpx
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await oup._probe_one_url(
+                client, asyncio.Semaphore(1), "app_settings.preview_base_url", url, **kwargs,
+            )
+
+    @pytest.mark.asyncio
+    async def test_probes_where_the_operators_phone_goes(self, monkeypatch):
+        import httpx
+
+        monkeypatch.setattr(oup, "_resolve_tailnet_host", _resolve_to())
+        requested: list = []
+
+        def handler(req):
+            requested.append((str(req.url), req.headers["host"]))
+            return httpx.Response(200)
+
+        result = await self._probe(handler, f"http://{_TAILNET_HOST}:8002", tailnet=_TAILNET)
+        assert result["ok"] is True
+        assert result["url"] == f"http://{_TAILNET_HOST}:8002"  # the operator's value
+        assert "tailnet DNS" in result["detail"]
+        assert requested == [(f"http://{_TAILNET_IP}:8002", f"{_TAILNET_HOST}:8002")]
+
+    @pytest.mark.asyncio
+    async def test_redirects_are_not_followed(self, monkeypatch):
+        """A redirect's target would resolve publicly again (Funnel ingress);
+        the 3xx already proves the host answered."""
+        import httpx
+
+        monkeypatch.setattr(oup, "_resolve_tailnet_host", _resolve_to())
+        requested: list = []
+
+        def handler(req):
+            requested.append(str(req.url))
+            return httpx.Response(
+                302, headers={"Location": f"http://{_TAILNET_HOST}:8002/console/"},
+            )
+
+        result = await self._probe(handler, f"http://{_TAILNET_HOST}:8002", tailnet=_TAILNET)
+        assert result["ok"] is True
+        assert result["status"] == 302
+        assert len(requested) == 1
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_name_fails_naming_host_and_resolver(self, monkeypatch):
+        async def nxdomain(host, resolver):
+            raise oup.TailnetResolveError(
+                f"tailnet DNS ({resolver}) did not resolve {host}: NXDOMAIN"
+            )
+
+        monkeypatch.setattr(oup, "_resolve_tailnet_host", nxdomain)
+
+        def handler(req):  # pragma: no cover
+            raise AssertionError("probed a name the tailnet could not resolve")
+
+        result = await self._probe(handler, f"http://{_TAILNET_HOST}:8002", tailnet=_TAILNET)
+        assert result["ok"] is False
+        assert result["status"] == 0
+        assert _TAILNET_HOST in result["detail"]
+        assert "100.100.100.100" in result["detail"]
+
+    @pytest.mark.asyncio
+    async def test_dead_tailnet_address_names_the_route(self, monkeypatch):
+        """The stale-IP case the mute hid: the name resolves, nothing answers."""
+        import httpx
+
+        monkeypatch.setattr(oup, "_resolve_tailnet_host", _resolve_to())
+
+        def handler(req):
+            raise httpx.ConnectTimeout("timed out", request=req)
+
+        result = await self._probe(handler, f"http://{_TAILNET_HOST}:8002", tailnet=_TAILNET)
+        assert result["ok"] is False
+        assert "ConnectTimeout" in result["detail"]
+        assert _TAILNET_IP in result["detail"]
+
+    @pytest.mark.asyncio
+    async def test_public_hosts_are_probed_as_before(self, monkeypatch):
+        import httpx
+
+        async def must_not_resolve(host, resolver):  # pragma: no cover
+            raise AssertionError("public host went through the tailnet resolver")
+
+        monkeypatch.setattr(oup, "_resolve_tailnet_host", must_not_resolve)
+        requested: list = []
+
+        def handler(req):
+            requested.append(str(req.url))
+            return httpx.Response(200)
+
+        result = await self._probe(handler, "https://www.gladlabs.io", tailnet=_TAILNET)
+        assert result["ok"] is True
+        assert result["detail"] == "HTTP 200"
+        assert requested == ["https://www.gladlabs.io"]
+
+
+@pytest.mark.unit
+class TestResolveTailnetHost:
+    @staticmethod
+    def _fake_resolver(monkeypatch, *, answer=None, error=None):
+        import dns.asyncresolver
+
+        created: dict = {}
+
+        class FakeResolver:
+            def __init__(self, configure=True):
+                created["configure"] = configure
+                self.nameservers: list = []
+                self.lifetime = None
+
+            async def resolve(self, host, rdtype):
+                created.update(
+                    nameservers=list(self.nameservers), lifetime=self.lifetime,
+                    host=host, rdtype=rdtype,
+                )
+                if error is not None:
+                    raise error
+                return answer
+
+        monkeypatch.setattr(dns.asyncresolver, "Resolver", FakeResolver)
+        return created
+
+    @pytest.mark.asyncio
+    async def test_asks_only_the_tailnet_resolver(self, monkeypatch):
+        record = MagicMock()
+        record.to_text.return_value = _TAILNET_IP
+        created = self._fake_resolver(monkeypatch, answer=[record])
+        assert await oup._resolve_tailnet_host(_TAILNET_HOST, "100.100.100.100") == _TAILNET_IP
+        assert created == {
+            "configure": False,  # never the container's /etc/resolv.conf
+            "nameservers": ["100.100.100.100"],
+            "lifetime": oup.TAILNET_DNS_TIMEOUT_S,
+            "host": _TAILNET_HOST,
+            "rdtype": "A",
+        }
+
+    @pytest.mark.asyncio
+    async def test_resolver_errors_become_a_named_error(self, monkeypatch):
+        import dns.resolver
+
+        self._fake_resolver(monkeypatch, error=dns.resolver.NXDOMAIN())
+        with pytest.raises(oup.TailnetResolveError) as excinfo:
+            await oup._resolve_tailnet_host(_TAILNET_HOST, "100.100.100.100")
+        assert _TAILNET_HOST in str(excinfo.value)
+        assert "100.100.100.100" in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_empty_answer_is_an_error(self, monkeypatch):
+        self._fake_resolver(monkeypatch, answer=[])
+        with pytest.raises(oup.TailnetResolveError, match="no A record"):
+            await oup._resolve_tailnet_host(_TAILNET_HOST, "100.100.100.100")
+
+
+@pytest.mark.unit
+class TestRunProbeUsesTailnetSettings:
+    @pytest.mark.asyncio
+    async def test_cycle_threads_the_loaded_tailnet_config(self, tmp_path: Path):
+        captured: dict = {}
+
+        async def fake_probe(targets, *, concurrency=10, overrides=None, tailnet=None):
+            captured["tailnet"] = tailnet
+            return []
+
+        with patch.object(oup, "probe_urls", side_effect=fake_probe), \
+             patch.object(oup, "_run_tailscale_status", return_value=None):
+            await oup.run_operator_url_probe(
+                _make_pool([]), dashboards_dir=tmp_path, notify_fn=lambda **k: None,
+            )
+        assert captured["tailnet"] == oup.TailnetDNS(
+            resolver="100.100.100.100", suffixes=(".ts.net",),
+        )

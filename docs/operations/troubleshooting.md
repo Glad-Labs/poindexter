@@ -246,6 +246,55 @@ The cap is read fresh on each executor poll, so no restart needed.
 
 ---
 
+## The "Preview:" link in an approval message does not open
+
+**Symptom.** The awaiting-approval Discord/Telegram message (or the Title link
+on the Grafana "Posts Awaiting Your Approval" panel) points at a page that
+times out on your phone.
+
+**Root cause.** The link's base is `app_settings.preview_base_url`, or, when
+that is empty, `http://{operator_service_host}:8002`. A value holding a tailnet
+IP dies when the node re-registers. That happened in the Pop!_OS migration and
+went unnoticed for about ten weeks, because the URL probe had `preview_base_url`
+in its mute list.
+
+**Fix.** Use the MagicDNS name; it follows the node:
+
+```bash
+poindexter settings set preview_base_url http://<host>.<tailnet>.ts.net:8002 --category infrastructure
+curl -s -o /dev/null -w '%{http_code}\n' http://<host>.<tailnet>.ts.net:8002/api/health
+```
+
+(Pass `--category`: without it `settings set` resets the row's category to
+`general` until the worker's next boot re-files it.) The brain's operator URL
+probe checks this link every 15 minutes through the tailnet resolver, so a dead
+value now pages. See
+[../architecture/preview-links.md](../architecture/preview-links.md).
+
+---
+
+## `qa_rail_degraded` with `rail=rendered_preview`
+
+**Symptom.** A Discord finding "rendered_preview rail could not run", and the
+worker log shows `[qa.vision] rendered-preview leg produced no verdict`.
+
+**Root cause.** `qa_preview_screenshot_enabled` is on, but the rendered-preview
+leg got no verdict. The finding's reason names which step failed:
+
+- `screenshot of the rendered draft failed: …`: chromium in the
+  prefect-worker (`playwright install chromium` missing, a crash, or out of
+  memory);
+- `qa_preview_vision_model is not set`: set it, or turn the leg off;
+- `vision model … returned no text` / `unparseable vision verdict`: the judge
+  model (see the `[VISION_QA]` lines for the dispatch-level cause).
+
+The leg renders the draft in-process and fetches no URL, so a URL or DNS
+problem is never the cause here. The draft still goes through every other
+rail. See
+[../architecture/preview-links.md](../architecture/preview-links.md).
+
+---
+
 ## HTCPCP, satire, and off-brand topic rejection
 
 **Symptom.** A satirical or meta-humor topic reaches awaiting_approval, the content is competently written but it's weird brand-wise. Example: "AS' HTCPCP AI Butler™" on 2026-04-10.

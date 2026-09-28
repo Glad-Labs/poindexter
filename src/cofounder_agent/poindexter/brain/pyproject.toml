@@ -43,6 +43,14 @@ httpx = "^0.28"
 # to "PyYAML missing — skipping" instead of actually checking drift.
 pyyaml = "^6.0"
 
+# DNS client — used by operator_url_probe.py to resolve tailnet (MagicDNS)
+# names through the tailnet's resolver (Tailscale's 100.100.100.100). The
+# container's public resolvers answer a *.ts.net name with the Funnel
+# ingress, so without this every MagicDNS operator link probes as dead.
+# Missing, the probe reports each tailnet URL as unresolvable (loud), and
+# every other URL is probed as before. Same major the worker locks.
+dnspython = "^2.8"
+
 [tool.poetry.group.tracing]
 # Optional OpenTelemetry stack for brain spans -> Tempo. brain/health_probes.py
 # imports these inside a try/except and falls back to no-op tracers when the

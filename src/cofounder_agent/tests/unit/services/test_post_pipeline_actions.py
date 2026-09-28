@@ -12,8 +12,7 @@ those four behaviours could fire:
 2. Auto-curator (auto-reject below ``min_curation_score``) never fires
 3. Auto-publish (when ``require_human_approval=false`` AND
    ``quality_score >= auto_threshold``) never fires
-4. Operator Discord/Telegram notification + preview-screenshot QA
-   never fire
+4. Operator Discord/Telegram notification never fires
 
 Architectural mirror of poindexter#473 (pipeline_versions writes) and
 poindexter#477 (subprocess DI wiring) — same class of bug, different
@@ -591,6 +590,102 @@ class TestOperatorNotification:
         assert "Awaiting approval" in sent_message
         # Preview URL is omitted (or marked as unavailable).
         assert "preview/" not in sent_message or "no preview link" in sent_message
+
+
+@pytest.mark.unit
+class TestOperatorNotificationPreviewLinkAndVerdict:
+    """The approval message's link is the OPERATOR's (services.preview_links)
+    and its "Visual QA" line quotes the in-graph rendered_preview verdict.
+
+    A post-pipeline screenshot pass used to produce that line. It had been
+    dark since the Prefect cutover (2026-05-10): the flow passes no settings
+    service, so it read its own switch as off, and its ``localhost:8002`` URL
+    is refused inside the prefect-worker. qa.vision's in-graph leg replaced it.
+    """
+
+    @staticmethod
+    async def _send(result, site_values):
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(fetchval_return="abcd1234efgh5678")
+        db = _make_db_service(pool=pool)
+        settings = _make_settings_service(
+            values={"min_curation_score": "70", "require_human_approval": "true"},
+        )
+        notify_mock = AsyncMock()
+        with patch(
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
+            new_callable=AsyncMock,
+        ), patch(
+            "poindexter.services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="t-visual-1",
+                topic="Visual verdict",
+                result=result,
+                site_config=_make_site_config(values=site_values),
+                settings_service=settings,
+            )
+        notify_mock.assert_awaited_once()
+        return notify_mock.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_quotes_the_in_graph_rendered_preview_verdict(self):
+        result = {
+            **_result(score=88),
+            "qa_reviews": [
+                {"reviewer": "image_relevance", "score": 90.0, "feedback": "ok"},
+                {
+                    "reviewer": "rendered_preview",
+                    "score": 72.0,
+                    "feedback": (
+                        "[advisory] (passed, not required_to_pass) Preview "
+                        "screenshot QA: 72/100 — Issues: table overflows; hero cropped"
+                    ),
+                },
+            ],
+        }
+        msg = await self._send(result, {"preview_base_url": "http://box.example.ts.net:8002"})
+        assert "Visual QA: 72/100 — table overflows; hero cropped" in msg
+        assert "http://box.example.ts.net:8002/preview/abcd1234efgh5678" in msg
+
+    @pytest.mark.asyncio
+    async def test_no_verdict_no_line(self):
+        msg = await self._send(_result(score=88), {"preview_base_url": "http://x:8002"})
+        assert "Visual QA" not in msg
+
+    @pytest.mark.asyncio
+    async def test_empty_base_derives_the_link_from_operator_service_host(self):
+        msg = await self._send(
+            _result(score=88),
+            {"preview_base_url": "", "operator_service_host": "box.example.ts.net"},
+        )
+        assert "Preview: http://box.example.ts.net:8002/preview/abcd1234efgh5678" in msg
+
+    def test_note_takes_the_latest_verdict_and_skips_not_applicable(self):
+        from poindexter.services.post_pipeline_actions import _rendered_preview_note
+
+        result = {
+            "qa_reviews": [
+                {"reviewer": "rendered_preview", "score": 40.0, "feedback": "first pass"},
+                {"reviewer": "rendered_preview", "score": 81.0, "feedback": "Preview screenshot QA: 81/100"},
+                {"reviewer": "rendered_preview", "score": 0.0, "feedback": "n/a", "not_applicable": True},
+            ],
+        }
+        assert _rendered_preview_note(result) == "Visual QA: 81/100"
+        assert _rendered_preview_note(None) == ""
+        assert _rendered_preview_note({"qa_reviews": "not-a-list"}) == ""
+
+    def test_no_second_vision_pass_after_the_pipeline(self):
+        """The approval notification quotes a verdict; it must not screenshot
+        or call a vision model again (that was the dead post-pipeline pass)."""
+        import poindexter.services.post_pipeline_actions as ppa
+
+        source = inspect.getsource(ppa)
+        assert "_check_rendered_preview" not in source
+        assert "capture_preview_screenshot" not in source
 
 
 # ---------------------------------------------------------------------------

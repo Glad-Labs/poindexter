@@ -93,7 +93,10 @@ Gates (mostly opt-in):
   _thinking_ vision model (e.g. `qwen3-vl`) gets so its `<think>` trace does
   not exhaust the budget before the JSON scores are emitted.
 - `qa_preview_screenshot_enabled` (default `false`) — full-page
-  screenshot via Playwright + vision review.
+  screenshot of the draft's preview page + vision review. `qa.vision` renders
+  the in-flight draft in-process (`services.preview_page`) because the served
+  `/preview/{token}` page does not exist yet at QA time; see
+  [../preview-links.md](../preview-links.md).
 - `qa_preview_vision_model` (default `qwen3-vl:30b`).
 - `qa_preview_pass_threshold` (default `70`).
 - `qa_preview_viewport_width/height` (defaults `1280` × `1024`).
@@ -108,7 +111,11 @@ Gates (mostly opt-in):
     `verify_content_urls` (programmatic layer).
   - `services.citation_verifier` (HTTP HEAD path).
   - `services.web_research.WebResearcher` (DuckDuckGo fact check).
-  - `services.preview_screenshot.capture_preview_screenshot` (Playwright).
+  - `services.preview_screenshot.capture_html_screenshot` (Playwright; the
+    `qa.vision` leg's in-process render) and `capture_preview_screenshot`
+    (the legacy URL path).
+  - `services.preview_page.render_preview_page` — the page `qa.vision`
+    screenshots, the same renderer `GET /preview/{token}` serves.
   - `services.ollama_client.OllamaClient` (deliberately concrete — it
     exposes `configure_electricity` + `check_health` features the
     Provider Protocol does not).
@@ -175,8 +182,9 @@ ollama/glm-4.7` (or `anthropic/claude-haiku-4-5` for cloud — note
   cost guard interactions).
 - **Disable vision QA:** `qa_vision_check_enabled=false` (default).
 - **Enable rendered-preview gate (after Playwright install):**
-  `qa_preview_screenshot_enabled=true` and ensure the calling stage
-  passes `preview_url=/preview/{hash}`.
+  `qa_preview_screenshot_enabled=true`. No URL is involved: `qa.vision`
+  renders the draft in-process. A leg that is on but produces no verdict
+  emits `qa_rail_degraded` with `rail=rendered_preview` naming the cause.
 - **Audit recent critic fallbacks:**
   `SELECT created_at, payload FROM audit_log WHERE event_type = 'critic_fallback' ORDER BY created_at DESC LIMIT 50;`
 - **Read the full feedback for a specific task:**

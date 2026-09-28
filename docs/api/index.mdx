@@ -254,7 +254,7 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
 | Feeds           | `GET /api/video/feed.xml`                 | public | Video RSS feed; each enclosure is the approved video in storage |
 | **Webhooks**    | `POST /api/webhooks/alertmanager`         | bearer | Prometheus Alertmanager webhook receiver (routes to Discord)    |
 | **Frontend**    | `POST /api/revalidate-cache`              | bearer | Trigger Next.js ISR cache revalidation after publish            |
-| Frontend        | `GET /preview/{preview_token}`            | token  | Server-rendered draft preview (review links, vision-gate QA)    |
+| Frontend        | `GET /preview/{preview_token}`            | token  | Server-rendered draft preview (the operator's review link)      |
 
 Everything prefixed `/api` is the REST surface. Generated images
 (`/images/generated/{filename}`) and the server-rendered preview

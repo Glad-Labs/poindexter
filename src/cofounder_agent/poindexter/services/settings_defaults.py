@@ -5339,6 +5339,22 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # catching genuine sustained outages (#1301).
     'mcp_http_probe_min_consecutive_failures': '3',
 
+    # ----- Operator URL probe: tailnet names (poindexter/brain/operator_url_probe.py) -----
+    # The operator's own links (preview_base_url, a MagicDNS
+    # operator_service_host) use tailnet names that only the tailnet's
+    # resolver answers. The brain container resolves with public DNS
+    # (1.1.1.1 / 8.8.8.8), where a *.ts.net name lands on the Tailscale Funnel
+    # ingress, so such a link always failed the probe. Muting it in
+    # operator_url_probe_skip_keys was the only way to stop the pages, and a
+    # mute is blind: the one on preview_base_url hid a dead link for about ten
+    # weeks (found 2026-09-28). A host ending in one of these
+    # CSV suffixes is resolved through this resolver (Tailscale's quad-100,
+    # reachable from containers on a Linux host running tailscaled) and probed
+    # at the address the operator's device reaches. Empty resolver = off, and
+    # every host resolves publicly as before.
+    'operator_url_probe_tailnet_resolver': '100.100.100.100',
+    'operator_url_probe_tailnet_suffixes': '.ts.net',
+
     # ----- Deploy health gate (scripts/linux/deploy_health_gate.py, 2026-09-13) -----
     # After the deploy sync rebuilds an image it waits for the recreated
     # container to be healthy and rolls back onto the previous image when it
@@ -6509,6 +6525,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'retention_backlog_row_threshold': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
     'retention_backlog_blind_after_hours': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
     'retention_backlog_sample_window_minutes': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
+    # The operator's preview link base (services/preview_links.py). Seeded
+    # empty by the baseline: unset derives http://{operator_service_host}:8002.
+    'preview_base_url': {'owner': 'preview_links', 'value_type': 'url'},
+    'operator_url_probe_tailnet_resolver': {'owner': 'operator_url_probe', 'value_type': 'string'},
+    'operator_url_probe_tailnet_suffixes': {'owner': 'operator_url_probe', 'value_type': 'csv'},
     'clock_skew_reference_url': {'owner': 'clock_skew_probe', 'value_type': 'url'},
     'clock_skew_renotify_minutes': {'owner': 'clock_skew_probe', 'value_type': 'integer'},
     'clock_skew_sample_retention_days': {'owner': 'clock_skew_probe', 'value_type': 'integer'},
