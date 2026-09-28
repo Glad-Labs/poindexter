@@ -33,8 +33,10 @@ hits the DB on every write.
   Falls back to the uppercase env var when the DB row is empty,
   matching `SiteConfig.get()` semantics for migration compatibility.
   Records the key into the process-wide `services.settings_read_sink`
-  so `FlushSettingsReadTelemetryJob` stamps `app_settings.last_read_at`
-  (poindexter#756). `get_all`/`get_by_category` deliberately do NOT
+  so `app_settings.last_read_at` gets stamped (poindexter#756) — by
+  `FlushSettingsReadTelemetryJob` in the worker, or at the end of the
+  run when the read happens inside a Prefect content-flow subprocess
+  (`multi_model_qa`'s reads do). `get_all`/`get_by_category` deliberately do NOT
   record — those bulk/admin reads would stamp the whole table and blind
   the zero-reader probe.
 - `await svc.get_by_category(category) -> dict[str, str]` —

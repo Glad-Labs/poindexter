@@ -4699,8 +4699,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'pinned_llm_endpoint_cache_ram_mib': '3072',
     # ----- Settings read-telemetry + orphan probe (#756 items 2-3) -----
     # SiteConfig.get records read keys in-memory; FlushSettingsReadTelemetryJob
-    # stamps app_settings.last_read_at each minute; ProbeZeroReaderSettingsJob
-    # surfaces keys never read past the grace window as orphan candidates.
+    # stamps app_settings.last_read_at each minute for the worker, and each
+    # Prefect content-flow run stamps its own reads when it ends;
+    # ProbeZeroReaderSettingsJob surfaces keys never read past the grace window
+    # as orphan candidates. The enabled flag gates both flushes.
     'settings_read_telemetry_enabled': 'true',
     # Re-stamp a hot key at most once per this many seconds (write-amp guard):
     # the per-minute UPDATE only touches rows whose last_read_at is NULL or older

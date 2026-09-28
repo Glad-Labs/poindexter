@@ -6,6 +6,12 @@ job drains that set once a minute and batch-stamps ``app_settings.last_read_at``
 so a key that is never read keeps a NULL stamp (an orphan candidate the
 ``ProbeZeroReaderSettingsJob`` later surfaces).
 
+This job flushes the worker process only. The drain and the throttled UPDATE
+live in ``services/settings_read_telemetry.py`` because the Prefect content
+flow calls them too. Each flow run is its own subprocess, and its read buffers
+die with it unless the run flushes them itself, which it does from
+``content_generation_flow``'s ``finally``.
+
 Why a separate job rather than folding into ``reload_site_config``: the
 scheduler seeds the lifespan-bound ``SiteConfig`` into EVERY job's config at
 ``config["_site_config"]`` (``plugins/scheduler.py``), so this job drains the
@@ -16,35 +22,15 @@ Write-amplification control: a naive "stamp every read key every minute" would
 re-UPDATE hot keys 60×/hour. The UPDATE only touches rows whose ``last_read_at``
 is NULL or older than ``settings_read_telemetry_min_restamp_seconds`` (default
 1h), so a hot key is written at most ~once/hour and the per-minute statement is
-a cheap, mostly-no-op HOT update on a ~1k-row table.
+a cheap, mostly-no-op HOT update on a ~2k-row table.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from poindexter.plugins.job import JobResult
-from poindexter.services import settings_read_sink
-from poindexter.utils.exception_format import describe_exception
-
-logger = logging.getLogger(__name__)
-
-# app_settings keys (seeded in settings_defaults.py).
-_ENABLED_KEY = "settings_read_telemetry_enabled"
-_RESTAMP_SECONDS_KEY = "settings_read_telemetry_min_restamp_seconds"
-_DEFAULT_RESTAMP_SECONDS = 3600
-
-
-def _affected_rows(status: Any) -> int:
-    """Parse asyncpg's ``execute`` command tag (``"UPDATE 5"``) into a count.
-
-    Degrades to 0 on anything unexpected — the count is for the JobResult /
-    metrics only, never a control-flow decision."""
-    try:
-        return int(str(status).split()[-1])
-    except (ValueError, IndexError):
-        return 0
+from poindexter.services.settings_read_telemetry import flush_read_telemetry
 
 
 class FlushSettingsReadTelemetryJob:
@@ -66,63 +52,10 @@ class FlushSettingsReadTelemetryJob:
                 detail="no site_config in config (job dispatcher seeding broken?)",
                 changes_made=0,
             )
-        if pool is None:
-            # Don't drain — keep the read set intact so the keys survive to the
-            # next cycle once a pool is available again.
-            return JobResult(ok=False, detail="no pool available", changes_made=0)
-
-        # Drain unconditionally (even when disabled) so the in-memory sets stay
-        # bounded — neither grows past one cycle's distinct reads. Union the
-        # lifespan SiteConfig's instance drain with the process-wide
-        # SettingsService read sink (poindexter#756): SettingsService is built
-        # ad-hoc with only a pool (multi_model_qa, content_router, …), so its
-        # reads — the qa_* weights, pipeline_*_model — can't land on the
-        # SiteConfig instance and would otherwise look "never read" forever.
-        keys = list(
-            set(site_config.drain_read_keys()) | set(settings_read_sink.drain_read_keys())
-        )
-
-        if not site_config.get_bool(_ENABLED_KEY, True):
-            return JobResult(
-                ok=True,
-                detail=f"telemetry disabled — discarded {len(keys)} key(s)",
-                changes_made=0,
-            )
-
-        if not keys:
-            return JobResult(
-                ok=True, detail="no keys read since last cycle", changes_made=0
-            )
-
-        restamp_seconds = site_config.get_int(
-            _RESTAMP_SECONDS_KEY, _DEFAULT_RESTAMP_SECONDS
-        )
-
-        try:
-            async with pool.acquire() as conn:
-                status = await conn.execute(
-                    """
-                    UPDATE app_settings
-                    SET last_read_at = NOW()
-                    WHERE key = ANY($1::text[])
-                      AND (
-                        last_read_at IS NULL
-                        OR last_read_at < NOW() - ($2 * INTERVAL '1 second')
-                      )
-                    """,
-                    keys,
-                    restamp_seconds,
-                )
-        except Exception as e:  # noqa: BLE001 — telemetry must never crash a cycle
-            logger.warning("[flush_settings_read_telemetry] UPDATE failed: %s", describe_exception(e))
-            return JobResult(ok=False, detail=f"update failed: {describe_exception(e)}", changes_made=0)
-
-        updated = _affected_rows(status)
-        logger.debug(
-            "[flush_settings_read_telemetry] stamped %d/%d key(s)", updated, len(keys)
-        )
+        # Drains the lifespan SiteConfig plus the process-wide SettingsService
+        # read sink. With no pool it drains nothing, so the keys survive to the
+        # next cycle.
+        flushed = await flush_read_telemetry(pool, site_config)
         return JobResult(
-            ok=True,
-            detail=f"stamped {updated}/{len(keys)} key(s) read this cycle",
-            changes_made=updated,
+            ok=flushed.ok, detail=flushed.detail, changes_made=flushed.keys_stamped
         )

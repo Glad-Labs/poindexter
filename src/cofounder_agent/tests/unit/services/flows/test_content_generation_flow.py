@@ -1308,3 +1308,307 @@ class TestGameModeDefersClaim:
             result = await content_generation_flow.fn(database_service=db)
 
         assert result["claimed"] is True
+
+
+# ---------------------------------------------------------------------------
+# poindexter#756: each flow run stamps the settings it read before it exits
+# ---------------------------------------------------------------------------
+
+
+# Seeded so the real stale-reclaim step parses a value instead of warning.
+_STALE_RECLAIM_ROW = {"key": "content_flow_stale_inprogress_minutes", "value": "30"}
+
+
+async def _conn_of(pool):
+    """The single connection double ``_make_pool`` hands out on every acquire."""
+    async with pool.acquire() as conn:
+        return conn
+
+
+def _stamped_keys(conn) -> set[str]:
+    """Keys passed to the read-telemetry UPDATE(s) among a conn's execute calls."""
+    keys: set[str] = set()
+    for call in conn.execute.call_args_list:
+        if "SET last_read_at" in call.args[0]:
+            keys.update(call.args[1])
+    return keys
+
+
+def _db_with_sweep(pool):
+    """A database_service double the REAL ``reclaim_stale_inprogress_tasks``
+    body can run against (its sweep reports nothing reclaimed)."""
+    db = _make_db_service(pool)
+    db.sweep_stale_tasks = AsyncMock(return_value={"reset": 0, "failed": 0, "promoted": 0})
+    return db
+
+
+def _pipeline_that_reads_settings(*, raises: Exception | None = None):
+    """A pipeline double that reads settings the way the graph does: one key
+    through the run's SiteConfig (atoms, platform.config) and one through the
+    process-wide sink (``SettingsService.get`` in multi_model_qa)."""
+    from poindexter.services import settings_read_sink
+
+    async def _run(**kwargs):
+        kwargs["site_config"].get("writer_self_review_model")
+        settings_read_sink.record_read("qa_critic_weight")
+        if raises is not None:
+            raise raises
+        return {"status": "awaiting_approval"}
+
+    return AsyncMock(side_effect=_run)
+
+
+@pytest.mark.unit
+class TestFlowStampsSettingsReads:
+    """Prefect runs every flow run in its own subprocess (``prefect worker
+    start --type process``), which builds its own SiteConfig and exits when the
+    run ends. The worker's once-a-minute ``FlushSettingsReadTelemetryJob``
+    never sees that subprocess's read buffers, so until the flow flushed them
+    itself no pipeline read was ever stamped. On 2026-09-28
+    ``content_flow_stale_inprogress_minutes`` (read by all ~700 flow runs a
+    day) had a NULL ``last_read_at``, and the zero-reader probe was naming live
+    QA weights as keys nothing reads.
+
+    The SiteConfig in these tests is the real one ``build_container`` loads
+    from the pool double, so the reads are production reads.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clean_read_sink(self):
+        from poindexter.services import settings_read_sink
+
+        settings_read_sink.drain_read_keys()
+        yield
+        settings_read_sink.drain_read_keys()
+
+    @pytest.mark.asyncio
+    async def test_idle_scheduled_run_stamps_the_stale_reclaim_setting(self):
+        """The production case: an empty-queue run still reads
+        ``content_flow_stale_inprogress_minutes`` in its pre-claim reclaim, and
+        the end-of-run flush stamps it."""
+        from poindexter.services.flows import content_generation as cg
+
+        real_reclaim = cg.reclaim_stale_inprogress_tasks.fn
+        pool = _make_pool(claim_row=None, settings_rows=[_STALE_RECLAIM_ROW])
+        db = _db_with_sweep(pool)
+
+        with patch(
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(side_effect=real_reclaim),
+        ), patch(
+            "poindexter.services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await cg.content_generation_flow.fn(database_service=db)
+
+        assert result == {"claimed": False, "task_id": None}
+        db.sweep_stale_tasks.assert_awaited_once_with(timeout_minutes=30)
+        assert "content_flow_stale_inprogress_minutes" in _stamped_keys(
+            await _conn_of(pool)
+        )
+
+    @pytest.mark.asyncio
+    async def test_pipeline_reads_on_both_paths_are_stamped(self):
+        from poindexter.services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        with patch(
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "poindexter.services.content_router_service.process_content_generation_task",
+            new=_pipeline_that_reads_settings(),
+        ), patch(
+            "poindexter.services.post_pipeline_actions.run_post_pipeline_actions",
+            new=AsyncMock(),
+        ):
+            result = await content_generation_flow.fn(
+                task_id="stamp-task", topic="A topic", database_service=db,
+            )
+
+        assert result["claimed"] is True
+        assert {"writer_self_review_model", "qa_critic_weight"} <= _stamped_keys(
+            await _conn_of(pool)
+        )
+
+    @pytest.mark.asyncio
+    async def test_crashed_run_still_stamps_and_reraises(self):
+        from poindexter.services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        with patch(
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "poindexter.services.content_router_service.process_content_generation_task",
+            new=_pipeline_that_reads_settings(raises=RuntimeError("pipeline boom")),
+        ), patch(
+            "poindexter.services.task_failure_alerts.send_failure_alert",
+            new=AsyncMock(),
+        ):
+            with pytest.raises(RuntimeError, match="pipeline boom"):
+                await content_generation_flow.fn(
+                    task_id="crash-stamp", topic="A topic", database_service=db,
+                )
+
+        assert {"writer_self_review_model", "qa_critic_weight"} <= _stamped_keys(
+            await _conn_of(pool)
+        )
+
+    @pytest.mark.asyncio
+    async def test_stamps_before_the_flow_closes_its_own_pool(self):
+        """The flush needs the pool, so it must run before the close in the
+        wrapper's finally, not after it."""
+        from poindexter.services.flows import content_generation as cg
+
+        events: list[str] = []
+        pool = _make_pool(claim_row=None, settings_rows=[_STALE_RECLAIM_ROW])
+        conn = await _conn_of(pool)
+
+        async def _execute(sql, *args):
+            if "SET last_read_at" in sql:
+                events.append("stamp")
+            return "UPDATE 1"
+
+        conn.execute = AsyncMock(side_effect=_execute)
+        built = _db_with_sweep(pool)
+        built.close = AsyncMock(side_effect=lambda: events.append("close"))
+        real_reclaim = cg.reclaim_stale_inprogress_tasks.fn
+
+        with patch(
+            "poindexter.services.flows.content_generation._build_default_database_service",
+            new=AsyncMock(return_value=built),
+        ), patch(
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(side_effect=real_reclaim),
+        ), patch(
+            "poindexter.services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ):
+            await cg.content_generation_flow.fn()
+
+        assert events == ["stamp", "close"]
+
+    @pytest.mark.asyncio
+    async def test_flush_failure_leaves_the_result_and_teardown_alone(self, caplog):
+        from poindexter.services.flows import content_generation as cg
+
+        pool = _make_pool(claim_row=None)
+        built = _make_db_service(pool)
+        built.close = AsyncMock()
+
+        with patch(
+            "poindexter.services.flows.content_generation._build_default_database_service",
+            new=AsyncMock(return_value=built),
+        ), patch(
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "poindexter.services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "poindexter.services.settings_read_telemetry.flush_read_telemetry",
+            new=AsyncMock(side_effect=RuntimeError("telemetry exploded")),
+        ), caplog.at_level("WARNING"):
+            result = await cg.content_generation_flow.fn()
+
+        assert result == {"claimed": False, "task_id": None}
+        built.close.assert_awaited_once()
+        assert any(
+            "read-telemetry flush raised" in r.message for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_flush_failure_never_masks_the_pipeline_exception(self):
+        from poindexter.services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        with patch(
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "poindexter.services.content_router_service.process_content_generation_task",
+            new=AsyncMock(side_effect=RuntimeError("pipeline boom")),
+        ), patch(
+            "poindexter.services.task_failure_alerts.send_failure_alert",
+            new=AsyncMock(),
+        ), patch(
+            "poindexter.services.settings_read_telemetry.flush_read_telemetry",
+            new=AsyncMock(side_effect=RuntimeError("telemetry exploded")),
+        ):
+            with pytest.raises(RuntimeError, match="pipeline boom"):
+                await content_generation_flow.fn(
+                    task_id="crash-2", topic="A topic", database_service=db,
+                )
+
+    @pytest.mark.asyncio
+    async def test_no_pool_skips_the_flush(self):
+        """No pool means no SiteConfig was wired and nothing to stamp with."""
+        from poindexter.services.flows.content_generation import content_generation_flow
+
+        db = MagicMock()
+        db.pool = None
+        flush_mock = AsyncMock()
+
+        with patch(
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "poindexter.services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "poindexter.services.settings_read_telemetry.flush_read_telemetry",
+            new=flush_mock,
+        ):
+            await content_generation_flow.fn(database_service=db)
+
+        flush_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_disabled_telemetry_stamps_nothing(self):
+        """``settings_read_telemetry_enabled=false`` gates the flow's flush
+        exactly as it gates the worker job's."""
+        from poindexter.services import settings_read_telemetry
+        from poindexter.services.flows import content_generation as cg
+
+        real_reclaim = cg.reclaim_stale_inprogress_tasks.fn
+        real_flush = settings_read_telemetry.flush_read_telemetry
+        outcomes = []
+
+        async def _spy_flush(pool, site_config):
+            outcome = await real_flush(pool, site_config)
+            outcomes.append(outcome)
+            return outcome
+
+        pool = _make_pool(
+            claim_row=None,
+            settings_rows=[
+                _STALE_RECLAIM_ROW,
+                {"key": "settings_read_telemetry_enabled", "value": "false"},
+            ],
+        )
+        db = _db_with_sweep(pool)
+
+        with patch(
+            "poindexter.services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(side_effect=real_reclaim),
+        ), patch(
+            "poindexter.services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "poindexter.services.settings_read_telemetry.flush_read_telemetry",
+            new=_spy_flush,
+        ):
+            await cg.content_generation_flow.fn(database_service=db)
+
+        # The flush ran and chose not to write, rather than never running.
+        assert len(outcomes) == 1
+        assert "telemetry disabled" in outcomes[0].detail
+        assert outcomes[0].keys_read > 0
+        assert _stamped_keys(await _conn_of(pool)) == set()

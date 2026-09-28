@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/poindexter/services/site_config.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_site_config.py`
-**Last reviewed:** 2026-06-30
+**Last reviewed:** 2026-09-28
 
 ## What it does
 
@@ -69,8 +69,9 @@ a seeded `SiteConfig` on an `AppContainer` so container-accessor modules
   excludes secrets by construction).
 - `cfg.drain_read_keys() -> list[str]` — returns the keys read via
   `get()` since the last drain, then clears the set. The read-telemetry
-  sink, called by `FlushSettingsReadTelemetryJob` (see "Read telemetry
-  & orphan detection" below).
+  sink, drained by `services.settings_read_telemetry.flush_read_telemetry`
+  from the worker's `FlushSettingsReadTelemetryJob` and at the end of each
+  Prefect content-flow run (see "Read telemetry & orphan detection" below).
 
 ## Configuration
 
@@ -141,9 +142,10 @@ The only env vars `SiteConfig` itself touches:
 - **Writes to:** no DB writes — read-only by design; settings are
   mutated via `services.settings_service.SettingsService` or the
   `/api/settings` route. (`get()` does record each read key in an
-  in-memory set for telemetry; the separate
-  `FlushSettingsReadTelemetryJob` performs the `last_read_at` UPDATE.
-  See "Read telemetry & orphan detection" below.)
+  in-memory set for telemetry; `services/settings_read_telemetry.py`
+  performs the `last_read_at` UPDATE, called from the worker's
+  `FlushSettingsReadTelemetryJob` and at the end of each content-flow
+  run. See "Read telemetry & orphan detection" below.)
 - **External APIs:** none.
 
 ## Failure modes
@@ -196,39 +198,69 @@ set — an O(1) `set.add` on the hot path. It writes nothing itself, and
 `load()`/`reload()` deliberately do NOT mark keys read, so a 60s cache
 refresh never makes every key look consumed.
 
-Two scheduled jobs close the loop (both reach the lifespan-bound
-`SiteConfig` via `config["_site_config"]`, seeded into every job by the
-plugin scheduler):
+### Flushing: every process flushes its own reads
 
-- **`FlushSettingsReadTelemetryJob`** (`services/jobs/flush_settings_read_telemetry.py`,
-  every minute) drains the `SiteConfig` set via `drain_read_keys()`,
-  unions it with the process-wide `SettingsService` read sink
-  (`services.settings_read_sink`, poindexter#756), and batch-stamps
-  `app_settings.last_read_at = NOW()` for those keys. The UPDATE only
-  touches rows whose `last_read_at` is NULL or older than
-  `settings_read_telemetry_min_restamp_seconds` (default 3600), so a
-  hot key is written ~once/hour rather than 60×. Gated by
-  `settings_read_telemetry_enabled` (default true).
-- **`ProbeZeroReaderSettingsJob`** (`services/jobs/probe_zero_reader_settings.py`,
-  every 6h) is the inverse query: non-secret, non-deprecated keys whose
-  `last_read_at` is still NULL more than `settings_zero_reader_grace_days`
-  (default 30) days after `created_at` are emitted as one advisory
-  `settings_zero_reader_keys` finding (severity `warn`, stable
-  `dedup_key`) routed to Discord ops via
-  `findings.settings_zero_reader_keys.delivery`. The grace window self-
-  suppresses on fresh installs and gives newly-seeded keys time to be
-  read. The live list also renders on the **Integrations & Admin**
-  Grafana board ("Settings Lifecycle — Orphan Candidates").
+The read set and the sink are process memory, so a read is stamped only
+if the process that made it flushes. The drain-and-stamp step is
+`services/settings_read_telemetry.py::flush_read_telemetry(pool, site_config)`.
+It drains the `SiteConfig` set via `drain_read_keys()`, unions it with
+the process-wide `SettingsService` read sink
+(`services.settings_read_sink`, poindexter#756), and batch-stamps
+`app_settings.last_read_at = NOW()` for those keys. The UPDATE only
+touches rows whose `last_read_at` is NULL or older than
+`settings_read_telemetry_min_restamp_seconds` (default 3600), so a hot
+key is written about once an hour however many processes read it.
+Gated by `settings_read_telemetry_enabled` (default true), which governs
+both callers:
 
-**Advisory, not authoritative.** `last_read_at` is stamped on both
-in-process read accessors — `SiteConfig.get` (per-instance set) and
-`SettingsService.get` (the shared `services.settings_read_sink`, which
-the flush job unions in; poindexter#756). A key read EXCLUSIVELY via a
-path neither accessor covers still surfaces as an orphan candidate:
-raw SQL (e.g. `findings_alert_router` reading `findings.*` policies,
-`auto_publish` reading `auto_publish_threshold`) or the **brain
-daemon**'s own asyncpg reads (a separate process, so its reads never
-reach this worker's flush job). Verify each key before retiring it.
+- **The worker.** `FlushSettingsReadTelemetryJob`
+  (`services/jobs/flush_settings_read_telemetry.py`, every minute)
+  flushes the lifespan-bound `SiteConfig`, which the plugin scheduler
+  seeds into every job as `config["_site_config"]`.
+- **Each Prefect content-flow run.** `content_generation_flow`
+  (`services/flows/content_generation.py`) flushes the run's own
+  `SiteConfig` from its `finally`, before the run's DB pool closes, on a
+  crashed run as well as a clean one. The Prefect worker runs every flow
+  run in a fresh subprocess (`prefect worker start --type process`) that
+  builds its own `SiteConfig` and exits when the run ends; nothing else
+  can reach that subprocess's buffers. Until 2026-09-28 the flow didn't
+  flush, so no read made inside the pipeline was ever stamped.
+  `content_flow_stale_inprogress_minutes`, read by ~700 flow runs a day,
+  was NULL, and the zero-reader finding listed live QA weights
+  (`qa_final_score_threshold`, `qa_critic_weight`) as unread. A flush
+  failure is logged and never changes the run's result or masks its
+  exception.
+
+### The orphan probe
+
+**`ProbeZeroReaderSettingsJob`** (`services/jobs/probe_zero_reader_settings.py`,
+every 6h) is the inverse query: non-secret, non-deprecated keys whose
+`last_read_at` is still NULL more than `settings_zero_reader_grace_days`
+(default 30) days after `created_at` are emitted as one advisory
+`settings_zero_reader_keys` finding (severity `warn`, stable
+`dedup_key`) routed to Discord ops via
+`findings.settings_zero_reader_keys.delivery`. The grace window
+self-suppresses on fresh installs and gives newly-seeded keys time to be
+read. The live list also renders on the **Integrations & Admin** Grafana
+board ("Settings Lifecycle — Orphan Candidates").
+
+**Advisory, not authoritative.** `last_read_at` is stamped on both read
+accessors — `SiteConfig.get` (per-instance set) and
+`SettingsService.get` (the shared `services.settings_read_sink`) — in
+the two processes that flush them. A key read EXCLUSIVELY via a path
+none of that covers still surfaces as an orphan candidate:
+
+- **Raw SQL** that doesn't record into the sink (e.g.
+  `findings_alert_router` reading `findings.*` policies, `auto_publish`
+  reading `auto_publish_threshold`).
+- **A `site_config.all()` snapshot** filtered in code. `persona_service.get_persona`
+  reads every `persona.<slug>.*` key this way, so they read as never
+  read even though every narration resolves them.
+- **A process that never flushes**: the **brain daemon**'s own asyncpg
+  reads, the `poindexter` CLI, and one-off scripts.
+
+A NULL `last_read_at` is a candidate, never proof. Verify each key
+from its readers in code before retiring it.
 
 ## See also
 

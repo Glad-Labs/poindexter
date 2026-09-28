@@ -304,7 +304,11 @@ async def content_generation_flow(
     own_database_service = database_service is None
     if own_database_service:
         database_service = await _build_default_database_service()
+    # The run's SiteConfig is wired here, beside the pool, so the finally can
+    # stamp the settings the run read before that pool closes (poindexter#756).
+    wired_site_config: Any = None
     try:
+        wired_site_config = await _wire_subprocess_site_config(database_service)
         return await _run_content_generation_flow(
             task_id=task_id,
             topic=topic,
@@ -316,21 +320,95 @@ async def content_generation_flow(
             category=category,
             target_audience=target_audience,
             database_service=database_service,
+            wired_site_config=wired_site_config,
         )
     finally:
-        # Clear structlog context so task_id/prefect_run_id don't bleed into
-        # any subsequent flow invocation that reuses this async context.
-        clear_contextvars()
-        if own_database_service and database_service is not None:
-            try:
-                await database_service.close()
-            except Exception:  # noqa: BLE001 — best-effort teardown
-                # The subprocess exit releases the connections regardless,
-                # so a close hiccup must not mask the flow's real result.
-                logger.warning(
-                    "[CONTENT_FLOW] closing the flow-owned DB pool raised",
-                    exc_info=True,
-                )
+        try:
+            await _stamp_settings_reads(database_service, wired_site_config)
+        finally:
+            # Clear structlog context so task_id/prefect_run_id don't bleed into
+            # any subsequent flow invocation that reuses this async context.
+            clear_contextvars()
+            if own_database_service and database_service is not None:
+                try:
+                    await database_service.close()
+                except Exception:  # noqa: BLE001 — best-effort teardown
+                    # The subprocess exit releases the connections regardless,
+                    # so a close hiccup must not mask the flow's real result.
+                    logger.warning(
+                        "[CONTENT_FLOW] closing the flow-owned DB pool raised",
+                        exc_info=True,
+                    )
+
+
+async def _wire_subprocess_site_config(database_service: Any) -> Any:
+    """Load and wire this subprocess's ``SiteConfig``; ``None`` without a pool.
+
+    poindexter#477: Prefect spawns this flow inside a fresh Python
+    subprocess that never runs ``main.py``'s lifespan. Without the
+    explicit wire here, every wired module's ``site_config`` stays
+    the empty default — ``site_config.get("preferred_ollama_model")``
+    returns ``""``, the ``auto`` resolver in ollama_client falls
+    through to "pick largest installed model by file size", and the
+    70-150B parameter local models that ship for testing get loaded
+    into 32 GB VRAM + 63 GB host RAM and thrash the system.
+    ``build_and_wire_subprocess_with_container`` (DI migration PR 2,
+    design doc 2026-05-28-site-config-di-migration.md) loads
+    SiteConfig from the database_service's pool via
+    ``services.bootstrap.build_container``, rebinds the same instance
+    across every wired module, and returns the AppContainer so
+    downstream migrated services can construct through it.
+    """
+    from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
+
+    pool = getattr(database_service, "pool", None)
+    if pool is None:
+        logger.warning(
+            "[CONTENT_FLOW] database_service has no .pool — skipping "
+            "subprocess SiteConfig wiring. Stage code that relies on "
+            "site_config will fall through to env defaults.",
+        )
+        return None
+    site_config, _ = await build_and_wire_subprocess_with_container(pool)
+    return site_config
+
+
+async def _stamp_settings_reads(database_service: Any, site_config: Any) -> None:
+    """Stamp ``app_settings.last_read_at`` for the settings this run read.
+
+    Read-telemetry (poindexter#756) buffers every read in process memory: the
+    wired SiteConfig's read set plus the process-wide ``settings_read_sink``.
+    This subprocess exits when the run ends, and the worker's once-a-minute
+    ``FlushSettingsReadTelemetryJob`` drains only the worker's own buffers, so
+    the run flushes itself. Until it did (2026-09-28), no read made inside a
+    flow run was ever stamped, and ``ProbeZeroReaderSettingsJob`` reported live
+    pipeline settings as keys nothing reads.
+
+    Best-effort: a failure is logged, and never changes the flow's result or
+    masks its exception.
+    """
+    if site_config is None:
+        # No pool, so no SiteConfig was wired and there is nothing to stamp with.
+        return
+    try:
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        flushed = await flush_read_telemetry(
+            getattr(database_service, "pool", None), site_config
+        )
+    except Exception:  # noqa: BLE001 — read telemetry must never fail a flow run
+        logger.warning(
+            "[CONTENT_FLOW] settings read-telemetry flush raised — the "
+            "settings this run read stay unstamped",
+            exc_info=True,
+        )
+        return
+    if flushed.keys_stamped:
+        logger.info(
+            "[CONTENT_FLOW] stamped last_read_at on %d of the %d setting(s) "
+            "this run read",
+            flushed.keys_stamped, flushed.keys_read,
+        )
 
 
 async def _run_content_generation_flow(
@@ -345,6 +423,7 @@ async def _run_content_generation_flow(
     category: str | None,
     target_audience: str | None,
     database_service: Any,
+    wired_site_config: Any,
 ) -> dict[str, Any]:
     """Body of :func:`content_generation_flow`.
 
@@ -352,6 +431,10 @@ async def _run_content_generation_flow(
     built (poindexter#702 item 1) via a try/finally around the whole run,
     without indenting the entire body. ``database_service`` is always
     non-None here — the wrapper builds one when the caller didn't inject it.
+    ``wired_site_config`` is the SiteConfig the wrapper wired for this
+    subprocess (:func:`_wire_subprocess_site_config`), or None when the
+    service has no pool. The wrapper owns it so its finally can stamp the
+    run's settings reads.
     Deliberately NOT ``@flow``-decorated: it executes inside the wrapper's
     flow context, so ``get_run_context`` and Prefect logging still resolve.
     """
@@ -359,34 +442,9 @@ async def _run_content_generation_flow(
     # the module to register flows during deployment-time discovery
     # but doesn't need the heavy database/services tree).
     from poindexter.services.content_router_service import process_content_generation_task
-    from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
 
-    # poindexter#477: Prefect spawns this flow inside a fresh Python
-    # subprocess that never runs ``main.py``'s lifespan. Without the
-    # explicit wire here, every wired module's ``site_config`` stays
-    # the empty default — ``site_config.get("preferred_ollama_model")``
-    # returns ``""``, the ``auto`` resolver in ollama_client falls
-    # through to "pick largest installed model by file size", and the
-    # 70-150B parameter local models that ship for testing get loaded
-    # into 32 GB VRAM + 63 GB host RAM and thrash the system.
-    # ``build_and_wire_subprocess_with_container`` (DI migration PR 2,
-    # design doc 2026-05-28-site-config-di-migration.md) loads
-    # SiteConfig from the database_service's pool via
-    # ``services.bootstrap.build_container``, rebinds the same instance
-    # across every wired module, and returns the AppContainer so
-    # downstream migrated services can construct through it.
-    _wired_site_config: Any = None
+    _wired_site_config: Any = wired_site_config
     _pool = getattr(database_service, "pool", None)
-    if _pool is not None:
-        _wired_site_config, _ = (
-            await build_and_wire_subprocess_with_container(_pool)
-        )
-    else:
-        logger.warning(
-            "[CONTENT_FLOW] database_service has no .pool — skipping "
-            "subprocess SiteConfig wiring. Stage code that relies on "
-            "site_config will fall through to env defaults.",
-        )
 
     # poindexter Phase-5 stress-test finding #6: this prefect-worker
     # subprocess never runs main.py's lifespan, so neither the OTel

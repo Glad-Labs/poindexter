@@ -1,13 +1,19 @@
 """Process-level read sink for ``SettingsService.get`` (Glad-Labs/poindexter#756).
 
 ``SiteConfig.get`` records every key it is asked for into its own instance set,
-which ``FlushSettingsReadTelemetryJob`` drains once a minute to stamp
+which ``services.settings_read_telemetry`` drains to stamp
 ``app_settings.last_read_at``. ``SettingsService`` is the other read path — but
 it is constructed ad-hoc in several places (``main.py`` lifespan,
 ``content_router_service``, ``multi_model_qa``) with only a pool, so there is no
-single instance for the flush job to drain. Those reads land here instead: one
+single instance for the flush to drain. Those reads land here instead: one
 shared, process-wide buffer that every ``SettingsService`` records into, which
-the flush job unions with the ``SiteConfig`` drain.
+the flush unions with the ``SiteConfig`` drain.
+
+"Process-wide" is the whole scope. The worker's ``FlushSettingsReadTelemetryJob``
+drains the worker's buffer once a minute. Each Prefect content-flow run is a
+separate subprocess with its own buffer, which the run flushes when it ends
+(``content_generation_flow``). ``multi_model_qa``'s reads happen in that
+subprocess, not the worker.
 
 This is a write-then-drain telemetry buffer — the same shape as a metrics
 counter — behind a two-function seam (``record_read`` / ``drain_read_keys``), so

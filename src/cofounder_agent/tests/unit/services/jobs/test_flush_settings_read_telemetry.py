@@ -122,6 +122,22 @@ class TestFlushSettingsReadTelemetryJob:
         args = conn.execute.await_args.args
         assert args[2] == 60
 
+    async def test_update_failure_returns_not_ok_without_raising(self):
+        """A failed UPDATE fails the cycle's JobResult but never raises into
+        the scheduler (the drain + UPDATE live in
+        services/settings_read_telemetry.py, shared with the content flow)."""
+        sc = _site_config_with_reads("site_url")
+        pool, conn = _make_pool()
+        conn.execute = AsyncMock(side_effect=OSError("connection reset by peer"))
+
+        result = await FlushSettingsReadTelemetryJob().run(
+            pool, {"_site_config": sc}
+        )
+
+        assert result.ok is False
+        assert result.changes_made == 0
+        assert "update failed" in result.detail
+
     async def test_missing_site_config_returns_not_ok(self):
         pool, _ = _make_pool()
         result = await FlushSettingsReadTelemetryJob().run(pool, {})

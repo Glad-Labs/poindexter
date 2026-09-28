@@ -12,14 +12,18 @@ with a stable ``dedup_key`` so the alert dispatcher collapses repeated fires
 into a single Discord page until the situation changes. The live list also
 renders on the Integrations & Admin Grafana board.
 
-ADVISORY, not authoritative. ``last_read_at`` is stamped on both in-process
-read accessors — ``SiteConfig.get`` and ``SettingsService.get`` (the latter via
-the shared ``services.settings_read_sink``, poindexter#756). A key read
-EXCLUSIVELY via a path neither covers still shows up here: raw SQL (e.g.
-``findings_alert_router`` reading ``findings.*`` policies, ``auto_publish``
-reading ``auto_publish_threshold``) or the brain daemon's own asyncpg reads (a
-separate process, so they never reach this worker's flush job). The finding body
-says as much; verify each key before retiring it.
+ADVISORY, not authoritative. ``last_read_at`` is stamped on both read
+accessors — ``SiteConfig.get`` and ``SettingsService.get`` (the latter via the
+shared ``services.settings_read_sink``, poindexter#756) — in the two processes
+that flush them: the worker (``FlushSettingsReadTelemetryJob``) and each Prefect
+content-flow run (flushed as the run ends, since 2026-09-28; before that no
+pipeline read was stamped). A key read EXCLUSIVELY via a path none of that
+covers still shows up here: raw SQL (e.g. ``findings_alert_router`` reading
+``findings.*`` policies, ``auto_publish`` reading ``auto_publish_threshold``),
+a ``SiteConfig.all()`` snapshot filtered in code (``persona_service`` reads the
+``persona.<slug>.*`` keys that way), or a process that never flushes (the brain
+daemon's own asyncpg reads, the ``poindexter`` CLI, one-off scripts). The
+finding body says as much; verify each key before retiring it.
 """
 
 from __future__ import annotations
@@ -79,9 +83,10 @@ def _build_body(rows: list[dict[str, Any]], grace_days: int) -> str:
         f"system has read them via `SiteConfig.get` since read-telemetry began.",
         "",
         "**Advisory only.** A key also appears here if it is read EXCLUSIVELY "
-        "via a path read-telemetry cannot see — raw SQL, or the brain daemon's "
-        "separate asyncpg process. Verify each is truly unused before retiring "
-        "it.",
+        "via a path read-telemetry cannot see — raw SQL, a `SiteConfig.all()` "
+        "snapshot, or a process that never flushes its reads (the brain "
+        "daemon, the `poindexter` CLI, one-off scripts). Verify each is truly "
+        "unused before retiring it.",
         "",
     ]
     for r in rows:

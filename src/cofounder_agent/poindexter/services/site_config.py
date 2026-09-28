@@ -87,12 +87,14 @@ class SiteConfig:
         # Guards against re-emitting the same warning on every get() call.
         self._deprecation_warned: set[str] = set()
         # Read-telemetry (poindexter#756 item 2): every key passed to get()
-        # is recorded here. ``FlushSettingsReadTelemetryJob`` drains this set
-        # once a minute and stamps ``app_settings.last_read_at``, so a key that
-        # never appears here is an orphan candidate. Per-instance + in-memory —
-        # the hot get() path only pays an O(1) set.add(). load()/reload()
-        # deliberately do NOT touch it (repopulating the value cache is not a
-        # "read").
+        # is recorded here. ``services.settings_read_telemetry`` drains this
+        # set and stamps ``app_settings.last_read_at``, so a key that never
+        # appears here is an orphan candidate. The worker's
+        # ``FlushSettingsReadTelemetryJob`` flushes once a minute, and each
+        # Prefect content-flow run flushes its own instance when it ends.
+        # Per-instance + in-memory — the hot get() path only pays an O(1)
+        # set.add(). load()/reload() deliberately do NOT touch it
+        # (repopulating the value cache is not a "read").
         self._read_keys: set[str] = set()
 
     async def load(self, pool) -> int:
@@ -334,9 +336,11 @@ class SiteConfig:
     def drain_read_keys(self) -> list[str]:
         """Return the keys read via get() since the last drain, then clear.
 
-        Read-telemetry sink (poindexter#756 item 2). ``FlushSettingsReadTelemetryJob``
-        calls this once a minute and stamps ``app_settings.last_read_at`` for the
-        returned keys. The snapshot-then-clear is a single synchronous step with
+        Read-telemetry sink (poindexter#756 item 2).
+        ``services.settings_read_telemetry.flush_read_telemetry`` calls this and
+        stamps ``app_settings.last_read_at`` for the returned keys: once a minute
+        in the worker, and at the end of each Prefect content-flow run for that
+        run's instance. The snapshot-then-clear is a single synchronous step with
         no ``await`` between, so it's atomic under asyncio — a get() racing the
         drain either lands in this batch or the next, never lost-and-uncounted.
         """
