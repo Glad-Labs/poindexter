@@ -171,8 +171,6 @@ class TestStageFallsBackToPexels:
         )
 
         image_service = SimpleNamespace(
-            gen_available=True,
-            gen_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_image),
         )
 
@@ -231,8 +229,6 @@ class TestStageFallsBackToPexels:
         from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
         image_service = SimpleNamespace(
-            gen_available=True,
-            gen_initialized=True,
             search_featured_image=AsyncMock(return_value=None),
         )
 
@@ -301,7 +297,7 @@ class TestStockFallbackGate:
 
         search = AsyncMock()
         image_service = SimpleNamespace(
-            gen_available=True, gen_initialized=True, search_featured_image=search,
+            search_featured_image=search,
         )
         emit = MagicMock()
         with patch.object(sfi, "_try_image_gen_featured", new=AsyncMock(return_value=None)), \
@@ -329,7 +325,6 @@ class TestStockFallbackGate:
             photographer="Ada L", source="pexels", width=940, height=650,
         )
         image_service = SimpleNamespace(
-            gen_available=True, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_image),
         )
         emit = MagicMock()

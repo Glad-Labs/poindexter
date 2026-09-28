@@ -1,10 +1,11 @@
-"""ImageGenProvider — text-to-image via the image-gen sidecar (or in-process diffusers).
+"""ImageGenProvider — text-to-image via the image-gen HTTP server sidecar.
 
-Phase G follow-up (GitHub #71). Delegates to the existing
-``services.image_service.ImageService.generate_image`` — the torch +
-diffusers + GPU-lifecycle plumbing stays in image_service so we don't
-fracture the model cache. The Provider surface adapts that to the
-``ImageProvider`` Protocol, so callers can swap Z-Image/Flux/DALL-E
+Phase G follow-up (GitHub #71). Delegates to
+``services.image_service.ImageService.generate_image``, which takes
+``gpu.lock("image_gen")`` and POSTs to the image-gen server
+(``scripts/image-gen-server.py``). That server owns the model and its GPU
+lifecycle; nothing here loads one. The Provider surface adapts the call to
+the ``ImageProvider`` Protocol, so callers can swap Z-Image/Flux/DALL-E
 later by setting ``plugin.image_provider.primary`` in app_settings.
 
 Config (``plugin.image_provider.image_gen`` in app_settings):
@@ -65,8 +66,8 @@ class ImageGenProvider:
                 (sc.get("image_negative_prompt", "") if sc is not None else "") or "",
             )
 
-        # Delegate to the in-process ImageService — it owns the torch/
-        # diffusers pipeline and GPU cache. We just hand it a path.
+        # Delegate to ImageService — it takes the GPU lock and renders on the
+        # image-gen HTTP server. We just hand it a path.
         try:
             from poindexter.services.image_service import get_image_service
         except Exception as e:

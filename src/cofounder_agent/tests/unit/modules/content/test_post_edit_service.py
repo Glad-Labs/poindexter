@@ -222,9 +222,11 @@ class _DetailedImageSvc:
     def __init__(self, outcome):
         self._outcome = outcome
         self.calls = 0
+        self.task_ids: list = []
 
-    async def generate_image_result(self, *, prompt, output_path, negative_prompt=""):
+    async def generate_image_result(self, *, prompt, output_path, negative_prompt="", task_id=None):
         self.calls += 1
+        self.task_ids.append(task_id)
         if self._outcome.ok:
             with open(output_path, "wb") as f:
                 f.write(b"PNGDATA")
@@ -270,6 +272,25 @@ async def test_regen_image_prefers_the_detailed_api_when_available():
 
     assert result.ok
     assert img.calls == 1, "the bool API must not be used when the detailed one exists"
+
+
+async def test_regen_image_names_the_task_on_the_render():
+    """The task id reaches the render, so the GPU lease, the console's
+    live-activity row and the image-gen server's image_ocr_gate_result audit
+    row can all be joined back to the task being edited. It used to render
+    anonymously: 62% of the OCR-gate audit rows in the 30 days to 2026-09-28
+    carried no task id."""
+    pool = FakePool(content="body", version=1)
+
+    async def fake_upload(self, path, task_id):
+        return "https://cdn/generated/new.webp"
+
+    img = _DetailedImageSvc(ImageGenOutcome(True))
+    with patch.object(PostEditService, "_upload_image", fake_upload):
+        svc = PostEditService(pool=pool, image_service=img)
+        await svc.regen_image("t1", which="featured", prompt="a teal robot")
+
+    assert img.task_ids == ["t1"]
 
 
 async def test_add_image_shares_the_same_generate_path():

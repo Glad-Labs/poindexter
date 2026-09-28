@@ -63,7 +63,6 @@ class TestSourceFeaturedImageRecordsAsset:
             "tags": [],
             "generate_featured_image": True,
             "image_service": SimpleNamespace(
-                gen_available=True, gen_initialized=True,
                 search_featured_image=AsyncMock(),
             ),
             "site_config": sc,
@@ -105,7 +104,6 @@ class TestSourceFeaturedImageRecordsAsset:
             width=800, height=600,
         )
         image_service = SimpleNamespace(
-            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_img),
         )
         ctx: dict[str, Any] = {
@@ -142,7 +140,6 @@ class TestSourceFeaturedImageRecordsAsset:
         # contention from the new app_settings-driven image-gen gate (#603).
         sc = _fake_site_config(pool=MagicMock(), image_gen_enabled=False)
         image_service = SimpleNamespace(
-            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=None),
         )
         ctx: dict[str, Any] = {
@@ -194,7 +191,6 @@ class TestFeaturedImageDataContextUpdates:
             "tags": [],
             "generate_featured_image": True,
             "image_service": SimpleNamespace(
-                gen_available=True, gen_initialized=True,
                 search_featured_image=AsyncMock(),
             ),
             "site_config": sc,
@@ -253,7 +249,6 @@ class TestFeaturedImageDataContextUpdates:
             "tags": [],
             "generate_featured_image": True,
             "image_service": SimpleNamespace(
-                gen_available=True, gen_initialized=True,
                 search_featured_image=AsyncMock(),
             ),
             "site_config": sc,
@@ -299,7 +294,6 @@ class TestFeaturedImageDataContextUpdates:
             width=800, height=600,
         )
         image_service = SimpleNamespace(
-            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_img),
         )
         ctx: dict[str, Any] = {
@@ -348,9 +342,7 @@ class TestFeaturedImageDataContextUpdates:
             "topic": "X",
             "tags": [],
             "generate_featured_image": False,
-            "image_service": SimpleNamespace(
-                gen_available=False, gen_initialized=True,
-            ),
+            "image_service": SimpleNamespace(),
             "site_config": sc,
         }
         result = await SourceFeaturedImageStage().execute(ctx, {})

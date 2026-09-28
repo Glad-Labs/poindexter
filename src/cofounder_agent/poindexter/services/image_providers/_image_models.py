@@ -1,72 +1,43 @@
-"""Shared image model registry (image-gen + future models) + torch availability probes.
+"""Shared image model registry — model names, their configs, the default resolver.
 
-Extracted from ``services/image_service.py`` in Phase G (GH#71) so the
-``ImageGenProvider`` can own the model lifecycle without image_service acting
-as a middleman. The registry + enum + default-resolver are imported from
-both sides during the cutover; image_service re-exports them for
-backward compatibility so existing callers and test patches keep working.
+``ImageModel``, ``ImageModelConfig`` / ``IMAGE_MODEL_REGISTRY`` and the
+``image_model`` default resolver. Extracted from ``services/image_service.py``
+in Phase G (GH#71); image_service re-exports these names so existing callers
+and tests keep importing them from there.
 
 Model list:
 
 - ``SDXL_BASE`` — stabilityai/stable-diffusion-xl-base-1.0 (30 steps, ~6GB)
 - ``SDXL_LIGHTNING`` — SDXL base + ByteDance Lightning LoRA (4 steps, ~6GB)
 - ``FLUX_SCHNELL`` — black-forest-labs/FLUX.1-schnell (4 steps, ~12GB)
+- ``Z_IMAGE_TURBO`` — Tongyi-MAI/Z-Image-Turbo (9 steps, ~13GB)
 
-All options are local GPU / CPU fallback — $0/month inference.
+Every render happens in the image-gen HTTP server
+(``scripts/image-gen-server.py``, its own CUDA container), which keeps its
+own registry and picks its model from ``app_settings.image_generation_model``.
+The ``pipeline_class`` / LoRA / scheduler / dtype fields below describe the
+worker's retired in-process diffusers path. Nothing in the worker loads
+them, and this module imports no torch, diffusers or xformers: an import
+probe here used to pull CPU torch into every process that imported
+image_service.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from importlib.util import find_spec
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Optional dependency probes. Kept as module-level constants so both
-# image_service (legacy callers, tests) and image_gen provider can branch on
-# availability without re-running the imports.
-#
-# ``torch`` is bound at module scope so test patches like
-# ``patch("services.image_service.torch", mock_torch)`` keep working
-# after the Phase G cutover — image_service.py re-exports it. The
-# diffusers pipeline classes are resolved dynamically by
-# ``ImageModelConfig.pipeline_class`` via ``importlib.import_module`` so
-# we don't need to import them at module scope here.
-# ---------------------------------------------------------------------------
-
-try:
-    import torch
-
-    TORCH_AVAILABLE = True
-except ImportError:
-    torch = None  # type: ignore[assignment]
-    TORCH_AVAILABLE = False
-
-# Explicit re-export so static analyzers don't flag ``torch`` as unused.
-# image_service.py imports ``torch`` from this module to preserve the
-# ``patch("services.image_service.torch", mock)`` test hook.
 __all__ = [
-    "DIFFUSERS_AVAILABLE",
     "IMAGE_MODEL_REGISTRY",
     "ImageModel",
     "ImageModelConfig",
-    "TORCH_AVAILABLE",
-    "XFORMERS_AVAILABLE",
     "get_default_image_model",
-    "torch",
 ]
-
-DIFFUSERS_AVAILABLE = find_spec("diffusers") is not None
-if not DIFFUSERS_AVAILABLE:
-    logger.warning("Diffusers library not available")
-
-XFORMERS_AVAILABLE = find_spec("xformers") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +115,7 @@ IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
         vram_gb=13.0,
         notes=(
             "Apache-2.0 6B guidance-distilled turbo (9 steps / CFG 0 / bf16, "
-            "no negative prompt). 2026-06-19 bake-off default. Mirrors the Stable Diffusion XL "
+            "no negative prompt). 2026-06-19 bake-off default. Mirrors the image-gen "
             "HTTP server registry (scripts/image-gen-server.py), the live render path."
         ),
     ),

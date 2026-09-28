@@ -86,7 +86,6 @@ _OVERRIDES: dict[str, str] = {
     "skill_importer_allowed_licenses": "plugins",
     "youtube_attribution_enabled": "media",
     "youtube_oembed_timeout_seconds": "media",
-    "enable_image_gen_warmup": "media",
     "enable_writer_self_review": "content",
     "enable_tracing": "observability",
     "enable_pyroscope": "observability",

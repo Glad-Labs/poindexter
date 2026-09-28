@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-09-28.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 676 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 675 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -41,7 +41,7 @@ The worker re-reads on every poll; no restart needed.
 - [experiments](#experiments) (3 keys)
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
-- [general](#general) (305 keys)
+- [general](#general) (304 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (2 keys)
@@ -296,7 +296,6 @@ The worker re-reads on every poll; no restart needed.
 | `docker_port_forward_watch_list` | `[{"container": "poindexter-pyroscope"...` |  |  |
 | `embed_model` | `nomic-embed-text` |  | Auto-seeded by services.settings_defaults (#379) |
 | `enabled_topic_sources` | `knowledge,codebase,hackernews,devto,w...` |  |  |
-| `enable_image_gen_warmup` | `` |  | Warm up the image-gen server on startup (lazy-loads otherwise) |
 | `enable_writer_self_review` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `environment` | `development` |  | Auto-seeded by services.settings_defaults (#379) |
 | `findings.anomaly.cooldown_minutes` | `60` |  |  |

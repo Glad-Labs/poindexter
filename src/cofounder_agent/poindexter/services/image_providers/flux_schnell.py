@@ -28,7 +28,8 @@ accepts these keys via the dispatcher's per-call forwarding):
   the file at the path they asked for.
 - ``num_inference_steps`` (default 4 — FLUX.1-schnell is 4-step distilled)
 - ``guidance_scale`` (default 0.0 — schnell ignores guidance by design)
-- ``task_id`` — WebSocket progress stream identifier
+- ``task_id`` — recorded in the returned ImageResult's metadata, for
+  correlating a render with its task
 - ``upload_to`` — ``""`` / ``"cloudinary"`` / ``"r2"``. Same shape as
   ImageGenProvider; the ImageResult.url reflects the upload target.
 

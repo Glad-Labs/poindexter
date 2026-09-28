@@ -2844,7 +2844,6 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Image generation -----
     'image_gen_enabled': 'true',
-    'enable_image_gen_warmup': '',
     # Worker in-process diffusers registry default (services/image_providers).
     # The live render path is the image-gen HTTP server, which reads the separate
     # 'image_generation_model' key (seeded in 0000_baseline.seeds.sql); both
@@ -6475,7 +6474,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'docker_port_forward_recovery_poll_interval_seconds': {'owner': 'docker_port_forward_probe', 'value_type': 'integer'},
     'electricity_rate_kwh': {'value_type': 'float'},
     'embed_num_gpu': {'value_type': 'integer'},
-    'enable_image_gen_warmup': {'owner': 'startup_manager'},
     'enable_writer_self_review': {'value_type': 'boolean'},
     'environment': {'value_type': 'string'},
     'experiment_weighted_selection_enabled': {'owner': 'experiment_runner', 'value_type': 'boolean'},

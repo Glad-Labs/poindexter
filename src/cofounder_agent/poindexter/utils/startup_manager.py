@@ -5,7 +5,7 @@ Handles all startup and shutdown operations for Poindexter (the AI cofounder pip
 - Database initialization (PostgreSQL + asyncpg)
 - Cache setup (Redis)
 - Migrations + module migrations
-- Retention janitor + image-gen warmup
+- Retention janitor
 - Route service registration
 - Graceful shutdown
 
@@ -112,7 +112,7 @@ class StartupManager:
         Args:
             site_config: SiteConfig instance — threaded from main.py lifespan
                 into every sub-service that needs DB-backed config at startup
-                (Redis cache, retention janitor, image-gen warmup). Phase H (GH#95)
+                (Redis cache, retention janitor). Phase H (GH#95)
                 dropped the transitional module-singleton imports in favour
                 of this single construction site. Defaults to None so any
                 test that constructs StartupManager() bare still works.
@@ -325,19 +325,11 @@ class StartupManager:
                     "[retention_janitor] Failed to start: %s", rj_err,
                 )
 
-            # Step 14: Warmup image-gen models (async, non-blocking)
-            # Only if GPU is available - this prevents timeout issues when users first request image-gen
-            try:
-                await self._warmup_image_models()
-            except Exception as e:
-                import traceback
-
-                logger.warning(
-                    f"[WARNING] image-gen warmup failed (non-critical): {type(e).__name__}: {e}",
-                    exc_info=True,
-                )
-                logger.debug(f"    Traceback: {traceback.format_exc()}")
-                # Continue anyway - image-gen will load lazily when first used
+            # No image-gen warmup step: the image-gen server lazy-loads its
+            # model on the first /generate and unloads it once idle
+            # (IDLE_TIMEOUT in scripts/image-gen-server.py), so a startup
+            # render could keep nothing warm. It would only take
+            # gpu.lock("image_gen") and evict Ollama on every worker restart.
 
             logger.info(" Application started successfully!")
             self._log_startup_summary()
@@ -1036,93 +1028,6 @@ class StartupManager:
                 "[model_validator] All %d configured model(s) validated OK",
                 len(configured),
             )
-
-    async def _warmup_image_models(self) -> None:
-        """Warmup image-gen models to avoid timeout on first request.
-
-        Disabled by default — image-gen loads lazily on first image generation
-        request. Enable with enable_image_gen_warmup=true if you want faster
-        first-image response at the cost of 20-30s slower startup.
-        """
-        import os
-
-        # Skip warmup unless explicitly enabled (lazy loading is the default).
-        # Uses the DI-seam'd SiteConfig from the constructor (glad-labs-stack#330).
-        sc = self._site_config
-        warmup_flag = sc.get("enable_image_gen_warmup", "") if sc is not None else ""
-        if warmup_flag.lower() not in ("true", "1", "yes"):
-            logger.info(
-                "  image-gen warmup: Skipped (lazy loading on first request). Set enable_image_gen_warmup=true to pre-load."
-            )
-            return
-
-        # Check if torch is even available (optional dependency for image-gen)
-        try:
-            import torch
-        except ModuleNotFoundError:
-            logger.info("  image-gen warmup: torch not installed - image-gen disabled")
-            logger.info(
-                "     In-process image-gen needs the `ml` extra (poetry install "
-                "--extras ml); GPU rendering runs in the image-gen-server container."
-            )
-            return
-
-        # Skip warmup if GPU is not available (image-gen only works on GPU)
-        if not torch.cuda.is_available():
-            logger.debug(
-                "  image-gen warmup: GPU not available, skipping model warmup (lazy loading enabled)"
-            )
-            return
-
-        try:
-            logger.info("  🎨 Warming up image-gen models (this may take 20-30 seconds)...")
-            import tempfile
-
-            from poindexter.services.image_service import ImageService
-            from poindexter.services.site_config import SiteConfig
-
-            # Create image service
-            image_service = ImageService(sc or SiteConfig())
-
-            # Generate a minimal test image just to load the models
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                output_path = tmp.name
-
-            try:
-                # Single-step generation just to load models
-                success = await image_service.generate_image(
-                    prompt="warmup",
-                    output_path=output_path,
-                    num_inference_steps=1,
-                    guidance_scale=7.5,
-                )
-
-                if success:
-                    logger.info(
-                        "  [OK] image-gen models loaded successfully! First requests will be fast."
-                    )
-                else:
-                    logger.warning(
-                        "  [WARNING] image-gen warmup generation failed (will initialize lazily)"
-                    )
-
-            finally:
-                # Clean up temp file
-                try:
-                    if os.path.exists(output_path):
-                        os.remove(output_path)
-                except OSError as e:
-                    logger.debug(f"  [DEBUG] Temp file cleanup failed (non-critical): {e!s}")
-
-        except Exception as e:
-            import traceback
-
-            logger.warning(
-                f"  [WARNING] image-gen warmup error (non-critical): {type(e).__name__}: {e}",
-                exc_info=True,
-            )
-            logger.warning(f"     Full traceback:\n{traceback.format_exc()}", exc_info=True)
-            logger.info("     image-gen will initialize on first request")
 
     def _log_startup_summary(self) -> None:
         """Log summary of startup state"""

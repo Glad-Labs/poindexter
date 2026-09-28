@@ -500,6 +500,10 @@ class PostEditService:
         them nothing and, for the OOM case, actively misdirected — the render
         never started, so there was no output to produce.
 
+        ``task_id`` rides along on the detailed call, so the GPU lease, the
+        console's live-activity row and the image-gen server's
+        ``image_ocr_gate_result`` audit row all name the task being edited.
+
         Falls back to the bool ``generate_image`` when the injected service
         predates the detailed API (duck-typed seam — tests inject fakes).
         """
@@ -525,6 +529,7 @@ class PostEditService:
             if detailed is not None:
                 outcome = await detailed(
                     prompt=prompt, output_path=out_path, negative_prompt=negative,
+                    task_id=task_id,
                 )
                 ok, why = bool(outcome.ok), outcome.message
             else:

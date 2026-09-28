@@ -13,6 +13,12 @@ The fix: ``image_gen_attempted`` is now ``app_settings.image_gen_enabled``
 failure handles image-gen-server-down gracefully — the gate no longer
 gates on local-diffusers state that's not relevant to the HTTP path.
 
+Since 2026-09 ``ImageService`` carries no local-generation flags at all
+(the in-process diffusers path was deleted). The fake below is ``spec``'d
+on the real class, so a stage that reached for ``gen_available`` /
+``gen_initialized`` again would raise AttributeError here, rather than read a
+value the test happened to set.
+
 A regression that reintroduces the local-diffusers check would put
 every featured image back on pexels, which Matt called out as a
 content-quality issue (he wants a mix of image-gen + pexels, not pexels-only).
@@ -26,12 +32,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
-def _make_image_service(gen_available: bool, gen_initialized: bool) -> Any:
-    """Stand-in for ImageService with controllable image-gen flags + the
-    Pexels search method the stage falls through to."""
-    svc = MagicMock()
-    svc.gen_available = gen_available
-    svc.gen_initialized = gen_initialized
+def _make_image_service() -> Any:
+    """Stand-in for ImageService, spec'd on the real class so it has exactly
+    the real surface. Only the Pexels search the stage falls through to is
+    stubbed."""
+    from poindexter.services.image_service import ImageService
+
+    svc = MagicMock(spec=ImageService)
     svc.search_featured_image = AsyncMock(return_value=None)
     return svc
 
@@ -77,13 +84,11 @@ async def test_image_gen_attempted_when_local_diffusers_missing() -> None:
     the first lazy init attempt. Pre-fix the gate evaluated to
     ``False or not True == False`` and image-gen was skipped on every run.
 
-    Verify the new gate calls ``_try_image_gen_featured`` regardless of
-    local-diffusers state."""
+    Verify the gate calls ``_try_image_gen_featured`` with a service that
+    has no local-diffusers state at all (the real ImageService since 2026-09)."""
     from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
-    image_service = _make_image_service(
-        gen_available=False, gen_initialized=True,
-    )
+    image_service = _make_image_service()
     site_config = _make_site_config({
         "image_gen_enabled": "true",
         "image_gen_server_url": "http://fake-image-gen:9836",
@@ -113,7 +118,7 @@ async def test_image_gen_skipped_when_explicitly_disabled() -> None:
     code edits."""
     from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
-    image_service = _make_image_service(gen_available=True, gen_initialized=True)
+    image_service = _make_image_service()
     site_config = _make_site_config({
         "image_gen_enabled": "false",
         "image_gen_server_url": "http://fake-image-gen:9836",
@@ -140,7 +145,7 @@ async def test_image_gen_attempted_by_default_when_setting_unset() -> None:
     image-gen. Fresh installs shouldn't have to set the flag to get image-gen working."""
     from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
-    image_service = _make_image_service(gen_available=False, gen_initialized=True)
+    image_service = _make_image_service()
     site_config = _make_site_config({})  # no image_gen_enabled key
     context = _make_context(image_service, site_config)
 

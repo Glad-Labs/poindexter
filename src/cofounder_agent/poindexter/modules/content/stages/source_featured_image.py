@@ -61,7 +61,7 @@ import random
 import tempfile
 import uuid
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -252,11 +252,7 @@ class GeneratedImage:
     url: str
     photographer: str
     source: str
-    gen_meta: dict[str, Any] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.gen_meta is None:
-            self.gen_meta = {}
+    gen_meta: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -385,11 +381,11 @@ class SourceFeaturedImageStage:
         # 2026-05-27 fix: the previous gate checked
         # ``image_service.gen_available or not image_service.gen_initialized``,
         # which is a leftover from the in-process diffusers era. The
-        # worker container no longer installs the ``ml`` extras (diffusers
-        # + torch + sentence-transformers moved out to dedicated
-        # containers), so ``gen_available`` is permanently False here
-        # and the gate skipped image-gen on every run — silently falling
-        # back to Pexels.
+        # worker image does not install diffusers (the ``ml`` extra), so
+        # ``gen_available`` was permanently False here and the gate skipped
+        # image-gen on every run — silently falling back to Pexels. Both
+        # flags were deleted from ImageService in 2026-09 with the rest of
+        # the in-process path.
         #
         # The real image-gen path goes through ``_try_image_gen_featured`` ->
         # ``_render_image_gen`` -> HTTP POST to ``image_gen_server_url``. That

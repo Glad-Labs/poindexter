@@ -3,44 +3,44 @@ Unified Image Service
 
 Consolidates all image processing functionality:
 - Featured image sourcing (Pexels API - free, unlimited)
-- Image generation (switchable models: image-gen, image-gen Lightning, Flux)
-- Image optimization and attribution
+- Image generation, rendered by the image-gen HTTP server
 - Gallery image sourcing
-- Metadata generation
+- Metadata generation and photographer attribution
 
 Architecture:
-- All operations are async (httpx for Pexels, GPU for generation)
-- Model registry pattern — switch models like LLM model_router
-- Lazy loading — models only loaded on first generation request
-- Proper error handling and fallback chains
+- All operations are async (httpx for Pexels and for the image-gen server)
+- Generation POSTs to the image-gen HTTP server (``scripts/image-gen-server.py``,
+  its own CUDA container) under ``gpu.lock("image_gen")``. The server picks the
+  model from ``app_settings.image_generation_model``, lazy-loads it on the
+  first request and unloads it when idle. This module loads no model and
+  imports no torch or diffusers.
+- A failed render returns an ``ImageGenOutcome`` naming the reason (the
+  server's own diagnosis, where it gave one) instead of a bare ``False``
 - Automatic photographer attribution from Pexels
 
-Supported Models: defined canonically in ``services.image_providers._image_models``
-(``ImageModel`` / ``IMAGE_MODEL_REGISTRY``), imported + re-exported here. The
-live default is ``z_image_turbo`` (HTTP image-gen server); sdxl_base /
-sdxl_lightning / flux_schnell describe the retired local-diffusers path.
+Model names: defined canonically in ``services.image_providers._image_models``
+(``ImageModel`` / ``IMAGE_MODEL_REGISTRY``), imported + re-exported here.
 
-Cost: $0/month for all options (local GPU or CPU fallback)
+Cost: $0/month (Pexels free tier; generation on the local GPU)
 """
 
 import asyncio
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import httpx
 
 from poindexter.services import live_activity
 from poindexter.services.image_providers._image_models import (
     IMAGE_MODEL_REGISTRY,
     ImageModel,
     ImageModelConfig,  # noqa: F401 — re-exported for back-compat (callers/tests import from here)
-    get_default_image_model,
+    get_default_image_model,  # noqa: F401 — re-exported for back-compat (callers/tests import from here)
 )
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-
-if TYPE_CHECKING:
-    import httpx
+from poindexter.utils.exception_format import describe_exception
 
 # SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
 # ``set_site_config`` setter were removed. Injection is mandatory —
@@ -105,13 +105,6 @@ def _server_error_detail(resp: Any) -> str:
         return "unreadable response body"
 
 
-try:
-    import httpx
-
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
-
 logger = get_logger(__name__)
 
 
@@ -153,10 +146,17 @@ class ImageGenOutcome:
     ``detail`` is the human string to surface (already truncated). Tokens:
 
     * ``gpu_busy`` — admission refused, or the lock wait timed out.
-    * ``server_error`` — image-gen answered non-2xx (OOM lives here).
-    * ``bad_response`` — 2xx with an unusable body (no filename, fetch failed).
-    * ``unavailable`` — no image-gen server AND no local diffusers fallback.
-    * ``render_failed`` — the local diffusers path raised.
+    * ``server_error`` — image-gen answered non-200 (OOM lives here), or
+      could not be reached at all (connection refused, timeout).
+    * ``bad_response`` — 200 with an unusable body: unparseable JSON, no
+      filename, an unexpected content type, or the rendered image could not
+      be fetched.
+    * ``write_failed`` — the server rendered the image but the worker could
+      not write it to ``output_path``.
+
+    The image-gen server is the only render path, so every failure is one of
+    these. The worker's in-process diffusers fallback was removed in 2026-09,
+    and with it the ``unavailable`` and ``render_failed`` tokens it produced.
     """
 
     ok: bool
@@ -165,9 +165,8 @@ class ImageGenOutcome:
 
     # Deliberately NOT given a __bool__. Making a failed outcome falsy reads
     # nicely at a call site (`if outcome:`) and is a trap everywhere else — it
-    # silently breaks `found_error or fallback`, which is exactly how the
-    # image-gen diagnosis is carried across the diffusers fallback below.
-    # Callers test ``.ok``.
+    # silently breaks `outcome or fallback`, discarding the diagnosis a failed
+    # outcome carries. Callers test ``.ok``.
 
     @property
     def message(self) -> str:
@@ -276,48 +275,11 @@ class ImageService:
         ).rstrip("/")
         self.pexels_headers: dict[str, str] = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
 
-        # Image generation state (lazy-loaded on first generate_image call)
-        self._gen_pipe = None  # Active generation pipeline
-        self._active_model: ImageModel | None = None  # Currently loaded model
-        self.gen_available = False  # Kept for backward compat (True when any model loaded)
-        self.gen_initialized = False  # Track if we've attempted initialization
-        self.use_device = "cpu"  # Updated during model initialization
-        # NOTE: Models are lazily initialized only when generate_image() is called.
-        # This avoids loading huge models if only Pexels search is needed.
+        # No image-generation state lives here: the image-gen HTTP server owns
+        # the model (see _generate_image_impl), so there is nothing to lazily
+        # load, track or unload in the worker.
 
         self.search_cache: dict[str, list[FeaturedImageMetadata]] = {}
-
-    def _initialize_model(self, model: ImageModel | None = None) -> None:
-        """
-        Mark local diffusers image generation as unavailable.
-
-        Local (in-process) diffusers generation cannot run in this
-        deployment: the worker image never installs the ``ml`` poetry
-        extra (torch + diffusers — see ``Dockerfile.worker``), so a
-        pipeline can never be loaded here. Real image generation runs
-        entirely through the image-gen HTTP server — Strategy 1 in
-        :meth:`_generate_image_impl` — a separate CUDA container (see
-        ``scripts/Dockerfile.image-gen``). This method's only remaining
-        job is to record that reality so :meth:`_generate_image_impl`
-        reports a clear ``unavailable`` outcome when the HTTP server
-        can't be reached either.
-
-        Args:
-            model: Which model was requested. Defaults to
-                get_default_image_model(); used only for the log line.
-        """
-        if model is None:
-            model = get_default_image_model(site_config=self._site_config)
-        logger.debug(
-            "Local diffusers unavailable for %s - image generation depends "
-            "entirely on the image-gen HTTP server",
-            model.value,
-        )
-        self.gen_available = False
-
-    def _initialize_image_gen(self) -> None:
-        """Backward-compatible alias for _initialize_model()."""
-        self._initialize_model()
 
     # =========================================================================
     # DB-FIRST KEY LOADING
@@ -650,7 +612,7 @@ class ImageService:
             return []
 
     # =========================================================================
-    # IMAGE GENERATION (Stable Diffusion XL - Local GPU)
+    # IMAGE GENERATION (image-gen HTTP server)
     # =========================================================================
 
     async def generate_image(
@@ -791,29 +753,47 @@ class ImageService:
         model: ImageModel | None = None,
     ) -> ImageGenOutcome:
         """
-        Generate an image using the configured (or specified) model.
+        Render one image on the image-gen HTTP server and write it to ``output_path``.
 
         Caller holds ``gpu.lock("image_gen")`` — see
         :meth:`generate_image_result`. This method does the rendering only.
+
+        The server (``scripts/image-gen-server.py``, a GPU-resident container
+        on the shared compose network) is the only render path. The worker
+        image installs no diffusers, so the in-process fallback that used to
+        follow a failed request here could never run. A failure is therefore
+        the server's failure, and the outcome carries the server's own
+        diagnosis.
 
         Args:
             prompt: Image generation prompt
             output_path: Local path to save generated image
             negative_prompt: Negative prompt for quality improvement
-            num_inference_steps: Override inference steps (defaults to model config)
-            guidance_scale: Override guidance scale (defaults to model config)
-            task_id: Optional task ID for progress tracking via WebSocket
-            model: Which model to use (defaults to IMAGE_MODEL env or sdxl_lightning)
+            num_inference_steps: Override inference steps. Left out of the
+                request when None, so the server's per-model registry decides.
+            guidance_scale: Override guidance scale. Left out when None, as above.
+            task_id: Sent to the server, which stamps it on its
+                ``image_ocr_gate_result`` audit row — the same field the
+                pipeline's own render paths send.
+            model: Accepted for backward compatibility and ignored, with a
+                warning when set. The server renders the model named by
+                ``app_settings.image_generation_model``; a request cannot
+                choose another.
 
         Returns:
             An :class:`ImageGenOutcome` — ``ok`` plus, on failure, the reason
             token and the underlying detail (the image-gen server's own error
             body, where it gave one).
         """
-        # Strategy 1: Try the image-gen server (GPU-resident container on the
-        # shared compose network — addressed by its service DNS name so the
-        # request never traverses the flaky host-published-port proxy).
+        if model is not None:
+            logger.warning(
+                "ImageService: model=%s ignored — the image-gen server renders "
+                "app_settings.image_generation_model and takes no per-request model",
+                getattr(model, "value", model),
+            )
         _sc = self._site_config
+        # Addressed by its compose service DNS name so the request never
+        # traverses the flaky host-published-port proxy.
         image_gen_server_url = _sc.get("image_gen_server_url", "http://image-gen-server:9836")
         from poindexter.services.settings_defaults import default_int
 
@@ -821,56 +801,75 @@ class ImageService:
             "image_render_timeout_seconds",
             default_int("image_render_timeout_seconds"),
         )
-        # Holds Strategy 1's diagnosis across the Strategy 2 fallback. When
-        # diffusers isn't installed — the norm, since torch left the worker
-        # image — this is the ONLY real explanation available, so reporting a
-        # generic "no backend" instead would discard the OOM we just read.
-        server_error: ImageGenOutcome | None = None
-        try:
-            import httpx
+        # Only forward steps / guidance_scale when the caller set them
+        # explicitly; otherwise let the image-gen server's per-model registry
+        # drive them. The old `or 4` / `or 1.0` fallback forced Stable
+        # Diffusion XL-Turbo's params onto z_image_turbo, which is
+        # guidance-distilled (wants 9 steps / CFG 0) — the mismatch produced
+        # degraded images. Matches replace_inline_images.
+        # #image-zimage-and-variety.
+        _gen_body: dict[str, object] = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt or "",
+        }
+        if num_inference_steps is not None:
+            _gen_body["steps"] = num_inference_steps
+        if guidance_scale is not None:
+            _gen_body["guidance_scale"] = guidance_scale
+        if task_id:
+            _gen_body["task_id"] = str(task_id)
 
+        try:
             # Always use a fresh client for image-gen calls. The shared
             # http_client pools keep-alive connections, but uvicorn's
             # default 5s keep-alive means the image-gen server closes the
             # connection between infrequent regen calls. The pooled
             # connection then goes stale and the next request gets
-            # "Server disconnected without sending a response" →
-            # silent fallthrough to diffusers (not installed) → 503.
+            # "Server disconnected without sending a response".
             # A per-call client never reuses stale connections.
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(float(render_timeout), connect=5.0),
             ) as client:
-                # Only forward steps / guidance_scale when the caller set
-                # them explicitly; otherwise let the image-gen server's per-model
-                # registry drive them. The old `or 4` / `or 1.0` fallback
-                # forced Stable Diffusion XL-Turbo's params onto z_image_turbo, which is
-                # guidance-distilled (wants 9 steps / CFG 0) — the mismatch
-                # produced degraded images. Matches replace_inline_images.
-                # #image-zimage-and-variety.
-                _gen_body: dict[str, object] = {
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt or "",
-                }
-                if num_inference_steps is not None:
-                    _gen_body["steps"] = num_inference_steps
-                if guidance_scale is not None:
-                    _gen_body["guidance_scale"] = guidance_scale
                 resp = await client.post(
                     f"{image_gen_server_url}/generate",
                     json=_gen_body,
                     timeout=render_timeout,
                 )
-                # The sidecar at scripts/image-gen-server.py returns JSON
-                # (image_path + filename + generation_time_ms), NOT raw
-                # bytes. Fetch the actual image via the secondary endpoint
-                # ``GET /images/{filename}`` since the worker container
-                # doesn't share the sidecar's volume mount. Original code
-                # assumed Content-Type: image/* and broke against the JSON
-                # response — see Glad-Labs/glad-labs-stack#334.
+                if resp.status_code != 200:
+                    # Carry the server's OWN diagnosis forward. Its 503 body is
+                    # the only place the real cause is stated in words — "CUDA
+                    # out of memory. Tried to allocate 76.00 MiB", "image-gen
+                    # server degraded: <reason>" — and dropping it is what left
+                    # the operator with an unactionable "produced no output".
+                    detail = _server_error_detail(resp)
+                    logger.warning(
+                        "image-gen server returned %s: %s", resp.status_code, detail,
+                    )
+                    return ImageGenOutcome(
+                        False, "server_error",
+                        f"image-gen server returned HTTP {resp.status_code}: {detail}",
+                    )
                 ctype = resp.headers.get("content-type", "")
-                if resp.status_code == 200 and ctype.startswith("application/json"):
-                    body = resp.json()
-                    filename = body.get("filename")
+                if ctype.startswith("application/json"):
+                    # The sidecar at scripts/image-gen-server.py returns JSON
+                    # (image_path + filename + generation_time_ms), NOT raw
+                    # bytes. Fetch the actual image via the secondary endpoint
+                    # ``GET /images/{filename}`` since the worker container
+                    # doesn't share the sidecar's volume mount. Original code
+                    # assumed Content-Type: image/* and broke against the JSON
+                    # response — see Glad-Labs/glad-labs-stack#334.
+                    try:
+                        body = resp.json()
+                    except ValueError:
+                        logger.warning(
+                            "image-gen server returned 200 with unparseable JSON: %s",
+                            _server_error_detail(resp),
+                        )
+                        return ImageGenOutcome(
+                            False, "bad_response",
+                            "image-gen server returned 200 with an unparseable JSON body",
+                        )
+                    filename = body.get("filename") if isinstance(body, dict) else None
                     if not filename:
                         logger.warning(
                             "image-gen server response missing filename: %s", body,
@@ -893,35 +892,26 @@ class ImageService:
                             f"fetching the rendered image returned HTTP "
                             f"{img_resp.status_code}",
                         )
-                    await asyncio.to_thread(
-                        _write_image_bytes, output_path, img_resp.content,
+                    image_bytes = img_resp.content
+                    render_time = f"{body.get('generation_time_ms', '?')}ms"
+                elif ctype.startswith("image/"):
+                    # Legacy path — sidecar streamed image bytes directly.
+                    # Kept for back-compat in case a future sidecar version
+                    # reverts to the pre-JSON response shape.
+                    image_bytes = resp.content
+                    render_time = f"{resp.headers.get('X-Elapsed-Seconds', '?')}s"
+                else:
+                    logger.warning(
+                        "image-gen server returned 200 with content-type %r: %s",
+                        ctype, _server_error_detail(resp),
                     )
-                    logger.info(
-                        "image-gen image generated via host server in %sms: %s",
-                        body.get("generation_time_ms", "?"), output_path,
+                    return ImageGenOutcome(
+                        False, "bad_response",
+                        f"image-gen server returned 200 with content-type "
+                        f"{ctype or 'none'}, expected JSON or an image",
                     )
-                    return ImageGenOutcome(True)
-                # Legacy path — sidecar streamed image bytes directly.
-                # Kept for back-compat in case a future sidecar version
-                # reverts to the pre-JSON response shape.
-                if resp.status_code == 200 and ctype.startswith("image/"):
-                    await asyncio.to_thread(_write_image_bytes, output_path, resp.content)
-                    elapsed = resp.headers.get("X-Elapsed-Seconds", "?")
-                    logger.info("image-gen image generated via host server in %ss: %s", elapsed, output_path)
-                    return ImageGenOutcome(True)
-                logger.warning("image-gen server returned %s: %s", resp.status_code, resp.text[:200])
-                # Carry the server's OWN diagnosis forward. Its 503 body is the
-                # only place the real cause is stated in words — "CUDA out of
-                # memory. Tried to allocate 76.00 MiB", "image-gen server
-                # degraded: <reason>" — and dropping it here is what left the
-                # operator with an unactionable "produced no output".
-                server_error = ImageGenOutcome(
-                    False, "server_error",
-                    f"image-gen server returned HTTP {resp.status_code}: "
-                    f"{_server_error_detail(resp)}",
-                )
         except Exception as e:
-            logger.warning("image-gen host server unavailable (%s)", e)
+            logger.warning("image-gen host server unavailable (%s)", describe_exception(e))
             # Exception TYPE only, never str(e). `detail` is destined for an
             # HTTP response body, and an httpx ConnectError embeds the resolved
             # address of the host it failed to reach — the disclosure
@@ -929,166 +919,34 @@ class ImageService:
             # is the part the operator acts on (ConnectError = container down,
             # ReadTimeout = alive but wedged); the full error is in the log
             # line directly above.
-            server_error = ImageGenOutcome(
+            return ImageGenOutcome(
                 False, "server_error",
                 f"image-gen server unreachable ({type(e).__name__})",
             )
 
-        # Strategy 2: local diffusers — never available in this deployment
-        # (see _initialize_model). Kept so a lazy-init call still runs and
-        # this always resolves to the "unavailable" ImageGenOutcome below
-        # when Strategy 1 also failed.
-        if not self.gen_initialized or (model is not None and model != self._active_model):
-            target = model or get_default_image_model(site_config=self._site_config)
-            logger.info("First generation request detected - initializing %s...", target.value)
-            self._initialize_model(target)
-            self.gen_initialized = True
-
-        if not self.gen_available:
-            logger.warning("Image generation model not available - generation skipped")
-            if server_error is not None:
-                return server_error
-            return ImageGenOutcome(
-                False, "unavailable",
-                "no image-gen server reached and local diffusers is not installed",
-            )
-
-        # Resolve defaults from the active model config
-        if self._active_model is None:
-            logger.warning("Image generation requested before a model was activated - skipping")
-            if server_error is not None:
-                return server_error
-            return ImageGenOutcome(
-                False, "unavailable", "no image model is active",
-            )
-        config = IMAGE_MODEL_REGISTRY[self._active_model]
-        if num_inference_steps is None:
-            num_inference_steps = config.default_steps
-        if guidance_scale is None:
-            guidance_scale = config.default_guidance_scale
-
         try:
-            logger.info("Generating image for prompt: '%s'", prompt)
-            logger.info(
-                "   Model: %s, steps=%s, guidance=%s, device=%s",
-                config.display_name, num_inference_steps, guidance_scale, self.use_device.upper(),
+            await asyncio.to_thread(_write_image_bytes, output_path, image_bytes)
+        except OSError as e:
+            # The render succeeded, so this is not the server's failure:
+            # reporting it as one would send the operator to a healthy
+            # container. Type only in `detail`, for the same reason as above —
+            # the message carries the local path.
+            logger.error(
+                "image-gen rendered the image but writing %s failed: %s",
+                output_path, describe_exception(e),
             )
-
-            # Run generation in thread pool to avoid blocking
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(
-                None,
-                self._generate_image_sync,
-                prompt,
-                output_path,
-                negative_prompt,
-                num_inference_steps,
-                guidance_scale,
-                task_id,
-            )
-
-            logger.info("Image saved to %s", output_path)
-
-            # Mark progress as complete if tracking
-            if task_id:
-                from poindexter.services.progress_service import get_progress_service
-
-                progress_service = get_progress_service()
-                progress_service.mark_complete(task_id, "Image generation complete")
-
-            return ImageGenOutcome(True)
-
-        except Exception as e:
-            logger.error("Error generating image: %s", e, exc_info=True)
-
-            # Mark progress as failed if tracking
-            if task_id:
-                from poindexter.services.progress_service import get_progress_service
-
-                progress_service = get_progress_service()
-                progress_service.mark_failed(task_id, str(e))
-
             return ImageGenOutcome(
-                False, "render_failed", f"{type(e).__name__}: {e}",
+                False, "write_failed",
+                f"the image rendered but could not be written ({type(e).__name__})",
             )
-
-    def _generate_image_sync(
-        self,
-        prompt: str,
-        output_path: str,
-        negative_prompt: str | None = None,
-        num_inference_steps: int = 30,
-        guidance_scale: float = 7.5,
-        task_id: str | None = None,
-    ) -> None:
-        """
-        Synchronous image generation using the active model pipeline.
-
-        Runs in a thread pool to avoid blocking async operations.
-        Emits progress updates if task_id is provided (for WebSocket streaming).
-        """
-        if not self._gen_pipe:
-            raise RuntimeError("Image generation model not initialized")
-
-        negative_prompt = negative_prompt or ""
-        start_time = time.time()
-
-        # Initialize progress tracking if task_id provided
-        progress_service = None
-        if task_id:
-            from poindexter.services.progress_service import get_progress_service
-
-            progress_service = get_progress_service()
-            progress_service.create_progress(task_id, num_inference_steps)
-
-        def progress_callback(step: int, _timestep: Any, _latents: Any) -> None:
-            """Callback for each generation step."""
-            if progress_service and task_id:
-                elapsed = time.time() - start_time
-                progress_service.update_progress(
-                    task_id,
-                    step + 1,  # 1-indexed for display
-                    stage="generation",
-                    elapsed_time=elapsed,
-                    message=f"Generating: step {step + 1}/{num_inference_steps}",
-                )
-
-        model_name = self._active_model.value if self._active_model else "unknown"
-        logger.info("   Generating with %s (%s steps)...", model_name, num_inference_steps)
-
-        if progress_service and task_id:
-            progress_service.update_progress(
-                task_id, 0, stage="generation", message="Starting image generation..."
-            )
-
-        result = self._gen_pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            output_type="pil",
-            callback=progress_callback if task_id else None,
-            callback_steps=1 if task_id else None,
+        logger.info(
+            "image-gen image generated via host server in %s: %s", render_time, output_path,
         )
-
-        image = result.images[0]
-        logger.info("   Generation complete, saving image...")
-
-        try:
-            image.save(output_path)
-            elapsed = time.time() - start_time
-            logger.info("   Image saved to %s (%.1fs)", output_path, elapsed)
-        except Exception as save_error:
-            logger.error("   Save failed: %s", save_error, exc_info=True)
-            raise
+        return ImageGenOutcome(True)
 
     # =========================================================================
     # MODEL INTROSPECTION
     # =========================================================================
-
-    def get_active_model(self) -> ImageModel | None:
-        """Return the currently loaded model enum, or None if no model is loaded."""
-        return self._active_model
 
     @staticmethod
     def list_available_models() -> dict[str, dict[str, Any]]:

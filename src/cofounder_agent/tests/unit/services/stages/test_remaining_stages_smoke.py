@@ -500,7 +500,6 @@ class TestSourceFeaturedImageAdapter:
 
     async def test_disabled_flag_skips_without_calls(self):
         image_service = SimpleNamespace(
-            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(),
         )
         ctx: dict[str, Any] = {
@@ -518,7 +517,6 @@ class TestSourceFeaturedImageAdapter:
             source="pexels", width=800, height=600,
         )
         image_service = SimpleNamespace(
-            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_img),
         )
         # image_gen_enabled=false — the app_settings-driven image-gen gate (#603)
@@ -558,7 +556,6 @@ class TestSourceFeaturedImageAdapter:
     async def test_image_gen_succeeds_populates_image_gen_source(self):
         from poindexter.modules.content.stages.source_featured_image import GeneratedImage
         image_service = SimpleNamespace(
-            gen_available=True, gen_initialized=True,
             search_featured_image=AsyncMock(),
         )
         ctx: dict[str, Any] = {
@@ -583,7 +580,6 @@ class TestSourceFeaturedImageAdapter:
 
     async def test_both_strategies_fail_records_not_found(self):
         image_service = SimpleNamespace(
-            gen_available=True, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=None),
         )
         ctx: dict[str, Any] = {

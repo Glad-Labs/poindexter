@@ -188,7 +188,7 @@ async def test_admission_reject_message_carries_the_holder_eta():
     ids=["success", "failure"],
 )
 async def test_generate_image_still_returns_a_plain_bool(outcome, expected):
-    """Existing callers (ImageGenProvider, startup warmup) keep their contract."""
+    """Existing bool callers (ImageGenProvider, post_edit_service's fallback) keep their contract."""
     svc = _svc()
     with patch.object(gpu_scheduler_mod, "gpu", SimpleNamespace(lock=_noop_lock)), \
             patch.object(ImageService, "_generate_image_impl", AsyncMock(return_value=outcome)):
@@ -199,9 +199,8 @@ async def test_generate_image_still_returns_a_plain_bool(outcome, expected):
 
 
 def test_outcome_has_no_bool_override():
-    """A failed outcome must stay TRUTHY as an object, or `err or fallback`
-    silently drops it — which is exactly how the image-gen diagnosis travels
-    across the diffusers fallback. Callers test ``.ok``."""
+    """A failed outcome must stay TRUTHY as an object, or `outcome or fallback`
+    silently drops the diagnosis it carries. Callers test ``.ok``."""
     assert bool(ImageGenOutcome(False, "server_error", "boom")) is True
     assert (ImageGenOutcome(False, "server_error", "boom") or "fallback") != "fallback"
 
@@ -283,16 +282,12 @@ async def test_oom_from_the_server_reaches_the_caller():
 
     with patch.object(gpu_scheduler_mod, "gpu", SimpleNamespace(lock=_noop_lock)), \
             patch("httpx.AsyncClient", lambda **_kw: _FakeClient()):
-        # gen_available False → no local diffusers fallback, which is the live
-        # shape since torch left the worker image.
-        svc.gen_initialized = True
-        svc.gen_available = False
         outcome = await svc.generate_image_result("a cat", "/tmp/x.png")
 
     assert outcome.ok is False
     assert outcome.reason == "server_error", (
-        "a diagnosed server failure must not be flattened into the generic "
-        "'no backend available' reason by the diffusers fallback"
+        "a diagnosed server failure must reach the caller as server_error, "
+        "never flattened into a generic reason"
     )
     assert "CUDA out of memory" in outcome.message
     assert "503" in outcome.message
@@ -317,8 +312,6 @@ async def test_unreachable_server_reports_the_type_but_never_the_address():
     svc = _svc()
     with patch.object(gpu_scheduler_mod, "gpu", SimpleNamespace(lock=_noop_lock)), \
             patch("httpx.AsyncClient", lambda **_kw: _Boom()):
-        svc.gen_initialized = True
-        svc.gen_available = False
         outcome = await svc.generate_image_result("a cat", "/tmp/x.png")
 
     assert outcome.reason == "server_error"

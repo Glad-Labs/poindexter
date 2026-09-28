@@ -370,15 +370,6 @@
       "receiver": "site_config"
     },
     {
-      "key": "enable_image_gen_warmup",
-      "value": "",
-      "value_type": "str",
-      "getter": "get",
-      "file": "src\\cofounder_agent\\utils\\startup_manager.py",
-      "line": 453,
-      "receiver": "site_config"
-    },
-    {
       "key": "enable_tracing",
       "value": "false",
       "value_type": "str",
@@ -3231,15 +3222,6 @@
       "getter": "get",
       "file": "src\\cofounder_agent\\services\\profiling.py",
       "line": 32,
-      "receiver": "site_config"
-    },
-    "enable_image_gen_warmup": {
-      "key": "enable_image_gen_warmup",
-      "value": "",
-      "value_type": "str",
-      "getter": "get",
-      "file": "src\\cofounder_agent\\utils\\startup_manager.py",
-      "line": 453,
       "receiver": "site_config"
     },
     "enable_tracing": {

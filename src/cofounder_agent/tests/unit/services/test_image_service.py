@@ -3,8 +3,9 @@ Unit tests for services/image_service.py
 
 Tests FeaturedImageMetadata (to_dict, to_markdown), ImageService initialization,
 search_featured_image, get_images_for_gallery, _pexels_search (mocked httpx),
-generate_image_markdown, cache helpers, and factory.
-Heavy GPU/image-gen paths are not exercised; they are tested via flag checks only.
+the image-gen HTTP render path and the outcome each failure maps to (mocked
+httpx), generate_image_markdown, cache helpers, and factory. The GPU-lock
+wrapper around the render is covered in test_image_service_vram_guard.py.
 """
 
 import logging
@@ -184,12 +185,18 @@ class TestImageServiceInit:
         svc = ImageService(site_config=_test_sc())
         assert "pexels.com" in svc.pexels_base_url
 
-    def test_image_gen_not_initialized_at_startup(self):
+    def test_holds_no_in_process_generation_state(self):
+        """The image-gen server owns the model; the service loads and tracks
+        nothing. These flags described the retired in-process diffusers path
+        and read False/None on every deployment. Stage-test fakes that still
+        carried them could not catch a stage gating on them again."""
         svc = ImageService(site_config=_test_sc())
-        # Models are lazily initialized only when generate_image() is called
-        assert svc.gen_initialized is False
-        assert svc._gen_pipe is None
-        assert svc._active_model is None
+        for attr in (
+            "_gen_pipe", "_active_model", "gen_available", "gen_initialized",
+            "use_device", "get_active_model", "_initialize_model",
+            "_initialize_image_gen", "_generate_image_sync",
+        ):
+            assert not hasattr(svc, attr), f"ImageService.{attr} is back"
 
     def test_search_cache_starts_empty(self):
         svc = ImageService(site_config=_test_sc())
@@ -610,48 +617,68 @@ class TestGetDefaultImageModel:
 
 
 # ---------------------------------------------------------------------------
-# _initialize_model()
+# generate_image / _generate_image_impl — the image-gen HTTP render path
 # ---------------------------------------------------------------------------
 #
-# Local diffusers generation is provably unavailable in this deployment (the
-# worker image never installs the ``ml`` poetry extra — torch + diffusers).
-# _initialize_model no longer attempts an in-process load; it always ends in
-# gen_available=False. Real generation is Strategy 1 in generate_image_result
-# / _generate_image_impl (the image-gen HTTP server), exercised separately
-# under TestGenerateImage below.
+# The image-gen HTTP server is the only render path: the worker image installs
+# no diffusers, and the in-process fallback that used to run after a failed
+# request is gone. So every failure maps to one of the ImageGenOutcome tokens
+# for the server path (server_error / bad_response / write_failed), each
+# carrying the diagnosis the operator acts on. The gpu_busy token and the
+# GPU-lock wrapper are covered in test_image_service_vram_guard.py.
 
 
-@pytest.mark.unit
-class TestInitializeModel:
-    def test_marks_generation_unavailable_for_explicit_model(self):
-        svc = ImageService(site_config=_test_sc())
-        svc._initialize_model(ImageModel.SDXL_BASE)
-        assert svc.gen_available is False
-        assert svc._gen_pipe is None
-        assert svc._active_model is None
+def _response(
+    status_code: int = 200,
+    content_type: str = "application/json",
+    *,
+    payload: Any = None,
+    json_error: Exception | None = None,
+    content: bytes = b"",
+    text: str = "",
+    extra_headers: dict[str, str] | None = None,
+) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.headers = {"content-type": content_type, **(extra_headers or {})}
+    resp.content = content
+    resp.text = text
+    if json_error is not None:
+        resp.json = MagicMock(side_effect=json_error)
+    else:
+        resp.json = MagicMock(return_value=payload)
+    return resp
 
-    def test_uses_get_default_when_model_is_none(self):
-        svc = ImageService(site_config=_test_sc())
-        with patch(
-            "poindexter.services.image_service.get_default_image_model",
-            return_value=ImageModel.FLUX_SCHNELL,
-        ) as mock_default:
-            svc._initialize_model(None)
-            mock_default.assert_called_once()
-        assert svc.gen_available is False
+
+def _client(
+    *,
+    post: MagicMock | None = None,
+    post_error: Exception | None = None,
+    get: MagicMock | None = None,
+) -> AsyncMock:
+    client = AsyncMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    if post_error is not None:
+        client.post = AsyncMock(side_effect=post_error)
+    else:
+        client.post = AsyncMock(return_value=post)
+    client.get = AsyncMock(return_value=get)
+    return client
 
 
-# ---------------------------------------------------------------------------
-# generate_image — main public method
-# ---------------------------------------------------------------------------
+async def _render(client: AsyncMock, output_path: str, **kwargs: Any):
+    svc = ImageService(site_config=_test_sc())
+    with patch("httpx.AsyncClient", return_value=client):
+        return await svc._generate_image_impl("a cat", output_path, **kwargs)
 
 
 class TestGenerateImage:
-    """Coverage for the 3-strategy generate_image method."""
+    """The image-gen server is the only render path; each failure names why."""
 
     @pytest.mark.asyncio
     async def test_host_image_gen_server_happy_path(self, tmp_path):
-        """Strategy 1: host image-gen server returns image bytes -> file written + True."""
+        """Legacy server shape: 200 with raw image bytes -> file written + True."""
         svc = ImageService(site_config=_test_sc())
 
         png_bytes = b"\x89PNG fake image data"
@@ -680,105 +707,158 @@ class TestGenerateImage:
         assert _P(output_path).read_bytes() == png_bytes
 
     @pytest.mark.asyncio
-    async def test_host_image_gen_non_200_falls_through_to_local(self, tmp_path):
-        """If host image-gen returns 500 and local diffusers unavailable -> False."""
-        svc = ImageService(site_config=_test_sc())
-        svc.gen_available = False  # local diffusers not available
+    async def test_json_response_fetches_the_image_and_writes_it(self, tmp_path):
+        """The live server shape: 200 JSON naming the file, then GET /images/<name>.
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 500
-        mock_resp.headers = {"content-type": "text/plain"}
-        mock_resp.text = "internal error"
-        mock_resp.content = b""
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch.object(svc, "_initialize_model"):
-            svc.gen_initialized = True  # skip the lazy init
-            result = await svc.generate_image(
-                prompt="x",
-                output_path=str(tmp_path / "x.png"),
-            )
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_host_image_gen_exception_falls_through_to_local(self, tmp_path):
-        """Connection error on host image-gen + diffusers unavailable -> False."""
-        svc = ImageService(site_config=_test_sc())
-        svc.gen_available = False
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
-
-        with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch.object(svc, "_initialize_model"):
-            svc.gen_initialized = True
-            result = await svc.generate_image(
-                prompt="x", output_path=str(tmp_path / "x.png"),
-            )
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_host_image_gen_wrong_content_type_falls_through(self, tmp_path):
-        """200 with text/html content-type is treated as failure."""
-        svc = ImageService(site_config=_test_sc())
-        svc.gen_available = False
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.headers = {"content-type": "text/html"}
-        mock_resp.text = "<html>error</html>"
-        mock_resp.content = b""
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch.object(svc, "_initialize_model"):
-            svc.gen_initialized = True
-            result = await svc.generate_image(
-                prompt="x", output_path=str(tmp_path / "x.png"),
-            )
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_local_diffusers_no_active_model_returns_false(self, tmp_path):
-        """gen_available=True but no model activated -> guard returns False (no KeyError).
-
-        When the host image-gen call fails and we fall through to Strategy 2 with
-        diffusers reportedly available but ``_active_model`` still None, the
-        ``IMAGE_MODEL_REGISTRY[self._active_model]`` lookup would raise
-        ``KeyError(None)``. The defensive guard converts that into the method's
-        standard False failure return.
+        The worker does not share the server's volume, so the bytes must come
+        over the second request (glad-labs-stack#334).
         """
-        svc = ImageService(site_config=_test_sc())
-        svc.gen_available = True  # pass the diffusers-available gate
-        svc._active_model = None  # ...but nothing was activated
+        png = b"\x89PNG rendered by the server"
+        client = _client(
+            post=_response(payload={"filename": "img_ab12cd34.png", "generation_time_ms": 4210}),
+            get=_response(200, "image/png", content=png),
+        )
+        out = tmp_path / "out.png"
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
+        outcome = await _render(client, str(out))
 
-        with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch.object(svc, "_initialize_model"):
-            svc.gen_initialized = True  # skip lazy init so _active_model stays None
-            result = await svc.generate_image(
-                prompt="x", output_path=str(tmp_path / "x.png"),
+        assert outcome.ok is True
+        assert out.read_bytes() == png
+        fetched = client.get.await_args.args[0]
+        assert fetched.endswith("/images/img_ab12cd34.png"), fetched
+
+    @pytest.mark.asyncio
+    async def test_server_non_200_is_a_server_error(self, tmp_path):
+        """Non-200 -> server_error carrying the status and the server's own body."""
+        client = _client(post=_response(500, "text/plain", text="internal error"))
+
+        outcome = await _render(client, str(tmp_path / "x.png"))
+
+        assert outcome.ok is False
+        assert outcome.reason == "server_error"
+        assert "HTTP 500" in outcome.message
+        assert "internal error" in outcome.message
+        assert not (tmp_path / "x.png").exists()
+
+    @pytest.mark.asyncio
+    async def test_unreachable_server_is_a_server_error(self, tmp_path):
+        """No response at all -> server_error naming the exception type."""
+        client = _client(post_error=RuntimeError("connection refused"))
+
+        outcome = await _render(client, str(tmp_path / "x.png"))
+
+        assert outcome.reason == "server_error"
+        assert "unreachable (RuntimeError)" in outcome.message
+
+    @pytest.mark.asyncio
+    async def test_unexpected_content_type_is_a_bad_response(self, tmp_path):
+        """200 with neither JSON nor an image is the server answering wrongly,
+        not an HTTP error. It used to be labelled "returned HTTP 200" under
+        server_error."""
+        client = _client(post=_response(200, "text/html", text="<html>error</html>"))
+
+        outcome = await _render(client, str(tmp_path / "x.png"))
+
+        assert outcome.reason == "bad_response"
+        assert "text/html" in outcome.message
+
+    @pytest.mark.asyncio
+    async def test_unparseable_json_is_a_bad_response(self, tmp_path):
+        """A 200 whose JSON body will not parse used to fall into the transport
+        ``except`` and read "image-gen server unreachable (JSONDecodeError)",
+        which sends the operator after a server that answered."""
+        client = _client(
+            post=_response(json_error=ValueError("Expecting value"), text="{trunc"),
+        )
+
+        outcome = await _render(client, str(tmp_path / "x.png"))
+
+        assert outcome.reason == "bad_response"
+        assert "unparseable JSON" in outcome.message
+        assert "unreachable" not in outcome.message
+
+    @pytest.mark.parametrize("payload", [{}, {"filename": ""}, ["img.png"]], ids=["missing", "empty", "not-a-dict"])
+    @pytest.mark.asyncio
+    async def test_json_without_a_filename_is_a_bad_response(self, tmp_path, payload):
+        client = _client(post=_response(payload=payload))
+
+        outcome = await _render(client, str(tmp_path / "x.png"))
+
+        assert outcome.reason == "bad_response"
+        assert "no filename" in outcome.message
+        client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_failed_image_fetch_is_a_bad_response(self, tmp_path):
+        client = _client(
+            post=_response(payload={"filename": "img_gone.png"}),
+            get=_response(404, "text/plain", text="not found"),
+        )
+
+        outcome = await _render(client, str(tmp_path / "x.png"))
+
+        assert outcome.reason == "bad_response"
+        assert "HTTP 404" in outcome.message
+
+    @pytest.mark.asyncio
+    async def test_local_write_failure_is_write_failed_not_a_server_error(self, tmp_path):
+        """The server rendered, the worker could not save it. Calling that a
+        server failure (it used to read "unreachable (FileNotFoundError)")
+        sends the operator to a healthy container. The detail names the type
+        only: it reaches an HTTP body, and the error message carries the path."""
+        target = tmp_path / "no-such-dir" / "x.png"
+        client = _client(post=_response(200, "image/png", content=b"\x89PNG"))
+
+        outcome = await _render(client, str(target))
+
+        assert outcome.ok is False
+        assert outcome.reason == "write_failed"
+        assert "FileNotFoundError" in outcome.message
+        assert "no-such-dir" not in outcome.message
+
+    @pytest.mark.asyncio
+    async def test_request_body_omits_unset_overrides(self, tmp_path):
+        """Unset steps / guidance / task_id stay out of the request, so the
+        server's per-model registry decides (z_image_turbo wants 9 steps / CFG 0)."""
+        client = _client(post=_response(200, "image/png", content=b"\x89PNG"))
+
+        await _render(client, str(tmp_path / "x.png"), negative_prompt="blurry")
+
+        body = client.post.await_args.kwargs["json"]
+        assert body == {"prompt": "a cat", "negative_prompt": "blurry"}
+
+    @pytest.mark.asyncio
+    async def test_request_body_carries_explicit_overrides_and_task_id(self, tmp_path):
+        """task_id goes to the server, which stamps it on its
+        image_ocr_gate_result audit row, the field the pipeline's own render
+        paths already send."""
+        client = _client(post=_response(200, "image/png", content=b"\x89PNG"))
+
+        await _render(
+            client, str(tmp_path / "x.png"),
+            num_inference_steps=9, guidance_scale=0.0, task_id="task-123",
+        )
+
+        body = client.post.await_args.kwargs["json"]
+        assert body["steps"] == 9
+        assert body["guidance_scale"] == 0.0
+        assert body["task_id"] == "task-123"
+
+    @pytest.mark.asyncio
+    async def test_model_argument_is_ignored_with_a_warning(self, tmp_path, caplog):
+        """The server renders app_settings.image_generation_model and takes no
+        per-request model, so ``model=`` cannot be honoured. It is accepted for
+        backward compatibility and says so instead of being silently dropped."""
+        client = _client(post=_response(200, "image/png", content=b"\x89PNG"))
+
+        with caplog.at_level(logging.WARNING):
+            outcome = await _render(
+                client, str(tmp_path / "x.png"), model=ImageModel.FLUX_SCHNELL,
             )
 
-        assert result is False
+        assert outcome.ok is True
+        assert "model" not in client.post.await_args.kwargs["json"]
+        assert "flux_schnell ignored" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -951,21 +1031,11 @@ class TestPexelsResolutionViaSiteConfigDI:
 
 
 # ---------------------------------------------------------------------------
-# get_active_model + list_available_models
+# list_available_models
 # ---------------------------------------------------------------------------
 
 
 class TestModelIntrospection:
-    def test_get_active_model_none_at_startup(self):
-        svc = ImageService(site_config=_test_sc())
-        # Fresh instance — nothing loaded
-        assert svc.get_active_model() is None
-
-    def test_get_active_model_returns_loaded(self):
-        svc = ImageService(site_config=_test_sc())
-        svc._active_model = ImageModel.SDXL_LIGHTNING
-        assert svc.get_active_model() == ImageModel.SDXL_LIGHTNING
-
     def test_list_available_models_returns_dict_with_all_registered(self):
         models = ImageService.list_available_models()
         assert isinstance(models, dict)
