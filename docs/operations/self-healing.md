@@ -1368,7 +1368,14 @@ is restarted by the same death-watch (`_alert_dispatch_died`) if it ever exits.
 Its cadence + hang-dump config are read **once at startup** — re-reading them on
 the one loop that must survive a wedged DB would re-introduce a DB dependency on
 the liveness path. The end-of-cycle write still happens too, carrying the full
-probe stats (`kind="cycle"` vs the loop's `kind="liveness"`).
+probe stats (`kind="cycle"` vs the loop's `kind="liveness"`). Its
+`probes_failed` is the number of `"issue"` entries in the same row's
+`probe_status`, tallied after the last probe has run; the "Cycle complete"
+`brain_decisions` row and the `=== Cycle end: … N probes (M failed) ===` log
+line use the same tally. (Before 2026-09-28 the tally ran straight after
+`run_health_probes`, so a failing gated probe was missing from all three
+counts.) The file heartbeat carries `ts` / `iso` / `pid` only; its readers ask
+whether the daemon is alive, not how the cycle went.
 
 ### Diagnosing a total freeze — faulthandler + py-spy
 

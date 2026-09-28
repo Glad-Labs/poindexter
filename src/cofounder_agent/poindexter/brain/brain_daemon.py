@@ -2905,7 +2905,6 @@ async def run_cycle(pool):
     probe_results = await run_health_probes(
         pool, notify_fn=notify, info_fn=notify_discord_ops,
     )
-    probe_failures = [name for name, r in probe_results.items() if not r.get("ok")]
 
     # Business probes — operator-level monitoring (Glad Labs private, #215)
     if _HAS_BUSINESS_PROBES:
@@ -3419,6 +3418,15 @@ async def run_cycle(pool):
         name: ("ok" if r.get("ok") else "issue")
         for name, r in probe_results.items()
     }
+    # Tallied off the finished map, never earlier, so the heartbeat's
+    # probes_failed, the brain_decisions row and the cycle-end log line always
+    # agree with probe_status. It used to run straight after run_health_probes,
+    # before any of the gated probes above had been added, so their failures
+    # never counted: on 2026-09-27 the log read "30 probes (0 failed)" beside a
+    # heartbeat whose probe_status held scheduled_workflow_watch="issue".
+    probe_failures = [
+        name for name, status in probe_status_map.items() if status == "issue"
+    ]
     await write_cycle_heartbeat(
         pool,
         probes_run=len(probe_results),
@@ -3673,15 +3681,20 @@ async def main():
     # Also keep Docker path for container healthcheck compatibility
     _docker_heartbeat = "/tmp/brain_heartbeat" if IS_DOCKER else None
 
-    def _touch_heartbeat(cycle_issues=0, probe_failures=0):
-        """Write structured heartbeat — timestamp + cycle stats."""
+    def _touch_heartbeat():
+        """Write the liveness heartbeat — timestamp + pid, nothing else.
+
+        Its readers only ask "is the daemon alive?": the Docker healthcheck
+        reads the file's mtime and the legacy host watchdogs read ``ts``. The
+        cycle's probe stats live in the ``brain.cycle_heartbeat`` audit_log row
+        that ``run_cycle`` writes. This file used to carry ``cycle_ok`` /
+        ``issues`` / ``probe_failures`` too, but no caller ever passed them, so
+        they read healthy on every write.
+        """
         data = json.dumps({
             "ts": time.time(),
             "iso": datetime.now(UTC).isoformat(),
             "pid": os.getpid(),
-            "cycle_ok": cycle_issues == 0 and probe_failures == 0,
-            "issues": cycle_issues,
-            "probe_failures": probe_failures,
         })
         try:
             with open(_heartbeat_path, "w") as hb:

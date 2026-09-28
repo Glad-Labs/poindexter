@@ -37,7 +37,7 @@ Multiple alerts at once?
 
 Telegram silent but you SEE a problem?
   -> Brain daemon may be dead.
-     Check: cat ~/.poindexter/heartbeat
+     Check: docker exec poindexter-brain-daemon cat /tmp/brain_heartbeat
      Then:  docker ps | grep brain-daemon
      Jump to "Brain Daemon Stale" alert section.
 ```
@@ -119,8 +119,13 @@ If the container won't start (crashloop), see [`troubleshooting.md`](./troublesh
 **Triage.**
 
 ```bash
-cat ~/.poindexter/heartbeat
-# Should be a unix timestamp from < 5 minutes ago.
+docker exec poindexter-brain-daemon cat /tmp/brain_heartbeat
+# {"ts": ..., "iso": ..., "pid": ...}. The liveness loop rewrites it every
+# brain_heartbeat_interval_seconds (default 60), independently of the cycle,
+# so "iso" should be under ~2 minutes old. Fresh here while brain_decisions
+# is stale = the cycle is hung; stale here too = the whole event loop froze.
+# (The host path ~/.poindexter/heartbeat only exists for a brain run outside
+# Docker.)
 
 docker ps --filter name=poindexter-brain-daemon --format "{{.Status}}"
 ```

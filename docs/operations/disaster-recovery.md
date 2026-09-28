@@ -618,10 +618,10 @@ For when a single service is down but the rest of the stack is fine. These were 
 ```bash
 docker ps | grep brain-daemon
 docker compose -f docker-compose.local.yml up -d brain-daemon
-cat ~/.poindexter/heartbeat   # Should be < 5 min old
+docker exec poindexter-brain-daemon cat /tmp/brain_heartbeat   # "iso" should be < 2 min old
 ```
 
-The container has `restart: unless-stopped`, so Docker relaunches it automatically on crash. (The legacy OS-level watchdog was retired when the brain was containerized.) If it's _up_ but the heartbeat is stale, it's hung — `docker restart poindexter-brain-daemon`.
+The container has `restart: unless-stopped`, so Docker relaunches it automatically on crash. (The legacy OS-level watchdog was retired when the brain was containerized.) If it's _up_ but the heartbeat is stale, its event loop is frozen — `docker restart poindexter-brain-daemon`. A fresh heartbeat with no new `brain_decisions` rows means the cycle itself is hung; the cycle watchdog cancels it and retries, and pages if that keeps happening.
 
 ### Content Worker (FastAPI) — pipeline stalled, `/api/health` fails
 
