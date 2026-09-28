@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import FastAPI
+import pytest
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from poindexter.routes.podcast_routes import (
@@ -204,6 +205,38 @@ class TestBuildRssXml:
         ]
         xml = _build_rss_xml(episodes, _test_site_config)
         assert xml.count("<item>") == 3
+
+
+class TestBuildRssXmlWithoutStoragePublicUrl:
+    """poindexter#485: the feed never guesses a bucket. With an episode to list
+    and ``storage_public_url`` unset, building the feed answers 503 naming the
+    setting instead of emitting enclosures under a bucket nobody configured."""
+
+    def test_an_unstamped_episode_503s_naming_the_setting(self):
+        unconfigured = SiteConfig(initial_config={
+            "podcast_name": "Test Podcast",
+            "podcast_description": "A test podcast feed",
+            "site_url": "https://www.test-site.example.com",
+            "site_domain": "test-site.example.com",
+            "owner_name": "Tester",
+            "owner_email": "owner@test.example.com",
+        })
+        episodes = [{
+            "post_id": "123",
+            "title": "Needs the fallback key",
+            "slug": "needs-the-fallback-key",
+            "description": "",
+            "published_at": datetime(2026, 9, 1, tzinfo=timezone.utc),
+            "file_size_bytes": 1,
+            "duration_seconds": 60,
+            "enclosure_url": "",
+        }]
+
+        with pytest.raises(HTTPException) as exc:
+            _build_rss_xml(episodes, unconfigured)
+
+        assert exc.value.status_code == 503
+        assert "storage_public_url" in exc.value.detail
 
 
 # ---------------------------------------------------------------------------

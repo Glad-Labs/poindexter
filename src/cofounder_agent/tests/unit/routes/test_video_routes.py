@@ -262,3 +262,48 @@ class TestVideoFeedEnclosureKey:
         ):
             assert gate in feed_sql, f"feed lost gate {gate!r}"
             assert gate in _CANDIDATES_SQL, f"mirror lost gate {gate!r}"
+
+
+class TestVideoFeedWithoutStoragePublicUrl:
+    """poindexter#485: the feed never guesses a bucket. With an episode to list
+    and ``storage_public_url`` unset it answers 503 naming the setting. An
+    empty feed never reaches that lookup, so it still renders."""
+
+    _unconfigured = SiteConfig(initial_config={
+        "video_feed_name": "Test Video",
+        "site_url": "https://www.test-site.example.com",
+        "site_domain": "test-site.example.com",
+    })
+
+    def _client(self):
+        app = FastAPI()
+        app.include_router(router)
+        from poindexter.utils.route_utils import get_site_config_dependency
+        app.dependency_overrides[get_site_config_dependency] = lambda: self._unconfigured
+        return TestClient(app, raise_server_exceptions=False)
+
+    @patch("poindexter.utils.route_utils.get_services")
+    def test_an_unstamped_episode_503s_naming_the_setting(self, mock_gs):
+        mock_gs.return_value.get_database.return_value = _pool_serving([{
+            "post_id": "post-3",
+            "title": "Needs the fallback key",
+            "slug": "needs-the-fallback-key",
+            "excerpt": "",
+            "published_at": datetime(2026, 9, 1, tzinfo=timezone.utc),
+            "url": "",
+            "file_size_bytes": 1,
+        }])
+
+        resp = self._client().get("/api/video/feed.xml")
+
+        assert resp.status_code == 503
+        assert "storage_public_url" in resp.json()["detail"]
+
+    @patch("poindexter.utils.route_utils.get_services")
+    def test_an_empty_feed_still_renders(self, mock_gs):
+        mock_gs.return_value.get_database.return_value = _pool_serving([])
+
+        resp = self._client().get("/api/video/feed.xml")
+
+        assert resp.status_code == 200
+        assert "<item>" not in resp.text
