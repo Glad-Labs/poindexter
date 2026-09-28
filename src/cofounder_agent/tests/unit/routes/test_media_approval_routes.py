@@ -6,8 +6,9 @@ operator console's only way to see/hear a Gate-2 item before deciding on it
 ``media_approval_service`` module docstring). ``pending`` / ``decide`` are
 covered by ``tests/unit/services/test_media_approval_service.py`` (the
 service layer) + ``test_operator_routers_require_auth.py`` (structural auth);
-this file is the HTTP-layer contract for the streaming route, mirroring
-``test_video_routes.py::TestStreamVideo``.
+this file is the HTTP-layer contract for the streaming route. Since
+Glad-Labs/poindexter#1087 removed ``/api/video/episodes/{post_id}.mp4``, it is
+the only route that streams a video render off local disk.
 """
 
 from __future__ import annotations

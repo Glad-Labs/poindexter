@@ -72,7 +72,7 @@ _WORKER_ROUTES = [
     ("poindexter.routes.newsletter_routes", "router", "newsletter_router", "newsletter subscribe/unsubscribe"),
     ("poindexter.routes.revalidate_routes", "router", "revalidate_router", "ISR cache invalidation"),
     ("poindexter.routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
-    ("poindexter.routes.video_routes", "router", "video_router", "video episodes & generation"),
+    ("poindexter.routes.video_routes", "router", "video_router", "video RSS feed"),
     ("poindexter.routes.settings_routes", "router", "settings_router", "settings read/write"),
     ("poindexter.routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
     ("poindexter.routes.findings_routes", "router", "findings_router", "probe-findings triage summary (/api/findings, #461)"),

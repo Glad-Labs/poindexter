@@ -6,7 +6,7 @@ description: "REST endpoints exposed by the Poindexter worker — base URL, auth
 <Info>
 **Base URL:** `http://localhost:8002` (local worker — the only supported deployment today).
 **Status:** Alpha. Surface area is broad but not contractually stable across releases.
-**Last updated:** 2026-05-23.
+**Last updated:** 2026-09-28.
 </Info>
 
 ## Jump to a group
@@ -244,29 +244,39 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
 | Pipeline        | `GET /api/pipeline/events/task/{task_id}` | bearer | Event history for a single task                                 |
 | **Analytics**   | `GET /api/analytics/views`                | bearer | Page view rollups (day, post_id, geo if configured)             |
 | **Export**      | `POST /api/export/rebuild`                | bearer | Trigger static JSON + RSS rebuild to R2 / configured storage    |
-| **Media**       | `GET /images/generated/{filename}`        | public | Serve a generated image-gen / Pexels image                           |
-| Media           | `GET /episodes`                           | public | List all podcast episodes                                       |
-| Media           | `GET /episodes/{post_id}.mp3`             | public | Stream a podcast audio episode                                  |
-| Media           | `GET /episodes/{post_id}.mp4`             | public | Stream a podcast video episode                                  |
-| Media           | `POST /generate/{post_id}`                | bearer | Regenerate audio/video for a specific post                      |
-| **Subscribers** | `GET /subscribers/count`                  | public | Total opted-in newsletter subscribers                           |
-| Subscribers     | `POST /subscribe`                         | public | Double opt-in newsletter signup (captcha recommended)           |
-| Subscribers     | `POST /unsubscribe`                       | public | One-click unsubscribe by token                                  |
-| **Feed**        | `GET /feed.xml`                           | public | RSS 2.0 feed of published posts                                 |
-| **Webhooks**    | `POST /alertmanager`                      | signed | Prometheus Alertmanager webhook receiver (routes to Discord)    |
-| **Frontend**    | `POST /revalidate-cache`                  | bearer | Trigger Next.js ISR cache revalidation after publish            |
+| **Media**       | `GET /images/generated/{filename}`        | public | Serve a generated image-gen / Pexels image                      |
+| Media           | `GET /api/podcast/episodes`               | public | List podcast episodes (`limit` / `offset`)                      |
+| Media           | `GET /api/podcast/episodes/{post_id}.mp3` | public | Stream a podcast episode MP3                                    |
+| Media           | `POST /api/podcast/generate/{post_id}`    | bearer | Regenerate the podcast episode for a published post             |
+| **Subscribers** | `GET /api/newsletter/subscribers/count`   | public | Total opted-in newsletter subscribers                           |
+| Subscribers     | `POST /api/newsletter/subscribe`          | public | Double opt-in newsletter signup (captcha recommended)           |
+| Subscribers     | `POST /api/newsletter/unsubscribe`        | public | One-click unsubscribe by token                                  |
+| **Feeds**       | `GET /api/podcast/feed.xml`               | public | Podcast RSS feed (Apple/Spotify compatible)                     |
+| Feeds           | `GET /api/video/feed.xml`                 | public | Video RSS feed; each enclosure is the approved video in storage |
+| **Webhooks**    | `POST /api/webhooks/alertmanager`         | bearer | Prometheus Alertmanager webhook receiver (routes to Discord)    |
+| **Frontend**    | `POST /api/revalidate-cache`              | bearer | Trigger Next.js ISR cache revalidation after publish            |
 | Frontend        | `GET /preview/{preview_token}`            | token  | Server-rendered preview HTML for vision-gate QA                 |
 
-Everything prefixed `/api` is the REST surface. Media routes
-(`/episodes/*`, `/images/generated/*`) and the RSS feed sit at the
-server root without the `/api` prefix to match classic web
-expectations.
+Everything prefixed `/api` is the REST surface. Generated images
+(`/images/generated/{filename}`) and the server-rendered preview
+(`/preview/{preview_token}`) sit at the server root without the `/api`
+prefix. The posts RSS feed (`/feed.xml`) is served by the public site,
+not the worker.
+
+Video has no public list or stream endpoint. The video feed's enclosures point
+at each approved video in object storage, and an operator streams a
+local render through the authenticated
+`GET /api/media-approval/{post_id}/video/preview`. The old
+`/api/video/episodes` list and stream routes were removed: they looked
+files up by post id, and renders are named by task id.
 
 ### Webhook security
 
-`POST /alertmanager` verifies the Alertmanager webhook signature
-(HMAC-SHA256, shared secret in `app_settings.alertmanager_webhook_secret`).
-Invalid signatures are rejected with 401.
+`POST /api/webhooks/alertmanager` requires `Authorization: Bearer <token>`:
+either an OAuth JWT (mint one with `poindexter auth mint-grafana-token`)
+or the static token in `app_settings.alertmanager_webhook_token`. A
+missing or mismatched token is rejected with 401; with neither
+configured the route fails closed with 503.
 
 Preview tokens (`/api/posts/preview/{token}`, `/preview/{token}`) are
 single-purpose signed tokens issued by the worker at post creation.

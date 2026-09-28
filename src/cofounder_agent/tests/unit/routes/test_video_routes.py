@@ -1,11 +1,11 @@
 """
 Video Routes — Unit Tests
 
-Tests for video RSS feed, episode streaming, listing, and manual generation.
+Tests for the video RSS feed, and for the removal of the episode list and
+stream routes (Glad-Labs/poindexter#1087).
 """
 
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -60,125 +60,27 @@ class TestRfc2822:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/video/episodes/{post_id}.mp4
+# Retired: GET /api/video/episodes and GET /api/video/episodes/{post_id}.mp4
 # ---------------------------------------------------------------------------
 
 
-class TestStreamVideo:
-    def test_missing_video_returns_404(self):
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", Path("/nonexistent/path")):
-            resp = client.get("/api/video/episodes/abc123.mp4")
-            assert resp.status_code == 404
+class TestRetiredEpisodeRoutes:
+    """Glad-Labs/poindexter#1087: both routes scanned the video dir for
+    ``{post_id}.mp4``. Since the task-keyed cutover (#1460) every render there
+    is ``{task_id}.mp4`` / ``{task_id}_short.mp4``, so the list mislabelled task
+    ids as post ids (and listed Shorts as episodes) and the stream 404ed for
+    every video. Nothing called either one. The feed's enclosures and the
+    console's ``/api/media-approval/{post_id}/video/preview`` cover them, both
+    sourced from ``media_assets``. Don't bring them back as a directory scan.
 
-    def test_path_traversal_blocked(self):
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", Path("/tmp/videos")):
-            resp = client.get("/api/video/episodes/..%2F..%2Fetc%2Fpasswd.mp4")
-            assert resp.status_code == 404
+    Asserted on the router, not by status code: the old stream handler also
+    answered 404 (for a missing file), so a 404 can't tell the two apart.
+    """
 
-    def test_valid_video_served(self, tmp_path):
-        mp4_file = tmp_path / "test123.mp4"
-        mp4_file.write_bytes(b"\x00\x00\x00\x18ftypmp42" * 10)
-
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", tmp_path):
-            resp = client.get("/api/video/episodes/test123.mp4")
-            assert resp.status_code == 200
-            assert resp.headers["content-type"] == "video/mp4"
-
-
-# ---------------------------------------------------------------------------
-# GET /api/video/episodes
-# ---------------------------------------------------------------------------
-
-
-class TestListVideoEpisodes:
-    def test_returns_json_list(self, tmp_path):
-        # Create some fake video files
-        (tmp_path / "post1.mp4").write_bytes(b"\x00" * 1000)
-        (tmp_path / "post2.mp4").write_bytes(b"\x00" * 2000)
-
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", tmp_path):
-            resp = client.get("/api/video/episodes")
-            assert resp.status_code == 200
-            data = resp.json()
-            # Canonical offset envelope (poindexter#745): items, not the legacy
-            # episodes/count keys. With pagination (#746) a no-param request
-            # echoes the DEFAULT limit (50) — NOT len(items) as the pre-#746
-            # unpaginated handler did.
-            assert data["total"] == 2
-            assert data["limit"] == 50
-            assert data["offset"] == 0
-            assert "episodes" not in data
-            assert "count" not in data
-            assert len(data["items"]) == 2
-            # #636: the video listing never exposes an on-disk file_path.
-            assert "file_path" not in data["items"][0]
-
-    def test_empty_when_no_videos(self, tmp_path):
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", tmp_path):
-            resp = client.get("/api/video/episodes")
-            data = resp.json()
-            # Empty page still echoes the default limit (#746), not 0.
-            assert data == {"items": [], "total": 0, "limit": 50, "offset": 0}
-
-    def test_empty_when_dir_missing(self):
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", Path("/nonexistent/dir")):
-            resp = client.get("/api/video/episodes")
-            data = resp.json()
-            assert data == {"items": [], "total": 0, "limit": 50, "offset": 0}
-
-    # --- pagination (#746 — apply the podcast fix to video) ------------------
-
-    def test_pagination_limits_page(self, tmp_path):
-        """?limit=2&offset=0 over 3 episodes returns the first 2, but `total`
-        reports the FULL unpaginated count (3) — the linear-growth fix."""
-        for i in range(1, 4):
-            (tmp_path / f"post{i}.mp4").write_bytes(b"\x00" * (1000 * i))
-
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", tmp_path):
-            resp = client.get("/api/video/episodes?limit=2&offset=0")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["total"] == 3
-            assert data["limit"] == 2
-            assert data["offset"] == 0
-            assert len(data["items"]) == 2
-
-    def test_pagination_offset_skips(self, tmp_path):
-        """?offset=2 skips the first 2 of 3 episodes; only the last remains.
-        Episodes sort by filename, so offset 2 yields post3."""
-        for i in range(1, 4):
-            (tmp_path / f"post{i}.mp4").write_bytes(b"\x00" * (1000 * i))
-
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", tmp_path):
-            resp = client.get("/api/video/episodes?limit=2&offset=2")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["total"] == 3
-            assert data["limit"] == 2
-            assert data["offset"] == 2
-            assert len(data["items"]) == 1
-            assert data["items"][0]["post_id"] == "post3"
-
-    def test_pagination_offset_past_end_is_empty(self, tmp_path):
-        """An offset beyond the end returns an empty page (graceful Python
-        slice, mirroring podcast), NOT a 404 — `total` still reports 3."""
-        for i in range(1, 4):
-            (tmp_path / f"post{i}.mp4").write_bytes(b"\x00" * 1000)
-
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", tmp_path):
-            resp = client.get("/api/video/episodes?offset=10")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["total"] == 3
-            assert data["items"] == []
-
-    def test_pagination_rejects_out_of_range_params(self, tmp_path):
-        """Query bounds mirror the podcast endpoint exactly: limit in [1, 200],
-        offset >= 0. Out-of-range values are rejected with 422 by FastAPI."""
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", tmp_path):
-            assert client.get("/api/video/episodes?limit=0").status_code == 422
-            assert client.get("/api/video/episodes?limit=201").status_code == 422
-            assert client.get("/api/video/episodes?offset=-1").status_code == 422
+    def test_no_episode_routes_are_registered(self):
+        paths = [route.path for route in router.routes]
+        assert "/api/video/feed.xml" in paths
+        assert not [p for p in paths if p.startswith("/api/video/episodes")], paths
 
 
 # ---------------------------------------------------------------------------
@@ -188,18 +90,17 @@ class TestListVideoEpisodes:
 
 class TestVideoFeed:
     @patch("poindexter.utils.route_utils.get_services")
-    def test_empty_feed_when_no_videos(self, mock_gs, tmp_path):
+    def test_empty_feed_when_no_videos(self, mock_gs):
         mock_db = MagicMock()
         mock_db.pool = None
         mock_db.cloud_pool = None
         mock_gs.return_value.get_database.return_value = mock_db
 
-        with patch("poindexter.routes.video_routes.VIDEO_DIR", tmp_path):
-            resp = client.get("/api/video/feed.xml")
-            assert resp.status_code == 200
-            assert "application/rss+xml" in resp.headers["content-type"]
-            assert "<item>" not in resp.text
-            assert "Test Video" in resp.text
+        resp = client.get("/api/video/feed.xml")
+        assert resp.status_code == 200
+        assert "application/rss+xml" in resp.headers["content-type"]
+        assert "<item>" not in resp.text
+        assert "Test Video" in resp.text
 
     @patch("poindexter.utils.route_utils.get_services")
     def test_feed_renders_approved_episodes(self, mock_gs):

@@ -1,23 +1,35 @@
 """
-Video Routes — Serve generated video episodes.
+Video Routes — the video RSS feed.
 
 Endpoints:
-    GET /api/video/feed.xml              — Video RSS feed (podcast-style)
-    GET /api/video/episodes              — JSON list of all video episodes
-    GET /api/video/episodes/{post_id}.mp4 — Stream a video MP4
+    GET /api/video/feed.xml — Video RSS feed (podcast-style)
+
+``GET /api/video/episodes`` and ``GET /api/video/episodes/{post_id}.mp4`` were
+removed (Glad-Labs/poindexter#1087). Both scanned ``VIDEO_DIR`` for post-keyed
+``{post_id}.mp4`` files, but every render since the task-keyed cutover (#1460)
+is ``{task_id}.mp4`` or ``{task_id}_short.mp4``. The list labelled task ids as
+post ids and listed Shorts as episodes, the stream 404ed for every video
+rendered since, and nothing called either one. Two surfaces already cover them,
+both keyed through ``media_assets``:
+
+- the feed's enclosure URLs, which point at each approved video's copy in
+  object storage; and
+- ``GET /api/media-approval/{post_id}/video/preview``, the operator console's
+  authenticated stream of a local render (``post_id`` → ``storage_path``).
+
+A new video endpoint should read ``media_assets`` the way the feed does, not
+scan the directory.
 """
 
 from datetime import datetime, timezone
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
-from poindexter.schemas.media_schemas import VideoEpisodeListResponse
 from poindexter.services.logger_config import get_logger
 from poindexter.services.r2_upload_service import video_episode_key
-from poindexter.services.video_service import VIDEO_DIR
 from poindexter.utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -35,7 +47,6 @@ def _r2_url(site_config: Any) -> str:
     """Get object-store CDN base URL or raise HTTPException(503) when unset."""
     url = (site_config.get("storage_public_url", "") or "").rstrip("/")
     if not url:
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=503,
             detail=(
@@ -189,63 +200,3 @@ async def video_feed(
 
     xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(rss, encoding="unicode")
     return Response(content=xml_content, media_type="application/rss+xml; charset=utf-8")
-
-
-@router.get("/episodes", response_model=VideoEpisodeListResponse)
-async def list_video_episodes(
-    limit: int = Query(50, ge=1, le=200, description="Max episodes to return"),
-    offset: int = Query(0, ge=0, description="Episodes to skip"),
-) -> VideoEpisodeListResponse:
-    """List video episodes as JSON, paginated (closes #746 — applies the same
-    fix to video that #746 gave podcast; the endpoint was previously unbounded
-    and grew linearly with content volume forever)."""
-    all_episodes = []
-    if VIDEO_DIR.exists():
-        for mp4 in sorted(VIDEO_DIR.glob("*.mp4")):
-            stat = mp4.stat()
-            all_episodes.append({
-                "post_id": mp4.stem,
-                # file_path intentionally omitted — it leaked the worker's
-                # absolute filesystem layout. Clients fetch the bytes via
-                # /api/video/episodes/{post_id}.mp4 (poindexter#636). Matches
-                # the podcast episodes endpoint, whose response_model now also
-                # filters on-disk paths (poindexter#745 step 10).
-                "file_size_bytes": stat.st_size,
-                "created_at": stat.st_ctime,
-            })
-    total = len(all_episodes)
-    page = all_episodes[offset : offset + limit]
-    # Canonical offset envelope (poindexter#745): `episodes` → `items`, drop the
-    # redundant `count` (recoverable as len(items)). Real `limit`/`offset`
-    # pagination (#746) mirrors the podcast endpoint — `total` is the FULL
-    # unpaginated count, `limit`/`offset` echo the actual params. Pydantic
-    # validates each row into a VideoEpisodeItem.
-    return VideoEpisodeListResponse(
-        items=page,  # type: ignore[arg-type]
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
-
-
-@router.get("/episodes/{post_id}.mp4")
-async def stream_video(post_id: str):
-    """Stream a video episode MP4 file."""
-    safe_id = post_id.replace("/", "").replace("\\", "").replace("..", "")
-    path = VIDEO_DIR / f"{safe_id}.mp4"
-
-    if not path.resolve().is_relative_to(VIDEO_DIR.resolve()):
-        raise HTTPException(status_code=404, detail="Episode not found")
-
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Episode not found")
-
-    return FileResponse(
-        path=str(path),
-        media_type="video/mp4",
-        filename=f"{safe_id}.mp4",
-        headers={
-            "Accept-Ranges": "bytes",
-            "Cache-Control": "public, max-age=86400",
-        },
-    )

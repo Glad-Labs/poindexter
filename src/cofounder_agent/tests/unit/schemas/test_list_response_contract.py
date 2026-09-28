@@ -13,7 +13,7 @@ import pytest
 
 from poindexter.schemas import ListResponse, PaginatedResponse
 from poindexter.schemas.data_plane_schemas import DataPlaneRowListResponse
-from poindexter.schemas.media_schemas import PodcastEpisodeListResponse, VideoEpisodeListResponse
+from poindexter.schemas.media_schemas import PodcastEpisodeListResponse
 from poindexter.schemas.settings_schemas import SettingListResponse
 from poindexter.schemas.task_schemas import (
     GateListResponse,
@@ -40,7 +40,8 @@ ENDPOINT_LIST_MODELS = [
     GateListResponse,  # step 8 — GET /api/gates
     PostApprovalListResponse,  # step 9 — GET /api/posts-approval/pending
     PodcastEpisodeListResponse,  # step 10 — GET /api/podcast/episodes
-    VideoEpisodeListResponse,  # step 11 — GET /api/video/episodes
+    # step 11 — GET /api/video/episodes — endpoint and model removed
+    # (Glad-Labs/poindexter#1087).
     DataPlaneRowListResponse,  # step 12 — GET /api/data-plane/{surface}
     TopicProposalListResponse,  # step 13 — GET /api/topics/proposals
 ]

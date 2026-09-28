@@ -7,8 +7,10 @@ through ``services/video_renderers/shot_list_renderer.render_shot_list``
 (per-shot image-gen / Wan i2v clips assembled by ``FFmpegLocalCompositor``),
 so this module now carries only the two pieces that path still shares:
 
-- ``VIDEO_DIR`` — the durable ``~/.poindexter/video`` output dir (read by the
-  media-persist atom, the video routes/feed, and the CMS ``has_video`` check).
+- ``VIDEO_DIR`` — the durable ``~/.poindexter/video`` output dir (used by the
+  media-persist atom, the media-scripts stage, the thumbnail composer and its
+  backfill, and the CMS ``has_video`` check). No HTTP route lists or streams
+  it: the video feed reads ``media_assets`` (Glad-Labs/poindexter#1087).
 - ``_consume_image_gen_response`` — materialises an image-gen frame from either
   the raw-bytes or JSON response shape (used by the shot-list renderer).
 """
