@@ -30,8 +30,11 @@ seed app_settings reads via the ``setting_values`` dict passed to
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import time
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -2105,3 +2108,94 @@ class TestRestartThroughTheSharedHelper:
 
         helper.assert_awaited_once_with("poindexter-pyroscope", pool=pool)
         assert svc["status"] == "recovered"
+
+
+# ---------------------------------------------------------------------------
+# The reachability checks run off the brain's event loop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestEventLoopStaysFree:
+    """The brain awaits every probe on one event loop, and this probe's
+    checks all block: a ``docker inspect``, a urllib GET, a socket handshake.
+    Run on the loop, each froze the whole brain for up to its timeout, and a
+    wedged host proxy (the state this probe exists for) makes every external
+    check run to the timeout."""
+
+    @staticmethod
+    async def _ticking(coro):
+        loop = asyncio.get_running_loop()
+        stamps: list[float] = []
+        running = True
+
+        async def ticker():
+            while running:
+                stamps.append(loop.time())
+                await asyncio.sleep(0.01)
+
+        task = asyncio.create_task(ticker())
+        try:
+            result = await coro
+        finally:
+            running = False
+            await task
+        return result, [b - a for a, b in pairwise(stamps)]
+
+    @pytest.mark.asyncio
+    async def test_slow_http_checks_do_not_block_the_loop(self):
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-pyroscope", "port": 4040, "path": "/"},
+            ]),
+        })
+        external = iter([False, True])
+
+        def slow_exists(_container):
+            time.sleep(0.2)
+            return True
+
+        def slow_http(url, _timeout):
+            time.sleep(0.2)
+            return next(external) if "host.docker.internal" in url else True
+
+        summary, gaps = await self._ticking(pf.run_docker_port_forward_probe(
+            pool,
+            http_probe_fn=slow_http,
+            container_exists_fn=slow_exists,
+            restart_fn=restart_stub(),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+        ))
+
+        # Existence check, internal, external, post-restart external: ~0.8 s.
+        assert summary["services"]["poindexter-pyroscope"]["status"] == "recovered"
+        assert len(gaps) > 20
+        assert max(gaps) < 0.15, f"event loop blocked ~{max(gaps):.2f}s"
+
+    @pytest.mark.asyncio
+    async def test_slow_postgres_checks_do_not_block_the_loop(self):
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-postgres-local", "port": 5432,
+                 "host_port": 5433, "probe_type": "postgres"},
+            ]),
+        })
+
+        def slow_pg(host, _port, _timeout):
+            time.sleep(0.2)
+            return host != "host.docker.internal"
+
+        summary, gaps = await self._ticking(pf.run_docker_port_forward_probe(
+            pool,
+            pg_probe_fn=slow_pg,
+            container_exists_fn=lambda c: True,
+            restart_fn=restart_stub(),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+        ))
+
+        # A database entry escalates instead of restarting.
+        assert summary["services"]["poindexter-postgres-local"]["status"] == "alert_only"
+        assert len(gaps) > 20
+        assert max(gaps) < 0.15, f"event loop blocked ~{max(gaps):.2f}s"

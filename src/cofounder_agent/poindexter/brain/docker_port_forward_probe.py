@@ -1073,7 +1073,14 @@ async def _check_one_service(
     # have stripped a service from their compose file; we don't want
     # the probe to crash or spam alerts about a deliberately missing
     # container.
-    if not container_exists_fn(container):
+    #
+    # Every reachability check below is blocking (a ``docker inspect`` of up
+    # to DOCKER_COMMAND_TIMEOUT_SECONDS, a urllib GET or a socket handshake of
+    # up to probe_timeout_seconds), so each runs through asyncio.to_thread:
+    # the brain is one event loop. They ran on the loop until 2026-09-28,
+    # where a wedged host proxy, the very state this probe exists for, held
+    # it for the full probe timeout on every external check.
+    if not await asyncio.to_thread(container_exists_fn, container):
         return {
             "ok": True,
             "status": "unwatched",
@@ -1095,19 +1102,21 @@ async def _check_one_service(
         # external closure is reused for the post-restart recovery re-probe.
         internal_url = f"postgres://{internal_hostname}:{port}"
         external_url = f"postgres://host.docker.internal:{host_port}"
-        ok_internal = pg_probe_fn(internal_hostname, port, timeout)
+        ok_internal = await asyncio.to_thread(pg_probe_fn, internal_hostname, port, timeout)
 
-        def _probe_external() -> bool:
-            return pg_probe_fn("host.docker.internal", host_port, timeout)
+        async def _probe_external() -> bool:
+            return await asyncio.to_thread(
+                pg_probe_fn, "host.docker.internal", host_port, timeout,
+            )
     else:
         internal_url = f"http://{internal_hostname}:{port}{path}"
         external_url = f"http://host.docker.internal:{host_port}{path}"
-        ok_internal = http_probe_fn(internal_url, timeout)
+        ok_internal = await asyncio.to_thread(http_probe_fn, internal_url, timeout)
 
-        def _probe_external() -> bool:
-            return http_probe_fn(external_url, timeout)
+        async def _probe_external() -> bool:
+            return await asyncio.to_thread(http_probe_fn, external_url, timeout)
 
-    ok_external = _probe_external()
+    ok_external = await _probe_external()
 
     # 1) Both ok → happy path candidate. For postgres entries, this is
     # exactly the state the SCRAM-corruption wedge hides in: the SSLRequest
@@ -1391,7 +1400,7 @@ async def _check_one_service(
         step = min(recovery_poll_interval, recovery_wait - waited)
         await sleep_fn(step)
         waited += step
-        recovered = _probe_external()
+        recovered = await _probe_external()
         if recovered:
             break
     recovery_ms = int((now_fn() - restart_started) * 1000)
@@ -1515,17 +1524,20 @@ async def run_docker_port_forward_probe(
     Args:
         pool: asyncpg pool for app_settings + alert_events + audit_log.
         http_probe_fn: ``(url, timeout) -> bool`` — defaults to the
-            stdlib HTTP probe. Tests inject canned outcomes.
+            stdlib HTTP probe. Blocking, so it runs through
+            ``asyncio.to_thread``. Tests inject canned outcomes.
         pg_probe_fn: ``(host, port, timeout) -> bool`` — defaults to the
-            credential-free SSLRequest reachability check. Tests inject
-            canned outcomes.
+            credential-free SSLRequest reachability check. Blocking, so it
+            runs through ``asyncio.to_thread``. Tests inject canned
+            outcomes.
         pg_auth_probe_fn: ``async (host, port, timeout) -> (scram_corrupted,
             detail)`` — defaults to :func:`_pg_auth_probe`, the real-auth
             SCRAM-corruption tier. Only runs for ``probe_type="postgres"``
             entries once the SSLRequest tier reports healthy. Tests inject
             canned outcomes.
         container_exists_fn: ``(container) -> bool`` — defaults to
-            ``docker inspect``. Tests inject a stub.
+            ``docker inspect``. Blocking, so it runs through
+            ``asyncio.to_thread``. Tests inject a stub.
         restart_fn: ``async (container, *, pool) -> ContainerRestart`` —
             defaults to :func:`brain.docker_utils.restart_container`, the
             brain's shared ``docker restart`` (inspect first, timeout from

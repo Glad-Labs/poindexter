@@ -130,6 +130,12 @@ Enforced by [`scripts/ci/brain_async_safety_lint.py`](../../../../scripts/ci/bra
 — a fail-on-any AST scan (`Popen`, sync helpers, and lambdas are exempt; escape
 hatch `# async-safety-ok: <reason>`).
 
+Exempt means trusted, not checked. The lint cannot tell that an injected sync
+seam such as `container_exists_fn(container)` is called straight from an
+`async def`, so that passes. Wrap every blocking seam call in
+`await asyncio.to_thread(...)` yourself. `docker_port_forward_probe` ran its
+inspect, HTTP and socket checks on the loop until 2026-09-28.
+
 ## Operator URL probe
 
 `operator_url_probe.py` (added in [#256](https://github.com/Glad-Labs/poindexter/pull/256), closes [#214](https://github.com/Glad-Labs/poindexter/issues/214))
