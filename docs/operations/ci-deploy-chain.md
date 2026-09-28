@@ -1037,18 +1037,82 @@ same change. Its timer reads the script on every fire, so a merged fix runs
 after one deploy pass. It needs no last-known-good copy because it does not
 deploy itself: the deploy sync delivers its fixes, and that sync is the part
 protected against a broken merge. It also gained its first tests
-(`test_docker_watchdog.py`). These units still run the working checkout:
+(`test_docker_watchdog.py`).
 
-| Unit                                                                | Why, and what it would take                                                                                                                                                                                                                            |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `poindexter-session@` (ops sessions)                                | By design; see the previous section. It is stale while the tree is dirty.                                                                                                                                                                              |
-| `poindexter-gpu-scraper` (daemon)                                   | A long-running process reads its code once, at start, so a launcher buys it nothing. It needs the deploy pass to restart host daemons whose files changed, which the recovery agent (already on the clone, but never restarted on a change) needs too. |
-| `ollama-primary`, `ollama-vision`, `poindexter-dr-backup{,-hourly}` | Not yet audited for the same move.                                                                                                                                                                                                                     |
+**Long-running host daemons are restarted when their files change**
+(Glad-Labs/glad-labs-stack#4188). A process reads its code once, at start, so
+running it from the deploy clone only updates the files it will load next
+time; a launcher buys it nothing. `poindexter-recovery-agent` already ran from
+the clone and still ran pre-#4158 code a day after that merge, because nothing
+restarted it. `poindexter-gpu-scraper` ran from the working checkout, so it ran
+whatever that tree held when it started. The scraper now runs the clone too,
+and step 8b of the deploy pass restarts either unit when a file it loads at
+start changed:
+
+| Path (regex)                                             | Unit                                |
+| -------------------------------------------------------- | ----------------------------------- |
+| `^scripts/gpu-scraper\.py$`                              | `poindexter-gpu-scraper.service`    |
+| `^src/cofounder_agent/poindexter/brain/bootstrap\.py$`   | `poindexter-gpu-scraper.service`    |
+| `^src/cofounder_agent/poindexter/(brain/)?__init__\.py$` | `poindexter-gpu-scraper.service`    |
+| `^scripts/recovery-agent\.py$`                           | `poindexter-recovery-agent.service` |
+
+The scraper imports `poindexter.brain.bootstrap` once, to resolve its DSN, and
+the two package `__init__` files run on the way. The table is `HOST_DAEMON_MAP`
+in the driver. `test_deploy_checkout_sync_host_daemons.py` loads each daemon's
+module level and fails when a repo file it loaded has no entry, so the table
+cannot fall behind a new import.
+
+How the step behaves, and why:
+
+- **Fail-soft.** A failed restart (no passwordless sudo, say) adds a note to
+  the status detail, like the host CLI step, and never withholds the deploy
+  marker. The connector step does withhold it, but on a host without the sudo
+  grant a withheld marker would turn every pass into `error`.
+- **Its own record, not the marker.** Each unit's record,
+  `~/.poindexter/deploy-host-daemons/<unit>`, names the tree the unit runs, and
+  the diff starts there. The marker moves on even when a restart failed, so a
+  diff from the marker would drop the change for good. The step also runs on
+  no-change passes, which is how a missed restart is retried, within one timer
+  period. `--status` prints each record.
+- **Once per tree.** A pass that retries some other failed step finds the
+  record already on HEAD and restarts nothing.
+- **Left alone:** a unit that is not installed (`LoadState`), that is not
+  running (`systemctl restart` would start it), or whose process started after
+  the clone reached HEAD (the installer restarted it, or the host rebooted).
+- **Not run from this clone:** a restart would reload the other tree's code and
+  prove nothing, so the unit is noted on every pass until `install-deploy-sync.sh`
+  re-renders it.
+- **Mid-action:** a restart kills the unit's whole cgroup, so a unit with more
+  than its main process in it waits for the next pass. The recovery agent runs
+  its compose reapply as a fire-and-forget child and waits on
+  `sudo systemctl restart` for host units, and killing either mid-way can
+  strand containers or cut a recovery short.
+- **No record yet** (the first pass with this step) is unknown, and unknown
+  restarts once, as the container bounce does for a missing record.
+- A restart onto broken code is caught downstream, not here:
+  `PoindexterSystemdUnitRestartLooping` pages a `poindexter-*` unit stuck in
+  `activating` for 10 minutes.
+
+The deploy-sync user needs root or passwordless sudo for these restarts, the
+same posture as the connector's. A narrow grant:
+
+```text
+<user> ALL=(root) NOPASSWD: /usr/bin/systemctl restart poindexter-gpu-scraper.service, /usr/bin/systemctl restart poindexter-recovery-agent.service
+```
+
+**These units still run the working checkout** (audited 2026-09-28):
+
+| Unit                                 | Shape                                    | Why it has not moved                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `poindexter-session@` (ops sessions) | oneshot                                  | By design; see the previous section. It is stale while the tree is dirty.                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `ollama-primary`                     | daemon: the wrapper execs `ollama serve` | The scraper's shape, but a restart unloads the resident model (an 18-22 GB re-read) and cuts every in-flight LLM call, so a deploy-time restart would need the busy guard the container bounce uses. Moving it is a decision about when Ollama may restart, not a path change. The recovery agent and the firefighter's `restart_host_service` restart it by unit name either way.                                                                                                                                                                |
+| `ollama-vision`                      | daemon: the wrapper execs `ollama serve` | As above, and it holds the QA judge resident (`OLLAMA_KEEP_ALIVE=-1`), which a restart evicts for a 10-40 s reload. Wrapper edits have also been staged and run from the working checkout ahead of their merge (a staged `ollama-vision.sh` sat there on 2026-09-28), so moving it changes that workflow too.                                                                                                                                                                                                                                     |
+| `poindexter-dr-backup{,-hourly}`     | oneshot timers                           | Mechanically the watchdog's shape: each fire reads the script, which is self-contained and resolves every path from `$HOME` and `DR_*`, so moving `ExecStart` would not change what gets backed up. Not moved, because the units carry per-host config (`DR_*`, `RequiresMountsFor=`) that this installer's render would overwrite, and whether disaster recovery takes merges unattended is the operator's call. Both timers are disabled while Tier 3 is parked ([backups.md](backups.md), 2026-08-27); re-arming them is the moment to decide. |
 
 **Install and operate.**
 
 ```bash
-# one-time, and again after any change to the launcher or either unit template
+# one-time, and again after any change to the launcher or one of its unit templates
 bash ~/.poindexter/deploy/glad-labs-stack/scripts/linux/install-deploy-sync.sh
 # which copy runs, what the last-known-good copy is, recent launcher decisions
 bash ~/.poindexter/deploy-sync/deploy-sync-launcher.sh --report
@@ -1061,6 +1125,14 @@ units (`User=` and `ExecStart=`; the repo templates ship generic
 `/home/poindexter` paths), reloads and restarts both timers, then runs one pass
 through the launcher and prints its report (`--no-start` skips the pass). Run
 it as your login: it calls `sudo` itself for `/etc/systemd/system`.
+
+It renders `poindexter-gpu-scraper.service` onto the clone as well (`User=`,
+`WorkingDirectory=`, `ExecStart=`). On a host that already had the unit, it
+`try-restart`s it, so a running scraper moves onto the clone at once and a
+stopped one stays stopped. On a host that did not, it installs the unit without
+enabling it: `gpu_metrics` is optional, and the scraper needs host
+`python3-asyncpg` and `python3-httpx`. Until the installer has run, the deploy
+pass notes on every pass that the scraper does not run from the deploy clone.
 
 To back out, point the unit's `ExecStart` at a checkout's driver again. The
 driver behaves the same when run directly (its status says `driver: direct`):

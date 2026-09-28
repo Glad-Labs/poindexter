@@ -1116,6 +1116,14 @@ posture as docker-watchdog's `systemctl restart docker`):
 <user> ALL=(root) NOPASSWD: /usr/bin/systemctl restart ollama-primary.service, /usr/bin/systemctl restart poindexter-mcp-http.service
 ```
 
+The agent reads `scripts/recovery-agent.py` once, at start, so running from the
+deploy clone keeps only the file current. The deploy pass restarts the agent
+when that file changes, and holds the restart while an action is in flight
+(step 8b, see [ci-deploy-chain.md](ci-deploy-chain.md)). When the deploy-sync
+timer runs as this same user, add
+`/usr/bin/systemctl restart poindexter-recovery-agent.service` to the grant;
+without it the pass notes the missed restart and retries it every pass.
+
 Then point the brain at it: `poindexter settings set mcp_http_probe_recovery_url
 http://host.docker.internal:9841/recover` (the token is already shared via
 `mcp_http_probe_recovery_token` / bootstrap `poindexter_recovery_token`).

@@ -158,9 +158,30 @@
 #      `sudo -n systemctl` (docker-watchdog precedent — the operator user
 #      needs passwordless sudo; see the unit header). Hosts without the unit
 #      installed skip this step; --no-restart leaves the unit alone too.
+#   8b. host daemons (Glad-Labs/glad-labs-stack#4188): the other long-running
+#      host systemd services that run code out of THIS clone (gpu-scraper,
+#      recovery agent) read it once, at start, so the clone alone only updates
+#      their files. HOST_DAEMON_MAP maps each file a daemon loads at start to
+#      its unit, and a unit is restarted when one of them changed since the
+#      tree it runs. That tree is the unit's own record,
+#      ~/.poindexter/deploy-host-daemons/<unit>, not the deploy marker, because
+#      this step is FAIL-SOFT like step 10: a missed restart amends the status
+#      detail and never withholds the marker, since on a host without
+#      passwordless sudo a withheld marker would error every pass. With the
+#      marker moving on regardless, a diff from it would drop a missed change
+#      for good, so the step diffs from the record and runs on no-change passes
+#      too; that is how a missed restart is retried. A unit is left alone when
+#      it is not installed (LoadState), not running (restart would START it),
+#      not run from this clone (noted every pass: re-run
+#      install-deploy-sync.sh), or its process started after the clone reached
+#      HEAD. One whose cgroup holds more than its main process is mid-action,
+#      e.g. the recovery agent's fire-and-forget compose reapply, which a
+#      restart would kill, so it waits for the next pass. No record yet means
+#      restart once and record. --no-restart leaves them alone too.
 #   9. step independence: rebuilds, compose-apply, the stranded sweep,
 #      restarts, and the connector sync ALL run even if an earlier one failed;
-#      ANY failure withholds the marker so the pass retries next cycle. A retry
+#      ANY failure withholds the marker so the pass retries next cycle (the
+#      fail-soft steps 8b and 10 excepted). A retry
 #      redoes only what did not complete: the bounce and the connector restart
 #      remember the tree they last finished for (see 7 and 8) and are skipped
 #      while HEAD is unchanged -- restarting a healthy container is NOT a no-op.
@@ -186,6 +207,7 @@
 # Marker  : ~/.poindexter/deploy-last-restarted-sha   (outside the clone; a fully clean pass)
 #           ~/.poindexter/deploy-last-bounced-sha     (tree the app containers were last restarted onto)
 #           ~/.poindexter/deploy-last-connector-sha   (tree the connector step last completed for)
+#           ~/.poindexter/deploy-host-daemons/<unit>  (tree each host daemon runs, step 8b)
 # Log     : ~/.poindexter/deploy-checkout-sync.log    (single .1 rotation)
 # Status  : ~/.poindexter/deploy-checkout-sync.status.json
 #   result: deployed | synced-no-change | synced-norestart | baseline-recorded
@@ -245,6 +267,13 @@ MARKER_FILE="$POINDEXTER_HOME/deploy-last-restarted-sha"
 BOUNCE_MARKER_FILE="$POINDEXTER_HOME/deploy-last-bounced-sha"
 CONNECTOR_MARKER_FILE="$POINDEXTER_HOME/deploy-last-connector-sha"
 ROLLBACK_MARKER_FILE="$POINDEXTER_HOME/deploy-rolled-back-sha"
+# Step 8b: one file per host daemon unit, naming the tree that unit runs.
+# HOST_DAEMON_NOTE carries a missed restart into write_status, like
+# CLI_ENV_NOTE. SYNC_CGROUP_ROOT exists for the tests.
+HOST_DAEMON_STATE_DIR="$POINDEXTER_HOME/deploy-host-daemons"
+CGROUP_ROOT="${SYNC_CGROUP_ROOT:-/sys/fs/cgroup}"
+HOST_DAEMON_NOTE=""
+HOST_DAEMON_RESTARTED=""
 GATE_SNAPSHOT_FILE="$POINDEXTER_HOME/deploy-gate-snapshot.json"
 HEALTH_GATE="$DEPLOY_DIR/scripts/linux/deploy_health_gate.py"
 LOG_MAX_BYTES="${POINDEXTER_DEPLOY_LOG_MAX_BYTES:-5242880}"
@@ -256,6 +285,9 @@ for arg in "$@"; do
       echo "deploy clone: $DEPLOY_DIR"
       git -C "$DEPLOY_DIR" rev-parse --short HEAD 2>/dev/null | sed 's/^/  HEAD: /' || echo "  (clone missing)"
       [ -f "$BOUNCE_MARKER_FILE" ] && echo "  containers last bounced onto: $(cut -c1-9 "$BOUNCE_MARKER_FILE")"
+      for f in "$HOST_DAEMON_STATE_DIR"/*; do
+        [ -f "$f" ] && echo "  host daemon $(basename "$f") runs: $(cut -c1-9 "$f")"
+      done
       [ -f "$STATUS_FILE" ] && { echo "  --- last status ---"; cat "$STATUS_FILE"; echo; }
       [ -f "$LOG_FILE" ] && { echo "  --- last 15 log lines ---"; tail -15 "$LOG_FILE"; }
       [ -f "$CLI_VENV_SYNC" ] && { echo "  --- host CLI env ---"; bash "$CLI_VENV_SYNC" --status 2>&1 | sed 's/^/  /'; }
@@ -280,10 +312,11 @@ log() { # log <msg> [LEVEL]
 }
 
 write_status() { # write_status <result> <head> <prev> <restarted-csv> <detail>
-  # Step 10 never changes the result; a failure there rides along in the detail.
-  # So does the launcher's reason for running the last-known-good copy.
+  # Steps 8b and 10 never change the result; a miss there rides along in the
+  # detail. So does the launcher's reason for running the last-known-good copy.
   local detail="${5:-}"
   [ -n "${DRIVER_NOTE:-}" ] && detail="${detail:+$detail; }$DRIVER_NOTE"
+  [ -n "${HOST_DAEMON_NOTE:-}" ] && detail="${detail:+$detail; }$HOST_DAEMON_NOTE"
   [ -n "${CLI_ENV_NOTE:-}" ] && detail="${detail:+$detail; }$CLI_ENV_NOTE"
   printf '{"timestamp":"%s","result":"%s","head":"%s","previousHead":"%s","restarted":[%s],"detail":"%s","driver":"%s","driverCommit":"%s","host":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" \
@@ -462,6 +495,131 @@ sync_host_cli_env() {
   return 0
 }
 
+systemctl_root() { # unit management needs root; `systemctl show` queries do not
+  if [ "$(id -u)" = "0" ]; then systemctl "$@"; else sudo -n systemctl "$@"; fi
+}
+
+# ---- host daemons (step 8b; see header) ---------------------------------------
+# path regex -> host systemd unit, for every repo file a long-running host daemon
+# loads AT START. The scraper resolves its DSN once, by importing
+# poindexter.brain.bootstrap, so that module and the two package __init__ files
+# Python runs to reach it are in its process as much as gpu-scraper.py is.
+# test_deploy_checkout_sync_host_daemons.py loads each daemon's module level and
+# fails when a repo file it loaded has no entry here, so a new import cannot slip
+# past this table.
+declare -A HOST_DAEMON_MAP=(
+  ['^scripts/gpu-scraper\.py$']="poindexter-gpu-scraper.service"
+  ['^src/cofounder_agent/poindexter/brain/bootstrap\.py$']="poindexter-gpu-scraper.service"
+  ['^src/cofounder_agent/poindexter/(brain/)?__init__\.py$']="poindexter-gpu-scraper.service"
+  ['^scripts/recovery-agent\.py$']="poindexter-recovery-agent.service"
+)
+
+host_daemon_note() { # host_daemon_note <text> [LEVEL]: into the status detail, and the log
+  HOST_DAEMON_NOTE="${HOST_DAEMON_NOTE:+$HOST_DAEMON_NOTE; }$1"
+  log "host daemons: $1" "${2:-WARN}"
+}
+
+record_host_daemon() { # record_host_daemon <unit>: it runs HEAD's copy of its files
+  mkdir -p "$HOST_DAEMON_STATE_DIR" 2>/dev/null
+  { printf '%s' "$head_sha" > "$HOST_DAEMON_STATE_DIR/$1"; } 2>/dev/null || true
+}
+
+# Live processes in a unit's cgroup (zombies are not listed there). More than
+# one means the daemon is running a child. Unreadable reads as 0, which never
+# holds a restart back: without the file there is nothing to go on.
+unit_process_count() { # unit_process_count <unit>
+  local cg n=""
+  cg="$(systemctl show -p ControlGroup --value "$1" 2>/dev/null)"
+  [ -n "$cg" ] && n="$(grep -c . "$CGROUP_ROOT$cg/cgroup.procs" 2>/dev/null)"
+  echo "${n:-0}"
+}
+
+# Restart each installed, running host daemon whose start-time files changed
+# since the tree it runs. Never fails the pass: a miss goes into
+# HOST_DAEMON_NOTE, the unit's record stays where it was, and the next pass,
+# no-change passes included, tries again. Restarts land in HOST_DAEMON_RESTARTED.
+sync_host_daemons() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  local units=() unit="" exec_start="" re="" base="" diff="" changed="" active="" started="" procs=0
+  local clone="${DEPLOY_DIR%/}/"
+  mapfile -t units < <(printf '%s\n' "${HOST_DAEMON_MAP[@]}" | sort -u)
+  for unit in "${units[@]}"; do
+    # Not installed on this host: the unit is the opt-in, as for the connector.
+    [ "$(systemctl show -p LoadState --value "$unit" 2>/dev/null)" = "loaded" ] || continue
+    # A unit that runs another tree would reload THAT tree's code on a restart,
+    # so restarting it here proves nothing. Say so on every pass until the
+    # installer re-renders it onto this clone.
+    exec_start="$(systemctl show -p ExecStart --value "$unit" 2>/dev/null)"
+    case "$exec_start" in
+      *"$clone"*) ;;
+      "") host_daemon_note "could not read $unit's ExecStart; not restarted"
+          continue ;;
+      *) host_daemon_note "$unit does not run from the deploy clone, so merged changes do not reach it; re-run scripts/linux/install-deploy-sync.sh"
+         continue ;;
+    esac
+    base=""
+    [ -f "$HOST_DAEMON_STATE_DIR/$unit" ] && base="$(tr -d '[:space:]' < "$HOST_DAEMON_STATE_DIR/$unit")"
+    [ "$base" = "$head_sha" ] && continue
+    # What is owed: one of its own files changed since the tree it runs. No
+    # record yet, or one git cannot diff from, is unknown, and unknown restarts
+    # (the bounce's rule for a missing record, step 7).
+    changed=""
+    if [ -z "$base" ]; then
+      changed="no record of the tree it runs"
+    elif diff="$(git -C "$DEPLOY_DIR" diff --name-only "$base" "$head_sha" 2>/dev/null)"; then
+      for re in "${!HOST_DAEMON_MAP[@]}"; do
+        [ "${HOST_DAEMON_MAP[$re]}" = "$unit" ] || continue
+        changed="$(grep -E -m1 "$re" <<<"$diff")" && break
+      done
+      [ -n "$changed" ] && changed="$changed changed"
+    else
+      changed="cannot diff from ${base:0:9}"
+    fi
+    if [ -z "$changed" ]; then
+      record_host_daemon "$unit"   # none of its files changed: it already runs HEAD's
+      continue
+    fi
+    active="$(systemctl show -p ActiveState --value "$unit" 2>/dev/null)"
+    case "$active" in
+      active|activating|reloading) ;;
+      "") host_daemon_note "could not read whether $unit is running; not restarted ($changed)"
+          continue ;;
+      *) # `restart` would START it. Stopped or failed, it loads this clone's
+         # code whenever it next starts, so nothing is owed.
+         log "host daemons: $unit is $active; not starting it ($changed)"
+         record_host_daemon "$unit"
+         continue ;;
+    esac
+    # Started after the clone reached this tree (the installer, a reboot,
+    # systemd's own Restart=): it already runs HEAD. Same guard as the bounce;
+    # an unreadable start time never skips.
+    started="$(systemctl show --timestamp=unix -p ExecMainStartTimestamp --value "$unit" 2>/dev/null)"
+    started="${started#@}"
+    if [[ "$started" =~ ^[0-9]+$ ]] && [ "$started" -gt $((tree_since_epoch + SKEW_MARGIN_SEC)) ]; then
+      log "host daemons: $unit started after the clone reached $short_head; not restarting it ($changed)"
+      record_host_daemon "$unit"
+      continue
+    fi
+    # A restart kills the unit's whole cgroup. The recovery agent runs its
+    # compose reapply as a fire-and-forget child and waits on `sudo systemctl
+    # restart` for host units; killing either mid-way is worse than a daemon
+    # that stays on its old code for another ten minutes.
+    procs="$(unit_process_count "$unit")"
+    if [ "$procs" -gt 1 ]; then
+      host_daemon_note "$unit is mid-action ($procs processes); restart held for the next pass ($changed)" INFO
+      continue
+    fi
+    if systemctl_root restart "$unit" >>"$LOG_FILE" 2>&1; then
+      HOST_DAEMON_RESTARTED="${HOST_DAEMON_RESTARTED:+$HOST_DAEMON_RESTARTED,}$unit"
+      record_host_daemon "$unit"
+      log "host daemons: restarted $unit onto $short_head ($changed)"
+    else
+      host_daemon_note "could not restart $unit ($changed): it still runs its previous code, and every pass retries. Without root this needs passwordless sudo for 'systemctl restart $unit'" ERROR
+    fi
+  done
+  return 0
+}
+
 reset_at_epoch=""
 if [ "$need_reset" = "1" ]; then
   wait_for_gap_or_defer "reset ($behind_raw commit(s) behind)"
@@ -519,8 +677,11 @@ if [ -z "$last_deployed" ]; then
 fi
 if [ "$last_deployed" = "$head_sha" ]; then
   log "Containers already on $short_head; nothing to restart."
+  # Step 8b runs here too: its record, not the marker, says what a host daemon
+  # still owes, so this is where a missed restart is retried.
+  sync_host_daemons
   sync_host_cli_env
-  write_status synced-no-change "$head_sha" "" "" ""
+  write_status synced-no-change "$head_sha" "" "$HOST_DAEMON_RESTARTED" ""
   exit 0
 fi
 
@@ -1010,10 +1171,6 @@ mcp_unit_loaded() {
   [ "$(systemctl show -p LoadState --value "$MCP_UNIT" 2>/dev/null)" = "loaded" ]
 }
 
-systemctl_root() { # unit management needs root; queries above do not
-  if [ "$(id -u)" = "0" ]; then systemctl "$@"; else sudo -n systemctl "$@"; fi
-}
-
 # The mcp_changed / mcp_deps_changed flags come from the MARKER-based diff, which
 # is identical on every retrying pass; without this record the connector was
 # re-synced and restarted every 10 minutes alongside the worker (stack#3661).
@@ -1060,6 +1217,12 @@ if mcp_unit_loaded; then
 elif [ "$mcp_changed" = "1" ]; then
   log "connector: mcp-server/ changed but $MCP_UNIT is not installed on this host; skipping."
 fi
+
+# ---- host daemons (step 8b) -------------------------------------------------
+# Fail-soft, so it is not part of the outcome below: a miss is in
+# HOST_DAEMON_NOTE, which write_status adds to the detail.
+sync_host_daemons
+[ -n "$HOST_DAEMON_RESTARTED" ] && restarted="${restarted:+$restarted,}$HOST_DAEMON_RESTARTED"
 
 # ---- outcome (step independence: marker only on a fully-clean pass) --------
 if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$recreate_failed" = "0" ] && [ "$state_failed" = "0" ] && [ "$restart_failed" = "0" ] && [ "$stranded_failed" = "0" ] && [ "$mcp_failed" = "0" ]; then

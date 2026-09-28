@@ -11,6 +11,14 @@
 # the Windows task needed has no Linux counterpart.
 #
 # Runs from the DEPLOY CLONE so deploy-checkout-sync keeps the script current.
+# The process reads it once, at start, so the clone alone only updated the FILE:
+# a merged change waited for a crash or a reboot (#4158 merged 2026-09-28 11:27
+# while the agent ran from 2026-09-27 11:16). Since Glad-Labs/glad-labs-stack#4188
+# the deploy pass restarts this unit when scripts/recovery-agent.py changes
+# (deploy-checkout-sync.sh step 8b), waiting while the agent has a recovery
+# action in flight. That needs passwordless sudo for
+# `systemctl restart poindexter-recovery-agent.service` when the deploy-sync
+# timer runs unprivileged (see docs/operations/ci-deploy-chain.md).
 # The bearer token is read by the script from ~/.poindexter/bootstrap.toml
 # (`poindexter_recovery_token`); the brain reads the same value from
 # app_settings.mcp_http_probe_recovery_token. Binds 0.0.0.0 so the brain

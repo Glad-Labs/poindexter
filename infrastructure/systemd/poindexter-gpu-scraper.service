@@ -4,7 +4,24 @@
 # background-services.ps1 launcher (Pop!_OS migration audit, 2026-07-23).
 # DSN resolves via brain.bootstrap (bootstrap.toml); needs host python3 with
 # asyncpg + httpx (apt: python3-asyncpg python3-httpx).
-# Operators: set User= and the paths to your login + checkout (ships generic).
+#
+# Runs from the DEPLOY CLONE (~/.poindexter/deploy/glad-labs-stack), not a
+# working checkout (Glad-Labs/glad-labs-stack#4188). The process reads its code
+# once, at start: gpu-scraper.py, and poindexter.brain.bootstrap from the same
+# tree, to resolve its DSN. Until 2026-09-28 it ran from the operator's working
+# checkout, so it ran whatever state that tree was in when it started (branch,
+# uncommitted edits, or 148 commits behind). Now deploy-checkout-sync.sh keeps
+# the clone on origin/main and restarts this unit when a merge changes a file
+# it loads at start (step 8b), so a merged change reaches the running process
+# within one deploy pass.
+#
+# Install or refresh with scripts/linux/install-deploy-sync.sh, which renders
+# User=, WorkingDirectory= and ExecStart= onto the host (this repo copy ships a
+# generic `poindexter` / /home/poindexter placeholder) and restarts the scraper
+# onto the clone if it is running. If the deploy-sync timer runs unprivileged,
+# its user needs passwordless sudo for
+# `systemctl restart poindexter-gpu-scraper.service`; without it the deploy
+# pass notes the missed restart in its status and retries every pass.
 [Unit]
 Description=Poindexter GPU metrics scraper (exporter -> gpu_metrics table)
 After=network-online.target docker.service
@@ -12,8 +29,8 @@ Wants=network-online.target
 
 [Service]
 User=poindexter
-WorkingDirectory=/home/poindexter/glad-labs-website
-ExecStart=/usr/bin/python3 /home/poindexter/glad-labs-website/scripts/gpu-scraper.py
+WorkingDirectory=/home/poindexter/.poindexter/deploy/glad-labs-stack
+ExecStart=/usr/bin/python3 /home/poindexter/.poindexter/deploy/glad-labs-stack/scripts/gpu-scraper.py
 Restart=on-failure
 RestartSec=15
 

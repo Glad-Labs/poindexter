@@ -2,9 +2,9 @@
 
 Glad-Labs/glad-labs-stack#4172. The installer is the one idempotent way the
 host gets (1) an installed COPY of the launcher, outside every git tree, (2) a
-last-known-good driver that was proven on this host, and (3) the two unit
-renders: deploy-sync execs the installed launcher, and the docker watchdog
-execs the deploy clone's copy.
+last-known-good driver that was proven on this host, and (3) the unit renders:
+deploy-sync execs the installed launcher, and the docker watchdog and (since
+#4188) the GPU scraper run the deploy clone's copies.
 
 Driven with a fake ``sudo`` (exec-through) and a recording ``systemctl`` on
 PATH, ``POINDEXTER_UNIT_DIR`` at a tmp dir and a throwaway deploy clone holding
@@ -34,7 +34,12 @@ _FROM_REPO = (
     "infrastructure/systemd/poindexter-deploy-sync.timer",
     "infrastructure/systemd/poindexter-docker-watchdog.service",
     "infrastructure/systemd/poindexter-docker-watchdog.timer",
+    "scripts/gpu-scraper.py",
+    "infrastructure/systemd/poindexter-gpu-scraper.service",
 )
+_SCRAPER = "poindexter-gpu-scraper.service"
+# The generic deploy-clone path the unit templates ship with.
+_TEMPLATE_CLONE = "/home/poindexter/.poindexter/deploy/glad-labs-stack"
 
 
 def _repo_root() -> Path:
@@ -206,6 +211,60 @@ class TestInstall:
         assert proc.returncode == 0, proc.stdout + proc.stderr
         assert "start poindexter-deploy-sync.service" in _systemctl(rig)
         assert "deploy driver launcher:" in proc.stdout, "ends with the launcher's report"
+
+
+class TestGpuScraper:
+    """#4188: the scraper reads its code once, at start. The deploy pass restarts
+    it when a file it loads changes, which only helps once it runs the clone."""
+
+    def test_renders_the_scraper_onto_the_deploy_clone(self, tmp_path):
+        rig = _rig(tmp_path)
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        rendered = (rig["units"] / _SCRAPER).read_text(encoding="utf-8")
+        template = (_repo_root() / "infrastructure/systemd" / _SCRAPER).read_text(encoding="utf-8")
+        host = ("User=", "WorkingDirectory=", "ExecStart=")
+        assert _directive(rendered, "User") == getpass.getuser()
+        assert _directive(rendered, "WorkingDirectory") == str(rig["clone"])
+        # The template's command on this host's clone, so the interpreter and
+        # arguments cannot drift between the installer and the template.
+        assert _directive(rendered, "ExecStart") == _directive(template, "ExecStart").replace(
+            _TEMPLATE_CLONE, str(rig["clone"]))
+        assert [ln for ln in rendered.splitlines() if not ln.startswith(host)] == [
+            ln for ln in template.splitlines() if not ln.startswith(host)
+        ], "only User=, WorkingDirectory= and ExecStart= are host-specific"
+
+    def test_a_host_that_ran_the_scraper_gets_it_restarted_onto_the_clone(self, tmp_path):
+        """The old unit ran the working checkout. A running scraper keeps that
+        tree's code until it restarts; a stopped one must stay stopped."""
+        rig = _rig(tmp_path)
+        (rig["units"] / _SCRAPER).write_text(
+            "[Service]\nUser=someone\nWorkingDirectory=/home/someone/glad-labs-website\n"
+            "ExecStart=/usr/bin/python3 /home/someone/glad-labs-website/scripts/gpu-scraper.py\n",
+            encoding="utf-8",
+        )
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        calls = _systemctl(rig)
+        assert f"try-restart {_SCRAPER}" in calls
+        assert calls.index("daemon-reload") < calls.index(f"try-restart {_SCRAPER}"), (
+            "the restart must load the new unit file"
+        )
+        assert not any(c.startswith(("enable", "start ")) and _SCRAPER in c for c in calls), (
+            "enablement is the operator's, as it was"
+        )
+        assert str(rig["clone"]) in _directive((rig["units"] / _SCRAPER).read_text(encoding="utf-8"), "ExecStart")
+
+    def test_a_host_that_never_ran_the_scraper_gets_the_unit_but_not_enabled(self, tmp_path):
+        """gpu_metrics is optional and the scraper needs host python3-asyncpg +
+        python3-httpx, so the installer does not switch it on."""
+        rig = _rig(tmp_path)
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert (rig["units"] / _SCRAPER).is_file()
+        assert not any(_SCRAPER in c for c in _systemctl(rig)), _systemctl(rig)
+        assert "installed but NOT enabled" in proc.stdout
+        assert f"systemctl enable --now {_SCRAPER}" in proc.stdout
 
 
 class TestRefusals:
