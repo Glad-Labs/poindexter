@@ -10,7 +10,7 @@ This module hosts two complementary container types:
    constructor-DI migration (design doc:
    ``docs/architecture/2026-05-28-site-config-di-migration.md``).
    Constructed once per entry point (worker lifespan, Prefect
-   subprocess, CLI command, brain daemon, test fixture). Services that
+   subprocess, CLI command, test fixture). Services that
    need ``SiteConfig`` reach it through this container — no
    module-level singletons. During the migration period it starts
    essentially empty; each migration PR adds a ``cached_property`` for
@@ -111,7 +111,7 @@ class AppContainer:
     """Composition root: every service the app needs, wired with deps.
 
     Constructed once per entry point (worker lifespan, Prefect subprocess,
-    CLI command, brain daemon, test fixture). Services that need
+    CLI command, test fixture). Services that need
     ``SiteConfig`` reach it through this container — no module-level
     singletons.
 

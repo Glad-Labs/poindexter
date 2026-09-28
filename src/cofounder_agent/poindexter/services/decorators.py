@@ -122,7 +122,7 @@ class Decorators:
 # ``site_config: SiteConfig = SiteConfig()``. This keeps imports cheap and
 # avoids crashing tests that import this module before any container or
 # fixture has run. Production entry points (worker lifespan, Prefect
-# subprocess, brain daemon, CLI) all construct an ``AppContainer``, which
+# subprocess, CLI) all construct an ``AppContainer``, which
 # replaces the fallback with the DB-loaded instance before any decorated
 # function runs.
 # ---------------------------------------------------------------------------

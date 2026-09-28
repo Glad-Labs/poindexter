@@ -1,6 +1,6 @@
 # SiteConfig: per-module singleton → constructor DI (Application Container)
 
-**Status:** ✅ **Shipped.** This is the original design v2 (2026-05-28; v1 proposed a ContextVar, superseded after the future-proofing review). `AppContainer` (`services/container.py`) + constructor DI is now live, `services.di_wiring.WIRED_MODULES` is an empty tuple, and the per-module `site_config` singleton + `set_site_config` fan-out are retired (#272 → the #788 capstone). Read the PR plan below as the executed roadmap.
+**Status:** ✅ **Shipped.** This is the original design v2 (2026-05-28; v1 proposed a ContextVar, superseded after the future-proofing review). `AppContainer` (`services/container.py`) + constructor DI is now live, `services.di_wiring.WIRED_MODULES` is an empty tuple, and the per-module `site_config` singleton + `set_site_config` fan-out are retired (#272 → the #788 capstone). Read the PR plan below as the executed roadmap, with one exception: the brain daemon, planned as an entry point, never became one (see the note under PR 2).
 **Closes:** the latent bug class where every new entry point silently fails because it forgot to wire SiteConfig into N service modules. Most recent victim: `poindexter topics sweep --niche glad-labs` (2026-05-28).
 **Aligns with:** Module v1 destination (each business module owns its dependencies as a composable unit) + future multi-tenant SaaS posture (per-request / per-tenant SiteConfig).
 
@@ -55,7 +55,7 @@ No `site_config = SiteConfig()` module global. No `set_site_config()` setter. Re
 
 ### 2. `AppContainer` — composition root + wiring
 
-A single dataclass-shaped container that holds every service the application needs, wired with the right dependencies. Constructed ONCE per entry point (worker lifespan, CLI command, Prefect subprocess, brain daemon, test fixture).
+A single dataclass-shaped container that holds every service the application needs, wired with the right dependencies. Constructed ONCE per entry point (worker lifespan, CLI command, Prefect subprocess, test fixture; the brain daemon was planned here too but never became one, see the note under PR 2).
 
 ```python
 # services/container.py
@@ -164,7 +164,7 @@ Loose tiers (leaf-first):
 
 - `main.py` lifespan: replace `wire_site_config_modules(loaded)` with `container = AppContainer(site_config=loaded, pool=pool); app.state.container = container`.
 - Prefect flow init: same swap.
-- Brain daemon: same swap.
+- Brain daemon: same swap. _(Not done: the brain is not an entry point. See the note under PR 2.)_
 - CLI: every command constructs its container at the top of `_impl()`. The topics CLI gets the canary wire-up that proves the bug Matt hit is fixed.
 - Delete `services/di_wiring.py` (no callers remain).
 - Delete the `services/site_config.py` module-level singleton + the shared_context fallback in `services/integrations/shared_context.py`.
@@ -217,6 +217,7 @@ Each migration PR has the same shape (template the agent follows):
    - `main.py` lifespan: also build the container alongside the old `wire_site_config_modules(loaded)` call. Both wirings coexist during the migration; new code reaches into the container; old code keeps using the per-module singleton.
    - Prefect subprocess init: same.
    - Brain daemon init: same.
+     - **Never live; removed 2026-09-28.** #715 gave `brain_daemon.main()` a best-effort `build_container` call behind a `get_app_container()` accessor. The brain image has never shipped the worker tree (its build context was `./brain` then; today it copies only `poindexter/__init__.py` and `poindexter/brain/`), so the import failed on every boot and logged that brain probes depending on the container "will fail". None did: no probe ever called `get_app_container()`, and PR 3-N migrated worker services, not brain probes. The brain reads `app_settings` directly and reaches the worker through the DB or HTTP. `scripts/ci/brain_import_isolation_lint.py` now rejects worker imports in the brain at any scope, lazy ones included.
    - CLI: build container in `_impl()` of each command; topics sweep gets the canary wire-up (proves the bug Matt hit is fixed for any service that's already in the container).
    - Pytest: add `default_container` fixture in conftest.
 

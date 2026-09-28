@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CI lint: the brain daemon must not import worker code at module scope.
+"""CI lint: the brain daemon must not import worker code, at any scope.
 
 The brain (``poindexter/brain/``) ships as its own container image, which
 copies ``poindexter/__init__.py`` and ``poindexter/brain/`` and nothing else
@@ -17,11 +17,20 @@ no-op behind green CI (stack #3673). The seam the brain may use for that
 knowledge is the database (``app_settings.owner``), which the worker's seeder
 keeps in step with the registry -- PostgreSQL as spinal cord, not imports.
 
-Rule: no ``import`` / ``from ... import`` of those packages at module scope in
-any ``poindexter/brain/*.py``. Function-scope (lazy) imports are tolerated for
-the two legacy call sites that degrade explicitly when the worker tree is
-absent, but new code should reach the worker through the DB or HTTP instead.
-Escape hatch for a deliberate exception: ``# brain-import-ok`` on the line.
+Rule: no ``import`` / ``from ... import`` of those packages anywhere in any
+``poindexter/brain/*.py`` -- module scope, class body or function body. A lazy
+import inside a function is no safer than one at the top of the file: it fails
+in the image just the same, only later. Function scope was tolerated wholesale
+until 2026-09-28, and one of the sites it let through was ``brain_daemon.main()``
+building an ``AppContainer`` that nothing ever read. The import failed on every
+boot for four months, logging a warning that probes depending on the container
+would fail; no probe did. New code reaches the worker through the DB or HTTP.
+
+``TOLERATED_LAZY_IMPORTS`` names the legacy function-scope sites still
+standing. It only shrinks: nothing is added to it, and an entry whose function
+no longer imports worker code fails the lint until the entry is deleted.
+Escape hatch for a deliberate exception: ``# brain-import-ok: <why>`` on the
+import's first line.
 
 Exit 1 with ``path:line: message`` per offence; exit 0 when clean. Fails when
 the brain directory is missing or nothing was scanned (see lib_scan_floor).
@@ -30,6 +39,7 @@ from __future__ import annotations
 
 import ast
 import sys
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -49,6 +59,15 @@ FORBIDDEN_ROOTS = (
 )
 ESCAPE = "# brain-import-ok"
 
+# (path relative to the brain dir, enclosing function's qualname) -> why it is
+# still here. Shrink-only; see the module docstring.
+TOLERATED_LAZY_IMPORTS: dict[tuple[str, str], str] = {
+    ("alert_dispatcher.py", "_resolve_notify_fn"): (
+        "tries the worker's notify_operator before brain.notify; in the brain "
+        "image that import always fails, so brain.notify is what pages"
+    ),
+}
+
 
 def _is_forbidden(module: str | None) -> bool:
     if not module:
@@ -56,61 +75,114 @@ def _is_forbidden(module: str | None) -> bool:
     return any(module == root or module.startswith(root + ".") for root in FORBIDDEN_ROOTS)
 
 
-def scan_source(source: str, rel: str) -> list[tuple[int, str]]:
-    """Return ``(lineno, message)`` for every module-scope import of worker code."""
+def find_worker_imports(source: str, rel: str) -> list[tuple[int, str, str | None]]:
+    """Every import of worker code in ``source`` as ``(lineno, module, function)``.
+
+    ``function`` is the enclosing function's dotted qualname (``outer.inner``,
+    ``Class.method``), or ``None`` at module scope and in a class body -- both
+    run at import time.
+    """
     tree = ast.parse(source, filename=rel)
-    lines = source.splitlines()
-    out: list[tuple[int, str]] = []
-    # Module scope = statements directly in the module body, including those
-    # nested in module-level try/if blocks (a try/except at module scope is the
-    # exact shape that hides the failure).
-    stack: list[ast.AST] = list(tree.body)
-    while stack:
-        node = stack.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            continue
-        names: list[str] = []
-        if isinstance(node, ast.Import):
-            names = [a.name for a in node.names]
-        elif isinstance(node, ast.ImportFrom) and node.level == 0:
-            names = [node.module or ""]
-        for name in names:
-            if _is_forbidden(name):
-                line = lines[node.lineno - 1] if node.lineno - 1 < len(lines) else ""
-                if ESCAPE in line:
-                    continue
-                out.append(
-                    (
-                        node.lineno,
-                        f"module-scope import of {name!r}: the brain image does not ship it "
-                        "(read the DB or call HTTP instead; lazy function-scope import only "
-                        "with an explicit degrade path)",
-                    )
-                )
+    found: list[tuple[int, str, str | None]] = []
+
+    def visit(node: ast.AST, scope: tuple[str, ...], function: str | None) -> None:
         for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.stmt) or isinstance(child, ast.excepthandler):
-                stack.append(child)
-    return sorted(out)  # stack order is LIFO; report in file order
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                inner = (*scope, child.name)
+                visit(child, inner, ".".join(inner))
+                continue
+            if isinstance(child, ast.ClassDef):
+                visit(child, (*scope, child.name), function)
+                continue
+            names: list[str] = []
+            if isinstance(child, ast.Import):
+                names = [a.name for a in child.names]
+            elif isinstance(child, ast.ImportFrom) and child.level == 0:
+                names = [child.module or ""]
+            found.extend((child.lineno, name, function) for name in names if _is_forbidden(name))
+            visit(child, scope, function)
+
+    visit(tree, (), None)
+    return sorted(found, key=lambda item: item[0])
+
+
+def _offences(
+    found: Iterable[tuple[int, str, str | None]],
+    lines: list[str],
+    tolerated: frozenset[str],
+) -> list[tuple[int, str]]:
+    out: list[tuple[int, str]] = []
+    for lineno, name, function in found:
+        line = lines[lineno - 1] if lineno - 1 < len(lines) else ""
+        if ESCAPE in line or (function is not None and function in tolerated):
+            continue
+        where = "at module scope" if function is None else f"in {function}()"
+        out.append(
+            (
+                lineno,
+                f"import of {name!r} {where}: the brain image does not ship it, so this "
+                "fails there even when it is lazy (read the DB or call HTTP instead)",
+            )
+        )
+    return out
+
+
+def scan_source(source: str, rel: str, tolerated: frozenset[str] = frozenset()) -> list[tuple[int, str]]:
+    """Return ``(lineno, message)`` for every worker import not excused.
+
+    ``tolerated`` holds the qualnames of this file's ``TOLERATED_LAZY_IMPORTS``
+    functions; an escape-marked line is excused anywhere.
+    """
+    return _offences(find_worker_imports(source, rel), source.splitlines(), tolerated)
+
+
+def check_tree(
+    brain_dir: Path,
+    repo_root: Path,
+    tolerated_sites: Mapping[tuple[str, str], str] = TOLERATED_LAZY_IMPORTS,
+) -> tuple[int, list[str]]:
+    """Scan every ``*.py`` under ``brain_dir``; return ``(files scanned, offences)``.
+
+    Besides unexcused imports, an offence is a tolerated site whose function no
+    longer imports worker code (or no longer exists), so the list cannot outlive
+    the debt it records.
+    """
+    scanned = 0
+    offences: list[str] = []
+    live: set[tuple[str, str]] = set()
+    for path in sorted(brain_dir.rglob("*.py")):
+        rel = path.relative_to(repo_root).as_posix()
+        key = path.relative_to(brain_dir).as_posix()
+        source = path.read_text(encoding="utf-8")
+        scanned += 1
+        tolerated = frozenset(function for (file, function) in tolerated_sites if file == key)
+        found = find_worker_imports(source, rel)
+        live.update((key, function) for _, _, function in found if function in tolerated)
+        offences.extend(f"{rel}:{ln}: {msg}" for ln, msg in _offences(found, source.splitlines(), tolerated))
+    lint_rel = Path(__file__).resolve().relative_to(REPO_ROOT).as_posix()
+    for file, function in sorted(set(tolerated_sites) - live):
+        offences.append(
+            f"{lint_rel}: TOLERATED_LAZY_IMPORTS entry ({file!r}, {function!r}) is stale -- "
+            "that function no longer imports worker code; delete the entry"
+        )
+    return scanned, offences
 
 
 def main() -> int:
     require_dir(BRAIN_DIR, lint="brain_import_isolation_lint")
-    scanned = 0
-    offences: list[str] = []
-    for path in sorted(BRAIN_DIR.rglob("*.py")):
-        rel = path.relative_to(REPO_ROOT).as_posix()
-        scanned += 1
-        for lineno, msg in scan_source(path.read_text(encoding="utf-8"), rel):
-            offences.append(f"{rel}:{lineno}: {msg}")
+    scanned, offences = check_tree(BRAIN_DIR, REPO_ROOT)
     require_scanned(scanned, lint="brain_import_isolation_lint", roots=(BRAIN_DIR,))
     if offences:
         print("\n".join(offences))
         print(
-            f"\nbrain_import_isolation_lint: {len(offences)} module-scope worker import(s) "
-            f"in {scanned} brain files. The brain container copies only poindexter/brain/."
+            f"\nbrain_import_isolation_lint: {len(offences)} problem(s) in {scanned} brain "
+            "files. The brain container copies only poindexter/brain/."
         )
         return 1
-    print(f"brain_import_isolation_lint: OK — no module-scope worker imports ({scanned} files).")
+    print(
+        f"brain_import_isolation_lint: OK — no worker imports outside the "
+        f"{len(TOLERATED_LAZY_IMPORTS)} tolerated legacy site(s) ({scanned} files)."
+    )
     return 0
 
 

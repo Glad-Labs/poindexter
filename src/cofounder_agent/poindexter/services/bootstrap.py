@@ -1,12 +1,13 @@
 """Bootstrap helpers for the SiteConfig constructor-DI migration.
 
 Single public entry point: ``build_container(pool)``. Every entry
-point (worker lifespan, Prefect subprocess, CLI command, brain
-daemon, test fixture) will call this exactly once at the top of its
-async setup to get a fully-loaded ``AppContainer``.
+point (worker lifespan, Prefect subprocess, CLI command, test fixture)
+will call this exactly once at the top of its async setup to get a
+fully-loaded ``AppContainer``. The brain daemon is not an entry point:
+its image ships only ``poindexter/brain/``, so this module does not
+exist there and the brain reads ``app_settings`` itself.
 
-Currently dormant — PR 1 of the migration lands this scaffold; PR 2
-wires entry points to call it. See the design doc at
+See the design doc at
 ``docs/architecture/2026-05-28-site-config-di-migration.md`` for the
 full plan.
 

@@ -374,7 +374,7 @@ migrated the last four ambient-singleton modules (`gpu_scheduler`,
 **`AppContainer`** accessor — leaving `services.di_wiring.WIRED_MODULES` an
 **empty tuple**. `AppContainer` (`services/container.py`) is the composition
 root: constructed once per entry point (worker lifespan, Prefect subprocess,
-CLI, brain, test fixture) by `services.bootstrap.build_container`, it holds the
+CLI, test fixture) by `services.bootstrap.build_container`, it holds the
 one loaded `SiteConfig` and exposes each migrated service as a `cached_property`.
 The old `set_site_config(loaded_instance)` lifespan loop survives only as a
 near-dead seam — `wire_site_config_modules` now wires 0 modules and merely
