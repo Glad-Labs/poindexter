@@ -25,8 +25,25 @@ from unittest import mock
 import pytest
 
 from poindexter.plugins import Tap
+from poindexter.services.site_config import SiteConfig
 from poindexter.services.taps.memory import MemoryFilesTap, _build_source_id, _discover_memory_dirs
 from tests.unit._nonempty import anonempty
+
+_TAP_LOGGER = "poindexter.services.taps.memory"
+
+
+@pytest.fixture(autouse=True)
+def home(monkeypatch, tmp_path_factory) -> Path:
+    """An empty home directory, so no test here can read the developer's real one.
+
+    The three sources have built-in defaults under ``Path.home()``. Before this
+    fixture a test that skipped only some of them ingested whatever the machine
+    running it happened to have (the operator's own checkout, in one case).
+    """
+    fake_home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    return fake_home
 
 
 class TestDiscoverMemoryDirs:
@@ -161,6 +178,247 @@ class TestDiscoverMemoryDirs:
         scopes = {s for _, _, s in dirs}
         assert "C--Users-alice" in scopes
         assert "C--Users-alice-myproject" in scopes
+
+
+class TestSourceRootResolution:
+    """Where each source's directory comes from, and what "unset" means.
+
+    Precedence is the tap's own config, then the app-level setting of the same
+    name (read from ``config["_site_config"]``), then the built-in default.
+    """
+
+    # -- shared-context: no operator-specific default -----------------------
+
+    def test_shared_context_has_no_default_source(self, monkeypatch):
+        """Unset, the source is off, and no location is even looked at.
+
+        It used to default to a folder under the home directory named for one
+        operator's checkout. Every other install carried that layout in its
+        code, and any machine that did have the folder ingested it into the RAG
+        corpus unasked. Asserting that nothing is probed pins "no default"
+        without naming a path, so it holds against any replacement default too.
+        """
+        probed: list[Path] = []
+        real_is_dir = Path.is_dir
+
+        def _record(self: Path, *args, **kwargs) -> bool:
+            probed.append(self)
+            return real_is_dir(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "is_dir", _record)
+
+        dirs = _discover_memory_dirs(claude_projects_dir="__skip__", openclaw_memory_dir="__skip__")
+
+        assert dirs == []
+        assert probed == []
+
+    def test_shared_context_dir_argument_is_ingested(self, tmp_path: Path):
+        notes = tmp_path / "notes"
+        notes.mkdir()
+
+        dirs = _discover_memory_dirs(
+            claude_projects_dir="__skip__",
+            openclaw_memory_dir="__skip__",
+            shared_context_dir=str(notes),
+        )
+
+        assert dirs == [(notes, "shared-context", "")]
+
+    def test_shared_context_dir_setting_is_ingested(self, tmp_path: Path):
+        notes = tmp_path / "notes"
+        notes.mkdir()
+
+        dirs = _discover_memory_dirs(
+            claude_projects_dir="__skip__",
+            openclaw_memory_dir="__skip__",
+            site_config=SiteConfig(initial_config={"shared_context_dir": str(notes)}),
+        )
+
+        assert dirs == [(notes, "shared-context", "")]
+
+    def test_seeded_empty_setting_leaves_the_source_off(self):
+        """The seeded value is ``''``: it must read as "unset", not as a path."""
+        dirs = _discover_memory_dirs(
+            claude_projects_dir="__skip__",
+            openclaw_memory_dir="__skip__",
+            site_config=SiteConfig(initial_config={"shared_context_dir": ""}),
+        )
+
+        assert dirs == []
+
+    # -- precedence and the skip sentinel, for all three sources ------------
+
+    def test_tap_config_beats_the_setting(self, tmp_path: Path):
+        from_tap = tmp_path / "from-tap"
+        from_tap.mkdir()
+        from_setting = tmp_path / "from-setting"
+        from_setting.mkdir()
+
+        dirs = _discover_memory_dirs(
+            claude_projects_dir="__skip__",
+            openclaw_memory_dir="__skip__",
+            shared_context_dir=str(from_tap),
+            site_config=SiteConfig(initial_config={"shared_context_dir": str(from_setting)}),
+        )
+
+        assert dirs == [(from_tap, "shared-context", "")]
+
+    @pytest.mark.parametrize(
+        ("key", "origin"),
+        [("openclaw_memory_dir", "openclaw"), ("shared_context_dir", "shared-context")],
+    )
+    def test_the_setting_is_used_when_the_tap_config_names_nothing(
+        self, key: str, origin: str, tmp_path: Path
+    ):
+        target = tmp_path / "target"
+        target.mkdir()
+        skips = {"claude_projects_dir": "__skip__", "openclaw_memory_dir": "__skip__",
+                 "shared_context_dir": "__skip__"}
+        skips.pop(key)
+
+        dirs = _discover_memory_dirs(
+            **skips, site_config=SiteConfig(initial_config={key: str(target)})
+        )
+
+        assert dirs == [(target, origin, "")]
+
+    def test_claude_projects_dir_setting_is_used(self, tmp_path: Path):
+        projects = tmp_path / "projects"
+        (projects / "-home-alice-project" / "memory").mkdir(parents=True)
+
+        dirs = _discover_memory_dirs(
+            openclaw_memory_dir="__skip__",
+            site_config=SiteConfig(initial_config={"claude_projects_dir": str(projects)}),
+        )
+
+        assert [(o, s) for _, o, s in dirs] == [("claude-code", "-home-alice-project")]
+
+    @pytest.mark.parametrize("key", ["claude_projects_dir", "openclaw_memory_dir", "shared_context_dir"])
+    def test_skip_sentinel_in_the_setting_turns_the_source_off_quietly(
+        self, key: str, caplog
+    ):
+        """``__skip__`` works from either surface, and is not a "missing directory"."""
+        with caplog.at_level(logging.WARNING, logger=_TAP_LOGGER):
+            dirs = _discover_memory_dirs(
+                site_config=SiteConfig(initial_config={key: "__skip__"}),
+            )
+
+        assert [o for _, o, _ in dirs if o != "claude-code"] == []
+        assert "__skip__" not in caplog.text
+
+    def test_every_setting_is_read_even_when_the_tap_config_pins_the_source(self):
+        """A pinned source still reads its setting, so the key never looks orphaned.
+
+        The zero-reader probe lists a seeded key nothing has read in 30 days. An
+        install whose ``plugin.tap.memory`` row pins a source with ``__skip__``
+        would otherwise never touch that source's setting, so a live key would
+        be reported as dead.
+        """
+        site_config = SiteConfig()
+
+        _discover_memory_dirs(
+            claude_projects_dir="__skip__",
+            openclaw_memory_dir="__skip__",
+            shared_context_dir="__skip__",
+            site_config=site_config,
+        )
+
+        assert set(site_config.drain_read_keys()) == {
+            "claude_projects_dir",
+            "openclaw_memory_dir",
+            "shared_context_dir",
+        }
+
+    # -- openclaw keeps its standard-location auto-detect -------------------
+
+    def test_openclaw_is_still_auto_detected_at_its_standard_location(self, home: Path):
+        memory = home / ".openclaw" / "workspace" / "memory"
+        memory.mkdir(parents=True)
+
+        dirs = _discover_memory_dirs(claude_projects_dir="__skip__")
+
+        assert dirs == [(memory, "openclaw", "")]
+
+    def test_claude_projects_dir_still_defaults_to_the_home_projects_tree(self, home: Path):
+        (home / ".claude" / "projects" / "-home-alice-project" / "memory").mkdir(parents=True)
+
+        dirs = _discover_memory_dirs()
+
+        assert [(o, s) for _, o, s in dirs] == [("claude-code", "-home-alice-project")]
+
+
+class TestConfiguredButUnusableDirectoryWarns:
+    """A path the operator set that is not a directory must not read as "no files".
+
+    Before this, a mistyped ``shared_context_dir`` (or a container that never
+    mounted the tree) ingested nothing and logged nothing.
+    """
+
+    _KEYS = ["claude_projects_dir", "openclaw_memory_dir", "shared_context_dir"]
+
+    @pytest.mark.parametrize("key", _KEYS)
+    def test_a_missing_directory_from_the_tap_config_warns(self, key: str, tmp_path: Path, caplog):
+        missing = tmp_path / "typo"
+        args = {"claude_projects_dir": "__skip__", "openclaw_memory_dir": "__skip__",
+                "shared_context_dir": "__skip__", key: str(missing)}
+
+        with caplog.at_level(logging.WARNING, logger=_TAP_LOGGER):
+            dirs = _discover_memory_dirs(**args)
+
+        assert dirs == []
+        assert key in caplog.text
+        assert str(missing) in caplog.text
+
+    @pytest.mark.parametrize("key", _KEYS)
+    def test_a_missing_directory_from_the_setting_warns(self, key: str, tmp_path: Path, caplog):
+        missing = tmp_path / "typo"
+        skips = {"claude_projects_dir": "__skip__", "openclaw_memory_dir": "__skip__",
+                 "shared_context_dir": "__skip__"}
+        skips.pop(key)
+
+        with caplog.at_level(logging.WARNING, logger=_TAP_LOGGER):
+            dirs = _discover_memory_dirs(
+                **skips, site_config=SiteConfig(initial_config={key: str(missing)})
+            )
+
+        assert dirs == []
+        assert key in caplog.text
+        assert str(missing) in caplog.text
+
+    def test_a_file_where_a_directory_is_expected_warns(self, tmp_path: Path, caplog):
+        not_a_dir = tmp_path / "notes.md"
+        not_a_dir.write_text("hello", encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING, logger=_TAP_LOGGER):
+            dirs = _discover_memory_dirs(
+                claude_projects_dir="__skip__",
+                openclaw_memory_dir="__skip__",
+                shared_context_dir=str(not_a_dir),
+            )
+
+        assert dirs == []
+        assert "shared_context_dir" in caplog.text
+
+    def test_absent_defaults_stay_quiet(self, caplog):
+        """Most installs have no OpenClaw and no Claude Code: that is not a fault."""
+        with caplog.at_level(logging.WARNING, logger=_TAP_LOGGER):
+            dirs = _discover_memory_dirs()
+
+        assert dirs == []
+        assert caplog.text == ""
+
+    def test_a_usable_configured_directory_does_not_warn(self, tmp_path: Path, caplog):
+        notes = tmp_path / "notes"
+        notes.mkdir()
+
+        with caplog.at_level(logging.WARNING, logger=_TAP_LOGGER):
+            _discover_memory_dirs(
+                claude_projects_dir="__skip__",
+                openclaw_memory_dir="__skip__",
+                shared_context_dir=str(notes),
+            )
+
+        assert caplog.text == ""
 
 
 class TestDiscoveryFailsLoud:
@@ -475,3 +733,27 @@ class TestMemoryFilesTapExtract:
         assert "claude-code/C--test/real.md" in source_ids
         assert not any("empty" in sid for sid in source_ids)
         assert not any("whitespace" in sid for sid in source_ids)
+
+    @pytest.mark.asyncio
+    async def test_extract_reads_settings_from_the_site_config_key(self, tmp_path: Path):
+        """The tap resolves a setting through ``config["_site_config"]``."""
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        (notes / "handoff.md").write_text("# Handoff\nship it\n", encoding="utf-8")
+
+        docs = []
+        async for doc in anonempty(
+            MemoryFilesTap().extract(
+                pool=None,
+                config={
+                    "claude_projects_dir": "__skip__",
+                    "openclaw_memory_dir": "__skip__",
+                    "_site_config": SiteConfig(initial_config={"shared_context_dir": str(notes)}),
+                },
+            ),
+            "tap.extract",
+        ):
+            docs.append(doc)
+
+        assert [d.source_id for d in docs] == ["shared-context/handoff.md"]
+        assert docs[0].writer == "shared-context"

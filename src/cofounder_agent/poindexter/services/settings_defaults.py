@@ -5327,16 +5327,35 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # late-by-a-whole-cycle is the surprising failure.
     'tap_interval_grace_seconds': '300',
 
-    # Where the Claude Code projects tree lives, for the taps that ingest it
-    # (services/taps/memory.py among them). Empty means `~/.claude/projects`
-    # under the running user's home, which is also what every reader falls
-    # back to, so this empty default changes nothing. Set it when the tree is
-    # mounted somewhere else (a container, another user's home). Unseeded until
-    # 2026-09-28, excused by an ALLOWLIST entry in
-    # scripts/ci/settings_phantom_read_lint.py that took the key for an
-    # operator-only override. The memory tap reads it too, through a
-    # non-literal key the lint cannot see.
+    # Where the memory tap (services/taps/memory.py) reads its three sources.
+    # Each is an app-level fallback for the same-named key in the tap's own
+    # `plugin.tap.memory` config, which wins when both are set; either surface
+    # accepts `__skip__` to turn that source off. The tap reads them through a
+    # non-literal key, which scripts/ci/settings_phantom_read_lint.py cannot
+    # see, so nothing but these seeds keeps them listed for an operator to
+    # find; tests/unit/services/test_settings_defaults.py derives the key set
+    # from the tap's own source so a fourth directory cannot ship unseeded.
+    #
+    # The Claude Code projects tree. Empty means `~/.claude/projects` under the
+    # running user's home, which is also what every reader falls back to, so
+    # the empty default changes nothing. Set it when the tree is mounted
+    # somewhere else (a container, another user's home). The Claude Code
+    # sessions tap reads it too, so one setting keeps the two taps on the same
+    # scopes. Unseeded until 2026-09-28, excused by an ALLOWLIST entry in the
+    # phantom-read lint that took it for an operator-only override.
     'claude_projects_dir': '',
+    # OpenClaw's workspace memory. Empty means `~/.openclaw/workspace/memory`,
+    # OpenClaw's own location, so an install that has OpenClaw is picked up
+    # and one that lacks it is left alone. OpenClaw is an optional integration
+    # (its SQLite tap is still a registered sample), not a dependency: nothing
+    # here needs it to be installed or running.
+    'openclaw_memory_dir': '',
+    # A directory of shared markdown notes to ingest as the `shared-context`
+    # origin. Empty means the source is OFF. It used to default to one
+    # operator's own checkout folder under the home directory, a path no other
+    # install has, so any machine that did have it ingested that folder into
+    # the RAG corpus unasked.
+    'shared_context_dir': '',
 
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',
@@ -7404,6 +7423,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tap_interval_enforcement_enabled': {'owner': 'runner', 'value_type': 'boolean'},
     'tap_interval_grace_seconds': {'owner': 'runner', 'value_type': 'integer'},
     'claude_projects_dir': {'owner': 'memory_tap', 'value_type': 'string'},
+    'openclaw_memory_dir': {'owner': 'memory_tap', 'value_type': 'string'},
+    'shared_context_dir': {'owner': 'memory_tap', 'value_type': 'string'},
     'tap_zero_yield_finding_enabled': {'owner': 'runner', 'value_type': 'boolean'},
     'tap_failure_finding_enabled': {'owner': 'tap_runner', 'value_type': 'boolean'},
     'tap_failure_alert_after_consecutive': {

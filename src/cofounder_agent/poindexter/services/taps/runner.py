@@ -11,7 +11,9 @@ The runner is responsible for:
 
 - Loading PluginConfig (enable/disable, per-Tap settings)
 - Honouring each Tap's ``interval_seconds`` against ``tap_run_state``
-- Calling ``tap.extract(pool, config)``
+- Calling ``tap.extract(pool, config)``, where ``config`` is the tap's
+  ``plugin.tap.<name>`` config plus the reserved ``_site_config`` key (the
+  pass's loaded ``SiteConfig``, the DI seam of glad-labs-stack#330)
 - For each yielded Document:
   - Checking content_hash dedup against the existing chunk-0 row
   - Chunking on text size (``chunk_text`` in ``_chunking.py``)
@@ -39,7 +41,10 @@ restarts and any second caller would share them.
 and stamps those reads into ``app_settings.last_read_at`` before it returns
 (poindexter#756). Nothing else in the sidecar's process flushes them: until
 2026-09-28 all six ``tap_*`` keys read as never-read on prod while the
-sidecar read them every hour.
+sidecar read them every hour. The taps are handed this same instance as
+``config["_site_config"]``, so the settings they read (``claude_projects_dir``,
+``openclaw_memory_dir``, ``shared_context_dir``) land in the same buffer and
+are stamped by the same flush.
 
 Three states a tap can be in, and they must stay distinguishable:
 
@@ -505,6 +510,7 @@ async def run_tap(
     dedup_batch_size: int = _DEFAULT_DEDUP_BATCH_SIZE,
     enforce_intervals: bool = False,
     interval_grace_seconds: int = _DEFAULT_INTERVAL_GRACE_S,
+    site_config: Any = None,
 ) -> TapStats:
     """Run one Tap end-to-end, returning a stats summary.
 
@@ -516,6 +522,14 @@ async def run_tap(
     ``app_settings.tap_dedup_batch_size``): each batch's existing chunk-0 hashes
     are pre-fetched in one query per source_table, so the dedup check costs one
     round-trip per source instead of one SELECT per document (#735).
+
+    ``site_config`` is the pass's loaded ``SiteConfig`` (:func:`run_all` builds
+    it for the ``tap_*`` tunables). It reaches the tap as
+    ``config["_site_config"]``, the reserved DI key every other plugin
+    dispatcher seeds (glad-labs-stack#330), so a tap can fall back to an
+    app-level setting when its own ``plugin.tap.<name>`` row names no value.
+    ``None`` (the default) seeds nothing, which is what a caller that has no
+    ``SiteConfig`` gets.
     """
     import time
 
@@ -576,10 +590,17 @@ async def run_tap(
             else:
                 stats.failed += 1
 
+    # What extract() sees: the row's config plus the reserved DI key. A COPY,
+    # so the SiteConfig never lands in ``cfg.config`` (``PluginConfig.save``
+    # json-dumps it) and a stored ``_site_config`` cannot shadow the real one.
+    tap_config = dict(cfg.config)
+    if site_config is not None:
+        tap_config["_site_config"] = site_config
+
     start = time.monotonic()
     try:
         batch: list[Any] = []
-        async for doc in tap.extract(pool, cfg.config):
+        async for doc in tap.extract(pool, tap_config):
             batch.append(doc)
             if len(batch) >= dedup_batch_size:
                 await _process_batch(batch)
@@ -692,6 +713,7 @@ async def run_all(
                     dedup_batch_size=dedup_batch_size,
                     enforce_intervals=enforce_intervals,
                     interval_grace_seconds=interval_grace_s,
+                    site_config=_sc,
                 ),
                 timeout=tap_timeout_s,
             )

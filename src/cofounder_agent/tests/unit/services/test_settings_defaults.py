@@ -140,6 +140,71 @@ def test_claude_projects_dir_seeded_empty_meaning_auto_detect():
     assert METADATA["claude_projects_dir"]["value_type"] == "string"
 
 
+def test_openclaw_memory_dir_seeded_empty_meaning_its_standard_location():
+    # Empty is the reader's own fallback (~/.openclaw/workspace/memory), so the
+    # seed changes no behaviour. The key name stays: it is a persisted setting
+    # and OpenClaw is still a supported optional integration.
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
+    assert DEFAULTS["openclaw_memory_dir"] == ""
+    assert METADATA["openclaw_memory_dir"] == {"owner": "memory_tap", "value_type": "string"}
+
+
+def test_shared_context_dir_seeded_empty_meaning_the_source_is_off():
+    # Empty must mean OFF. The reader used to default to one operator's own
+    # checkout folder, so a non-empty seed here would re-bake a single
+    # machine's directory layout into every install.
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
+    assert DEFAULTS["shared_context_dir"] == ""
+    assert METADATA["shared_context_dir"] == {"owner": "memory_tap", "value_type": "string"}
+
+
+def _memory_tap_setting_keys() -> set[str]:
+    """Every settings key the memory tap resolves, read from its own source.
+
+    The tap passes each key to ``_resolve`` as a string literal, but only as an
+    argument to a helper, so ``settings_phantom_read_lint`` (which looks for
+    ``site_config.get("<literal>")``) never sees them. Deriving the set here
+    means a directory added to the tap tomorrow is checked the day it lands,
+    instead of by whoever remembers to extend a hand-typed list.
+    """
+    import ast
+    import inspect
+
+    from poindexter.services.taps import memory
+
+    keys: set[str] = set()
+    for node in ast.walk(ast.parse(inspect.getsource(memory))):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_resolve"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+        ):
+            keys.add(node.args[1].value)
+    return keys
+
+
+def test_every_directory_key_the_memory_tap_resolves_is_seeded():
+    from poindexter.services.settings_categories import resolve_category
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
+
+    keys = _memory_tap_setting_keys()
+    # A scan that found nothing has not passed: floor it on the three known
+    # sources so a rename of ``_resolve`` cannot turn this into a no-op.
+    assert keys >= {"claude_projects_dir", "openclaw_memory_dir", "shared_context_dir"}, keys
+
+    for key in sorted(keys):
+        assert key in DEFAULTS, f"{key} is read by the memory tap but not seeded"
+        # Empty is the only safe seed: each reader has its own fallback, and a
+        # path here would be one machine's path on every fresh install.
+        assert DEFAULTS[key] == "", f"{key} must be seeded empty, not {DEFAULTS[key]!r}"
+        assert METADATA[key]["owner"] == "memory_tap"
+        assert METADATA[key]["value_type"] == "string"
+        assert resolve_category(key) == "integrations"
+
+
 def test_vram_budget_defaults_present():
     """The VRAM budget guard reads four DB-tunable knobs: total VRAM, the
     desktop reserve carved out so the WDDM compositor never starves, the KV

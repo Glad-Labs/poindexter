@@ -31,7 +31,26 @@ Config (``plugin.tap.memory`` in ``app_settings``):
   ``~/.claude/projects`` path. Useful in containers that bind-mount
   the projects tree to a fixed location.
 - ``config.openclaw_memory_dir`` — overrides the default
-  ``~/.openclaw/workspace/memory`` path.
+  ``~/.openclaw/workspace/memory`` path (OpenClaw's own workspace, so an
+  install that has OpenClaw is picked up and one that does not is left alone).
+- ``config.shared_context_dir`` — a directory of shared markdown notes,
+  ingested as the ``shared-context`` origin. **No default:** unset, that
+  source is off.
+- ``config.memory_scope_allowlist`` — comma-separated ``claude-code`` scopes
+  to ingest; empty means all of them.
+
+Each of the three directories also has an app-level setting of the same name
+(``claude_projects_dir``, ``openclaw_memory_dir``, ``shared_context_dir``),
+read through ``config["_site_config"]`` (the tap runner seeds it), so one
+setting can serve this tap and the Claude Code sessions tap. Precedence is the
+tap config, then the setting, then the default; either surface accepts
+``__skip__`` to turn that source off. A directory that was configured but is
+not a readable directory is logged at WARNING. A missing *default* is not: most
+installs have no OpenClaw and no Claude Code.
+
+The ``shared-context`` and ``openclaw`` origin labels are stored on every
+embedded row (``embeddings.writer``) and key the per-writer staleness
+thresholds, so they keep their names.
 """
 
 from __future__ import annotations
@@ -117,8 +136,13 @@ def _discover_memory_dirs(
 
     site_config keys ``claude_projects_dir`` / ``openclaw_memory_dir`` /
     ``shared_context_dir`` override the defaults; config args override
-    site_config. Passing the sentinel ``"__skip__"`` disables that source
-    entirely — useful for tests that shouldn't touch real home dirs.
+    site_config. Passing the sentinel ``"__skip__"`` (in either) disables that
+    source entirely. ``shared_context_dir`` has no default, so that source is
+    off until one is configured.
+
+    A configured directory that is not a readable directory is logged at
+    WARNING and skipped: a mistyped setting must not read as "no memory files
+    exist". An absent *default* is silent, since most installs lack it.
 
     ``scope_allowlist`` is a comma-separated list of ``claude-code`` project
     scopes (the scope directory names) to ingest; when set, every other
@@ -140,16 +164,36 @@ def _discover_memory_dirs(
     """
     _sc = site_config
 
-    def _resolve(cfg_value: Any, sc_key: str, default: Path) -> Path | None:
-        if cfg_value == _SENTINEL_SKIP:
+    def _resolve(cfg_value: Any, sc_key: str, default: Path | None) -> Path | None:
+        """One source's directory: tap config, then setting, then ``default``.
+
+        ``default=None`` means "no built-in location": unconfigured, the
+        source is off. A directory the operator configured but that is not
+        usable is warned about here so the three sources share one message.
+        """
+        # The setting is read even when the tap config wins. Precedence is
+        # unchanged, but an install whose tap row pins a source (``__skip__``)
+        # would otherwise never read that source's setting, and the zero-reader
+        # probe would list a live key as orphaned.
+        setting = _sc.get(sc_key, "") if _sc is not None else ""
+        configured = cfg_value or setting
+        if configured == _SENTINEL_SKIP:
             return None
-        if cfg_value:
-            return Path(cfg_value)
-        if _sc is not None:
-            sc_val = _sc.get(sc_key, "")
-            if sc_val:
-                return Path(sc_val)
-        return Path(default)
+        if not configured:
+            if default is not None and _is_readable_dir(default):
+                return default
+            return None
+        path = Path(configured)
+        if _is_readable_dir(path):
+            return path
+        logger.warning(
+            "MemoryFilesTap: %s=%s is not a readable directory — that source "
+            "ingests nothing. Fix the path, or set it to %r to turn the source off.",
+            sc_key,
+            path,
+            _SENTINEL_SKIP,
+        )
+        return None
 
     projects_root = _resolve(
         claude_projects_dir,
@@ -161,17 +205,15 @@ def _discover_memory_dirs(
         "openclaw_memory_dir",
         Path.home() / ".openclaw" / "workspace" / "memory",
     )
-    shared_root = _resolve(
-        shared_context_dir,
-        "shared_context_dir",
-        Path.home() / "glad-labs-website" / ".shared-context",
-    )
+    # No built-in location: the old default named one operator's checkout
+    # folder, which no other install has.
+    shared_root = _resolve(shared_context_dir, "shared_context_dir", None)
 
     dirs: list[tuple[Path, str, str]] = []
 
     allow = {s.strip().lower() for s in scope_allowlist.split(",") if s.strip()}
 
-    if projects_root and projects_root.is_dir():
+    if projects_root:
         scope_dirs = _iter_scope_dirs(projects_root)
         matched = [d for d in scope_dirs if not allow or d.name.lower() in allow]
         for scope_dir in matched:
@@ -196,10 +238,10 @@ def _discover_memory_dirs(
                 projects_root,
             )
 
-    if shared_root and shared_root.is_dir():
+    if shared_root:
         dirs.append((shared_root, "shared-context", ""))
 
-    if openclaw_root and openclaw_root.is_dir():
+    if openclaw_root:
         dirs.append((openclaw_root, "openclaw", ""))
 
     return dirs

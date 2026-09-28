@@ -51,6 +51,7 @@ _OVERRIDES: dict[str, str] = {
     "embed_model": "models",
     "embed_num_gpu": "models",
     "claude_projects_dir": "integrations",
+    "shared_context_dir": "integrations",
     "use_ollama": "models",
     "use_prefect_orchestration": "pipeline",
     "trace_recent_limit": "observability",

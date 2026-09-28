@@ -89,6 +89,11 @@ class Tap(Protocol):
             pool: asyncpg connection pool for Taps that need DB access
                 (e.g. reading ``brain_knowledge``).
             config: Per-install config loaded from
-                ``app_settings.plugin.tap.<name>``.
+                ``app_settings.plugin.tap.<name>``, plus the reserved
+                ``_site_config`` key: the runner's loaded ``SiteConfig``, for a
+                tap that falls back to an app-level setting when its own config
+                names no value (glad-labs-stack#330). Read it with
+                ``config.get("_site_config")``; it is absent when a caller runs
+                the tap without one.
         """
         ...
