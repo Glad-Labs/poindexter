@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-09-25.**  
+> **Auto-generated from live `app_settings` table on 2026-09-28.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 676 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -41,7 +41,7 @@ The worker re-reads on every poll; no restart needed.
 - [experiments](#experiments) (3 keys)
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
-- [general](#general) (307 keys)
+- [general](#general) (305 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (2 keys)
