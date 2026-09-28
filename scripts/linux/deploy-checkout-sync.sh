@@ -99,8 +99,10 @@
 #      (worker, pipeline-bot) so changed Python is re-imported. prefect-worker
 #      is deliberately NOT bounced (each flow run is a fresh subprocess that
 #      re-imports /app; a bounce would kill an in-flight post). Two guards:
-#      skip a container whose process already started after this pass's reset
-#      (it's necessarily on the new tree), and -- ONCE PER TREE -- skip the whole
+#      skip a container whose process already started after the clone reached
+#      this tree, since it is necessarily on it ("reached" = this pass's reset,
+#      or, when the clone was already current, HEAD's last move in git's
+#      reflog); and -- ONCE PER TREE -- skip the whole
 #      bounce when ~/.poindexter/deploy-last-bounced-sha already names HEAD and
 #      this pass did no reset. That file is written as soon as the restarts
 #      succeed, independently of the deploy marker below, so a pass that is
@@ -420,6 +422,30 @@ head_sha="$(git -C "$DEPLOY_DIR" rev-parse HEAD | tr -d '[:space:]')"
 short_head="${head_sha:0:9}"
 log "Deploy checkout now at $short_head ($SOURCE_REMOTE/$SYNC_BRANCH)."
 
+# Since when the clone has been on this tree. The bounce (step 7) leaves alone a
+# container that started after it: that container already loaded the tree.
+# After a reset it is the reset. Already current means something else moved
+# the clone here — a pass that reset and then failed or died, the brain's
+# migration-drift probe (reset --hard, then its own `docker restart
+# poindexter-worker`), a hand fast-forward — and git's reflog records when.
+# The entry counts only if it names HEAD and is no older than HEAD's own commit:
+# the clone cannot reach a commit before it exists, and a selector read as an
+# index (HEAD@{0}) would otherwise date the move to 1970 and skip every
+# container. Otherwise fall back to now, which is still before this pass has
+# touched a container.
+tree_since_epoch="$reset_at_epoch"
+if [ -z "$tree_since_epoch" ]; then
+  reflog_sha=""; reflog_sel=""; moved_at=""
+  read -r reflog_sha reflog_sel < <(git -C "$DEPLOY_DIR" reflog -1 --date=unix --format='%H %gd' HEAD 2>/dev/null)
+  [ "$reflog_sha" = "$head_sha" ] && [[ "$reflog_sel" =~ @\{([0-9]+)\}$ ]] && moved_at="${BASH_REMATCH[1]}"
+  committed_at="$(git -C "$DEPLOY_DIR" log -1 --format=%ct HEAD 2>/dev/null)"
+  if [[ "$moved_at" =~ ^[0-9]+$ && "$committed_at" =~ ^[0-9]+$ ]] && [ "$moved_at" -ge "$committed_at" ]; then
+    tree_since_epoch="$moved_at"
+  else
+    tree_since_epoch="$(date -u +%s)"
+  fi
+fi
+
 if [ "$NO_RESTART" = "1" ]; then
   log "--no-restart set; code synced on disk, containers left as-is."
   sync_host_cli_env
@@ -672,10 +698,18 @@ fi
 # Once per tree. A pass that did NOT reset (HEAD unchanged since the last pass)
 # and whose HEAD is already the tree the containers were bounced onto is a retry
 # of some other failed step; bouncing again would kill whatever the worker is
-# doing for nothing (stack#3661). The per-container StartedAt guard inside the
-# loop stays for the same-pass case (compose-apply recreated it moments ago).
-# No bounce record yet (first pass after this change, or the file was removed)
-# means "unknown": bounce once and record, exactly the pre-3661 behaviour.
+# doing for nothing (stack#3661). No bounce record yet (first pass after this
+# change, or the file was removed) means "unknown": bounce once and record,
+# exactly the pre-3661 behaviour.
+#
+# Per container, a process that started after the clone reached this tree
+# (tree_since_epoch, above) is already running it and is skipped: one that
+# compose-apply or the rebuilt-service recreate started moments ago, or one the
+# drift probe restarted after moving the clone. Until 2026-09-28 this check ran
+# only when the same pass had reset, so a pass that found the clone already
+# current `docker restart`ed a container it had itself just recreated, seconds
+# earlier. That hit worker on every such dependency deploy (it is in REBUILD_MAP
+# and in RESTART_CONTAINERS), and pipeline-bot too once stack#4144 mapped it.
 restart_failed=0; restarted=""; skipped=""; bounce_skipped=0
 last_bounced="$(cat "$BOUNCE_MARKER_FILE" 2>/dev/null | tr -d '[:space:]')"
 if [ -z "$reset_at_epoch" ] && [ -n "$last_bounced" ] && [ "$last_bounced" = "$head_sha" ]; then
@@ -687,10 +721,12 @@ for c in "${RESTART_CONTAINERS[@]}"; do
   if ! docker container inspect "$c" >/dev/null 2>&1; then
     log "  skip '$c' (not present)"; continue
   fi
-  if [ -n "$reset_at_epoch" ]; then
+  # Empty means no guard (bounce): in $((...)) it would read as epoch 0 and
+  # skip every container.
+  if [ -n "$tree_since_epoch" ]; then
     started_at="$(docker container inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null)"
     started_epoch="$(date -u -d "$started_at" +%s 2>/dev/null || echo "")"
-    if [ -n "$started_epoch" ] && [ "$started_epoch" -gt $((reset_at_epoch + SKEW_MARGIN_SEC)) ]; then
+    if [ -n "$started_epoch" ] && [ "$started_epoch" -gt $((tree_since_epoch + SKEW_MARGIN_SEC)) ]; then
       skipped="$skipped$c "; log "  skip '$c' (already restarted onto this tree at $started_at)"; continue
     fi
   fi

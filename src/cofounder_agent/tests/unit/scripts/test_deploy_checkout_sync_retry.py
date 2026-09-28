@@ -20,14 +20,22 @@ with recorder fakes on PATH (rig follows ``test_deploy_checkout_sync_apply.py``)
 - a new tree bounces again;
 - no bounce record (first pass after this change) means bounce-once-and-record;
 - the connector step keeps its own record (``deploy-last-connector-sha``) so a
-  retry does not ``uv sync`` + ``systemctl restart`` the mcp-http unit again.
+  retry does not ``uv sync`` + ``systemctl restart`` the mcp-http unit again;
+- a container that started after the clone reached HEAD is not restarted, on a
+  pass that found the clone already current too — "reached" is then HEAD's last
+  move in the reflog. Before 2026-09-28 that per-container check ran only after
+  a reset, so such a pass recreated worker + pipeline-bot for a dependency bump
+  and ``docker restart``-ed both seconds later.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -57,24 +65,38 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 # `build` exits FAKE_BUILD_EXIT so a test can make the image-rebuild step fail
-# (the real incident's failing step) and withhold the deploy marker.
+# (the real incident's failing step) and withhold the deploy marker. An
+# `up --force-recreate <svc>...` starts fresh containers, so it stamps each one's
+# StartedAt (container_name is poindexter-<service>) for the docker fake below.
 _FAKE_START_STACK = """#!/usr/bin/env bash
 echo "start-stack $*" >> "${EVENTS_FILE:-/dev/null}"
 case "${1:-}" in
   build) exit "${FAKE_BUILD_EXIT:-0}" ;;
   ps) exit 0 ;;
+  up)
+    if [[ " $* " == *" --force-recreate "* ]] && [ -n "${STARTED_DIR:-}" ]; then
+      for a in "${@:2}"; do
+        [[ "$a" == -* ]] && continue
+        date -u +%Y-%m-%dT%H:%M:%S.000000000Z > "$STARTED_DIR/poindexter-$a"
+      done
+    fi ;;
 esac
 exit 0
 """
 
-# Containers are present; `container inspect -f` reports a StartedAt far in the
-# past so the same-pass StartedAt guard never fires and only the cross-pass
-# record under test can suppress a restart.
+# Containers are present. `container inspect -f` reports the StartedAt stamped
+# for that container in STARTED_DIR (by a recreate, or by a test), else one far
+# in the past, so the per-container StartedAt check never fires and only the
+# cross-pass record under test can suppress a restart.
 _FAKE_DOCKER = """#!/usr/bin/env bash
 echo "docker $*" >> "$EVENTS_FILE"
 case "${1:-} ${2:-}" in
   "container inspect")
-    [[ "$*" == *"-f"* ]] && echo "${FAKE_STARTED_AT:-2020-01-01T00:00:00.000000000Z}"
+    if [[ "$*" == *"-f"* ]]; then
+      c="${@: -1}"
+      if [ -n "${STARTED_DIR:-}" ] && [ -f "$STARTED_DIR/$c" ]; then cat "$STARTED_DIR/$c"
+      else echo "${FAKE_STARTED_AT:-2020-01-01T00:00:00.000000000Z}"; fi
+    fi
     exit 0 ;;
 esac
 exit 0
@@ -128,10 +150,14 @@ def _build_rig(tmp_path: Path) -> dict:
     clone = tmp_path / "deploy-clone"
     subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True, timeout=60)
     (home / ".poindexter" / "deploy-last-restarted-sha").write_text(base_sha, encoding="utf-8")
-    return {"home": home, "bin": bin_dir, "events": tmp_path / "events", "seed": seed, "clone": clone, "base_sha": base_sha}
+    started = tmp_path / "started"
+    started.mkdir()
+    return {"home": home, "bin": bin_dir, "events": tmp_path / "events", "seed": seed, "clone": clone,
+            "base_sha": base_sha, "started": started}
 
 
-def _advance_origin(rig: dict, paths: dict[str, str] | None = None) -> str:
+def _advance_origin(rig: dict, paths: dict[str, str] | None = None, *,
+                    committed_seconds_ago: int | None = None) -> str:
     """Commit a change to origin/main so the clone is one commit behind."""
     seed = rig["seed"]
     n = len(_git(seed, "rev-list", "HEAD").splitlines())
@@ -140,7 +166,13 @@ def _advance_origin(rig: dict, paths: dict[str, str] | None = None) -> str:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
     _git(seed, "add", "-A")
-    _git(seed, "commit", "-q", "-m", f"C{n + 1}")
+    if committed_seconds_ago is None:
+        _git(seed, "commit", "-q", "-m", f"C{n + 1}")
+    else:
+        subprocess.run(
+            ["git", *_GIT_ID, "commit", "-q", "-m", f"C{n + 1}"], cwd=seed, check=True, timeout=60,
+            env={**os.environ, "GIT_COMMITTER_DATE": f"{int(time.time()) - committed_seconds_ago} +0000"},
+        )
     _git(seed, "push", "-q", "origin", "main")
     return _git(seed, "rev-parse", "HEAD")
 
@@ -153,11 +185,31 @@ def _run_sync(rig: dict, **env_extra: str) -> subprocess.CompletedProcess:
             "HOME": str(rig["home"]),
             "POINDEXTER_DEPLOY_ROOT": str(rig["clone"]),
             "EVENTS_FILE": str(rig["events"]),
+            "STARTED_DIR": str(rig["started"]),
             "SYNC_APPLY_RETRY_SETTLE_SEC": "0",
             **env_extra,
         },
         capture_output=True, text=True, timeout=180,
     )
+
+
+def _move_clone_to_origin(rig: dict, *, seconds_ago: int) -> None:
+    """Something other than this script moved the clone onto origin/main — the
+    drift probe, a pass that reset then died, a hand fast-forward — so the next
+    pass finds it current ("no reset needed"). GIT_COMMITTER_DATE dates the
+    reflog entry, which is how the script learns WHEN the clone moved."""
+    _git(rig["clone"], "fetch", "-q", "origin")
+    subprocess.run(
+        ["git", *_GIT_ID, "reset", "-q", "--hard", "origin/main"],
+        cwd=rig["clone"], check=True, timeout=60,
+        env={**os.environ, "GIT_COMMITTER_DATE": f"{int(time.time()) - seconds_ago} +0000"},
+    )
+
+
+def _set_started(rig: dict, container: str, *, seconds_ago: int) -> None:
+    """The container's current process started this long ago (docker's format)."""
+    at = datetime.fromtimestamp(time.time() - seconds_ago, tz=timezone.utc)
+    (rig["started"] / container).write_text(at.strftime("%Y-%m-%dT%H:%M:%S.000000000Z"), encoding="utf-8")
 
 
 def _events(rig: dict) -> list[str]:
@@ -261,6 +313,64 @@ class TestBounceOncePerTree:
         assert proc.returncode == 0
         assert _restarts(rig) == []
         assert "already-fresh" in _status(rig)["detail"]
+
+
+class TestAlreadyOnTheTreeWithoutAReset:
+    """The per-container StartedAt check on a pass that found the clone already
+    current. It used to run only when the same pass had reset."""
+
+    def test_rebuilt_worker_image_services_are_not_restarted_again(self, tmp_path):
+        """A poetry.lock bump rebuilds and recreates worker, prefect-worker and
+        pipeline-bot. worker and pipeline-bot are RESTART_CONTAINERS as well, so
+        a pass with no reset `docker restart`ed both seconds after recreating them."""
+        rig = _build_rig(tmp_path)
+        _advance_origin(rig, {"src/cofounder_agent/poetry.lock": "lock-v2\n"}, committed_seconds_ago=900)
+        _move_clone_to_origin(rig, seconds_ago=600)
+        proc = _run_sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert "no reset needed" in proc.stdout, "the shape under test is a pass that does not reset"
+        recreates = [e.split() for e in _events(rig) if "--force-recreate" in e]
+        assert recreates and {"worker", "prefect-worker", "pipeline-bot"} <= set(recreates[0]), _events(rig)
+        assert _restarts(rig) == [], f"recreated by this pass, then restarted again: {_restarts(rig)}"
+        detail = _status(rig)["detail"]
+        assert "already-fresh" in detail and "poindexter-worker" in detail and "poindexter-pipeline-bot" in detail
+
+    def test_a_restart_after_the_clone_moved_is_not_repeated(self, tmp_path):
+        """The drift probe resets the clone, then restarts the worker itself. The
+        next pass still owes pipeline-bot its bounce (it started before the move),
+        and owes the worker nothing (it started after)."""
+        rig = _build_rig(tmp_path)
+        _advance_origin(rig, committed_seconds_ago=900)
+        _move_clone_to_origin(rig, seconds_ago=600)
+        _set_started(rig, "poindexter-worker", seconds_ago=300)
+        proc = _run_sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert _restarts(rig) == ["docker restart poindexter-pipeline-bot"]
+
+    @pytest.mark.parametrize("reflog", ["missing", "names another commit", "predates HEAD's commit"])
+    def test_an_unusable_reflog_bounces_everything_that_predates_the_pass(self, tmp_path, reflog):
+        """With no trustworthy time for the move, "since" falls back to the start
+        of this pass, so the worker that started five minutes ago is bounced. An
+        unknown time must never skip a restart: an entry that does not name HEAD,
+        or dates the move before HEAD even existed (what a selector misread as
+        an index looks like), could be far older than the tree the containers
+        are meant to be on."""
+        rig = _build_rig(tmp_path)
+        _advance_origin(rig, committed_seconds_ago=900)
+        _move_clone_to_origin(rig, seconds_ago=600)
+        log = rig["clone"] / ".git" / "logs" / "HEAD"
+        an_hour_ago = int(time.time()) - 3600
+        if reflog == "missing":
+            # All of logs/: with only logs/HEAD gone, git answers from the
+            # branch's reflog, which dates the same move correctly.
+            shutil.rmtree(log.parent)
+        else:
+            named = rig["base_sha"] if reflog == "names another commit" else _git(rig["clone"], "rev-parse", "HEAD")
+            log.write_text(f"{'0' * 40} {named} t <t@example.com> {an_hour_ago} +0000\tclone\n", encoding="utf-8")
+        _set_started(rig, "poindexter-worker", seconds_ago=300)
+        proc = _run_sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert sorted(_restarts(rig)) == ["docker restart poindexter-pipeline-bot", "docker restart poindexter-worker"]
 
 
 class TestConnectorOncePerTree:

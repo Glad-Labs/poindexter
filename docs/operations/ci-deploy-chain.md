@@ -648,9 +648,19 @@ profile comes back.
 
 **Overlapping restarts coalesce instead of stacking.** The sync skips its
 bounce for any container whose current process already started _after_ the
-pass's `git reset` (bind-mounted code ⇒ it is already running the new tree), so
-a manual post-merge `docker restart` and the next scheduled cycle no longer
-double-bounce the worker. The worker service also sets `stop_grace_period: 75s`:
+deploy clone reached the tree being deployed (bind-mounted code ⇒ it is already
+running that tree). "Reached" is the pass's own `git reset`. If the clone was
+already current because something else moved it (the brain's migration-drift
+probe, a pass that reset and then failed, a hand fast-forward), it is the time
+git's reflog gives for HEAD's last move. So a container the same pass has just
+recreated (compose-apply, or the rebuilt-service recreate) is not restarted
+again seconds later. And a restart that came after the clone moved, such as the
+drift probe's own `docker restart poindexter-worker`, is not repeated by the
+next cycle. Until 2026-09-28 the check ran only after the pass's own reset, so
+a pass that found the clone current restarted worker, and since
+glad-labs-stack#4144 pipeline-bot, right after recreating them on a dependency
+bump. The worker
+service also sets `stop_grace_period: 75s`:
 uvicorn only honors a SIGTERM received mid-startup once lifespan startup
 (~40-55 s) completes, and Docker's default 10 s stop window used to SIGKILL the
 half-started process whenever restarts collided (observed 5x during the
