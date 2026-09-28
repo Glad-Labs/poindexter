@@ -378,6 +378,42 @@ pins`, `Lint shell + PowerShell scripts`, `poetry check --lock
   of reporting ok. The upgrade to this behaviour read ok from 23:24 to 23:56
   UTC on 2026-09-25 while `playwright-e2e` was stale.
 
+  **A watch list it cannot use pages too** (2026-09-28). Only an empty
+  value (`''` or `[]`, the default) means "not configured". Anything else
+  that cannot be used as written reports `ok=False` and pages once per
+  episode, under its own `failure_episode:_config` key:
+  - **Invalid JSON, or JSON that is not a list**, leaves nothing watched. The
+    page quotes the parser's error with the text around it, and names the
+    usual mistakes: a single object not wrapped in `[ ]`, or a list stored
+    as a JSON string (encoded twice).
+  - **An entry it has to ignore**: a repo that is not `owner/name`, a
+    workflow that is not a bare `.yml`/`.yaml` file name, a `max_age_hours`
+    that is not a finite number above 0, or a repeat of an earlier entry.
+    The page names each ignored entry by position and says why (five at
+    most; the brain log has them all), and the valid entries are still
+    checked. `NaN` and `Infinity` used to be accepted as windows, and a
+    workflow with either could never go stale.
+
+  Every entry is either watched or named in a page. Fix the list with
+  `poindexter settings set scheduled_workflows '<json>'`, which replaces
+  the whole value. The page repeats when the problem changes, when it
+  reached no channel, and on the
+  `scheduled_workflow_watch_failure_repage_hours` reminder. A change is an
+  edit that moves the JSON error, changes an ignored entry, or leaves no
+  valid entry at all. An edit that leaves the problem as it was is not
+  news. One info note follows when the list is usable again, or emptied. The
+  list is parsed on every brain cycle, silently. Its WARNING is logged once
+  per real pass, and a throttled cycle reports that pass's verdict. Each
+  failing pass writes a `probe.scheduled_workflow_watch_config_failed` audit
+  row, and the fix writes `probe.scheduled_workflow_watch_config_recovered`.
+  A failed read of the setting reports `ok=False`. It used to report "no
+  workflows configured", which could also sweep every open repo episode
+  closed. Until
+  2026-09-28 every case above read as "no workflows configured", ok, with a
+  WARNING per dropped entry on every 5-minute cycle and no page. The
+  watchdog watched nothing, or less than the operator believed, and
+  reported healthy: the `gh_token` incident's failure class, one layer up.
+
   **When the watchdog itself cannot read the runs**, it pages once per
   failure episode per repo (`poindexter/brain/failure_episode.py`, shared
   with the branch-drift canary and the PR staleness probe), and the pass
@@ -414,7 +450,9 @@ pins`, `Lint shell + PowerShell scripts`, `poetry check --lock
   again. A closing note is sent if the episode paged, and
   `probe.scheduled_workflow_watch_unwatched` is written either way. If the
   list does not parse, nothing is closed, so a JSON typo cannot end every
-  episode at once. Until
+  episode at once. The sweep only closes repo episodes. It never touches
+  the watch list's own `_config` episode, which closes when the list is
+  fixed. Until
   2026-09-25 each of these failures only left the target "not assessed"
   and the pass reported ok. From 2026-09-23 23:13 UTC the replaced
   `gh_token` could not see the repo, all nine workflows 404'd on every

@@ -4908,6 +4908,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # because GitHub's scheduler is best-effort and routinely runs late:
     #   [{"repo": "<owner>/<repo>", "workflow": "benchmarks.yml",
     #     "max_age_hours": 30}]
+    # Only '' or '[]' means "not configured". A value the watchdog cannot use
+    # as written (invalid JSON, not a list, or any entry it has to ignore)
+    # pages once per episode and reports ok=False; until 2026-09-28 it read
+    # as "no workflows configured", ok.
     # See docs/operations/ci-deploy-chain.md for the full runbook.
     'scheduled_workflow_watch_enabled': 'true',
     'scheduled_workflows': '[]',

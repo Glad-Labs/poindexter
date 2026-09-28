@@ -378,32 +378,163 @@ class TestEveryPassIsAudible:
 
 @pytest.mark.unit
 class TestConfigValidation:
-    @pytest.mark.parametrize("entry", [
-        {"repo": "no-slash", "workflow": "a.yml"},
-        {"repo": "a/b", "workflow": "../../etc/passwd"},
-        {"repo": "a/b", "workflow": "benchmarks"},          # missing extension
-        {"repo": "a/b", "workflow": "a.yml", "max_age_hours": 0},
-        {"repo": "a/b", "workflow": "a.yml", "max_age_hours": "soon"},
-        "not-an-object",
+    """Every entry is either watched or ignored with a reason, never dropped
+    unreported. The pages built from these reasons are pinned in
+    test_scheduled_workflow_watch_failure_episodes.py."""
+
+    @pytest.mark.parametrize("entry, field, reason", [
+        ({"repo": "no-slash", "workflow": "a.yml"}, "repo",
+         'entry 1: repo must be <owner>/<name>, got "no-slash"'),
+        ({"workflow": "a.yml"}, "repo", "entry 1 has no repo"),
+        ({"repo": None, "workflow": "a.yml"}, "repo",
+         "entry 1: repo must be <owner>/<name>, got null"),
+        ({"repo": "a/b", "workflow": "../../etc/passwd"}, "workflow",
+         'entry 1 (a/b): workflow must be a bare .yml or .yaml file name, '
+         'got "../../etc/passwd"'),
+        ({"repo": "a/b", "workflow": "benchmarks"}, "workflow",   # missing extension
+         'entry 1 (a/b): workflow must be a bare .yml or .yaml file name, '
+         'got "benchmarks"'),
+        ({"repo": "a/b"}, "workflow", "entry 1 (a/b) has no workflow"),
+        ({"repo": "a/b", "workflow": "a.yml", "max_age_hours": 0}, "max_age_hours",
+         "entry 1 (a/b, a.yml): max_age_hours must be a number of hours above 0, got 0"),
+        ({"repo": "a/b", "workflow": "a.yml", "max_age_hours": -5}, "max_age_hours",
+         "entry 1 (a/b, a.yml): max_age_hours must be a number of hours above 0, got -5"),
+        ({"repo": "a/b", "workflow": "a.yml", "max_age_hours": "soon"}, "max_age_hours",
+         'entry 1 (a/b, a.yml): max_age_hours must be a number of hours above 0, got "soon"'),
+        ({"repo": "a/b", "workflow": "a.yml", "max_age_hours": None}, "max_age_hours",
+         "entry 1 (a/b, a.yml): max_age_hours must be a number of hours above 0, got null"),
+        # float(True) is 1.0: a JSON true is not a one-hour window.
+        ({"repo": "a/b", "workflow": "a.yml", "max_age_hours": True}, "max_age_hours",
+         "entry 1 (a/b, a.yml): max_age_hours must be a number of hours above 0, got true"),
+        ("not-an-object", "entry", 'entry 1 is not an object: "not-an-object"'),
+        (["a/b", "a.yml"], "entry", 'entry 1 is not an object: ["a/b", "a.yml"]'),
     ])
-    def test_malformed_entries_are_dropped(self, entry):
-        assert swf._parse_watches(json.dumps([entry])) == []
+    def test_a_malformed_entry_is_ignored_with_its_reason(self, entry, field, reason):
+        watch_list = swf._parse_watch_list(json.dumps([entry]))
 
-    def test_valid_entry_survives(self):
-        parsed = swf._parse_watches(_WATCH_JSON)
-        assert len(parsed) == 1
-        assert parsed[0]["repo"] == "acme/widgets"
+        assert watch_list.watches == []
+        assert [(ig.index, ig.field, ig.reason) for ig in watch_list.ignored] == [
+            (1, field, reason),
+        ]
+        assert watch_list.signature.startswith("config:all-entries-invalid:1:")
+        assert not watch_list.empty
 
-    def test_a_duplicate_entry_is_dropped(self):
-        """Watched twice, it would be checked twice and counted twice."""
-        parsed = swf._parse_watches(json.dumps(_WATCH + [
+    @pytest.mark.parametrize("raw_age", ["NaN", "Infinity", "-Infinity", '"inf"', '"nan"'])
+    def test_a_window_that_is_not_finite_is_ignored(self, raw_age):
+        """An infinite or NaN window never compares below a workflow's age, so
+        the workflow could never go stale. Both used to be accepted."""
+        raw = f'[{{"repo": "a/b", "workflow": "a.yml", "max_age_hours": {raw_age}}}]'
+
+        watch_list = swf._parse_watch_list(raw)
+
+        assert watch_list.watches == []
+        assert [ig.field for ig in watch_list.ignored] == ["max_age_hours"]
+
+    def test_valid_entries_survive_in_order(self):
+        watch_list = swf._parse_watch_list(json.dumps(_WATCH + [
+            {"repo": "acme/other", "workflow": "nightly.yaml", "max_age_hours": "12"},
+            {"repo": " acme/third ", "workflow": " weekly.yml "},
+        ]))
+
+        assert watch_list.watches == [
+            {"repo": "acme/widgets", "workflow": "benchmarks.yml", "max_age_hours": 30.0},
+            {"repo": "acme/other", "workflow": "nightly.yaml", "max_age_hours": 12.0},
+            {"repo": "acme/third", "workflow": "weekly.yml", "max_age_hours": 30.0},
+        ]
+        assert watch_list.ignored == ()
+        assert watch_list.signature is None
+        assert not watch_list.empty
+
+    def test_a_duplicate_with_another_window_is_ignored_and_says_which_applies(self):
+        """Watched twice, it would be checked twice and counted twice. And the
+        second window would be silently overruled, so it is reported."""
+        watch_list = swf._parse_watch_list(json.dumps(_WATCH + [
             {"repo": "acme/widgets", "workflow": "benchmarks.yml", "max_age_hours": 12},
         ]))
-        assert [(w["repo"], w["workflow"], w["max_age_hours"]) for w in parsed] == [
+
+        assert [(w["repo"], w["workflow"], w["max_age_hours"]) for w in watch_list.watches] == [
             ("acme/widgets", "benchmarks.yml", 30.0),
         ]
+        assert [ig.reason for ig in watch_list.ignored] == [
+            "entry 2 (acme/widgets, benchmarks.yml): repeats entry 1 with "
+            "max_age_hours 12, not 30; only entry 1's window is used",
+        ]
+        assert watch_list.signature.startswith("config:invalid-entries:1:")
 
-    def test_non_json_is_dropped_not_raised(self):
-        assert swf._parse_watches("{not json") == []
-        assert swf._parse_watches('{"a": 1}') == []
-        assert swf._parse_watches("") == []
+    def test_an_exact_duplicate_is_ignored_as_a_likely_copy_paste(self):
+        watch_list = swf._parse_watch_list(json.dumps(_WATCH + _WATCH))
+
+        assert len(watch_list.watches) == 1
+        assert [ig.reason for ig in watch_list.ignored] == [
+            "entry 2 (acme/widgets, benchmarks.yml): repeats entry 1 and adds "
+            "nothing; if it was meant for another workflow, fix its name",
+        ]
+
+    @pytest.mark.parametrize("raw", ["", "   ", "\n", "[]", " [ ]\n"])
+    def test_only_an_empty_value_means_not_configured(self, raw):
+        watch_list = swf._parse_watch_list(raw)
+
+        assert watch_list.empty
+        assert watch_list.signature is None
+
+    def test_invalid_json_is_reported_with_where_it_broke(self):
+        raw = '[{"repo": "a/b", "workflow": "a.yml"} {"repo": "a/c"}]'
+
+        watch_list = swf._parse_watch_list(raw)
+
+        assert watch_list.watches == []
+        assert watch_list.signature == "config:invalid-json:char-38"
+        assert watch_list.summary == (
+            "app_settings.scheduled_workflows is not valid JSON "
+            "(Expecting ',' delimiter at line 1, column 39)"
+        )
+        assert '"a.yml"} {"repo": "a/c"}]' in watch_list.problem
+        assert not watch_list.empty
+
+    @pytest.mark.parametrize("raw, kind", [
+        ('{"repo": "a/b", "workflow": "a.yml"}', "object"),
+        ('"a/b:a.yml"', "string"),
+        ("30", "number"),
+        ("true", "boolean"),
+        ("null", "null"),
+    ])
+    def test_json_that_is_not_a_list_is_reported_by_its_type(self, raw, kind):
+        watch_list = swf._parse_watch_list(raw)
+
+        assert watch_list.watches == []
+        assert watch_list.signature == f"config:not-a-list:{kind}"
+        assert watch_list.summary == (
+            f"app_settings.scheduled_workflows holds a JSON {kind}, not a list"
+        )
+
+    @pytest.mark.parametrize("raw, signature", [
+        # json.loads refuses an integer past Python's 4,300-digit limit with a
+        # plain ValueError, not a JSONDecodeError.
+        ("[" + "1" * 5000 + "]", "config:invalid-json:ValueError"),
+        ("[" * 100_000 + "]" * 100_000, "config:invalid-json:RecursionError"),
+    ], ids=["huge-integer", "deep-nesting"])
+    def test_json_that_python_refuses_is_reported_not_raised(self, raw, signature):
+        watch_list = swf._parse_watch_list(raw)
+
+        assert watch_list.signature == signature
+        assert watch_list.watches == []
+        assert watch_list.summary.startswith(
+            "app_settings.scheduled_workflows is not valid JSON ("
+        )
+
+    def test_a_window_too_large_for_a_float_is_ignored_not_raised(self):
+        """float() of a 400-digit integer raises OverflowError."""
+        raw = '[{"repo": "a/b", "workflow": "a.yml", "max_age_hours": 1' + "0" * 400 + "}]"
+
+        watch_list = swf._parse_watch_list(raw)
+
+        assert [ig.field for ig in watch_list.ignored] == ["max_age_hours"]
+
+    def test_the_parse_is_silent_because_it_runs_every_cycle(self, caplog):
+        """Logging here spoke on every 5-minute brain cycle. The pass logs
+        once, after the throttle."""
+        with caplog.at_level("DEBUG", logger=swf.logger.name):
+            for raw in ("{not json", '{"a": 1}', json.dumps([{"repo": "x"}, "y"])):
+                swf._parse_watch_list(raw)
+
+        assert caplog.records == []

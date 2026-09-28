@@ -38,11 +38,38 @@ Config is ``app_settings.scheduled_workflows``:
 
 ``max_age_hours`` should be roughly 1.5x the cron period: GitHub's scheduler
 is best-effort and routinely runs late under load, so a window equal to the
-period produces false alarms.
+period produces false alarms. Left out, it is 30.
 
 A workflow with no scheduled runs at all is not assessed and raises nothing.
 Mirrors ``data_freshness_probe``'s zero-rows rule: an operator who never
 enabled a cron gets no alarms about it.
+
+When the watch list itself cannot be used
+-----------------------------------------
+Only an empty value, ``''`` or ``[]`` (the OSS default), means "not
+configured": ok, no page. A value that is set but cannot be used as written
+pages once per episode (``failure_episode:_config``, the same mechanism as a
+repo, below) and reports ok=False:
+
+* invalid JSON, or JSON that is not a list: nothing is watched;
+* a list with entries the watchdog must ignore: a repo that is not
+  ``owner/name``, a workflow that is not a bare ``.yml``/``.yaml`` file name,
+  a ``max_age_hours`` that is not a finite number above 0, or a repeat of an
+  earlier entry. The page names each one and why. The valid entries are still
+  checked. Every entry is either watched or named in a page, never dropped
+  unreported.
+
+The page repeats when the problem changes (an edit that moves a JSON error,
+or changes any ignored entry), when it reached no channel, and on the
+reminder. One recovery note follows once the list is usable again, or
+emptied. The parse runs every brain cycle but stays silent; the WARNING is
+logged once per real pass, and a throttled cycle reports that verdict.
+
+Until 2026-09-28 all of these read as "no workflows configured", ok, with a
+WARNING per dropped entry on every 5-minute cycle and no page. The watchdog
+watched nothing, or less than the operator believed, and reported healthy:
+the gh_token incident's failure class, one layer up. A failed read of the
+setting read the same way; it now reports ok=False.
 
 When the watchdog itself cannot read the runs
 ---------------------------------------------
@@ -64,9 +91,10 @@ repo in ``brain_knowledge``, so a brain restart does not page again.
 
 One recovery note follows on the first clean pass after a page. A repo taken
 out of ``scheduled_workflows`` is never checked again, so its open episode is
-closed when the list stops naming it, with one closing note if it paged. A
-list that fails to parse closes nothing, so a JSON typo does not end every
-episode at once.
+closed when the list stops naming it validly, with one closing note if it
+paged. A value that is not a list closes nothing, so a JSON typo does not end
+every episode at once. That sweep only closes repo-shaped episodes, never the
+watch list's own.
 
 A 404 means two different things on this endpoint. GitHub answers 404, not
 403, for a private repo the token cannot see, and it also answers 404 for a
@@ -99,8 +127,10 @@ Standalone — stdlib + asyncpg + httpx (asyncpg pool injected by the daemon).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import math
 import os
 import re
 from collections.abc import Callable
@@ -126,6 +156,7 @@ INTERVAL_SETTING_KEY = "scheduled_workflow_watch_interval_minutes"
 FAILURE_REPAGE_HOURS_KEY = "scheduled_workflow_watch_failure_repage_hours"
 TRANSIENT_FAILURE_PAGE_HOURS_KEY = "scheduled_workflow_watch_transient_failure_page_hours"
 TOKEN_SETTING_KEY = "gh_token"
+_WATCHES_REF = f"app_settings.{WATCHES_SETTING_KEY}"
 
 DEFAULT_INTERVAL_MINUTES = 60.0
 # Hours between reminders while the watchdog keeps failing (0 = never remind).
@@ -184,58 +215,261 @@ async def _read_token(pool: Any) -> str:
     return os.getenv("GITHUB_TOKEN", "").strip()
 
 
-def _parse_watches(raw: str) -> list[dict[str, Any]]:
+# ---------------------------------------------------------------------------
+# The watch list: what scheduled_workflows holds, and what can be used of it.
+# ---------------------------------------------------------------------------
+
+# The window an entry gets when it leaves max_age_hours out.
+_DEFAULT_MAX_AGE_HOURS = 30.0
+# How the operator replaces the watch list; quoted by every config page.
+_CONFIG_FIX = f"`poindexter settings set {WATCHES_SETTING_KEY} '<json>'`"
+_ENTRY_SHAPE = (
+    '{"repo": "<owner>/<name>", "workflow": "<file>.yml", "max_age_hours": <hours>}'
+)
+# What each kind of ignored entry is called in the one-line pass detail.
+_FIELD_LABEL = {
+    "entry": "not an object",
+    "repo": "repo",
+    "workflow": "workflow",
+    "max_age_hours": "max_age_hours",
+    "duplicate": "duplicate",
+}
+
+
+@dataclass(frozen=True)
+class _Ignored:
+    """An entry of ``scheduled_workflows`` the watchdog cannot use as written."""
+
+    index: int  # its position in the list, counting from 1
+    field: str  # what is wrong with it: a key of _FIELD_LABEL
+    reason: str  # operator-facing: which entry, and why
+    entry: Any  # the entry as written, for the episode signature
+
+
+@dataclass(frozen=True)
+class _WatchList:
+    """What ``app_settings.scheduled_workflows`` holds, and what the watchdog can use.
+
+    ``signature`` is None when the value is usable as written: empty (the OSS
+    default, so nothing is configured) or a list whose every entry is valid.
+    Otherwise it is the config failure episode's identity.
+    """
+
+    watches: list[dict[str, Any]]  # the valid entries, in list order
+    ignored: tuple[_Ignored, ...] = ()  # the entries it cannot use
+    total: int = 0  # entries in the list; 0 when the value is not a list
+    signature: str | None = None
+    summary: str = ""  # the problem in one line, for the pass detail
+    problem: str = ""  # a value that is not a list: what the page says is wrong
+    hint: str = ""  # ...and how that usually happens
+
+    @property
+    def empty(self) -> bool:
+        """'' or [], the OSS default: not configured, so nothing to report."""
+        return self.signature is None and not self.watches
+
+    @property
+    def detail(self) -> str:
+        """The problem in full, every ignored entry included, for logs and audit_log."""
+        if not self.ignored:
+            return self.summary
+        return (
+            f"{len(self.ignored)} of {self.total} entries in {_WATCHES_REF} are "
+            f"ignored: " + "; ".join(ig.reason for ig in self.ignored)
+        )
+
+
+def _show(value: Any, limit: int = 60) -> str:
+    """A value as the operator wrote it: JSON-quoted, cut to ``limit`` characters."""
+    text = json.dumps(value, ensure_ascii=False)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _excerpt(raw: str, pos: int, width: int = 24) -> str:
+    """The text around a JSON syntax error, on one line, for the page."""
+    start, end = max(0, pos - width), min(len(raw), pos + width)
+    text = " ".join(raw[start:end].split()).replace("`", "'")
+    return f"{'…' if start else ''}{text}{'…' if end < len(raw) else ''}"
+
+
+def _json_type(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int | float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return "object" if isinstance(value, dict) else type(value).__name__
+
+
+def _not_a_list_hint(value: Any) -> str:
+    """The usual way a watch list ends up as something other than a list."""
+    if isinstance(value, dict):
+        return "It must be a list even for one workflow: wrap the object in [ ]."
+    if isinstance(value, str):
+        try:
+            inner = json.loads(value)
+        except (ValueError, RecursionError):
+            return ""
+        if isinstance(inner, list):
+            return (
+                "The string itself holds a JSON list, so the value was encoded "
+                "twice: store the list, not a string that contains it."
+            )
+    return ""
+
+
+def _hours(value: Any) -> float | None:
+    """A usable ``max_age_hours``: a finite number above 0. A numeric string counts.
+
+    Infinity and NaN were accepted until 2026-09-28. Neither ever compares
+    below a workflow's age, so the workflow could never go stale: watched on
+    paper, unwatched in fact.
+    """
+    if isinstance(value, bool):
+        return None  # float(True) is 1.0, and a JSON true is not one hour
+    try:
+        hours = float(value)
+    except (TypeError, ValueError, OverflowError):  # OverflowError: a 400-digit integer
+        return None
+    return hours if math.isfinite(hours) and hours > 0 else None
+
+
+def _check_entry(
+    index: int, entry: Any, first: dict[tuple[str, str], tuple[int, float]],
+) -> dict[str, Any] | _Ignored:
+    """Return ``entry`` as a watch, or say why it cannot be one."""
+    if not isinstance(entry, dict):
+        return _Ignored(index, "entry", f"entry {index} is not an object: {_show(entry)}", entry)
+    repo = str(entry.get("repo", "")).strip()
+    if not _REPO_RE.match(repo):
+        why = (
+            f"entry {index} has no repo" if "repo" not in entry
+            else f"entry {index}: repo must be <owner>/<name>, got {_show(entry['repo'])}"
+        )
+        return _Ignored(index, "repo", why, entry)
+    workflow = str(entry.get("workflow", "")).strip()
+    if not _WORKFLOW_RE.match(workflow):
+        why = (
+            f"entry {index} ({repo}) has no workflow" if "workflow" not in entry
+            else (
+                f"entry {index} ({repo}): workflow must be a bare .yml or .yaml "
+                f"file name, got {_show(entry['workflow'])}"
+            )
+        )
+        return _Ignored(index, "workflow", why, entry)
+    raw_age = entry.get("max_age_hours", _DEFAULT_MAX_AGE_HOURS)
+    max_age = _hours(raw_age)
+    if max_age is None:
+        return _Ignored(index, "max_age_hours", (
+            f"entry {index} ({repo}, {workflow}): max_age_hours must be a number "
+            f"of hours above 0, got {_show(raw_age)}"
+        ), entry)
+    seen = first.get((repo, workflow))
+    if seen is not None:
+        # Watched twice, the workflow would be checked and counted twice.
+        was, was_age = seen
+        if max_age == was_age:
+            why = (
+                f"repeats entry {was} and adds nothing; if it was meant for "
+                f"another workflow, fix its name"
+            )
+        else:
+            why = (
+                f"repeats entry {was} with max_age_hours {max_age:g}, not "
+                f"{was_age:g}; only entry {was}'s window is used"
+            )
+        return _Ignored(index, "duplicate", f"entry {index} ({repo}, {workflow}): {why}", entry)
+    first[(repo, workflow)] = (index, max_age)
+    return {"repo": repo, "workflow": workflow, "max_age_hours": max_age}
+
+
+def _digest(ignored: list[_Ignored]) -> str:
+    """Eight hex characters that change whenever an ignored entry does."""
+    blob = json.dumps([[ig.index, ig.field, ig.entry] for ig in ignored], sort_keys=True)
+    return hashlib.sha256(blob.encode()).hexdigest()[:8]
+
+
+def _parse_watch_list(raw: str) -> _WatchList:
+    """Read ``scheduled_workflows``. Pure: logs nothing, never raises.
+
+    It runs on every brain cycle, ahead of the throttle, so it stays quiet.
+    What it finds is logged and paged by :func:`_check_watch_list`, once per
+    real pass. Until 2026-09-28 this logged a WARNING per dropped entry on
+    every 5-minute cycle and paged nothing, and a value that did not parse,
+    or held no valid entry, read as "no workflows configured", ok.
+
+    Every entry of a list ends up either watched or ignored with a reason,
+    never dropped unreported.
+    """
     if not raw.strip():
-        return []
+        return _WatchList(watches=[])
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        logger.warning("[sched_wf] %s is not valid JSON: %s", WATCHES_SETTING_KEY, exc)
-        return []
+        where = f"line {exc.lineno}, column {exc.colno}"
+        return _WatchList(
+            watches=[],
+            # The position is in the identity so that an edit that moves the
+            # error, fixing one mistake to reveal the next, is news.
+            signature=f"config:invalid-json:char-{exc.pos}",
+            summary=f"{_WATCHES_REF} is not valid JSON ({exc.msg} at {where})",
+            problem=(
+                f"{_WATCHES_REF} is not valid JSON: {exc.msg} at {where}, near "
+                f"`{_excerpt(raw, exc.pos)}`."
+            ),
+        )
+    except (ValueError, RecursionError) as exc:
+        # Valid syntax json.loads still refuses: an integer past Python's
+        # 4,300-digit limit, or nesting deeper than the recursion limit.
+        why = _clip(str(exc) or type(exc).__name__, 160)
+        return _WatchList(
+            watches=[],
+            signature=f"config:invalid-json:{type(exc).__name__}",
+            summary=f"{_WATCHES_REF} is not valid JSON ({why})",
+            problem=f"{_WATCHES_REF} cannot be read as JSON: {why}.",
+        )
     if not isinstance(parsed, list):
-        logger.warning("[sched_wf] %s must be a JSON list", WATCHES_SETTING_KEY)
-        return []
-    return _validate(parsed)
-
-
-def _validate(parsed: list[Any]) -> list[dict[str, Any]]:
-    """Drop malformed entries loudly rather than letting them 404 silently."""
-    out: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for entry in parsed:
-        if not isinstance(entry, dict):
-            logger.warning("[sched_wf] skipping non-object entry: %r", entry)
-            continue
-        repo = str(entry.get("repo", "")).strip()
-        workflow = str(entry.get("workflow", "")).strip()
-        if not _REPO_RE.match(repo):
-            logger.warning("[sched_wf] skipping entry with bad repo: %r", repo)
-            continue
-        if not _WORKFLOW_RE.match(workflow):
-            logger.warning(
-                "[sched_wf] skipping %s: workflow must be a bare .yml filename, "
-                "got %r", repo, workflow,
-            )
-            continue
-        try:
-            max_age = float(entry.get("max_age_hours", 30))
-        except (TypeError, ValueError):
-            logger.warning("[sched_wf] skipping %s/%s: bad max_age_hours", repo, workflow)
-            continue
-        if max_age <= 0:
-            logger.warning(
-                "[sched_wf] skipping %s/%s: max_age_hours must be > 0", repo, workflow
-            )
-            continue
-        if (repo, workflow) in seen:
-            # A duplicate would be checked twice and counted twice.
-            logger.warning(
-                "[sched_wf] skipping duplicate entry for %s/%s", repo, workflow
-            )
-            continue
-        seen.add((repo, workflow))
-        out.append({"repo": repo, "workflow": workflow, "max_age_hours": max_age})
-    return out
+        kind = _json_type(parsed)
+        return _WatchList(
+            watches=[],
+            signature=f"config:not-a-list:{kind}",
+            summary=f"{_WATCHES_REF} holds a JSON {kind}, not a list",
+            problem=f"{_WATCHES_REF} holds a JSON {kind}, not a list.",
+            hint=_not_a_list_hint(parsed),
+        )
+    watches: list[dict[str, Any]] = []
+    ignored: list[_Ignored] = []
+    first: dict[tuple[str, str], tuple[int, float]] = {}
+    for index, entry in enumerate(parsed, start=1):
+        checked = _check_entry(index, entry, first)
+        if isinstance(checked, _Ignored):
+            ignored.append(checked)
+        else:
+            watches.append(checked)
+    total = len(parsed)
+    if not ignored:
+        return _WatchList(watches=watches, total=total)
+    which = "; ".join(f"entry {ig.index}: {_FIELD_LABEL[ig.field]}" for ig in ignored)
+    if watches:
+        # Watching some of the list and watching none of it are different
+        # failures, so a list that slides from one to the other is news.
+        signature = f"config:invalid-entries:{len(ignored)}:{_digest(ignored)}"
+        summary = f"{len(ignored)} of {total} entries in {_WATCHES_REF} ignored ({which})"
+    else:
+        signature = f"config:all-entries-invalid:{total}:{_digest(ignored)}"
+        whole = "the only entry" if total == 1 else f"all {total} entries"
+        summary = f"{whole} in {_WATCHES_REF} ignored ({which})"
+    return _WatchList(
+        watches=watches, ignored=tuple(ignored), total=total,
+        signature=signature, summary=summary,
+    )
 
 
 def _target_name(watch: dict[str, Any]) -> str:
@@ -514,7 +748,6 @@ FAILURE_STATE_ENTITY = "scheduled_workflow_watch"
 _SOURCE = "brain.scheduled_workflow_watch"
 # What the watchdog needs the gh_token to grant, quoted by every credential page.
 _NEEDS = "Actions (read)"
-_WATCHES_REF = f"app_settings.{WATCHES_SETTING_KEY}"
 
 
 @dataclass(frozen=True)
@@ -534,6 +767,16 @@ def _failure_key(repo: str) -> failure_episode.EpisodeKey:
         attribute=f"failure_episode:{repo}",
         label="sched_wf",
     )
+
+
+# The episode for a watch list the watchdog cannot use. "_config" is not
+# repo-shaped, so the sweep that closes unwatched repos' episodes
+# (_open_episode_repos) never touches it.
+_CONFIG_KEY = failure_episode.EpisodeKey(
+    entity=FAILURE_STATE_ENTITY,
+    attribute="failure_episode:_config",
+    label="sched_wf",
+)
 
 
 def _plural(n: int, noun: str) -> str:
@@ -881,20 +1124,6 @@ async def _close_repo_episode(
         )
 
 
-def _watch_list_parses(raw: str) -> bool:
-    """True when ``scheduled_workflows`` is empty or a JSON list.
-
-    Guards :func:`_close_unwatched_episodes`: a typo that breaks the JSON
-    empties the watch list too, and must not close every open episode.
-    """
-    if not raw.strip():
-        return True
-    try:
-        return isinstance(json.loads(raw), list)
-    except json.JSONDecodeError:
-        return False
-
-
 async def _open_episode_repos(pool: Any) -> list[str]:
     """The repos that have an open failure episode in brain_knowledge."""
     prefix = "failure_episode:"
@@ -911,7 +1140,9 @@ async def _open_episode_repos(pool: Any) -> list[str]:
         )
         return []
     repos = [str(r["attribute"])[len(prefix):] for r in rows]
-    # Only repo-shaped keys: anything else in this entity is not ours to close.
+    # Only repo-shaped keys. Anything else in this entity is not ours to close:
+    # the watch list's own episode (failure_episode:_config) closes when the
+    # list is usable again, with its own note, never because no repo names it.
     return [repo for repo in repos if _REPO_RE.match(repo)]
 
 
@@ -969,6 +1200,218 @@ async def _close_unwatched_episodes(
 
 
 # ---------------------------------------------------------------------------
+# When the watch list itself cannot be used: page once per episode, like a
+# repo, under failure_episode:_config.
+# ---------------------------------------------------------------------------
+
+# Discord cuts a message at 1,900 characters (operator_notifier._try_discord)
+# and the cut falls on the end of the page: the episode lines. So a page names
+# at most this many ignored entries, each line clipped; the log has them all.
+# 180 keeps the offending value on the line for a repo name of ordinary length
+# (the value comes last, so a tighter clip cuts exactly the part that matters).
+_MAX_ENTRIES_SHOWN = 5
+_ENTRY_LINE_LIMIT = 180
+
+
+def _entries(n: int) -> str:
+    return "1 entry" if n == 1 else f"{n} entries"
+
+
+def _build_config_page(
+    watch_list: _WatchList,
+    *,
+    reason: str,
+    episode: dict[str, Any],
+    config: dict[str, Any],
+) -> tuple[str, str]:
+    """Render ``(title, body)`` for a watch list the watchdog cannot use."""
+    still = " still" if reason == failure_episode.PAGE_REMINDER else ""
+    ignored = watch_list.ignored
+    if watch_list.watches:
+        title = f"Scheduled-CI watchdog is{still} ignoring {_entries(len(ignored))} in {_WATCHES_REF}"
+        head = (
+            f"The scheduled-CI watchdog is ignoring {len(ignored)} of the "
+            f"{watch_list.total} entries in {_WATCHES_REF} and watches the other "
+            f"{len(watch_list.watches)}:"
+        )
+        consequence = "Until then, nothing checks what the ignored entries ask for."
+    else:
+        title = f"Scheduled-CI watchdog{still} cannot use {_WATCHES_REF}"
+        if ignored:
+            whole = (
+                "the only entry" if watch_list.total == 1
+                else f"any of the {watch_list.total} entries"
+            )
+            head = (
+                f"The scheduled-CI watchdog cannot use {whole} in {_WATCHES_REF}, "
+                f"so it checks no scheduled workflow:"
+            )
+        else:
+            head = (
+                f"{watch_list.problem} So the scheduled-CI watchdog has no watch "
+                f"list and checks no scheduled workflow."
+            )
+        consequence = (
+            "Until then, nothing notices a scheduled workflow that stops firing "
+            "or never passes."
+        )
+    lines = [head]
+    shown = ignored[:_MAX_ENTRIES_SHOWN]
+    lines += [f"- {_clip(ig.reason, _ENTRY_LINE_LIMIT)}" for ig in shown]
+    if len(ignored) > len(shown):
+        lines.append(f"- and {len(ignored) - len(shown)} more, listed in the brain log")
+    if watch_list.hint:
+        lines.append(watch_list.hint)
+    if ignored:
+        lines.append(
+            f"Fix or remove {'it' if len(ignored) == 1 else 'them'} with "
+            f"{_CONFIG_FIX}, which replaces the whole list."
+        )
+    else:
+        lines.append(f"Fix it with {_CONFIG_FIX}: a JSON list of {_ENTRY_SHAPE} objects.")
+    lines += ["", consequence]
+    lines += failure_episode.episode_lines(
+        episode,
+        reason=reason,
+        retry_minutes=_retry_minutes(config),
+        repage_hours=int(config["failure_repage_hours"]),
+        repage_setting_key=FAILURE_REPAGE_HOURS_KEY,
+    )
+    return title, "\n".join(lines)
+
+
+async def _check_watch_list(
+    pool: Any,
+    watch_list: _WatchList,
+    *,
+    now_utc: datetime,
+    config: dict[str, Any],
+    notify_fn: Callable[..., Any],
+) -> dict[str, Any] | None:
+    """Record a watch list the watchdog cannot use; page when the episode says so.
+
+    Runs on real passes only, so its WARNING is logged once a pass rather than
+    on every 5-minute brain cycle. A usable list closes the episode instead.
+    Returns the failure's summary, or None when the list is usable.
+
+    Every such failure is LOUD: only the operator can fix the list. There is
+    no credential behind it, so ``credential_key`` is None and a rewrite of
+    the list is news only when it changes the signature, which covers each
+    ignored entry as written.
+    """
+    if watch_list.signature is None:
+        await _close_config_episode(pool, watch_list, notify_fn=notify_fn)
+        return None
+    detail = watch_list.detail
+    logger.warning("[sched_wf] cannot use the watch list as written: %s", detail)
+    outcome = await failure_episode.record_failure(
+        pool,
+        _CONFIG_KEY,
+        signature=watch_list.signature,
+        detail=detail,
+        now_utc=now_utc,
+        notify_fn=notify_fn,
+        render=lambda episode, reason: _build_config_page(
+            watch_list, reason=reason, episode=episode, config=config,
+        ),
+        source=_SOURCE,
+        dedup_prefix="scheduled_workflow_watch_config",
+        loud=True,
+        repage_hours=int(config["failure_repage_hours"]),
+        credential_key=None,
+    )
+    episode = outcome.episode
+    summary = {
+        "signature": watch_list.signature,
+        "entries": watch_list.total,
+        "watched": len(watch_list.watches),
+        "ignored": [ig.reason for ig in watch_list.ignored],
+        "failed_attempts": episode.get("attempts"),
+        "failing_since": episode.get("since"),
+        "page_reason": outcome.reason,
+        "paged": outcome.paged,
+    }
+    await _emit_audit_event(
+        pool,
+        "probe.scheduled_workflow_watch_config_failed",
+        detail,
+        extra=summary,
+        severity="warning",
+    )
+    return {**summary, "detail": watch_list.summary}
+
+
+async def _close_config_episode(
+    pool: Any, watch_list: _WatchList, *, notify_fn: Callable[..., Any],
+) -> None:
+    """End the config episode once the list is usable again, or empty.
+
+    One closing note, and only when the episode paged, the rule a repo's
+    recovery follows.
+    """
+    episode = await failure_episode.close_episode(pool, _CONFIG_KEY)
+    if not episode:
+        return
+    since = failure_episode.recovery_summary(episode)
+    if watch_list.watches:
+        title = f"Scheduled-CI watchdog can use {_WATCHES_REF} again"
+        note = (
+            f"The scheduled-CI watchdog can use {_WATCHES_REF} again {since}. It "
+            f"watches {_plural(len(watch_list.watches), 'workflow')} from this "
+            f"pass on."
+        )
+    else:
+        title = "Scheduled-CI watchdog watch list is empty"
+        note = (
+            f"{_WATCHES_REF} is empty now, so the scheduled-CI watchdog watches "
+            f"nothing. Its config failure is closed {since}."
+        )
+    logger.info("[sched_wf] %s", note)
+    await _emit_audit_event(
+        pool,
+        "probe.scheduled_workflow_watch_config_recovered",
+        note,
+        extra={
+            "signature": episode.get("signature") or "unknown",
+            "attempts": episode.get("attempts"),
+            "failing_since": episode.get("since"),
+            "was_paged": bool(episode.get("paged_at")),
+            "watched": len(watch_list.watches),
+        },
+    )
+    if episode.get("paged_at"):
+        failure_episode.send_page(
+            notify_fn,
+            label="sched_wf",
+            title=title,
+            detail=note,
+            source=_SOURCE,
+            severity="info",
+            dedup_key="scheduled_workflow_watch_config_recovered",
+            if_undelivered="the operator still believes the watch list is broken",
+        )
+
+
+async def _read_watch_list_setting(pool: Any) -> str | None:
+    """The raw ``scheduled_workflows`` value ('' when unset), or None when the read failed.
+
+    A failed read is not an empty list. Read as one, it reported "no
+    workflows configured", ok, and could sweep every open repo episode
+    closed (if the sweep's own query got through).
+    """
+    try:
+        row = await pool.fetchrow(
+            "SELECT value FROM app_settings WHERE key = $1", WATCHES_SETTING_KEY
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[sched_wf] could not read %s: %s", _WATCHES_REF, exc)
+        return None
+    if not row or row["value"] is None:
+        return ""
+    return str(row["value"])
+
+
+# ---------------------------------------------------------------------------
 # Top-level entry point.
 # ---------------------------------------------------------------------------
 
@@ -998,6 +1441,8 @@ async def _finish_pass(
     results: dict[str, dict[str, Any]],
     failures: dict[str, dict[str, Any]],
     now_utc: datetime,
+    *,
+    config_failure: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     await _stamp_run(pool, now_utc)
 
@@ -1028,10 +1473,13 @@ async def _finish_pass(
         detail += "; watchdog failing for " + ", ".join(
             f"{repo} ({failure['signature']})" for repo, failure in failures.items()
         )
+    if config_failure:
+        detail += f"; {config_failure['detail']}"
 
-    # A pass that checked nothing, or could not check every workflow, is not
-    # ok: that is how this watchdog read as healthy while blind.
-    ok = not bad and n_assessed > 0 and not failures
+    # A pass that checked nothing, could not check every workflow, or had to
+    # ignore part of the watch list is not ok: that is how this watchdog read
+    # as healthy while blind.
+    ok = not bad and n_assessed > 0 and not failures and not config_failure
     await _record_last_pass(pool, ok=ok, detail=detail, now_utc=now_utc)
 
     # Log EVERY completed pass, healthy or not. A probe that only speaks when
@@ -1043,7 +1491,12 @@ async def _finish_pass(
         "[sched_wf] pass complete — %s (%d assessed, %d not assessed)",
         detail, n_assessed, n_unassessed,
     )
-    return {"ok": ok, "detail": detail, "workflows": results, "failures": failures}
+    summary: dict[str, Any] = {
+        "ok": ok, "detail": detail, "workflows": results, "failures": failures,
+    }
+    if config_failure:
+        summary["config"] = config_failure
+    return summary
 
 
 async def _fail_every_repo(
@@ -1055,6 +1508,7 @@ async def _fail_every_repo(
     now_utc: datetime,
     config: dict[str, Any],
     notify_fn: Callable[..., Any],
+    config_failure: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """A pass that could not start (no token, no httpx): every repo fails loud."""
     results: dict[str, dict[str, Any]] = {}
@@ -1072,7 +1526,9 @@ async def _fail_every_repo(
             pool, repo=repo, failure=failure, n_targets=len(repo_watches),
             now_utc=now_utc, config=config, notify_fn=notify_fn,
         )
-    return await _finish_pass(pool, results, failures, now_utc)
+    return await _finish_pass(
+        pool, results, failures, now_utc, config_failure=config_failure,
+    )
 
 
 async def run_scheduled_workflow_watch(
@@ -1094,13 +1550,16 @@ async def run_scheduled_workflow_watch(
     if enabled in ("false", "0", "no", "off"):
         return {"ok": True, "detail": "disabled", "workflows": {}}
 
-    raw_watches = await _read_setting(pool, WATCHES_SETTING_KEY, "")
-    watches = _parse_watches(raw_watches)
-    if not watches:
-        if _watch_list_parses(raw_watches):
-            # The operator emptied the list, or left no valid entry: close
-            # any episode still open for a repo that used to be watched.
-            await _close_unwatched_episodes(pool, watched=set(), notify_fn=notify_fn)
+    raw_watches = await _read_watch_list_setting(pool)
+    if raw_watches is None:
+        # Not "no workflows configured": nobody knows what is configured.
+        return {"ok": False, "detail": f"could not read {_WATCHES_REF}", "workflows": {}}
+    watch_list = _parse_watch_list(raw_watches)
+    if watch_list.empty:
+        # '' or [], the OSS default. The operator watches nothing, on purpose:
+        # close whatever was still open, the list's own episode included.
+        await _close_config_episode(pool, watch_list, notify_fn=notify_fn)
+        await _close_unwatched_episodes(pool, watched=set(), notify_fn=notify_fn)
         return {"ok": True, "detail": "no workflows configured", "workflows": {}}
 
     try:
@@ -1125,6 +1584,20 @@ async def run_scheduled_workflow_watch(
             pool, TRANSIENT_FAILURE_PAGE_HOURS_KEY, DEFAULT_TRANSIENT_FAILURE_PAGE_HOURS,
         ),
     }
+    # Set but not usable as written: say so once per episode, then check
+    # whatever part of the list is valid.
+    config_failure = await _check_watch_list(
+        pool, watch_list, now_utc=now_utc, config=config, notify_fn=notify_fn,
+    )
+    watches = watch_list.watches
+    if not watches:
+        # Invalid JSON, not a list, or no entry it can use: nothing to check.
+        if watch_list.total:
+            # A list, so every repo it no longer validly names is unwatched.
+            # A value that is not a list at all closes nothing, so a JSON typo
+            # cannot end every open episode at once.
+            await _close_unwatched_episodes(pool, watched=set(), notify_fn=notify_fn)
+        return await _finish_pass(pool, {}, {}, now_utc, config_failure=config_failure)
     by_repo = _group_by_repo(watches)
     await _close_unwatched_episodes(pool, watched=set(by_repo), notify_fn=notify_fn)
 
@@ -1136,11 +1609,13 @@ async def run_scheduled_workflow_watch(
         return await _fail_every_repo(
             pool, by_repo, signature="no-token", detail_for=_no_token_detail,
             now_utc=now_utc, config=config, notify_fn=notify_fn,
+            config_failure=config_failure,
         )
     if http_client_factory is None and httpx is None:
         return await _fail_every_repo(
             pool, by_repo, signature="no-httpx", detail_for=_no_httpx_detail,
             now_utc=now_utc, config=config, notify_fn=notify_fn,
+            config_failure=config_failure,
         )
 
     factory = http_client_factory or _default_client_factory(token)
@@ -1170,4 +1645,6 @@ async def run_scheduled_workflow_watch(
             pool, repo=repo, failure=failure, n_targets=len(repo_watches),
             now_utc=now_utc, config=config, notify_fn=notify_fn,
         )
-    return await _finish_pass(pool, results, failures, now_utc)
+    return await _finish_pass(
+        pool, results, failures, now_utc, config_failure=config_failure,
+    )

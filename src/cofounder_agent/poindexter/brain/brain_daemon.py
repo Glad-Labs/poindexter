@@ -3200,9 +3200,10 @@ async def run_cycle(pool):
     # `scheduled_workflow_stale` finding when a watched workflow's last
     # SUCCESSFUL scheduled run ages out, or when it has never succeeded at
     # all. When the watchdog itself cannot read the runs (a gh_token that
-    # cannot see the repo, a watched workflow that does not exist) it pages
-    # once per failure episode and reports ok=False. Self-throttling (default
-    # hourly) — see brain/scheduled_workflow_watch.py.
+    # cannot see the repo, a watched workflow that does not exist), or cannot
+    # use app_settings.scheduled_workflows as written, it pages once per
+    # failure episode and reports ok=False. Self-throttling (default hourly)
+    # — see brain/scheduled_workflow_watch.py.
     if _HAS_SCHEDULED_WORKFLOW_WATCH:
         try:
             sw_summary = await run_scheduled_workflow_watch(pool)

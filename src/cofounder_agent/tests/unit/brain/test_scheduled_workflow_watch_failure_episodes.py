@@ -71,6 +71,10 @@ _NO_ACTIONS = json.dumps(
 )
 _RATE_LIMITED = json.dumps({"message": "API rate limit exceeded for user ID 1."})
 _UNICORN = "<!DOCTYPE html>\n<!--\n\nHello future GitHubber! I bet you're here to remove"
+_WATCHES_REF = f"app_settings.{swf.WATCHES_SETTING_KEY}"
+# The likeliest typo: the comma between the first two entries is gone.
+_BROKEN_JSON = json.dumps(_WATCHES).replace("}, {", "} {", 1)
+_BROKEN_AT = "config:invalid-json:char-83"
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +170,10 @@ class _FakeDB:
     def episode(self, repo: str = REPO) -> dict[str, Any] | None:
         raw = self.knowledge.get((swf.FAILURE_STATE_ENTITY, f"failure_episode:{repo}"))
         return json.loads(raw) if raw else None
+
+    def config_episode(self) -> dict[str, Any] | None:
+        """The watch list's own episode: the one this module keeps under _config."""
+        return self.episode("_config")
 
     def target_state(self, workflow: str, repo: str = REPO) -> str | None:
         return self.knowledge.get(
@@ -1148,7 +1156,8 @@ class TestUnwatchedRepos:
     @pytest.mark.parametrize("raw", ["[{not json", '{"repo": "Test-Org/test-repo"}'])
     @pytest.mark.asyncio
     async def test_a_watch_list_that_fails_to_parse_closes_nothing(self, raw):
-        """A typo empties the watch list too; it must not end every episode."""
+        """A typo empties the watch list too; it must not end every episode.
+        The typo itself pages, under the list's own episode."""
         db, gh, clock, notify = _setup()
         gh.answer = _Resp(404, text=_NOT_FOUND)
         await _passes(1, db, gh, clock, notify)
@@ -1160,7 +1169,12 @@ class TestUnwatchedRepos:
 
         _set_watches(db, _WATCHES)  # the typo is fixed; the token still fails
         await _passes(1, db, gh, clock, notify)
-        assert len(notify.calls) == 1  # the same episode, already reported
+        assert notify.titles() == [
+            f"Scheduled-CI watchdog cannot check {REPO}",
+            f"Scheduled-CI watchdog cannot use {_WATCHES_REF}",
+            f"Scheduled-CI watchdog can use {_WATCHES_REF} again",
+        ]  # the repo episode, already reported, stays quiet
+        assert db.episode()["attempts"] == 2
 
     @pytest.mark.asyncio
     async def test_an_unpaged_episode_closes_without_a_note(self):
@@ -1180,13 +1194,23 @@ class TestUnwatchedRepos:
     @pytest.mark.asyncio
     async def test_a_non_repo_key_under_the_entity_is_left_alone(self):
         db, gh, clock, notify = _setup()
-        other = (swf.FAILURE_STATE_ENTITY, "failure_episode:_config")
+        other = (swf.FAILURE_STATE_ENTITY, "failure_episode:_someone_else")
         db.knowledge[other] = json.dumps({"since": _T0.isoformat(), "attempts": 1})
 
         await _passes(1, db, gh, clock, notify)
 
         assert other in db.knowledge
         assert db.knowledge_deletes == 0
+
+    @pytest.mark.asyncio
+    async def test_the_sweep_lists_repos_only(self):
+        """The watch list's own episode lives under the same entity, and the
+        sweep must never read it as a repo nobody watches any more."""
+        db = _FakeDB()
+        for attribute in ("failure_episode:_config", f"failure_episode:{REPO}"):
+            db.knowledge[(swf.FAILURE_STATE_ENTITY, attribute)] = "{}"
+
+        assert await swf._open_episode_repos(db) == [REPO]
 
     @pytest.mark.asyncio
     async def test_an_episode_listing_that_fails_is_logged_and_the_pass_runs(
@@ -1207,6 +1231,545 @@ class TestUnwatchedRepos:
             "could not list open failure episodes: connection reset" in r.getMessage()
             for r in caplog.records
         )
+
+
+# ---------------------------------------------------------------------------
+# A watch list the watchdog cannot use pages, once per episode
+# ---------------------------------------------------------------------------
+
+_NAN = float("nan")
+# Two entries a hand edit gets wrong: a path for the workflow, and a window
+# that never expires. Appended after the nine valid ones, so entries 10, 11.
+_TWO_BAD = [
+    {"repo": REPO, "workflow": ".github/workflows/nightly.yml", "max_age_hours": 30},
+    {"repo": REPO, "workflow": "weekly.yml", "max_age_hours": _NAN},
+]
+_TWO_BAD_LINES = [
+    f'- entry 10 ({REPO}): workflow must be a bare .yml or .yaml file name, '
+    f'got ".github/workflows/nightly.yml"',
+    f"- entry 11 ({REPO}, weekly.yml): max_age_hours must be a number of hours "
+    f"above 0, got NaN",
+]
+_THREE_BAD = [
+    {"repo": "Test Org/test-repo", "workflow": "benchmarks.yml", "max_age_hours": 30},
+    {"repo": REPO, "workflow": "benchmarks", "max_age_hours": 30},
+    {"repo": REPO, "workflow": "security.yml", "max_age_hours": 0},
+]
+
+
+def _set_raw(db: _FakeDB, raw: str) -> None:
+    db.settings[swf.WATCHES_SETTING_KEY] = raw
+
+
+def _config_warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [
+        r.getMessage() for r in caplog.records
+        if r.levelname == "WARNING" and "cannot use the watch list" in r.getMessage()
+    ]
+
+
+@pytest.mark.unit
+class TestUnusableWatchList:
+    @pytest.mark.asyncio
+    async def test_invalid_json_pages_once_in_a_day(self, caplog):
+        """Until 2026-09-28: "no workflows configured", ok, on every cycle,
+        with no page. Now one page, ok=False on all 288 cycles, and one
+        WARNING per real pass instead of one per cycle."""
+        db, gh, clock, notify = _setup()
+        _set_raw(db, _BROKEN_JSON)
+
+        with caplog.at_level("WARNING", logger=swf.logger.name):
+            results = await _cycles(288, db, gh, clock, notify)
+
+        assert len(notify.calls) == 1, notify.titles()
+        page = notify.calls[0]
+        assert page["title"] == f"Scheduled-CI watchdog cannot use {_WATCHES_REF}"
+        assert page["severity"] == "warning"
+        assert page["source"] == "brain.scheduled_workflow_watch"
+        assert page["dedup_key"] == f"scheduled_workflow_watch_config:{_BROKEN_AT}:0"
+        detail = page["detail"]
+        assert detail.startswith(
+            f"{_WATCHES_REF} is not valid JSON: Expecting ',' delimiter at line 1, "
+            f'column 84, near `…", "max_age_hours": 30}} {{"repo": "Test-Org/test-…`. '
+            f"So the scheduled-CI watchdog has no watch list and checks no "
+            f"scheduled workflow.\n"
+        )
+        assert (
+            f"Fix it with `poindexter settings set {swf.WATCHES_SETTING_KEY} '<json>'`: "
+            f"a JSON list of" in detail
+        )
+        assert (
+            "Until then, nothing notices a scheduled workflow that stops firing "
+            "or never passes." in detail
+        )
+        assert "Next reminder in 24h if it persists" in detail
+
+        assert gh.requests == []  # nothing to check
+        assert [r["ok"] for r in results] == [False] * 288
+        throttled = [r for r in results if r["detail"].startswith("throttled")]
+        assert len(throttled) == 264
+        assert throttled[0]["detail"] == (
+            f"throttled (60m); last pass: no scheduled workflow(s) assessed; "
+            f"{_WATCHES_REF} is not valid JSON (Expecting ',' delimiter at line 1, "
+            f"column 84)"
+        )
+        failed = db.audit_of("probe.scheduled_workflow_watch_config_failed")
+        assert len(failed) == 24
+        assert [f["page_reason"] for f in failed] == [fe.PAGE_NEW] + [None] * 23
+        assert failed[0]["paged"] is True
+        assert failed[0]["signature"] == _BROKEN_AT
+        episode = db.config_episode()
+        assert (episode["attempts"], episode["pages"]) == (24, 1)
+        assert db.findings() == []
+        # Once per real pass, not once per five-minute brain cycle.
+        assert len(_config_warnings(caplog)) == 24
+
+    @pytest.mark.asyncio
+    async def test_the_real_notifier_sends_one_discord_message(self, monkeypatch):
+        db, gh, clock, _ = _setup()
+        sent = _real_notifier(monkeypatch, clock)
+        _set_raw(db, _BROKEN_JSON)
+
+        await _cycles(288, db, gh, clock, on.notify_operator)
+
+        assert len(sent) == 1
+        assert f"{_WATCHES_REF} is not valid JSON: Expecting ',' delimiter" in sent[0]
+        assert "***" not in sent[0]  # survived the notifier's credential redaction
+        assert len(sent[0]) <= 1900  # and Discord did not have to cut it
+
+    @pytest.mark.parametrize("raw, kind, hint", [
+        (json.dumps(_WATCHES[0]), "object",
+         "It must be a list even for one workflow: wrap the object in [ ]."),
+        (json.dumps(json.dumps(_WATCHES)), "string",
+         "The string itself holds a JSON list, so the value was encoded twice: "
+         "store the list, not a string that contains it."),
+        ("30", "number", None),
+    ], ids=["object", "encoded-twice", "number"])
+    @pytest.mark.asyncio
+    async def test_json_that_is_not_a_list_pages(self, raw, kind, hint):
+        db, gh, clock, notify = _setup()
+        _set_raw(db, raw)
+
+        results = await _passes(3, db, gh, clock, notify)
+
+        assert len(notify.calls) == 1
+        detail = notify.calls[0]["detail"]
+        assert notify.calls[0]["title"] == f"Scheduled-CI watchdog cannot use {_WATCHES_REF}"
+        assert detail.startswith(
+            f"{_WATCHES_REF} holds a JSON {kind}, not a list. So the scheduled-CI "
+            f"watchdog has no watch list and checks no scheduled workflow."
+        )
+        if hint:
+            assert f"\n{hint}\n" in detail
+        assert all(r["ok"] is False for r in results)
+        assert results[0]["config"]["signature"] == f"config:not-a-list:{kind}"
+        assert gh.requests == []
+
+    @pytest.mark.asyncio
+    async def test_a_list_with_no_usable_entry_names_each_one(self):
+        db, gh, clock, notify = _setup(watches=_THREE_BAD)
+
+        results = await _passes(3, db, gh, clock, notify)
+
+        assert len(notify.calls) == 1
+        page = notify.calls[0]
+        assert page["title"] == f"Scheduled-CI watchdog cannot use {_WATCHES_REF}"
+        assert page["detail"].startswith("\n".join([
+            f"The scheduled-CI watchdog cannot use any of the 3 entries in "
+            f"{_WATCHES_REF}, so it checks no scheduled workflow:",
+            '- entry 1: repo must be <owner>/<name>, got "Test Org/test-repo"',
+            f"- entry 2 ({REPO}): workflow must be a bare .yml or .yaml file "
+            f'name, got "benchmarks"',
+            f"- entry 3 ({REPO}, security.yml): max_age_hours must be a number "
+            f"of hours above 0, got 0",
+            f"Fix or remove them with `poindexter settings set "
+            f"{swf.WATCHES_SETTING_KEY} '<json>'`, which replaces the whole list.",
+            "",
+            "Until then, nothing notices a scheduled workflow that stops firing "
+            "or never passes.",
+        ]))
+        assert results[0]["ok"] is False
+        assert results[0]["detail"] == (
+            f"no scheduled workflow(s) assessed; all 3 entries in {_WATCHES_REF} "
+            f"ignored (entry 1: repo; entry 2: workflow; entry 3: max_age_hours)"
+        )
+        assert results[0]["config"]["signature"].startswith("config:all-entries-invalid:3:")
+        assert gh.requests == []
+
+    @pytest.mark.asyncio
+    async def test_a_partly_invalid_list_pages_and_still_checks_the_rest(self, caplog):
+        """Before, entries 10 and 11 were dropped with a WARNING on every
+        cycle and nothing else: the operator believed they were watched."""
+        db, gh, clock, notify = _setup(watches=_WATCHES + _TWO_BAD)
+
+        with caplog.at_level("WARNING", logger=swf.logger.name):
+            results = await _cycles(12, db, gh, clock, notify)  # 1 real pass, 11 throttled
+
+        assert len(notify.calls) == 1
+        page = notify.calls[0]
+        assert page["title"] == (
+            f"Scheduled-CI watchdog is ignoring 2 entries in {_WATCHES_REF}"
+        )
+        assert page["detail"].startswith("\n".join([
+            f"The scheduled-CI watchdog is ignoring 2 of the 11 entries in "
+            f"{_WATCHES_REF} and watches the other 9:",
+            *_TWO_BAD_LINES,
+            f"Fix or remove them with `poindexter settings set "
+            f"{swf.WATCHES_SETTING_KEY} '<json>'`, which replaces the whole list.",
+            "",
+            "Until then, nothing checks what the ignored entries ask for.",
+        ]))
+        # The nine valid entries were still checked, once.
+        assert len(gh.requests) == 18
+        assert db.target_state("security.yml") == "ok"
+        first = results[0]
+        assert first["ok"] is False
+        assert first["detail"] == (
+            f"all 9 assessed scheduled workflow(s) healthy; 2 of 11 entries in "
+            f"{_WATCHES_REF} ignored (entry 10: workflow; entry 11: max_age_hours)"
+        )
+        assert first["config"]["watched"] == 9
+        assert [r["ok"] for r in results[1:]] == [False] * 11
+        assert results[1]["detail"].startswith(
+            "throttled (60m); last pass: all 9 assessed scheduled workflow(s) healthy; "
+            "2 of 11 entries"
+        )
+        # Logged once for the real pass, naming both entries.
+        warnings = _config_warnings(caplog)
+        assert len(warnings) == 1
+        assert "entry 10 (" in warnings[0] and "entry 11 (" in warnings[0]
+
+    @pytest.mark.asyncio
+    async def test_a_stale_workflow_is_still_reported_alongside(self):
+        db, gh, clock, notify = _setup(watches=_WATCHES + _TWO_BAD)
+        gh.per_workflow["playwright-e2e.yml"] = _runs(clock.now - timedelta(hours=250))
+
+        summary = await _run(db, gh, clock, notify)
+
+        assert [f["title"] for f in db.findings()] == [
+            f"Scheduled workflow stale: {REPO}:playwright-e2e.yml",
+        ]
+        assert summary["detail"].startswith(
+            f"1 of 9 assessed scheduled workflow(s) unhealthy: {REPO}:playwright-e2e.yml; "
+            f"2 of 11 entries in {_WATCHES_REF} ignored"
+        )
+
+    @pytest.mark.asyncio
+    async def test_fixing_the_list_sends_one_recovery_note_and_checks_it_at_once(self):
+        db, gh, clock, notify = _setup()
+        _set_raw(db, _BROKEN_JSON)
+        await _passes(3, db, gh, clock, notify)
+
+        _set_watches(db, _WATCHES)
+        healed = await _run(db, gh, clock, notify)
+        clock.advance(hours=1)
+        after = await _passes(3, db, gh, clock, notify)
+
+        assert healed["ok"] is True
+        assert healed["detail"] == "all 9 assessed scheduled workflow(s) healthy"
+        assert "config" not in healed
+        assert len(gh.requests) == 4 * 18  # checked on the pass that saw the fix
+        assert all(r["ok"] is True for r in after)
+        assert notify.titles() == [
+            f"Scheduled-CI watchdog cannot use {_WATCHES_REF}",
+            f"Scheduled-CI watchdog can use {_WATCHES_REF} again",
+        ]
+        note = notify.calls[1]
+        assert note["severity"] == "info"
+        assert note["dedup_key"] == "scheduled_workflow_watch_config_recovered"
+        assert note["detail"] == (
+            f"The scheduled-CI watchdog can use {_WATCHES_REF} again after 3 failed "
+            f"attempts since 2026-09-23 23:48 UTC (last failure: {_BROKEN_AT}). It "
+            f"watches 9 workflows from this pass on."
+        )
+        assert db.config_episode() is None
+        recovered = db.audit_of("probe.scheduled_workflow_watch_config_recovered")
+        assert len(recovered) == 1
+        assert recovered[0]["was_paged"] is True
+        assert recovered[0]["signature"] == _BROKEN_AT
+
+    @pytest.mark.asyncio
+    async def test_emptying_a_broken_list_closes_its_episode_with_one_note(self):
+        db, gh, clock, notify = _setup()
+        _set_raw(db, _BROKEN_JSON)
+        await _passes(2, db, gh, clock, notify)
+
+        _set_watches(db, [])
+        results = await _cycles(24, db, gh, clock, notify)
+
+        assert results[0] == {"ok": True, "detail": "no workflows configured", "workflows": {}}
+        assert notify.titles() == [
+            f"Scheduled-CI watchdog cannot use {_WATCHES_REF}",
+            "Scheduled-CI watchdog watch list is empty",
+        ]
+        assert notify.calls[1]["severity"] == "info"
+        assert notify.calls[1]["detail"] == (
+            f"{_WATCHES_REF} is empty now, so the scheduled-CI watchdog watches "
+            f"nothing. Its config failure is closed after 2 failed attempts since "
+            f"2026-09-23 23:48 UTC (last failure: {_BROKEN_AT})."
+        )
+        assert db.config_episode() is None
+        assert db.audit_of("probe.scheduled_workflow_watch_unwatched") == []
+
+    @pytest.mark.parametrize("raw", ["", "   ", "[]", " [ ]\n"])
+    @pytest.mark.asyncio
+    async def test_only_an_empty_value_means_not_configured(self, raw, caplog):
+        """The OSS default. No page, no GitHub call, no config row, no log."""
+        db, gh, clock, notify = _setup(settings={"gh_token": ""})
+        _set_raw(db, raw)
+
+        with caplog.at_level("WARNING", logger=swf.logger.name):
+            results = await _passes(24, db, gh, clock, notify)
+
+        assert all(
+            r == {"ok": True, "detail": "no workflows configured", "workflows": {}}
+            for r in results
+        )
+        assert notify.calls == []
+        assert gh.requests == []
+        assert db.config_episode() is None
+        assert db.audit_of("probe.scheduled_workflow_watch_config_failed") == []
+        assert db.knowledge_deletes == 0
+        assert caplog.records == []
+
+    @pytest.mark.asyncio
+    async def test_a_new_problem_is_news_and_an_unrelated_edit_is_not(self):
+        """The signature covers what is wrong, not just that something is.
+        An edit that fixes one mistake and reveals, or makes, another pages
+        again; so does a bad entry rewritten into another bad value. An edit
+        that leaves the problem as it was does not."""
+        db, gh, clock, notify = _setup()
+        _set_raw(db, _BROKEN_JSON)
+        await _passes(1, db, gh, clock, notify)
+
+        # The first comma is fixed and the third one is lost.
+        parts = json.dumps(_WATCHES).split("}, {")
+        _set_raw(db, "}, {".join(parts[:3]) + "} {" + "}, {".join(parts[3:]))
+        moved = await _passes(1, db, gh, clock, notify)
+        assert moved[0]["config"]["page_reason"] == fe.PAGE_CHANGED
+        assert (
+            f"The failure changed (was {_BROKEN_AT}, now config:invalid-json:char-273)."
+            in notify.calls[1]["detail"]
+        )
+
+        # Valid JSON at last, with one bad entry.
+        bad = {"repo": REPO, "workflow": "nightly", "max_age_hours": 30}
+        _set_watches(db, _WATCHES + [bad])
+        await _passes(1, db, gh, clock, notify)
+        assert notify.calls[2]["title"] == f"Scheduled-CI watchdog is ignoring 1 entry in {_WATCHES_REF}"
+
+        # The same entry, "fixed" into another bad name: still news.
+        _set_watches(db, _WATCHES + [{**bad, "workflow": "nightly.yml.disabled"}])
+        await _passes(1, db, gh, clock, notify)
+        assert len(notify.calls) == 4
+        assert 'got "nightly.yml.disabled"' in notify.calls[3]["detail"]
+
+        # Another valid entry appended; the bad one unchanged: not news.
+        extra = {"repo": OTHER_REPO, "workflow": "nightly.yml", "max_age_hours": 30}
+        _set_watches(db, _WATCHES + [{**bad, "workflow": "nightly.yml.disabled"}, extra])
+        await _passes(2, db, gh, clock, notify)
+        assert len(notify.calls) == 4
+
+    @pytest.mark.asyncio
+    async def test_losing_every_valid_entry_is_news(self):
+        """Watching some of the list and watching none of it are different
+        failures, even when the ignored entry itself is unchanged."""
+        bad = {"repo": REPO, "workflow": "nightly", "max_age_hours": 30}
+        db, gh, clock, notify = _setup(watches=[bad] + _WATCHES)
+        await _passes(1, db, gh, clock, notify)
+
+        _set_watches(db, [bad])
+        nothing = await _passes(1, db, gh, clock, notify)
+
+        assert nothing[0]["config"]["page_reason"] == fe.PAGE_CHANGED
+        assert notify.titles() == [
+            f"Scheduled-CI watchdog is ignoring 1 entry in {_WATCHES_REF}",
+            f"Scheduled-CI watchdog cannot use {_WATCHES_REF}",
+        ]
+        assert (
+            f"The scheduled-CI watchdog cannot use the only entry in {_WATCHES_REF}, "
+            f"so it checks no scheduled workflow:" in notify.calls[1]["detail"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_reminder_after_the_repage_window(self):
+        db, gh, clock, notify = _setup(watches=_WATCHES + _TWO_BAD)
+
+        await _passes(24, db, gh, clock, notify)  # t0 .. t0 + 23h
+        reminder = await _run(db, gh, clock, notify)  # t0 + 24h
+
+        assert reminder["config"]["page_reason"] == fe.PAGE_REMINDER
+        assert notify.titles() == [
+            f"Scheduled-CI watchdog is ignoring 2 entries in {_WATCHES_REF}",
+            f"Scheduled-CI watchdog is still ignoring 2 entries in {_WATCHES_REF}",
+        ]
+        assert "Failing since 2026-09-23 23:48 UTC (25 attempts)" in notify.calls[1]["detail"]
+
+        # A changed failure pages at once, and its own reminder is 24h later.
+        _set_raw(db, _BROKEN_JSON)
+        clock.advance(hours=1)
+        await _passes(25, db, gh, clock, notify)
+        assert notify.titles()[2:] == [
+            f"Scheduled-CI watchdog cannot use {_WATCHES_REF}",
+            f"Scheduled-CI watchdog still cannot use {_WATCHES_REF}",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_an_undelivered_config_page_is_retried_next_pass(self):
+        db, gh, clock, _ = _setup()
+        _set_raw(db, _BROKEN_JSON)
+        notify = _Notifier({
+            "telegram": "skipped (severity below error)",
+            "discord": "discord send failed: URLError('name resolution')",
+        })
+
+        first = await _run(db, gh, clock, notify)
+        assert first["config"]["paged"] is False
+        assert db.config_episode()["owed"] == fe.PAGE_NEW
+
+        notify.result = {"telegram": "skipped (severity below error)", "discord": "discord"}
+        clock.advance(hours=1)
+        second = await _run(db, gh, clock, notify)
+        assert second["config"]["page_reason"] == fe.PAGE_UNDELIVERED
+        assert "The previous page about this failure reached no channel." in notify.calls[1]["detail"]
+
+        clock.advance(hours=1)
+        await _run(db, gh, clock, notify)
+        assert len(notify.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_an_episode_nobody_heard_about_ends_without_a_note(self):
+        """No page ever reached a channel, so there is nothing to take back."""
+        db, gh, clock, _ = _setup()
+        _set_raw(db, _BROKEN_JSON)
+        notify = _Notifier({
+            "telegram": "skipped (severity below error)",
+            "discord": "discord send failed: TimeoutError()",
+        })
+        await _passes(2, db, gh, clock, notify)
+
+        _set_watches(db, _WATCHES)
+        await _passes(1, db, gh, clock, notify)
+
+        # The first page and its retry, both undelivered; no note after.
+        assert notify.titles() == [f"Scheduled-CI watchdog cannot use {_WATCHES_REF}"] * 2
+        assert db.config_episode() is None
+        recovered = db.audit_of("probe.scheduled_workflow_watch_config_recovered")
+        assert len(recovered) == 1
+        assert recovered[0]["was_paged"] is False
+
+    @pytest.mark.asyncio
+    async def test_a_broken_list_and_a_blind_token_are_separate_episodes(self):
+        db, gh, clock, notify = _setup(watches=_WATCHES + _TWO_BAD)
+        gh.answer = _Resp(404, text=_NOT_FOUND)
+
+        blind = await _passes(3, db, gh, clock, notify)
+
+        assert notify.titles() == [
+            f"Scheduled-CI watchdog is ignoring 2 entries in {_WATCHES_REF}",
+            f"Scheduled-CI watchdog cannot check {REPO}",
+        ]
+        assert blind[0]["detail"] == (
+            f"no scheduled workflow(s) assessed; watchdog failing for {REPO} "
+            f"(workflow-runs:404); 2 of 11 entries in {_WATCHES_REF} ignored "
+            f"(entry 10: workflow; entry 11: max_age_hours)"
+        )
+
+        # The operator drops the bad entries; the token is still blind.
+        _set_watches(db, _WATCHES)
+        await _passes(1, db, gh, clock, notify)
+        assert notify.titles()[-1] == f"Scheduled-CI watchdog can use {_WATCHES_REF} again"
+        assert db.config_episode() is None
+        assert db.episode()["attempts"] == 4  # still open, still reported once
+        assert len(notify.calls) == 3
+
+    @pytest.mark.asyncio
+    async def test_the_repo_sweep_leaves_the_config_episode_alone(self):
+        """A list with no usable entry sweeps every repo episode closed on
+        each pass (nothing names a repo validly). The list's own episode is
+        under the same entity and must survive that, or it would close and
+        page as new on every pass."""
+        db, gh, clock, notify = _setup(watches=_THREE_BAD)
+
+        await _passes(5, db, gh, clock, notify)
+
+        assert db.config_episode()["attempts"] == 5
+        assert len(notify.calls) == 1
+        assert db.audit_of("probe.scheduled_workflow_watch_unwatched") == []
+        assert db.audit_of("probe.scheduled_workflow_watch_config_recovered") == []
+
+    @pytest.mark.asyncio
+    async def test_no_valid_entry_left_for_a_failing_repo_closes_its_episode_too(self):
+        """Its entries are named in the config page; the repo's own episode
+        closes with its note, as when the repo is removed (#4112)."""
+        db, gh, clock, notify = _setup(watches=_WATCHES[:2] + [_OTHER_WATCH])
+        gh.per_repo[REPO] = _Resp(404, text=_NOT_FOUND)
+        await _passes(1, db, gh, clock, notify)
+
+        _set_watches(db, [{**w, "max_age_hours": 0} for w in _WATCHES[:2]] + [_OTHER_WATCH])
+        await _passes(2, db, gh, clock, notify)
+
+        assert notify.titles() == [
+            f"Scheduled-CI watchdog cannot check {REPO}",
+            f"Scheduled-CI watchdog is ignoring 2 entries in {_WATCHES_REF}",
+            f"Scheduled-CI watchdog no longer watching {REPO}",
+        ]
+        assert db.episode() is None
+        assert db.config_episode()["attempts"] == 2
+
+    @pytest.mark.asyncio
+    async def test_a_failed_read_of_the_list_is_not_ok_and_closes_nothing(
+        self, monkeypatch, caplog,
+    ):
+        """Read as '', a failed read said "no workflows configured", ok, and
+        could sweep every open repo episode closed: here only the watch-list
+        query fails, so the sweep's own query would get through."""
+        db, gh, clock, notify = _setup()
+        gh.answer = _Resp(404, text=_NOT_FOUND)
+        await _passes(1, db, gh, clock, notify)
+        real_fetchrow = db.fetchrow
+
+        async def _flaky(query: str, *args: Any) -> Any:
+            if "FROM app_settings" in query and args and args[0] == swf.WATCHES_SETTING_KEY:
+                raise RuntimeError("canceling statement due to statement timeout")
+            return await real_fetchrow(query, *args)
+
+        monkeypatch.setattr(db, "fetchrow", _flaky)
+        with caplog.at_level("WARNING", logger=swf.logger.name):
+            summary = await _run(db, gh, clock, notify)
+
+        assert summary == {
+            "ok": False,
+            "detail": f"could not read {_WATCHES_REF}",
+            "workflows": {},
+        }
+        assert db.episode() is not None
+        assert db.audit_of("probe.scheduled_workflow_watch_unwatched") == []
+        assert len(notify.calls) == 1
+        assert any(
+            f"could not read {_WATCHES_REF}: canceling statement" in r.getMessage()
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_long_list_of_ignored_entries_is_capped_on_the_page(self, caplog):
+        """Discord cuts a message at 1,900 characters, from the end: the
+        episode lines. The page names five entries; the log names all."""
+        bad = [
+            {"repo": REPO, "workflow": f"job-{i}", "max_age_hours": 30} for i in range(9)
+        ]
+        db, gh, clock, notify = _setup(watches=bad)
+
+        with caplog.at_level("WARNING", logger=swf.logger.name):
+            await _run(db, gh, clock, notify)
+
+        lines = notify.calls[0]["detail"].split("\n")
+        entry_lines = [line for line in lines if line.startswith("- entry ")]
+        assert [line.split(" (")[0] for line in entry_lines] == [
+            f"- entry {i}" for i in range(1, 6)
+        ]
+        assert "- and 4 more, listed in the brain log" in lines
+        assert all(f"entry {i} (" in _config_warnings(caplog)[0] for i in range(1, 10))
 
 
 # ---------------------------------------------------------------------------
@@ -1329,6 +1892,115 @@ class TestFailureWording:
         for detail in (swf._no_token_detail(REPO, 9), swf._no_httpx_detail(REPO, 9)):
             rendered = on._fmt_message("t", detail, "brain.scheduled_workflow_watch", "warning")
             assert "***" not in rendered
+
+
+# The longest config page a hand edit can produce: twelve ignored entries
+# beside valid ones, each naming the longest repo GitHub allows (a 39-character
+# owner, a 100-character name) and a long bad workflow, so every line is clipped.
+_LONG_REPO = f"{'o' * 39}/{'n' * 100}"
+_WORST_CASE = _WATCHES + [
+    {"repo": _LONG_REPO, "workflow": f"{'w' * 200}-{i}", "max_age_hours": 30}
+    for i in range(12)
+]
+
+
+@pytest.mark.unit
+class TestConfigPageWording:
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            _BROKEN_JSON,
+            "[" + "1" * 5000 + "]",
+            json.dumps(_WATCHES[0]),
+            json.dumps(json.dumps(_WATCHES)),
+            json.dumps(_THREE_BAD),
+            json.dumps(_WATCHES + _TWO_BAD),
+            json.dumps(_WORST_CASE),
+        ],
+        ids=[
+            "invalid-json", "huge-integer", "object", "encoded-twice",
+            "no-valid-entry", "partial", "worst-case",
+        ],
+    )
+    @pytest.mark.parametrize(
+        "reason",
+        # The config episode has no credential, so token_replaced cannot fire.
+        [fe.PAGE_NEW, fe.PAGE_CHANGED, fe.PAGE_UNDELIVERED, fe.PAGE_REMINDER],
+    )
+    def test_the_page_survives_the_redaction_and_fits_discord(self, reason, raw):
+        """``_fmt_message`` masks ``token: <x>`` shapes, and Discord cuts a
+        message past 1,900 characters from the end, where the episode lines
+        are. Neither may touch a config page."""
+        watch_list = swf._parse_watch_list(raw)
+        episode = {
+            "signature": watch_list.signature,
+            "previous_signature": "config:all-entries-invalid:12:0123abcd",
+            "since": _T0.isoformat(), "attempts": 1234, "owed": fe.PAGE_NEW,
+        }
+        config = {
+            "interval_minutes": 60.0, "failure_repage_hours": 24,
+            "transient_failure_page_hours": 6,
+        }
+        title, body = swf._build_config_page(
+            watch_list, reason=reason, episode=episode, config=config,
+        )
+        rendered = on._fmt_message(title, body, "brain.scheduled_workflow_watch", "warning")
+
+        assert "***" not in rendered
+        assert body in rendered
+        assert len(rendered) <= 1900, len(rendered)
+        assert "Next reminder in 24h" in rendered
+
+    def test_the_worst_case_names_five_entries_and_counts_the_rest(self):
+        watch_list = swf._parse_watch_list(json.dumps(_WORST_CASE))
+        title, body = swf._build_config_page(
+            watch_list, reason=fe.PAGE_NEW, episode={"since": _T0.isoformat()},
+            config={"interval_minutes": 60.0, "failure_repage_hours": 24},
+        )
+
+        assert title == f"Scheduled-CI watchdog is ignoring 12 entries in {_WATCHES_REF}"
+        entry_lines = [line for line in body.split("\n") if line.startswith("- entry ")]
+        assert len(entry_lines) == 5
+        assert all(
+            len(line) == swf._ENTRY_LINE_LIMIT + 2 and line.endswith("…")
+            for line in entry_lines
+        )
+        assert "\n- and 7 more, listed in the brain log\n" in body
+
+    def test_a_long_repo_name_still_keeps_the_offending_value(self):
+        """The value comes last on the line, so the clip must not reach it for
+        a repo name of any usual length. The pre-merge prod replay (2026-09-28)
+        caught a 150-character clip cutting ``.github/workflows/nightly.yml``
+        to ``nightly.ym…``, the one part of the line the operator needs. This
+        60-character name makes a 172-character reason: cut at 150, whole at
+        180."""
+        repo = "an-organisation-named-at-length/a-repository-named-at-length"
+        bad = ".github/workflows/console-contract-drift.yml"
+        watch_list = swf._parse_watch_list(
+            json.dumps(_WATCHES + [{"repo": repo, "workflow": bad, "max_age_hours": 30}]),
+        )
+
+        _, body = swf._build_config_page(
+            watch_list, reason=fe.PAGE_NEW, episode={"since": _T0.isoformat()},
+            config={"interval_minutes": 60.0, "failure_repage_hours": 24},
+        )
+
+        assert f'- entry 10 ({repo}): workflow must be a bare .yml or .yaml file name, got "{bad}"\n' in body
+
+    @pytest.mark.parametrize("raw", [json.dumps(_WATCHES), "[]"], ids=["fixed", "emptied"])
+    @pytest.mark.asyncio
+    async def test_the_closing_notes_survive_the_redaction(self, raw):
+        db, gh, clock, notify = _setup()
+        _set_raw(db, _BROKEN_JSON)
+        await _passes(1, db, gh, clock, notify)
+        _set_raw(db, raw)
+        await _run(db, gh, clock, notify)
+
+        note = notify.calls[-1]
+        assert note["severity"] == "info"
+        rendered = on._fmt_message(note["title"], note["detail"], note["source"], note["severity"])
+        assert "***" not in rendered
+        assert note["detail"] in rendered
 
 
 # ---------------------------------------------------------------------------
