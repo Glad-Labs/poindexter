@@ -177,6 +177,40 @@ def test_rule_add_threads_optional_caps():
     assert kw["verify_after_seconds"] == 90
 
 
+def test_rule_add_the_documented_ollama_rule():
+    """The command docs/operations/self-healing.md gives for PoindexterOllamaDown:
+    no --verify-after, so the rule takes the 600 s Alertmanager default."""
+    mock = AsyncMock(return_value=_rule_row(
+        id=39, alertname="PoindexterOllamaDown", action_name="restart_host_service",
+        params={"service": "ollama"},
+    ))
+    with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(
+        "poindexter.services.remediation_rules_service.add_rule", new=mock,
+    ):
+        result = CliRunner().invoke(firefighter_group, [
+            "rule", "add", "--action", "restart_host_service",
+            "--alert", "PoindexterOllamaDown", "--param", "service=ollama",
+        ])
+    assert result.exit_code == 0, result.output
+    kw = mock.await_args.kwargs
+    assert (kw["action_name"], kw["alertname"], kw["params"]) == (
+        "restart_host_service", "PoindexterOllamaDown", {"service": "ollama"})
+    assert kw["verify_after_seconds"] is None
+    assert "added rule #39: PoindexterOllamaDown → restart_host_service" in result.output
+
+
+def test_rule_add_a_host_service_off_the_allowlist_fails_before_the_db():
+    """The real service refuses it before any DB call; the pool here is a bare
+    object() that would blow up if touched."""
+    with patch("poindexter.cli.firefighter.run_service", _fake_run_service):
+        result = CliRunner().invoke(firefighter_group, [
+            "rule", "add", "--action", "restart_host_service",
+            "--alert", "PoindexterOllamaDown", "--param", "service=compose-reapply",
+        ])
+    assert result.exit_code == 1
+    assert "can restart only ollama" in result.output
+
+
 def test_rule_add_bad_param_exits_before_service():
     mock = AsyncMock(return_value=_rule_row())
     with patch("poindexter.cli.firefighter.run_service", _fake_run_service), patch(

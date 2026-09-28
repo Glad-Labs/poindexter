@@ -1,7 +1,8 @@
 # Poindexter host Recovery Agent (:9841) — the endpoint the brain daemon
 # POSTs to for host-level recovery it cannot do from inside a container
 # (scripts/recovery-agent.py; consumers: poindexter/brain/health_probes.py remediation
-# for `ollama`, poindexter/brain/mcp_http_probe.py for `mcp-http`,
+# and the firefighter's restart_host_service action for `ollama`,
+# poindexter/brain/mcp_http_probe.py for `mcp-http`,
 # poindexter/brain/compose_drift_probe.py for `compose-reapply`).
 #
 # Linux port of the Windows logon Scheduled Task + the PowerShell own-liveness

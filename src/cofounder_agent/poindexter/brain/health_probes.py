@@ -2247,13 +2247,42 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
 REMEDIATION_COOLDOWN = 900  # 15 minutes
 
 
-async def _call_agent_recovery(pool, service: str) -> tuple[bool, str]:
+def _agent_said(response) -> str:
+    """The recovery agent's own words from its JSON body, or "".
+
+    ``detail`` when it ran an action (``restarted ollama-primary.service
+    (system)``, or systemd's error when the restart failed), ``error`` when it
+    refused the request (``invalid token``, ``unknown service: 'x'``).
+    """
+    try:
+        body = response.json()
+    except Exception:
+        # silent-ok: this only ENRICHES the "HTTP <status>" detail with the
+        # response body. On a non-JSON body the caller keeps the plain status,
+        # and a failure is still returned as (False, detail).
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    for key in ("detail", "error"):
+        said = body.get(key)
+        if isinstance(said, str) and said.strip():
+            return said.strip()
+    return ""
+
+
+async def _call_agent_recovery(pool, service: str, *, timeout: float = 15.0) -> tuple[bool, str]:
     """POST to the host recovery agent to restart a host-side service.
 
-    Container-safe: the agent runs on the Windows host at the URL stored in
+    Container-safe: the agent runs on the host at the URL stored in
     ``mcp_http_probe_recovery_url`` and is reachable via ``host.docker.internal``
     from the brain container. Mirrors ``mcp_http_probe._try_http_recovery`` but
-    reads the URL/token from the DB and is called from health_probes remediation.
+    reads the URL/token from the DB. Called from health_probes remediation and
+    from the firefighter's ``restart_host_service`` action
+    (``remediation/host_services.py``), which passes a ``timeout`` longer than
+    the agent's own 30 s wait on ``systemctl restart``.
+
+    The detail carries what the agent said as well as the status, on success
+    too, so a remediation record names the unit that was restarted.
     """
     if pool is None:
         return False, "pool unavailable — cannot read recovery agent config"
@@ -2268,7 +2297,7 @@ async def _call_agent_recovery(pool, service: str) -> tuple[bool, str]:
         return False, "httpx not installed in brain image"
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 recovery_url,
                 json={"service": service},
@@ -2276,15 +2305,9 @@ async def _call_agent_recovery(pool, service: str) -> tuple[bool, str]:
             )
             ok = 200 <= response.status_code < 300
             detail = f"HTTP {response.status_code}"
-            if not ok:
-                try:
-                    detail += f" — {response.json().get('detail', '')}"
-                except Exception:
-                    # silent-ok: this only ENRICHES an error string with the
-                    # response body. On a non-JSON body we keep the plain
-                    # "HTTP <status>" detail, and the real failure is still
-                    # returned as (False, detail) below.
-                    pass
+            said = _agent_said(response)
+            if said:
+                detail += f" — {said}"
             return ok, detail
     except Exception as exc:  # noqa: BLE001
         return False, f"{type(exc).__name__}: {exc}"

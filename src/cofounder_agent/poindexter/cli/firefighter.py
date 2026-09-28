@@ -1,9 +1,10 @@
 """``poindexter firefighter`` — operate the self-healing firefighter.
 
 The firefighter matches an about-to-page alert against the ``remediation_rules``
-table and runs an allowlisted action (restart a container, re-run the stuck-task
-sweep) before paging. Rules are **operational runtime state** — you add, tune,
-and retire them one alert at a time — so they live only in the DB, managed here:
+table and runs an allowlisted action (restart a container, restart a host
+service through the Recovery Agent, re-run the stuck-task sweep) before paging.
+Rules are **operational runtime state** — you add, tune, and retire them one
+alert at a time — so they live only in the DB, managed here:
 
     poindexter firefighter rule list [--state enabled|disabled]
     poindexter firefighter rule show (RULE_ID | --alert NAME)
@@ -11,6 +12,8 @@ and retire them one alert at a time — so they live only in the DB, managed her
         --alert PyroscopeDown --param container=poindexter-pyroscope \\
         [--match REGEX] [--description ...] [--max-attempts N] \\
         [--window-minutes N] [--verify-after N] [--disabled]
+    poindexter firefighter rule add --action restart_host_service \\
+        --alert PoindexterOllamaDown --param service=ollama
     poindexter firefighter rule rm (RULE_ID | --alert NAME)
     poindexter firefighter rule enable  (RULE_ID | --alert NAME)
     poindexter firefighter rule disable (RULE_ID | --alert NAME)
@@ -119,7 +122,7 @@ def rule_show(rule_id: int | None, alert: str) -> None:
 @rule_group.command("add")
 @click.option(
     "--action", "action_name", required=True,
-    help="Action executor (restart_container | run_auto_remediate).",
+    help="Action executor (restart_container | restart_host_service | run_auto_remediate).",
 )
 @click.option("--alert", "alertname", default="", help="Exact alertname to match.")
 @click.option(
@@ -128,7 +131,10 @@ def rule_show(rule_id: int | None, alert: str) -> None:
 )
 @click.option(
     "--param", "params", multiple=True, metavar="KEY=VALUE",
-    help="Action param (repeatable), e.g. --param container=poindexter-pyroscope.",
+    help=(
+        "Action param (repeatable), e.g. --param container=poindexter-pyroscope "
+        "or --param service=ollama."
+    ),
 )
 @click.option("--description", default="", help="Human note shown in list / show.")
 @click.option(
@@ -160,7 +166,8 @@ def rule_add(
     disabled: bool,
 ) -> None:
     """Add a remediation rule. Fails loud on an unknown action, a missing
-    alertname/--match, or a restart_container rule without a container."""
+    alertname/--match, a restart_container rule without a container, or a
+    restart_host_service rule without an allowlisted service."""
     try:
         param_dict = _parse_params(params)
     except ValueError as e:

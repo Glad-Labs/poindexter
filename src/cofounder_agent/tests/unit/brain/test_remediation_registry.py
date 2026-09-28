@@ -56,17 +56,39 @@ async def test_known_action_dispatches_with_params():
 #     sends the LLM selector (Plan B). --------------------------------------
 
 
+def _selectable():
+    """Every registered action except the rules-only ones."""
+    from poindexter.brain.remediation.registry import is_rules_only
+
+    return {name for name in ACTION_REGISTRY if not is_rules_only(name)}
+
+
 def test_describe_catalog_covers_every_registered_action():
     from poindexter.brain.remediation.registry import describe_catalog
 
     catalog = describe_catalog()
     names = {a["name"] for a in catalog}
-    # Every executable action is described — no silent gaps the model can't see.
-    assert names == set(ACTION_REGISTRY.keys())
+    # Every executable action the model may pick is described — no silent gaps
+    # it can't see. A rules-only action is left out on purpose (see
+    # test_remediation_host_service.py), and there is only the one.
+    assert names == _selectable()
+    assert set(ACTION_REGISTRY) - names == {"restart_host_service"}
     for entry in catalog:
         assert set(entry) >= {"name", "description", "params_schema"}
         assert isinstance(entry["description"], str) and entry["description"]
         assert isinstance(entry["params_schema"], dict)
+
+
+def test_every_registered_action_is_described():
+    """Rules-only actions are not offered, but they are described: the
+    metadata is the one account of each action, for people as well as the
+    model."""
+    from poindexter.brain.remediation.registry import _ACTION_META
+
+    assert set(_ACTION_META) == set(ACTION_REGISTRY)
+    for name, meta in _ACTION_META.items():
+        assert isinstance(meta.get("description"), str) and meta["description"], name
+        assert isinstance(meta.get("params_schema"), dict), name
 
 
 def test_describe_catalog_filters_to_allowlist():
@@ -77,10 +99,11 @@ def test_describe_catalog_filters_to_allowlist():
 
 
 def test_describe_catalog_empty_allowlist_means_all():
-    """Mirrors config semantics: an empty allowlist = no restriction = all."""
+    """Mirrors config semantics: an empty allowlist = no restriction = every
+    action the model may pick."""
     from poindexter.brain.remediation.registry import describe_catalog
 
-    assert {a["name"] for a in describe_catalog(allowlist=[])} == set(ACTION_REGISTRY.keys())
+    assert {a["name"] for a in describe_catalog(allowlist=[])} == _selectable()
 
 
 def test_describe_catalog_ignores_unknown_allowlist_entries():

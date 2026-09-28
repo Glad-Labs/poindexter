@@ -27,7 +27,16 @@ from typing import Any
 # brain are decoupled), so this is a local copy kept honest by
 # ``test_known_actions_in_sync_with_brain_registry``: if the brain registry
 # grows an executor, that test fails until this tuple is updated.
-_KNOWN_ACTIONS: tuple[str, ...] = ("restart_container", "run_auto_remediate")
+_KNOWN_ACTIONS: tuple[str, ...] = (
+    "restart_container", "restart_host_service", "run_auto_remediate",
+)
+
+# The host services ``restart_host_service`` may restart: a local copy of the
+# keys of ``poindexter/brain/remediation/host_services.py::HOST_SERVICES``,
+# kept honest by ``test_host_services_in_sync_with_brain`` for the same reason
+# as ``_KNOWN_ACTIONS``. A rule naming any other service would be refused by
+# the brain on every firing, which is the silent dead row add_rule refuses.
+_HOST_SERVICES: tuple[str, ...] = ("ollama",)
 
 # Columns written on insert, in bind order.
 _INSERT_COLUMNS = (
@@ -110,8 +119,9 @@ async def add_rule(
 
     Validates (before any DB write) that ``action_name`` is a registered
     executor, that at least one of ``alertname`` / ``match_regex`` is present
-    (the table's CHECK constraint), and that a ``restart_container`` rule names
-    a ``container``, and that ``match_regex`` compiles — a rule the brain can
+    (the table's CHECK constraint), that a ``restart_container`` rule names
+    a ``container``, that a ``restart_host_service`` rule names an allowlisted
+    ``service``, and that ``match_regex`` compiles — a rule the brain can
     never run is a silent dead row, so it fails loud here instead.
 
     Raises:
@@ -140,6 +150,18 @@ async def add_rule(
             "restart_container requires a 'container' param "
             "(e.g. --param container=poindexter-pyroscope)"
         )
+    if action_name == "restart_host_service":
+        service = str(params.get("service") or "").strip()
+        if not service:
+            raise RemediationRuleError(
+                "restart_host_service requires a 'service' param "
+                f"(e.g. --param service={_HOST_SERVICES[0]})"
+            )
+        if service not in _HOST_SERVICES:
+            raise RemediationRuleError(
+                f"restart_host_service can restart only {', '.join(_HOST_SERVICES)}; "
+                f"got service={service!r}"
+            )
 
     values = {
         "alertname": alertname,

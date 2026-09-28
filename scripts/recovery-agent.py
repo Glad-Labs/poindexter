@@ -88,9 +88,11 @@ _WINDOWS_SERVICES: dict[str, dict[str, str]] = {
 _LINUX_SERVICES: dict[str, dict[str, str]] = {
     "mcp-http": {"kind": "systemd", "unit": "poindexter-mcp-http.service", "scope": "system"},
     "compose-reapply": {"kind": "compose"},
-    # The brain's ollama_models / ollama_embedding remediation. Restarts the
-    # PRIMARY (:11434, all GPUs) instance only — the vision instance (:11435)
-    # is a separate unit and is not what those probes exercise.
+    # The brain's ollama_models / ollama_embedding remediation, and the
+    # firefighter's restart_host_service (PoindexterOllamaDown; allowlisted in
+    # poindexter/brain/remediation/host_services.py). Restarts the PRIMARY
+    # (:11434, GPU 0) instance only — the vision instance (:11435) is a
+    # separate unit and is not what those probes exercise.
     "ollama": {"kind": "systemd", "unit": "ollama-primary.service", "scope": "system"},
 }
 SERVICES: dict[str, dict[str, str]] = (

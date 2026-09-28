@@ -1916,6 +1916,61 @@ class TestCallAgentRecovery:
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
+class TestCallAgentRecoveryDetail:
+    """What ``_call_agent_recovery`` says back, and how long it waits. The
+    firefighter's ``restart_host_service`` records this detail on its
+    remediation_action and pages with it, so the agent's own words matter."""
+
+    @staticmethod
+    def _agent(status, body=None, *, raises=None):
+        response = MagicMock()
+        response.status_code = status
+        if raises is not None:
+            response.json.side_effect = raises
+        else:
+            response.json.return_value = body
+        client = AsyncMock()
+        client.post = AsyncMock(return_value=response)
+        fake_httpx = MagicMock()
+        fake_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=client)
+        fake_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+        return fake_httpx
+
+    async def _call(self, fake_httpx, **kwargs):
+        configured = AsyncMock(side_effect=["http://host.docker.internal:9841/recover", "tok"])
+        with patch.object(hp, "_read_app_setting", new=configured), \
+             patch.object(hp, "httpx", fake_httpx):
+            return await hp._call_agent_recovery(_make_pool(), "ollama", **kwargs)
+
+    async def test_success_names_what_the_agent_restarted(self):
+        fake = self._agent(200, {"ok": True, "service": "ollama",
+                                 "detail": "restarted ollama-primary.service (system)"})
+        assert await self._call(fake) == (True, "HTTP 200 — restarted ollama-primary.service (system)")
+
+    async def test_a_refused_request_reports_the_agents_error(self):
+        """The agent answers a bad token or an unknown service with ``error``,
+        not ``detail``; the old read dropped it and said only "HTTP 401 — "."""
+        fake = self._agent(401, {"ok": False, "error": "invalid token"})
+        assert await self._call(fake) == (False, "HTTP 401 — invalid token")
+
+    async def test_a_body_that_is_not_json_keeps_the_plain_status(self):
+        fake = self._agent(502, raises=ValueError("not json"))
+        assert await self._call(fake) == (False, "HTTP 502")
+
+    async def test_the_probe_path_keeps_its_15_second_wait(self):
+        fake = self._agent(200, {"ok": True})
+        await self._call(fake)
+        fake.AsyncClient.assert_called_once_with(timeout=15.0)
+
+    async def test_a_caller_can_wait_longer(self):
+        """The firefighter waits past the agent's own 30 s on systemctl."""
+        fake = self._agent(200, {"ok": True})
+        await self._call(fake, timeout=45.0)
+        fake.AsyncClient.assert_called_once_with(timeout=45.0)
+
+
+@pytest.mark.unit
 class TestOllamaRemediation:
     """REMEDIATIONS config and _try_remediation routing for Ollama probes."""
 

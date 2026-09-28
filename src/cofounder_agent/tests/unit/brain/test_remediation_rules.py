@@ -299,18 +299,24 @@ def _seconds(duration: str) -> int:
     return sum(int(n) * units[u] for n, u in parts)
 
 
+# The Alertmanager alerts the live rules act on with no per-rule grace (see
+# docs/operations/self-healing.md): PyroscopeDown and PromtailDown restart a
+# container, PoindexterOllamaDown restarts ollama-primary (restart_host_service).
+_GRACE_DEFAULT_ALERTS = ("PyroscopeDown", "PromtailDown", "PoindexterOllamaDown")
+
+
 def test_the_alertmanager_grace_covers_a_resolved_notification_and_a_relapse():
     """The default grace must outlast what the verify waits on.
 
-    The live Alertmanager rules restart for PyroscopeDown and PromtailDown
-    (docs/operations/self-healing.md). After a restart that works, the resolved
-    notification comes at the notifier's next group_interval tick. After one
-    that only looks like it worked (the target comes up and dies again), the
-    alert re-fires once its ``for:`` has elapsed, at the tick after that. So
-    the grace covers ``for:`` + group_interval. Read from the configs, so
-    lengthening either one fails here instead of silently shortening the
-    verify: past the grace, a relapse gets restarted again as a new episode
-    before anyone hears of it.
+    The live Alertmanager rules restart for the alerts in
+    ``_GRACE_DEFAULT_ALERTS`` (docs/operations/self-healing.md). After a
+    restart that works, the resolved notification comes at the notifier's
+    next group_interval tick. After one that only looks like it worked (the
+    target comes up and dies again), the alert re-fires once its ``for:`` has
+    elapsed, at the tick after that. So the grace covers ``for:`` +
+    group_interval. Read from the configs, so lengthening either one fails here
+    instead of silently shortening the verify: past the grace, a relapse gets
+    restarted again as a new episode before anyone hears of it.
     """
     import yaml
 
@@ -327,14 +333,14 @@ def test_the_alertmanager_grace_covers_a_resolved_notification_and_a_relapse():
         [_seconds(alertmanager["route"]["group_interval"])]
         + [_seconds(p["group_interval"]) for p in grafana["policies"]]
     )
-    rules_file = _repo_file("infrastructure", "prometheus", "alerts", "observability-sidecars.yml")
     rules = {
         r["alert"]: r
-        for group in yaml.safe_load(rules_file.read_text(encoding="utf-8"))["groups"]
+        for rules_file in sorted(_repo_file("infrastructure", "prometheus", "alerts").glob("*.yml"))
+        for group in (yaml.safe_load(rules_file.read_text(encoding="utf-8")) or {}).get("groups") or []
         for r in group["rules"] if "alert" in r
     }
     grace = int(_defaults_value("ops_firefighter_alertmanager_verify_after_seconds"))
-    for alertname in ("PyroscopeDown", "PromtailDown"):
+    for alertname in _GRACE_DEFAULT_ALERTS:
         needed = _seconds(rules[alertname]["for"]) + group_interval
         assert grace >= needed, (
             f"ops_firefighter_alertmanager_verify_after_seconds={grace} is shorter than "

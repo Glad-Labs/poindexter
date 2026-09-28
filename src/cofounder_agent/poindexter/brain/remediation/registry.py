@@ -5,6 +5,9 @@ caller — return an ActionResult(status="failed", ...) instead.
 
 Brain-image isolation: this module resolves brain_daemon lazily (flat OR
 package path) exactly like alert_dispatcher, and imports nothing from services/.
+``host_services`` (the host-service allowlist behind ``restart_host_service``)
+imports ``health_probes`` and ``docker_utils``, both brain modules with no
+import back into the remediation package.
 """
 from __future__ import annotations
 
@@ -13,6 +16,8 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
+
+from poindexter.brain.remediation import host_services
 
 
 @dataclass
@@ -131,6 +136,65 @@ async def _restart_container(params: dict[str, Any], ctx: RemediationContext) ->
     return ActionResult(status="ok" if ok else "failed", detail=detail, latency_ms=latency)
 
 
+async def _restart_host_service_check(
+    params: dict[str, Any], ctx: RemediationContext,
+) -> tuple[str | None, str]:
+    """``(refusal, evidence)`` for ``restart_host_service``.
+
+    Refuses a missing ``service``, one that isn't in
+    ``host_services.HOST_SERVICES``, and a service its own check finds
+    answering (``HostService.confirm_down``). Otherwise the refusal is None and
+    the evidence says how the brain saw it down. The executor and ``refusal``
+    both call this, so they cannot disagree.
+    """
+    service = str(params.get("service") or "").strip()
+    if not service:
+        return "restart_host_service: no 'service' param", ""
+    spec = host_services.HOST_SERVICES.get(service)
+    if spec is None:
+        allowed = ", ".join(sorted(host_services.HOST_SERVICES)) or "none"
+        return (
+            f"restart_host_service: {service!r} is not a host service the "
+            f"firefighter may restart (allowed: {allowed})"
+        ), ""
+    confirmation = await spec.confirm_down(ctx.pool)
+    if not confirmation.down:
+        return f"restart_host_service: {confirmation.detail}", ""
+    return None, confirmation.detail
+
+
+async def _restart_host_service_refusal(params: dict[str, Any], ctx: RemediationContext) -> str | None:
+    """Why ``restart_host_service`` would refuse these params, or None if it would run."""
+    refused, _evidence = await _restart_host_service_check(params, ctx)
+    return refused
+
+
+async def _restart_host_service(params: dict[str, Any], ctx: RemediationContext) -> ActionResult:
+    """Restart an allowlisted host service through the host Recovery Agent.
+
+    Only after the brain has seen the service down from its own side (see
+    ``host_services``). A refusal is ``skipped``, which pages like any non-ok
+    status; so does an agent that can't be reached or reports failure.
+    """
+    started = time.monotonic()
+    refused, evidence = await _restart_host_service_check(params, ctx)
+    if refused is not None:
+        return ActionResult(
+            status="skipped", detail=refused,
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
+    service = str(params.get("service") or "").strip()
+    ok, agent_detail = await host_services.restart_via_agent(ctx.pool, service)
+    # The agent's answer first: a failure's page carries the start of this
+    # detail (the dispatcher cuts its note at 200 characters), and the agent's
+    # reason is what the operator needs there.
+    return ActionResult(
+        status="ok" if ok else "failed",
+        detail=f"recovery agent: {agent_detail}; confirmed down first: {evidence}",
+        latency_ms=int((time.monotonic() - started) * 1000),
+    )
+
+
 async def _run_auto_remediate(params: dict[str, Any], ctx: RemediationContext) -> ActionResult:
     """Run the brain's stuck-task / stale-approval cleanup sweep."""
     mod = _resolve_brain_daemon()
@@ -153,15 +217,18 @@ async def _run_auto_remediate(params: dict[str, Any], ctx: RemediationContext) -
 
 ACTION_REGISTRY: dict[str, Executor] = {
     "restart_container": _restart_container,
+    "restart_host_service": _restart_host_service,
     "run_auto_remediate": _run_auto_remediate,
 }
 
 # The side-effect-free checks an executor makes before it acts (bad params, the
-# restart denylist), for callers that must know the answer without acting: a
-# dry run records "would be refused" instead of "would have run it". The
-# executor runs the same function, so the two cannot disagree.
+# restart denylist, the host-service allowlist and its is-it-down check), for
+# callers that must know the answer without acting: a dry run records "would be
+# refused" instead of "would have run it". The executor runs the same function,
+# so the two cannot disagree.
 _ACTION_REFUSALS: dict[str, Callable[[dict[str, Any], RemediationContext], Awaitable[str | None]]] = {
     "restart_container": _restart_container_refusal,
+    "restart_host_service": _restart_host_service_refusal,
 }
 
 
@@ -170,6 +237,14 @@ _ACTION_REFUSALS: dict[str, Callable[[dict[str, Any], RemediationContext], Await
 # ONLY description of the actions the brain sends the LLM selector; the model
 # picks a name from here and the engine re-validates that pick against
 # ACTION_REGISTRY before executing — the model's output is never trusted.
+#
+# ``rules_only: True`` keeps an action out of that catalog entirely, so only an
+# operator-written remediation_rules row can run it. ``restart_host_service``
+# is one: its only allowlisted target is Ollama, which the selector itself runs
+# on (``ops_firefighter_model``). The exclusion regex keeps Ollama's alerts
+# away from the model; this keeps "restart Ollama" out of the model's answers
+# to every other alert, such as the pipeline findings that make up nearly all
+# of what reaches it.
 _ACTION_META: dict[str, dict[str, Any]] = {
     "restart_container": {
         "description": (
@@ -184,6 +259,25 @@ _ACTION_META: dict[str, dict[str, Any]] = {
             "container": "str (required) — container name, e.g. 'poindexter-pyroscope'",
         },
     },
+    "restart_host_service": {
+        "rules_only": True,
+        "description": (
+            "Restart a host systemd service through the host Recovery Agent, "
+            "for a service that runs on the host rather than in a container. "
+            "Allowlisted services only, and only after the brain has asked the "
+            "service itself and got no answer: a service that answers is up, "
+            "and restarting it would only kill its in-flight work."
+        ),
+        "params_schema": {
+            "service": (
+                "str (required) — the Recovery Agent's service name; one of: "
+                + ", ".join(
+                    f"{name} ({spec.restarts})"
+                    for name, spec in sorted(host_services.HOST_SERVICES.items())
+                )
+            ),
+        },
+    },
     "run_auto_remediate": {
         "description": (
             "Run the brain's stuck-task / stale-approval cleanup sweep "
@@ -194,20 +288,29 @@ _ACTION_META: dict[str, dict[str, Any]] = {
 }
 
 
+def is_rules_only(action_name: str) -> bool:
+    """True for an action only a remediation_rules row may run (see _ACTION_META)."""
+    return bool(_ACTION_META.get(action_name, {}).get("rules_only"))
+
+
 def describe_catalog(allowlist: list[str] | None = None) -> list[dict[str, Any]]:
     """The action catalog the brain hands the LLM selector.
 
     Returns ``[{name, description, params_schema}]`` for every registered
-    action, in registry order. A non-empty ``allowlist`` restricts the catalog
-    to those names — mirroring ``ops_firefighter_action_allowlist`` semantics
-    where an empty/absent list means "all registered actions". A name in the
-    allowlist that isn't registered is ignored: you can only ever offer an
-    action that actually executes.
+    action the selector may pick, in registry order. A rules-only action
+    (``is_rules_only``) is never offered, so the engine refuses it as
+    off-catalog if a model names it anyway. A non-empty ``allowlist`` restricts
+    the catalog to those names — mirroring ``ops_firefighter_action_allowlist``
+    semantics where an empty/absent list means "all registered actions". A name
+    in the allowlist that isn't registered is ignored: you can only ever offer
+    an action that actually executes.
     """
     allowed = set(allowlist) if allowlist else None
     catalog: list[dict[str, Any]] = []
     for name in ACTION_REGISTRY:
         if allowed is not None and name not in allowed:
+            continue
+        if is_rules_only(name):
             continue
         meta = _ACTION_META.get(name, {})
         catalog.append(

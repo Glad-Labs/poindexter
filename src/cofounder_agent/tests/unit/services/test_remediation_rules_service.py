@@ -100,6 +100,50 @@ async def test_add_rule_restart_container_requires_container_param():
 
 
 @pytest.mark.asyncio
+async def test_add_rule_restart_host_service_for_ollama():
+    """The PoindexterOllamaDown rule docs/operations/self-healing.md has the
+    operator add."""
+    pool = _FakePool(fetchrow=_rule_row(
+        alertname="PoindexterOllamaDown", action_name="restart_host_service",
+        params={"service": "ollama"},
+    ))
+    out = await svc.add_rule(
+        pool, action_name="restart_host_service", alertname="PoindexterOllamaDown",
+        params={"service": "ollama"},
+    )
+    sql, args = pool.conn.calls[-1]
+    assert "INSERT INTO remediation_rules" in sql
+    assert "restart_host_service" in args and '{"service": "ollama"}' in args
+    assert out["params"] == {"service": "ollama"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("params", [{}, {"service": ""}, {"service": "   "}, {"container": "ollama"}])
+async def test_add_rule_restart_host_service_requires_a_service(params):
+    pool = _FakePool()
+    with pytest.raises(svc.RemediationRuleError, match="requires a 'service' param"):
+        await svc.add_rule(
+            pool, action_name="restart_host_service", alertname="PoindexterOllamaDown",
+            params=params,
+        )
+    assert pool.conn.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service", ["compose-reapply", "mcp-http", "ollama-vision", "Ollama"])
+async def test_add_rule_restart_host_service_refuses_a_service_off_the_allowlist(service):
+    """The brain would refuse such a rule on every firing, so it pages each
+    time and never restarts anything: a dead row, refused here instead."""
+    pool = _FakePool()
+    with pytest.raises(svc.RemediationRuleError, match="can restart only ollama"):
+        await svc.add_rule(
+            pool, action_name="restart_host_service", alertname="PoindexterOllamaDown",
+            params={"service": service},
+        )
+    assert pool.conn.calls == []
+
+
+@pytest.mark.asyncio
 async def test_add_rule_rejects_a_regex_that_does_not_compile():
     """The brain skips an uncompilable regex at dispatch, so storing one is a dead rule."""
     pool = _FakePool()
@@ -275,6 +319,19 @@ def test_known_actions_in_sync_with_brain_registry():
         "services.remediation_rules_service._KNOWN_ACTIONS drifted from "
         "poindexter/brain/remediation/registry.py ACTION_REGISTRY — sync them (a new brain "
         "action must be added to _KNOWN_ACTIONS or the CLI rejects valid rules)."
+    )
+
+
+def test_host_services_in_sync_with_brain():
+    """``_HOST_SERVICES`` is the worker's copy of the brain's host-service
+    allowlist (the worker can't import the brain). If the brain allows one the
+    CLI refuses, a valid rule can't be added; the other way round, the CLI
+    accepts a rule the brain refuses on every firing."""
+    from poindexter.brain.remediation.host_services import HOST_SERVICES
+
+    assert set(svc._HOST_SERVICES) == set(HOST_SERVICES), (
+        "services.remediation_rules_service._HOST_SERVICES drifted from "
+        "poindexter/brain/remediation/host_services.py HOST_SERVICES — sync them."
     )
 
 

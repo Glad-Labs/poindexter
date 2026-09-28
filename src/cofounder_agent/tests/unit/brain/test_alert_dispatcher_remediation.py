@@ -9,7 +9,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 import poindexter.brain.alert_dispatcher as ad
+from poindexter.brain import health_probes as hp
 from poindexter.brain.remediation import engine as E
+from poindexter.brain.remediation import host_services as hs
+from poindexter.brain.remediation import registry as REG
 from poindexter.brain.remediation.engine import RemediationAttempt, RemediationDecision
 from poindexter.brain.remediation.registry import ActionResult
 from tests.unit.brain._remediation_fakes import FirefighterWorld
@@ -1339,3 +1342,155 @@ async def test_an_injected_notifier_hears_a_failed_fix_at_its_alerts_routing(mon
     await sim.cycle(after_minutes=10.5)
     (page,) = [c for c in sim.notify.await_args_list if c.args[0].startswith(_FAILED_FIX)]
     assert page.kwargs == {"critical": critical}
+
+
+# ---------------------------------------------------------------------------
+# PoindexterOllamaDown -> restart_host_service. Ollama is a host systemd unit,
+# so the rule restarts it through the host Recovery Agent, and only after the
+# brain has asked Ollama itself and got no answer (remediation/host_services).
+# These run the REAL executor; only its two network edges are faked, the
+# brain's /api/tags request and the agent POST. The rule is the one
+# docs/operations/self-healing.md has the operator add: no per-rule grace, so
+# Alertmanager's 600 s default, which covers the rule's for: 3m plus
+# group_interval 5m (test_remediation_rules.py pins that).
+# ---------------------------------------------------------------------------
+
+OLLAMA_FP = "c0ed9532ae325a47"  # the fingerprint prod's PoindexterOllamaDown rows carry
+OLLAMA_RULE = {
+    "id": 39, "alertname": "PoindexterOllamaDown", "match_regex": None,
+    "action_name": "restart_host_service", "params": {"service": "ollama"},
+    "max_attempts_per_window": None, "window_minutes": None, "verify_after_seconds": None,
+    "enabled": True,
+}
+OLLAMA_DOWN = {
+    "alertname": "PoindexterOllamaDown", "fingerprint": OLLAMA_FP, "severity": "critical",
+    "labels": {"job": "poindexter-worker", "instance": "worker:8002",
+               "alertname": "PoindexterOllamaDown", "severity": "critical",
+               "category": "infrastructure"},
+    "summary": "Ollama is not reachable from the worker",
+}
+_OLLAMA_TAGS = "http://host.docker.internal:11434/api/tags"
+_AGENT_RESTARTED = (True, "HTTP 200 — restarted ollama-primary.service (system)")
+
+
+class _OllamaSim(_AlertmanagerSim):
+    """``ollama_answers`` scripts the brain's /api/tags attempts (an HTTP
+    status, or None for silence; silent once it runs out); ``agent`` is what
+    the Recovery Agent returns."""
+
+    def __init__(self, monkeypatch, *, ollama_answers=(), agent=_AGENT_RESTARTED,
+                 alert=OLLAMA_DOWN, brain_senders=False):
+        super().__init__(monkeypatch, rule=OLLAMA_RULE, alert=alert, brain_senders=brain_senders)
+        monkeypatch.setattr(E, "execute", REG.execute)  # the real executor, not _Sim's recorder
+        monkeypatch.setenv("OLLAMA_URL", "http://host.docker.internal:11434")
+        monkeypatch.setattr(hs, "OLLAMA_CONFIRM_GAP_SECONDS", 0)
+        answers = list(ollama_answers)
+        self.asked = []
+        self.agent_calls = []
+
+        def _http_status(url, timeout):
+            self.asked.append(url)
+            return answers.pop(0) if answers else None
+
+        async def _call_agent_recovery(pool, service, *, timeout=15.0):
+            self.agent_calls.append(service)
+            return agent
+
+        monkeypatch.setattr(hs, "_http_status", _http_status)
+        monkeypatch.setattr(hp, "_call_agent_recovery", _call_agent_recovery)
+
+
+@pytest.mark.asyncio
+async def test_ollama_down_is_restarted_and_its_page_held_until_alertmanager_resolves_it(monkeypatch):
+    sim = _OllamaSim(monkeypatch)
+    row = sim.firing()
+    await sim.cycle()
+    assert sim.asked == [_OLLAMA_TAGS] * 2           # silent from the brain too
+    assert sim.agent_calls == ["ollama"]
+    assert row["dispatch_result"].startswith("remediating: restart_host_service (run ")
+    assert sim.notify.await_count == 0               # page held
+    action = sim.world.audit_rows("remediation_action")[0]["details"]
+    assert (action["rule_id"], action["action_name"], action["params"]) == (
+        39, "restart_host_service", {"service": "ollama"})
+    assert action["verify_signal"] == E.VERIFY_BY_RESOLVED_NOTIFICATION
+    assert action["verify_after_seconds"] == 600
+    assert action["alert_severity"] == "critical"
+    assert action["execution"]["status"] == "ok"
+    assert "restarted ollama-primary.service" in action["execution"]["detail"]
+    sim.world.advance(minutes=5)
+    sim.resolved()                                   # the next group_interval tick
+    await sim.cycle()
+    await sim.cycle(after_minutes=5.5)               # t+10.5: the verify
+    assert sim.verifies() == [("resolved", "resolved_notification")]
+    assert sim.notify.await_count == 0
+    assert sim.agent_calls == ["ollama"]
+
+
+@pytest.mark.asyncio
+async def test_an_ollama_that_answers_the_brain_is_left_alone_and_the_alert_pages(monkeypatch):
+    """The worker's check failed for 3 minutes, but Ollama answers the brain,
+    so it is up and busy with someone's work. No restart; the operator hears
+    the alert now, on its critical channels, with the reason."""
+    sim = _OllamaSim(monkeypatch, ollama_answers=[200], brain_senders=True)
+    sim.firing()
+    await sim.cycle()
+    assert sim.agent_calls == []
+    ((channels, page),) = sim.senders.sent
+    assert channels == "telegram+discord"
+    assert "PoindexterOllamaDown" in page
+    assert (
+        "Not auto-remediated (restart_host_service: action skipped: restart_host_service: "
+        f"Ollama answers {_OLLAMA_TAGS} from the brain (HTTP 200)"
+    ) in page
+    # Terminal: the verify never pages it a second time.
+    assert [v["details"]["result"] for v in sim.world.audit_rows("remediation_verify")] == ["action_failed"]
+    await sim.cycle(after_minutes=10.5)
+    assert len(sim.senders.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_restart_that_does_not_bring_ollama_back_pages_telegram_at_the_verify(monkeypatch):
+    sim = _OllamaSim(monkeypatch, brain_senders=True)
+    sim.firing()
+    await sim.cycle()
+    assert sim.senders.sent == []
+    await sim.cycle(after_minutes=10.5)              # no resolved notification in 600 s
+    assert sim.verifies() == [("still_firing", "no_resolved_notification")]
+    assert sim.senders.channels(
+        f"{_FAILED_FIX} PoindexterOllamaDown: attempted restart_host_service, still firing after 600s"
+    ) == ["telegram+discord"]
+    assert len(sim.senders.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_agent_that_cannot_restart_ollama_pages_now_with_its_reason(monkeypatch):
+    sim = _OllamaSim(
+        monkeypatch, brain_senders=True,
+        agent=(False, "HTTP 500 — Job for ollama-primary.service failed because the control process exited"),
+    )
+    sim.firing()
+    await sim.cycle()
+    assert sim.agent_calls == ["ollama"]
+    ((channels, page),) = sim.senders.sent
+    assert channels == "telegram+discord"
+    assert (
+        "Not auto-remediated (restart_host_service: action failed: recovery agent: "
+        "HTTP 500 — Job for ollama-primary.service failed"
+    ) in page
+
+
+@pytest.mark.asyncio
+async def test_the_ollama_rule_restarts_nothing_for_its_neighbour_alert(monkeypatch):
+    """OllamaNoModelsLoaded is Ollama up with an empty library: a restart can't
+    load models. The rule names PoindexterOllamaDown exactly, so it isn't
+    consulted, and the LLM long-tail never sees Ollama alerts."""
+    no_models = {
+        **OLLAMA_DOWN, "alertname": "OllamaNoModelsLoaded", "fingerprint": "4d1f0b6e2c9a7e35",
+        "labels": {**OLLAMA_DOWN["labels"], "alertname": "OllamaNoModelsLoaded"},
+    }
+    sim = _OllamaSim(monkeypatch, alert=no_models)
+    sim.firing()
+    await sim.cycle()
+    assert sim.asked == [] and sim.agent_calls == []
+    assert sim.world.audit_rows("remediation_action") == []
+    assert sim.notify.await_count == 1

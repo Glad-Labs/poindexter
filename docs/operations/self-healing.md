@@ -135,11 +135,16 @@ did exactly that. Measured first, over Prometheus's full 15-day retention
   That stretch covers all of the Linux host's time (it took over
   2026-07-23), so at `critical` the rule would never have paged there.
 
-The page goes out before the brain's own restart of `ollama-primary` would
-run (3 minutes against 10 to 15), the same order as `PoindexterWorkerDown`
-and the worker restart. The [firefighter](#deterministic-firefighter-detect--act--verify--escalate)
-can't hold it for a restart-then-verify either: its action registry
-restarts containers, and Ollama is a host unit.
+Without a firefighter rule, the page goes out before the brain's own restart
+of `ollama-primary` would run (3 minutes against 10 to 15), the same order as
+`PoindexterWorkerDown` and the worker restart. With the `restart_host_service`
+rule (see [Host services](#host-services--restart_host_service)), the
+[firefighter](#deterministic-firefighter-detect--act--verify--escalate) holds
+the page. It asks Ollama for `/api/tags` from the brain, and if nothing
+answers it restarts `ollama-primary` through the Recovery Agent, within
+about 30 s of Alertmanager's notification. It pages only if the alert hasn't
+resolved 600 s later. If Ollama answers the brain, or the restart fails, it
+pages at once, and the page ends with the reason.
 
 **A covering rule has to fire in the probe's own failure condition, and no
 test can check that.** `cost_freshness` deferred to
@@ -386,17 +391,138 @@ behaviour the rule exists to absorb, is a per-rule call.
 
 `poindexter/brain/remediation/registry.py` maps an `action_name` to an executor. Executors
 **must be idempotent, reversible, and blast-radius-bounded, and must never raise**
-into the loop (they return `ActionResult(status="failed", …)` instead). v1 ships
-two, each wrapping a primitive the brain already owns:
+into the loop (they return `ActionResult(status="failed", …)` instead). There are
+three, each wrapping a primitive the brain already owns:
 
-| `action_name`        | Params                    | Does                                                                                                                                              |
-| -------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `restart_container`  | `{"container": "<name>"}` | `docker restart <name>` (inspect-then-restart) via `brain_daemon.docker_restart_container`. Refuses the restart denylist — see Safety guardrails. |
-| `run_auto_remediate` | _(none)_                  | Re-runs `brain_daemon.auto_remediate` — the stuck-`in_progress` / stale-`awaiting_approval` `pipeline_tasks` sweep.                               |
+| `action_name`          | Params                    | Does                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restart_container`    | `{"container": "<name>"}` | `docker restart <name>` (inspect-then-restart) via `brain_daemon.docker_restart_container`. Refuses the restart denylist — see Safety guardrails.                                                                                                                                                                                         |
+| `restart_host_service` | `{"service": "ollama"}`   | Restarts an allowlisted host systemd unit through the host Recovery Agent (`ollama` is `ollama-primary.service`), the same POST the probe path makes. Only after the brain has asked the service itself and got no answer. **Rules-only**: never offered to the LLM long-tail. See [Host services](#host-services--restart_host_service). |
+| `run_auto_remediate`   | _(none)_                  | Re-runs `brain_daemon.auto_remediate` — the stuck-`in_progress` / stale-`awaiting_approval` `pipeline_tasks` sweep.                                                                                                                                                                                                                       |
 
 Adding an action = register one more executor in `ACTION_REGISTRY` (+ the
-primitive it wraps). An unknown `action_name` is `skipped` — it never crashes the
-loop.
+primitive it wraps), and add it to `_KNOWN_ACTIONS` in
+`services/remediation_rules_service.py`, which the CLI validates rules against
+(a test fails until the two agree). An unknown `action_name` is `skipped` — it
+never crashes the loop.
+
+### Host services — `restart_host_service`
+
+Ollama is not a container here. It runs as two host systemd units,
+`ollama-primary.service` (:11434, the instance at `ollama_base_url`) and
+`ollama-vision.service` (:11435, the pinned judge), so `restart_container` can't
+touch it, and before this action the firefighter couldn't hold
+`PoindexterOllamaDown`: the page landed first, and the probe path's
+`recover_via_agent` restart ran 10 to 15 minutes later. `restart_host_service`
+posts to the same [host Recovery Agent](#the-host-recovery-agent) with the same
+call (`health_probes._call_agent_recovery`: agent URL and token from
+`mcp_http_probe_recovery_url` / `mcp_http_probe_recovery_token` through the
+brain's secret reader). It waits 45 s for the answer, longer than the agent's
+own 30 s wait on `systemctl restart`, so a restart that takes 20 s is recorded
+as done rather than as a failure. The record carries what the agent said, for
+example `recovery agent: HTTP 200 — restarted ollama-primary.service (system)`.
+The code is `poindexter/brain/remediation/host_services.py`.
+
+**An allowlist, in code.** `host_services.HOST_SERVICES` names the services
+this action may restart, and each entry carries its own check that the service
+is really down, so adding one means writing that check. Today it holds only
+`ollama`. The agent's other two services stay off it. `compose-reapply` isn't
+a service restart: it recreates every drifted container, and
+`compose_drift_probe` owns it with its own cap. `mcp-http` has its own
+confirm-then-recover path in `mcp_http_probe`. `poindexter firefighter rule add`
+refuses any other `service`, from a local copy of the allowlist kept equal to
+the brain's by a test.
+
+**It restarts only an Ollama that doesn't answer.** Before restarting, the brain
+asks the primary for `/api/tags` itself (the container's `OLLAMA_URL`, else
+`ollama_base_url`: the same instance the worker's gauge reads), twice, 5 s
+each, a second apart. Any HTTP answer, an error status included, means the
+server is up, and the action refuses (`skipped`), so the alert pages with the
+reason:
+`Not auto-remediated (restart_host_service: action skipped: restart_host_service: Ollama answers http://host.docker.internal:11434/api/tags from the brain (HTTP 200), so it is not down; a live server is not restarted).`
+Only silence on both tries (refused, reset, timed out) lets the restart run.
+The alert is one vantage point, the worker's. Of the zeros it recorded before
+it went critical, every one the host journal could still check was the
+worker's request never reaching Ollama, while Ollama answered everything else
+in under 1 ms (see [Which brain notices page](#which-brain-notices-page)). A
+restart then would kill live work and fix nothing. The check also makes a
+mis-wired rule harmless: pointed at an alert that isn't an Ollama outage, it
+finds Ollama answering and refuses. A URL that isn't `http(s)`, or a check
+that fails in a way it can't classify, refuses too.
+
+**Not gated on the GPU lock.** Restarting `ollama-primary` kills whatever it is
+generating, which is why the brain's two paths that touch a healthy Ollama
+wait: `ollama_embedding` defers while the GPU advisory lock is held, and
+`ollama_runner_ram_watch` recycles only an idle runner. This action acts on an
+Ollama that answers no one, so it is generating for no one. The lock would be
+the wrong signal here, measured over the 324.5 h from 2026-09-15 to 09-28
+(`gpu_task_sessions`):
+
+- `media_render` held it for 32.6 h, 10% of the time, in sessions of 48 min on
+  average, and image generation for 2.1 h more. A render holds GPU 0's device
+  key, the same key every locked call to the primary needs (`render` and
+  `llm_primary` are both `[0]` in `gpu_lock_scopes`), so no locked LLM call runs
+  on the primary under it, and the render doesn't use Ollama. A lock gate would
+  refuse the self-heal through every render and protect nothing.
+- LLM calls held it for 8.7 h, since `dispatch_complete` takes
+  `gpu.lock("ollama")` around each call. During an outage that holder is the
+  pipeline's own call failing against Ollama, the thing the restart fixes.
+
+What's left is an Ollama that accepts connections but answers nothing for
+5 s, twice, while a runner still streams a reply. The restart loses that
+reply. Nothing like it has been observed, and the probe path already restarts
+in that state without asking.
+
+**Rules-only.** `restart_host_service` is never in the catalog the LLM
+long-tail sees (`registry.is_rules_only`), and a model that names it anyway is
+refused as off-catalog. Its only target is Ollama, which the selector itself
+runs on. The exclusion regex keeps Ollama's alerts away from the model, and
+this keeps "restart Ollama" out of its answers to everything else, such as the
+pipeline findings that make up nearly all of what reaches it (see
+[What reaches the long-tail](#what-reaches-the-long-tail)).
+
+**The rule for `PoindexterOllamaDown`**, added after the deploy (see
+[Deploy order](#deploy-order-rules-come-last)):
+
+```bash
+poindexter firefighter rule add \
+  --action restart_host_service \
+  --alert PoindexterOllamaDown \
+  --param service=ollama \
+  --description "Ollama unreachable: confirm from the brain, restart ollama-primary via the Recovery Agent, page if Alertmanager hasn't resolved it by the verify."
+```
+
+It sets no `--verify-after`, so the verify waits the Alertmanager default, 600 s
+([sizing the grace](#the-verify--what-counts-as-a-fix)). The rule's `for: 3m`
+plus Alertmanager's 5 min `group_interval` is 480 s, which leaves 2 minutes for
+the rule's 30 s evaluation interval and the brain's 30 s poll, the steps that
+formula leaves out.
+`test_the_alertmanager_grace_covers_a_resolved_notification_and_a_relapse`
+reads the rule and fails if its `for:` outgrows the default. The circuit
+breaker keeps the defaults (3 restarts per 60 minutes), so a fourth outage
+inside an hour pages with `circuit breaker tripped`.
+
+What the operator sees, in each case:
+
+| Outcome                                      | When                                                                 | Page                                                                                                                                                        |
+| -------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Restarted, and Alertmanager resolves it      | resolved notification at the next `group_interval` tick, about 5 min | none; a `remediation_verify` row with `result=resolved`                                                                                                     |
+| Restarted, still firing                      | the verify, 600 s after the restart                                  | `[FIREFIGHTER] auto-remediation did not resolve PoindexterOllamaDown: attempted restart_host_service, still firing after 600s (…)`, on Telegram and Discord |
+| Ollama answers the brain, or the agent fails | at once                                                              | the alert's own page, ending `Not auto-remediated (restart_host_service: …)` with the reason                                                                |
+
+The probe path still runs alongside: `ollama_models` restarts `ollama-primary`
+itself after three failed 5-minute probes. It needs at least 10 minutes of
+outage to act, and the firefighter acts 3.5 to 5 minutes in (`for: 3m`, the
+30 s rule evaluation, Alertmanager's 30 s `group_wait`, the brain's 30 s poll),
+so it's the second attempt when the first didn't take. Once the firefighter's
+restart works, the probe passes and its failure count resets.
+
+**Stopping Ollama on purpose.** A deliberate `systemctl stop ollama-primary`
+fires the alert after 3 minutes, and with the rule in place the firefighter
+restarts it. Disable the rule first (`poindexter firefighter rule disable
+--alert PoindexterOllamaDown`), or silence the alert in Alertmanager, and put it
+back afterwards. The probe path would restart it anyway after 10 to 15 minutes,
+as it always has.
 
 ### Operator-triggered restart — a third path into the same primitive
 
@@ -498,6 +624,12 @@ the container on a guess is worse than reporting it.
   names both containers as never-choose, which suppresses most picks at the
   source — the executor guard is the backstop for the rest.
 
+- **Host services: allowlisted, and only when down.** `restart_host_service`
+  restarts only the services in `host_services.HOST_SERVICES` (today `ollama`,
+  hardcoded, each with its own is-it-down check), and only after the brain has
+  asked the service itself and got no answer. A service that answers is
+  refused, which pages. No LLM pick can run it (rules-only). See
+  [Host services](#host-services--restart_host_service).
 - **Firing alerts only.** A resolved row is never remediated. A probe's recovery
   row, or Alertmanager's resolved notification, carries the same alertname and
   fingerprint prefix as the firing alert, so before this guard (2026-09-24) a
@@ -591,7 +723,9 @@ inference call**:
   `ops_firefighter_llm_exclude_regex` (default
   `(?i)(ollama|gpu|vram|cuda|inference)`) is **never** sent to the model — you
   can't ask the LLM to fix the substrate it runs on. Those stay
-  deterministic-rule-only.
+  deterministic-rule-only. The other half is the catalog: `restart_host_service`,
+  whose only target is Ollama, is rules-only, so the model is never offered
+  "restart Ollama" as the answer to any other alert either.
 - **Confidence.** A selection below `ops_firefighter_min_confidence` (default
   `0.6`) is not acted on.
 - **Untrusted output.** The model's `action_name` must be one of the catalog
@@ -603,7 +737,9 @@ inference call**:
   cap, is recorded but not run. See
   [Graduating the long-tail](#graduating-the-long-tail-from-dry-run).
 - **The rules-only label and the restart denylist** apply here as they do on a
-  first row (see Safety guardrails).
+  first row (see Safety guardrails). A rules-only _action_ never reaches the
+  model at all: `describe_catalog` leaves it out, and a pick that names it is
+  refused as off-catalog.
 
 Every look is visible on the alert's own row. The persistent repeat's
 `dispatch_result` ends with what the model did, for example
@@ -716,8 +852,9 @@ Measured by replaying prod's 90 days of `alert_events` (11,351 rows,
 - Nearly all are **pipeline and job findings** that no container restart
   fixes: `hero_render_fallback`, `run_taps:job_failure`,
   `critic_model_collision`, `qa_rail_degraded`, `topic_sanity_rejected`,
-  `stale_task_reclaimed` and similar. The two-action catalog
-  (`restart_container`, `run_auto_remediate`) fits very few of them. Here the
+  `stale_task_reclaimed` and similar. The two actions the model is offered
+  (`restart_container`, `run_auto_remediate`; `restart_host_service` is
+  rules-only) fit very few of them. Here the
   model is mostly deciding whether to abstain, and a wrong restart is how it
   would hurt. `poindexter-worker` and `poindexter-prefect-worker` are not on the
   restart denylist. Restarting either interrupts pipeline work, and a
@@ -834,29 +971,38 @@ poindexter firefighter rule rm 3              # or: --alert SomeSidecarDown (thi
 ```
 
 `add` **validates before it writes**: an unknown `--action`, a rule with neither
-`--alert` nor `--match`, or a `restart_container` rule missing
-`--param container=…` all fail loud — a rule the brain could never run is a
-silent dead row, so it's rejected up front. Known actions today: `restart_container`,
-`run_auto_remediate`. Optional per-rule circuit-breaker caps: `--max-attempts`,
+`--alert` nor `--match`, a `restart_container` rule missing
+`--param container=…`, or a `restart_host_service` rule whose `--param service=…`
+is missing or not on the host-service allowlist all fail loud — a rule the brain
+could never run is a silent dead row, so it's rejected up front. Known actions
+today: `restart_container`, `restart_host_service`, `run_auto_remediate`.
+Optional per-rule circuit-breaker caps: `--max-attempts`,
 `--window-minutes`, `--verify-after` (each falls back to the global default when
 omitted). The default `--verify-after` depends on who produces the alert: 120 s
 for a probe, 600 s for an alert Alertmanager or Grafana delivered (see
-[sizing the grace](#the-verify--what-counts-as-a-fix)). PyroscopeDown and
-PromtailDown, the two Alertmanager rules on prod, set none and get the 600 s.
+[sizing the grace](#the-verify--what-counts-as-a-fix)). PyroscopeDown,
+PromtailDown and PoindexterOllamaDown, the Alertmanager rules on prod, set none
+and get the 600 s.
 
 **Only wire an action to an alert it can actually fix.** `restart_container`
 targets **containers** — confirm the surface is one (`docker ps`) before pointing
-a rule at it. Several _noisy_ surfaces are **host-native, not containers**, so a
+a rule at it. Some surfaces are **host systemd units, not containers**, so a
 `docker restart` can't touch them and the rule would act uselessly, then page:
 
-- **Ollama** (`Ollama Unresponsive`) runs on the host
-  (`host.docker.internal:11434`), not in a container.
-- The **MCP HTTP server** (`mcp_http_server_unreachable`) is a host Scheduled
-  Task — it already has the `mcp-http` host-recover path (see the Recovery Agent
-  below).
-- **image-gen / wan** inference servers are host-native too.
+- **Ollama** runs as `ollama-primary.service` (:11434) and
+  `ollama-vision.service` (:11435). For `PoindexterOllamaDown`, use
+  `restart_host_service` with `service=ollama` (see
+  [Host services](#host-services--restart_host_service)), which restarts the
+  primary. `OllamaNoModelsLoaded` is Ollama up with an empty library, which a
+  restart doesn't fix.
+- The **MCP HTTP server** is `poindexter-mcp-http.service`. It has its own
+  confirm-then-recover path (`mcp_http_probe` → the agent's `mcp-http`, see the
+  Recovery Agent below), and `restart_host_service` doesn't offer it.
 
-Route those through a probe + host Recovery Agent action, not a firefighter rule.
+**image-gen** and **wan** were host processes on the Windows host and are
+containers on Linux (`poindexter-image-gen-server`, `poindexter-wan-server`),
+but they hold GPU renders for minutes at a time, so no rule restarts them; the
+container health watch marks its alerts rules-only for the same reason.
 And note `run_auto_remediate` already runs unconditionally every brain cycle, so a
 rule for it only adds an _on-demand_ re-run between cycles.
 
@@ -876,6 +1022,14 @@ Until step 3 the firefighter is live but inert (enabled, no rules). The
 **Self-Healing / Remediation** row on the System Health dashboard shows silent
 auto-recoveries, still-firing/paged counts, actions-by-type, and the latest
 actions once rules begin matching.
+
+The same order holds for a rule on a **new action** (`restart_host_service`
+arrived 2026-09-28), and it has two halves to wait for. The brain image must
+have the executor: until then the rule is an unknown action, and every firing
+pages with `Not auto-remediated (restart_host_service: action skipped: unknown
+action: restart_host_service)`. The `poindexter` CLI must run code that knows
+the action too, since `add` validates against `_KNOWN_ACTIONS`. On the operator
+box the CLI runs the main checkout, not the deploy clone.
 
 ## The detector / actor split
 
@@ -931,11 +1085,11 @@ On Linux the agent runs as `poindexter-recovery-agent.service`
 watchdog, so `recovery-agent-watchdog.ps1` has no Linux counterpart) and the
 action registry switches to `_LINUX_SERVICES`, whose surfaces are systemd units:
 
-| Service           | Kind      | Action                                                  |
-| ----------------- | --------- | ------------------------------------------------------- |
-| `ollama`          | `systemd` | `sudo -n systemctl restart ollama-primary.service`      |
-| `mcp-http`        | `systemd` | `sudo -n systemctl restart poindexter-mcp-http.service` |
-| `compose-reapply` | `compose` | `start-stack.sh up -d --no-build` (unchanged)           |
+| Service           | Kind      | Action                                                  | Called by                                                                                                           |
+| ----------------- | --------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `ollama`          | `systemd` | `sudo -n systemctl restart ollama-primary.service`      | the `ollama_models` / `ollama_embedding` probes (`recover_via_agent`), and the firefighter's `restart_host_service` |
+| `mcp-http`        | `systemd` | `sudo -n systemctl restart poindexter-mcp-http.service` | `mcp_http_probe`                                                                                                    |
+| `compose-reapply` | `compose` | `start-stack.sh up -d --no-build` (unchanged)           | `compose_drift_probe`                                                                                               |
 
 Install (deploy clone on `origin/main`):
 

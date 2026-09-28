@@ -83,6 +83,11 @@ groups:
       #     the 71 days since, which cover all of the Linux host's time
       #     (from 2026-07-23). As critical it would have paged 0 times there.
       # Write-up: docs/operations/self-healing.md, "Which brain notices page".
+      # A firefighter rule (restart_host_service, service=ollama) can hold this
+      # page for a restart-then-verify: docs/operations/self-healing.md, "Host
+      # services". It sets no grace, so the verify waits 600 s, which must stay
+      # at least this rule's for: plus Alertmanager's group_interval
+      # (test_the_alertmanager_grace_covers_a_resolved_notification_and_a_relapse).
       - alert: PoindexterOllamaDown
         expr: poindexter_ollama_reachable == 0
         for: 3m
@@ -100,7 +105,9 @@ groups:
             `ollama serve`), then `curl -s localhost:11434/api/tags`. The
             brain restarts ollama-primary through the recovery agent after
             three failed 5-minute probes, so a restart may already be under
-            way.
+            way. With a firefighter rule on this alert, the brain asked
+            Ollama itself before this page; a "Not auto-remediated" line
+            below says why it didn't restart it.
 
       # --- Cloudflare page-views beacon ---
       # Static (not DB-rendered): binary up/down, no tunable threshold. The
