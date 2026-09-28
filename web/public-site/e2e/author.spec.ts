@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 /**
  * Author page E2E coverage.
@@ -9,10 +9,30 @@ import { test, expect } from '@playwright/test';
  * - Navigate to known author slugs — assert no 500 error
  * - Assert author bio/name renders
  * - Unknown author gracefully falls back to default profile
+ * - The known author's page lists their posts; an unknown author's page
+ *   shows the empty state instead (glad-labs-stack#3339)
  */
 
 const KNOWN_AUTHOR_ID = 'poindexter-ai';
 const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+// The two states of the page's post list, matched on the markup it renders.
+// A post card is a brand <Card> (a div.gl-card), not an <article>, so a post
+// is found by its title link to /posts/<slug>. The empty state is a Card too,
+// so neither `article` nor `.gl-card` can tell the two states apart.
+const POST_LINKS = 'a[href^="/posts/"]';
+const EMPTY_STATE = /hasn't published anything yet/i;
+
+/**
+ * The "Articles by <name>" section. Scoping to it keeps the header's
+ * "← All articles" button and the site chrome from standing in for either
+ * list state.
+ */
+function articlesSection(page: Page) {
+  return page.locator('section').filter({
+    has: page.getByRole('heading', { level: 2, name: /^Articles by/i }),
+  });
+}
 
 test.describe('Author Page', () => {
   test.beforeAll(async ({ request }) => {
@@ -59,22 +79,33 @@ test.describe('Author Page', () => {
     await expect(heading).toBeVisible();
   });
 
-  test('known author page shows posts list or empty state', async ({
+  // Every published post is attributed to the Poindexter AI author row
+  // (src/cofounder_agent/poindexter/services/default_author.py), so on any
+  // target that has posts, an empty state on this page is a bug. It is what
+  // #3339 looked like in production.
+  // This test used to accept "posts OR empty state" and counted <article>
+  // elements, which this page has never rendered. It could only pass through
+  // the empty state, so it was green while #3339 hid every post (2026-08-31,
+  // 09-07) and turned red once #3599 fixed the page and listed them.
+  test('known author page lists their posts, not the empty state', async ({
     page,
   }) => {
     await page.goto(`/author/${KNOWN_AUTHOR_ID}`);
-    const articles = await page.locator('article').count();
-    // .first(): the empty-state copy ("NO ARTICLES YET" badge + "hasn't
-    // published anything yet" body) matches TWICE, and strict-mode
-    // isVisible() then THROWS — which the .catch turned into false, failing
-    // the test against a correctly-rendering page. The regex also names the
-    // page's real copy; the old one only knew phrasings the page never used.
-    const hasEmptyState = await page
-      .locator("text=/no posts|no articles|check back|hasn't published/i")
-      .first()
-      .isVisible()
-      .catch(() => false);
-    expect(articles > 0 || hasEmptyState).toBeTruthy();
+    const articles = articlesSection(page);
+    await expect(articles.locator(POST_LINKS).first()).toBeVisible();
+    await expect(articles.getByText(EMPTY_STATE)).toHaveCount(0);
+  });
+
+  // The empty state belongs here: an unknown slug gets the default profile
+  // and no posts. The no-posts check also pins #3599's rule that an unknown
+  // slug never falls back to listing somebody else's posts.
+  test('unknown author page shows the empty state and lists no posts', async ({
+    page,
+  }) => {
+    await page.goto('/author/unknown-author-xyz-999');
+    const articles = articlesSection(page);
+    await expect(articles.getByText(EMPTY_STATE)).toBeVisible();
+    await expect(articles.locator(POST_LINKS)).toHaveCount(0);
   });
 
   test('unknown author id falls back gracefully (not a 500)', async ({
