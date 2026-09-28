@@ -39,13 +39,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from poindexter.brain import docker_utils
 from poindexter.brain.operator_notifier import notify_operator
 from poindexter.brain.secret_reader import read_app_setting
 
@@ -70,7 +69,6 @@ DEFAULT_API_URL = "http://postiz:3000"
 
 _CONTAINER = "poindexter-postiz"
 _ALERTNAME = "postiz_queue_wedged"
-_DOCKER_RESTART_TIMEOUT_SECONDS = 60
 _API_TIMEOUT_SECONDS = 15
 # How far back to scan for stuck posts. A wedge older than this window has
 # long since been paged; keeps the response small.
@@ -246,31 +244,6 @@ def _overdue_from_posts(
     return overdue
 
 
-def _restart_postiz_container(container: str) -> tuple[bool, str]:
-    """``docker restart <container>`` (shape mirrors auto_embed_watch)."""
-    try:
-        kwargs: dict[str, Any] = {
-            "capture_output": True,
-            "text": True,
-            "timeout": _DOCKER_RESTART_TIMEOUT_SECONDS,
-        }
-        if os.name == "nt":
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        result = subprocess.run(["docker", "restart", container], **kwargs)
-        if result.returncode == 0:
-            return True, f"Restarted {container}"
-        return False, (
-            f"docker restart {container} exit {result.returncode}: "
-            f"{(result.stderr or '').strip()[:200]}"
-        )
-    except FileNotFoundError:
-        return False, "docker CLI not on PATH"
-    except subprocess.TimeoutExpired:
-        return False, f"docker restart {container} timed out"
-    except Exception as exc:  # noqa: BLE001
-        return False, f"docker restart error: {type(exc).__name__}: {str(exc)[:160]}"
-
-
 async def _firing_alert_exists(pool: Any, alertname: str) -> bool:
     try:
         row = await pool.fetchrow(
@@ -351,7 +324,7 @@ async def run_postiz_queue_watch_probe(
     pool: Any,
     *,
     check_fn: Callable[[], Awaitable[dict[str, Any] | None]] | None = None,
-    restart_fn: Callable[[str], tuple[bool, str]] | None = None,
+    restart_fn: docker_utils.RestartFn | None = None,
     sleep_fn: Callable[[float], Awaitable[None]] | None = None,
     notify_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
@@ -362,9 +335,11 @@ async def run_postiz_queue_watch_probe(
         check_fn: ``() -> {"overdue": N, "sample": [...]} | None`` — defaults
             to the live Postiz API read. Tests inject canned states; None
             means "API unreachable" and is treated as wedged.
-        restart_fn: ``(container) -> (ok, msg)`` — defaults to the real
-            ``docker restart``. Offloaded via ``asyncio.to_thread`` so the
-            blocking restart never stalls the brain event loop.
+        restart_fn: ``async (container, *, pool) -> ContainerRestart`` —
+            defaults to :func:`brain.docker_utils.restart_container`, the
+            brain's shared ``docker restart`` (inspect first, timeout from
+            ``app_settings.brain_docker_restart_timeout_seconds``, off the
+            event loop).
         sleep_fn: ``async (seconds) -> None`` — defaults to ``asyncio.sleep``
             so the between-retry wait yields the loop instead of freezing it.
         notify_fn: operator notifier — defaults to
@@ -372,7 +347,7 @@ async def run_postiz_queue_watch_probe(
             the "docker is unreachable" surface.
     """
     global _retry_count
-    restart_fn = restart_fn or _restart_postiz_container
+    restart_fn = restart_fn or docker_utils.restart_container
     sleep_fn = sleep_fn or asyncio.sleep
     _notify: Callable[..., Any] = notify_fn or notify_operator
 
@@ -454,8 +429,27 @@ async def run_postiz_queue_watch_probe(
         "[POSTIZ_WATCH] wedged (%s) — restart %d/%d on %s",
         stuck_detail, _retry_count, max_retries, _CONTAINER,
     )
-    ok, msg = await asyncio.to_thread(restart_fn, _CONTAINER)
-    if not ok:
+    restart = await restart_fn(_CONTAINER, pool=pool)
+    if restart.status == docker_utils.RESTART_MISSING:
+        # Mid-recreate (``docker compose up --force-recreate`` leaves the name
+        # unbound for a second or two): nothing was restarted, so skip the
+        # wait and re-check; the next cycle queries the replacement. The retry
+        # still counts, so a Postiz that stays missing (an unreachable API
+        # counts as wedged) reaches the escalation above.
+        detail = (
+            f"Postiz queue wedged but {restart.detail}; nothing was restarted "
+            f"(retry {_retry_count}/{max_retries})."
+        )
+        logger.info("[POSTIZ_WATCH] %s", detail)
+        await _emit_audit_event(
+            pool,
+            "probe.postiz_queue_restart_skipped",
+            detail,
+            extra={"retries_used": _retry_count},
+        )
+        return {"ok": False, "status": "container_missing", "retries_used": _retry_count}
+    if not restart.ok:
+        msg = restart.detail
         detail = (
             f"Postiz queue wedged and docker restart failed: {msg} "
             f"(retry {_retry_count}/{max_retries})."
@@ -467,7 +461,7 @@ async def run_postiz_queue_watch_probe(
             detail,
             extra={"retries_used": _retry_count, "restart_error": msg},
         )
-        if "docker CLI" in msg:
+        if restart.status == docker_utils.RESTART_NO_DOCKER_CLI:
             try:
                 _notify(
                     title="Postiz watch cannot restart container",

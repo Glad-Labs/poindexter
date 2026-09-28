@@ -15,9 +15,10 @@ import math
 import os
 import re
 import subprocess
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,18 @@ class ContainerRestart:
         return self.status == RESTART_OK
 
 
+class RestartFn(Protocol):
+    """The shape of :func:`restart_container`.
+
+    A probe that restarts a container takes a ``restart_fn`` of this shape so
+    its tests can inject a stub, defaults it to :func:`restart_container`, and
+    calls it as ``await restart_fn(container, pool=pool)``. The pool is what
+    the timeout is read through.
+    """
+
+    def __call__(self, container: str, *, pool: Any = None) -> Awaitable[ContainerRestart]: ...
+
+
 async def docker_restart_timeout_seconds(pool: Any = None) -> float:
     """Seconds a ``docker restart`` may run before the brain reports it failed.
 
@@ -235,13 +248,17 @@ def _could_not_run(container: str, step: str, timeout: float, exc: Exception) ->
 async def restart_container(container: str, *, pool: Any = None) -> ContainerRestart:
     """``docker inspect`` then ``docker restart`` one container, off the event loop.
 
-    Shared by ``brain_daemon.restart_service`` (``monitor_services``' heal),
+    Every ``docker restart`` the brain runs goes through this:
+    ``brain_daemon.restart_service`` (``monitor_services``' heal),
     ``brain_daemon.docker_restart_container`` (the firefighter's
-    ``restart_container`` action and console restart requests) and
-    ``health_probes``' ``REMEDIATIONS`` self-heal. New brain code restarts a
-    container through this. The probe-owned restarts that predate it are
-    listed in ``tests/unit/brain/test_docker_utils_restart.py`` until they
-    move over, and that ratchet fails on any new one.
+    ``restart_container`` action and console restart requests),
+    ``health_probes``' ``REMEDIATIONS`` self-heal, and the probes that restart
+    what they watch (``migration_drift_probe``, ``backup_watcher``,
+    ``offsite_backup_watch``, ``auto_embed_watch``, ``postiz_queue_watch``,
+    ``docker_port_forward_probe``, ``sidecar_ram_watch``,
+    ``comfyui_ram_watch``), each through a :class:`RestartFn` seam. A ratchet
+    in ``tests/unit/brain/test_docker_utils_restart.py`` fails if any other
+    brain module shells out ``docker restart`` itself.
 
     * **Inspect first.** ``docker compose up --force-recreate`` leaves the
       name unbound for a second or two between removing the old container

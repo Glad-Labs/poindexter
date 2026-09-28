@@ -1221,45 +1221,67 @@ twice in one night, cancelling an in-flight media render):
   missing, the call raised, or the service has no container mapping.
 
 Related knob: `brain_docker_restart_timeout_seconds` (default 90) bounds the
-`docker restart` subprocess on every path that goes through the brain's
-shared restart implementation, `docker_utils.restart_container`
-(`poindexter/brain/docker_utils.py`):
+`docker restart` subprocess on every path the brain restarts a container
+through. All of them go through one implementation,
+`docker_utils.restart_container` (`poindexter/brain/docker_utils.py`):
 
 - `restart_service`, this monitor's heal;
 - `docker_restart_container`, the firefighter's `restart_container` action
   and console restart requests (see [The action registry](#the-action-registry));
 - the `health_probes` `REMEDIATIONS` self-heal (`worker_error_rate`,
   `stuck_tasks` and `public_site` restart the worker; `grafana_datasources`
-  restarts Grafana).
+  restarts Grafana);
+- the probes that restart what they watch, each through a `restart_fn` seam
+  typed `docker_utils.RestartFn` that it calls with the pool:
+  `migration_drift_probe` (the worker), `backup_watcher`,
+  `offsite_backup_watch`, `auto_embed_watch`, `postiz_queue_watch`,
+  `docker_port_forward_probe`, `sidecar_ram_watch` and `comfyui_ram_watch`.
 
 `docker restart` waits out the container's `stop_grace_period` before it
 kills and starts it, and the worker's is 75 s, so the timeout must exceed the
 longest grace of anything these paths restart. The old hardcoded 30 s here
 was shorter than the worker's graceful stop (~30-45 s), so every worker heal
 paged a misleading "Restart failed: timed out" while dockerd completed the
-restart fine (2026-08-15). The knob fixed `restart_service` only: until the
+restart fine (2026-08-15). The knob fixed `restart_service` only. Until the
 shared helper (2026-09-28) the firefighter and console path still waited a
-hardcoded 30 s and the self-heal 60 s, both under the worker's grace. A
-restart that does outlive the timeout still fails, and says so: "did not
-return within Ns … dockerd may still complete it".
+hardcoded 30 s and the self-heal 60 s, both under the worker's grace. The
+probes kept their own 30 s or 60 s until they moved onto the helper too, and
+`migration_drift_probe` restarted the worker on 30 s and paged critical
+("FAILED to restart") when it ran out. A restart that does outlive the
+timeout still fails, and says so: "did not return within Ns … dockerd may
+still complete it". Moving the probes onto the knob also raises their worst
+case: a hung restart now holds a probe for up to 10 s of inspect plus the
+knob, where it used to be 30 s or 60 s. The cycle watchdog,
+`brain_cycle_timeout_seconds`, is 240 s.
 
-The helper runs the `docker inspect` pre-check for all three. Only docker's
-own "no such container" counts as the compose recreate window:
-`restart_service` and the self-heal then skip quietly (the self-heal's
-cooldown, stamped before the attempt, still stands, which keeps its next
-attempt off the freshly recreated container), and the firefighter gets
-`(False, "container … not found (likely mid-recreate)")`. A docker daemon the
-brain cannot reach fails the inspect too. `restart_service` used to skip that
-as "mid-recreate"; now it pages as a failed restart.
+The helper runs the `docker inspect` pre-check for every caller. Only docker's
+own "no such container" counts as the compose recreate window
+(`RESTART_MISSING`), and each caller decides what it means.
+`restart_service` and the self-heal skip quietly. The self-heal's cooldown,
+stamped before the attempt, still stands and keeps its next attempt off the
+freshly recreated container. The firefighter gets
+`(False, "container … not found (likely mid-recreate)")`. For the probes it
+means nothing was restarted, never that a restart failed. None of them pages
+or notifies on it, and none waits or re-checks, because there is no restart to
+verify and the next cycle checks the replacement:
 
-Not on the helper yet: seven probe-owned restarts with their own timeouts —
-`migration_drift_probe` (the worker, hardcoded 30 s), `backup_watcher`,
-`auto_embed_watch`, `offsite_backup_watch` and `docker_port_forward_probe`
-(30 s), `postiz_queue_watch` and `ram_recycle_common` (60 s). All but
-`migration_drift_probe` restart sidecars on docker's default 10 s grace. The
-ratchet in `tests/unit/brain/test_docker_utils_restart.py` fails if a brain
-module adds its own `docker restart`, or if one of these seven moves onto the
-helper without leaving the list.
+| Probe                                                                              | A container missing mid-recreate                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `migration_drift_probe`                                                            | No "FAILED to restart" page and no health wait: the replacement applies pending migrations at boot. It uses one of `migration_drift_recover_max_attempts`, so a worker that stays missing ends at the exhaustion page. Audited `probe.migration_drift_recover_skipped`. |
+| `backup_watcher`, `offsite_backup_watch`, `auto_embed_watch`, `postiz_queue_watch` | No retry-delay wait and no re-check. It uses one retry, so a container that stays missing still escalates (the offsite tier critical, as before). Status `container_missing`, audited `probe.<watch>_restart_skipped`.                                                  |
+| `docker_port_forward_probe`                                                        | No cap slot, no failed-recovery count, no alert: the replacement gets a fresh forward. A container that stays gone is the existence check's `unwatched`. Audited `docker_port_forward_container_missing`.                                                               |
+| `sidecar_ram_watch`, `comfyui_ram_watch`                                           | Neither a recycle nor a failure: no finding and no cooldown stamp. The replacement's new process returns the memory anyway.                                                                                                                                             |
+
+A docker daemon the brain cannot reach fails the inspect too. `restart_service`
+used to skip that as "mid-recreate"; now it pages as a failed restart. Every
+other outcome keeps each probe's own handling. A failed or timed-out restart
+is still `migration_drift_probe`'s critical page. The four watches and the
+port-forward probe write a restart-failed audit row, with a warning notify
+only when the docker CLI is missing. The RAM recycles emit their
+`sidecar_ram_recycle_failed` or `comfyui_ram_recycle_failed` finding.
+
+The ratchet in `tests/unit/brain/test_docker_utils_restart.py` fails if any
+other brain module runs `docker restart` itself.
 
 ## Liveness probes
 
@@ -1888,7 +1910,7 @@ full incident write-up.
 | Setting                                                       | Default                                    | Meaning                                                                                                                                                                                           |
 | ------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `brain_restart_consecutive_failures`                          | `2`                                        | Consecutive hard-down monitor cycles before `monitor_services` auto-restarts a local service (degraded never restarts).                                                                           |
-| `brain_docker_restart_timeout_seconds`                        | `90`                                       | Timeout for every `docker restart` via `docker_utils.restart_container` (monitor, firefighter, console, self-heal). Must exceed the longest `stop_grace_period` it restarts (worker: 75 s).       |
+| `brain_docker_restart_timeout_seconds`                        | `90`                                       | Timeout for every brain `docker restart`, all via `docker_utils.restart_container` (monitor, firefighter, console, self-heal, probes). Must exceed the longest `stop_grace_period` (worker 75 s). |
 | `compose_drift_host_recover_enabled`                          | `true`                                     | Auto-heal compose drift via the host agent.                                                                                                                                                       |
 | `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                                                                                        |
 | `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                                                                                                   |

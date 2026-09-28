@@ -46,7 +46,11 @@ On each 5-minute brain cycle, when drift is detected **and**
      wipes any stray untracked file and advances past a stale checkout, so the
      restart applies **correct** migration files. Audited as
      `probe.migration_drift_synced` / `…_sync_failed`.
-   - `docker restart poindexter-worker` (the runner applies migrations on boot).
+   - `docker restart poindexter-worker` (the runner applies migrations on boot),
+     through the brain's shared `docker_utils.restart_container`: it inspects
+     first and waits `brain_docker_restart_timeout_seconds` (default 90), which
+     must outlast the worker's 75 s stop grace. The probe used to wait a
+     hardcoded 30 s and could page a restart dockerd went on to finish.
 5. **Re-check.** Worker healthy + `pending == 0` → audit
    `probe.migration_drift_recovered`, reset counters, done. Drift persists →
    audit `probe.migration_drift_recover_attempt_failed` and let the next cycle's
@@ -54,6 +58,16 @@ On each 5-minute brain cycle, when drift is detected **and**
 
 Restart-process failures and a worker that never comes back healthy still page
 **immediately** — those are genuine infra faults, not "retry might help."
+
+A worker **missing mid-recreate** is neither. `docker compose up
+--force-recreate` leaves the container name unbound for a second or two, so the
+inspect finds nothing and nothing is restarted. The replacement applies pending
+migrations at boot, just as a restart would, so the probe does not page. It
+skips the health wait, audits `probe.migration_drift_recover_skipped`, and lets
+the next cycle re-read drift. The attempt still counts, so a worker that keeps
+going missing ends at the exhaustion page like any other attempt that did not
+clear drift. Before the shared restart helper, `docker restart` hit the missing
+name, failed with "No such container", and paged critical.
 
 ### Why a _dedicated_ deploy checkout
 

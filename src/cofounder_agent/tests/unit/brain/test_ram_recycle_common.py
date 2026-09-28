@@ -125,16 +125,6 @@ def test_read_container_cpu_percent_unknown_is_none_never_zero(
     assert rc.read_container_cpu_percent("c") is None
 
 
-def test_restart_container_reports_failure_without_raising(monkeypatch):
-    def _boom(*a, **k):
-        raise FileNotFoundError
-
-    monkeypatch.setattr(rc.subprocess, "run", _boom)
-    ok, msg = rc.restart_container("c")
-    assert ok is False
-    assert "docker CLI not on PATH" in msg
-
-
 @pytest.mark.parametrize(
     "stderr",
     [

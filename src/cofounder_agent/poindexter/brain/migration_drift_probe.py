@@ -20,13 +20,18 @@ Probe behavior every 5-min cycle:
    a. Always emit a ``probe.migration_drift_detected`` audit event.
    b. If ``migration_drift_auto_recover_enabled = true`` (an
       app_setting that defaults to ``"false"`` for safety in case of bad
-      migrations) — restart ``poindexter-worker`` via ``docker restart``
-      using the Docker socket the brain container already mounts at
-      ``/var/run/docker.sock`` (see docker-compose.local.yml). Then wait
-      up to 60s for the worker to report healthy via /api/health and
-      re-check drift. If it cleared, emit
-      ``probe.migration_drift_recovered`` and stop. If it didn't, escalate
-      via :func:`brain.operator_notifier.notify_operator`.
+      migrations) — restart ``poindexter-worker`` through the brain's
+      shared ``docker_utils.restart_container`` (inspect first, then
+      ``docker restart`` bounded by
+      ``app_settings.brain_docker_restart_timeout_seconds``, which must
+      outlast the worker's 75 s stop grace), using the Docker socket the
+      brain container already mounts at ``/var/run/docker.sock`` (see
+      docker-compose.local.yml). Then wait up to 60s for the worker to
+      report healthy via /api/health and re-check drift. If it cleared,
+      emit ``probe.migration_drift_recovered`` and stop. If it didn't,
+      escalate via :func:`brain.operator_notifier.notify_operator`. A
+      worker missing mid-recreate is not restarted and not paged; see
+      ``run_migration_drift_probe``.
    c. If auto-recover is disabled — fire a single ``notify_operator()``
       so the operator knows there's drift, capped at one per cycle so a
       stuck restart-loop can't blast Telegram.
@@ -49,6 +54,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from poindexter.brain import docker_utils
 from poindexter.brain.docker_utils import localize_url
 from poindexter.brain.operator_notifier import notify_operator
 
@@ -578,41 +584,9 @@ async def _emit_audit_event(
 
 
 # ---------------------------------------------------------------------------
-# Worker restart
+# Recovery steps. The worker restart itself is the brain's shared
+# ``docker_utils.restart_container``.
 # ---------------------------------------------------------------------------
-
-
-def _restart_worker_container() -> tuple[bool, str]:
-    """Run ``docker restart poindexter-worker``. Returns (ok, message).
-
-    The brain container has /var/run/docker.sock bind-mounted (see
-    docker-compose.local.yml) and the docker CLI installed in its image
-    (see brain/Dockerfile). Never raises — caller handles the bool.
-    """
-    try:
-        kwargs: dict[str, Any] = {
-            "capture_output": True,
-            "text": True,
-            "timeout": 30,
-        }
-        if os.name == "nt":
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        result = subprocess.run(
-            ["docker", "restart", WORKER_CONTAINER],
-            **kwargs,
-        )
-        if result.returncode == 0:
-            return True, f"Restarted {WORKER_CONTAINER}"
-        return False, (
-            f"docker restart {WORKER_CONTAINER} exit {result.returncode}: "
-            f"{(result.stderr or '').strip()[:200]}"
-        )
-    except FileNotFoundError:
-        return False, "docker CLI not on PATH (brain container missing docker binary?)"
-    except subprocess.TimeoutExpired:
-        return False, f"docker restart {WORKER_CONTAINER} timed out after 30s"
-    except Exception as exc:
-        return False, f"docker restart error: {type(exc).__name__}: {str(exc)[:160]}"
 
 
 def _run_git(deploy_path: str, *args: str, timeout: int = 60) -> subprocess.CompletedProcess:
@@ -711,7 +685,7 @@ async def run_migration_drift_probe(
     pool,
     *,
     notify_fn=None,
-    restart_fn=None,
+    restart_fn: docker_utils.RestartFn | None = None,
     wait_fn=None,
     health_fetcher=None,
     sync_fn=None,
@@ -723,9 +697,10 @@ async def run_migration_drift_probe(
         notify_fn: operator notifier callable. Defaults to
             :func:`brain.operator_notifier.notify_operator`. Tests inject
             a stub.
-        restart_fn: docker-restart callable. Defaults to
-            :func:`_restart_worker_container`. Tests inject a stub so
-            no real ``docker restart`` runs.
+        restart_fn: ``async (container, *, pool) -> ContainerRestart``.
+            Defaults to :func:`brain.docker_utils.restart_container`, which
+            reads its timeout through ``pool``. Tests inject a stub so no
+            real ``docker restart`` runs.
         wait_fn: callable that waits for the worker to report healthy.
             Defaults to :func:`_wait_for_worker_healthy`. Tests inject a
             stub.
@@ -744,7 +719,7 @@ async def run_migration_drift_probe(
     global _recover_attempts, _recover_cycles_waited, _inflight_defers
 
     notify_fn = notify_fn or notify_operator
-    restart_fn = restart_fn or _restart_worker_container
+    restart_fn = restart_fn or docker_utils.restart_container
     wait_fn = wait_fn or _wait_for_worker_healthy
     health_fetcher = health_fetcher or _fetch_health
     sync_fn = sync_fn or _sync_deploy_checkout
@@ -1070,8 +1045,37 @@ async def run_migration_drift_probe(
     logger.info(
         "[MIGRATION_DRIFT] Restarting %s to apply migrations", WORKER_CONTAINER,
     )
-    restart_ok, restart_msg = await asyncio.to_thread(restart_fn)
-    if not restart_ok:
+    # Inspects first, waits app_settings.brain_docker_restart_timeout_seconds
+    # (read through the pool) and runs off the event loop. The worker's stop
+    # grace is 75 s; the hardcoded 30 s this probe used before could page a
+    # restart dockerd went on to finish.
+    restart = await restart_fn(WORKER_CONTAINER, pool=pool)
+    if restart.status == docker_utils.RESTART_MISSING:
+        # ``docker compose up --force-recreate`` leaves the name unbound for a
+        # second or two while it replaces the container. Nothing was
+        # restarted, but the replacement applies pending migrations at boot
+        # just as a restart would, so this is not the failure page below. The
+        # next cycle re-reads /api/health and sees whether it did. The attempt
+        # still counts, so a worker that keeps going missing ends at the
+        # exhaustion page like any other attempt that did not clear drift.
+        missing_detail = f"{detected_detail} — {restart.detail}; nothing was restarted"
+        logger.info("[MIGRATION_DRIFT] %s", missing_detail)
+        await _emit_audit_event(
+            pool,
+            "probe.migration_drift_recover_skipped",
+            missing_detail,
+            pending=pending,
+            extra={"attempt": _recover_attempts, "restart_status": restart.status},
+        )
+        return {
+            "ok": False,
+            "status": "recover_worker_missing",
+            "detail": missing_detail,
+            "pending": pending,
+            "auto_recover_enabled": True,
+            "attempts": _recover_attempts,
+        }
+    if not restart.ok:
         # Restart itself failed — escalate immediately. We don't want
         # to silently fall through and pretend recovery worked.
         try:
@@ -1079,7 +1083,7 @@ async def run_migration_drift_probe(
                 title=f"Migration drift auto-recover FAILED to restart {WORKER_CONTAINER}",
                 detail=(
                     f"{detected_detail}\n\n"
-                    f"docker restart failed: {restart_msg}\n\n"
+                    f"The restart did not go through: {restart.detail}\n\n"
                     f"Recommended fix: manually restart {WORKER_CONTAINER} "
                     f"and investigate why the brain container can't reach "
                     f"the docker socket."
@@ -1092,14 +1096,15 @@ async def run_migration_drift_probe(
         await _emit_audit_event(
             pool,
             "probe.migration_drift_recover_failed",
-            f"docker restart failed: {restart_msg}",
+            restart.detail,
             pending=pending,
+            extra={"restart_status": restart.status},
         )
         _last_notify_drift_count = pending
         return {
             "ok": False,
             "status": "recover_restart_failed",
-            "detail": f"{detected_detail} — restart failed: {restart_msg}",
+            "detail": f"{detected_detail} — restart failed: {restart.detail}",
             "pending": pending,
             "auto_recover_enabled": True,
         }

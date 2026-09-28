@@ -111,6 +111,7 @@ from typing import Any
 
 import asyncpg
 
+from poindexter.brain import docker_utils
 from poindexter.brain.bootstrap import resolve_database_url
 from poindexter.brain.operator_notifier import notify_operator
 
@@ -168,8 +169,10 @@ DEFAULT_PG_AUTH_TIMEOUT_SECONDS = 5
 # ``internal_hostname`` overrides this when the heuristic doesn't fit.
 _CONTAINER_PREFIX = "poindexter-"
 
-# Subprocess timeout for ``docker restart`` / ``docker inspect``.
-# Generous because Docker Desktop on Windows can be slow to respond.
+# Subprocess timeout for the ``docker inspect`` existence check. Generous
+# because Docker Desktop on Windows can be slow to respond. The restart goes
+# through ``docker_utils.restart_container`` and waits
+# ``app_settings.brain_docker_restart_timeout_seconds`` instead.
 DOCKER_COMMAND_TIMEOUT_SECONDS = 30
 
 # How long the probe is willing to take in a single cycle. With the
@@ -619,9 +622,9 @@ def _http_probe(url: str, timeout_seconds: float) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Docker subprocess wrappers — same shape as backup_watcher's
-# ``_restart_backup_container`` / compose_drift_probe's
-# ``_docker_inspect``.
+# Docker subprocess wrapper — same shape as compose_drift_probe's
+# ``_docker_inspect``. The restart is the brain's shared
+# ``docker_utils.restart_container``.
 # ---------------------------------------------------------------------------
 
 
@@ -663,49 +666,6 @@ def _container_exists(container: str) -> bool:
             "[PORT_FORWARD] docker inspect %s error: %s", container, exc,
         )
         return False
-
-
-def _restart_container(container: str) -> tuple[bool, str]:
-    """Run ``docker restart <container>``. Returns (ok, message).
-
-    Brain container has /var/run/docker.sock bind-mounted (see
-    docker-compose.local.yml) and the docker CLI installed
-    (brain/Dockerfile). Never raises — caller handles the bool. On
-    Windows the Docker CLI is invoked from the host via the same
-    PATH-discovered binary; the CREATE_NO_WINDOW flag suppresses the
-    flash-and-vanish console window per Matt's "no popups" rule.
-    """
-    try:
-        kwargs: dict[str, Any] = {
-            "capture_output": True,
-            "text": True,
-            "timeout": DOCKER_COMMAND_TIMEOUT_SECONDS,
-        }
-        if os.name == "nt":
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        result = subprocess.run(
-            ["docker", "restart", container],
-            **kwargs,
-        )
-        if result.returncode == 0:
-            return True, f"Restarted {container}"
-        return False, (
-            f"docker restart {container} exit {result.returncode}: "
-            f"{(result.stderr or '').strip()[:200]}"
-        )
-    except FileNotFoundError:
-        return False, (
-            "docker CLI not on PATH (brain image missing docker binary?)"
-        )
-    except subprocess.TimeoutExpired:
-        return False, (
-            f"docker restart {container} timed out after "
-            f"{DOCKER_COMMAND_TIMEOUT_SECONDS}s"
-        )
-    except Exception as exc:  # noqa: BLE001
-        return False, (
-            f"docker restart error: {type(exc).__name__}: {str(exc)[:160]}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -919,7 +879,7 @@ async def _escalate_alert_only(
     external_url: str,
     reason: str,
     config: dict[str, Any],
-    notify_fn: Callable[..., None],
+    notify_fn: Callable[..., Any],
     detail_extra: str | None = None,
 ) -> dict[str, Any]:
     """Detected a stuck forward (or, for ``reason="scram_corruption"``, a
@@ -1086,9 +1046,9 @@ async def _check_one_service(
     pg_probe_fn: Callable[[str, int, float], bool],
     pg_auth_probe_fn: Callable[[str, int, float], Awaitable[tuple[bool, str | None]]],
     container_exists_fn: Callable[[str], bool],
-    restart_fn: Callable[[str], tuple[bool, str]],
+    restart_fn: docker_utils.RestartFn,
     sleep_fn: Callable[[float], Awaitable[None]],
-    notify_fn: Callable[..., None],
+    notify_fn: Callable[..., Any],
     now_fn: Callable[[], float],
 ) -> dict[str, Any]:
     """Probe a single service.
@@ -1341,11 +1301,41 @@ async def _check_one_service(
         container, internal_url, external_url,
     )
     restart_started = now_fn()
-    restart_ok, restart_msg = await asyncio.to_thread(restart_fn, container)
+    restart = await restart_fn(container, pool=pool)
+    if restart.status == docker_utils.RESTART_MISSING:
+        # The container passed step 0's existence check and is gone now:
+        # compose is recreating it (``up --force-recreate`` leaves the name
+        # unbound for a second or two), and the replacement gets a fresh port
+        # forward. Nothing was restarted, so this counts toward neither the
+        # rolling restart cap nor the failed-recovery count, and pages
+        # nothing. The next cycle probes the replacement; a container that
+        # stays gone is step 0's ``unwatched``.
+        await _emit_audit_event(
+            pool,
+            "docker_port_forward_container_missing",
+            (
+                f"Stuck port forward detected on {container}, but "
+                f"{restart.detail}; nothing was restarted."
+            ),
+            extra={
+                "container": container,
+                "internal_url": internal_url,
+                "external_url": external_url,
+            },
+        )
+        return {
+            "ok": False,
+            "status": "container_missing",
+            "container": container,
+            "internal_url": internal_url,
+            "external_url": external_url,
+            "detail": restart.detail,
+        }
     _record_restart(container, now=restart_started)
     retried_n = len(_restart_state.get(container, []))
+    restart_msg = restart.detail
 
-    if not restart_ok:
+    if not restart.ok:
         await _emit_audit_event(
             pool,
             "docker_port_forward_restart_failed",
@@ -1360,7 +1350,7 @@ async def _check_one_service(
                 "retried_n": retried_n,
             },
         )
-        if "docker CLI" in restart_msg or "docker socket" in restart_msg.lower():
+        if restart.status == docker_utils.RESTART_NO_DOCKER_CLI:
             try:
                 notify_fn(
                     title=(
@@ -1515,9 +1505,9 @@ async def run_docker_port_forward_probe(
     pg_auth_probe_fn: Callable[[str, int, float], Awaitable[tuple[bool, str | None]]]
     | None = None,
     container_exists_fn: Callable[[str], bool] | None = None,
-    restart_fn: Callable[[str], tuple[bool, str]] | None = None,
+    restart_fn: docker_utils.RestartFn | None = None,
     sleep_fn: Callable[[float], Awaitable[None]] | None = None,
-    notify_fn: Callable[..., None] | None = None,
+    notify_fn: Callable[..., Any] | None = None,
     now_fn: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
     """Single execution of the Docker port-forward probe.
@@ -1536,8 +1526,11 @@ async def run_docker_port_forward_probe(
             canned outcomes.
         container_exists_fn: ``(container) -> bool`` — defaults to
             ``docker inspect``. Tests inject a stub.
-        restart_fn: ``(container) -> (ok, msg)`` — defaults to the
-            real ``docker restart``. Tests inject a stub.
+        restart_fn: ``async (container, *, pool) -> ContainerRestart`` —
+            defaults to :func:`brain.docker_utils.restart_container`, the
+            brain's shared ``docker restart`` (inspect first, timeout from
+            ``app_settings.brain_docker_restart_timeout_seconds``, off the
+            event loop). Tests inject a stub.
         sleep_fn: ``async (seconds) -> None`` — defaults to ``asyncio.sleep``
             so the recovery wait yields the brain loop instead of freezing
             it. Tests inject an async no-op so they don't wait.
@@ -1553,7 +1546,7 @@ async def run_docker_port_forward_probe(
     pg_probe_fn = pg_probe_fn or _pg_probe
     pg_auth_probe_fn = pg_auth_probe_fn or _pg_auth_probe
     container_exists_fn = container_exists_fn or _container_exists
-    restart_fn = restart_fn or _restart_container
+    restart_fn = restart_fn or docker_utils.restart_container
     sleep_fn = sleep_fn or asyncio.sleep
     notify_fn = notify_fn or notify_operator
     now_fn = now_fn or time.time

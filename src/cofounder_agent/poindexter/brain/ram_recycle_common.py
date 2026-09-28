@@ -5,7 +5,9 @@ was generalised to the queue-less GPU sidecars after the 2026-08-27 freeze.
 Both probes answer the same three mechanical questions — *how big is this
 container's PID 1*, *restart it*, *record what happened* — and differ only in
 how they prove the sidecar is IDLE, which is the part that must stay
-per-sidecar.
+per-sidecar. The restart is the brain's shared
+``docker_utils.restart_container`` (inspect first, timeout from
+``app_settings.brain_docker_restart_timeout_seconds``), not a lever here.
 
 Nothing here decides whether to recycle. Callers own that; these are the
 levers.
@@ -21,7 +23,6 @@ from typing import Any
 
 logger = logging.getLogger("brain.ram_recycle_common")
 
-DOCKER_RESTART_TIMEOUT_SECONDS = 60
 DOCKER_EXEC_TIMEOUT_SECONDS = 30
 
 # CREATE_NO_WINDOW — keeps the Windows .ps1-era fleet from flashing consoles.
@@ -195,30 +196,6 @@ def read_container_cpu_percent(container: str) -> float | None:
         return float(raw)
     except (TypeError, ValueError):
         return None
-
-
-# --- restart -----------------------------------------------------------------
-
-
-def restart_container(container: str) -> tuple[bool, str]:
-    """``docker restart <container>`` -> ``(ok, message)``. Never raises."""
-    try:
-        result = subprocess.run(
-            ["docker", "restart", container],
-            **_subprocess_kwargs(DOCKER_RESTART_TIMEOUT_SECONDS),
-        )
-        if result.returncode == 0:
-            return True, f"Restarted {container}"
-        return False, (
-            f"docker restart {container} exit {result.returncode}: "
-            f"{(result.stderr or '').strip()[:200]}"
-        )
-    except FileNotFoundError:
-        return False, "docker CLI not on PATH"
-    except subprocess.TimeoutExpired:
-        return False, f"docker restart {container} timed out"
-    except Exception as exc:  # noqa: BLE001
-        return False, f"docker restart error: {type(exc).__name__}: {str(exc)[:160]}"
 
 
 # --- finding emission --------------------------------------------------------

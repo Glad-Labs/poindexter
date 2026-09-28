@@ -1,12 +1,14 @@
 """Unit tests for :func:`poindexter.brain.docker_utils.restart_container`.
 
 The shared ``docker restart`` implementation behind ``brain_daemon.restart_service``,
-``brain_daemon.docker_restart_container`` (firefighter + console restarts) and
-``health_probes``' self-heal. Before it, those three disagreed: a 90 s timeout
-read from ``app_settings`` in one, a hardcoded 30 s in the firefighter's, a
-hardcoded 60 s and no inspect pre-check in health_probes'. The worker's
-``stop_grace_period`` is 75 s, so the two hardcoded timeouts could report a
-restart dockerd went on to finish as a failure.
+``brain_daemon.docker_restart_container`` (firefighter + console restarts),
+``health_probes``' self-heal and every probe that restarts what it watches
+(migration_drift, backup/offsite/auto-embed/postiz watches, port-forward, the
+two RAM recycles). Before it, those paths disagreed: a 90 s timeout read from
+``app_settings`` in one, hardcoded 30 s or 60 s everywhere else, and an
+inspect pre-check in only two. The worker's ``stop_grace_period`` is 75 s, so
+the hardcoded timeouts could report a restart dockerd went on to finish as a
+failure.
 
 What must hold:
 
@@ -305,26 +307,16 @@ def test_no_console_window_on_a_windows_host(docker, monkeypatch, os_name, flags
 
 
 # ---------------------------------------------------------------------------
-# Ratchet: no new docker-restart copies in the brain; the old ones only leave
+# Ratchet: the shared helper is the brain's only ``docker restart``
 # ---------------------------------------------------------------------------
 
 _BRAIN_DIR = Path(du.__file__).resolve().parent
 
-# Brain modules that still run their own ``docker restart``. Each is a sync
-# ``restart_fn`` seam its probe offloads with ``asyncio.to_thread``, so none
-# blocks the loop, but none reads brain_docker_restart_timeout_seconds or
-# inspects first either. Move one onto ``docker_utils.restart_container`` and
-# delete it here; nothing may be added. (migration_drift_probe restarts the
-# worker on a hardcoded 30 s, under the worker's 75 s stop grace.)
-_LEGACY_DOCKER_RESTARTS = {
-    "auto_embed_watch.py",
-    "backup_watcher.py",
-    "docker_port_forward_probe.py",
-    "migration_drift_probe.py",
-    "offsite_backup_watch.py",
-    "postiz_queue_watch.py",
-    "ram_recycle_common.py",
-}
+# Until 2026-09-28 seven probes each ran their own ``docker restart`` behind a
+# sync ``restart_fn`` seam, on hardcoded 30 s / 60 s timeouts and with no
+# inspect first; this ratchet listed them until they moved over. None is left:
+# every brain restart goes through ``docker_utils.restart_container``, and the
+# probes' ``restart_fn`` seams are ``docker_utils.RestartFn``.
 
 
 def _modules_running_docker_restart() -> set[str]:
@@ -349,26 +341,12 @@ def test_the_shared_helper_is_seen_by_the_scan():
     assert "docker_utils.py" in _modules_running_docker_restart()
 
 
-def test_no_new_brain_module_runs_its_own_docker_restart():
-    extra = _modules_running_docker_restart() - {"docker_utils.py"} - _LEGACY_DOCKER_RESTARTS
+def test_no_other_brain_module_runs_its_own_docker_restart():
+    extra = _modules_running_docker_restart() - {"docker_utils.py"}
     assert not extra, (
         f"{sorted(extra)} run their own `docker restart`. Call "
-        "poindexter.brain.docker_utils.restart_container instead: it inspects "
+        "poindexter.brain.docker_utils.restart_container instead (a probe "
+        "takes it as a docker_utils.RestartFn `restart_fn` seam): it inspects "
         "first, reads app_settings.brain_docker_restart_timeout_seconds and "
         "stays off the event loop."
     )
-
-
-def test_the_legacy_list_only_shrinks():
-    """A module that moved onto the shared helper must leave the list, or the
-    list stops meaning anything."""
-    migrated = _LEGACY_DOCKER_RESTARTS - _modules_running_docker_restart()
-    assert not migrated, f"{sorted(migrated)} no longer restart on their own; remove them from _LEGACY_DOCKER_RESTARTS"
-
-
-def test_the_three_callers_share_the_helper():
-    """brain_daemon (restart_service + the firefighter's docker_restart_container)
-    and health_probes (REMEDIATIONS self-heal) keep no restart of their own."""
-    found = _modules_running_docker_restart()
-    assert "brain_daemon.py" not in found
-    assert "health_probes.py" not in found

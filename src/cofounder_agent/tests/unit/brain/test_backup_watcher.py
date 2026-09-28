@@ -14,7 +14,8 @@ All external I/O (filesystem stats, subprocess, the asyncpg pool) is
 mocked — no real ``docker restart`` runs and no test sleeps for real.
 The pool is a ``MagicMock`` whose async methods are ``AsyncMock``s; we
 seed app_settings reads via the ``setting_values`` dict passed to
-``_make_pool``.
+``_make_pool``. ``restart_fn`` stubs stand in for
+``docker_utils.restart_container`` (``_restart_fakes.restart_stub``).
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ import pytest
 # pythonpath in pyproject.toml includes "../.." so the brain package
 # resolves the same way the migration_drift_probe tests import it.
 from poindexter.brain import backup_watcher as bw
+from poindexter.brain import docker_utils as du
+from tests.unit.brain._restart_fakes import outcome, restart_stub
 
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned config
@@ -178,9 +181,7 @@ class TestKillRestartResolves:
 
         restart_calls: list[str] = []
 
-        def fake_restart(container):
-            restart_calls.append(container)
-            return True, f"Restarted {container}"
+        fake_restart = restart_stub(restart_calls)
 
         sleeps: list[float] = []
 
@@ -257,7 +258,7 @@ class TestKillRestartResolves:
         await bw.run_backup_watcher_probe(
             pool,
             stat_fn=fake_stat,
-            restart_fn=lambda c: (True, f"Restarted {c}"),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
@@ -306,9 +307,7 @@ class TestPersistentFailureEscalates:
 
         restart_calls: list[str] = []
 
-        def fake_restart(container):
-            restart_calls.append(container)
-            return True, f"Restarted {container}"
+        fake_restart = restart_stub(restart_calls)
 
         # Cycle 1
         s1 = await bw.run_backup_watcher_probe(
@@ -390,9 +389,7 @@ class TestEdgeCases:
             stat_calls.append(tier)
             return 10_000.0
 
-        def fake_restart(container):
-            restart_calls.append(container)
-            return True, "should not be called"
+        fake_restart = restart_stub(restart_calls)
 
         summary = await bw.run_backup_watcher_probe(
             pool,
@@ -422,7 +419,7 @@ class TestEdgeCases:
         summary = await bw.run_backup_watcher_probe(
             pool,
             stat_fn=lambda d, t: 30.0,  # would be fresh, but we never get there
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=fake_notify,
         )
@@ -461,13 +458,10 @@ class TestEdgeCases:
                 return 10_000.0
             return 60.0
 
-        def fake_restart(container):
-            return False, "docker CLI not on PATH (brain image missing docker binary?)"
-
         summary = await bw.run_backup_watcher_probe(
             pool,
             stat_fn=fake_stat,
-            restart_fn=fake_restart,
+            restart_fn=restart_stub(status=du.RESTART_NO_DOCKER_CLI),
             sleep_fn=AsyncMock(),
             notify_fn=fake_notify,
         )
@@ -482,6 +476,117 @@ class TestEdgeCases:
         # Retry counter advanced so the next cycle eventually escalates
         # rather than infinite-looping.
         assert bw._retry_state["hourly"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "status", [du.RESTART_FAILED, du.RESTART_TIMED_OUT, du.RESTART_ERROR],
+    )
+    async def test_other_restart_failures_are_audited_without_a_notify(
+        self, _reset_module_state, status,
+    ):
+        """Only a missing docker CLI notifies. Any other failed restart is an
+        audit row and a used retry, as before the shared helper; the tier's
+        own escalation is the operator's signal."""
+        pool = _make_pool(setting_values={bw.BACKUP_DIR_KEY: _reset_module_state})
+        notify_calls: list[dict] = []
+        sleep_fn = AsyncMock()
+
+        summary = await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=lambda _dir, tier: 10_000.0 if tier == "hourly" else 60.0,
+            restart_fn=restart_stub(status=status),
+            sleep_fn=sleep_fn,
+            notify_fn=lambda **k: notify_calls.append(k),
+        )
+
+        hourly = summary["tiers"]["hourly"]
+        assert hourly["status"] == "restart_failed"
+        assert hourly["restart_error"] == outcome("poindexter-backup-hourly", status).detail
+        assert notify_calls == []
+        sleep_fn.assert_not_awaited()
+        assert "probe.backup_watcher_restart_failed" in _executed_audit_events(pool)
+        assert bw._retry_state["hourly"] == 1
+
+
+@pytest.mark.unit
+class TestContainerMissing:
+    """The backup container missing mid-recreate (``docker compose up
+    --force-recreate`` leaves the name unbound for a second or two). Nothing
+    was restarted, so there is no fresh dump to wait for."""
+
+    @pytest.mark.asyncio
+    async def test_missing_container_skips_the_wait_and_notifies_nothing(self, _reset_module_state):
+        pool = _make_pool(setting_values={bw.BACKUP_DIR_KEY: _reset_module_state})
+        notify_calls: list[dict] = []
+        stat_calls: list[str] = []
+        sleep_fn = AsyncMock()
+
+        def fake_stat(_dir, tier):
+            stat_calls.append(tier)
+            return 10_000.0 if tier == "hourly" else 60.0
+
+        summary = await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=fake_stat,
+            restart_fn=restart_stub(status=du.RESTART_MISSING),
+            sleep_fn=sleep_fn,
+            notify_fn=lambda **k: notify_calls.append(k),
+        )
+
+        hourly = summary["tiers"]["hourly"]
+        assert hourly["status"] == "container_missing"
+        assert hourly["retries_used"] == 1
+        sleep_fn.assert_not_awaited()
+        # One freshness stat per tier; no post-restart re-stat.
+        assert stat_calls == ["hourly", "daily"]
+        assert notify_calls == []
+        events = _executed_audit_events(pool)
+        assert "probe.backup_watcher_restart_skipped" in events
+        assert "probe.backup_watcher_restart_failed" not in events
+
+    @pytest.mark.asyncio
+    async def test_a_container_that_stays_missing_still_escalates(self, _reset_module_state):
+        """Each missing-container cycle uses a retry, so a tier whose
+        container never comes back reaches the escalation instead of looping
+        on a restart that never runs."""
+        pool = _make_pool(
+            setting_values={bw.BACKUP_DIR_KEY: _reset_module_state, bw.MAX_RETRIES_KEY: "2"},
+        )
+        kw = {
+            "stat_fn": lambda _dir, tier: 10_000.0 if tier == "hourly" else 60.0,
+            "restart_fn": restart_stub(status=du.RESTART_MISSING),
+            "sleep_fn": AsyncMock(),
+            "notify_fn": lambda **k: None,
+        }
+
+        statuses = [
+            (await bw.run_backup_watcher_probe(pool, **kw))["tiers"]["hourly"]["status"]
+            for _ in range(3)
+        ]
+
+        assert statuses == ["container_missing", "container_missing", "escalated"]
+        assert "probe.backup_watcher_escalate" in _executed_audit_events(pool)
+
+    @pytest.mark.asyncio
+    async def test_restart_is_the_shared_helper_given_the_pool(self, _reset_module_state, monkeypatch):
+        """With no ``restart_fn`` injected the restart goes through
+        ``docker_utils.restart_container`` with the pool, so it waits
+        ``app_settings.brain_docker_restart_timeout_seconds`` rather than the
+        30 s this probe used to hardcode."""
+        helper = restart_stub()
+        monkeypatch.setattr(du, "restart_container", helper)
+        pool = _make_pool(setting_values={bw.BACKUP_DIR_KEY: _reset_module_state})
+        ages = {"hourly": [10_000.0, 30.0], "daily": [60.0]}
+
+        summary = await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=lambda _dir, tier: ages[tier].pop(0),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+        )
+
+        helper.assert_awaited_once_with("poindexter-backup-hourly", pool=pool)
+        assert summary["tiers"]["hourly"]["status"] == "recovered"
 
     @pytest.mark.asyncio
     async def test_one_tier_exception_does_not_kill_the_other(self, _reset_module_state):
@@ -501,7 +606,7 @@ class TestEdgeCases:
         summary = await bw.run_backup_watcher_probe(
             pool,
             stat_fn=fake_stat,
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
@@ -699,7 +804,7 @@ class TestSentinelAlertEmission:
         summary = await bw.run_backup_watcher_probe(
             pool,
             stat_fn=lambda d, t: 60.0,
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=fake_notify,
         )
@@ -750,7 +855,7 @@ class TestSentinelAlertEmission:
         summary = await bw.run_backup_watcher_probe(
             pool,
             stat_fn=lambda d, t: 60.0,
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
@@ -780,7 +885,7 @@ class TestSentinelAlertEmission:
         summary = await bw.run_backup_watcher_probe(
             pool,
             stat_fn=lambda d, t: 60.0,
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
@@ -808,7 +913,7 @@ class TestSentinelAlertEmission:
         summary = await bw.run_backup_watcher_probe(
             pool,
             stat_fn=lambda d, t: 60.0,
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
@@ -848,7 +953,7 @@ class TestSentinelAlertEmission:
         await bw.run_backup_watcher_probe(
             pool,
             stat_fn=lambda d, t: 60.0,
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )

@@ -29,6 +29,8 @@ import pytest
 # pythonpath in pyproject.toml includes "../.." so the brain package resolves
 # the same way the postiz_queue_watch tests import it.
 from poindexter.brain import comfyui_ram_watch as cw
+from poindexter.brain import docker_utils as du
+from tests.unit.brain._restart_fakes import restart_stub
 
 
 def _make_pool(*, setting_values=None, executed=None):
@@ -89,7 +91,7 @@ def test_sidecar_unreachable_is_a_noop():
     """
     pool = _make_pool()
     mem = MagicMock(side_effect=AssertionError("must not read memory"))
-    restart = MagicMock(side_effect=AssertionError("must not restart"))
+    restart = AsyncMock(side_effect=AssertionError("must not restart"))
     summary = asyncio.run(
         cw.run_comfyui_ram_watch_probe(
             pool,
@@ -105,7 +107,7 @@ def test_sidecar_unreachable_is_a_noop():
 def test_busy_queue_never_restarts():
     """#3094 posture: a running/pending render blocks the recycle outright."""
     pool = _make_pool()
-    restart = MagicMock(side_effect=AssertionError("must not restart"))
+    restart = AsyncMock(side_effect=AssertionError("must not restart"))
     summary = asyncio.run(
         cw.run_comfyui_ram_watch_probe(
             pool,
@@ -120,7 +122,7 @@ def test_busy_queue_never_restarts():
 
 def test_below_watermark_no_restart():
     pool = _make_pool()
-    restart = MagicMock(side_effect=AssertionError("must not restart"))
+    restart = AsyncMock(side_effect=AssertionError("must not restart"))
     summary = asyncio.run(
         cw.run_comfyui_ram_watch_probe(
             pool,
@@ -136,7 +138,7 @@ def test_below_watermark_no_restart():
 def test_above_watermark_recycles_and_emits_info_finding():
     executed = []
     pool = _make_pool(executed=executed)
-    restart = MagicMock(return_value=(True, "Restarted poindexter-comfyui"))
+    restart = restart_stub()
     queue = AsyncMock(return_value=False)
     summary = asyncio.run(
         cw.run_comfyui_ram_watch_probe(
@@ -149,7 +151,7 @@ def test_above_watermark_recycles_and_emits_info_finding():
     assert summary["ok"] is True
     assert summary["status"] == "recycled"
     assert summary["footprint_gb"] == pytest.approx(28.7)
-    restart.assert_called_once_with("poindexter-comfyui")
+    restart.assert_awaited_once_with("poindexter-comfyui", pool=pool)
     # Qualify + immediate pre-restart re-check (#3094) = two queue reads.
     assert queue.await_count == 2
 
@@ -167,7 +169,7 @@ def test_recheck_busy_defers_the_restart():
     """A render enqueued between qualify and restart defers the recycle —
     the immediate pre-restart re-check is the #3094 posture's second half."""
     pool = _make_pool()
-    restart = MagicMock(side_effect=AssertionError("must not restart"))
+    restart = AsyncMock(side_effect=AssertionError("must not restart"))
     summary = asyncio.run(
         cw.run_comfyui_ram_watch_probe(
             pool,
@@ -183,7 +185,7 @@ def test_recheck_busy_defers_the_restart():
 def test_recheck_unreachable_defers_the_restart():
     """Queue unreadable at the re-check counts as busy, not as idle."""
     pool = _make_pool()
-    restart = MagicMock(side_effect=AssertionError("must not restart"))
+    restart = AsyncMock(side_effect=AssertionError("must not restart"))
     summary = asyncio.run(
         cw.run_comfyui_ram_watch_probe(
             pool,
@@ -199,7 +201,7 @@ def test_cooldown_suppresses_then_expires():
     """A recycle stamps the cooldown; the next over-watermark cycle inside
     the window no-ops, and one past the window recycles again."""
     pool = _make_pool()
-    restart = MagicMock(return_value=(True, "Restarted poindexter-comfyui"))
+    restart = restart_stub()
     clock = {"now": 1000.0}
 
     def _run():
@@ -214,21 +216,21 @@ def test_cooldown_suppresses_then_expires():
         )
 
     assert _run()["status"] == "recycled"
-    restart.assert_called_once()
+    restart.assert_awaited_once()
 
     clock["now"] += 10 * 60  # 10 minutes < 60m cooldown
     summary = _run()
     assert summary["status"] == "cooldown"
-    restart.assert_called_once()  # still exactly one restart
+    restart.assert_awaited_once()  # still exactly one restart
 
     clock["now"] += 55 * 60  # now 65 minutes since the recycle
     assert _run()["status"] == "recycled"
-    assert restart.call_count == 2
+    assert restart.await_count == 2
 
 
 def test_zero_cooldown_disables_suppression():
     pool = _make_pool(setting_values={cw.COOLDOWN_MINUTES_KEY: "0"})
-    restart = MagicMock(return_value=(True, "Restarted poindexter-comfyui"))
+    restart = restart_stub()
 
     def _run():
         return asyncio.run(
@@ -242,7 +244,7 @@ def test_zero_cooldown_disables_suppression():
 
     assert _run()["status"] == "recycled"
     assert _run()["status"] == "recycled"
-    assert restart.call_count == 2
+    assert restart.await_count == 2
 
 
 def test_restart_failure_emits_warn_finding():
@@ -250,7 +252,7 @@ def test_restart_failure_emits_warn_finding():
     per the findings.<kind> policy instead of vanishing."""
     executed = []
     pool = _make_pool(executed=executed)
-    restart = MagicMock(return_value=(False, "docker CLI not on PATH"))
+    restart = restart_stub(status=du.RESTART_NO_DOCKER_CLI)
     summary = asyncio.run(
         cw.run_comfyui_ram_watch_probe(
             pool,
@@ -266,14 +268,14 @@ def test_restart_failure_emits_warn_finding():
     assert rows, "expected a comfyui_ram_recycle_failed finding row"
     args, details = rows[0]
     assert args[2] == "warn"
-    assert "docker CLI not on PATH" in details["extra"]["error"]
+    assert details["extra"]["error"] == "docker CLI not available in brain container"
     # A failed restart must NOT stamp the cooldown — the next cycle retries.
     assert cw._last_recycle_monotonic is None
 
 
 def test_stats_failure_is_surfaced_not_silent():
     pool = _make_pool()
-    restart = MagicMock(side_effect=AssertionError("must not restart"))
+    restart = AsyncMock(side_effect=AssertionError("must not restart"))
     summary = asyncio.run(
         cw.run_comfyui_ram_watch_probe(
             pool,
@@ -289,7 +291,7 @@ def test_stats_failure_is_surfaced_not_silent():
 def test_watermark_reads_from_app_settings():
     """A float watermark below the footprint triggers; above it doesn't."""
     pool = _make_pool(setting_values={cw.WATERMARK_GB_KEY: "17.5"})
-    restart = MagicMock(return_value=(True, "Restarted poindexter-comfyui"))
+    restart = restart_stub()
     summary = asyncio.run(
         cw.run_comfyui_ram_watch_probe(
             pool,
@@ -333,3 +335,55 @@ class TestWatermarkPlacement:
         assert float(DEFAULTS["comfyui_ram_recycle_watermark_gb"]) == (
             cw.DEFAULT_WATERMARK_GB
         )
+
+
+# ---------------------------------------------------------------------------
+# The restart is docker_utils.restart_container (the brain's shared helper)
+# ---------------------------------------------------------------------------
+
+
+def test_container_missing_mid_recreate_is_neither_a_recycle_nor_a_failure():
+    """Measured and verified idle, then gone: compose is recreating it, and
+    the replacement's new process returns the memory anyway. No failure
+    finding (it would say "check docker socket access"), no recycled
+    finding, and no cooldown stamp. Before the shared helper this was a
+    failed restart ("No such container")."""
+    executed = []
+    pool = _make_pool(executed=executed)
+
+    summary = asyncio.run(
+        cw.run_comfyui_ram_watch_probe(
+            pool,
+            queue_fn=AsyncMock(return_value=False),
+            mem_fn=MagicMock(return_value=(20.0, 9.0)),
+            restart_fn=restart_stub(status=du.RESTART_MISSING),
+        )
+    )
+
+    assert summary["ok"] is True
+    assert summary["status"] == "container_missing"
+    assert "not found (likely mid-recreate)" in summary["detail"]
+    assert _findings(executed, "comfyui_ram_recycle_failed") == []
+    assert _findings(executed, "comfyui_ram_recycled") == []
+    assert cw._last_recycle_monotonic is None
+
+
+def test_default_restart_is_the_shared_helper_given_the_pool(monkeypatch):
+    """With no ``restart_fn`` the recycle goes through
+    ``docker_utils.restart_container`` with the pool, so it waits
+    ``app_settings.brain_docker_restart_timeout_seconds`` rather than the
+    60 s this probe used to hardcode."""
+    helper = restart_stub()
+    monkeypatch.setattr(du, "restart_container", helper)
+    pool = _make_pool()
+
+    summary = asyncio.run(
+        cw.run_comfyui_ram_watch_probe(
+            pool,
+            queue_fn=AsyncMock(return_value=False),
+            mem_fn=MagicMock(return_value=(20.0, 9.0)),
+        )
+    )
+
+    helper.assert_awaited_once_with(cw._CONTAINER, pool=pool)
+    assert summary["status"] == "recycled"

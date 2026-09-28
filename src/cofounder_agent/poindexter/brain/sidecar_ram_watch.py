@@ -56,6 +56,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from poindexter.brain import docker_utils
 from poindexter.brain.ram_recycle_common import (
     coerce_bool,
     coerce_float,
@@ -64,7 +65,6 @@ from poindexter.brain.ram_recycle_common import (
     read_container_cpu_percent,
     read_container_main_rss_swap_gb,
     read_setting,
-    restart_container,
 )
 
 logger = logging.getLogger("brain.sidecar_ram_watch")
@@ -249,14 +249,20 @@ async def run_sidecar_ram_watch_probe(
     gpu_lock_fn: Callable[[], Awaitable[bool | None]] | None = None,
     cpu_fn: Callable[[str], float | None] | None = None,
     mem_fn: Callable[[str], tuple[float, float] | None] | None = None,
-    restart_fn: Callable[[str], tuple[bool, str]] | None = None,
+    restart_fn: docker_utils.RestartFn | None = None,
     now_fn: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
-    """Single cycle of the sidecar host-RAM recycle watch."""
+    """Single cycle of the sidecar host-RAM recycle watch.
+
+    ``restart_fn`` defaults to :func:`brain.docker_utils.restart_container`,
+    the brain's shared ``docker restart`` (inspect first, timeout from
+    ``app_settings.brain_docker_restart_timeout_seconds``, off the event
+    loop); tests inject a stub.
+    """
     gpu_lock_fn = gpu_lock_fn or (lambda: gpu_lock_held(pool))
     cpu_fn = cpu_fn or read_container_cpu_percent
     mem_fn = mem_fn or read_container_main_rss_swap_gb
-    restart_fn = restart_fn or restart_container
+    restart_fn = restart_fn or docker_utils.restart_container
     now_fn = now_fn or time.monotonic
 
     config = await _read_config(pool)
@@ -336,8 +342,28 @@ async def run_sidecar_ram_watch_probe(
             "footprint_gb": round(footprint_gb, 2),
         }
 
-    ok, msg = await asyncio.to_thread(restart_fn, container)
-    if not ok:
+    restart = await restart_fn(container, pool=pool)
+    if restart.status == docker_utils.RESTART_MISSING:
+        # Measured and proven idle a moment ago, gone now: compose is
+        # recreating it, and the replacement's new PID 1 returns the memory
+        # just as the recycle would have. Nothing was restarted, so no
+        # cooldown stamp and no failure finding; the next cycle measures the
+        # replacement.
+        detail = (
+            f"{container} at {footprint_gb:.1f} GB is over its "
+            f"{watermark_gb:g} GB watermark, but {restart.detail}; nothing "
+            f"was restarted"
+        )
+        logger.info("[SIDECAR_RAM] %s", detail)
+        return {
+            "ok": True,
+            "status": "container_missing",
+            "detail": detail,
+            "container": container,
+            "footprint_gb": round(footprint_gb, 2),
+        }
+    if not restart.ok:
+        msg = restart.detail
         detail = (
             f"{container} RSS+swap at {footprint_gb:.1f} GB (>= "
             f"{watermark_gb:g} GB watermark) but the recycle restart failed: {msg}"

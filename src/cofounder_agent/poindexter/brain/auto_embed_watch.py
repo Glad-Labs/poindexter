@@ -35,12 +35,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from poindexter.brain import docker_utils
 from poindexter.brain.operator_notifier import notify_operator
 
 logger = logging.getLogger("brain.auto_embed_watch")
@@ -60,7 +59,6 @@ DEFAULT_RETRY_DELAY_SECONDS = 120
 _CONTAINER = "poindexter-auto-embed"
 _ALERTNAME = "auto_embed_stale"
 _HEARTBEAT_EVENT = "auto_embed_succeeded"
-_DOCKER_RESTART_TIMEOUT_SECONDS = 30
 PROBE_INTERVAL_SECONDS = 300
 
 # Module-level retry counter — persists across cycles so escalation fires
@@ -144,31 +142,6 @@ async def _seconds_since_heartbeat(pool: Any) -> float | None:
     return None if val is None else float(val)
 
 
-def _restart_auto_embed_container(container: str) -> tuple[bool, str]:
-    """``docker restart <container>`` (shape mirrors offsite_backup_watch)."""
-    try:
-        kwargs: dict[str, Any] = {
-            "capture_output": True,
-            "text": True,
-            "timeout": _DOCKER_RESTART_TIMEOUT_SECONDS,
-        }
-        if os.name == "nt":
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        result = subprocess.run(["docker", "restart", container], **kwargs)
-        if result.returncode == 0:
-            return True, f"Restarted {container}"
-        return False, (
-            f"docker restart {container} exit {result.returncode}: "
-            f"{(result.stderr or '').strip()[:200]}"
-        )
-    except FileNotFoundError:
-        return False, "docker CLI not on PATH"
-    except subprocess.TimeoutExpired:
-        return False, f"docker restart {container} timed out"
-    except Exception as exc:  # noqa: BLE001
-        return False, f"docker restart error: {type(exc).__name__}: {str(exc)[:160]}"
-
-
 async def _firing_alert_exists(pool: Any, alertname: str) -> bool:
     try:
         row = await pool.fetchrow(
@@ -248,7 +221,7 @@ async def run_auto_embed_watch_probe(
     pool: Any,
     *,
     age_fn: Callable[[], Awaitable[float | None]] | None = None,
-    restart_fn: Callable[[str], tuple[bool, str]] | None = None,
+    restart_fn: docker_utils.RestartFn | None = None,
     sleep_fn: Callable[[float], Awaitable[None]] | None = None,
     notify_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
@@ -258,9 +231,11 @@ async def run_auto_embed_watch_probe(
         pool: asyncpg pool for app_settings + audit_log + alert_events.
         age_fn: ``() -> age_seconds | None`` — defaults to the audit_log
             heartbeat read. Tests inject canned ages.
-        restart_fn: ``(container) -> (ok, msg)`` — defaults to the real
-            ``docker restart``. The (blocking) restart is offloaded via
-            ``asyncio.to_thread`` so it never stalls the brain event loop.
+        restart_fn: ``async (container, *, pool) -> ContainerRestart`` —
+            defaults to :func:`brain.docker_utils.restart_container`, the
+            brain's shared ``docker restart`` (inspect first, timeout from
+            ``app_settings.brain_docker_restart_timeout_seconds``, off the
+            event loop).
         sleep_fn: ``async (seconds) -> None`` — defaults to ``asyncio.sleep``
             so the between-retry wait yields the loop instead of freezing it.
         notify_fn: operator notifier — defaults to
@@ -269,7 +244,7 @@ async def run_auto_embed_watch_probe(
     """
     global _retry_count
     age_fn = age_fn or (lambda: _seconds_since_heartbeat(pool))
-    restart_fn = restart_fn or _restart_auto_embed_container
+    restart_fn = restart_fn or docker_utils.restart_container
     sleep_fn = sleep_fn or asyncio.sleep
     _notify: Callable[..., Any] = notify_fn or notify_operator
 
@@ -338,8 +313,27 @@ async def run_auto_embed_watch_probe(
         max_retries,
         _CONTAINER,
     )
-    ok, msg = await asyncio.to_thread(restart_fn, _CONTAINER)
-    if not ok:
+    restart = await restart_fn(_CONTAINER, pool=pool)
+    if restart.status == docker_utils.RESTART_MISSING:
+        # Mid-recreate (``docker compose up --force-recreate`` leaves the name
+        # unbound for a second or two): nothing was restarted, so skip the
+        # wait and re-read; the next cycle reads the replacement's heartbeat.
+        # The retry still counts, so a container that stays missing reaches
+        # the escalation above.
+        detail = (
+            f"Auto-embed stale but {restart.detail}; nothing was restarted "
+            f"(retry {_retry_count}/{max_retries})."
+        )
+        logger.info("[AUTO_EMBED_WATCH] %s", detail)
+        await _emit_audit_event(
+            pool,
+            "probe.auto_embed_restart_skipped",
+            detail,
+            extra={"retries_used": _retry_count},
+        )
+        return {"ok": False, "status": "container_missing", "retries_used": _retry_count}
+    if not restart.ok:
+        msg = restart.detail
         detail = (
             f"Auto-embed stale and docker restart failed: {msg} "
             f"(retry {_retry_count}/{max_retries})."
@@ -351,7 +345,7 @@ async def run_auto_embed_watch_probe(
             detail,
             extra={"retries_used": _retry_count, "restart_error": msg},
         )
-        if "docker CLI" in msg:
+        if restart.status == docker_utils.RESTART_NO_DOCKER_CLI:
             try:
                 _notify(
                     title="Auto-embed watch cannot restart container",

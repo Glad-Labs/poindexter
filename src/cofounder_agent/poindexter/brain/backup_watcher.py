@@ -52,12 +52,12 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from poindexter.brain import docker_utils
 from poindexter.brain.operator_notifier import notify_operator
 
 logger = logging.getLogger("brain.backup_watcher")
@@ -102,11 +102,6 @@ _CONTAINERS_BY_TIER: dict[str, str] = {
     "hourly": "poindexter-backup-hourly",
     "daily": "poindexter-backup-daily",
 }
-
-# Subprocess timeout for ``docker restart``. Generous because a stack
-# under load can take 10s+ to restart a container with an active
-# pg_dump in flight.
-DOCKER_RESTART_TIMEOUT_SECONDS = 30
 
 # How long the probe is willing to take in a single cycle. With the
 # default ``retry_delay_seconds=120`` and ``max_retries=2``, a worst-case
@@ -297,54 +292,6 @@ def _latest_dump_age_seconds(
     if latest_mtime == 0.0:
         return None
     return (now if now is not None else time.time()) - latest_mtime
-
-
-# ---------------------------------------------------------------------------
-# Container restart — same pattern as migration_drift_probe._restart_worker.
-# ---------------------------------------------------------------------------
-
-
-def _restart_backup_container(container: str) -> tuple[bool, str]:
-    """Run ``docker restart <container>``. Returns (ok, message).
-
-    Brain container has /var/run/docker.sock bind-mounted (see
-    docker-compose.local.yml) and the docker CLI installed
-    (brain/Dockerfile). Never raises — caller handles the bool. On
-    Windows the Docker CLI is invoked from the host via the same
-    PATH-discovered binary; the CREATE_NO_WINDOW flag suppresses the
-    flash-and-vanish console window per Matt's "no popups" rule.
-    """
-    try:
-        kwargs: dict[str, Any] = {
-            "capture_output": True,
-            "text": True,
-            "timeout": DOCKER_RESTART_TIMEOUT_SECONDS,
-        }
-        if os.name == "nt":
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        result = subprocess.run(
-            ["docker", "restart", container],
-            **kwargs,
-        )
-        if result.returncode == 0:
-            return True, f"Restarted {container}"
-        return False, (
-            f"docker restart {container} exit {result.returncode}: "
-            f"{(result.stderr or '').strip()[:200]}"
-        )
-    except FileNotFoundError:
-        return False, (
-            "docker CLI not on PATH (brain image missing docker binary?)"
-        )
-    except subprocess.TimeoutExpired:
-        return False, (
-            f"docker restart {container} timed out after "
-            f"{DOCKER_RESTART_TIMEOUT_SECONDS}s"
-        )
-    except Exception as exc:  # noqa: BLE001
-        return False, (
-            f"docker restart error: {type(exc).__name__}: {str(exc)[:160]}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -651,7 +598,7 @@ async def _check_sentinels(
     *,
     sentinel_dir: str,
     scan_fn: Callable[[str], list[tuple[str, Path, dict[str, str]]]],
-    notify_fn: Callable[..., None],
+    notify_fn: Callable[..., Any],
 ) -> dict[str, Any]:
     """Scan ``sentinel_dir`` for dr-backup sentinels and emit alerts.
 
@@ -764,9 +711,9 @@ async def _check_one_tier(
     tier: str,
     config: dict[str, Any],
     stat_fn: Callable[[str, str], float | None],
-    restart_fn: Callable[[str], tuple[bool, str]],
+    restart_fn: docker_utils.RestartFn,
     sleep_fn: Callable[[float], Awaitable[None]],
-    notify_fn: Callable[..., None],
+    notify_fn: Callable[..., Any],
 ) -> dict[str, Any]:
     """Run the freshness → retry → escalate flow for one backup tier.
 
@@ -861,7 +808,9 @@ async def _check_one_tier(
 
     # 2a) Try a docker restart. Counts toward the retry budget whether
     # docker accepts the command or not — a missing docker socket means
-    # we can't auto-recover, period.
+    # we can't auto-recover, period. That includes a container docker has
+    # no record of, so a tier whose container never comes back still
+    # reaches the escalation above.
     _retry_state[tier] = used + 1
     logger.info(
         "[BACKUP_WATCHER] %s stale (age=%s, threshold=%.0fs) — restart "
@@ -869,8 +818,39 @@ async def _check_one_tier(
         tier, f"{age:.0f}s" if age is not None else "missing",
         max_age_seconds, _retry_state[tier], max_retries, container,
     )
-    restart_ok, restart_msg = await asyncio.to_thread(restart_fn, container)
-    if not restart_ok:
+    restart = await restart_fn(container, pool=pool)
+    if restart.status == docker_utils.RESTART_MISSING:
+        # Mid-recreate (``docker compose up --force-recreate`` leaves the
+        # name unbound for a second or two): nothing was restarted, so skip
+        # the retry-delay wait and re-stat. The replacement takes a dump as
+        # soon as it starts (scripts/backup/run.sh ticks once on boot), and
+        # the next cycle's freshness check sees it.
+        detail = (
+            f"Backup tier={tier} stale but {restart.detail}; nothing was "
+            f"restarted. Retry attempt {_retry_state[tier]}/{max_retries}."
+        )
+        logger.info("[BACKUP_WATCHER] %s", detail)
+        await _emit_audit_event(
+            pool,
+            "probe.backup_watcher_restart_skipped",
+            detail,
+            extra={
+                "tier": tier,
+                "container": container,
+                "age_seconds": age,
+                "retries_used": _retry_state[tier],
+            },
+        )
+        return {
+            "ok": False,
+            "status": "container_missing",
+            "tier": tier,
+            "container": container,
+            "age_seconds": age,
+            "retries_used": _retry_state[tier],
+        }
+    if not restart.ok:
+        restart_msg = restart.detail
         detail = (
             f"Backup tier={tier} stale and docker restart failed: "
             f"{restart_msg}. Retry attempt {_retry_state[tier]}/{max_retries}."
@@ -890,7 +870,7 @@ async def _check_one_tier(
         )
         # If docker isn't available we'll never recover. Surface that
         # specifically so the operator knows the brain is degraded.
-        if "docker CLI" in restart_msg or "docker socket" in restart_msg.lower():
+        if restart.status == docker_utils.RESTART_NO_DOCKER_CLI:
             try:
                 notify_fn(
                     title="Backup watcher cannot restart container",
@@ -1000,9 +980,9 @@ async def run_backup_watcher_probe(
     pool: Any,
     *,
     stat_fn: Callable[[str, str], float | None] | None = None,
-    restart_fn: Callable[[str], tuple[bool, str]] | None = None,
+    restart_fn: docker_utils.RestartFn | None = None,
     sleep_fn: Callable[[float], Awaitable[None]] | None = None,
-    notify_fn: Callable[..., None] | None = None,
+    notify_fn: Callable[..., Any] | None = None,
     scan_sentinels_fn: Callable[[str], list[tuple[str, Path, dict[str, str]]]] | None = None,
 ) -> dict[str, Any]:
     """Single execution of the backup-watcher probe.
@@ -1011,8 +991,11 @@ async def run_backup_watcher_probe(
         pool: asyncpg pool for app_settings + alert_events + audit_log.
         stat_fn: ``(backup_dir, tier) -> age_seconds | None`` — defaults
             to filesystem stat. Tests inject canned ages.
-        restart_fn: ``(container) -> (ok, msg)`` — defaults to the
-            real ``docker restart``. Tests inject a stub.
+        restart_fn: ``async (container, *, pool) -> ContainerRestart`` —
+            defaults to :func:`brain.docker_utils.restart_container`, the
+            brain's shared ``docker restart`` (inspect first, timeout from
+            ``app_settings.brain_docker_restart_timeout_seconds``, off the
+            event loop). Tests inject a stub.
         sleep_fn: ``async (seconds) -> None`` — defaults to ``asyncio.sleep``
             so the between-retry wait yields the brain loop instead of
             freezing it. Tests inject an async no-op so they don't wait.
@@ -1029,7 +1012,7 @@ async def run_backup_watcher_probe(
     ``brain_decisions`` / the cycle's ``probe_results`` map.
     """
     stat_fn = stat_fn or _latest_dump_age_seconds
-    restart_fn = restart_fn or _restart_backup_container
+    restart_fn = restart_fn or docker_utils.restart_container
     sleep_fn = sleep_fn or asyncio.sleep
     notify_fn = notify_fn or notify_operator
     scan_sentinels_fn = scan_sentinels_fn or _scan_sentinel_dir

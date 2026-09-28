@@ -9,6 +9,10 @@ Covers the three required scenarios from the issue:
 Plus assorted edge cases (worker unreachable, restart fails, repeat-cycle
 notification dedupe). All external I/O (asyncpg, urllib, subprocess) is
 mocked — no real ``docker restart`` runs and no test sleeps for real.
+
+The restart goes through ``docker_utils.restart_container``, so ``restart_fn``
+stubs are async and answer with a ``ContainerRestart``
+(``tests/unit/brain/_restart_fakes.py``).
 """
 
 from __future__ import annotations
@@ -17,7 +21,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from poindexter.brain import docker_utils as du
 from poindexter.brain import migration_drift_probe as mdp
+from tests.unit.brain._restart_fakes import outcome, restart_stub
 
 
 def _make_pool():
@@ -117,14 +123,12 @@ class TestNoDrift:
         pool.fetchval = AsyncMock(return_value="false")  # auto-recover off
 
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
 
         def fake_notify(**kwargs):
             notifies.append(kwargs)
 
-        def fake_restart():
-            restart_calls.append(None)
-            return True, "should not be called"
+        fake_restart = restart_stub(restart_calls)
 
         summary = await mdp.run_migration_drift_probe(
             pool,
@@ -159,7 +163,7 @@ class TestNoDrift:
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(0),
         )
@@ -180,14 +184,12 @@ class TestDriftAutoRecoverDisabled:
         pool.fetchval = AsyncMock(return_value="false")  # auto-recover off
 
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
 
         def fake_notify(**kwargs):
             notifies.append(kwargs)
 
-        def fake_restart():
-            restart_calls.append(None)
-            return True, "should not be called"
+        fake_restart = restart_stub(restart_calls)
 
         summary = await mdp.run_migration_drift_probe(
             pool,
@@ -222,7 +224,7 @@ class TestDriftAutoRecoverDisabled:
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=fake_notify,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(2),
         )
@@ -232,7 +234,7 @@ class TestDriftAutoRecoverDisabled:
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=fake_notify,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(2),
         )
@@ -253,14 +255,14 @@ class TestDriftAutoRecoverDisabled:
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=fake_notify,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(2),
         )
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=fake_notify,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(3),
         )
@@ -275,7 +277,7 @@ class TestDriftAutoRecoverDisabled:
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(2),
         )
@@ -302,14 +304,12 @@ class TestDriftAutoRecoverEnabled:
         pool.fetchval = _settings_fetchval()  # auto-recover on, sync off
 
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
 
         def fake_notify(**kwargs):
             notifies.append(kwargs)
 
-        def fake_restart():
-            restart_calls.append(None)
-            return True, "Restarted"
+        fake_restart = restart_stub(restart_calls)
 
         # First fetch: drift=2. After restart, wait_fn returns the
         # post-restart health with pending=0.
@@ -355,14 +355,12 @@ class TestDriftAutoRecoverEnabled:
         pool.fetchval = _settings_fetchval()
 
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
 
         def fake_notify(**kwargs):
             notifies.append(kwargs)
 
-        def fake_restart():
-            restart_calls.append(None)
-            return True, "Restarted"
+        fake_restart = restart_stub(restart_calls)
 
         post_health = _health_with_drift(2)  # still drifting
 
@@ -399,7 +397,10 @@ class TestDriftAutoRecoverEnabled:
         summary = await mdp.run_migration_drift_probe(
             pool,
             notify_fn=fake_notify,
-            restart_fn=lambda: (False, "docker socket permission denied"),
+            restart_fn=restart_stub(
+                status=du.RESTART_FAILED,
+                detail="docker restart failed for poindexter-worker: docker socket permission denied",
+            ),
             wait_fn=fake_wait,
             health_fetcher=lambda: _health_with_drift(1),
         )
@@ -411,6 +412,144 @@ class TestDriftAutoRecoverEnabled:
         assert "docker socket permission denied" in notifies[0]["detail"]
         # wait_fn must NOT be called when restart failed.
         assert wait_calls == []
+
+    @pytest.mark.asyncio
+    async def test_restart_is_awaited_with_the_worker_and_the_pool(self):
+        # The pool is how docker_utils.restart_container reads
+        # app_settings.brain_docker_restart_timeout_seconds; a restart_fn
+        # called without it would fall back to the default.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval()
+        restart_fn = restart_stub()
+
+        await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=restart_fn,
+            wait_fn=lambda: (True, _health_with_drift(0)),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        restart_fn.assert_awaited_once_with(mdp.WORKER_CONTAINER, pool=pool)
+
+    @pytest.mark.asyncio
+    async def test_restart_that_timed_out_pages_like_any_failed_restart(self):
+        # dockerd may still finish a restart that outlived the timeout, but
+        # the probe cannot know that; it pages as before and says so.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval()
+        notifies: list[dict] = []
+
+        summary = await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: notifies.append(k),
+            restart_fn=restart_stub(status=du.RESTART_TIMED_OUT),
+            wait_fn=lambda: (True, _health_with_drift(0)),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        assert summary["status"] == "recover_restart_failed"
+        assert len(notifies) == 1
+        assert notifies[0]["severity"] == "critical"
+        assert "may still complete it" in notifies[0]["detail"]
+
+
+@pytest.mark.unit
+class TestRecoverWorkerMissing:
+    """The worker missing mid-recreate (``docker compose up --force-recreate``
+    leaves the name unbound for a second or two).
+
+    Nothing was restarted, and the replacement applies pending migrations at
+    boot, so it is neither the "FAILED to restart" page nor a recovery. Before
+    the shared helper, ``docker restart`` against the missing name failed with
+    "No such container" and paged critical.
+    """
+
+    @staticmethod
+    def _missing():
+        return restart_stub(status=du.RESTART_MISSING)
+
+    @pytest.mark.asyncio
+    async def test_missing_worker_is_not_paged_and_skips_the_health_wait(self):
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval()
+        notifies: list[dict] = []
+        wait_fn = MagicMock(return_value=(True, _health_with_drift(0)))
+
+        summary = await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: notifies.append(k),
+            restart_fn=self._missing(),
+            wait_fn=wait_fn,
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        assert summary["ok"] is False
+        assert summary["status"] == "recover_worker_missing"
+        assert "not found (likely mid-recreate)" in summary["detail"]
+        assert notifies == []
+        wait_fn.assert_not_called()
+        # No page went out, so the exhaustion page is still free to fire.
+        assert mdp._last_notify_drift_count is None
+
+        events = [
+            call.args[1] for call in pool.execute.call_args_list
+            if "audit_log" in call.args[0]
+        ]
+        assert "probe.migration_drift_recover_skipped" in events
+        assert "probe.migration_drift_recover_failed" not in events
+
+    @pytest.mark.asyncio
+    async def test_missing_worker_uses_an_attempt_so_it_still_ends_at_the_exhaustion_page(self):
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            **{mdp.RECOVER_MAX_ATTEMPTS_SETTING_KEY: "1"}
+        )
+        notifies: list[dict] = []
+        kw = {
+            "notify_fn": lambda **k: notifies.append(k),
+            "restart_fn": self._missing(),
+            "wait_fn": lambda: (True, _health_with_drift(1)),
+            "health_fetcher": lambda: _health_with_drift(1),
+        }
+
+        first = await mdp.run_migration_drift_probe(pool, **kw)
+        second = await mdp.run_migration_drift_probe(pool, **kw)
+        third = await mdp.run_migration_drift_probe(pool, **kw)
+
+        assert first["status"] == "recover_worker_missing"
+        assert first["attempts"] == 1
+        assert second["status"] == third["status"] == "recover_exhausted"
+        assert len(notifies) == 1
+        assert notifies[0]["severity"] == "critical"
+        assert "UNRESOLVED" in notifies[0]["title"]
+
+    @pytest.mark.asyncio
+    async def test_drift_the_recreate_cleared_resets_the_episode(self):
+        # The recreated worker applied the migrations at boot: the next cycle
+        # reads pending=0 and the episode starts over.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval()
+
+        await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=self._missing(),
+            wait_fn=lambda: (True, {}),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+        assert mdp._recover_attempts == 1
+
+        summary = await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=restart_stub(),
+            wait_fn=lambda: (True, {}),
+            health_fetcher=lambda: _health_with_drift(0),
+        )
+
+        assert summary["status"] == "no_drift"
+        assert mdp._recover_attempts == 0
 
     @pytest.mark.asyncio
     async def test_recover_worker_unhealthy_after_restart_escalates(self):
@@ -427,7 +566,7 @@ class TestDriftAutoRecoverEnabled:
         summary = await mdp.run_migration_drift_probe(
             pool,
             notify_fn=fake_notify,
-            restart_fn=lambda: (True, "Restarted"),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (False, {"_error": "Connection refused"}),
             health_fetcher=lambda: _health_with_drift(1),
         )
@@ -454,9 +593,7 @@ class TestRecoverBackoffAndSync:
         def fake_notify(**kwargs):
             notifies.append(kwargs)
 
-        def fake_restart():
-            restart_calls.append(None)
-            return True, "Restarted"
+        fake_restart = restart_stub(restart_calls)
 
         return {
             "notify_fn": fake_notify,
@@ -476,7 +613,7 @@ class TestRecoverBackoffAndSync:
             **{mdp.RECOVER_MAX_ATTEMPTS_SETTING_KEY: "3"}
         )
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
         kw = self._persist_kwargs(notifies, restart_calls, pending=1)
 
         statuses = [
@@ -507,7 +644,7 @@ class TestRecoverBackoffAndSync:
             **{mdp.RECOVER_MAX_ATTEMPTS_SETTING_KEY: "1"}
         )
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
         kw = self._persist_kwargs(notifies, restart_calls, pending=1)
 
         for _ in range(4):
@@ -548,14 +685,14 @@ class TestRecoverBackoffAndSync:
             order.append(("sync", path))
             return True, "synced"
 
-        def fake_restart():
-            order.append(("restart", None))
-            return True, "Restarted"
+        async def fake_restart(container, *, pool=None):
+            order.append(("restart", container))
+            return outcome(container)
 
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=fake_restart,
+            restart_fn=AsyncMock(side_effect=fake_restart),
             sync_fn=fake_sync,
             wait_fn=lambda: (True, _health_with_drift(0)),  # recovers
             health_fetcher=lambda: _health_with_drift(1),
@@ -573,7 +710,7 @@ class TestRecoverBackoffAndSync:
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (True, "Restarted"),
+            restart_fn=restart_stub(),
             sync_fn=lambda p: (sync_calls.append(p) or (True, "")),
             wait_fn=lambda: (True, _health_with_drift(0)),
             health_fetcher=lambda: _health_with_drift(1),
@@ -589,12 +726,12 @@ class TestRecoverBackoffAndSync:
         pool.fetchval = _settings_fetchval(
             **{mdp.AUTO_SYNC_SETTING_KEY: "true"}
         )
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
 
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (restart_calls.append(None) or (True, "Restarted")),
+            restart_fn=restart_stub(restart_calls),
             sync_fn=lambda p: (False, "git reset failed"),
             wait_fn=lambda: (True, _health_with_drift(0)),
             health_fetcher=lambda: _health_with_drift(1),
@@ -609,7 +746,7 @@ class TestRecoverBackoffAndSync:
         pool = _make_pool()
         pool.fetchval = _settings_fetchval()
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
 
         await mdp.run_migration_drift_probe(
             pool, **self._persist_kwargs(notifies, restart_calls, pending=1)
@@ -627,7 +764,7 @@ class TestRecoverBackoffAndSync:
         pool = _make_pool()
         pool.fetchval = _settings_fetchval()
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
         persist = self._persist_kwargs(notifies, restart_calls, pending=1)
 
         await mdp.run_migration_drift_probe(pool, **persist)  # attempt 1
@@ -637,7 +774,7 @@ class TestRecoverBackoffAndSync:
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (restart_calls.append(None) or (True, "")),
+            restart_fn=restart_stub(restart_calls),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(0),
         )
@@ -664,12 +801,12 @@ class TestInflightDefer:
         pool.fetchval = _settings_fetchval(inflight=1)
 
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
 
         summary = await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: notifies.append(k),
-            restart_fn=lambda: (restart_calls.append(None) or (True, "Restarted")),
+            restart_fn=restart_stub(restart_calls),
             wait_fn=lambda: (True, _health_with_drift(0)),
             health_fetcher=lambda: _health_with_drift(1),
         )
@@ -697,10 +834,10 @@ class TestInflightDefer:
             inflight=1, **{mdp.MAX_INFLIGHT_DEFERS_SETTING_KEY: "2"}
         )
 
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
         kw = {
             "notify_fn": lambda **k: None,
-            "restart_fn": lambda: (restart_calls.append(None) or (True, "Restarted")),
+            "restart_fn": restart_stub(restart_calls),
             "wait_fn": lambda: (True, _health_with_drift(0)),  # recovers on restart
             "health_fetcher": lambda: _health_with_drift(1),
         }
@@ -733,11 +870,11 @@ class TestInflightDefer:
             inflight=3, **{mdp.DEFER_WHILE_INFLIGHT_SETTING_KEY: "false"}
         )
 
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
         summary = await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (restart_calls.append(None) or (True, "Restarted")),
+            restart_fn=restart_stub(restart_calls),
             wait_fn=lambda: (True, _health_with_drift(0)),
             health_fetcher=lambda: _health_with_drift(1),
         )
@@ -751,11 +888,11 @@ class TestInflightDefer:
         pool = _make_pool()
         pool.fetchval = _settings_fetchval(inflight=0)
 
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
         summary = await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (restart_calls.append(None) or (True, "Restarted")),
+            restart_fn=restart_stub(restart_calls),
             wait_fn=lambda: (True, _health_with_drift(0)),
             health_fetcher=lambda: _health_with_drift(1),
         )
@@ -785,14 +922,12 @@ class TestEdgeCases:
         pool.fetchval = AsyncMock(return_value="false")
 
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
 
         def fake_notify(**kwargs):
             notifies.append(kwargs)
 
-        def fake_restart():
-            restart_calls.append(None)
-            return True, ""
+        fake_restart = restart_stub(restart_calls)
 
         summary = await mdp.run_migration_drift_probe(
             pool,
@@ -815,7 +950,7 @@ class TestEdgeCases:
         summary = await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: {"status": "healthy", "components": {}},
         )
@@ -833,7 +968,7 @@ class TestEdgeCases:
         summary = await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(0),
         )
@@ -847,12 +982,12 @@ class TestEdgeCases:
         pool.fetchval = AsyncMock(return_value=None)
 
         notifies: list[dict] = []
-        restart_calls: list[None] = []
+        restart_calls: list[str] = []
 
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **kwargs: notifies.append(kwargs),
-            restart_fn=lambda: (restart_calls.append(None) or (True, "")),
+            restart_fn=restart_stub(restart_calls),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(1),
         )
@@ -1075,7 +1210,7 @@ class TestNoDriftWithRelkindMismatch:
         summary = await mdp.run_migration_drift_probe(
             pool,
             notify_fn=fake_notify,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(0),
         )
@@ -1108,7 +1243,7 @@ class TestNoDriftWithRelkindMismatch:
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: notifies.append(k),
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(0),
         )
@@ -1130,7 +1265,7 @@ class TestNoDriftWithRelkindMismatch:
         await mdp.run_migration_drift_probe(
             pool,
             notify_fn=lambda **k: None,
-            restart_fn=lambda: (True, ""),
+            restart_fn=restart_stub(),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(0),
         )

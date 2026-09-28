@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
+from poindexter.brain import docker_utils as du
 from poindexter.brain import sidecar_ram_watch as sw
+from tests.unit.brain._restart_fakes import restart_stub
 
 
 class _Pool:
@@ -42,7 +44,7 @@ def _summary(pool, **kw):
     kw.setdefault("gpu_lock_fn", AsyncMock(return_value=False))
     kw.setdefault("cpu_fn", lambda c: 0.5)
     kw.setdefault("mem_fn", lambda c: (1.0, 9.0))
-    kw.setdefault("restart_fn", lambda c: (True, "ok"))
+    kw.setdefault("restart_fn", restart_stub())
     kw.setdefault("now_fn", lambda: 10_000.0)
     return _run(sw.run_sidecar_ram_watch_probe(pool, **kw))
 
@@ -135,7 +137,7 @@ def test_parse_targets_skips_malformed_without_dropping_the_rest(bad):
 
 
 def test_gpu_lock_held_blocks_the_recycle():
-    restart = MagicMock()
+    restart = restart_stub()
     s = _summary(
         _Pool(),
         gpu_lock_fn=AsyncMock(return_value=True),
@@ -143,13 +145,13 @@ def test_gpu_lock_held_blocks_the_recycle():
     )
     assert s["status"] == "busy"
     assert "scheduler lock" in s["detail"]
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_unknown_gpu_lock_state_counts_as_busy():
     """#3094 posture: unprovable == busy. A failed lock query must never be
     read as 'nothing running'."""
-    restart = MagicMock()
+    restart = restart_stub()
     s = _summary(
         _Pool(),
         gpu_lock_fn=AsyncMock(return_value=None),
@@ -157,13 +159,13 @@ def test_unknown_gpu_lock_state_counts_as_busy():
     )
     assert s["status"] == "busy"
     assert "unknown" in s["detail"]
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_gpu_gate_can_be_disabled_but_cpu_gate_still_applies():
     """Turning gate 1 off must not turn the probe into a blind restarter —
     the per-container CPU gate is the one that stays."""
-    restart = MagicMock()
+    restart = restart_stub()
     pool = _Pool(
         {sw.TARGETS_KEY: "solo:6", sw.REQUIRE_GPU_LOCK_FREE_KEY: "false"}
     )
@@ -180,7 +182,7 @@ def test_gpu_gate_can_be_disabled_but_cpu_gate_still_applies():
         restart_fn=restart,
     )
     assert s["status"] == "busy"
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_gpu_lock_is_not_even_queried_when_the_gate_is_off():
@@ -194,29 +196,29 @@ def test_gpu_lock_is_not_even_queried_when_the_gate_is_off():
 
 
 def test_busy_cpu_blocks_the_recycle():
-    restart = MagicMock()
+    restart = restart_stub()
     s = _summary(_Pool(), cpu_fn=lambda c: 80.0, restart_fn=restart)
     assert s["status"] == "busy"
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_unreadable_cpu_counts_as_busy():
-    restart = MagicMock()
+    restart = restart_stub()
     s = _summary(_Pool(), cpu_fn=lambda c: None, restart_fn=restart)
     assert s["status"] == "busy"
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_cpu_exactly_at_threshold_is_busy():
     """Boundary is >=, so the threshold value itself does not count as idle."""
-    restart = MagicMock()
+    restart = restart_stub()
     s = _summary(
         _Pool({sw.CPU_IDLE_PERCENT_KEY: "5"}),
         cpu_fn=lambda c: 5.0,
         restart_fn=restart,
     )
     assert s["status"] == "busy"
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_idle_proof_is_taken_after_the_footprint_read_not_before():
@@ -240,10 +242,10 @@ def test_idle_proof_is_taken_after_the_footprint_read_not_before():
 
 
 def test_below_watermark_never_restarts():
-    restart = MagicMock()
+    restart = restart_stub()
     s = _summary(_Pool(), mem_fn=lambda c: (0.2, 0.3), restart_fn=restart)
     assert s["status"] == "below_watermark"
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_recycles_only_the_fattest_target_per_cycle():
@@ -258,7 +260,7 @@ def test_recycles_only_the_fattest_target_per_cycle():
     s = _summary(
         _Pool(),
         mem_fn=lambda c: sizes[c],
-        restart_fn=lambda c: (restarted.append(c), (True, "ok"))[1],
+        restart_fn=restart_stub(restarted),
     )
     assert s["status"] == "recycled"
     assert restarted == ["poindexter-chatterbox"]
@@ -281,11 +283,11 @@ def test_cooldown_blocks_a_second_recycle_of_the_same_container():
     assert first["status"] == "recycled"
 
     now["t"] += 30 * 60  # 30 min later, inside the 60 min cooldown
-    restart = MagicMock()
+    restart = restart_stub()
     second = _summary(pool, now_fn=lambda: now["t"], restart_fn=restart)
     assert second["status"] == "below_watermark"
     assert any("cooldown" in x for x in second["skipped"])
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_cooldown_is_per_container_not_global():
@@ -294,9 +296,7 @@ def test_cooldown_is_per_container_not_global():
     now = {"t": 10_000.0}
     restarted: list[str] = []
 
-    def _restart(c):
-        restarted.append(c)
-        return (True, "ok")
+    _restart = restart_stub(restarted)
 
     # 'a' and 'b' both fat; the fattest ('a') goes first.
     _summary(
@@ -333,7 +333,7 @@ def test_successful_recycle_emits_info_finding():
 
 def test_restart_failure_emits_warn_finding_and_reports_not_ok():
     pool = _Pool({sw.TARGETS_KEY: "solo:6"})
-    s = _summary(pool, restart_fn=lambda c: (False, "docker exploded"))
+    s = _summary(pool, restart_fn=restart_stub(status=du.RESTART_FAILED))
     assert s["ok"] is False
     assert s["status"] == "restart_failed"
     details = json.loads(pool.execute.await_args.args[2])
@@ -344,7 +344,7 @@ def test_restart_failure_emits_warn_finding_and_reports_not_ok():
 def test_failed_recycle_does_not_start_the_cooldown():
     """A failed restart must be retried next cycle, not sat out for an hour."""
     pool = _Pool({sw.TARGETS_KEY: "solo:6"})
-    _summary(pool, restart_fn=lambda c: (False, "nope"))
+    _summary(pool, restart_fn=restart_stub(status=du.RESTART_FAILED))
     assert sw._last_recycle_monotonic == {}
 
 
@@ -370,3 +370,46 @@ def test_gpu_lock_query_failure_is_unknown_not_free():
             raise RuntimeError("pg gone")
 
     assert _run(sw.gpu_lock_held(_Boom())) is None
+
+
+# --- the restart is docker_utils.restart_container ---------------------------
+
+
+def test_container_missing_mid_recreate_is_neither_a_recycle_nor_a_failure():
+    """Measured and proven idle, then gone: compose is recreating it, and the
+    replacement's new PID 1 returns the memory anyway. No failure finding (it
+    would say "check docker socket access"), no recycled finding, no
+    cooldown stamp. Before the shared helper this was a failed restart
+    ("No such container")."""
+    pool = _Pool({sw.TARGETS_KEY: "solo:6"})
+
+    s = _summary(pool, restart_fn=restart_stub(status=du.RESTART_MISSING))
+
+    assert s["ok"] is True
+    assert s["status"] == "container_missing"
+    assert "not found (likely mid-recreate)" in s["detail"]
+    pool.execute.assert_not_awaited()
+    assert sw._last_recycle_monotonic == {}
+
+
+def test_restart_is_the_shared_helper_given_the_pool(monkeypatch):
+    """With no ``restart_fn`` the recycle goes through
+    ``docker_utils.restart_container`` with the pool, so it waits
+    ``app_settings.brain_docker_restart_timeout_seconds`` rather than the
+    60 s this probe used to hardcode."""
+    helper = restart_stub()
+    monkeypatch.setattr(du, "restart_container", helper)
+    pool = _Pool({sw.TARGETS_KEY: "solo:6"})
+
+    s = _run(
+        sw.run_sidecar_ram_watch_probe(
+            pool,
+            gpu_lock_fn=AsyncMock(return_value=False),
+            cpu_fn=lambda c: 0.5,
+            mem_fn=lambda c: (1.0, 9.0),
+            now_fn=lambda: 10_000.0,
+        )
+    )
+
+    helper.assert_awaited_once_with("solo", pool=pool)
+    assert s["status"] == "recycled"

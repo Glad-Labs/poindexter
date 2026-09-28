@@ -26,7 +26,9 @@ import pytest
 
 # pythonpath in pyproject.toml includes "../.." so the brain package resolves
 # the same way the auto_embed_watch tests import it.
+from poindexter.brain import docker_utils as du
 from poindexter.brain import postiz_queue_watch as pz
+from tests.unit.brain._restart_fakes import restart_stub
 
 
 def _make_pool(*, setting_values=None, api_key="pz-key", firing=None, executed=None):
@@ -99,7 +101,7 @@ def test_disabled_short_circuits():
 def test_unconfigured_key_is_a_noop():
     """No postiz_api_key => never restart, never page, never hit the API."""
     pool = _make_pool(api_key="")
-    restart = MagicMock()
+    restart = restart_stub()
     summary = asyncio.run(
         pz.run_postiz_queue_watch_probe(
             pool,
@@ -110,12 +112,12 @@ def test_unconfigured_key_is_a_noop():
     )
     assert summary["ok"] is True
     assert summary["status"] == "unconfigured"
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_clean_queue_no_restart():
     pool = _make_pool()
-    restart = MagicMock()
+    restart = restart_stub()
     summary = asyncio.run(
         pz.run_postiz_queue_watch_probe(
             pool,
@@ -125,7 +127,7 @@ def test_clean_queue_no_restart():
         )
     )
     assert summary == {"ok": True, "status": "clean", "overdue": 0, "retries_used": 0}
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
 
 def test_clean_queue_auto_resolves_firing_alert():
@@ -135,7 +137,7 @@ def test_clean_queue_auto_resolves_firing_alert():
         pz.run_postiz_queue_watch_probe(
             pool,
             check_fn=AsyncMock(return_value=_clean()),
-            restart_fn=MagicMock(),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
         )
     )
@@ -148,7 +150,7 @@ def test_clean_queue_auto_resolves_firing_alert():
 
 def test_wedged_restart_recovers():
     pool = _make_pool()
-    restart = MagicMock(return_value=(True, "Restarted poindexter-postiz"))
+    restart = restart_stub()
     check = AsyncMock(side_effect=[_wedged(), _clean()])
     slept = []
     summary = asyncio.run(
@@ -159,14 +161,14 @@ def test_wedged_restart_recovers():
     )
     assert summary["ok"] is True
     assert summary["status"] == "recovered"
-    restart.assert_called_once_with("poindexter-postiz")
+    restart.assert_awaited_once_with("poindexter-postiz", pool=pool)
     assert slept == [180.0]
 
 
 def test_api_unreachable_counts_as_wedged():
     """A dead/hung container can't serve the API — same restart heals it."""
     pool = _make_pool()
-    restart = MagicMock(return_value=(True, "Restarted poindexter-postiz"))
+    restart = restart_stub()
     check = AsyncMock(side_effect=[None, _clean()])
     summary = asyncio.run(
         pz.run_postiz_queue_watch_probe(
@@ -174,13 +176,13 @@ def test_api_unreachable_counts_as_wedged():
         )
     )
     assert summary["status"] == "recovered"
-    restart.assert_called_once()
+    restart.assert_awaited_once()
 
 
 def test_escalates_with_warning_alert_after_max_retries():
     executed = []
     pool = _make_pool(executed=executed)
-    restart = MagicMock(return_value=(True, "Restarted poindexter-postiz"))
+    restart = restart_stub()
 
     # Two full wedged cycles burn the retry budget (max_retries=2)...
     for _ in range(2):
@@ -206,7 +208,7 @@ def test_escalates_with_warning_alert_after_max_retries():
     )
     assert summary["ok"] is False
     assert summary["status"] == "escalated"
-    restart.assert_not_called()
+    restart.assert_not_awaited()
 
     firing = [
         (q, a)
@@ -221,7 +223,7 @@ def test_escalates_with_warning_alert_after_max_retries():
 def test_restart_failure_is_surfaced_not_swallowed():
     executed = []
     pool = _make_pool(executed=executed)
-    restart = MagicMock(return_value=(False, "docker CLI not on PATH"))
+    restart = restart_stub(status=du.RESTART_NO_DOCKER_CLI)
     notify = MagicMock()
     summary = asyncio.run(
         pz.run_postiz_queue_watch_probe(
@@ -283,7 +285,7 @@ def test_escalate_detail_includes_sample_json():
         pz.run_postiz_queue_watch_probe(
             pool,
             check_fn=AsyncMock(return_value=_wedged(1)),
-            restart_fn=MagicMock(),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
         )
     )
@@ -291,3 +293,109 @@ def test_escalate_detail_includes_sample_json():
     assert firing
     annotations = json.loads(firing[0][4])
     assert "cmq123" in annotations["description"]
+
+
+# ---------------------------------------------------------------------------
+# The restart is docker_utils.restart_container (the brain's shared helper)
+# ---------------------------------------------------------------------------
+
+
+def _audit_events(executed: list) -> list[str]:
+    return [a[0] for q, a in executed if "audit_log" in q]
+
+
+def test_missing_container_skips_the_wait_and_notifies_nothing():
+    """Mid-recreate the container name is unbound for a second or two, so
+    nothing was restarted: no retry-delay wait, no re-check, no notify. Before
+    the shared helper this was a failed restart ("No such container")."""
+    executed: list = []
+    pool = _make_pool(executed=executed)
+    check = AsyncMock(return_value=None)  # API unreachable counts as wedged
+    sleep_fn = AsyncMock()
+    notify = MagicMock()
+
+    summary = asyncio.run(
+        pz.run_postiz_queue_watch_probe(
+            pool, check_fn=check, restart_fn=restart_stub(status=du.RESTART_MISSING),
+            sleep_fn=sleep_fn, notify_fn=notify,
+        )
+    )
+
+    assert summary == {"ok": False, "status": "container_missing", "retries_used": 1}
+    sleep_fn.assert_not_awaited()
+    assert check.await_count == 1
+    notify.assert_not_called()
+    events = _audit_events(executed)
+    assert "probe.postiz_queue_restart_skipped" in events
+    assert "probe.postiz_queue_restart_failed" not in events
+
+
+def test_a_postiz_that_stays_missing_still_escalates():
+    """Each missing-container cycle uses a retry, so a Postiz whose container
+    never comes back (its API unreachable, which counts as wedged) still ends
+    at the firing postiz_queue_wedged alert."""
+    executed: list = []
+    pool = _make_pool(executed=executed)
+    kw = {
+        "check_fn": AsyncMock(return_value=None),
+        "restart_fn": restart_stub(status=du.RESTART_MISSING),
+        "sleep_fn": AsyncMock(),
+        "notify_fn": MagicMock(),
+    }
+
+    statuses = [
+        asyncio.run(pz.run_postiz_queue_watch_probe(pool, **kw))["status"]
+        for _ in range(3)
+    ]
+
+    assert statuses == ["container_missing", "container_missing", "escalated"]
+    assert any(
+        "alert_events" in q and pz._ALERTNAME in a and "firing" in a for q, a in executed
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "notified"),
+    [
+        (du.RESTART_NO_DOCKER_CLI, True),
+        (du.RESTART_FAILED, False),
+        (du.RESTART_TIMED_OUT, False),
+        (du.RESTART_ERROR, False),
+    ],
+)
+def test_only_a_missing_docker_cli_notifies(status, notified):
+    executed: list = []
+    pool = _make_pool(executed=executed)
+    notify = MagicMock()
+
+    summary = asyncio.run(
+        pz.run_postiz_queue_watch_probe(
+            pool, check_fn=AsyncMock(return_value=_wedged()),
+            restart_fn=restart_stub(status=status), sleep_fn=AsyncMock(),
+            notify_fn=notify,
+        )
+    )
+
+    assert summary["status"] == "restart_failed"
+    assert notify.called is notified
+    assert "probe.postiz_queue_restart_failed" in _audit_events(executed)
+
+
+def test_default_restart_is_the_shared_helper_given_the_pool(monkeypatch):
+    """With no ``restart_fn`` the restart goes through
+    ``docker_utils.restart_container`` with the pool, so it waits
+    ``app_settings.brain_docker_restart_timeout_seconds`` rather than the
+    60 s this probe used to hardcode."""
+    helper = restart_stub()
+    monkeypatch.setattr(du, "restart_container", helper)
+    pool = _make_pool()
+
+    summary = asyncio.run(
+        pz.run_postiz_queue_watch_probe(
+            pool, check_fn=AsyncMock(side_effect=[_wedged(), _clean()]),
+            sleep_fn=AsyncMock(),
+        )
+    )
+
+    helper.assert_awaited_once_with(pz._CONTAINER, pool=pool)
+    assert summary["status"] == "recovered"

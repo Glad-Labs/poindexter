@@ -41,6 +41,8 @@ import pytest
 # pythonpath in pyproject.toml includes "../.." so the brain package
 # resolves the same way the backup_watcher tests import it.
 from poindexter.brain import docker_port_forward_probe as pf
+from poindexter.brain import docker_utils as du
+from tests.unit.brain._restart_fakes import restart_stub
 
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned config
@@ -166,9 +168,7 @@ class TestHappyPath:
 
         restart_calls: list[str] = []
 
-        def fake_restart(container):
-            restart_calls.append(container)
-            return True, "should not be called"
+        fake_restart = restart_stub(restart_calls)
 
         summary = await pf.run_docker_port_forward_probe(
             pool,
@@ -220,9 +220,7 @@ class TestStuckPortForwardRecovers:
 
         restart_calls: list[str] = []
 
-        def fake_restart(container):
-            restart_calls.append(container)
-            return True, f"Restarted {container}"
+        fake_restart = restart_stub(restart_calls)
 
         sleeps: list[float] = []
 
@@ -305,7 +303,7 @@ class TestStuckPortForwardRecovers:
             pool,
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (True, f"Restarted {c}"),
+            restart_fn=restart_stub(),
             sleep_fn=fake_sleep,
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -342,7 +340,7 @@ class TestRecoveryFailedPagesOperator:
             pool,
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (True, f"Restarted {c}"),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -393,7 +391,7 @@ class TestRecoveryFailedPagesOperator:
             pool,
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (True, f"Restarted {c}"),
+            restart_fn=restart_stub(),
             sleep_fn=fake_sleep,
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -424,9 +422,7 @@ class TestServiceDownIsNotPortForwardBug:
 
         restart_calls: list[str] = []
 
-        def fake_restart(container):
-            restart_calls.append(container)
-            return True, "should not be called"
+        fake_restart = restart_stub(restart_calls)
 
         summary = await pf.run_docker_port_forward_probe(
             pool,
@@ -478,7 +474,7 @@ class TestUnwatchedContainerSkipsCleanly:
             pool,
             http_probe_fn=fake_http,
             container_exists_fn=fake_exists,
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -528,9 +524,7 @@ class TestRestartCapEnforced:
 
         restart_calls: list[str] = []
 
-        def fake_restart(container):
-            restart_calls.append(container)
-            return True, f"Restarted {container}"
+        fake_restart = restart_stub(restart_calls)
 
         # All within the same minute so the rolling window holds.
         now = 1_000_000.0
@@ -610,7 +604,7 @@ class TestPerServiceExceptionIsolation:
             pool,
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -640,9 +634,7 @@ class TestDisabledShortCircuits:
             http_calls.append(url)
             return True
 
-        def fake_restart(container):
-            restart_calls.append(container)
-            return True, ""
+        fake_restart = restart_stub(restart_calls)
 
         summary = await pf.run_docker_port_forward_probe(
             pool,
@@ -681,9 +673,7 @@ class TestInverseInternalOnlyDownDoesNotRestart:
 
         restart_calls: list[str] = []
 
-        def fake_restart(container):
-            restart_calls.append(container)
-            return True, ""
+        fake_restart = restart_stub(restart_calls)
 
         summary = await pf.run_docker_port_forward_probe(
             pool,
@@ -749,7 +739,7 @@ class TestExternalUrlUsesHostPort:
             pool,
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (True, ""),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -1296,7 +1286,7 @@ class TestPostgresWatchEntry:
             http_probe_fn=fake_http,
             pg_probe_fn=fake_pg,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            restart_fn=restart_stub(restart_calls),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: notify_calls.append(k),
             now_fn=lambda: 1_000_000.0,
@@ -1343,7 +1333,7 @@ class TestPostgresWatchEntry:
             pool,
             pg_probe_fn=fake_pg,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            restart_fn=restart_stub(restart_calls),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -1363,7 +1353,7 @@ class TestPostgresWatchEntry:
             pool,
             pg_probe_fn=lambda h, p, t: False,  # both down
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            restart_fn=restart_stub(restart_calls),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -1382,7 +1372,7 @@ class TestPostgresWatchEntry:
             pg_probe_fn=lambda h, p, t: True,
             pg_auth_probe_fn=_ok_pg_auth,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            restart_fn=restart_stub(restart_calls),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -1434,7 +1424,7 @@ class TestScramCorruptionDetection:
             pg_probe_fn=lambda h, p, t: True,  # SSLRequest tier: both ok
             pg_auth_probe_fn=fake_pg_auth,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            restart_fn=restart_stub(restart_calls),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: notify_calls.append(k),
             now_fn=lambda: 1_000_000.0,
@@ -1485,7 +1475,7 @@ class TestScramCorruptionDetection:
             pg_probe_fn=lambda h, p, t: True,
             pg_auth_probe_fn=fake_pg_auth,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            restart_fn=restart_stub(restart_calls),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -1509,7 +1499,7 @@ class TestScramCorruptionDetection:
             pg_probe_fn=lambda h, p, t: True,
             pg_auth_probe_fn=_ok_pg_auth,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            restart_fn=restart_stub(restart_calls),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -1538,7 +1528,7 @@ class TestScramCorruptionDetection:
             http_probe_fn=lambda url, t: True,
             pg_auth_probe_fn=fake_pg_auth,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (True, "ok"),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -1562,7 +1552,7 @@ class TestScramCorruptionDetection:
             pg_probe_fn=lambda h, p, t: True,
             pg_auth_probe_fn=fake_pg_auth,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (True, "ok"),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -1587,7 +1577,7 @@ class TestScramCorruptionDetection:
                 pg_probe_fn=lambda h, p, t: True,
                 pg_auth_probe_fn=fake_pg_auth,
                 container_exists_fn=lambda c: True,
-                restart_fn=lambda c: (True, "ok"),
+                restart_fn=restart_stub(),
                 sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: notify_calls.append(k),
                 now_fn=lambda i=i: 1_000_000.0 + i,
@@ -1617,7 +1607,7 @@ class TestScramCorruptionDetection:
             pg_probe_fn=lambda h, p, t: True,
             pg_auth_probe_fn=fake_pg_auth,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (True, "ok"),
+            restart_fn=restart_stub(),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
@@ -1771,7 +1761,7 @@ class TestAdaptiveGiveUp:
             pool,
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            restart_fn=restart_stub(restart_calls),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: now,
@@ -1784,7 +1774,7 @@ class TestAdaptiveGiveUp:
             pool,
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
-            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            restart_fn=restart_stub(restart_calls),
             sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: now + 60.0,  # 1 min later — within the 60-min backoff
@@ -1812,7 +1802,7 @@ class TestAdaptiveGiveUp:
                 pool,
                 pg_probe_fn=fake_pg,
                 container_exists_fn=lambda c: True,
-                restart_fn=lambda c: (True, "ok"),
+                restart_fn=restart_stub(),
                 sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: None,
                 now_fn=lambda i=i: 1_000_000.0 + i,
@@ -1845,7 +1835,7 @@ class TestAdaptiveGiveUp:
                 pool,
                 http_probe_fn=fake_http,
                 container_exists_fn=lambda c: True,
-                restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+                restart_fn=restart_stub(restart_calls),
                 sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: None,
                 now_fn=lambda: t,
@@ -1887,7 +1877,7 @@ class TestAdaptiveGiveUp:
                 pool,
                 http_probe_fn=fake_http,
                 container_exists_fn=lambda c: True,
-                restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+                restart_fn=restart_stub(restart_calls),
                 sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: None,
                 now_fn=lambda: t,
@@ -1938,7 +1928,7 @@ class TestAdaptiveGiveUp:
                 pool,
                 http_probe_fn=fake_http,
                 container_exists_fn=lambda c: True,
-                restart_fn=lambda c: (True, "ok"),
+                restart_fn=restart_stub(),
                 sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: None,
                 now_fn=lambda: t,
@@ -1980,7 +1970,7 @@ class TestAdaptiveGiveUp:
                 pool,
                 http_probe_fn=fake_http,
                 container_exists_fn=lambda c: True,
-                restart_fn=lambda c: (True, "ok"),
+                restart_fn=restart_stub(),
                 sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: None,
                 now_fn=lambda: t,
@@ -2002,3 +1992,116 @@ class TestAdaptiveGiveUp:
         assert _executed_alertnames(pool).count(
             "docker_port_forward_recovery_failed"
         ) == 2
+
+
+# ---------------------------------------------------------------------------
+# The restart is docker_utils.restart_container (the brain's shared helper):
+# inspect first, timeout from app_settings, off the event loop.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRestartThroughTheSharedHelper:
+    @staticmethod
+    def _pool():
+        return _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-pyroscope", "port": 4040, "path": "/"},
+            ]),
+        })
+
+    @staticmethod
+    def _stuck(url, _timeout):
+        """Internal hostname answers, host.docker.internal does not."""
+        return "host.docker.internal" not in url
+
+    async def _run(self, pool, **kw):
+        kw.setdefault("http_probe_fn", self._stuck)
+        kw.setdefault("container_exists_fn", lambda c: True)
+        kw.setdefault("sleep_fn", AsyncMock())
+        kw.setdefault("notify_fn", MagicMock())
+        kw.setdefault("now_fn", lambda: 1_000_000.0)
+        summary = await pf.run_docker_port_forward_probe(pool, **kw)
+        return summary["services"]["poindexter-pyroscope"]
+
+    @pytest.mark.asyncio
+    async def test_container_missing_mid_recreate_is_not_a_restart(self):
+        """The container passed the existence check, then vanished: compose
+        is recreating it and the replacement gets a fresh forward. Nothing
+        was restarted, so no cap slot, no failed recovery, no recovery wait,
+        no alert and no notify. Before the shared helper this was a failed
+        restart ("No such container")."""
+        pool = self._pool()
+        sleep_fn = AsyncMock()
+        notify = MagicMock()
+
+        svc = await self._run(
+            pool, restart_fn=restart_stub(status=du.RESTART_MISSING),
+            sleep_fn=sleep_fn, notify_fn=notify,
+        )
+
+        assert svc["status"] == "container_missing"
+        assert svc["ok"] is False
+        assert "not found (likely mid-recreate)" in svc["detail"]
+        sleep_fn.assert_not_awaited()
+        notify.assert_not_called()
+        assert _executed_alertnames(pool) == []
+        assert pf._restart_state.get("poindexter-pyroscope", []) == []
+        assert "poindexter-pyroscope" not in pf._consecutive_recovery_failures
+        events = _executed_audit_events(pool)
+        assert "docker_port_forward_container_missing" in events
+        assert "docker_port_forward_restart_failed" not in events
+
+    @pytest.mark.asyncio
+    async def test_container_missing_never_uses_up_the_restart_cap(self):
+        pool = self._pool()
+        restart_fn = restart_stub(status=du.RESTART_MISSING)
+
+        statuses = [
+            (await self._run(pool, restart_fn=restart_fn))["status"] for _ in range(5)
+        ]
+
+        assert statuses == ["container_missing"] * 5
+        assert restart_fn.await_count == 5
+        assert "docker_port_forward_restart_capped" not in _executed_alertnames(pool)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("status", "notified"),
+        [
+            (du.RESTART_NO_DOCKER_CLI, True),
+            (du.RESTART_FAILED, False),
+            (du.RESTART_TIMED_OUT, False),
+            (du.RESTART_ERROR, False),
+        ],
+    )
+    async def test_failed_restart_uses_a_cap_slot_and_notifies_only_without_a_cli(
+        self, status, notified,
+    ):
+        pool = self._pool()
+        notify = MagicMock()
+
+        svc = await self._run(pool, restart_fn=restart_stub(status=status), notify_fn=notify)
+
+        assert svc["status"] == "restart_failed"
+        assert svc["retried_n"] == 1
+        assert notify.called is notified
+        assert "docker_port_forward_restart_failed" in _executed_audit_events(pool)
+
+    @pytest.mark.asyncio
+    async def test_default_restart_is_the_shared_helper_given_the_pool(self, monkeypatch):
+        """With no ``restart_fn`` the restart goes through
+        ``docker_utils.restart_container`` with the pool, so it waits
+        ``app_settings.brain_docker_restart_timeout_seconds``."""
+        helper = restart_stub()
+        monkeypatch.setattr(du, "restart_container", helper)
+        pool = self._pool()
+        external = iter([False, True])
+
+        svc = await self._run(
+            pool,
+            http_probe_fn=lambda url, _t: next(external) if "host.docker.internal" in url else True,
+        )
+
+        helper.assert_awaited_once_with("poindexter-pyroscope", pool=pool)
+        assert svc["status"] == "recovered"

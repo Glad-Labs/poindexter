@@ -92,7 +92,7 @@ The guards above catch a hang _after_ it happens. The cheaper win is not
 freezing the loop in the first place. The daemon awaits **every probe
 sequentially on one event loop** (`run_cycle` → `await run_*_probe(pool)`), so a
 _synchronous_ blocking call executed directly inside an `async def` freezes the
-entire watchdog for its whole duration — a `docker restart` (30 s) or a
+entire watchdog for its whole duration — a `docker restart` (up to 90 s) or a
 `time.sleep(120)` retry wait is enough to stall the heartbeat and trip the
 brain's own stale detector.
 
@@ -111,10 +111,14 @@ The rule: **inside an `async def`, never call a blocking primitive directly.**
 `RESTART_MISSING`, not restarted), waits
 `app_settings.brain_docker_restart_timeout_seconds` (the worker's stop grace
 alone is 75 s), and returns a `ContainerRestart` instead of raising. What an
-outcome means (a notice, a page, silence) stays with the caller. A ratchet in
-`tests/unit/brain/test_docker_utils_restart.py` fails on any new module that
-shells out `docker restart` itself; the seven probe-owned restarts that predate
-the helper are listed there until they move over.
+outcome means (a notice, a page, silence) stays with the caller. A probe that
+restarts what it watches takes it as a `restart_fn` seam typed
+`docker_utils.RestartFn` and awaits `restart_fn(container, pool=pool)`: the
+pool is how the timeout is read. Its tests stub the seam with
+`tests/unit/brain/_restart_fakes.restart_stub`, which is awaitable; a sync
+`lambda c: (True, "")` from the old `(ok, msg)` seam fails when awaited. A
+ratchet in `tests/unit/brain/test_docker_utils_restart.py` fails if any module
+other than `docker_utils` shells out `docker restart` itself.
 
 For an injectable wait seam (`sleep_fn`), default it to `asyncio.sleep` and
 `await` it — mirror `alert_dispatcher.py`, not the pre-2026-07 watch probes that

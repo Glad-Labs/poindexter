@@ -3,10 +3,11 @@
 Focused coverage for the async-safety contract. The brain awaits every probe
 sequentially on a single event loop (brain_daemon.py), so
 ``run_migration_drift_probe``'s blocking seams — ``_fetch_health`` (urllib GET),
-``_sync_deploy_checkout`` (git), ``_restart_worker_container`` (docker), and the
-``_wait_for_worker_healthy`` poll loop (urllib + ``time.sleep``) — MUST be
-offloaded via ``asyncio.to_thread``. A synchronous call on this loop freezes the
-whole watchdog for the duration.
+``_sync_deploy_checkout`` (git) and the ``_wait_for_worker_healthy`` poll loop
+(urllib + ``time.sleep``) — MUST be offloaded via ``asyncio.to_thread``. A
+synchronous call on this loop freezes the whole watchdog for the duration. The
+worker restart is ``docker_utils.restart_container``, which offloads its own
+docker calls (tests/unit/brain/test_docker_utils_restart.py).
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import time
 from itertools import pairwise
 from unittest.mock import AsyncMock, MagicMock
 
+from poindexter.brain import docker_utils as du
 from poindexter.brain import migration_drift_probe as md
 
 
@@ -72,3 +74,46 @@ def test_blocking_health_fetch_does_not_block_event_loop():
     assert len(stamps) > 5, "event loop was starved during the blocking health fetch"
     gaps = [b - a for a, b in pairwise(stamps)]
     assert max(gaps) < 0.3, f"event loop blocked ~{max(gaps):.2f}s during health fetch"
+
+
+def _migrations_health(pending: int) -> dict:
+    return {
+        "status": "healthy",
+        "components": {
+            "migrations": {"pending": pending, "applied": 5, "latest_applied": "x.py"},
+        },
+    }
+
+
+def test_default_restart_is_the_shared_helper_with_the_pool(monkeypatch):
+    """With no ``restart_fn`` injected the worker restart goes through
+    ``docker_utils.restart_container`` and is handed the pool, so it waits
+    ``app_settings.brain_docker_restart_timeout_seconds``. The probe used to
+    hardcode 30 s, under the worker's 75 s stop grace, and page a restart that
+    dockerd went on to finish."""
+    helper = AsyncMock(return_value=du.ContainerRestart(
+        md.WORKER_CONTAINER, du.RESTART_OK, f"restarted {md.WORKER_CONTAINER}", 90,
+    ))
+    monkeypatch.setattr(du, "restart_container", helper)
+    settings = {
+        md.AUTO_RECOVER_SETTING_KEY: "true",
+        md.DEFER_WHILE_INFLIGHT_SETTING_KEY: "false",
+    }
+
+    async def fetchval(_query, *args):
+        return settings.get(args[0]) if args else 0
+
+    pool = _make_pool()
+    pool.fetchval = AsyncMock(side_effect=fetchval)
+
+    summary = asyncio.run(
+        md.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            wait_fn=lambda: (True, _migrations_health(0)),
+            health_fetcher=lambda: _migrations_health(1),
+        )
+    )
+
+    helper.assert_awaited_once_with(md.WORKER_CONTAINER, pool=pool)
+    assert summary["status"] == "recovered"

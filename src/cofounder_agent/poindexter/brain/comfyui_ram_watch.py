@@ -38,6 +38,8 @@ Per cycle:
    visibility, never pages) carrying the reclaimed footprint. Failure
    => a ``comfyui_ram_recycle_failed`` finding (``warn`` — routes per
    the ``findings.<kind>`` policy) so a broken lever can't fail silent.
+   A container missing mid-recreate is neither: nothing was restarted,
+   and the recreate returns the memory anyway.
 
 Design parity with postiz_queue_watch: DB-configurable via app_settings,
 injectable ``queue_fn`` / ``mem_fn`` / ``restart_fn`` / ``now_fn`` seams
@@ -53,7 +55,9 @@ from typing import Any
 
 # Shared with sidecar_ram_watch (poindexter#3360 generalisation): both probes
 # read a container's PID-1 footprint, restart it, and record the outcome the
-# same way — only the IDLE PROOF differs, and that stays per-module.
+# same way — only the IDLE PROOF differs, and that stays per-module. The
+# restart is the brain's shared docker_utils.restart_container.
+from poindexter.brain import docker_utils
 from poindexter.brain.docker_utils import resolve_url
 from poindexter.brain.ram_recycle_common import (
     coerce_bool as _coerce_bool,
@@ -72,9 +76,6 @@ from poindexter.brain.ram_recycle_common import (
 )
 from poindexter.brain.ram_recycle_common import (
     read_setting as _read_setting,
-)
-from poindexter.brain.ram_recycle_common import (
-    restart_container as _restart_comfyui_container,
 )
 
 logger = logging.getLogger("brain.comfyui_ram_watch")
@@ -224,7 +225,7 @@ async def run_comfyui_ram_watch_probe(
     *,
     queue_fn: Callable[[], Awaitable[bool | None]] | None = None,
     mem_fn: Callable[[str], tuple[float, float] | None] | None = None,
-    restart_fn: Callable[[str], tuple[bool, str]] | None = None,
+    restart_fn: docker_utils.RestartFn | None = None,
     now_fn: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
     """Single cycle of the ComfyUI host-RAM recycle watch.
@@ -239,15 +240,18 @@ async def run_comfyui_ram_watch_probe(
             the ``docker exec … /proc/1/status`` read. Offloaded via
             ``asyncio.to_thread`` so the blocking subprocess never stalls
             the brain event loop.
-        restart_fn: ``(container) -> (ok, msg)`` — defaults to the real
-            ``docker restart``, also offloaded via ``asyncio.to_thread``.
+        restart_fn: ``async (container, *, pool) -> ContainerRestart`` —
+            defaults to :func:`brain.docker_utils.restart_container`, the
+            brain's shared ``docker restart`` (inspect first, timeout from
+            ``app_settings.brain_docker_restart_timeout_seconds``, off the
+            event loop).
         now_fn: monotonic clock for the cooldown stamp — defaults to
             ``time.monotonic``.
     """
     global _last_recycle_monotonic
     queue_fn = queue_fn or (lambda: _queue_busy(pool))
     mem_fn = mem_fn or _read_container_main_rss_swap_gb
-    restart_fn = restart_fn or _restart_comfyui_container
+    restart_fn = restart_fn or docker_utils.restart_container
     now_fn = now_fn or time.monotonic
 
     config = await _read_config(pool)
@@ -325,8 +329,21 @@ async def run_comfyui_ram_watch_probe(
             ),
         }
 
-    ok, msg = await asyncio.to_thread(restart_fn, _CONTAINER)
-    if not ok:
+    restart = await restart_fn(_CONTAINER, pool=pool)
+    if restart.status == docker_utils.RESTART_MISSING:
+        # Measured and verified idle a moment ago, gone now: compose is
+        # recreating it, and the replacement's new PID 1 returns the memory
+        # just as the recycle would have. Nothing was restarted, so no
+        # cooldown stamp and no failure finding; the next cycle measures the
+        # replacement.
+        detail = (
+            f"ComfyUI at {footprint_gb:.1f} GB is over the {watermark_gb:g} GB "
+            f"watermark, but {restart.detail}; nothing was restarted"
+        )
+        logger.info("[COMFYUI_RAM] %s", detail)
+        return {"ok": True, "status": "container_missing", "detail": detail}
+    if not restart.ok:
+        msg = restart.detail
         detail = (
             f"ComfyUI RSS+swap at {footprint_gb:.1f} GB (>= {watermark_gb:g} "
             f"GB watermark) but the recycle restart failed: {msg}"
