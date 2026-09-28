@@ -4,8 +4,9 @@ Pins the generalized data-feed dead-man's switch: per-feed staleness vs
 an app_settings-declared threshold, edge-triggered ``data_feed_stale``
 finding (warn severity, stable per-feed ``dedup_key``), no re-fire on
 a persistent stall, recovery resets the edge, feeds with zero rows are
-not assessed, and malformed feed config entries are dropped instead of
-interpolated into SQL.
+not assessed, and malformed feed config entries are left out instead of
+interpolated into SQL. How a list the probe cannot use is reported and paged
+is pinned in test_data_freshness_probe_config_episodes.py.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import pytest
 
 from poindexter.brain.data_freshness_probe import (
     DEFAULT_FEEDS,
-    _parse_feeds,
+    _parse_feed_list,
     run_data_freshness_probe,
 )
 
@@ -119,16 +120,26 @@ async def test_disabled_probe_is_silent():
     pool.fetchrow.assert_not_called()
 
 
-def test_parse_feeds_falls_back_to_defaults_on_garbage():
-    fallback = _parse_feeds("")
-    assert [f["name"] for f in fallback] == [f["name"] for f in DEFAULT_FEEDS]
-    assert _parse_feeds("not json") == fallback
-    assert _parse_feeds('{"a": 1}') == fallback
+def test_an_empty_value_means_the_builtin_feeds():
+    feed_list = _parse_feed_list("")
+    assert feed_list.origin == "defaults"
+    assert [f["name"] for f in feed_list.feeds] == [f["name"] for f in DEFAULT_FEEDS]
+    assert all(f["index"] is None for f in feed_list.feeds)
+
+
+def test_a_value_that_is_not_a_json_list_gives_no_feed_of_its_own():
+    """The run checks the built-in feeds instead, and pages; see the
+    config-episodes tests."""
+    for raw, kind in (("not json", "invalid-json:char-0"), ('{"a": 1}', "not-a-list:object")):
+        feed_list = _parse_feed_list(raw)
+        assert feed_list.origin == "unusable"
+        assert feed_list.feeds == []
+        assert feed_list.value_problem.kind == kind
 
 
 def test_parse_feeds_drops_sql_unsafe_identifiers():
     """Injection-shaped table/column names never reach the query builder."""
-    feeds = _parse_feeds(json.dumps([
+    feeds = _parse_feed_list(json.dumps([
         {"name": "evil", "table": "cost_logs; DROP TABLE posts",
          "column": "created_at", "threshold_minutes": 60},
         {"name": "evil2", "table": "cost_logs",
@@ -138,15 +149,16 @@ def test_parse_feeds_drops_sql_unsafe_identifiers():
         {"name": "good", "table": "cost_logs", "column": "created_at",
          "threshold_minutes": 60},
     ]))
-    assert [f["name"] for f in feeds] == ["good"]
+    assert [f["name"] for f in feeds.feeds] == ["good"]
+    assert [ig.field for ig in feeds.ignored] == ["table", "column", "threshold_minutes"]
 
 
 def test_parse_feeds_accepts_filter_column_value():
-    feeds = _parse_feeds(json.dumps([
+    feeds = _parse_feed_list(json.dumps([
         {"name": "corsair", "table": "sensor_samples", "column": "sampled_at",
          "threshold_minutes": 120, "filter_column": "source",
          "filter_value": "corsair_csv"},
-    ]))
+    ])).feeds
     assert feeds[0]["filter_column"] == "source"
     assert feeds[0]["filter_value"] == "corsair_csv"
 
@@ -183,7 +195,7 @@ def test_corsair_feed_is_not_watched():
     Watching it here now would mean permanently alerting on a producer we
     retired on purpose. Re-add only alongside a live sensor_samples producer.
     """
-    feeds = {f["name"]: f for f in _parse_feeds("")}
+    feeds = {f["name"]: f for f in _parse_feed_list("").feeds}
     assert "corsair_csv" not in feeds, (
         "corsair_csv is back in DEFAULT_FEEDS — sensor_samples has no producer "
         "since 2026-07-28, so this feed can only ever report stale. If a new "
@@ -198,6 +210,11 @@ def test_seeded_default_matches_in_code_fallback():
     fallback (in-code) watch different things."""
     from poindexter.services.settings_defaults import DEFAULTS
 
-    seeded = _parse_feeds(DEFAULTS["data_freshness_feeds"])
-    fallback = _parse_feeds("")
-    assert seeded == fallback
+    seeded = _parse_feed_list(DEFAULTS["data_freshness_feeds"])
+    fallback = _parse_feed_list("")
+    assert seeded.ignored == ()  # every seeded entry is valid
+
+    def _without_index(feeds):
+        return [{k: v for k, v in f.items() if k != "index"} for f in feeds]
+
+    assert _without_index(seeded.feeds) == _without_index(fallback.feeds)

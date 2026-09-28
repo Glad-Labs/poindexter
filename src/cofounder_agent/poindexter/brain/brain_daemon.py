@@ -3134,11 +3134,11 @@ async def run_cycle(pool):
     # Generalized data-feed freshness watchdog (2026-07-01 audit).
     # Transition-only findings; the feed list is declarative JSON in
     # app_settings.data_freshness_feeds (cost_logs / gpu_metrics /
-    # atom_runs / page_views / corsair_csv by default) — a dead-man's
-    # switch for DATA, so a producer dying no longer leaves dashboards
-    # silently serving stale numbers. The iCUE corsair_csv sensor feed
-    # (#868) rides this as a filtered feed since 2026-07-02; its
-    # dedicated corsair_feed_probe is retired.
+    # atom_runs / page_views by default; the iCUE corsair_csv feed was
+    # retired 2026-07-28) — a dead-man's switch for DATA, so a producer
+    # dying no longer leaves dashboards silently serving stale numbers. A
+    # feed list it cannot use as written pages once per episode and reports
+    # ok=False — see brain/data_freshness_probe.py.
     if _HAS_DATA_FRESHNESS_PROBE:
         try:
             df_summary = await run_data_freshness_probe(pool)

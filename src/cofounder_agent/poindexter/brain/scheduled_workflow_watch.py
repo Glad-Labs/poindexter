@@ -127,7 +127,6 @@ Standalone — stdlib + asyncpg + httpx (asyncpg pool injected by the daemon).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import math
@@ -144,6 +143,14 @@ except ImportError:  # pragma: no cover — brain ships httpx; degrade loudly
     httpx = None  # type: ignore[assignment]
 
 from poindexter.brain import failure_episode
+from poindexter.brain.config_value import (
+    Ignored,
+    ValueProblem,
+    clip,
+    digest,
+    load_list,
+    show,
+)
 from poindexter.brain.github_errors import TOKEN_FIX, GitHubAPIError, github_message
 from poindexter.brain.operator_notifier import notify_operator
 from poindexter.brain.secret_reader import read_app_setting as _shared_read_app_setting
@@ -237,16 +244,6 @@ _FIELD_LABEL = {
 
 
 @dataclass(frozen=True)
-class _Ignored:
-    """An entry of ``scheduled_workflows`` the watchdog cannot use as written."""
-
-    index: int  # its position in the list, counting from 1
-    field: str  # what is wrong with it: a key of _FIELD_LABEL
-    reason: str  # operator-facing: which entry, and why
-    entry: Any  # the entry as written, for the episode signature
-
-
-@dataclass(frozen=True)
 class _WatchList:
     """What ``app_settings.scheduled_workflows`` holds, and what the watchdog can use.
 
@@ -256,7 +253,7 @@ class _WatchList:
     """
 
     watches: list[dict[str, Any]]  # the valid entries, in list order
-    ignored: tuple[_Ignored, ...] = ()  # the entries it cannot use
+    ignored: tuple[Ignored, ...] = ()  # the entries it cannot use; field is a _FIELD_LABEL key
     total: int = 0  # entries in the list; 0 when the value is not a list
     signature: str | None = None
     summary: str = ""  # the problem in one line, for the pass detail
@@ -279,52 +276,6 @@ class _WatchList:
         )
 
 
-def _show(value: Any, limit: int = 60) -> str:
-    """A value as the operator wrote it: JSON-quoted, cut to ``limit`` characters."""
-    text = json.dumps(value, ensure_ascii=False)
-    return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
-def _clip(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
-def _excerpt(raw: str, pos: int, width: int = 24) -> str:
-    """The text around a JSON syntax error, on one line, for the page."""
-    start, end = max(0, pos - width), min(len(raw), pos + width)
-    text = " ".join(raw[start:end].split()).replace("`", "'")
-    return f"{'…' if start else ''}{text}{'…' if end < len(raw) else ''}"
-
-
-def _json_type(value: Any) -> str:
-    if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return "boolean"
-    if isinstance(value, int | float):
-        return "number"
-    if isinstance(value, str):
-        return "string"
-    return "object" if isinstance(value, dict) else type(value).__name__
-
-
-def _not_a_list_hint(value: Any) -> str:
-    """The usual way a watch list ends up as something other than a list."""
-    if isinstance(value, dict):
-        return "It must be a list even for one workflow: wrap the object in [ ]."
-    if isinstance(value, str):
-        try:
-            inner = json.loads(value)
-        except (ValueError, RecursionError):
-            return ""
-        if isinstance(inner, list):
-            return (
-                "The string itself holds a JSON list, so the value was encoded "
-                "twice: store the list, not a string that contains it."
-            )
-    return ""
-
-
 def _hours(value: Any) -> float | None:
     """A usable ``max_age_hours``: a finite number above 0. A numeric string counts.
 
@@ -343,33 +294,33 @@ def _hours(value: Any) -> float | None:
 
 def _check_entry(
     index: int, entry: Any, first: dict[tuple[str, str], tuple[int, float]],
-) -> dict[str, Any] | _Ignored:
+) -> dict[str, Any] | Ignored:
     """Return ``entry`` as a watch, or say why it cannot be one."""
     if not isinstance(entry, dict):
-        return _Ignored(index, "entry", f"entry {index} is not an object: {_show(entry)}", entry)
+        return Ignored(index, "entry", f"entry {index} is not an object: {show(entry)}", entry)
     repo = str(entry.get("repo", "")).strip()
     if not _REPO_RE.match(repo):
         why = (
             f"entry {index} has no repo" if "repo" not in entry
-            else f"entry {index}: repo must be <owner>/<name>, got {_show(entry['repo'])}"
+            else f"entry {index}: repo must be <owner>/<name>, got {show(entry['repo'])}"
         )
-        return _Ignored(index, "repo", why, entry)
+        return Ignored(index, "repo", why, entry)
     workflow = str(entry.get("workflow", "")).strip()
     if not _WORKFLOW_RE.match(workflow):
         why = (
             f"entry {index} ({repo}) has no workflow" if "workflow" not in entry
             else (
                 f"entry {index} ({repo}): workflow must be a bare .yml or .yaml "
-                f"file name, got {_show(entry['workflow'])}"
+                f"file name, got {show(entry['workflow'])}"
             )
         )
-        return _Ignored(index, "workflow", why, entry)
+        return Ignored(index, "workflow", why, entry)
     raw_age = entry.get("max_age_hours", _DEFAULT_MAX_AGE_HOURS)
     max_age = _hours(raw_age)
     if max_age is None:
-        return _Ignored(index, "max_age_hours", (
+        return Ignored(index, "max_age_hours", (
             f"entry {index} ({repo}, {workflow}): max_age_hours must be a number "
-            f"of hours above 0, got {_show(raw_age)}"
+            f"of hours above 0, got {show(raw_age)}"
         ), entry)
     seen = first.get((repo, workflow))
     if seen is not None:
@@ -385,15 +336,9 @@ def _check_entry(
                 f"repeats entry {was} with max_age_hours {max_age:g}, not "
                 f"{was_age:g}; only entry {was}'s window is used"
             )
-        return _Ignored(index, "duplicate", f"entry {index} ({repo}, {workflow}): {why}", entry)
+        return Ignored(index, "duplicate", f"entry {index} ({repo}, {workflow}): {why}", entry)
     first[(repo, workflow)] = (index, max_age)
     return {"repo": repo, "workflow": workflow, "max_age_hours": max_age}
-
-
-def _digest(ignored: list[_Ignored]) -> str:
-    """Eight hex characters that change whenever an ignored entry does."""
-    blob = json.dumps([[ig.index, ig.field, ig.entry] for ig in ignored], sort_keys=True)
-    return hashlib.sha256(blob.encode()).hexdigest()[:8]
 
 
 def _parse_watch_list(raw: str) -> _WatchList:
@@ -410,46 +355,21 @@ def _parse_watch_list(raw: str) -> _WatchList:
     """
     if not raw.strip():
         return _WatchList(watches=[])
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        where = f"line {exc.lineno}, column {exc.colno}"
+    parsed = load_list(raw, _WATCHES_REF, noun="workflow")
+    if isinstance(parsed, ValueProblem):
         return _WatchList(
             watches=[],
-            # The position is in the identity so that an edit that moves the
-            # error, fixing one mistake to reveal the next, is news.
-            signature=f"config:invalid-json:char-{exc.pos}",
-            summary=f"{_WATCHES_REF} is not valid JSON ({exc.msg} at {where})",
-            problem=(
-                f"{_WATCHES_REF} is not valid JSON: {exc.msg} at {where}, near "
-                f"`{_excerpt(raw, exc.pos)}`."
-            ),
-        )
-    except (ValueError, RecursionError) as exc:
-        # Valid syntax json.loads still refuses: an integer past Python's
-        # 4,300-digit limit, or nesting deeper than the recursion limit.
-        why = _clip(str(exc) or type(exc).__name__, 160)
-        return _WatchList(
-            watches=[],
-            signature=f"config:invalid-json:{type(exc).__name__}",
-            summary=f"{_WATCHES_REF} is not valid JSON ({why})",
-            problem=f"{_WATCHES_REF} cannot be read as JSON: {why}.",
-        )
-    if not isinstance(parsed, list):
-        kind = _json_type(parsed)
-        return _WatchList(
-            watches=[],
-            signature=f"config:not-a-list:{kind}",
-            summary=f"{_WATCHES_REF} holds a JSON {kind}, not a list",
-            problem=f"{_WATCHES_REF} holds a JSON {kind}, not a list.",
-            hint=_not_a_list_hint(parsed),
+            signature=f"config:{parsed.kind}",
+            summary=parsed.summary,
+            problem=parsed.problem,
+            hint=parsed.hint,
         )
     watches: list[dict[str, Any]] = []
-    ignored: list[_Ignored] = []
+    ignored: list[Ignored] = []
     first: dict[tuple[str, str], tuple[int, float]] = {}
     for index, entry in enumerate(parsed, start=1):
         checked = _check_entry(index, entry, first)
-        if isinstance(checked, _Ignored):
+        if isinstance(checked, Ignored):
             ignored.append(checked)
         else:
             watches.append(checked)
@@ -460,10 +380,10 @@ def _parse_watch_list(raw: str) -> _WatchList:
     if watches:
         # Watching some of the list and watching none of it are different
         # failures, so a list that slides from one to the other is news.
-        signature = f"config:invalid-entries:{len(ignored)}:{_digest(ignored)}"
+        signature = f"config:invalid-entries:{len(ignored)}:{digest(ignored)}"
         summary = f"{len(ignored)} of {total} entries in {_WATCHES_REF} ignored ({which})"
     else:
-        signature = f"config:all-entries-invalid:{total}:{_digest(ignored)}"
+        signature = f"config:all-entries-invalid:{total}:{digest(ignored)}"
         whole = "the only entry" if total == 1 else f"all {total} entries"
         summary = f"{whole} in {_WATCHES_REF} ignored ({which})"
     return _WatchList(
@@ -1257,7 +1177,7 @@ def _build_config_page(
         )
     lines = [head]
     shown = ignored[:_MAX_ENTRIES_SHOWN]
-    lines += [f"- {_clip(ig.reason, _ENTRY_LINE_LIMIT)}" for ig in shown]
+    lines += [f"- {clip(ig.reason, _ENTRY_LINE_LIMIT)}" for ig in shown]
     if len(ignored) > len(shown):
         lines.append(f"- and {len(ignored) - len(shown)} more, listed in the brain log")
     if watch_list.hint:

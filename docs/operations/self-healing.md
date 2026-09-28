@@ -1905,6 +1905,77 @@ by the deadmans-switch on `brain.cycle_heartbeat`. So the brain probe is the sol
 sufficient reclaim path. See `project_prefect_concurrency_zombie_stall` for the
 full incident write-up.
 
+## Data-feed freshness — an unusable feed list pages
+
+`poindexter/brain/data_freshness_probe.py` watches each feed in
+`app_settings.data_freshness_feeds` and emits an edge-triggered
+`data_feed_stale` finding when a feed's newest row is older than its
+`threshold_minutes`. It runs on every brain cycle.
+
+Only two values are quiet. An empty value means the built-in feeds
+(`cost_logs`, `gpu_metrics`, `atom_runs`, `page_views`: the list
+`settings_defaults.py` seeds), and `[]` means no feed. Anything else the probe
+cannot use as written reports `ok=False` and pages once per episode
+(`brain/failure_episode.py`). The episode is kept at attribute
+`failure_episode:_config` under the `data_freshness_probe` entity, apart from
+the per-feed state rows, so no feed name can collide with it:
+
+| What is wrong                                                                                                                                         | What the probe watches meanwhile |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| Not valid JSON, or JSON that is not a list                                                                                                            | The built-in feeds               |
+| An entry it has to ignore (see below)                                                                                                                 | The other entries                |
+| A feed Postgres rejects as written: SQLSTATE class 42, e.g. a table or column that does not exist, a column that is not a timestamp, or no permission | The other entries                |
+| Nothing in the list can be checked                                                                                                                    | The built-in feeds               |
+
+An entry is ignored when it:
+
+- is not an object, or has no name;
+- has a `table`, `column` or `filter_column` that is not a lowercase SQL identifier;
+- has a `filter_column` without a `filter_value`, or the reverse;
+- has a `threshold_minutes` that is not a whole number above 0;
+- reuses a name an earlier entry already has.
+
+The page names each entry and why, five at most (the brain log has them all),
+and gives the fix: `poindexter settings set data_freshness_feeds '<json>'`,
+which replaces the whole list. It pages again when:
+
+- the problem changes, meaning an edit moves the JSON error, changes an
+  entry, or leaves no entry that can be checked;
+- the last page reached no channel;
+- `data_freshness_config_failure_repage_hours` (24) pass.
+
+An edit that leaves the problem as it was is not news. One info note follows
+when the list is usable again. A transient query failure (a dropped
+connection, a statement timeout) is not a config problem: the feed is "not
+assessed" that cycle, and the failure is logged.
+
+Because the probe runs every cycle, an unchanged problem is recorded again
+only every `data_freshness_config_recheck_minutes` (60). Recording means the
+WARNING, a `probe.data_freshness_config_failed` audit row, and the reminder
+and undelivered-page checks. The check reads the episode's `last_attempt_at`,
+which `failure_episode` stamps on every recorded failure. A new or changed
+problem is recorded at once, and every cycle still reports it.
+
+Until 2026-09-28 none of this paged:
+
+- a bad entry was dropped with a WARNING every five minutes;
+- a list with no valid entry watched nothing and reported "0 feed(s) checked;
+  all fresh";
+- two entries with one name flapped a finding every cycle;
+- an `Infinity` threshold crashed the probe every cycle;
+- a `filter_column` with no value watched the whole table;
+- a misspelled table stayed "not assessed" forever.
+
+The scheduled-CI watchdog pages an unusable `scheduled_workflows` the same
+way. The two share `poindexter/brain/config_value.py`.
+
+Is the feed list failing right now?
+
+```sql
+SELECT value FROM brain_knowledge
+ WHERE entity = 'data_freshness_probe' AND attribute = 'failure_episode:_config';
+```
+
 ## Settings reference
 
 | Setting                                                       | Default                                    | Meaning                                                                                                                                                                                           |
@@ -1943,6 +2014,8 @@ full incident write-up.
 | `ops_firefighter_llm_exclude_regex`                           | `(?i)(ollama\|gpu\|vram\|cuda\|inference)` | Circular-dependency guard — alertnames matching this regex never take the LLM path.                                                                                                               |
 | `ops_firefighter_llm_dry_run`                                 | `true`                                     | The LLM long-tail records each pick (`remediation_dry_run` in `audit_log`) instead of running it. Set `false` to graduate it; see Graduating the long-tail.                                       |
 | `ops_firefighter_llm_verify_intervals`                        | `2`                                        | An LLM action on a probe's alert is verified after this many of the alert's own re-fire intervals, never sooner than `ops_firefighter_verify_after_seconds`.                                      |
+| `data_freshness_config_recheck_minutes`                       | `60`                                       | How often the data-freshness probe records an unchanged problem with `data_freshness_feeds` again (log line, audit row, reminder check). A new or changed problem is recorded at once.            |
+| `data_freshness_config_failure_repage_hours`                  | `24`                                       | Reminder interval while `data_freshness_feeds` stays unusable. `0` = never.                                                                                                                       |
 
 ## Deploying the Recovery Agent
 

@@ -264,6 +264,9 @@ def decide_page(
     episode = dict(old)
     episode["since"] = old.get("since") or now_iso
     episode["attempts"] = _coerce_int(old.get("attempts"), 0) + 1
+    # When the probe last recorded the failure. A probe that runs more often
+    # than it wants to record an unchanged failure throttles on this.
+    episode["last_attempt_at"] = now_iso
     episode.setdefault("paged_at", None)
     episode["pages"] = _coerce_int(old.get("pages"), 0)
     episode["signature"] = signature

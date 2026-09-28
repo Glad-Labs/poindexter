@@ -4976,6 +4976,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         ' {"name": "page_views", "table": "page_views", "column": "created_at",'
         ' "threshold_minutes": 2880}]'
     ),
+    # When the feed list itself cannot be used as written (not JSON, not a
+    # list, an entry the probe has to ignore, or a feed Postgres rejects), the
+    # probe pages once per episode. Only '' (the built-in feeds) and '[]' (no
+    # feed) are quiet. The probe runs on every brain cycle, so an UNCHANGED
+    # problem is recorded again (log line, audit row, reminder check) only this
+    # often; a new or changed one is recorded at once.
+    'data_freshness_config_recheck_minutes': '60',
+    # ...and the reminder interval while the list stays unusable. 0 = never.
+    'data_freshness_config_failure_repage_hours': '24',
 
     # ----- Scheduled-CI dead-man's switch (2026-08-28) -----
     # poindexter/brain/scheduled_workflow_watch.py. A required check that goes red blocks
@@ -6540,6 +6549,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'data_fabric_pyroscope_url': {'owner': 'pyroscope', 'value_type': 'url'},
     'data_fabric_tempo_url': {'owner': 'tempo', 'value_type': 'url'},
     'data_freshness_feeds': {'owner': 'data_freshness_probe', 'value_type': 'json'},
+    'data_freshness_config_recheck_minutes': {'owner': 'data_freshness_probe', 'value_type': 'integer'},
+    'data_freshness_config_failure_repage_hours': {'owner': 'data_freshness_probe', 'value_type': 'integer'},
     'data_freshness_probe_enabled': {'owner': 'data_freshness_probe', 'value_type': 'boolean'},
     'default_ollama_model': {'value_type': 'model'},
     'development_mode': {'value_type': 'boolean'},
