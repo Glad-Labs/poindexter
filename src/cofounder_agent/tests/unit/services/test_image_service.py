@@ -612,181 +612,33 @@ class TestGetDefaultImageModel:
 # ---------------------------------------------------------------------------
 # _initialize_model()
 # ---------------------------------------------------------------------------
+#
+# Local diffusers generation is provably unavailable in this deployment (the
+# worker image never installs the ``ml`` poetry extra — torch + diffusers).
+# _initialize_model no longer attempts an in-process load; it always ends in
+# gen_available=False. Real generation is Strategy 1 in generate_image_result
+# / _generate_image_impl (the image-gen HTTP server), exercised separately
+# under TestGenerateImage below.
 
 
 @pytest.mark.unit
 class TestInitializeModel:
-    def test_returns_early_when_model_already_loaded(self):
-        """When the requested model is already the active model, _initialize_model is a no-op."""
+    def test_marks_generation_unavailable_for_explicit_model(self):
         svc = ImageService(site_config=_test_sc())
-        svc._active_model = ImageModel.SDXL_BASE
-        svc._gen_pipe = MagicMock()  # pretend a pipeline is loaded
-        original_pipe = svc._gen_pipe
-
         svc._initialize_model(ImageModel.SDXL_BASE)
-
-        # Pipeline reference unchanged — no reload happened
-        assert svc._gen_pipe is original_pipe
-
-    def test_sets_gen_available_false_when_diffusers_unavailable(self):
-        svc = ImageService(site_config=_test_sc())
-        with patch("poindexter.services.image_service.DIFFUSERS_AVAILABLE", False):
-            svc._initialize_model(ImageModel.SDXL_BASE)
         assert svc.gen_available is False
         assert svc._gen_pipe is None
-
-    def test_sets_gen_available_false_when_torch_unavailable(self):
-        svc = ImageService(site_config=_test_sc())
-        with (
-            patch("poindexter.services.image_service.DIFFUSERS_AVAILABLE", True),
-            patch("poindexter.services.image_service.TORCH_AVAILABLE", False),
-        ):
-            svc._initialize_model(ImageModel.SDXL_BASE)
-        assert svc.gen_available is False
-        assert svc._gen_pipe is None
-
-    def test_unloads_previous_model_before_loading_new(self):
-        """When switching models, _unload_model is called before loading the new one."""
-        svc = ImageService(site_config=_test_sc())
-        svc._gen_pipe = MagicMock()
-        svc._active_model = ImageModel.SDXL_BASE
-
-        # DIFFUSERS and TORCH must be True so we get past the prerequisite checks
-        # and reach the unload branch. We then let the actual load fail (no real GPU).
-        with (
-            patch("poindexter.services.image_service.DIFFUSERS_AVAILABLE", True),
-            patch("poindexter.services.image_service.TORCH_AVAILABLE", True),
-            patch.object(svc, "_unload_model") as mock_unload,
-            patch.object(svc, "_import_pipeline_class", side_effect=ImportError("no GPU")),
-        ):
-            svc._initialize_model(ImageModel.FLUX_SCHNELL)
-            mock_unload.assert_called_once()
+        assert svc._active_model is None
 
     def test_uses_get_default_when_model_is_none(self):
         svc = ImageService(site_config=_test_sc())
-        with (
-            patch("poindexter.services.image_service.DIFFUSERS_AVAILABLE", False),
-            patch(
-                "poindexter.services.image_service.get_default_image_model",
-                return_value=ImageModel.FLUX_SCHNELL,
-            ) as mock_default,
-        ):
+        with patch(
+            "poindexter.services.image_service.get_default_image_model",
+            return_value=ImageModel.FLUX_SCHNELL,
+        ) as mock_default:
             svc._initialize_model(None)
             mock_default.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# _unload_model()
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestUnloadModel:
-    def test_clears_pipeline_and_model(self):
-        svc = ImageService(site_config=_test_sc())
-        svc._gen_pipe = MagicMock()
-        svc._active_model = ImageModel.SDXL_BASE
-        svc.gen_available = True
-
-        with patch("poindexter.services.image_service.TORCH_AVAILABLE", False):
-            svc._unload_model()
-
-        assert svc._gen_pipe is None
-        assert svc._active_model is None
         assert svc.gen_available is False
-
-    def test_noop_when_no_pipeline_loaded(self):
-        svc = ImageService(site_config=_test_sc())
-        assert svc._gen_pipe is None
-        with patch("poindexter.services.image_service.TORCH_AVAILABLE", False):
-            svc._unload_model()  # Should not raise
-        assert svc._gen_pipe is None
-        assert svc._active_model is None
-        assert svc.gen_available is False
-
-    def test_clears_cuda_cache_when_available(self):
-        svc = ImageService(site_config=_test_sc())
-        svc._gen_pipe = MagicMock()
-        svc._active_model = ImageModel.SDXL_LIGHTNING
-
-        mock_torch = MagicMock()
-        mock_torch.cuda.is_available.return_value = True
-
-        import poindexter.services.image_service as img_mod
-
-        original_torch = getattr(img_mod, "torch", None)
-        try:
-            img_mod.torch = mock_torch
-            with patch("poindexter.services.image_service.TORCH_AVAILABLE", True):
-                svc._unload_model()
-            mock_torch.cuda.empty_cache.assert_called_once()
-        finally:
-            if original_torch is not None:
-                img_mod.torch = original_torch
-
-    def test_skips_cuda_cache_when_not_available(self):
-        svc = ImageService(site_config=_test_sc())
-        svc._gen_pipe = MagicMock()
-        svc._active_model = ImageModel.SDXL_BASE
-
-        mock_torch = MagicMock()
-        mock_torch.cuda.is_available.return_value = False
-
-        import poindexter.services.image_service as img_mod
-
-        original_torch = getattr(img_mod, "torch", None)
-        try:
-            img_mod.torch = mock_torch
-            with patch("poindexter.services.image_service.TORCH_AVAILABLE", True):
-                svc._unload_model()
-            mock_torch.cuda.empty_cache.assert_not_called()
-        finally:
-            if original_torch is not None:
-                img_mod.torch = original_torch
-
-
-# ---------------------------------------------------------------------------
-# _import_pipeline_class()
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestImportPipelineClass:
-    def test_valid_dotted_path(self):
-        # Use a known stdlib class as a stand-in
-        cls = ImageService._import_pipeline_class("collections.OrderedDict")
-        from collections import OrderedDict
-
-        assert cls is OrderedDict
-
-    def test_another_valid_path(self):
-        cls = ImageService._import_pipeline_class("os.path")
-        import os.path
-
-        assert cls is os.path
-
-    def test_invalid_path_no_dot(self):
-        with pytest.raises(ImportError, match="Invalid pipeline class path"):
-            ImageService._import_pipeline_class("nodots")
-
-    def test_nonexistent_module(self):
-        with pytest.raises(ModuleNotFoundError):
-            ImageService._import_pipeline_class("nonexistent_module_xyz.SomeClass")
-
-    def test_nonexistent_class_in_valid_module(self):
-        with pytest.raises(AttributeError):
-            ImageService._import_pipeline_class("collections.NonexistentClassXyz")
-
-    def test_with_mock_importlib(self):
-        """Verify the method calls importlib.import_module with the module part."""
-        mock_module = MagicMock()
-        mock_module.MyPipeline = "fake_class"
-
-        with patch("importlib.import_module", return_value=mock_module) as mock_import:
-            result = ImageService._import_pipeline_class("diffusers.MyPipeline")
-
-        mock_import.assert_called_once_with("diffusers")
-        assert result == "fake_class"
 
 
 # ---------------------------------------------------------------------------

@@ -24,7 +24,6 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 """
 
 import asyncio
-import importlib
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -62,11 +61,6 @@ def set_http_client(client: "httpx.AsyncClient | None") -> None:
     """Wire the lifespan-bound shared httpx.AsyncClient."""
     global http_client
     http_client = client
-
-# Module-level logger (unified across the codebase). Used once at import
-# time below for the diffusers-missing warning — the rest of the file
-# uses `logger` from get_logger().
-_import_logger = get_logger(__name__)
 
 
 def _write_image_bytes(path: str, content: bytes) -> None:
@@ -117,32 +111,6 @@ try:
     HTTPX_AVAILABLE = True
 except ImportError:
     HTTPX_AVAILABLE = False
-
-try:
-    import torch
-
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-
-# Diffusers pipelines — imported lazily per model type
-DIFFUSERS_AVAILABLE = False
-try:
-    from diffusers import StableDiffusionXLPipeline
-
-    DIFFUSERS_AVAILABLE = True
-except (ImportError, RuntimeError) as e:
-    StableDiffusionXLPipeline = None  # type: ignore[misc, assignment]
-    _import_logger.warning("Diffusers library not available: %s", e)
-
-# Optional optimization packages. find_spec instead of try/import —
-# lets us probe availability without holding a reference to the module
-# we never call (ruff F401). E402 suppressed because this deliberately
-# lives below the try/except ImportError block that provisions the
-# diffusers fallback.
-from importlib.util import find_spec as _find_spec  # noqa: E402
-
-XFORMERS_AVAILABLE = _find_spec("xformers") is not None
 
 logger = get_logger(__name__)
 
@@ -321,245 +289,35 @@ class ImageService:
 
     def _initialize_model(self, model: ImageModel | None = None) -> None:
         """
-        Initialize or switch the active image generation model.
+        Mark local diffusers image generation as unavailable.
 
-        Supports lazy loading, hot-swapping between models, and automatic
-        cleanup of previously loaded models to free VRAM.
+        Local (in-process) diffusers generation cannot run in this
+        deployment: the worker image never installs the ``ml`` poetry
+        extra (torch + diffusers — see ``Dockerfile.worker``), so a
+        pipeline can never be loaded here. Real image generation runs
+        entirely through the image-gen HTTP server — Strategy 1 in
+        :meth:`_generate_image_impl` — a separate CUDA container (see
+        ``scripts/Dockerfile.image-gen``). This method's only remaining
+        job is to record that reality so :meth:`_generate_image_impl`
+        reports a clear ``unavailable`` outcome when the HTTP server
+        can't be reached either.
 
         Args:
-            model: Which model to load. Defaults to get_default_image_model().
+            model: Which model was requested. Defaults to
+                get_default_image_model(); used only for the log line.
         """
         if model is None:
             model = get_default_image_model(site_config=self._site_config)
-
-        # Already loaded — nothing to do
-        if self._active_model == model and self._gen_pipe is not None:
-            logger.debug("Model %s already loaded, skipping init", model.value)
-            return
-
-        # Check prerequisites
-        if not DIFFUSERS_AVAILABLE:
-            logger.warning("Diffusers library not installed - image generation will be unavailable")
-            self.gen_available = False
-            return
-
-        if not TORCH_AVAILABLE:
-            logger.warning("PyTorch not installed - image generation will be unavailable")
-            self.gen_available = False
-            return
-
-        # Unload any previously loaded model first
-        if self._gen_pipe is not None:
-            logger.info(
-                "Switching model: %s -> %s",
-                self._active_model.value if self._active_model else 'none',
-                model.value,
-            )
-            self._unload_model()
-
-        config = IMAGE_MODEL_REGISTRY[model]
-
-        try:
-            # Determine device: CUDA (if compatible) or CPU
-            use_device = "cpu"
-            torch_dtype = torch.float32
-
-            if torch.cuda.is_available():
-                try:
-                    capability = torch.cuda.get_device_capability(0)
-                    device_name = torch.cuda.get_device_name(0)
-                    current_cap = capability[0] * 10 + capability[1]
-                    supported_caps = [
-                        50,
-                        60,
-                        61,
-                        70,
-                        75,
-                        80,
-                        86,
-                        90,
-                        120,
-                    ]
-
-                    logger.info(
-                        "GPU: %s, Capability: sm_%s%s",
-                        device_name, capability[0], capability[1],
-                    )
-
-                    if current_cap in supported_caps:
-                        use_device = "cuda"
-                        gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                        logger.info("GPU Memory: %.1fGB - Using CUDA acceleration", gpu_memory)
-                    else:
-                        logger.warning(
-                            "GPU capability sm_%s%s not officially supported. "
-                            "Falling back to CPU mode.",
-                            capability[0], capability[1],
-                        )
-                except Exception as e:
-                    logger.warning(
-                        "Could not verify GPU capability: %s. Using CPU mode.", e, exc_info=True
-                    )
-            else:
-                logger.warning("CUDA not available - using CPU mode (slower)")
-
-            # Determine torch dtype from config
-            if use_device == "cpu":
-                torch_dtype = torch.float32
-                logger.info("CPU mode: using fp32 (full precision)")
-            elif config.torch_dtype_str == "bfloat16":
-                torch_dtype = torch.bfloat16
-                logger.info("Using bfloat16 precision")
-            else:
-                torch_dtype = torch.float16
-                logger.info("Using fp16 (half precision) for memory efficiency")
-
-            # Dynamically import the pipeline class
-            pipeline_cls = self._import_pipeline_class(config.pipeline_class)
-
-            # Load model
-            logger.info("Loading %s (%s) on %s...", config.display_name, config.model_id, use_device)
-            load_kwargs = {
-                "torch_dtype": torch_dtype,
-                "use_safetensors": True,
-            }
-            # Only pass variant for fp16 models (not bfloat16 or fp32)
-            if torch_dtype == torch.float16:
-                load_kwargs["variant"] = "fp16"
-
-            pipe = pipeline_cls.from_pretrained(config.model_id, **load_kwargs).to(use_device)
-
-            # Apply LoRA weights if configured (e.g. Stable Diffusion XL Lightning)
-            if config.lora_repo:
-                logger.info("Loading LoRA weights from %s...", config.lora_repo)
-                pipe.load_lora_weights(config.lora_repo, weight_name=config.lora_weight_name)
-                pipe.fuse_lora()
-                logger.info("LoRA weights fused successfully")
-
-            # Override scheduler if configured (e.g. EulerDiscreteScheduler for Lightning)
-            if config.scheduler_override:
-                logger.info("Applying scheduler override: %s", config.scheduler_override)
-                from diffusers import EulerDiscreteScheduler
-
-                sched_kwargs = config.scheduler_kwargs or {}
-                pipe.scheduler = EulerDiscreteScheduler.from_config(
-                    pipe.scheduler.config, **sched_kwargs
-                )
-
-            # Apply performance optimizations
-            self._apply_model_optimizations(pipe, use_device)
-
-            # Store state
-            self._gen_pipe = pipe
-            self._active_model = model
-            self.use_device = use_device
-            self.gen_available = True
-
-            logger.info("%s loaded successfully", config.display_name)
-            logger.info("   Device: %s", use_device.upper())
-            logger.info(
-                "   Default steps: %s, guidance: %s",
-                config.default_steps, config.default_guidance_scale,
-            )
-            logger.info(
-                "   Optimizations: %s",
-                'ENABLED (xformers)' if XFORMERS_AVAILABLE else 'BASIC (no xformers)',
-            )
-
-        except Exception as e:
-            logger.error("Failed to load %s: %s", config.display_name, e, exc_info=True)
-            self.gen_available = False
+        logger.debug(
+            "Local diffusers unavailable for %s - image generation depends "
+            "entirely on the image-gen HTTP server",
+            model.value,
+        )
+        self.gen_available = False
 
     def _initialize_image_gen(self) -> None:
         """Backward-compatible alias for _initialize_model()."""
         self._initialize_model()
-
-    def _unload_model(self) -> None:
-        """Unload the current model and free VRAM/RAM."""
-        if self._gen_pipe is not None:
-            model_name = self._active_model.value if self._active_model else "unknown"
-            logger.info("Unloading model: %s", model_name)
-            del self._gen_pipe
-
-        self._gen_pipe = None
-        self._active_model = None
-        self.gen_available = False
-
-        if TORCH_AVAILABLE and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            logger.debug("CUDA cache cleared")
-
-    @staticmethod
-    def _import_pipeline_class(dotted_path: str):
-        """
-        Dynamically import a pipeline class from a dotted path.
-
-        Args:
-            dotted_path: e.g. "diffusers.StableDiffusionXLPipeline"
-
-        Returns:
-            The imported class.
-        """
-        parts = dotted_path.rsplit(".", 1)
-        if len(parts) != 2:
-            raise ImportError(f"Invalid pipeline class path: {dotted_path}")
-        module_path, class_name = parts
-        module = importlib.import_module(module_path)
-        return getattr(module, class_name)
-
-    def _apply_model_optimizations(self, pipe, device: str) -> None:
-        """
-        Apply performance optimizations to image-gen pipeline.
-
-        Optimizations:
-        - Memory-efficient attention (xformers if available)
-        - Flash Attention v2
-        - Model CPU offloading for 16GB GPU
-        - Reduced precision where safe
-
-        These work on both CPU and GPU and will benefit future GPU usage.
-        """
-        try:
-            # 1. Enable attention slicing for memory efficiency
-            pipe.enable_attention_slicing()
-            logger.info("   Attention slicing enabled")
-
-            # 2. Use xformers memory efficient attention if available
-            if XFORMERS_AVAILABLE:
-                try:
-                    pipe.enable_xformers_memory_efficient_attention()
-                    logger.info("   xformers memory-efficient attention enabled (2-4x faster)")
-                except Exception as e:
-                    logger.warning("   Could not enable xformers: %s", e, exc_info=True)
-
-            # 3. Enable Flash Attention v2 if available (PyTorch 2.0+)
-            try:
-                if hasattr(pipe.unet, "enable_flash_attn"):
-                    pipe.unet.enable_flash_attn(use_flash_attention_v2=True)
-                    logger.info("   Flash Attention v2 enabled (30-50% faster)")
-            except Exception as e:
-                logger.debug("   Flash Attention v2 not available: %s", e)
-
-            # 4. Enable sequential CPU offloading for GPU mode (frees VRAM between steps)
-            if device == "cuda":
-                try:
-                    pipe.enable_sequential_cpu_offload()
-                    logger.info("   Sequential CPU offloading enabled (GPU memory saver)")
-                except Exception as e:
-                    logger.debug("   Sequential CPU offload not available: %s", e)
-
-            # 5. Enable model CPU offload for memory-constrained GPUs
-            if device == "cuda":
-                try:
-                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                    if gpu_mem < 20:
-                        pipe.enable_model_cpu_offload()
-                        logger.info("   Model CPU offload enabled (constrained GPU memory)")
-                except Exception as e:
-                    logger.debug("   Model CPU offload not available: %s", e)
-
-        except Exception as e:
-            logger.warning("Error applying optimizations: %s", e, exc_info=True)
 
     # =========================================================================
     # DB-FIRST KEY LOADING
@@ -1163,7 +921,7 @@ class ImageService:
                     f"{_server_error_detail(resp)}",
                 )
         except Exception as e:
-            logger.warning("image-gen host server unavailable (%s), trying local diffusers...", e)
+            logger.warning("image-gen host server unavailable (%s)", e)
             # Exception TYPE only, never str(e). `detail` is destined for an
             # HTTP response body, and an httpx ConnectError embeds the resolved
             # address of the host it failed to reach — the disclosure
@@ -1176,8 +934,10 @@ class ImageService:
                 f"image-gen server unreachable ({type(e).__name__})",
             )
 
-        # Strategy 2: Try local diffusers (if available)
-        # Lazy initialize on first generation request
+        # Strategy 2: local diffusers — never available in this deployment
+        # (see _initialize_model). Kept so a lazy-init call still runs and
+        # this always resolves to the "unavailable" ImageGenOutcome below
+        # when Strategy 1 also failed.
         if not self.gen_initialized or (model is not None and model != self._active_model):
             target = model or get_default_image_model(site_config=self._site_config)
             logger.info("First generation request detected - initializing %s...", target.value)
