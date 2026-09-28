@@ -1352,6 +1352,26 @@ Why: the sync rebuilt `chatterbox` on a merged change, recreated it, logged
 times over eight hours. Nothing between "build succeeded" and "a downstream
 probe noticed" had looked at the container.
 
+**The gate and the game-mode re-park look only at the stack's own containers.**
+Both find a service's container by its compose service label, which every
+compose project on the host carries, and `docker ps` lists the newest first.
+Throwaway projects from worktrees reuse the stack's service names. On
+2026-09-28 a `seedorder-repro` project, run from the consumer compose file,
+left exited `brain-daemon` and `worker` containers newer than the stack's.
+Unscoped, the next brain rebuild would have snapshotted that container. It
+could have gated it too, reading `exited` as a failed deploy and rolling the
+stack's brain back over it. And the recreate check read "2 containers" as
+"recreate to be safe". The re-park (step 6c) has the same lookup: it would
+stop another project's running sidecar and leave the stack's GPU sidecars warm
+for the rest of the game. So each pass asks compose for the stack's project
+name, once and on first use
+(`start-stack.sh config --format json --no-interpolate`, which prints no
+environment values). It passes it to `snapshot`, `recreate-plan` and `verify`
+as `--project`, and every container lookup filters on
+`com.docker.compose.project`. If the name cannot be resolved, the pass logs
+`[WARN] could not resolve the stack's compose project` and those lookups run
+unscoped, as before.
+
 **Why the rollback target is a tag, not an image id.** Until 2026-09-28 the
 snapshot recorded the running image's id and the rollback re-tagged that id.
 On this host that never worked. Docker 29 with the containerd image store

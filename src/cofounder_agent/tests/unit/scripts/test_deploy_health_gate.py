@@ -452,14 +452,16 @@ def test_recreate_plan_cli_prints_one_tab_separated_line_per_service(monkeypatch
     mod = _load()
     seen = {}
 
-    def fake_plan(services, *, since=None):
-        seen["args"] = (services, since)
+    def fake_plan(services, *, since=None, project=None):
+        seen["args"] = (services, since, project)
         return [("skip", "brain-daemon", "compose-apply already\trecreated\nit"),
                 ("parked", "voice-agent-livekit", "no container")]
 
     monkeypatch.setattr(mod, "recreate_plan", fake_plan)
-    rc = mod.main(["recreate-plan", "--since", "1790602824", "--services", "brain-daemon", "voice-agent-livekit"])
-    assert rc == 0 and seen["args"] == (["brain-daemon", "voice-agent-livekit"], 1790602824.0)
+    rc = mod.main(["recreate-plan", "--since", "1790602824", "--project", "glad-labs-website",
+                   "--services", "brain-daemon", "voice-agent-livekit"])
+    assert rc == 0
+    assert seen["args"] == (["brain-daemon", "voice-agent-livekit"], 1790602824.0, "glad-labs-website")
     lines = capsys.readouterr().out.splitlines()
     assert [line.split("\t") for line in lines] == [
         ["skip", "brain-daemon", "compose-apply already recreated it"],
@@ -912,7 +914,7 @@ def test_snapshot_cli_prints_the_json_on_stdout_and_the_notes_on_stderr(monkeypa
     mod = _load()
     snap = {"x": {"container": "c", "rollback_ref": "r:rollback-x", "rollback_note": "manifest abc,\nthe image"},
             "y": {"container": "", "rollback_ref": "", "rollback_note": "no container"}}
-    monkeypatch.setattr(mod, "snapshot", lambda services: snap)
+    monkeypatch.setattr(mod, "snapshot", lambda services, project=None: snap)
     assert mod.main(["snapshot", "--services", "x", "y"]) == 0
     out, err = capsys.readouterr()
     assert json.loads(out) == snap
@@ -930,3 +932,88 @@ def test_a_page_without_a_rollback_says_how_to_put_the_preserved_image_back():
     _, fake = _verify(mod, fake, ["x"], rollback=False, snap=snap)
     body = " ".join(fake.alerts()[0])
     assert f"docker tag {ROLLBACK_REF} {LIVE_REF} && bash start-stack.sh up -d --no-build --force-recreate x" in body
+
+
+# ── the stack's own compose project only (2026-09-28) ─────────────────────
+#
+# A worktree's throwaway `seedorder-repro` project (the consumer compose file,
+# so the same service names) left exited brain-daemon and worker containers
+# newer than the stack's. The service label matches every project, and
+# `docker ps` lists the newest first.
+
+class TwoProjectDocker(IdentityDocker):
+    """`docker ps -a` as the host answered it: the newer throwaway container
+    first, unless the lookup filters by the stack's project."""
+
+    def __call__(self, argv):
+        if argv[:3] == ["docker", "ps", "-a"]:
+            self.calls.append(argv)
+            if "label=com.docker.compose.project=glad-labs-website" in argv:
+                return 0, "poindexter-brain-daemon\n", ""
+            return 0, "seedorder-repro-brain\npoindexter-brain-daemon\n", ""
+        return super().__call__(argv)
+
+
+def test_scoped_lookups_find_the_stacks_container_not_the_newer_throwaway():
+    mod = _load()
+    fake = TwoProjectDocker()
+    assert mod.find_container("brain-daemon", run=fake) == "seedorder-repro-brain", "unscoped: the bug"
+    assert mod.find_container("brain-daemon", run=fake, project="glad-labs-website") == "poindexter-brain-daemon"
+    assert mod.snapshot(["brain-daemon"], run=fake, project="glad-labs-website")["brain-daemon"]["container"] == (
+        "poindexter-brain-daemon")
+
+
+def test_a_scoped_plan_is_not_confused_by_another_projects_container():
+    """Unscoped, the second container read as "recreating to be safe": a
+    needless bounce of the stack's brain for somebody else's repro."""
+    mod = _load()
+    since = mod._epoch(APPLY_BEGAN)
+
+    def fake():
+        return TwoProjectDocker(container=_container(created="2026-09-27T21:40:35.9Z", manifest=V2_MANIFEST),
+                                tag_manifest=V2_MANIFEST)
+
+    assert mod.plan_recreate("brain-daemon", since=since, run=fake())[0] == "recreate"
+    action, why = mod.plan_recreate("brain-daemon", since=since, run=fake(), project="glad-labs-website")
+    assert action == "skip" and "already recreated" in why
+
+
+def test_the_gate_watches_and_rolls_back_the_stacks_container_only():
+    mod = _load()
+    fake = FakeDocker([_inspect_json(health="healthy")])
+    clock = Clock()
+    mod.verify(["x"], {}, sha="s", timeout=300, settle=30, do_rollback=True, stack_cmd=STACK, run=fake,
+               clock=clock, sleep=clock.sleep, project="glad-labs-website")
+    lookups = [a for a in fake.calls if a[:3] == ["docker", "ps", "-a"]]
+    assert lookups and all("label=com.docker.compose.project=glad-labs-website" in a for a in lookups)
+    store = _v1_running()
+    snap = mod.snapshot(["x"], run=store)
+    store.build(V2_MANIFEST, broken=True)
+    store.up()
+    before = len(store.calls)
+    mod.rollback("x", snap["x"], STACK, run=store, project="glad-labs-website")
+    post = [a for a in store.calls[before:] if a[:3] == ["docker", "ps", "-a"]]
+    assert post and all("label=com.docker.compose.project=glad-labs-website" in a for a in post)
+
+
+def test_without_a_project_nothing_is_filtered():
+    """The pre-2026-09-28 behaviour, kept for a caller that names no project."""
+    mod = _load()
+    fake = FakeDocker([_inspect_json()])
+    mod.find_container("x", run=fake)
+    assert not [a for a in fake.calls if any("com.docker.compose.project" in x for x in a)]
+
+
+@pytest.mark.parametrize("cmd", ["snapshot", "verify"])
+def test_the_cli_passes_the_project_through(monkeypatch, capsys, cmd):
+    mod = _load()
+    seen = []
+
+    def fake(*args, project=None, **kwargs):
+        seen.append(project)
+        return {}
+
+    monkeypatch.setattr(mod, cmd, fake)
+    extra = ["--timeout", "1", "--settle", "1", "--no-rollback"] if cmd == "verify" else []
+    assert mod.main([cmd, "--project", "glad-labs-website", *extra, "--services", "x"]) == 0
+    assert seen == ["glad-labs-website"]

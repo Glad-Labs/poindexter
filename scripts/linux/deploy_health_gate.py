@@ -37,6 +37,10 @@ Three subcommands, all driven by the deploy sync:
         preserved content before the rollback counts; a critical alert_events
         row carries the container's last log lines either way.
 
+Every subcommand takes ``--project NAME``, the stack's compose project, and
+then considers only containers carrying that project's label. Other projects
+on the host reuse the same service names (see ``in_project``).
+
 Why this exists (2026-09-13): the deploy sync rebuilt the chatterbox image on
 a merged change, recreated the container, logged "Pipeline now running …",
 and never looked back. The container died on import and restarted 507 times
@@ -138,8 +142,24 @@ CONTAINER_PREFIX = "container:"  # a unit named "container:<name>" is verified b
 NOT_ONE_OFF = ("--filter", "label=com.docker.compose.oneoff=False")
 
 
-def find_container(service: str, run: Runner = _run) -> str | None:
-    """The container compose created for ``service`` (label-based, name-agnostic).
+def in_project(project: str | None) -> tuple[str, ...]:
+    """The ``docker ps`` filter that keeps another compose project's containers out.
+
+    The service label alone matches every project on the host, and ``docker ps``
+    lists the newest first. Throwaway projects are routine here: on 2026-09-28
+    a worktree's ``seedorder-repro`` (the consumer compose file, so the same
+    service names) left exited ``brain-daemon`` and ``worker`` containers newer
+    than the stack's. Unscoped, the next brain rebuild would have snapshotted
+    that container, could have gated it (``exited`` = a failed deploy) and
+    rolled the stack's brain back over it, and the recreate check read "2
+    containers" as "recreate to be safe". Unscoped (no filter) when the
+    caller names no project.
+    """
+    return ("--filter", f"label=com.docker.compose.project={project}") if project else ()
+
+
+def find_container(service: str, run: Runner = _run, project: str | None = None) -> str | None:
+    """The container compose created for ``service`` in ``project`` (label-based, name-agnostic).
 
     A unit spelled ``container:<name>`` (the deploy's bounce-restarted bind-mount
     containers, addressed by name) resolves to that name directly.
@@ -147,7 +167,7 @@ def find_container(service: str, run: Runner = _run) -> str | None:
     if service.startswith(CONTAINER_PREFIX):
         return service[len(CONTAINER_PREFIX):] or None
     rc, out, _ = run(["docker", "ps", "-a", "--filter", f"label=com.docker.compose.service={service}",
-                      *NOT_ONE_OFF, "--format", "{{.Names}}"])
+                      *NOT_ONE_OFF, *in_project(project), "--format", "{{.Names}}"])
     names = [n.strip() for n in out.splitlines() if n.strip()] if rc == 0 else []
     return names[0] if names else None
 
@@ -441,11 +461,11 @@ def _tag_running(container: str, info: dict[str, Any], target: str, running: str
     return _confirm(target, running, platform, f"via {info['image_ref']}, which names the same content", run)
 
 
-def snapshot(services: list[str], run: Runner = _run) -> dict[str, dict[str, str]]:
+def snapshot(services: list[str], run: Runner = _run, project: str | None = None) -> dict[str, dict[str, str]]:
     """What each service runs before the rebuild, with that image preserved (``preserve``)."""
     out: dict[str, dict[str, str]] = {}
     for svc in services:
-        container = find_container(svc, run)
+        container = find_container(svc, run, project)
         info = inspect(container, run) if container else None
         entry = {
             "container": container or "",
@@ -485,7 +505,8 @@ def snapshot_notes(snap: dict[str, dict[str, str]]) -> list[str]:
 RECREATE, SKIP, PARKED = "recreate", "skip", "parked"
 
 
-def plan_recreate(service: str, *, since: float | None = None, run: Runner = _run) -> tuple[str, str]:
+def plan_recreate(service: str, *, since: float | None = None, run: Runner = _run,
+                  project: str | None = None) -> tuple[str, str]:
     """Step 6a-bis: after compose-apply, does ``service`` still need a force-recreate?
 
     ``since`` is when compose-apply began (epoch seconds). Returns
@@ -512,15 +533,16 @@ def plan_recreate(service: str, *, since: float | None = None, run: Runner = _ru
                   profile comes back.
     """
     rc, out, err = run(["docker", "ps", "-a", "--filter", f"label=com.docker.compose.service={service}",
-                        *NOT_ONE_OFF, "--format", "{{.Names}}"])
+                        *NOT_ONE_OFF, *in_project(project), "--format", "{{.Names}}"])
     if rc != 0:
         return RECREATE, f"could not list its container ({(err.strip() or 'docker ps failed')[:120]}); recreating to be safe"
     names = [n.strip() for n in out.splitlines() if n.strip()]
     if not names:
         return PARKED, "no container (its compose profile is off); a named recreate would create and start it"
     if len(names) > 1:
-        # Another compose project with the same service name. Judging the wrong
-        # container could skip a stale one, so don't pick.
+        # Another compose project with the same service name (the caller did
+        # not scope to the stack's project, see in_project), or a scaled
+        # service. Judging the wrong container could skip a stale one, so don't pick.
         return RECREATE, f"{len(names)} containers carry this service's label ({', '.join(names[:3])}); recreating to be safe"
     container = names[0]
     info = inspect(container, run)
@@ -543,11 +565,12 @@ def plan_recreate(service: str, *, since: float | None = None, run: Runner = _ru
     return RECREATE, f"could not compare images ({ident['why']}); recreating to be safe"
 
 
-def recreate_plan(services: list[str], *, since: float | None = None, run: Runner = _run) -> list[tuple[str, str, str]]:
+def recreate_plan(services: list[str], *, since: float | None = None, run: Runner = _run,
+                  project: str | None = None) -> list[tuple[str, str, str]]:
     """``[(action, service, reason), …]`` in the order given — one line each for the shell."""
     plan: list[tuple[str, str, str]] = []
     for svc in services:
-        action, reason = plan_recreate(svc, since=since, run=run)
+        action, reason = plan_recreate(svc, since=since, run=run, project=project)
         plan.append((action, svc, reason))
     return plan
 
@@ -578,6 +601,7 @@ def verdict(info: dict[str, Any] | None, *, running_for: float, settle: int) -> 
 def wait_for(
     service: str, *, timeout: int, settle: int, run: Runner = _run,
     clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep,
+    project: str | None = None,
 ) -> tuple[str, str | None, dict[str, Any] | None]:
     """Poll one service until healthy/failed/timeout. Returns (verdict, container, last info)."""
     start = clock()
@@ -585,7 +609,7 @@ def wait_for(
     container: str | None = None
     info: dict[str, Any] | None = None
     while True:
-        container = container or find_container(service, run)
+        container = container or find_container(service, run, project)
         info = inspect(container, run) if container else None
         now = clock()
         if info and info["status"] == "running":
@@ -600,7 +624,8 @@ def wait_for(
         sleep(POLL_SECONDS)
 
 
-def rollback(service: str, snap: dict[str, str], stack_cmd: list[str], run: Runner = _run) -> tuple[bool, str]:
+def rollback(service: str, snap: dict[str, str], stack_cmd: list[str], run: Runner = _run,
+             project: str | None = None) -> tuple[bool, str]:
     """Re-tag the preserved rollback image over the compose ref, recreate the service onto it, and prove it.
 
     The source is the tag the snapshot preserved (``rollback_ref``), never the
@@ -625,7 +650,7 @@ def rollback(service: str, snap: dict[str, str], stack_cmd: list[str], run: Runn
     rc, _, err = run([*stack_cmd, "up", "-d", "--no-build", "--force-recreate", service])
     if rc != 0:
         return False, f"re-tagged {image_ref} from {target}, but the recreate failed: {_last_line(err)}"
-    container = find_container(service, run)
+    container = find_container(service, run, project)
     info = inspect(container, run) if container else None
     runs = _content(info)[0] if info else ""
     if runs != held:
@@ -658,10 +683,12 @@ def verify(
     services: list[str], snap: dict[str, dict[str, str]], *, sha: str, timeout: int, settle: int,
     do_rollback: bool, stack_cmd: list[str], run: Runner = _run,
     clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep,
+    project: str | None = None,
 ) -> dict[str, Any]:
     results: dict[str, Any] = {}
     for svc in services:
-        v, container, info = wait_for(svc, timeout=timeout, settle=settle, run=run, clock=clock, sleep=sleep)
+        v, container, info = wait_for(svc, timeout=timeout, settle=settle, run=run, clock=clock, sleep=sleep,
+                                      project=project)
         entry: dict[str, Any] = {"verdict": v, "container": container or "", "rolled_back": False}
         if v == "healthy":
             results[svc] = entry
@@ -669,11 +696,12 @@ def verify(
         tail = log_tail(container, run) if container else "(container not found)"
         hint = restore_hint(svc, snap.get(svc, {}), stack_cmd)
         if v.startswith("failed") and do_rollback and not svc.startswith(CONTAINER_PREFIX):
-            ok, note = rollback(svc, snap.get(svc, {}), stack_cmd, run)
+            ok, note = rollback(svc, snap.get(svc, {}), stack_cmd, run, project)
             entry["rolled_back"] = ok
             entry["rollback_note"] = note
             if ok:
-                v2, _, _ = wait_for(svc, timeout=min(timeout, 120), settle=settle, run=run, clock=clock, sleep=sleep)
+                v2, _, _ = wait_for(svc, timeout=min(timeout, 120), settle=settle, run=run, clock=clock, sleep=sleep,
+                                    project=project)
                 entry["after_rollback"] = v2
             write_alert(
                 service=svc, sha=sha, severity="critical",
@@ -728,9 +756,13 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("--timeout", type=int, default=None)
     v.add_argument("--settle", type=int, default=None)
     v.add_argument("--stack-cmd", default="", help="command prefix that runs docker compose for the stack")
+    for p in (s, rp, v):
+        p.add_argument("--project", default="",
+                       help="the stack's compose project; only its containers are considered (see in_project)")
     args = ap.parse_args(argv)
+    project = args.project or None
     if args.cmd == "snapshot":
-        snap = snapshot(args.services)
+        snap = snapshot(args.services, project=project)
         print(json.dumps(snap))
         # stdout is the JSON the verify half reads; these go to the deploy log.
         for line in snapshot_notes(snap):
@@ -739,7 +771,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "recreate-plan":
         # Tab-separated so the shell can `read` it without a JSON parser; a
         # reason can never smuggle in a field or a line of its own.
-        for action, svc, reason in recreate_plan(args.services, since=args.since):
+        for action, svc, reason in recreate_plan(args.services, since=args.since, project=project):
             print(f"{action}\t{svc}\t{' '.join(reason.split())}")
         return 0
     snap: dict[str, dict[str, str]] = {}
@@ -751,7 +783,7 @@ def main(argv: list[str] | None = None) -> int:
     do_rollback = (not args.no_rollback) and (args.rollback or read_bool_setting("deploy_rollback_on_unhealthy", True))
     stack_cmd = args.stack_cmd.split() if args.stack_cmd else ["docker", "compose"]
     results = verify(args.services, snap, sha=args.sha, timeout=timeout, settle=settle,
-                     do_rollback=do_rollback, stack_cmd=stack_cmd)
+                     do_rollback=do_rollback, stack_cmd=stack_cmd, project=project)
     print(json.dumps(results))
     return exit_code(results)
 

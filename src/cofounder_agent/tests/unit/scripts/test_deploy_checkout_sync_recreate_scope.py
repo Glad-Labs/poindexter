@@ -98,6 +98,9 @@ case "$action" in
     fi
     for s in "${svcs[@]}"; do printf running > "$STATE_DIR/$s"; done
     exit 0 ;;
+  config)  # the compose project the health gate is scoped to
+    printf '{"name": "%s"}\n' "${FAKE_COMPOSE_PROJECT-glad-labs-website}"
+    exit 0 ;;
   ps)
     case "$*" in *--status=created*) exit 0 ;; esac  # the stranded sweep: nothing stranded
     all=0; svcs=()
@@ -482,3 +485,44 @@ class TestUnreadableState:
         assert st["result"] == "error"
         assert "service-state" in st["detail"]
         assert _marker(rig) == rig["base_sha"], "a pass that could not decide must retry"
+
+
+class TestGateIsScopedToTheStacksProject:
+    """Every health-gate call names the stack's compose project, resolved by
+    compose itself through start-stack.sh. Unscoped, the gate took the newest
+    container with the service label from ANY project: on 2026-09-28 a
+    worktree's `seedorder-repro` (the consumer compose file) left exited
+    brain-daemon and worker containers newer than the stack's."""
+
+    @staticmethod
+    def _gate_calls(rig: dict) -> list[str]:
+        return [e for e in _events(rig) if e.startswith("gate ")]
+
+    def test_every_gate_call_carries_the_project(self, tmp_path):
+        rig = _build_rig(tmp_path)
+        _containers(rig, {"brain-daemon": "running", "auto-embed": "running"})
+        _advance_origin(rig, _BRAIN_SRC)
+        proc = _run_sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        calls = self._gate_calls(rig)
+        assert {c.split()[1] for c in calls} == {"snapshot", "recreate-plan", "verify"}
+        for call in calls:
+            assert "--project glad-labs-website " in call, call
+        assert "start-stack config --format json --no-interpolate" in _events(rig), (
+            "the name comes from compose (start-stack.sh), with nothing interpolated"
+        )
+
+    @pytest.mark.parametrize("project", ["", "Grafana dashboard links will point at: x"],
+                             ids=["empty", "not-a-project-name"])
+    def test_an_unresolvable_project_is_said_and_the_gate_runs_unscoped(self, tmp_path, project):
+        rig = _build_rig(tmp_path)
+        _containers(rig, {"brain-daemon": "running", "auto-embed": "running"})
+        _advance_origin(rig, _BRAIN_SRC)
+        proc = _run_sync(rig, FAKE_COMPOSE_PROJECT=project)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        calls = self._gate_calls(rig)
+        assert calls and not [c for c in calls if "--project glad-labs-website" in c]
+        # the recorder joins argv with spaces: an empty --project value shows as two
+        assert all(" --project  " in c for c in calls), calls
+        log = (rig["home"] / ".poindexter" / "deploy-checkout-sync.log").read_text(encoding="utf-8")
+        assert "[WARN] could not resolve the stack's compose project" in log

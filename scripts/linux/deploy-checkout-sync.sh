@@ -119,7 +119,9 @@
 #      is recorded in deploy-rolled-back-sha so the same broken build is not
 #      retried every 10 minutes — the fix must merge as a new commit. Bounced
 #      bind-mount containers are watched too (page only; their rollback is a
-#      code revert).
+#      code revert). The gate, 6a-bis and the re-park (6c) only ever look at
+#      the stack's own compose project: other projects on the host reuse its
+#      service names.
 #      Chatterbox restarted 507 times behind "Pipeline now running …" before
 #      this existed. Settings: deploy_health_gate_seconds,
 #      deploy_health_gate_settle_seconds, deploy_rollback_on_unhealthy;
@@ -839,6 +841,35 @@ service_state() { # service_state <compose service>
 declare -A state_before=()
 for svc in $rebuild_services; do state_before[$svc]="$(service_state "$svc")"; done
 
+# ---- the stack's compose project, for every container looked up by label ----
+# A container found by its compose SERVICE label alone is found in every project
+# on the host, and `docker ps` lists the newest first. Throwaway projects from
+# worktrees reuse the stack's service names (the consumer compose file): on
+# 2026-09-28 `seedorder-repro` left exited brain-daemon and worker containers
+# newer than the stack's. Unscoped, the next brain rebuild would have
+# snapshotted that container, could have gated it ("exited" = a failed deploy)
+# and rolled the stack's brain back over it, and the recreate check read "2
+# containers" as "recreate to be safe". The game-mode re-park (6c) has the same
+# lookup and would stop the other project's sidecar while leaving the stack's
+# GPU sidecars warm. The name comes from compose itself, through start-stack.sh
+# like every compose call here, not from a second parse of bootstrap.toml.
+# --no-interpolate keeps every environment value (secrets included) out of the
+# output. Resolved once, on first use. Empty = lookups are not project-scoped,
+# as before, and the pass says so.
+compose_project=""; compose_project_resolved=0
+resolve_compose_project() {
+  [ "$compose_project_resolved" = "1" ] && return 0
+  compose_project_resolved=1
+  compose_project="$(bash "$DEPLOY_DIR/scripts/start-stack.sh" config --format json --no-interpolate 2>>"$LOG_FILE" \
+    | python3 -c 'import json, sys; print(json.load(sys.stdin).get("name") or "")' 2>>"$LOG_FILE")"
+  [[ "$compose_project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || {
+    log "could not resolve the stack's compose project; container lookups by service label are not project-scoped this pass" WARN
+    compose_project=""
+  }
+  return 0
+}
+if [ -n "$rebuild_services" ] && [ -f "$HEALTH_GATE" ]; then resolve_compose_project; fi
+
 gate_pre_ok=0
 if [ -n "$rebuild_services" ] && [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ]; then
   # The snapshot TAGS each running image as <repository>:rollback-<service>.
@@ -850,8 +881,11 @@ if [ -n "$rebuild_services" ] && [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ]; 
   # snapshot's per-service notes (its stderr: what a failed gate could roll
   # back to) are logged on EVERY pass, and one that cannot roll a service back
   # is a WARN, before the build rather than at the moment a rollback is needed.
-  # shellcheck disable=SC2086
-  snap_notes="$(python3 "$HEALTH_GATE" snapshot --services $rebuild_services 2>&1 >"$GATE_SNAPSHOT_FILE")" && gate_pre_ok=1
+  # `2>&1 >file` in that order on purpose: stdout (the JSON the verify half
+  # reads) goes to the file and stderr (the notes) is captured. Swapped, the
+  # notes would land inside the JSON and the verify half would fail to read it.
+  # shellcheck disable=SC2086,SC2069
+  snap_notes="$(python3 "$HEALTH_GATE" snapshot --project "$compose_project" --services $rebuild_services 2>&1 >"$GATE_SNAPSHOT_FILE")" && gate_pre_ok=1
   while IFS= read -r note; do
     case "$note" in
       "") ;;
@@ -963,7 +997,7 @@ if [ -n "$live_services" ] && [ "$apply_failed" = "0" ]; then
   if [ -f "$HEALTH_GATE" ]; then
     # shellcheck disable=SC2086
     if ! plan="$(python3 "$HEALTH_GATE" recreate-plan --since "$apply_started_epoch" \
-                   --services $live_services 2>>"$LOG_FILE")"; then
+                   --project "$compose_project" --services $live_services 2>>"$LOG_FILE")"; then
       log "recreate check: could not compare images; recreating every live rebuilt service to be safe" WARN
       plan=""
     fi
@@ -1104,7 +1138,7 @@ if [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ] && { [ -n "$rebuild_services" ]
   fi
   for c in $(echo "$restarted" | tr ',' ' '); do gate_units="${gate_units:+$gate_units }container:$c"; done
   if [ -n "$gate_units" ]; then
-    gate_args=(verify --sha "$head_sha" --stack-cmd "bash $DEPLOY_DIR/scripts/start-stack.sh")
+    gate_args=(verify --sha "$head_sha" --project "$compose_project" --stack-cmd "bash $DEPLOY_DIR/scripts/start-stack.sh")
     if [ "$gate_pre_ok" = "1" ]; then gate_args+=(--snapshot "$GATE_SNAPSHOT_FILE"); else gate_args+=(--no-rollback); fi
     # shellcheck disable=SC2086
     gate_json="$(python3 "$HEALTH_GATE" "${gate_args[@]}" --services $gate_units 2>>"$LOG_FILE")"; gate_rc=$?
@@ -1159,11 +1193,14 @@ game_mode_setting() { # game_mode_setting <key> <default>
 }
 reparked=""; repark_failed=0
 if game_mode_active; then
+  resolve_compose_project
+  proj_filter=(); [ -n "$compose_project" ] && proj_filter=(--filter "label=com.docker.compose.project=${compose_project}")
   prefix="$(game_mode_setting game_mode_container_prefix poindexter-)"
   for svc in $(game_mode_setting game_mode_parked_services "speaches,chatterbox,stable-audio-server,image-gen-server,wan-server,comfyui" | tr ',' ' '); do
     # Resolve by compose service label: container_name isn't always prefix+service
     # (stable-audio-server runs as poindexter-stable-audio).
-    c="$(docker ps -a --filter "label=com.docker.compose.service=${svc}" --format '{{.Names}}' 2>/dev/null | head -n1)"
+    # ${proj_filter[@]+...}: an empty array is an unbound variable under set -u on older bash.
+    c="$(docker ps -a --filter "label=com.docker.compose.service=${svc}" ${proj_filter[@]+"${proj_filter[@]}"} --format '{{.Names}}' 2>/dev/null | head -n1)"
     c="${c:-${prefix}${svc}}"
     [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ] || continue
     if docker stop -t 20 "$c" >>"$LOG_FILE" 2>&1; then

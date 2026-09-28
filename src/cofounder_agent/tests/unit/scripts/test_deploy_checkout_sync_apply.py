@@ -82,6 +82,10 @@ if [ "$action" = "up" ]; then
   [ "$n" -le "${UP_FAIL_TIMES:-0}" ] && exit 1
   exit 0
 fi
+if [ "$action" = "config" ]; then  # the compose project the health gate is scoped to
+  printf '{"name": "%s"}\n' "${FAKE_COMPOSE_PROJECT-glad-labs-website}"
+  exit 0
+fi
 if [ "$action" = "ps" ]; then
   case "$*" in
     *--status=created*) printf '%s' "${STRANDED_NAMES:-}" \
@@ -274,8 +278,13 @@ class TestRecreateRebuilt:
 
 # docker, answering from a JSON scenario:
 #   {"containers": {service: <docker inspect doc>},
-#    "tags": {image ref: {"index": <image ID>, "manifest": <platform manifest>}}}
+#    "tags": {image ref: {"index": <image ID>, "manifest": <platform manifest>}},
+#    "others": [{"service", "project", "doc"}],
+#    "game_mode": {"parked": "<csv>"}}   (absent = game mode off)
 # enough for the real deploy_health_gate.py (recreate-plan, snapshot, verify).
+# "containers" belong to the stack's project (glad-labs-website); "others" are
+# another project's containers with the same service label, newer, so an
+# unscoped `docker ps` lists them first, as docker does.
 _FAKE_DOCKER_PY = r"""#!/usr/bin/env python3
 import hashlib, json, os, sys
 
@@ -303,11 +312,17 @@ def positional(rest):
     return out
 
 
+others = scenario.get("others", [])
 if args[:2] == ["ps", "-a"]:
+    project = next((a.split("=", 2)[2] for a in args if a.startswith("label=com.docker.compose.project=")), None)
     for a in args:
         if a.startswith("label=com.docker.compose.service="):
-            doc = containers.get(a.split("=", 2)[2])
-            if doc:
+            svc = a.split("=", 2)[2]
+            for other in others:
+                if other["service"] == svc and project in (None, other["project"]):
+                    print(other["doc"]["Name"].lstrip("/"))
+            doc = containers.get(svc)
+            if doc and project in (None, "glad-labs-website"):
                 print(doc["Name"].lstrip("/"))
     sys.exit(0)
 if args[:2] == ["ps", "-q"]:  # no -a: running containers only (the liveness query)
@@ -319,7 +334,7 @@ if args[:2] == ["ps", "-q"]:  # no -a: running containers only (the liveness que
     sys.exit(0)
 if args[:1] == ["inspect"]:
     wanted = positional(args[1:])[0]
-    for doc in containers.values():
+    for doc in [*containers.values(), *(o["doc"] for o in others)]:
         if wanted in (doc["Name"].lstrip("/"), container_id(doc)):
             if "{{.State.Running}}" in args:
                 print("true" if doc["State"]["Running"] else "false")
@@ -357,6 +372,18 @@ if args[:1] == ["tag"]:
     sys.exit(0)
 if args[:1] == ["container"]:
     sys.exit(1)  # the bounce loop finds nothing to restart; not under test here
+if args[:1] == ["exec"]:
+    # psql through the postgres container. Only game mode is modelled: the
+    # scenario's "game_mode" is {"parked": "<csv of services>"} while it is on.
+    sql = args[-1]
+    game = scenario.get("game_mode")
+    if game and "game_mode_until" in sql:
+        print(1)
+    elif game and "game_mode_parked_services" in sql:
+        print(game["parked"])
+    elif game and "game_mode_container_prefix" in sql:
+        print("poindexter-")
+    sys.exit(0)
 sys.exit(0)
 """
 
@@ -395,15 +422,8 @@ def _doc(
     }
 
 
-class TestRecreateCheck:
-    """Step 6a-bis with the real ``recreate-plan`` in the clone.
-
-    compose-apply recreates a container whenever its rebuilt image's content
-    changed (it compares platform manifests), so the check normally recreates
-    nothing. Before 2026-09-28 the step force-recreated every rebuilt service
-    unconditionally, which started each one compose had just recreated a
-    second time — every brain deploy bounced the brain twice.
-    """
+class _ScenarioRig:
+    """The real driver and the real ``deploy_health_gate.py`` over a scenario docker."""
 
     def _rig(self, tmp_path: Path, scenario: dict, gate_source: str | None = None) -> dict:
         gate = (
@@ -435,6 +455,17 @@ class TestRecreateCheck:
         return (rig["home"] / ".poindexter" / "deploy-checkout-sync.log").read_text(
             encoding="utf-8"
         )
+
+
+class TestRecreateCheck(_ScenarioRig):
+    """Step 6a-bis with the real ``recreate-plan`` in the clone.
+
+    compose-apply recreates a container whenever its rebuilt image's content
+    changed (it compares platform manifests), so the check normally recreates
+    nothing. Before 2026-09-28 the step force-recreated every rebuilt service
+    unconditionally, which started each one compose had just recreated a
+    second time — every brain deploy bounced the brain twice.
+    """
 
     def test_what_compose_apply_already_recreated_is_not_recreated_again(self, tmp_path):
         """The 2026-09-27 deploy of 49d4052c7, minus the second bounce: the
@@ -636,6 +667,62 @@ class TestRecreateCheck:
         assert snap["auto-embed"]["rollback_ref"] == ""
         assert "health gate: all healthy (auto-embed brain-daemon)" in log
 
+    def test_another_projects_same_named_container_is_never_taken_for_the_stacks(self, tmp_path):
+        """2026-09-28: a worktree's `seedorder-repro` project (the consumer
+        compose file, so the same service names) left an exited brain-daemon
+        container NEWER than the stack's, which `docker ps` lists first.
+        Unscoped, the snapshot recorded it, the recreate check saw "2
+        containers" and bounced the stack's brain "to be safe", and the gate
+        watched the exited one: a failed deploy, rolled back."""
+        scenario = {
+            "containers": {
+                "brain-daemon": _doc(
+                    "poindexter-brain-daemon",
+                    "glad-labs-website-brain-daemon",
+                    manifest=_M2,
+                    created=_NOW_OR_LATER,
+                ),
+                "auto-embed": _doc(
+                    "poindexter-auto-embed",
+                    "glad-labs-website-auto-embed",
+                    manifest=_M2,
+                    created=_NOW_OR_LATER,
+                ),
+            },
+            "tags": {
+                "glad-labs-website-brain-daemon": {"index": "sha256:new-index", "manifest": _M2},
+                "glad-labs-website-auto-embed": {"index": "sha256:new-index", "manifest": _M2},
+            },
+            "others": [
+                {
+                    "service": "brain-daemon",
+                    "project": "seedorder-repro",
+                    "doc": _doc(
+                        "seedorder-repro-brain",
+                        "seedorder-repro-brain-daemon",
+                        manifest=_M1,
+                        created=_NOW_OR_LATER,
+                        status="exited",
+                    ),
+                }
+            ],
+        }
+        rig = self._rig(tmp_path, scenario)
+        _advance_origin(rig, "src/cofounder_agent/poindexter/brain/probe.py")
+        proc = self._sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert _force_recreates(rig) == [], "the stack's brain was already on its new image"
+        log = self._log(rig)
+        assert "health gate: all healthy (auto-embed brain-daemon)" in log
+        assert "seedorder-repro" not in log
+        snap = json.loads(
+            (rig["home"] / ".poindexter" / "deploy-gate-snapshot.json").read_text(encoding="utf-8")
+        )
+        assert snap["brain-daemon"]["container"] == "poindexter-brain-daemon"
+        assert not [e for e in _events(rig) if e.startswith("docker tag") and "seedorder" in e]
+        lookups = [e for e in _events(rig) if e.startswith("docker ps -a ")]
+        assert lookups and all("label=com.docker.compose.project=glad-labs-website" in e for e in lookups)
+
     def test_a_failed_recreate_withholds_the_marker(self, tmp_path):
         """Otherwise the pass records `deployed` over a service still on the
         old image, and the next pass has nothing left to retry."""
@@ -704,6 +791,80 @@ class TestRecreateCheck:
             "start-stack up -d --no-build --no-deps --force-recreate auto-embed brain-daemon"
         ]
         assert "recreate check: could not compare images" in self._log(rig)
+
+
+class TestGameModeReparkIsScopedToTheStack(_ScenarioRig):
+    """Step 6c resolves each parked sidecar by its compose service label, then
+    `docker stop`s it. Found by the label alone it is found in every project on
+    the host, newest first: a throwaway project's running `image-gen-server`
+    would be stopped in place of the stack's, which would stay warm on the GPU
+    for the rest of the game, the very thing the step exists to prevent."""
+
+    @staticmethod
+    def _scenario() -> dict:
+        return {
+            "containers": {
+                "image-gen-server": _doc(
+                    "poindexter-image-gen-server",
+                    "glad-labs-website-image-gen-server",
+                    manifest=_M1,
+                    created=_BEFORE_THE_PASS,
+                ),
+            },
+            "tags": {},
+            "others": [
+                {
+                    "service": "image-gen-server",
+                    "project": "seedorder-repro",
+                    "doc": _doc(
+                        "seedorder-repro-image-gen",
+                        "seedorder-repro-image-gen-server",
+                        manifest=_M1,
+                        created=_NOW_OR_LATER,  # newer, so an unscoped `docker ps` lists it first
+                    ),
+                }
+            ],
+            "game_mode": {"parked": "image-gen-server"},
+        }
+
+    @staticmethod
+    def _stops(rig: dict) -> list[str]:
+        return [e for e in _events(rig) if e.startswith("docker stop ")]
+
+    def test_the_stack_is_repark_stopped_and_the_other_project_is_left_alone(self, tmp_path):
+        rig = self._rig(tmp_path, self._scenario())
+        _advance_origin(rig, "docs/note.md")  # no rebuild: the step runs on every pass
+        proc = self._sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert self._stops(rig) == ["docker stop -t 20 poindexter-image-gen-server"]
+        assert "game mode active: re-parked poindexter-image-gen-server" in self._log(rig)
+        lookups = [e for e in _events(rig) if e.startswith("docker ps -a ")]
+        assert lookups and all(
+            "label=com.docker.compose.project=glad-labs-website" in e for e in lookups
+        )
+
+    def test_the_project_is_resolved_once_however_many_steps_use_it(self, tmp_path):
+        """A pass that rebuilds AND re-parks needs the name twice."""
+        rig = self._rig(tmp_path, self._scenario())
+        _advance_origin(rig, "src/cofounder_agent/poindexter/brain/probe.py")
+        proc = self._sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        configs = [e for e in _events(rig) if e.startswith("start-stack config ")]
+        assert configs == ["start-stack config --format json --no-interpolate"]
+        assert self._stops(rig) == ["docker stop -t 20 poindexter-image-gen-server"]
+
+    def test_an_unresolvable_project_warns_once_and_never_fails_the_pass(self, tmp_path):
+        scenario = self._scenario()
+        scenario["others"] = []  # nothing to confuse it: this is the fallback path
+        rig = self._rig(tmp_path, scenario)
+        _advance_origin(rig, "src/cofounder_agent/poindexter/brain/probe.py")
+        proc = self._sync(rig, FAKE_COMPOSE_PROJECT="")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        log = self._log(rig)
+        assert log.count("[WARN] could not resolve the stack's compose project") == 1
+        assert self._stops(rig) == ["docker stop -t 20 poindexter-image-gen-server"], (
+            "unscoped is the old behaviour, not a reason to skip the re-park"
+        )
 
 
 class TestApplyRetry:
