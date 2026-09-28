@@ -15,10 +15,19 @@ node. In order:
 2. **Style** — `_select_style_lru` rotates `app_settings.image_styles`
    least-recently-used, so style stays decoupled from content.
 3. **Prompt** — `_build_image_gen_prompt` asks `inline_image_prompt_model` for
-   one SDXL prompt using the `image.featured_image` skill wording, then
+   one image prompt using the `image.featured_image` skill wording, then
    sanitises the reply (below).
 4. **Render** — `_render_image_gen` POSTs to `image_gen_server_url` under
-   `gpu.lock("image_gen")`, retried `image_gen_render_attempts` times.
+   `gpu.lock("image_gen")`, retried `image_gen_render_attempts` times. The
+   request carries no `steps` or `guidance_scale`. The server's per-model
+   registry sets both. For the two distilled models it has run in production,
+   `z_image_turbo` (9 steps / CFG 0) and Lightning (4 / 0), it pins them
+   whatever a caller sends. `sdxl_base` runs real guidance and keeps a caller's
+   numbers. Every other render path follows the same rule, operator surfaces
+   included. `POST /api/tasks/{id}/generate-image` sent 50 / 7.5 until
+   2026-09-28. Those were Stable Diffusion XL base values left over from before
+   the move to Z-Image-Turbo, so a render there ran all 50 steps, ~5.5x the
+   denoise time.
 5. **Upload** — R2, then `posts.featured_image_data` carries the
    reproducibility blob (model, seed, prompt, negative prompt, dimensions).
 

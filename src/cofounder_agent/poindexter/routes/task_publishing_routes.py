@@ -1271,11 +1271,15 @@ async def generate_task_image(
 
                 image_service = ImageService(site_config=site_config_dep)
 
-                # Build generation prompt from topic and content
-                generation_prompt = f"{request.topic}"
+                # Build generation prompt from topic and content. The topic
+                # falls back to the task's own, as the pexels search above
+                # does: request.topic is optional, and formatting a missing
+                # one rendered an image of the literal word "None".
+                topic = request.topic or task.get("topic") or ""
+                generation_prompt = topic
                 if request.content_summary:
                     # Extract key concepts from content summary
-                    generation_prompt = f"{request.topic}: {request.content_summary[:200]}"
+                    generation_prompt = f"{topic}: {request.content_summary[:200]}"
 
                 logger.info("Generating image: %s", generation_prompt)
 
@@ -1293,11 +1297,16 @@ async def generate_task_image(
                 # Generate image. Runs under gpu.lock("image_gen") inside
                 # ImageService (poindexter#1005), so the resident writer LLM is
                 # evicted first instead of this racing it into a CUDA OOM.
+                #
+                # Steps and guidance are left to the image-gen server's
+                # per-model registry, as on every pipeline render path. This
+                # call used to send 50 / 7.5, Stable Diffusion XL base values
+                # that outlived the move to z_image_turbo: the server zeroed
+                # the guidance but rendered all 50 steps on a model distilled
+                # to run in 9. #image-zimage-and-variety.
                 outcome = await image_service.generate_image_result(
                     prompt=generation_prompt,
                     output_path=output_path,
-                    num_inference_steps=50,  # Good quality/speed balance
-                    guidance_scale=7.5,
                     task_id=task_id,
                 )
 

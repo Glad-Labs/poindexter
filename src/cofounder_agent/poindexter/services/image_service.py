@@ -780,7 +780,10 @@ class ImageService:
             negative_prompt: Negative prompt for quality improvement
             num_inference_steps: Override inference steps. Left out of the
                 request when None, so the server's per-model registry decides.
-            guidance_scale: Override guidance scale. Left out when None, as above.
+                The distilled models ignore an override: the server renders
+                z_image_turbo at 9 steps and Lightning at 4 whatever is sent.
+            guidance_scale: Override guidance scale. Left out when None, as
+                above, and pinned to 0 for those same models.
             task_id: Sent to the server, which stamps it on its
                 ``image_ocr_gate_result`` audit row — the same field the
                 pipeline's own render paths send.

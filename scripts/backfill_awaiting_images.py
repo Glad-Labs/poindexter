@@ -69,11 +69,10 @@ async def _generate_png(prompt: str) -> bytes | None:
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
             resp = await client.post(
                 f"{image_gen_url}/generate",
-                json={
-                    "prompt": prompt,
-                    "steps": 4,
-                    "guidance_scale": 1.0,
-                },
+                # steps / guidance_scale omitted: the image-gen server's
+                # per-model registry drives them. The 4 / 1.0 this sent were
+                # Lightning-era values. #image-zimage-and-variety.
+                json={"prompt": prompt},
             )
         ct = resp.headers.get("content-type", "")
         if resp.status_code == 200 and ct.startswith("image/"):

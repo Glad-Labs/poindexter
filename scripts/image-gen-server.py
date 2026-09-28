@@ -1013,8 +1013,17 @@ class GenerateRequest(BaseModel):
     )
     width: int = Field(default=1024, ge=256, le=2048)
     height: int = Field(default=1024, ge=256, le=2048)
-    steps: int | None = Field(default=None, ge=1, le=50)
-    guidance_scale: float | None = Field(default=None, ge=0, le=20)
+    steps: int | None = Field(
+        default=None, ge=1, le=50,
+        description="Leave unset: the per-model registry decides. z_image_turbo "
+                    "and sdxl_lightning render at their registry step count "
+                    "whatever is sent.",
+    )
+    guidance_scale: float | None = Field(
+        default=None, ge=0, le=20,
+        description="Leave unset: the per-model registry decides. z_image_turbo "
+                    "and sdxl_lightning always run at 0.",
+    )
     seed: int = Field(default=-1)
     task_id: str | None = Field(
         default=None,
@@ -1270,6 +1279,18 @@ async def _render_attempts(
                         guidance_scale)
             guidance_scale = 0.0
     elif config.friendly_name == "z_image_turbo":
+        # Step-distilled: Decoupled-DMD trained it to finish in 8 function
+        # evaluations, which its scheduler spells as 9 steps (model card).
+        # That count belongs to the model, the way 4 belongs to Lightning,
+        # so pin it to the registry default instead of honoring the caller.
+        # The only callers that sent one were stale: POST
+        # /api/tasks/{id}/generate-image sent Stable Diffusion XL base's 50
+        # (~5.5x the denoise time, on every OCR re-roll too) and
+        # scripts/backfill_awaiting_images.py sent Lightning's 4.
+        if steps != config.default_steps:
+            logger.info("Clamping steps %d -> %d for z_image_turbo",
+                        steps, config.default_steps)
+            steps = config.default_steps
         # Guidance-distilled: CFG>0 reintroduces the artifacts distillation
         # removed. Clamp to 0 regardless of what the caller sent.
         if guidance_scale != 0.0:

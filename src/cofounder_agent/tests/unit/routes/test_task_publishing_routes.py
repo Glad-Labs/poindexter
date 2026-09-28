@@ -4,14 +4,17 @@ Unit tests for routes/task_publishing_routes.py.
 Tests cover:
 - POST /{task_id}/approve     — approve_task (happy path, reject via approved=false, 404, invalid status, invalid ID)
 - POST /{task_id}/publish     — publish_task (happy path, 404, non-approved status, invalid ID)
-- POST /{task_id}/generate-image — generate_task_image (invalid source, 404, pexels missing key)
+- POST /{task_id}/generate-image — generate_task_image (invalid source, 404, pexels missing key,
+                                   image_gen render arguments)
 - Utility function            — clean_generated_content
 
 Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occurs.
 """
 
+import inspect
 import json
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1364,6 +1367,89 @@ class TestGenerateTaskImage:
         assert resp.status_code == 200, (
             "get_secret() should find the pexels key even when get() returns empty"
         )
+
+    def _post_image_gen(self, monkeypatch, tmp_path, body):
+        """POST an image_gen request through a stand-in renderer.
+
+        Returns the response and the renderer call's arguments, bound to
+        ``ImageService.generate_image_result``'s real signature. The stand-in
+        is autospec'd, so a call that signature would reject fails here too,
+        and an argument passed positionally binds as surely as a keyword.
+        HOME points at ``tmp_path`` because the route writes its preview file
+        under ``~/Downloads``.
+        """
+        from poindexter.services.image_service import ImageGenOutcome, ImageService
+        from poindexter.services.site_config import SiteConfig
+        from poindexter.utils.route_utils import get_site_config_dependency
+
+        async def render(_self, prompt, output_path, *args, **kwargs):
+            Path(output_path).write_bytes(b"\x89PNG not really")
+            return ImageGenOutcome(True)
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task(topic="AI Trends"))
+        mock_db.update_task = AsyncMock(return_value=True)
+        app = _build_app(mock_db)
+        app.dependency_overrides[get_site_config_dependency] = (
+            lambda: SiteConfig(initial_config={})
+        )
+
+        with patch.object(
+            ImageService, "generate_image_result", autospec=True, side_effect=render,
+        ) as generate:
+            resp = TestClient(app).post(f"/{VALID_TASK_ID}/generate-image", json=body)
+
+        assert resp.status_code == 200, resp.text
+        assert generate.call_count == 1
+        bound = inspect.signature(ImageService.generate_image_result).bind(
+            *generate.call_args.args, **generate.call_args.kwargs,
+        )
+        bound.apply_defaults()
+        return resp, bound.arguments
+
+    def test_image_gen_leaves_steps_and_guidance_to_the_image_gen_server(
+        self, monkeypatch, tmp_path,
+    ):
+        """The route sent 50 steps / CFG 7.5, Stable Diffusion XL base values
+        that outlived the move to z_image_turbo, which is distilled to run in
+        9 steps at CFG 0. Every pipeline render path sends neither and lets
+        the image-gen server's per-model registry decide. This operator
+        surface must do the same."""
+        resp, args = self._post_image_gen(
+            monkeypatch, tmp_path, {"source": "image_gen", "topic": "AI Marketing"},
+        )
+
+        assert args["num_inference_steps"] is None
+        assert args["guidance_scale"] is None
+        assert args["task_id"] == VALID_TASK_ID
+        assert resp.json()["image_url"].startswith(str(tmp_path))
+
+    @pytest.mark.parametrize(
+        "body, prompt",
+        [
+            pytest.param(
+                {"source": "image_gen", "topic": "AI Marketing"}, "AI Marketing",
+                id="request-topic",
+            ),
+            pytest.param({"source": "image_gen"}, "AI Trends", id="task-topic"),
+            pytest.param(
+                {"source": "image_gen", "content_summary": "How AI is changing marketing"},
+                "AI Trends: How AI is changing marketing",
+                id="task-topic-with-summary",
+            ),
+        ],
+    )
+    def test_image_gen_prompt_uses_the_request_topic_else_the_tasks(
+        self, monkeypatch, tmp_path, body, prompt,
+    ):
+        """``topic`` is optional in the request body. The pexels branch falls
+        back to the task's topic. This branch formatted the missing value
+        instead and rendered an image of the word "None"."""
+        _, args = self._post_image_gen(monkeypatch, tmp_path, body)
+
+        assert args["prompt"] == prompt
 
 
 # ===========================================================================
