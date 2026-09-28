@@ -18,6 +18,7 @@ are all mocked. No real network, no real GPU, no real DB.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -25,7 +26,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from poindexter.services.jobs.media_reconciliation import MediaReconciliationJob
+from poindexter.services.jobs.media_reconciliation import (
+    MediaReconciliationJob,
+    _BucketCheck,
+)
+from poindexter.services.r2_upload_service import ObjectStoreUnavailable
 from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
@@ -117,6 +122,49 @@ def _patch_head(
         return resp
 
     return patch.object(httpx.AsyncClient, "head", _stub_head)
+
+
+def _r2_stub(
+    *,
+    sizes: dict[str, int] | None = None,
+    error: Exception | None = None,
+    upload_url: str | None = "https://r2.test/podcast/v2/re-delivered.mp3",
+) -> Any:
+    """R2UploadService stand-in (poindexter#1086).
+
+    ``object_size`` (the authenticated HEAD) answers from ``sizes``: a key in
+    it is present, any other key is "no such key" (``None``). With ``error``
+    set it raises that instead, which is how the store says it can't answer.
+    ``upload_to_r2`` records re-deliveries.
+    """
+    known = sizes or {}
+
+    async def _object_size(key: str) -> int | None:
+        if error is not None:
+            raise error
+        return known.get(key)
+
+    r2 = MagicMock()
+    r2.object_size = AsyncMock(side_effect=_object_size)
+    r2.upload_to_r2 = AsyncMock(return_value=upload_url)
+    return r2
+
+
+def _delivered_asset(post_id: str, storage_path: str) -> dict[str, Any]:
+    """A delivered (``cloudflare_r2``) podcast ``media_assets`` row."""
+    return {
+        "post_id": post_id, "type": "podcast",
+        "storage_provider": "cloudflare_r2", "storage_path": storage_path,
+        "url": f"https://r2.test/podcast/v2/{post_id}.mp3",
+    }
+
+
+def _marker_clears(pool: Any) -> list[Any]:
+    """The ``podcast_dispatched_at`` clears a re-dispatch issued."""
+    return [
+        c for c in pool.execute.await_args_list
+        if "podcast_dispatched_at" in c.args[0]
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -651,9 +699,10 @@ class TestCheckPostMediaDbRowPresence:
     via the ``post_id`` OR the ``task_id``→``pipeline_task_id`` seam), NOT an R2
     HEAD. A rendered-but-pending podcast (``storage_provider='local'``, not yet
     on R2) must NOT read as missing — that false-missing is what drove
-    reconciliation to author Gate-2-bypassing duplicates. The R2 HEAD is
+    reconciliation to author Gate-2-bypassing duplicates. The public R2 HEAD is
     retained only to (a) keep the #560 file-present row-stamp pass and (b)
-    detect a *delivered* episode whose R2 object has since vanished.
+    screen *delivered* episodes for a vanished object. Since poindexter#1086 a
+    miss in (b) is only a suspicion, and the bucket's authenticated HEAD decides.
     """
 
     @staticmethod
@@ -704,48 +753,104 @@ class TestCheckPostMediaDbRowPresence:
         assert out["podcast_missing"] is False
         assert out["podcast_delivered_gone"] is False
 
-    async def test_delivered_row_with_r2_gone_flags_delivered_gone(self):
-        """A delivered (storage_provider='cloudflare_r2') row whose R2 object
-        now 404s → not missing, but flagged for re-delivery (not re-render)."""
-        client = self._client(404)
-        row = {
-            "id": "p-gone", "title": "t", "content": "b",
+    @staticmethod
+    def _delivered(post_id: str) -> dict[tuple[str, str], dict[str, Any]]:
+        return {
+            (post_id, "podcast"): _delivered_asset(
+                post_id, "/data/podcasts/task.mp3",
+            ),
+        }
+
+    @staticmethod
+    def _row(post_id: str) -> dict[str, Any]:
+        return {
+            "id": post_id, "title": "t", "content": "b",
             "media_to_generate": ["podcast"],
         }
-        existing_assets = {
-            ("p-gone", "podcast"): {
-                "storage_provider": "cloudflare_r2",
-                "storage_path": "/data/podcasts/task.mp3",
-                "url": "https://r2.test/podcast/v2/p-gone.mp3",
-            },
-        }
+
+    async def test_delivered_row_with_r2_gone_flags_delivered_gone(self):
+        """A delivered (storage_provider='cloudflare_r2') row whose public HEAD
+        404s AND whose key the bucket confirms is gone → not missing, but
+        flagged for re-delivery (not re-render)."""
+        r2 = _r2_stub(sizes={})  # the store answers "no such key"
         out = await MediaReconciliationJob()._check_post_media(
-            client, "https://r2.test", "v2", row,
-            existing_assets=existing_assets,
+            self._client(404), "https://r2.test", "v2", self._row("p-gone"),
+            existing_assets=self._delivered("p-gone"), bucket=_BucketCheck(r2),
         )
         assert out["podcast_missing"] is False
         assert out["podcast_delivered_gone"] is True
+        assert out["podcast_unverified"] is False
+        r2.object_size.assert_awaited_once_with("podcast/v2/p-gone.mp3")
+
+    async def test_delivered_row_public_miss_but_in_bucket_is_healthy(self):
+        """poindexter#1086: the public HEAD failed (throttled) but the bucket
+        still holds the object → present, nothing to re-deliver."""
+        r2 = _r2_stub(sizes={"podcast/v2/p-ok.mp3": 4_200_000})
+        out = await MediaReconciliationJob()._check_post_media(
+            self._client(429), "https://r2.test", "v2", self._row("p-ok"),
+            existing_assets=self._delivered("p-ok"), bucket=_BucketCheck(r2),
+        )
+        assert out["podcast_delivered_gone"] is False
+        assert out["podcast_unverified"] is False
+        assert out["podcast_exists"] is True
+
+    async def test_delivered_row_store_unavailable_is_unverified_not_gone(self):
+        """The store can't answer → unknown, which is never "gone"."""
+        r2 = _r2_stub(error=ObjectStoreUnavailable("HEAD failed: 503"))
+        out = await MediaReconciliationJob()._check_post_media(
+            self._client(404), "https://r2.test", "v2", self._row("p-x"),
+            existing_assets=self._delivered("p-x"), bucket=_BucketCheck(r2),
+        )
+        assert out["podcast_delivered_gone"] is False
+        assert out["podcast_unverified"] is True
+        assert out["podcast_missing"] is False
+
+    async def test_delivered_row_without_bucket_is_unverified_not_gone(self):
+        """No bucket to ask → a public miss alone can't call an episode gone."""
+        out = await MediaReconciliationJob()._check_post_media(
+            self._client(404), "https://r2.test", "v2", self._row("p-x"),
+            existing_assets=self._delivered("p-x"),
+        )
+        assert out["podcast_delivered_gone"] is False
+        assert out["podcast_unverified"] is True
 
     async def test_delivered_row_with_r2_present_is_healthy(self):
-        """Delivered row + R2 object present (HEAD 200) → no action at all."""
-        client = self._client(200)
-        row = {
-            "id": "p-ok", "title": "t", "content": "b",
-            "media_to_generate": ["podcast"],
-        }
-        existing_assets = {
-            ("p-ok", "podcast"): {
-                "storage_provider": "cloudflare_r2",
-                "storage_path": "/data/podcasts/task.mp3",
-                "url": "https://r2.test/podcast/v2/p-ok.mp3",
-            },
-        }
+        """Delivered row + R2 object present (public HEAD 200) → no action at
+        all, and the bucket is never asked: the public HEAD stays the cheap
+        first filter, so a clean cycle costs no authenticated HEADs."""
+        r2 = _r2_stub(sizes={})
         out = await MediaReconciliationJob()._check_post_media(
-            client, "https://r2.test", "v2", row,
-            existing_assets=existing_assets,
+            self._client(200), "https://r2.test", "v2", self._row("p-ok"),
+            existing_assets=self._delivered("p-ok"), bucket=_BucketCheck(r2),
         )
         assert out["podcast_missing"] is False
         assert out["podcast_delivered_gone"] is False
+        assert out["podcast_unverified"] is False
+        r2.object_size.assert_not_awaited()
+
+    async def test_only_delivered_rows_ask_the_bucket(self):
+        """A public miss on a no-row post or a local-pending row never costs an
+        authenticated HEAD: neither verdict is "a delivered episode is gone".
+        The no-row post stays missing on the public HEAD alone."""
+        r2 = _r2_stub(sizes={})
+        bucket = _BucketCheck(r2)
+        job = MediaReconciliationJob()
+        no_row = await job._check_post_media(
+            self._client(404), "https://r2.test", "v2", self._row("p-norow"),
+            existing_assets={}, bucket=bucket,
+        )
+        local = await job._check_post_media(
+            self._client(404), "https://r2.test", "v2", self._row("p-local"),
+            existing_assets={("p-local", "podcast"): {
+                "storage_provider": "local",
+                "storage_path": "/data/podcasts/task.mp3", "url": None,
+            }},
+            bucket=bucket,
+        )
+        assert no_row["podcast_missing"] is True
+        assert local["podcast_missing"] is False
+        assert not no_row["podcast_unverified"] and not local["podcast_unverified"]
+        r2.object_size.assert_not_awaited()
 
 
 @pytest.mark.unit
@@ -1271,9 +1376,10 @@ class TestPodcastRedeliver:
         assert ok is False
 
     async def test_run_redelivers_delivered_gone_episode(self, tmp_path):
-        """Delivered (cloudflare_r2) row + R2 HEAD 404 → run() re-uploads the
-        durable local render (never authors) and counts redelivered_podcast.
-        The post is NOT 'missing' (the row exists)."""
+        """Delivered (cloudflare_r2) row + public HEAD 404 + the bucket confirms
+        the key is gone → run() re-uploads the durable local render (never
+        authors) and counts redelivered_podcast. The post is NOT 'missing'
+        (the row exists)."""
         render = tmp_path / "task-xyz.mp3"
         render.write_bytes(b"ID3 fake-mp3")
         existing = [{
@@ -1288,6 +1394,7 @@ class TestPodcastRedeliver:
         r2 = MagicMock()
         upload = AsyncMock(return_value="https://r2.test/podcast/v2/p-gone.mp3")
         r2.upload_to_r2 = upload
+        r2.object_size = AsyncMock(return_value=None)  # authenticated HEAD: gone
         gen = AsyncMock()
         sc = MagicMock()
         sc.get.side_effect = lambda k, d="": d
@@ -1305,7 +1412,9 @@ class TestPodcastRedeliver:
                 pool, config={"_site_config": sc},
             )
         assert result.metrics["missing_podcast"] == 0  # delivered row → not missing
+        assert result.metrics["r2_lost_podcast"] == 1
         assert result.metrics["redelivered_podcast"] == 1
+        r2.object_size.assert_awaited_once_with("podcast/v2/p-gone.mp3")
         upload.assert_awaited_once()
         assert upload.await_args.args[1] == "podcast/v2/p-gone.mp3"
         gen.assert_not_awaited()
@@ -1314,8 +1423,8 @@ class TestPodcastRedeliver:
     async def test_run_redeliver_falls_back_to_redispatch_when_local_gone(
         self, tmp_path,
     ):
-        """Delivered row + R2 404 + local render also gone → fall back to a
-        gated re-dispatch (still never authors)."""
+        """Delivered row + R2 confirmed gone + local render also gone → fall
+        back to a gated re-dispatch (still never authors)."""
         existing = [{
             "post_id": "p-gone", "type": "podcast",
             "storage_provider": "cloudflare_r2",
@@ -1329,6 +1438,7 @@ class TestPodcastRedeliver:
         )
         r2 = MagicMock()
         r2.upload_to_r2 = AsyncMock(return_value=None)
+        r2.object_size = AsyncMock(return_value=None)  # authenticated HEAD: gone
         gen = AsyncMock()
         sc = MagicMock()
         sc.get.side_effect = lambda k, d="": d
@@ -1397,6 +1507,8 @@ class TestNeverAuthorsPodcast:
         r2.upload_podcast_episode = AsyncMock(
             side_effect=AssertionError("must not use the regen-upload path"),
         )
+        # Only p-gone is delivered, so only it is re-asked of the bucket: gone.
+        r2.object_size = AsyncMock(return_value=None)
         sc = MagicMock()
         sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
@@ -1418,6 +1530,182 @@ class TestNeverAuthorsPodcast:
         assert result.metrics["redelivered_podcast"] == 1   # p-gone
         gen.assert_not_awaited()
         r2.upload_podcast_episode.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDeliveredPodcastLossNeedsTheBucket:
+    """poindexter#1086: a failed public HEAD never re-delivers on its own.
+
+    The public ``*.r2.dev`` URL is rate-limited and the job HEADs every post at
+    once. From 2026-09-10 to 09-28, 39 throttled cycles each read 18-64
+    delivered episodes as "R2-lost" while the objects were still in the bucket,
+    and each re-uploaded up to three of the newest (89 uploads of 19 episodes). A
+    delivered episode counts as lost only when the authenticated HEAD
+    (``R2UploadService.object_size``) says its key is gone.
+
+    Every case seeds a local render and a re-dispatchable task, so a wrong
+    re-delivery (an upload) or a wrong re-dispatch (a marker clear) would show.
+    """
+
+    @staticmethod
+    async def _run(
+        tmp_path: Any, post_ids: list[str], r2: Any, *,
+        head_status: int = 404, config: dict[str, Any] | None = None,
+    ) -> tuple[Any, Any, Any]:
+        existing = []
+        for pid in post_ids:
+            render = tmp_path / f"{pid}.mp3"
+            render.write_bytes(b"ID3 fake-mp3")
+            existing.append(_delivered_asset(pid, str(render)))
+        pool, _ = _make_pool(
+            [_post(id_=pid, media_to_generate=["podcast"]) for pid in post_ids],
+            existing_assets=existing,
+            task_row={"task_id": "t", "podcast_redispatch_count": 0},
+        )
+        if config is None:
+            sc = MagicMock()
+            sc.get.side_effect = lambda k, d="": d
+            config = {"_site_config": sc}
+        with _patch_head(podcast_status=head_status, video_status=200), \
+             patch(
+                 "poindexter.services.r2_upload_service.R2UploadService",
+                 return_value=r2,
+             ), \
+             patch(
+                 "poindexter.services.jobs.media_reconciliation.emit_finding"
+             ) as emit_mock:
+            result = await MediaReconciliationJob().run(pool, config=config)
+        return result, pool, emit_mock
+
+    async def test_public_miss_with_object_in_bucket_redelivers_nothing(
+        self, tmp_path,
+    ):
+        """The prod burst: every public HEAD throttled (429) while all five
+        objects sit in the bucket. Nothing is uploaded or re-dispatched,
+        nothing counts as lost, and no drift finding fires."""
+        ids = [f"p{i}" for i in range(5)]
+        r2 = _r2_stub(sizes={f"podcast/v2/{pid}.mp3": 4_200_000 for pid in ids})
+        result, pool, emit_mock = await self._run(
+            tmp_path, ids, r2, head_status=429,
+        )
+        asked = sorted(c.args[0] for c in r2.object_size.await_args_list)
+        assert asked == sorted(f"podcast/v2/{pid}.mp3" for pid in ids)
+        r2.upload_to_r2.assert_not_awaited()
+        assert _marker_clears(pool) == []
+        assert result.metrics["r2_lost_podcast"] == 0
+        assert result.metrics["unverified_podcast"] == 0
+        assert "in sync" in result.detail
+        emit_mock.assert_not_called()
+
+    async def test_confirmed_absence_still_redelivers(self, tmp_path):
+        """All three public HEADs fail, but the bucket says only one key is
+        really gone (``object_size`` → None). Exactly that episode is
+        re-uploaded from its local render and counted as lost."""
+        r2 = _r2_stub(sizes={
+            "podcast/v2/p-kept-1.mp3": 4_200_000,
+            "podcast/v2/p-kept-2.mp3": 3_900_000,
+        })
+        result, _, emit_mock = await self._run(
+            tmp_path, ["p-kept-1", "p-lost", "p-kept-2"], r2,
+        )
+        r2.upload_to_r2.assert_awaited_once()
+        assert r2.upload_to_r2.await_args.args[1] == "podcast/v2/p-lost.mp3"
+        assert result.metrics["r2_lost_podcast"] == 1
+        assert result.metrics["redelivered_podcast"] == 1
+        assert result.metrics["unverified_podcast"] == 0
+        emit_mock.assert_called_once()
+        assert "1 podcast R2-lost" in emit_mock.call_args.kwargs["title"]
+
+    async def test_object_store_unavailable_redelivers_nothing_and_is_not_lost(
+        self, tmp_path,
+    ):
+        """The store can't answer (``ObjectStoreUnavailable``). The episode is
+        unknown, not lost: nothing is re-uploaded or re-dispatched, the R2-lost
+        total stays 0, and it is reported unverified for the next cycle."""
+        r2 = _r2_stub(
+            error=ObjectStoreUnavailable("HEAD podcast/v2/p-gone.mp3 failed: 503"),
+        )
+        result, pool, emit_mock = await self._run(tmp_path, ["p-gone"], r2)
+        r2.upload_to_r2.assert_not_awaited()
+        assert _marker_clears(pool) == []
+        assert result.metrics["r2_lost_podcast"] == 0
+        assert result.metrics["unverified_podcast"] == 1
+        assert "1 delivered podcast(s) unverified" in result.detail
+        emit_mock.assert_not_called()
+
+    async def test_first_store_failure_stops_asking_for_the_cycle(self, tmp_path):
+        """Every other HEAD would fail the same way, so after the first failure
+        the rest are unverified without another call. An unreachable store
+        costs one timeout, not one per episode."""
+        r2 = _r2_stub(error=ObjectStoreUnavailable("object store not configured"))
+        result, _, _ = await self._run(tmp_path, ["p1", "p2", "p3"], r2)
+        assert r2.object_size.await_count == 1
+        assert result.metrics["unverified_podcast"] == 3
+        assert result.metrics["r2_lost_podcast"] == 0
+
+    async def test_without_site_config_no_episode_is_declared_gone(self, tmp_path):
+        """No site_config means no object-store client, so nothing can be
+        confirmed. Before the fix this path fell through to a gated re-dispatch
+        (a re-render) of every public-HEAD miss, because re-delivery had no
+        client to upload with."""
+        r2 = _r2_stub(sizes={})
+        result, pool, emit_mock = await self._run(
+            tmp_path, ["p-gone"], r2, config={},
+        )
+        r2.object_size.assert_not_awaited()
+        assert _marker_clears(pool) == []
+        assert result.metrics["unverified_podcast"] == 1
+        assert result.metrics["r2_lost_podcast"] == 0
+        emit_mock.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestBucketCheck:
+    """``_BucketCheck`` — the per-cycle authenticated existence check."""
+
+    async def test_answers_are_tri_state(self):
+        bucket = _BucketCheck(_r2_stub(sizes={"podcast/v2/a.mp3": 10}))
+        assert await bucket.has("podcast/v2/a.mp3") is True
+        assert await bucket.has("podcast/v2/b.mp3") is False
+        assert (bucket.asked, bucket.found, bucket.error) == (2, 1, None)
+
+    async def test_any_error_is_unknown_and_ends_the_asking(self):
+        """Not only ``ObjectStoreUnavailable``: an unexpected error is still
+        "can't say", never "gone"."""
+        r2 = _r2_stub(error=RuntimeError("boom"))
+        bucket = _BucketCheck(r2)
+        assert await bucket.has("podcast/v2/a.mp3") is None
+        assert await bucket.has("podcast/v2/b.mp3") is None
+        assert r2.object_size.await_count == 1
+        assert bucket.error is not None and "RuntimeError" in bucket.error
+        assert bucket.asked == 2
+
+    async def test_no_client_never_asks(self):
+        bucket = _BucketCheck(None)
+        assert await bucket.has("podcast/v2/a.mp3") is None
+        assert bucket.error
+
+    async def test_heads_run_one_at_a_time(self):
+        """Concurrent callers (the job's gather) are serialized, so the first
+        failure is seen before the next HEAD is sent."""
+        active = peak = 0
+
+        async def _object_size(key: str) -> int:  # noqa: ARG001
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0)
+            active -= 1
+            return 1
+
+        r2 = MagicMock()
+        r2.object_size = AsyncMock(side_effect=_object_size)
+        bucket = _BucketCheck(r2)
+        answers = await asyncio.gather(*(bucket.has(f"k{i}") for i in range(5)))
+        assert answers == [True] * 5
+        assert peak == 1
 
 
 @pytest.mark.unit

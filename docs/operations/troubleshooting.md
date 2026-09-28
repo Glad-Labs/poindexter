@@ -657,6 +657,23 @@ FROM media_assets GROUP BY type;
 
 ---
 
+## `media_reconciliation` says delivered podcasts are "unverified", or its public HEAD "failed for N" (Glad-Labs/poindexter#1086)
+
+**Two log lines, only one of them a fault.**
+
+- `public HEAD failed for 52 delivered podcast(s); the bucket has 52, 0 gone, 0 unverified` (INFO) is **routine**. The public `*.r2.dev` URL is rate-limited and the job HEADs every scanned post at once, so a throttled burst misses dozens of episodes. The bucket's authenticated HEAD overruled every miss, and nothing was re-uploaded. Before this was fixed, the same burst logged `drift detected — … 44 podcast R2-lost` and re-uploaded up to three of the newest episodes each time, 89 uploads of 19 episodes from 2026-09-10 to 09-28.
+- `object store couldn't confirm podcast/v2/<post_id>.mp3 (...) — no more authenticated HEADs this cycle` (WARNING), with `unverified_podcast > 0` in the job's metrics, **is the fault**. The authenticated HEAD (`R2UploadService.object_size`) couldn't answer, so the delivered episodes whose public HEAD missed are unknown this cycle.
+
+**What "unverified" costs.** Nothing is re-uploaded on a guess, and nothing is counted as lost. But an episode that really is gone isn't restored either until the store answers again. Each cycle asks again, starting with one HEAD.
+
+**Fix.** The warning carries the reason:
+
+- `object store not configured …`: one of `storage_endpoint`, `storage_bucket`, `storage_access_key`, or `storage_secret_key` (secret) is empty, or `boto3` is missing from the worker image.
+- `HEAD … failed: …` with a 403: the access key lost read access to the bucket.
+- Any other `HEAD … failed`: the S3 endpoint itself (network, 5xx). Check it before assuming data loss.
+
+---
+
 ## Voice agent (or any non-interactive Claude session) reports "Permission denied" for an MCP tool the allowlist seems to cover
 
 **Symptom.** The voice-agent-livekit container, a `/schedule` cron Claude Code session, or anything running with `dontAsk` permissions denies a tool call like `mcp__claude_ai_Poindexter__check_health` even though `~/.claude/settings.json` has `"mcp__*"` or `"mcp__claude_ai_*"` in `permissions.allow`. Surfaces to the user as "Sorry, I had trouble talking to Claude Code" or a flat "Permission denied".

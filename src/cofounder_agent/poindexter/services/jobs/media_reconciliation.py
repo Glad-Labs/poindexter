@@ -51,7 +51,33 @@ produce the same symptom (a media-wanting post with no asset):
    and per task. The watchdog NEVER authors media directly (#1904); a
    *delivered* episode whose R2 object vanished is re-uploaded from the
    durable local render (no re-render), falling back to re-dispatch only
-   if that local file is also gone.
+   if that local file is also gone. "Vanished" is the bucket's answer to
+   an authenticated HEAD, never a failed public HEAD (next section).
+
+## Delivered-episode integrity (poindexter#1086)
+
+A delivered (``cloudflare_r2``) episode counts as lost only when
+``R2UploadService.object_size``, an authenticated S3 HeadObject, says its
+key is gone. The public HEAD is a first filter and nothing more. The public
+``*.r2.dev`` URL is rate-limited, and this job HEADs every scanned post at
+once. From 2026-09-10 to 09-28, 39 throttled cycles each read 18-64
+delivered episodes as "R2-lost" while every object was still in the bucket.
+Each of those cycles re-uploaded up to three of the newest (the per-cycle
+cap), for 89 uploads of 19 episodes in all.
+
+A public miss is re-asked of the bucket, one HEAD at a time:
+
+- a size: present after all, so no action;
+- ``None``: gone, so re-deliver;
+- ``ObjectStoreUnavailable``, or any other error: unverified. The episode
+  is skipped until the next cycle. It is never re-delivered and never
+  counted as lost.
+
+The first error stops the asking for the rest of the cycle, since every
+other HEAD would fail the same way (the rule ``video_r2_mirror`` uses). An
+unreachable store then costs one timeout instead of one per episode. The
+public HEAD alone still drives the row-stamp pass, where a false negative
+only delays a stamp.
 
 ## Bounded cap-reset self-heal (2026-07-03)
 
@@ -109,7 +135,10 @@ gated feed silently excluded them (the approval gate covering every medium).
   is detected, in addition to re-dispatching.
 - ``config.r2_public_base`` (default: resolved from the
   ``storage_public_url`` app_setting) — the base URL we HEAD against to
-  verify R2 has the file. None when neither config nor app_setting is set.
+  verify R2 has the file. That answer drives the row-stamp pass. For a
+  delivered episode it is only the first filter, and a miss is confirmed
+  against the bucket before anything is re-uploaded. None when neither
+  config nor app_setting is set.
 - ``config.podcast_cdn_version`` (default ``v2``) — path prefix on R2.
   Mirrors the podcast delivery R2 key (``podcast/{ver}/{post_id}.mp3``).
 """
@@ -130,7 +159,9 @@ from poindexter.utils.findings import emit_finding
 
 if TYPE_CHECKING:  # annotation-only — the runtime import stays lazy, inside
     # _probe_infra_health, so importing this job never pulls the probe stack.
+    # R2UploadService likewise, inside _object_store / _redeliver_podcast.
     from poindexter.services.media_infra_health import MediaInfraHealth
+    from poindexter.services.r2_upload_service import R2UploadService
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +329,57 @@ async def _write_last_drift_fingerprint(pool: Any, fingerprint: str) -> None:
         logger.warning(
             "media_reconciliation: drift-fingerprint write failed: %s", describe_exception(e),
         )
+
+
+class _BucketCheck:
+    """Asks the bucket whether an object exists, for one job cycle (poindexter#1086).
+
+    Wraps :meth:`R2UploadService.object_size`, an authenticated S3 HeadObject.
+    It exists because the public ``*.r2.dev`` URL is rate-limited: this job
+    HEADs every scanned post at once, and on a throttled cycle each miss read
+    as a lost episode. :meth:`has` is tri-state like ``object_size``. ``True``
+    means the store returned a size, ``False`` means it answered "no such
+    key", and ``None`` means it couldn't be asked.
+
+    It sends one HEAD at a time, and the first failure ends the asking for the
+    rest of the cycle, because every other HEAD would fail the same way. That
+    is the rule ``video_r2_mirror`` uses, and it means an unreachable store
+    costs one timeout instead of one per episode. Any exception counts, not
+    only ``ObjectStoreUnavailable``, because "couldn't ask" must never read as
+    "gone".
+    """
+
+    def __init__(self, r2: R2UploadService | None) -> None:
+        self._r2 = r2
+        self._lock = asyncio.Lock()
+        #: Why the store can't be asked; once set, :meth:`has` stops asking.
+        self.error: str | None = (
+            None if r2 is not None else "no object-store client (no site_config)"
+        )
+        self.asked = 0
+        self.found = 0
+
+    async def has(self, key: str) -> bool | None:
+        """Is ``key`` in the bucket? True / False, or None when it can't say."""
+        self.asked += 1
+        async with self._lock:
+            if self._r2 is None or self.error is not None:
+                return None
+            try:
+                size = await self._r2.object_size(key)
+            except Exception as exc:  # noqa: BLE001 — ObjectStoreUnavailable or not, it can't say
+                self.error = describe_exception(exc)
+                logger.warning(
+                    "media_reconciliation: object store couldn't confirm %s (%s) "
+                    "— no more authenticated HEADs this cycle; delivered podcasts "
+                    "whose public HEAD failed stay unverified, not re-delivered",
+                    key, self.error,
+                )
+                return None
+        if size is None:
+            return False
+        self.found += 1
+        return True
 
 
 class MediaReconciliationJob:
@@ -486,13 +568,16 @@ class MediaReconciliationJob:
         # HEAD-check R2 for every row in parallel. Local files matter less
         # than R2 (operators read from R2); a file present locally but
         # absent on R2 is an upload-failure case the regen path also
-        # handles.
+        # handles. The public HEAD can't be trusted to call a delivered
+        # episode gone, so its misses there are re-asked of the bucket
+        # through one object-store client per cycle (poindexter#1086).
+        bucket = _BucketCheck(self._object_store())
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             results = await asyncio.gather(
                 *[
                     self._check_post_media(
                         client, r2_base, cdn_ver, dict(row), existing_pairs,
-                        existing_assets,
+                        existing_assets, bucket=bucket,
                     )
                     for row in rows
                 ],
@@ -502,10 +587,21 @@ class MediaReconciliationJob:
         missing_podcast = [r for r in results if r["podcast_missing"]]
         missing_video = [r for r in results if r["video_missing"]]
         # Delivered-then-lost: an episode that WAS on R2 (storage_provider=
-        # cloudflare_r2) whose object has since vanished. Not "missing" (the row
-        # exists) — re-delivered from the durable local render in Pass 2, never
-        # re-rendered.
+        # cloudflare_r2) whose object the bucket confirms is gone. Not "missing"
+        # (the row exists) — re-delivered from the durable local render in
+        # Pass 2, never re-rendered.
         redeliver_podcast = [r for r in results if r.get("podcast_delivered_gone")]
+        # Delivered, public HEAD failed, and the bucket couldn't be asked: not
+        # known to be lost, so neither re-delivered nor counted as R2-lost.
+        # The next cycle asks again.
+        unverified_podcast = [r for r in results if r.get("podcast_unverified")]
+        if bucket.asked:
+            logger.info(
+                "media_reconciliation: public HEAD failed for %d delivered "
+                "podcast(s); the bucket has %d, %d gone, %d unverified",
+                bucket.asked, bucket.found, len(redeliver_podcast),
+                len(unverified_podcast),
+            )
 
         # ---- Pass 1: row-stamp (unbounded, cheap, no GPU) ---------------
         # The #560 gap: file IS on R2 but the media_assets row is absent.
@@ -551,6 +647,11 @@ class MediaReconciliationJob:
                 detail=(
                     f"in sync — {len(rows)} posts scanned, no drift; "
                     f"stamped {stamped_total} missing rows"
+                    + (
+                        f"; {len(unverified_podcast)} delivered podcast(s) "
+                        "unverified (object store unavailable)"
+                        if unverified_podcast else ""
+                    )
                 ),
                 changes_made=stamped_total,
                 metrics={
@@ -558,6 +659,8 @@ class MediaReconciliationJob:
                     "missing_podcast": 0,
                     "missing_video": 0,
                     "stamped_podcast": stamped_podcast,
+                    "r2_lost_podcast": 0,
+                    "unverified_podcast": len(unverified_podcast),
                 },
             )
 
@@ -685,7 +788,8 @@ class MediaReconciliationJob:
                     f"cleared, {podcast_unresolved} unresolved (no task / capped)\n"
                     f"- video re-dispatch: {redispatched_video}/{redispatch_attempts} "
                     f"cleared, {redispatch_unresolved} unresolved (no task / capped)\n"
-                    f"- podcast re-deliver (R2 object lost): {redelivered_podcast}/"
+                    f"- podcast re-deliver (R2 object lost, confirmed by an "
+                    f"authenticated HEAD): {redelivered_podcast}/"
                     f"{len(redeliver_podcast)} re-uploaded from local render\n\n"
                     f"## Likely causes\n"
                     f"1. Worker container UID/HOME mismatch wrote files to "
@@ -731,11 +835,26 @@ class MediaReconciliationJob:
                 "stamped_podcast": stamped_podcast,
                 "redispatched_podcast": redispatched_podcast,
                 "podcast_unresolved": podcast_unresolved,
+                "r2_lost_podcast": len(redeliver_podcast),
+                "unverified_podcast": len(unverified_podcast),
                 "redelivered_podcast": redelivered_podcast,
                 "redispatched_video": redispatched_video,
                 "redispatch_unresolved": redispatch_unresolved,
             },
         )
+
+    def _object_store(self) -> R2UploadService | None:
+        """This cycle's object-store client, built from ``self._site_config``.
+
+        None when the job has no site_config. Every delivered episode whose
+        public HEAD fails then stays unverified rather than being called gone.
+        """
+        sc = getattr(self, "_site_config", None)
+        if sc is None:
+            return None
+        from poindexter.services.r2_upload_service import R2UploadService
+
+        return R2UploadService(site_config=sc)
 
     async def _check_post_media(
         self,
@@ -745,6 +864,8 @@ class MediaReconciliationJob:
         row: dict[str, Any],
         existing_pairs: set[tuple[str, str]] | None = None,
         existing_assets: dict[tuple[str, str], dict[str, Any]] | None = None,
+        *,
+        bucket: _BucketCheck | None = None,
     ) -> dict[str, Any]:
         """Derive podcast + video presence from the DB row, not an R2 HEAD.
 
@@ -754,20 +875,40 @@ class MediaReconciliationJob:
         row AND no R2 file — a file-present-row-absent post is healed by the
         cheap #560 stamp pass, and a rendered-but-pending podcast
         (``storage_provider='local'``, not yet on R2) is correctly waiting in the
-        Gate-2 queue, not missing. The R2 HEAD is retained only to drive that
-        stamp pass and to flag a *delivered* (cloudflare_r2) episode whose object
-        has since vanished (``podcast_delivered_gone`` → re-deliver, not
-        re-render). Video (#1460) is produced task-keyed by Stage-2 and
-        back-stamped at distribution — presence is its ``existing_pairs`` row.
+        Gate-2 queue, not missing. Video (#1460) is produced task-keyed by
+        Stage-2 and back-stamped at distribution — presence is its
+        ``existing_pairs`` row.
+
+        The public R2 HEAD drives that stamp pass. For a *delivered*
+        (``cloudflare_r2``) episode it is only a first filter on whether the
+        object has vanished (poindexter#1086). The public URL is rate-limited and
+        this method runs for every scanned post at once, so a miss is re-asked of
+        the bucket through ``bucket`` (an authenticated ``object_size``). There
+        are three outcomes:
+
+        - a size: the episode is present after all.
+        - ``None``: ``podcast_delivered_gone``, which means re-deliver, not
+          re-render.
+        - the store can't answer: ``podcast_unverified``, which is neither gone
+          nor healthy and is left for the next cycle.
+
+        Without a ``bucket`` nothing can be confirmed, so no episode is declared
+        gone. The no-row ``podcast_missing`` verdict still rests on the public
+        HEAD alone. A delivered podcast always has a row, so a no-row post whose
+        file is in the bucket is a pre-#560 legacy case the stamp pass heals on
+        its first good HEAD. In prod, ``missing_podcast`` held at 9-10 through
+        every throttled cycle in 2026-09.
 
         Returns the row dict augmented with ``podcast_missing`` /
-        ``podcast_delivered_gone`` / ``video_missing`` (plus the podcast
-        file-present + resolved-asset fields the Pass-1/Pass-2 paths consume).
+        ``podcast_delivered_gone`` / ``podcast_unverified`` / ``video_missing``
+        (plus the podcast file-present + resolved-asset fields the Pass-1/Pass-2
+        paths consume).
         """
         existing_pairs = existing_pairs or set()
         existing_assets = existing_assets or {}
         post_id = row["id"]
-        podcast_url = f"{r2_base}/podcast/{cdn_ver}/{post_id}.mp3"
+        podcast_key = f"podcast/{cdn_ver}/{post_id}.mp3"
+        podcast_url = f"{r2_base}/{podcast_key}"
 
         async def _exists(url: str) -> bool:
             try:
@@ -799,6 +940,14 @@ class MediaReconciliationJob:
             podcast_asset
             and (podcast_asset.get("storage_provider") or "") == "cloudflare_r2"
         )
+        # A delivered episode's failed public HEAD is a suspicion, not a verdict
+        # (poindexter#1086): throttled cycles "lost" 18-64 episodes that were
+        # still in the bucket. The bucket decides, and "couldn't ask" is unknown.
+        podcast_unverified = False
+        if podcast_delivered and not podcast_exists:
+            in_bucket = await bucket.has(podcast_key) if bucket is not None else None
+            podcast_exists = in_bucket is True
+            podcast_unverified = in_bucket is None
         # Presence is the DB row, not the R2 HEAD (#1904). "Genuinely missing"
         # = no row AND no R2 file: a file-present-row-absent post is healed by
         # the cheap #560 stamp pass below (never a re-dispatch), and a
@@ -807,12 +956,13 @@ class MediaReconciliationJob:
         row["podcast_missing"] = (
             wants_podcast and not has_podcast_row and not podcast_exists
         )
-        # A delivered (R2) episode whose object has since vanished → re-deliver
-        # the durable local render (no re-render). The HEAD is retained only for
-        # this integrity check + the stamp pass.
+        # A delivered (R2) episode the bucket confirms is gone → re-deliver the
+        # durable local render (no re-render). An unverified one waits.
         row["podcast_delivered_gone"] = (
             wants_podcast and podcast_delivered and not podcast_exists
+            and not podcast_unverified
         )
+        row["podcast_unverified"] = podcast_unverified
         row["podcast_exists"] = wants_podcast and podcast_exists
         row["podcast_url"] = podcast_url if wants_podcast else ""
         # Stash the resolved podcast asset (storage_path/url/provider) so the

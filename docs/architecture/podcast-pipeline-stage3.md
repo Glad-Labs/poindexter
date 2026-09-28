@@ -74,6 +74,9 @@ FEED — GET /podcast-feed.xml (Next.js) → R2 podcast/feed.xml
 SAFETY NET — media_reconciliation
   drift detected (published podcast-wanting post, no asset) → re-dispatch podcast_pipeline
   (clear podcast_dispatched_at, capped attempts); keep drift alert. No inline regen.
+  delivered episode whose object the BUCKET says is gone (authenticated HEAD, not the
+  public URL — see "Delivered-episode integrity" in §4) → re-upload the durable local
+  render; a store that can't answer → unverified, asked again next cycle.
 ```
 
 > **Interim self-healing seed (shipped 2026-06-14, ahead of §11).** Until the
@@ -245,6 +248,62 @@ what guarantees convergence.
 > This is why the public feed can still lag R2 right after a reconcile. Not
 > changed here — shortening it is a deploy-side cost/freshness call, not a
 > pipeline fix.
+
+### Delivered-episode integrity: ask the bucket (2026-09-28, poindexter#1086)
+
+`media_reconciliation` re-uploads a delivered (`cloudflare_r2`) episode whose
+object has vanished. It uses the durable local render, so there is no
+re-render and no Gate-2 re-entry. Until this fix it decided "vanished" from an
+unauthenticated HEAD on the public URL
+(`{storage_public_url}/podcast/v2/{post_id}.mp3`), fired for every scanned
+post at once. The public `*.r2.dev` URL is rate-limited, so a throttled burst
+read as data loss.
+
+Measured in the worker's Loki logs from 2026-09-10 to 09-28 (1,718 cycles):
+
+- **39 cycles each read 18–64 delivered episodes as "R2-lost".** At the
+  worst, on 09-28, that was 64 of the 65 delivered episodes. The objects were
+  in the bucket: the next clean cycle read them all present again, and the
+  only uploads in between were the throttled cycles' own re-uploads.
+- Each of those cycles re-uploaded up to three of the newest episodes (the
+  per-cycle cap). That came to **89 uploads of 19 episodes**, two of them 17
+  times each, and it was still happening on the day of the fix. None caused a
+  re-render: when a local render was missing, the re-dispatch fallback was
+  stopped by its caps.
+- `missing_podcast` (no row at all) held at 9–10 through every one of those
+  cycles. Only the delivered verdict was hit, never the no-row one.
+
+The decisions:
+
+- **A public miss is only a suspicion, and the bucket decides.** A delivered
+  episode whose public HEAD fails is re-asked with
+  `R2UploadService.object_size`, the authenticated S3 `HeadObject` the video
+  mirror uses. There are three answers:
+  - a size means present, so nothing happens;
+  - `None` means gone, so the episode is re-delivered;
+  - `ObjectStoreUnavailable`, or any other error, means unverified. The
+    episode is skipped this cycle, never re-delivered, and never counted as
+    R2-lost.
+
+  An episode counts as lost only when the store itself answers "no such key".
+
+- **The public HEAD stays as the first filter.** A clean cycle sends no
+  authenticated HEADs, since only misses are re-asked. The public HEAD alone
+  still drives the #560 row-stamp pass, where a false negative only delays a
+  stamp.
+- **One HEAD at a time, and the first error ends the asking for that cycle.**
+  Every remaining HEAD would fail the same way, which is the video mirror's
+  rule too. A store that can't be reached costs one timeout, not one per
+  episode.
+- **Visible, not silent.** Whenever the public HEAD missed a delivered episode,
+  the job logs one line per cycle, of the form
+  `public HEAD failed for N delivered podcast(s); the bucket has N, …`.
+  `r2_lost_podcast` and `unverified_podcast` are now part of the job's metrics.
+
+A read-only dry run of the fixed decision path ran against prod on 2026-09-28:
+real rows, real HEADs, no writes. It scanned 121 posts, 65 of them with a
+delivered episode. An authenticated HEAD on each of the 65 found every one
+present, in 7.5 s one at a time.
 
 ## 5. Vocabulary
 
@@ -525,8 +584,10 @@ The decisions:
 **Still open:** `media_reconciliation` treats video presence as "has a `video`
 row" and never HEADs video objects. Nothing checks whether a delivered video's
 object is still there, which the podcast lane does with
-`podcast_delivered_gone`. The stamped URL keeps the object in
-`media_orphan_sweep`'s keep-set, so that sweep won't delete it.
+`podcast_delivered_gone`. A video twin should decide "gone" the way the podcast
+check does since poindexter#1086: an authenticated `object_size`, never the
+public URL (§4, "Delivered-episode integrity"). The stamped URL keeps the
+object in `media_orphan_sweep`'s keep-set, so that sweep won't delete it.
 
 ## 12. Podcast one-per-post parity (shipped 2026-07-17 — #884)
 
