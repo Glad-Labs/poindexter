@@ -57,6 +57,7 @@ async def main() -> int:
 
     # Build a minimal SiteConfig from the live DB so configure_langfuse_callback
     # can read the four rows it needs.
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry
     from poindexter.services.site_config import SiteConfig
 
     site_config = SiteConfig(pool=pool)
@@ -187,6 +188,8 @@ async def main() -> int:
         print(f"[smoke]   {k}: {v}")
 
     print("[smoke] PASS - Langfuse received the span")
+    # Stamp the settings this run read (read telemetry, poindexter#756).
+    await flush_read_telemetry(pool, site_config)
     await pool.close()
     return 0
 

@@ -789,6 +789,7 @@ async def _transcript_discord_webhook() -> str | None:
     import asyncpg
 
     from poindexter.brain.bootstrap import resolve_database_url
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry
     from poindexter.services.site_config import SiteConfig
 
     db_url = resolve_database_url()
@@ -804,8 +805,8 @@ async def _transcript_discord_webhook() -> str | None:
     pool = await asyncpg.create_pool(
         db_url, min_size=1, max_size=1, timeout=2.0, command_timeout=5.0,
     )
+    site_config = SiteConfig(pool=pool)
     try:
-        site_config = SiteConfig(pool=pool)
         enabled = await site_config.get_secret(
             "voice_agent_claude_code_transcript_enabled", "true",
         )
@@ -830,6 +831,8 @@ async def _transcript_discord_webhook() -> str | None:
         logger.info("Discord transcript: webhook loaded.")
         return _DISCORD_WEBHOOK_CACHE
     finally:
+        # Stamp the settings read here (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, site_config)
         await pool.close()
 
 

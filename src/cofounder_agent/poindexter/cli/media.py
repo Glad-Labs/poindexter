@@ -33,7 +33,7 @@ from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+from poindexter.cli._bootstrap import cli_site_config, close_cli_pool, open_cli_pool
 from poindexter.cli._prefix import looks_like_full_uuid, resolve_uuid_prefix
 from poindexter.utils.exception_format import describe_exception
 
@@ -59,9 +59,7 @@ async def _make_site_config(pool):
     non-fatal: the decision still succeeds on partial config (the feed rebuild
     inside ``decide()`` is itself non-fatal — it just won't propagate).
     """
-    from poindexter.services.site_config import SiteConfig
-
-    cfg = SiteConfig(pool=pool)
+    cfg = cli_site_config(pool)
     try:
         await cfg.load(pool)
     except Exception as e:  # noqa: BLE001 — partial config still lets the decision succeed
@@ -657,10 +655,9 @@ def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
         if out_dir:
             return Path(out_dir)
 
-        from poindexter.services.site_config import SiteConfig
         pool = await open_cli_pool()
         try:
-            sc = SiteConfig()
+            sc = cli_site_config(pool)
             await sc.reload(pool)
             return clip_dir(sc)
         finally:

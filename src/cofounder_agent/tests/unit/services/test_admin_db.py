@@ -488,36 +488,34 @@ class TestGetSetting:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_records_read_in_settings_sink(self):
-        """get_setting stamps the read sink so FlushSettingsReadTelemetryJob
-        can mark app_settings.last_read_at.
+    async def test_does_not_record_a_read(self):
+        """get_setting is the row fetch behind the settings-admin surfaces:
+        GET/POST/PUT /api/settings/{key} (so `poindexter settings get`, the
+        console's settings editor and the MCP set_setting tool) and the MCP
+        get_setting tool. Each fetches a key someone NAMED, which says nothing
+        about whether the running system reads it (poindexter#756).
 
-        Closes the telemetry blind spot for the DatabaseService.get_setting_value
-        read path: those raw-SQL reads never reached SiteConfig / SettingsService,
-        so live keys (max_posts_per_day, daily_post_limit, …) looked unread to
-        the zero-reader probe. Mirrors SettingsService.get's record_read.
+        It used to record, so a key was stamped the moment an operator looked
+        at it, and because ProbeZeroReaderSettingsJob lists only never-stamped
+        keys, the lookup hid a real orphan for good. On prod, 11 keys carried
+        exactly that stamp: 6-68 s after a `settings set`, never again.
         """
         from poindexter.services import settings_read_sink
 
-        settings_read_sink.drain_read_keys()  # clear any prior state
         pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
         with patch(
             f"{_CONVERTER}.to_setting_response",
             return_value=_make_setting_sentinel(),
         ):
-            await db.get_setting("max_posts_per_day")
+            await db.get_setting("compose_drift_on_demand_services")
 
-        assert "max_posts_per_day" in settings_read_sink.drain_read_keys()
+        assert settings_read_sink.drain_read_keys() == []
 
     @pytest.mark.asyncio
-    async def test_records_read_even_on_cache_hit(self):
-        """The ask is recorded regardless of where the value resolves — a
-        cache hit still stamps last_read_at, mirroring SettingsService.get
-        (which records before consulting its cache)."""
+    async def test_does_not_record_a_read_on_cache_hit_either(self):
         from poindexter.services import settings_read_sink
 
-        settings_read_sink.drain_read_keys()
         pool = _make_pool()
         db = _make_db(pool)
         db._settings_cache["cached_key|False"] = {
@@ -526,7 +524,7 @@ class TestGetSetting:
         }
         await db.get_setting("cached_key")
 
-        assert "cached_key" in settings_read_sink.drain_read_keys()
+        assert settings_read_sink.drain_read_keys() == []
 
 
 # ---------------------------------------------------------------------------
@@ -713,6 +711,35 @@ class TestGetSettingValue:
         db.get_setting = AsyncMock(return_value=setting)
         result = await db.get_setting_value("empty_key", default="default_val")
         assert result == "default_val"
+
+    @pytest.mark.asyncio
+    async def test_records_the_read_in_the_settings_sink(self):
+        """get_setting_value is how code reads a value it names
+        (publish_service's max_posts_per_day, auto_publish's thresholds,
+        post_pipeline_actions). Those raw-SQL reads never reach SiteConfig or
+        SettingsService, so they record into the process-wide sink, which the
+        process's flush stamps into app_settings.last_read_at (poindexter#756).
+        """
+        from poindexter.services import settings_read_sink
+
+        db = _make_db()
+        db.get_setting = AsyncMock(return_value=_make_setting_sentinel(value="3"))
+        await db.get_setting_value("max_posts_per_day", 3)
+
+        assert settings_read_sink.drain_read_keys() == ["max_posts_per_day"]
+
+    @pytest.mark.asyncio
+    async def test_records_the_read_even_when_the_key_has_no_row(self):
+        """The ask is recorded regardless of where the value resolves,
+        mirroring SettingsService.get; the flush's UPDATE only matches real
+        rows, so recording an absent key is harmless."""
+        from poindexter.services import settings_read_sink
+
+        db = _make_db()
+        db.get_setting = AsyncMock(return_value=None)
+        await db.get_setting_value("never_seeded_key", "fallback")
+
+        assert settings_read_sink.drain_read_keys() == ["never_seeded_key"]
 
 
 # ---------------------------------------------------------------------------

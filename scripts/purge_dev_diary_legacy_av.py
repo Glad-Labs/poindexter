@@ -246,6 +246,7 @@ async def _run(db_url: str, *, execute: bool) -> int:
 
     host_root = _data_root()
     pool = await asyncpg.create_pool(db_url, min_size=1, max_size=4)
+    site_config = None
     try:
         container = await build_container(pool)
         site_config = container.site_config
@@ -329,6 +330,10 @@ async def _run(db_url: str, *, execute: bool) -> int:
         print("=" * 64)
         return 0
     finally:
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        # Stamp the settings this run read (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, site_config)
         await pool.close()
 
 

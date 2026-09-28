@@ -10,7 +10,7 @@ import asyncio
 
 import click
 
-from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+from poindexter.cli._bootstrap import cli_site_config, close_cli_pool, open_cli_pool
 from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
 from poindexter.services.community_drafts import (
     SubredditProfile,
@@ -41,9 +41,7 @@ async def _connect():
 
 
 async def _make_site_config(pool):
-    from poindexter.services.site_config import SiteConfig
-
-    site_config = SiteConfig(pool=pool)
+    site_config = cli_site_config(pool)
     # Fail loud. The only caller is `draft reddit`, which needs the writer model
     # from settings — there is no pool-only path to protect (unlike
     # affiliate.py::_make_site_config, whose callers work without settings). A

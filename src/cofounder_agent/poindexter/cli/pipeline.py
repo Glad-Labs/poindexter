@@ -59,7 +59,7 @@ from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+from poindexter.cli._bootstrap import cli_site_config, close_cli_pool, open_cli_pool
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
 from poindexter.cli._event_loop import (
     ensure_selector_event_loop_on_windows as _ensure_selector_event_loop_on_windows,
@@ -150,9 +150,7 @@ async def _make_pool():
 
 
 async def _make_site_config(pool):
-    from poindexter.services.site_config import SiteConfig
-
-    cfg = SiteConfig(pool=pool)
+    cfg = cli_site_config(pool)
     try:
         await cfg.load(pool)
     except Exception as exc:  # noqa: BLE001 — best-effort; CLI still works on defaults

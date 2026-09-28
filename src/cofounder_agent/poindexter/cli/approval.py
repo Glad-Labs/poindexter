@@ -34,7 +34,7 @@ from typing import Any
 import click
 
 from poindexter.cli._aliases import deprecated_alias
-from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool  # noqa: E402
+from poindexter.cli._bootstrap import cli_site_config, close_cli_pool, open_cli_pool  # noqa: E402
 from poindexter.cli._prefix import fetch_prefix_candidates, looks_like_full_uuid
 
 
@@ -53,9 +53,7 @@ async def _make_site_config(pool):
     service module. Loaded from the DB so gate-enable settings are
     visible to the same process.
     """
-    from poindexter.services.site_config import SiteConfig
-
-    cfg = SiteConfig(pool=pool)
+    cfg = cli_site_config(pool)
     try:
         await cfg.load(pool)
     except Exception as exc:

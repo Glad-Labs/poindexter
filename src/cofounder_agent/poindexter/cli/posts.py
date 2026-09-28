@@ -22,7 +22,7 @@ def _run(coro):
 
 
 from poindexter.cli._aliases import deprecated_alias  # noqa: E402
-from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool  # noqa: E402
+from poindexter.cli._bootstrap import cli_site_config, close_cli_pool, open_cli_pool  # noqa: E402
 from poindexter.cli._bootstrap import resolve_dsn as _gate_dsn
 
 
@@ -549,7 +549,6 @@ def post_create(
     import re
     import secrets
 
-    from poindexter.services.site_config import SiteConfig
     from poindexter.services.title_generation import extract_h1_title
 
     # --- Resolve body (no DB needed — fail fast before opening a pool) ----
@@ -592,7 +591,7 @@ def post_create(
     async def _impl():
         pool = await _make_gate_pool()
         try:
-            site_cfg = SiteConfig(pool=pool)
+            site_cfg = cli_site_config(pool)
             try:
                 await site_cfg.load(pool)
             except Exception as cfg_exc:

@@ -7,10 +7,12 @@ so a key that is never read keeps a NULL stamp (an orphan candidate the
 ``ProbeZeroReaderSettingsJob`` later surfaces).
 
 This job flushes the worker process only. The drain and the throttled UPDATE
-live in ``services/settings_read_telemetry.py`` because the Prefect content
-flow calls them too. Each flow run is its own subprocess, and its read buffers
-die with it unless the run flushes them itself, which it does from
-``content_generation_flow``'s ``finally``.
+live in ``services/settings_read_telemetry.py`` because every other process
+that reads settings calls them too, as it finishes: each Prefect content-flow
+run (from ``content_generation_flow``'s ``finally``), each ``poindexter`` CLI
+command (``close_cli_pool``) and each auto-embed pass (``taps.runner.run_all``).
+Their read buffers die with them otherwise.
+``scripts/ci/settings_read_flush_lint.py`` keeps that list complete.
 
 Why a separate job rather than folding into ``reload_site_config``: the
 scheduler seeds the lifespan-bound ``SiteConfig`` into EVERY job's config at

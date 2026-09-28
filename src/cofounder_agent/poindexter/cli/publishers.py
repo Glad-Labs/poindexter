@@ -179,16 +179,16 @@ def publishers_fire(name: str, text: str, url: str) -> None:
     through the registry with a run-bound SiteConfig, prints the return dict.
     """
     async def _impl(pool):
+        from poindexter.cli._bootstrap import cli_site_config
         from poindexter.services.integrations import registry
         from poindexter.services.integrations.handlers import load_all
         from poindexter.services.publishing_adapters_db import PublishingAdapterRow
-        from poindexter.services.site_config import SiteConfig
 
         load_all()  # idempotent — registry refuses duplicate registrations
         # SiteConfig DI (#272): build a run-bound instance from the pool so the
         # publishing dispatcher gets a real, DB-loaded config (adapters
         # short-circuit when site_config is missing).
-        site_cfg = SiteConfig(pool=pool)
+        site_cfg = cli_site_config(pool)
         try:
             await site_cfg.load(pool)
         except Exception:  # silent-ok: — keep the smoke test usable on partial bootstrap

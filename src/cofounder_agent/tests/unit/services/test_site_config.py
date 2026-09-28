@@ -457,3 +457,90 @@ class TestReadTracking:
         ])
         await cfg.load(pool)
         assert cfg.drain_read_keys() == []
+
+    def test_require_records_the_key(self):
+        # require() is a read like get(): site_url is read through it by the
+        # feed routes, publish_service and static export.
+        cfg = SiteConfig(initial_config={"site_url": "https://x"})
+        cfg.require("site_url")
+        assert cfg.drain_read_keys() == ["site_url"]
+
+    def test_require_records_even_when_it_raises(self):
+        cfg = SiteConfig()
+        with pytest.raises(RuntimeError):
+            cfg.require("never_set_required_key")
+        assert cfg.drain_read_keys() == ["never_set_required_key"]
+
+
+class TestPeek:
+    """peek() resolves like get() but is not a read (poindexter#756).
+
+    It exists for settings-admin surfaces that fetch a key a person or an agent
+    named (the console chat's get_setting tool). A lookup says nothing about
+    whether the running system uses a key, and a stamp is permanent as far as
+    ProbeZeroReaderSettingsJob is concerned (it lists only never-stamped keys),
+    so recording lookups hid real orphans for good.
+    """
+
+    def test_resolves_db_then_env_then_default_like_get(self, monkeypatch):
+        cfg = SiteConfig(initial_config={"in_db": "db-value"})
+        monkeypatch.setenv("PEEK_TEST_ENV_ONLY", "env-value")
+
+        assert cfg.peek("in_db") == cfg.get("in_db") == "db-value"
+        assert cfg.peek("peek_test_env_only") == "env-value"
+        assert cfg.peek("peek_test_absent", "fallback") == "fallback"
+        assert cfg.peek("peek_test_absent", None) is None
+
+    def test_records_nothing(self):
+        cfg = SiteConfig(initial_config={"site_name": "X"})
+        cfg.peek("site_name")
+        cfg.peek("absent_key", "d")
+        assert cfg.drain_read_keys() == []
+
+    async def test_skips_the_deprecation_warning(self, caplog):
+        # The warning tells code to migrate to the successor key; an operator
+        # looking a deprecated key up is not a caller to migrate.
+        cfg = SiteConfig()
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"key": "old_key", "value": "v", "deprecated": True,
+             "superseded_by": "new_key"},
+        ])
+        await cfg.load(pool)
+
+        def deprecation_warnings() -> list:
+            return [r for r in caplog.records if "deprecated" in r.getMessage()]
+
+        with caplog.at_level("WARNING"):
+            assert cfg.peek("old_key") == "v"
+            assert deprecation_warnings() == []
+            # Non-vacuous: get() on the same key does warn, so the capture works.
+            assert cfg.get("old_key") == "v"
+            assert len(deprecation_warnings()) == 1
+
+
+class TestReadRecorder:
+    """An injected read_recorder receives every read instead of the instance.
+
+    The CLI passes settings_read_sink.record_read (cli_site_config): its
+    SiteConfigs are built in helpers and run_service factories that return
+    before the command's pool closes, so reads parked on the instance would be
+    gone by the time close_cli_pool flushes.
+    """
+
+    def test_reads_go_to_the_recorder_not_the_instance(self):
+        seen: list[str] = []
+        cfg = SiteConfig(initial_config={"n": "3"}, read_recorder=seen.append)
+
+        cfg.get("a")
+        cfg.get_int("n")
+        cfg.require("n")
+
+        assert seen == ["a", "n", "n"]
+        assert cfg.drain_read_keys() == []
+
+    def test_peek_bypasses_the_recorder_too(self):
+        seen: list[str] = []
+        cfg = SiteConfig(initial_config={"a": "1"}, read_recorder=seen.append)
+        cfg.peek("a")
+        assert seen == []

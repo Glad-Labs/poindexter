@@ -9,11 +9,22 @@ single instance for the flush to drain. Those reads land here instead: one
 shared, process-wide buffer that every ``SettingsService`` records into, which
 the flush unions with the ``SiteConfig`` drain.
 
+``DatabaseService.get_setting_value`` and the raw-SQL helpers record here for
+the same reason, and so does every ``SiteConfig`` the CLI builds
+(``cli._bootstrap.cli_site_config`` passes :func:`record_read` as its
+``read_recorder``), because those instances are often gone before the
+command's pool closes.
+
 "Process-wide" is the whole scope. The worker's ``FlushSettingsReadTelemetryJob``
 drains the worker's buffer once a minute. Each Prefect content-flow run is a
 separate subprocess with its own buffer, which the run flushes when it ends
 (``content_generation_flow``). ``multi_model_qa``'s reads happen in that
-subprocess, not the worker.
+subprocess, not the worker. A CLI command's buffer is flushed by
+``close_cli_pool``, an auto-embed pass's by ``taps.runner.run_all``.
+
+The settings-admin surfaces do not record here: the row fetch behind
+``/api/settings/{key}`` (``AdminDatabase.get_setting``) is not a read, because
+someone looking a key up says nothing about whether the system uses it.
 
 This is a write-then-drain telemetry buffer — the same shape as a metrics
 counter — behind a two-function seam (``record_read`` / ``drain_read_keys``), so

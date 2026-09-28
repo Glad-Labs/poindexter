@@ -27,9 +27,9 @@ from poindexter.services import persona_service as ps
 
 
 async def _site_config(pool: Any) -> Any:
-    from poindexter.services.site_config import SiteConfig
+    from poindexter.cli._bootstrap import cli_site_config
 
-    sc = SiteConfig()
+    sc = cli_site_config(pool)
     await sc.load(pool)
     return sc
 

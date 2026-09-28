@@ -1,13 +1,14 @@
 """Unit tests for ``services/settings_read_telemetry.py``.
 
 ``flush_read_telemetry`` is the drain-and-stamp step of read-telemetry
-(Glad-Labs/poindexter#756), shared by the two processes that flush: the
-worker's ``FlushSettingsReadTelemetryJob`` (once a minute) and each Prefect
-content-flow run (once, as the run ends — its subprocess and the reads buffered
-in it are gone afterwards). These tests pin the helper's contract; the job's
-mapping onto ``JobResult`` is covered in
-``tests/unit/services/jobs/test_flush_settings_read_telemetry.py`` and the
-flow's end-of-run flush in ``tests/unit/services/flows/``.
+(Glad-Labs/poindexter#756), shared by every process that flushes: the
+worker's ``FlushSettingsReadTelemetryJob`` (once a minute), and each Prefect
+content-flow run, CLI command and auto-embed pass (once, as it ends — the
+reads buffered in that process are gone afterwards). These tests pin the
+helper's contract; the job's mapping onto ``JobResult`` is covered in
+``tests/unit/services/jobs/test_flush_settings_read_telemetry.py``, the
+flow's end-of-run flush in ``tests/unit/services/flows/``, and the CLI's in
+``tests/unit/cli/test_cli_settings_read_telemetry.py``.
 
 Pool mocked (no asyncpg). The SiteConfig is real so the drain semantics are the
 production ones.
@@ -44,10 +45,15 @@ def _clean_read_sink():
 
 
 def _make_pool(
-    execute_status: Any = "UPDATE 0", execute_error: Exception | None = None
+    execute_status: Any = "UPDATE 0",
+    execute_error: Exception | None = None,
+    control_rows: list[dict[str, str]] | None = None,
+    fetch_error: Exception | None = None,
 ) -> tuple[Any, Any]:
     conn = AsyncMock()
     conn.execute = AsyncMock(return_value=execute_status, side_effect=execute_error)
+    # The controls query of a flush with no SiteConfig (the CLI's teardown).
+    conn.fetch = AsyncMock(return_value=control_rows or [], side_effect=fetch_error)
     ctx = AsyncMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)
     ctx.__aexit__ = AsyncMock(return_value=False)
@@ -164,6 +170,112 @@ class TestFlushReadTelemetry:
         assert "connection reset by peer" in flushed.detail
         assert flushed.keys_read == 2
         assert flushed.keys_stamped == 0
+        assert any("last_read_at UPDATE failed" in r.message for r in caplog.records)
+
+
+@pytest.mark.unit
+class TestNeverRaises:
+    """Callers put the flush in a ``finally`` (the content flow, the CLI's
+    ``container_for_cli``, the auto-embed runner) and rely on it never
+    replacing their own exception."""
+
+    async def test_a_malformed_site_config_is_reported_not_raised(self, caplog):
+        pool, conn = _make_pool()
+
+        with caplog.at_level("WARNING"):
+            flushed = await flush_read_telemetry(pool, object())  # no drain_read_keys
+
+        assert flushed.ok is False
+        assert flushed.detail.startswith("flush failed:")
+        conn.execute.assert_not_awaited()
+        assert any("flush failed" in r.message for r in caplog.records)
+
+    async def test_a_pool_that_cannot_hand_out_a_connection_is_reported_not_raised(self):
+        settings_read_sink.record_read("site_url")
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=ConnectionResetError("reset by peer"))
+
+        flushed = await flush_read_telemetry(pool)
+
+        assert flushed.ok is False
+        assert "reset by peer" in flushed.detail
+
+
+@pytest.mark.unit
+class TestFlushWithoutASiteConfig:
+    """``flush_read_telemetry(pool)``: a process that holds no SiteConfig.
+
+    The CLI's ``close_cli_pool`` flushes this way: every SiteConfig a command
+    builds (``cli_site_config``) records into the process-wide sink, so the
+    sink is all there is to drain, and the two telemetry controls are read
+    from ``app_settings`` on the connection that runs the UPDATE.
+    """
+
+    async def test_nothing_read_touches_no_database(self):
+        pool, conn = _make_pool()
+
+        flushed = await flush_read_telemetry(pool)
+
+        assert flushed == ReadTelemetryFlush(ok=True, detail="no keys read since the last flush")
+        pool.acquire.assert_not_called()
+
+    async def test_stamps_the_sink_with_the_controls_read_from_the_db(self):
+        settings_read_sink.record_read("tap_chunk_max_chars")
+        settings_read_sink.record_read("pro_delivery_enabled")
+        pool, conn = _make_pool(
+            execute_status="UPDATE 2",
+            control_rows=[{"key": "settings_read_telemetry_min_restamp_seconds", "value": "600"}],
+        )
+
+        flushed = await flush_read_telemetry(pool)
+
+        assert flushed == ReadTelemetryFlush(
+            ok=True,
+            detail="stamped 2/2 key(s) read since the last flush",
+            keys_read=2,
+            keys_stamped=2,
+        )
+        control_sql, control_keys = conn.fetch.await_args.args
+        assert "FROM app_settings" in control_sql
+        assert set(control_keys) == _CONTROL_KEYS
+        _sql, keys, restamp_seconds = conn.execute.await_args.args
+        assert keys == ["pro_delivery_enabled", "tap_chunk_max_chars"]
+        assert restamp_seconds == 600
+        assert settings_read_sink.drain_read_keys() == []
+
+    async def test_missing_control_rows_fall_back_to_the_defaults(self):
+        settings_read_sink.record_read("site_url")
+        pool, conn = _make_pool(execute_status="UPDATE 1")
+
+        flushed = await flush_read_telemetry(pool)
+
+        assert flushed.keys_stamped == 1
+        assert conn.execute.await_args.args[2] == 3600
+
+    async def test_disabled_in_the_db_discards_without_writing(self):
+        settings_read_sink.record_read("site_url")
+        pool, conn = _make_pool(
+            control_rows=[{"key": "settings_read_telemetry_enabled", "value": "false"}]
+        )
+
+        flushed = await flush_read_telemetry(pool)
+
+        assert flushed.ok is True
+        assert "telemetry disabled" in flushed.detail
+        assert flushed.keys_read == 1
+        conn.execute.assert_not_awaited()
+        assert settings_read_sink.drain_read_keys() == []
+
+    async def test_a_failed_controls_query_is_reported_not_raised(self, caplog):
+        settings_read_sink.record_read("site_url")
+        pool, conn = _make_pool(fetch_error=OSError("connection reset by peer"))
+
+        with caplog.at_level("WARNING"):
+            flushed = await flush_read_telemetry(pool)
+
+        assert flushed.ok is False
+        assert "connection reset by peer" in flushed.detail
+        conn.execute.assert_not_awaited()
         assert any("last_read_at UPDATE failed" in r.message for r in caplog.records)
 
 

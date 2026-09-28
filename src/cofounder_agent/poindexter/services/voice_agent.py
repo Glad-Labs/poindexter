@@ -649,15 +649,18 @@ async def _bootstrap_and_run(brain: str, project_dir: str | None) -> None:
     import asyncpg
 
     from poindexter.brain.bootstrap import require_database_url
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry
     from poindexter.services.site_config import SiteConfig
 
     dsn = require_database_url(source="voice_agent")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    site_config = SiteConfig()
     try:
-        site_config = SiteConfig()
         await site_config.load(pool)
         await run_local(site_config, brain=brain, project_dir=project_dir)
     finally:
+        # Stamp the settings read here (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, site_config)
         await pool.close()
 
 

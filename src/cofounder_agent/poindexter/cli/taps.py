@@ -173,16 +173,16 @@ def taps_run(name: str | None) -> None:
     With NAME: runs just that tap (requires enabled=TRUE).
     """
     async def _impl(pool):
+        from poindexter.cli._bootstrap import cli_site_config
         from poindexter.services.integrations import tap_runner
         from poindexter.services.integrations.handlers import load_all
-        from poindexter.services.site_config import SiteConfig
 
         load_all()  # idempotent — registry refuses duplicate registrations
         # SiteConfig DI (#272): build a run-bound instance so tap.singer_subprocess
         # can resolve config.secret_fields via site_config.get_secret() (#857/#2502).
         # Without this, any tap with secret_fields set (gsc_main, ga4_main) fails
         # with "secret_fields is set but no site_config was provided to resolve it".
-        site_cfg = SiteConfig(pool=pool)
+        site_cfg = cli_site_config(pool)
         try:
             await site_cfg.load(pool)
         except Exception:  # silent-ok: taps without secret_fields don't need this to succeed

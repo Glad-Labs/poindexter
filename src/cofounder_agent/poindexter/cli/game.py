@@ -32,7 +32,7 @@ from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+from poindexter.cli._bootstrap import cli_site_config, close_cli_pool, open_cli_pool
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,7 @@ async def _open_pool() -> Any:
 
 
 async def _make_site_config(pool):
-    from poindexter.services.site_config import SiteConfig
-
-    site_config = SiteConfig(pool=pool)
+    site_config = cli_site_config(pool)
     await site_config.load(pool)
     return site_config
 

@@ -1107,7 +1107,9 @@ def _stub_thumbnails(monkeypatch, outcomes):
         return list(outcomes)
 
     async def _wire(_pool):
-        return object(), None
+        from poindexter.services.site_config import SiteConfig
+
+        return SiteConfig(), None
 
     def _run_service(factory):
         import asyncio
@@ -1192,7 +1194,9 @@ def test_a_refused_hook_combination_exits_with_the_reason(runner, monkeypatch):
         raise ValueError("--hook needs --post naming exactly one long video; 13 matched")
 
     async def _wire(_pool):
-        return object(), None
+        from poindexter.services.site_config import SiteConfig
+
+        return SiteConfig(), None
 
     def _run_service(factory):
         import asyncio

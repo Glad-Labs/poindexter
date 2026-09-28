@@ -12,18 +12,31 @@ with a stable ``dedup_key`` so the alert dispatcher collapses repeated fires
 into a single Discord page until the situation changes. The live list also
 renders on the Integrations & Admin Grafana board.
 
-ADVISORY, not authoritative. ``last_read_at`` is stamped on both read
-accessors — ``SiteConfig.get`` and ``SettingsService.get`` (the latter via the
-shared ``services.settings_read_sink``, poindexter#756) — in the two processes
-that flush them: the worker (``FlushSettingsReadTelemetryJob``) and each Prefect
-content-flow run (flushed as the run ends, since 2026-09-28; before that no
-pipeline read was stamped). A key read EXCLUSIVELY via a path none of that
-covers still shows up here: raw SQL (e.g. ``findings_alert_router`` reading
-``findings.*`` policies, ``auto_publish`` reading ``auto_publish_threshold``),
-a ``SiteConfig.all()`` snapshot filtered in code (``persona_service`` reads the
+ADVISORY, not authoritative. ``last_read_at`` is stamped when code reads a key
+it names: ``SiteConfig.get``/``require`` and, through the shared
+``services.settings_read_sink``, ``SettingsService.get``,
+``DatabaseService.get_setting_value`` and the raw-SQL helpers that call
+``record_read`` (poindexter#756). The processes that make those reads flush
+them: the worker (``FlushSettingsReadTelemetryJob``, every minute), each Prefect
+content-flow run (since 2026-09-28; before that no pipeline read was stamped),
+each ``poindexter`` CLI command, each auto-embed pass, and every script and
+voice agent that loads a ``SiteConfig`` (all since the change that added
+``scripts/ci/settings_read_flush_lint.py``, which now makes every new
+SiteConfig flush or say why not). A key read EXCLUSIVELY via a path none of
+that covers still shows up here: raw SQL that skips ``record_read`` (e.g.
+``findings_alert_router`` reading the ``findings.*`` policies), a
+``SiteConfig.all()`` snapshot filtered in code (``persona_service`` reads the
 ``persona.<slug>.*`` keys that way), or a process that never flushes (the brain
-daemon's own asyncpg reads, the ``poindexter`` CLI, one-off scripts). The
-finding body says as much; verify each key before retiring it.
+daemon's own asyncpg reads, the MCP server). The finding body says as much;
+verify each key before retiring it.
+
+The inverse no longer happens: a person or an agent looking a key up does not
+count as a read. The settings-admin surfaces (``/api/settings/{key}`` behind
+``poindexter settings get``, the console and the MCP ``set_setting`` tool; the
+MCP and console-chat ``get_setting`` tools) stopped recording on 2026-09-28.
+Before then a single ``settings get`` stamped the key it looked at, and since
+this probe lists only never-stamped keys, that hid a real orphan for good.
+Migration ``20260928_141858`` cleared the stamps those lookups left.
 """
 
 from __future__ import annotations
@@ -79,14 +92,15 @@ def _format_created(value: Any) -> str:
 def _build_body(rows: list[dict[str, Any]], grace_days: int) -> str:
     lines = [
         f"{len(rows)} app_settings key(s) have a NULL `last_read_at` and have "
-        f"existed for more than {grace_days} day(s) — nothing in the running "
-        f"system has read them via `SiteConfig.get` since read-telemetry began.",
+        f"existed for more than {grace_days} day(s): no read of them has been "
+        "recorded by the worker, a pipeline run, a CLI command, auto-embed or a script.",
         "",
         "**Advisory only.** A key also appears here if it is read EXCLUSIVELY "
         "via a path read-telemetry cannot see — raw SQL, a `SiteConfig.all()` "
         "snapshot, or a process that never flushes its reads (the brain "
-        "daemon, the `poindexter` CLI, one-off scripts). Verify each is truly "
-        "unused before retiring it.",
+        "daemon, the MCP server). Looking a key up with `poindexter settings get` "
+        "does not count as a read. Verify each is truly unused before "
+        "retiring it.",
         "",
     ]
     for r in rows:

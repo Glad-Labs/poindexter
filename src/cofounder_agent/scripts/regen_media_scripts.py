@@ -45,8 +45,11 @@ async def _main() -> int:
     # A REAL DatabaseService (not a bare pool): its initialize() also sets the
     # global AuditLogger, without which build_platform_for_subprocess returns
     # None and generate_video_shot_list SKIPS ("no Platform handle").
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
     database_service = await _build_default_database_service()
     pool = database_service.pool
+    site_config = None
     try:
         site_config, _container = await build_and_wire_subprocess_with_container(pool)
         platform = build_platform_for_subprocess(pool, site_config)
@@ -73,6 +76,12 @@ async def _main() -> int:
                 ok = False
         return 0 if ok else 1
     finally:
+        # Stamp the settings this run read (read telemetry, poindexter#756):
+        # this process exits when the run ends, and nothing else flushes them.
+        # Reports a failed stamp rather than raising, so it can't mask an
+        # exception from the regen. site_config is None if wiring failed; the
+        # process-wide sink is flushed anyway.
+        await flush_read_telemetry(pool, site_config)
         close = getattr(database_service, "close", None)
         if close is not None:
             await close()

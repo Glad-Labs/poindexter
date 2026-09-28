@@ -13,10 +13,12 @@ manager gives us a single, future-proof place to add per-command
 teardown (close shared http clients, drain async queues, flush traces,
 etc.) without revisiting every subcommand the migration touches.
 
-Today the body is a no-op — ``AppContainer`` is a dataclass with
-``cached_property`` services and nothing inside it owns lifecycle
-resources of its own. PR 3+ migrates services one-at-a-time; the first
-service that holds a resource gets a matching teardown here.
+The one teardown today stamps the settings the command read into
+``app_settings.last_read_at`` (read telemetry, poindexter#756): the
+container's ``SiteConfig`` buffers its reads in memory, and a CLI process
+exits with the command. ``AppContainer`` itself is a dataclass with
+``cached_property`` services that own no lifecycle resources; the first
+migrated service that holds one gets a matching teardown here.
 
 Usage::
 
@@ -75,12 +77,16 @@ async def container_for_cli(pool: Any) -> AsyncIterator[AppContainer]:
     try:
         yield container
     finally:
-        # No teardown needed today — container is just a dataclass +
-        # cached_property services with no owned resources. Reserved
-        # for future per-CLI cleanup (close http clients, flush
-        # traces, drain queues, etc.) once a migrated service holds
-        # a resource of its own.
-        pass
+        # Stamp the settings this command read (read telemetry,
+        # poindexter#756). The container's SiteConfig keeps its reads on the
+        # instance, and this process exits with the command, so nothing else
+        # will ever flush them. The pool is still open here: the caller's
+        # ``_impl()`` closes it after this block. flush_read_telemetry never
+        # raises, so a failed stamp can't replace an exception the body is
+        # propagating.
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        await flush_read_telemetry(pool, container.site_config)
 
 
 __all__ = ["container_for_cli"]

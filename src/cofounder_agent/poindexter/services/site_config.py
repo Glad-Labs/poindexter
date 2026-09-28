@@ -44,6 +44,7 @@ Testing:
 """
 
 import os
+from collections.abc import Callable
 
 from poindexter.services.logger_config import get_logger
 
@@ -65,6 +66,7 @@ class SiteConfig:
         *,
         initial_config: dict[str, str] | None = None,
         pool=None,
+        read_recorder: Callable[[str], None] | None = None,
     ):
         """Build a SiteConfig instance.
 
@@ -75,6 +77,13 @@ class SiteConfig:
             pool: Optional asyncpg pool. If provided, it's stored so
                 ``get_secret()`` can query on demand. Call ``load()``
                 separately to populate ``_config`` from app_settings.
+            read_recorder: Where ``get()`` and ``require()`` record the keys
+                they read, for read telemetry. Defaults to this instance's
+                own set, which ``drain_read_keys()`` returns. The CLI passes
+                ``settings_read_sink.record_read`` (see
+                ``poindexter.cli._bootstrap.cli_site_config``), because its
+                SiteConfigs are often gone by the time the command's pool
+                closes and its reads are stamped.
         """
         self._config: dict[str, str] = dict(initial_config or {})
         self._loaded = bool(initial_config)
@@ -86,16 +95,20 @@ class SiteConfig:
         self._deprecated_keys: dict[str, str | None] = {}
         # Guards against re-emitting the same warning on every get() call.
         self._deprecation_warned: set[str] = set()
-        # Read-telemetry (poindexter#756 item 2): every key passed to get()
-        # is recorded here. ``services.settings_read_telemetry`` drains this
-        # set and stamps ``app_settings.last_read_at``, so a key that never
-        # appears here is an orphan candidate. The worker's
-        # ``FlushSettingsReadTelemetryJob`` flushes once a minute, and each
-        # Prefect content-flow run flushes its own instance when it ends.
-        # Per-instance + in-memory — the hot get() path only pays an O(1)
-        # set.add(). load()/reload() deliberately do NOT touch it
-        # (repopulating the value cache is not a "read").
+        # Read-telemetry (poindexter#756 item 2): every key passed to get() or
+        # require() is recorded here, unless a read_recorder was injected.
+        # ``services.settings_read_telemetry`` drains this set and stamps
+        # ``app_settings.last_read_at``, so a key that never appears here is an
+        # orphan candidate. The worker's ``FlushSettingsReadTelemetryJob``
+        # flushes once a minute; each Prefect content-flow run, CLI command
+        # and auto-embed pass flushes when it ends. Per-instance + in-memory —
+        # the hot get() path only pays an O(1) set.add(). load()/reload()
+        # deliberately do NOT touch it (repopulating the value cache is not a
+        # "read"), and neither does peek(), which settings-admin surfaces use.
         self._read_keys: set[str] = set()
+        self._record_read: Callable[[str], None] = (
+            read_recorder if read_recorder is not None else self._read_keys.add
+        )
 
     async def load(self, pool) -> int:
         """Load all non-secret settings from app_settings.
@@ -236,7 +249,9 @@ class SiteConfig:
 
         Use this for settings that MUST be set for the system to work
         (site_name, site_url, company_name, API keys). No silent defaults.
+        Records the read for telemetry, like ``get()``.
         """
+        self._record_read(key)
         if key in self._config:
             return self._config[key]
         env_key = key.upper()
@@ -258,7 +273,7 @@ class SiteConfig:
         # Read-telemetry: record the access regardless of where it resolves
         # (DB / env / default). The flush job's UPDATE filters down to real
         # app_settings rows, so recording a key with no row is harmless.
-        self._read_keys.add(key)
+        self._record_read(key)
 
         # One-time deprecation warning — fires at most once per key per reload
         # cycle so Loki doesn't get spammed on hot paths.
@@ -274,6 +289,21 @@ class SiteConfig:
             else:
                 logger.warning("[SITE_CONFIG] Key %r is deprecated", key)
 
+        return self.peek(key, default)
+
+    def peek(self, key: str, default: str = "") -> str:
+        """Resolve a value like ``get()``, without counting it as a read.
+
+        For settings-admin surfaces that fetch a key because a person or an
+        agent named it: the console chat's ``get_setting`` tool is one. Read
+        telemetry (``app_settings.last_read_at``) exists to answer "does the
+        running system consult this key?". Someone looking a key up says
+        nothing about that, and a stamp is permanent, because the zero-reader
+        probe lists only keys that were never stamped. So a looked-up orphan
+        would never be reported. Code that reads a key to use it calls
+        ``get()``. ``peek()`` also skips the deprecation warning, which is
+        meant for callers in code.
+        """
         # DB value takes priority
         if key in self._config:
             return self._config[key]
@@ -334,15 +364,17 @@ class SiteConfig:
         return dict(self._config)
 
     def drain_read_keys(self) -> list[str]:
-        """Return the keys read via get() since the last drain, then clear.
+        """Return the keys read via get()/require() since the last drain, then clear.
 
         Read-telemetry sink (poindexter#756 item 2).
         ``services.settings_read_telemetry.flush_read_telemetry`` calls this and
         stamps ``app_settings.last_read_at`` for the returned keys: once a minute
-        in the worker, and at the end of each Prefect content-flow run for that
-        run's instance. The snapshot-then-clear is a single synchronous step with
-        no ``await`` between, so it's atomic under asyncio — a get() racing the
-        drain either lands in this batch or the next, never lost-and-uncounted.
+        in the worker, and when each process that built its own instance
+        finishes (a Prefect content-flow run, an auto-embed pass). Always empty
+        for an instance built with a ``read_recorder``: its reads went there.
+        The snapshot-then-clear is a single synchronous step with no ``await``
+        between, so it's atomic under asyncio — a get() racing the drain either
+        lands in this batch or the next, never lost-and-uncounted.
         """
         keys = list(self._read_keys)
         self._read_keys.clear()

@@ -1175,6 +1175,7 @@ async def run_bot(
     import asyncpg
 
     from poindexter.brain.bootstrap import require_database_url
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry
     from poindexter.services.site_config import SiteConfig
 
     # Bootstrap a tiny pool just to read voice_agent_livekit_url before
@@ -1184,12 +1185,14 @@ async def run_bot(
     # container vs. the ad-hoc script.
     _bootstrap_dsn = require_database_url(source="voice_agent_livekit_creds")
     _bootstrap_pool = await asyncpg.create_pool(_bootstrap_dsn, min_size=1, max_size=1)
+    _bootstrap_cfg = SiteConfig()
     try:
-        _bootstrap_cfg = SiteConfig()
         await _bootstrap_cfg.load(_bootstrap_pool)
         # DB-first (#1000): key/secret from app_settings, env fallback.
         url, key, secret = await _resolve_livekit_creds_async(_bootstrap_cfg)
     finally:
+        # Stamp the settings read here (read telemetry, poindexter#756).
+        await flush_read_telemetry(_bootstrap_pool, _bootstrap_cfg)
         await _bootstrap_pool.close()
 
     token = _mint_token(key, secret, identity=identity, room=room)
@@ -1228,8 +1231,8 @@ async def run_bot(
     # Stable session ID shared across all turns in this bot's lifetime —
     # cost_logs rows use this as task_id so the whole session is queryable.
     _voice_session_id = str(_uuid.uuid4())
+    site_config = SiteConfig()
     try:
-        site_config = SiteConfig()
         await site_config.load(pool)
 
         # Half B: resolve the brain mode AT pipeline-build time, not at
@@ -1409,6 +1412,8 @@ async def run_bot(
             except asyncio.CancelledError:
                 pass
     finally:
+        # Stamp the settings read here (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, site_config)
         await pool.close()
         log.info("Voice agent shut down.")
 
@@ -1470,12 +1475,13 @@ async def run_service(profile: str = "default") -> int:
     import asyncpg
 
     from poindexter.brain.bootstrap import require_database_url
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry
     from poindexter.services.site_config import SiteConfig
 
     dsn = require_database_url(source=f"voice_agent_livekit_service[{profile}]")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    site_config = SiteConfig()
     try:
-        site_config = SiteConfig()
         await site_config.load(pool)
 
         enabled = str(
@@ -1505,6 +1511,8 @@ async def run_service(profile: str = "default") -> int:
             site_config.get(spec["identity_key"], spec["identity_default"]),
         ).strip() or spec["identity_default"]
     finally:
+        # Stamp the settings read here (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, site_config)
         # ``run_bot`` opens its own pool (it needs the lifecycle to
         # mirror the Pipecat task), so close this one and avoid double
         # use.

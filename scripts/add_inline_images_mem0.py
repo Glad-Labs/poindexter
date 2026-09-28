@@ -161,6 +161,7 @@ async def main() -> int:
 
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
     sys.path.insert(0, "/app")
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry  # type: ignore
     from poindexter.services.site_config import SiteConfig  # type: ignore
     site_config = SiteConfig()
     await site_config.load(pool)
@@ -204,6 +205,8 @@ async def main() -> int:
             content, TASK_ID,
         )
     logger.info("done — task %s updated", TASK_ID)
+    # Stamp the settings this run read (read telemetry, poindexter#756).
+    await flush_read_telemetry(pool, site_config)
     await pool.close()
     return 0
 

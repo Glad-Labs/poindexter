@@ -957,12 +957,20 @@ def youtube_thumbnails(
 
     async def _go(pool):
         from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
 
         sc, _container = await build_and_wire_subprocess_with_container(pool)
-        return await backfill_youtube_thumbnails(
-            pool, sc, selector=selector, apply=do_apply, recompose=recompose, limit=limit,
-            hook=hook_text,
-        )
+        try:
+            return await backfill_youtube_thumbnails(
+                pool, sc, selector=selector, apply=do_apply, recompose=recompose, limit=limit,
+                hook=hook_text,
+            )
+        finally:
+            # This SiteConfig keeps its reads on the instance, which is gone
+            # once _go returns, so stamp them now (read telemetry, #756).
+            # Reports a failed stamp rather than raising, so it can't mask
+            # the backfill's own exception.
+            await flush_read_telemetry(pool, sc)
 
     try:
         outcomes = run_service(_go)
@@ -1015,15 +1023,15 @@ def youtube_sync_metadata(selector: str | None, limit: int | None, do_apply: boo
     Requires the youtube.force-ssl scope — an upload-only token is INSERT-ONLY.
     Re-consent once with `poindexter integrations youtube setup --with-update`.
     """
+    from poindexter.cli._bootstrap import cli_site_config
     from poindexter.cli._dataplane import run_service
-    from poindexter.services.site_config import SiteConfig
     from poindexter.services.youtube_metadata_sync import (
         find_unrecorded_uploads,
         sync_youtube_metadata,
     )
 
     async def _go(pool):
-        sc = SiteConfig(pool=pool)
+        sc = cli_site_config(pool)
         await sc.load(pool)
         # A platform opts the run into repairing a Short whose stored hook has
         # a CONTENT defect (one local call, written back to the task). Only on

@@ -643,3 +643,84 @@ class TestTimestampProvenance:
 
         assert body["updated_at"] is None
         assert body["created_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# Read telemetry: looking a key up is not a read (poindexter#756)
+# ---------------------------------------------------------------------------
+
+
+def _real_admin_db_service(row: dict):
+    """The routes' db_service, delegating to a REAL AdminDatabase over a mock
+    pool, so the test covers the path that used to record the read
+    (AdminDatabase.get_setting) rather than a mocked-out stand-in."""
+    from contextlib import asynccontextmanager
+
+    from poindexter.services.admin_db import AdminDatabase
+    from poindexter.services.database_service import DatabaseService
+
+    conn = MagicMock()
+    conn.fetchrow = AsyncMock(return_value=row)
+    conn.execute = AsyncMock(return_value="INSERT 0 1")
+    conn.fetchval = AsyncMock(return_value=False)
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def _acquire():
+        yield conn
+
+    pool.acquire = _acquire
+    db = object.__new__(DatabaseService)  # only the settings delegates are exercised
+    db.admin = AdminDatabase(pool=pool)
+    return db
+
+
+@pytest.mark.unit
+class TestSettingsLookupsAreNotReads:
+    """GET/PUT /api/settings/{key} (behind `poindexter settings get`, the
+    console's settings editor and the MCP set_setting tool) fetch a key a
+    person or an agent NAMED. That says nothing about whether the running
+    system reads it, so it must not reach read telemetry.
+
+    It did until 2026-09-28: `poindexter settings set` followed by the usual
+    `poindexter settings get` stamped app_settings.last_read_at, and since the
+    zero-reader probe lists only never-stamped keys, the lookup hid a real
+    orphan from it for good. 11 prod keys carried that stamp.
+    """
+
+    _ROW = {
+        "id": 7,
+        "key": "compose_drift_on_demand_services",
+        "value": "chatterbox",
+        "category": "brain",
+        "description": "",
+        "is_secret": False,
+        "is_active": True,
+        "created_at": datetime(2026, 6, 21, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 9, 21, tzinfo=timezone.utc),
+        "owner": None,
+        "value_type": None,
+        "deprecated": False,
+        "superseded_by": None,
+    }
+
+    def test_get_does_not_record_a_read(self):
+        from poindexter.services import settings_read_sink
+
+        client = TestClient(_build_app(_real_admin_db_service(self._ROW)))
+        resp = client.get("/api/settings/compose_drift_on_demand_services")
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["value"] == "chatterbox"
+        assert settings_read_sink.drain_read_keys() == []
+
+    def test_put_does_not_record_a_read(self):
+        from poindexter.services import settings_read_sink
+
+        client = TestClient(_build_app(_real_admin_db_service(self._ROW)))
+        resp = client.put(
+            "/api/settings/compose_drift_on_demand_services", json={"value": "rife"}
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert settings_read_sink.drain_read_keys() == []

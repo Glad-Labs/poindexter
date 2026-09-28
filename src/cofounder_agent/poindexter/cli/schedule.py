@@ -28,7 +28,7 @@ import click
 # DSN + asyncpg helpers (mirror the qa-gates / taps CLI patterns)
 # ---------------------------------------------------------------------------
 from poindexter.cli._aliases import deprecated_alias
-from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool  # noqa: E402
+from poindexter.cli._bootstrap import cli_site_config, close_cli_pool, open_cli_pool  # noqa: E402
 from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
 
 
@@ -64,9 +64,7 @@ async def _load_site_config(pool):
     not here. Falls back to an empty config if the DB is unreachable so
     operator CLI-flag overrides still flow through.
     """
-    from poindexter.services.site_config import SiteConfig
-
-    cfg = SiteConfig(pool=pool)
+    cfg = cli_site_config(pool)
     try:
         await cfg.load(pool)
     except Exception as exc:

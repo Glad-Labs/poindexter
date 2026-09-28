@@ -30,6 +30,7 @@ from poindexter.services.chat_tools import (
     to_openai_tools,
     tool_names_csv,
 )
+from poindexter.services.site_config import SiteConfig
 from tests.unit._nonempty import nonempty
 
 
@@ -99,24 +100,32 @@ class TestRegistryShape:
 @pytest.mark.unit
 class TestGetSetting:
     def test_missing_or_secret_raises_chat_tool_error(self):
-        class Cfg:
-            def get(self, key, default=None):
-                return None
+        cfg = SiteConfig(initial_config={})
 
         with pytest.raises(ChatToolError, match="secret"):
             asyncio.run(
-                get_tool("get_setting").handler(_ctx(site_config=Cfg()), key="x")
+                get_tool("get_setting").handler(
+                    _ctx(site_config=cfg), key="chat_tool_test_absent_key"
+                )
             )
 
     def test_present_value_rendered(self):
-        class Cfg:
-            def get(self, key, default=None):
-                return "42"
+        cfg = SiteConfig(initial_config={"k": "42"})
 
         out = asyncio.run(
-            get_tool("get_setting").handler(_ctx(site_config=Cfg()), key="k")
+            get_tool("get_setting").handler(_ctx(site_config=cfg), key="k")
         )
         assert out == "k = '42'"
+
+    def test_looking_a_key_up_is_not_counted_as_a_read(self):
+        """The operator (or the model) named this key. A lookup is not the
+        system reading it, so it must not reach read telemetry: a stamp would
+        hide the key from the zero-reader probe for good (poindexter#756)."""
+        cfg = SiteConfig(initial_config={"k": "42"})
+
+        asyncio.run(get_tool("get_setting").handler(_ctx(site_config=cfg), key="k"))
+
+        assert cfg.drain_read_keys() == []
 
 
 @pytest.mark.unit

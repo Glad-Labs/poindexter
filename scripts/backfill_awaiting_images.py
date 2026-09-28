@@ -154,6 +154,7 @@ async def main(task_ids: list[str] | None) -> int:
     # lifespan; we replicate the dance so this script doesn't need a
     # running FastAPI process.
     sys.path.insert(0, "/app")
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry  # type: ignore
     from poindexter.services.site_config import SiteConfig  # type: ignore
 
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
@@ -214,6 +215,8 @@ async def main(task_ids: list[str] | None) -> int:
         logger.info("done: %d/%d images backfilled", success, len(rows))
         return 0 if success == len(rows) else 1
     finally:
+        # Stamp the settings this run read (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, site_config)
         await conn.close()
 
 

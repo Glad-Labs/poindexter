@@ -156,8 +156,36 @@ async def open_cli_pool(
     return pool
 
 
+def cli_site_config(pool):
+    """Build the ``SiteConfig`` a CLI command reads settings through.
+
+    Its reads are recorded in the process-wide ``settings_read_sink``, and
+    :func:`close_cli_pool` stamps them into ``app_settings.last_read_at``
+    before it closes the pool (read telemetry, poindexter#756). Without that,
+    a key read only by a CLI command looked unread to the zero-reader probe.
+    They go to the sink rather than the instance because the instance is
+    often gone by then: a ``run_service`` factory or a ``_make_site_config``
+    helper builds it, uses it and returns before the pool closes.
+
+    Construction only. Each command still calls ``load()`` itself and keeps
+    its own policy for a failed load (warn and run on defaults, or fail).
+    ``scripts/ci/settings_read_flush_lint.py`` flags a DB-loaded
+    ``SiteConfig`` built any other way in ``poindexter/cli/``.
+    """
+    from poindexter.services import settings_read_sink
+    from poindexter.services.site_config import SiteConfig
+
+    return SiteConfig(pool=pool, read_recorder=settings_read_sink.record_read)
+
+
 async def close_cli_pool(pool) -> None:
-    """Detach the audit sink, flush in-flight finding writes, close the pool.
+    """Stamp settings reads, detach the audit sink, flush findings, close the pool.
+
+    The command's settings reads are stamped first, while the pool is still
+    open (see :func:`cli_site_config`). This is the one teardown every CLI
+    pool goes through (``scripts/ci/cli_audit_sink_lint.py`` enforces it), so
+    no command can skip it. ``flush_read_telemetry`` never raises, so a failed
+    stamp is logged and never blocks the command or the close.
 
     The drain-before-close ordering is the point: ``audit_log_bg`` writes
     are fire-and-forget tasks, and a finding emitted moments before command
@@ -172,6 +200,10 @@ async def close_cli_pool(pool) -> None:
     the pool closes no matter what the audit teardown does.
     """
     try:
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        await flush_read_telemetry(pool)
+
         from poindexter.services.audit_log import drain_pending_writes, reset_global_audit_logger
 
         reset_global_audit_logger(pool)

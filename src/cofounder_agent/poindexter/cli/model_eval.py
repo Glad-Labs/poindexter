@@ -25,7 +25,7 @@ from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+from poindexter.cli._bootstrap import cli_site_config, close_cli_pool, open_cli_pool
 
 _DEFAULT_SLOT = "rag_rerank_model"
 
@@ -44,9 +44,7 @@ def model_eval_group() -> None:
 async def _load_cfg(pool: Any) -> Any:
     """Build a SiteConfig from app_settings; tolerate an unreachable DB so
     operator CLI flags still flow (mirrors schedule.py::_load_site_config)."""
-    from poindexter.services.site_config import SiteConfig
-
-    cfg = SiteConfig(pool=pool)
+    cfg = cli_site_config(pool)
     try:
         await cfg.load(pool)
     except Exception:  # noqa: BLE001

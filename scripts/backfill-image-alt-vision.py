@@ -315,6 +315,7 @@ async def _revalidate_all(sc) -> None:
 async def run(args) -> int:
     db_url = _resolve_db_url(args.database_url)
     pool = await asyncpg.create_pool(db_url, min_size=1, max_size=4)
+    sc = None
     try:
         sc = await _build_site_config(pool)
         async with pool.acquire() as conn:
@@ -341,6 +342,10 @@ async def run(args) -> int:
             await _revalidate_all(sc)
         return 0
     finally:
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        # Stamp the settings this run read (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, sc)
         await pool.close()
 
 

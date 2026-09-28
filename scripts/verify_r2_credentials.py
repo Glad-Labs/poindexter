@@ -27,6 +27,7 @@ async def main() -> int:
         from poindexter.brain.bootstrap import resolve_database_url
         dsn = resolve_database_url()
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    sc = None
     try:
         from poindexter.services.site_config import SiteConfig
 
@@ -37,6 +38,10 @@ async def main() -> int:
         access = sc.get("storage_access_key", "")
         secret = await sc.get_secret("storage_secret_key", "")
     finally:
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        # Stamp the settings this run read (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, sc)
         await pool.close()
 
     missing = [

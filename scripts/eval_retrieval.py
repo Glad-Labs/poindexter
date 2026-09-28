@@ -106,6 +106,7 @@ async def main() -> int:
     from poindexter.services.model_eval.golden_sets.retrieval import build_retrieval_golden_set
     from poindexter.services.model_eval.types import GoldenCase, GoldenSet
     from poindexter.services.retrieval_eval import persist_result, score_retrieval
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry
     from poindexter.services.site_config import SiteConfig
 
     dsn = os.getenv("DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL")
@@ -170,6 +171,8 @@ async def main() -> int:
                 await persist_result(pool, res)
                 print("  persisted to audit_log (event_type='retrieval_eval')")
 
+    # Stamp the settings this run read (read telemetry, poindexter#756).
+    await flush_read_telemetry(pool, site_config)
     await pool.close()
     return 0
 

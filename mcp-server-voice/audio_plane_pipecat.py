@@ -102,14 +102,17 @@ async def _resolve_livekit_creds_db_first() -> tuple[str, str, str]:
             raise RuntimeError("no DATABASE_URL (env or bootstrap.toml)")
 
         import asyncpg
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
         from poindexter.services.site_config import SiteConfig
 
         pool = await asyncpg.create_pool(dsn, min_size=1, max_size=1)
+        cfg = SiteConfig()
         try:
-            cfg = SiteConfig()
             await cfg.load(pool)
             return await resolve_livekit_creds_async(cfg)
         finally:
+            # Stamp the settings read here (read telemetry, poindexter#756).
+            await flush_read_telemetry(pool, cfg)
             await pool.close()
     except Exception as e:  # noqa: BLE001 -- never break minting; env fallback
         logger.warning(

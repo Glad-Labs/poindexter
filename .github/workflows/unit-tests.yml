@@ -537,6 +537,17 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/cli_audit_sink_lint.py
 
+      # Settings read-flush lint: every DB-loaded SiteConfig must have its
+      # reads stamped into app_settings.last_read_at (flush_read_telemetry in
+      # the function that builds it) or carry a reasoned ALLOWLIST entry. Read
+      # telemetry is buffered per process, so a process that never flushes
+      # makes every key only it reads look unused to the zero-reader probe —
+      # the CLI, the auto-embed sidecar and the Prefect flow runs all did,
+      # silently. Pure-Python AST scan, no deps beyond stdlib.
+      - name: Settings read-flush lint (every SiteConfig's reads get stamped)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/settings_read_flush_lint.py
+
       # Bandit ratchet: no NEW security findings. Bandit is a textual matcher
       # with no dataflow analysis, so on this codebase it is mostly false
       # positives (all 30 of #2594-#2623 were, closed by #2644) — which makes it
@@ -944,6 +955,8 @@ jobs:
         run: python scripts/ci/atom_independence_lint.py
       - name: CLI audit-sink lint (findings reach audit_log from the CLI)
         run: python scripts/ci/cli_audit_sink_lint.py
+      - name: Settings read-flush lint (every SiteConfig's reads get stamped)
+        run: python scripts/ci/settings_read_flush_lint.py
       - name: GPU lock-key contract lint (five-party cross-tree contract)
         run: python scripts/ci/gpu_lock_key_contract_lint.py
       # The only non-stdlib lint in this job. Pinned to the exact poetry.lock

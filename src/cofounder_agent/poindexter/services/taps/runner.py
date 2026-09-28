@@ -25,11 +25,21 @@ after N consecutive failures), etc.
 
 ## Scheduling
 
-``run_all`` has TWO hourly callers — ``RunTapsJob`` in the worker and the
-auto-embed sidecar's loop — in separate processes. Per-tap intervals are
-therefore held in the ``tap_run_state`` TABLE, not in memory: shared state
-is what lets the two agree, and it also stopped every tap from running
-twice an hour.
+``run_all``'s caller is the auto-embed sidecar's hourly loop
+(``scripts/auto-embed.py``), a process of its own. ``RunTapsJob`` in the
+worker drives the other tap runner, ``services/integrations/tap_runner.py``
+(the ``external_taps`` rows), not this one, though this docstring said
+otherwise from 2026-08-07 to 2026-09-28. Per-tap intervals are held in the
+``tap_run_state`` TABLE, not in memory, so they survive the sidecar's
+restarts and any second caller would share them.
+
+## Read telemetry
+
+``run_all`` builds its own ``SiteConfig`` to read the ``tap_*`` tunables,
+and stamps those reads into ``app_settings.last_read_at`` before it returns
+(poindexter#756). Nothing else in the sidecar's process flushes them: until
+2026-09-28 all six ``tap_*`` keys read as never-read on prod while the
+sidecar read them every hour.
 
 Three states a tap can be in, and they must stay distinguishable:
 
@@ -631,6 +641,7 @@ async def run_all(
     zero_yield_findings = True
     enforce_intervals = True
     interval_grace_s = _DEFAULT_INTERVAL_GRACE_S
+    _sc = None
     try:
         from poindexter.services.site_config import SiteConfig
 
@@ -716,4 +727,11 @@ async def run_all(
             _emit_zero_yield_finding(stats)
 
     summary.duration_s = time.monotonic() - start
+    # Stamp the settings this pass read (see "Read telemetry" above). Also
+    # drains the process-wide sink, so a tap's own reads through
+    # SettingsService are stamped too; _sc is None only if building it
+    # failed. flush_read_telemetry never raises, so ingest can't break here.
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+    await flush_read_telemetry(pool, _sc)
     return summary

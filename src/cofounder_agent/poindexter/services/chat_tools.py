@@ -204,7 +204,9 @@ async def _get_audit_summary(ctx: ChatToolContext, *, hours: int = 24) -> str:
 
 async def _get_setting(ctx: ChatToolContext, *, key: str) -> str:
     key = key.strip()
-    value = ctx.site_config.get(key, None)
+    # peek, not get: the operator (or the model) named this key, so looking it
+    # up is not the system reading it, and must not stamp last_read_at.
+    value = ctx.site_config.peek(key, None)
     if value is None:
         raise ChatToolError(
             f"Setting {key!r} is not set, does not exist, or is a secret — "

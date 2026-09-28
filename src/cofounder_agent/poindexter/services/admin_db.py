@@ -494,16 +494,18 @@ class AdminDatabase(DatabaseServiceMixin):
         By default, only active rows (`is_active = true`) are returned —
         soft-deleted rows are hidden. Pass `include_inactive=True` for admin
         or debug workflows that need to see disabled keys.
-        """
-        # Read-telemetry: record the ask so FlushSettingsReadTelemetryJob can
-        # stamp app_settings.last_read_at. This is the DatabaseService.
-        # get_setting_value read path — raw-SQL reads that never reach
-        # SiteConfig / SettingsService, so without this the zero-reader probe
-        # flags live keys (max_posts_per_day, daily_post_limit, …) as orphans
-        # (poindexter#756 follow-up). Recorded before the cache check so a
-        # cache hit still counts as a read, mirroring SettingsService.get.
-        record_read(key)
 
+        Returns the whole row, and does NOT count as a read for read telemetry
+        (`app_settings.last_read_at`, poindexter#756). Its callers are the
+        settings-admin surfaces: `GET/POST/PUT /api/settings/{key}` (behind
+        `poindexter settings get`, the console's settings editor and the MCP
+        `set_setting` tool) and the MCP `get_setting` tool, each fetching a
+        key someone named. Until 2026-09-28 this recorded the read, so a key
+        was stamped the moment an operator looked at it, and the zero-reader
+        probe, which lists only never-stamped keys, never reported it again.
+        Code that reads a value to use it goes through `get_setting_value`,
+        which records.
+        """
         cache_key = f"{key}|{include_inactive}"
         cached = self._settings_cache.get(cache_key)
         if cached and (time.monotonic() - cached["ts"]) < self._SETTINGS_CACHE_TTL:
@@ -700,6 +702,15 @@ class AdminDatabase(DatabaseServiceMixin):
         Returns:
             Setting value or default
         """
+        # Read-telemetry: record the ask so the process's flush can stamp
+        # app_settings.last_read_at. These are raw-SQL reads that never reach
+        # SiteConfig / SettingsService, so without this the zero-reader probe
+        # flags live keys (max_posts_per_day, publish_spacing_hours, …) as
+        # orphans (poindexter#756 follow-up). Recorded before the lookup so a
+        # cache hit still counts, mirroring SettingsService.get. Here and not in
+        # get_setting: that is the row fetch behind the settings-admin API.
+        record_read(key)
+
         setting = await self.get_setting(key)
         if not setting:
             return default

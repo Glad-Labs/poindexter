@@ -221,6 +221,7 @@ async def _emit(sio: socketio.AsyncClient, event: str, *args: Any, timeout: floa
 
 async def main() -> int:
     pool = await asyncpg.create_pool(os.environ["DATABASE_URL"], min_size=1, max_size=2)
+    sc = None
     try:
         # SiteConfig handles the pgcrypto envelope for is_secret rows. Reading
         # raw `value` directly returns ciphertext (`enc:v1:...`) — passing that
@@ -367,6 +368,11 @@ async def main() -> int:
         await sio.disconnect()
         return 0
     finally:
+        if sc is not None:
+            from poindexter.services.settings_read_telemetry import flush_read_telemetry  # noqa: WPS433
+
+            # Stamp the settings this run read (read telemetry, poindexter#756).
+            await flush_read_telemetry(pool, sc)
         await pool.close()
 
 

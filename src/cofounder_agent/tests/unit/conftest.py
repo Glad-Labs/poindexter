@@ -494,6 +494,30 @@ def _restore_root_log_level():
 
 
 # ---------------------------------------------------------------------------
+# Layer 2.6 — settings read-telemetry sink isolation
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolate_settings_read_sink():
+    """Start and end every test with an empty process-wide settings read sink.
+
+    ``services.settings_read_sink`` is a module-global buffer. ``SettingsService.get``,
+    ``DatabaseService.get_setting_value``, the raw-SQL helpers and every CLI
+    ``SiteConfig`` (``cli_site_config``) record into it, and
+    ``cli._bootstrap.close_cli_pool`` flushes it through the command's pool.
+    A key left behind by an earlier test would make an unrelated CLI test's
+    teardown run an extra query against its mock pool, so whether that test's
+    call-count assertions hold would depend on test order.
+    """
+    from poindexter.services import settings_read_sink
+
+    settings_read_sink.drain_read_keys()
+    yield
+    settings_read_sink.drain_read_keys()
+
+
+# ---------------------------------------------------------------------------
 # Layer 3 — module-level singleton resets
 # ---------------------------------------------------------------------------
 

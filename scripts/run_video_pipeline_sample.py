@@ -215,6 +215,7 @@ async def main(
     slug: str, strategy: str = "pexels", skip_long_form: bool = False,
 ) -> None:
     pool = await asyncpg.create_pool(_DATABASE_URL, min_size=1, max_size=4)
+    real_config = None
     try:
         # Populate the module-level service container so providers that
         # use the DI seam (Pexels, etc.) can reach the DB pool.
@@ -299,6 +300,10 @@ async def main(
             print(f"    file_size:      {payload.get('file_size_bytes')} bytes")
             print(f"    srt_path:       {payload.get('srt_path')}")
     finally:
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        # Stamp the settings this run read (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, real_config)
         await pool.close()
 
 

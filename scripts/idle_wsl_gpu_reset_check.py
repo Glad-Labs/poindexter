@@ -267,9 +267,11 @@ async def notify(text: str) -> None:
     + a direct POST) without the two layers of lifespan-only indirection.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
+    from poindexter.services.settings_read_telemetry import flush_read_telemetry  # type: ignore
     from poindexter.services.site_config import SiteConfig  # type: ignore
 
     pool = await asyncpg.create_pool(_resolve_db_url(), min_size=1, max_size=2)
+    site_config = None
     try:
         site_config = SiteConfig(pool=pool)
         await site_config.load(pool)
@@ -280,6 +282,8 @@ async def notify(text: str) -> None:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(webhook_url, json={"content": text})
     finally:
+        # Stamp the settings this run read (read telemetry, poindexter#756).
+        await flush_read_telemetry(pool, site_config)
         await pool.close()
 
 
