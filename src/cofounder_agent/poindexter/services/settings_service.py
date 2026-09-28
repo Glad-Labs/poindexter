@@ -13,6 +13,7 @@ import os
 import time
 
 from poindexter.services.logger_config import get_logger
+from poindexter.services.settings_categories import resolve_category
 from poindexter.services.settings_read_sink import record_read
 
 logger = get_logger(__name__)
@@ -115,18 +116,33 @@ class SettingsService:
     ):
         """Set a setting value (upsert).
 
-        Only non-None optional fields are updated on conflict.
+        Only non-None optional fields are updated on conflict: an omitted
+        ``category`` / ``description`` / ``is_secret`` leaves the existing
+        row's column alone. A NEW row takes ``category`` from
+        ``resolve_category(key)`` when none is given (the same answer the boot
+        seeder and ``AdminDatabase.set_setting`` give) and ``is_secret``
+        FALSE.
+
+        The DO UPDATE arms read the bound parameters, NOT ``EXCLUDED``.
+        ``EXCLUDED`` is the row proposed for insertion, and the new-row
+        fallbacks in VALUES make its category / is_secret non-NULL, so
+        ``COALESCE(EXCLUDED.x, app_settings.x)`` could never reach the
+        existing value. It used to: ``set(key, value)`` re-filed an existing
+        row under ``general`` (the console chat's ``set_setting`` tool does
+        exactly that) and would have cleared ``is_secret`` on a secret row.
+        The ``::text`` / ``::boolean`` casts give each reused parameter one
+        type.
         """
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO app_settings (key, value, category, description, is_secret, updated_at)
-                VALUES ($1, $2, COALESCE($3, 'general'), $4, COALESCE($5, FALSE), NOW())
+                VALUES ($1, $2, COALESCE($3::text, $6::text), $4::text, COALESCE($5::boolean, FALSE), NOW())
                 ON CONFLICT (key) DO UPDATE SET
                     value = EXCLUDED.value,
-                    category = COALESCE(EXCLUDED.category, app_settings.category),
-                    description = COALESCE(EXCLUDED.description, app_settings.description),
-                    is_secret = COALESCE(EXCLUDED.is_secret, app_settings.is_secret),
+                    category = COALESCE($3::text, app_settings.category),
+                    description = COALESCE($4::text, app_settings.description),
+                    is_secret = COALESCE($5::boolean, app_settings.is_secret),
                     updated_at = NOW()
                 """,
                 key,
@@ -134,6 +150,7 @@ class SettingsService:
                 category,
                 description,
                 is_secret,
+                resolve_category(key),
             )
 
         # Invalidate cache so next read picks up the change

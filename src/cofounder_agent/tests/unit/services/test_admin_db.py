@@ -635,6 +635,40 @@ class TestSetSetting:
         )
         assert result is True
 
+    # Bound-argument positions: (sql, key, value, category, description).
+    # The description arm of the upsert reads the bound $4, not EXCLUDED, so
+    # an omitted description (None) must reach it as NULL. The row-level
+    # guarantee is pinned against a real Postgres in
+    # tests/integration_db/test_settings_writers_keep_existing.py.
+
+    @pytest.mark.asyncio
+    async def test_omitted_description_binds_null(self):
+        pool = _make_pool()
+        db = _make_db(pool)
+        assert await db.set_setting("qa_new_threshold", "0.5") is True
+        async with pool.acquire() as conn:
+            args = conn.execute.await_args.args
+        assert args[1] == "qa_new_threshold"
+        assert args[4] is None  # description: NULL keeps an existing row's
+
+    @pytest.mark.asyncio
+    async def test_omitted_category_is_resolved_from_the_key(self):
+        """Deliberate (the "third category writer" fix): a caller that names no
+        category gets the resolver's answer, not 'general' and not the row's own."""
+        pool = _make_pool()
+        db = _make_db(pool)
+        assert await db.set_setting("qa_new_threshold", "0.5") is True
+        async with pool.acquire() as conn:
+            assert conn.execute.await_args.args[3] == "quality"
+
+    @pytest.mark.asyncio
+    async def test_explicit_empty_description_is_bound_not_dropped(self):
+        pool = _make_pool()
+        db = _make_db(pool)
+        assert await db.set_setting("qa_new_threshold", "0.5", description="") is True
+        async with pool.acquire() as conn:
+            assert conn.execute.await_args.args[4] == ""  # a deliberate clear
+
 
 # ---------------------------------------------------------------------------
 # delete_setting

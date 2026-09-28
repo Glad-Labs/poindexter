@@ -585,6 +585,11 @@ class AdminDatabase(DatabaseServiceMixin):
         implicit "bring this setting back" operation. To disable a key
         without losing the value, call `set_setting_active(key, False)`.
 
+        `description=None` keeps an existing row's description (a new row
+        starts with ''); an explicit value, including '', is written.
+        `category=None` is resolved from the key (see below), so it does NOT
+        keep the row's own category — pass the existing category to keep it.
+
         `display_name` is accepted for back-compat but ignored.
         """
         del display_name
@@ -597,15 +602,23 @@ class AdminDatabase(DatabaseServiceMixin):
             if category is None:
                 category = resolve_category(key)
 
+            # The description arm reads the bound $4, NOT EXCLUDED: EXCLUDED
+            # is the row proposed for insertion, and COALESCE($4, '') in
+            # VALUES makes its description non-NULL, so COALESCE(EXCLUDED.
+            # description, <existing>) could never reach <existing> and every
+            # call without a description blanked the row's. (The category arm
+            # is safe only because `category` was resolved above and is never
+            # NULL here, so EXCLUDED.category is the explicit-or-resolved
+            # value, which is meant to win.) $4 is reused, hence the casts.
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
                     INSERT INTO app_settings (key, value, category, description, is_active)
-                    VALUES ($1, $2, COALESCE($3, 'general'), COALESCE($4, ''), true)
+                    VALUES ($1, $2, COALESCE($3, 'general'), COALESCE($4::text, ''), true)
                     ON CONFLICT (key) DO UPDATE SET
                         value       = EXCLUDED.value,
                         category    = COALESCE(EXCLUDED.category, app_settings.category),
-                        description = COALESCE(EXCLUDED.description, app_settings.description),
+                        description = COALESCE($4::text, app_settings.description),
                         is_active   = true,
                         updated_at  = NOW()
                     """,

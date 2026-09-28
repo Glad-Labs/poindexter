@@ -226,6 +226,47 @@ class TestSet:
         _run(svc.set("x", "new"))
         assert svc._last_refresh == 0  # cache invalidated
 
+    # -- omitted optionals -------------------------------------------------
+    #
+    # The upsert's DO UPDATE arms must read the BOUND parameters, not EXCLUDED
+    # (which the new-row fallbacks in VALUES make non-NULL). These pin what is
+    # bound; the row-level guarantee -- an omitted category / description /
+    # is_secret leaves an existing row alone -- is pinned against a real
+    # Postgres in tests/integration_db/test_settings_writers_keep_existing.py,
+    # because a mock cannot run the COALESCE.
+    # Bound-argument positions: (sql, key, value, category, description,
+    # is_secret, new_row_category).
+
+    def test_omitted_optionals_bind_null_so_an_existing_row_keeps_its_own(self):
+        pool = _make_pool()
+        svc = SettingsService(pool)
+        _run(svc.set("qa_new_threshold", "0.5"))
+        args = pool.acquire().__aenter__.return_value.execute.await_args.args
+        assert args[1:3] == ("qa_new_threshold", "0.5")
+        assert args[3] is None  # category
+        assert args[4] is None  # description
+        assert args[5] is None  # is_secret
+
+    def test_new_row_category_fallback_is_the_resolvers_answer(self):
+        from poindexter.services.settings_categories import resolve_category
+
+        assert resolve_category("qa_new_threshold") == "quality"  # test premise
+        pool = _make_pool()
+        svc = SettingsService(pool)
+        _run(svc.set("qa_new_threshold", "0.5"))
+        args = pool.acquire().__aenter__.return_value.execute.await_args.args
+        assert args[6] == "quality"
+
+    def test_explicit_optionals_are_bound_as_given(self):
+        pool = _make_pool()
+        svc = SettingsService(pool)
+        _run(svc.set(
+            "qa_new_threshold", "0.5",
+            category="models", description="d", is_secret=False,
+        ))
+        args = pool.acquire().__aenter__.return_value.execute.await_args.args
+        assert args[3:6] == ("models", "d", False)  # False is a value, not "omitted"
+
 
 # ---------------------------------------------------------------------------
 # delete

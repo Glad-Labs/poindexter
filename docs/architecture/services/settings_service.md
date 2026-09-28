@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/poindexter/services/settings_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_settings_service.py`
-**Last reviewed:** 2026-04-30
+**Last reviewed:** 2026-09-28
 
 ## What it does
 
@@ -44,8 +44,10 @@ hits the DB on every write.
   `{key: value}` for every cached row whose `category` column matches.
 - `await svc.set(key, value, category=None, description=None, is_secret=None)` —
   upsert. Optional fields are only updated on conflict if explicitly
-  passed (None means "leave the existing column alone"). Invalidates
-  the local cache so the next `get_*` call re-fetches.
+  passed (None means "leave the existing column alone"). A NEW row takes
+  its category from `resolve_category(key)` when none is given (the same
+  answer the boot seeder gives) and `is_secret` FALSE. Invalidates the
+  local cache so the next `get_*` call re-fetches.
 - `await svc.delete(key)` — DELETE by key. Logs the result string and
   invalidates the cache.
 - `await svc.get_all(include_secrets=False) -> list[dict]` — full
@@ -78,10 +80,24 @@ updated_at}]`, sorted by key. Secret values are replaced with
   falls through to `os.getenv("FOO_BAR")`. This matches `SiteConfig`
   but means setting `foo_bar` in the DB to `""` (empty string) will
   silently fall through to env — empty isn't the same as "no row."
-- **Write fields with COALESCE.** The upsert SQL uses
-  `COALESCE($N, app_settings.<col>)` for category, description,
-  is_secret — so passing `None` preserves the existing value rather
-  than overwriting with NULL.
+- **Write fields with COALESCE — on the bound parameter, never on
+  `EXCLUDED`.** The upsert's DO UPDATE arms use
+  `COALESCE($N::<type>, app_settings.<col>)` for category, description
+  and is_secret, so passing `None` preserves the existing value rather
+  than overwriting it. `EXCLUDED` is the row _proposed for insertion_,
+  and the new-row fallbacks in VALUES (`COALESCE($3, ...)`,
+  `COALESCE($5, FALSE)`) make it non-NULL, so
+  `COALESCE(EXCLUDED.<col>, app_settings.<col>)` can never reach the
+  existing value. That is what this method used to do: until 2026-09-28
+  `set(key, value)` re-filed an existing row under `general` (the console
+  chat's `set_setting` tool is exactly that call) and cleared
+  `is_secret` on a secret row, contradicting this very paragraph. Any
+  new upsert of the "keep it unless supplied" kind has to read the
+  parameter, and needs a real-Postgres test, since a mock cannot run the
+  COALESCE (`tests/integration_db/test_settings_writers_keep_existing.py`).
+  `AdminDatabase.set_setting` had the same trap on `description`
+  (fixed alongside); its `category=None` deliberately resolves from the
+  key instead of keeping the row's own.
 
 ## Configuration
 
@@ -106,6 +122,11 @@ TIMESTAMP`.
   - `services.container` — stores it under key `"settings"` for DI.
   - `/api/settings` and `/api/settings/{key}` route handlers — use
     it for both reads (with masking) and writes.
+  - `services/chat_tools.py::_set_setting` — the console chat's setting
+    tool: `SettingsService(pool).set(key, value)` on an existing,
+    non-secret row (it refuses new keys and secret rows itself).
+  - `services/persona_service.py::upsert_persona` — writes
+    `persona.<slug>.*` rows with an explicit category and description.
   - OpenClaw setting-management UI — same routes.
 
 ## Failure modes
@@ -141,8 +162,11 @@ TIMESTAMP`.
       category="cost_guard", description="Daily LLM spend cap"
   )
   ```
-- **Set a value via CLI:** `poindexter settings set <key> <value>` — wraps
-  this service through the API.
+- **Set a value via CLI:** `poindexter settings set <key> <value>` — a
+  direct DB upsert with its own statement (it does not go through this
+  service or the API, so it can run while the worker is down). Its
+  `--category` / `--description` semantics are documented in
+  `docs/operations/cli-reference.md`.
 - **List everything (with secrets revealed):**
   ```python
   rows = await services["settings"].get_all(include_secrets=True)
