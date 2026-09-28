@@ -13,8 +13,7 @@
  */
 import { NextRequest } from 'next/server';
 import { proxy, postIsGone } from '../proxy';
-
-const R2 = 'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
+import { STATIC_URL } from '../lib/static-url';
 
 function req(path) {
   return new NextRequest(`https://www.gladlabs.io${path}`);
@@ -53,7 +52,7 @@ describe('postIsGone', () => {
     global.fetch.mockResolvedValue({ status: 404 });
     await postIsGone('some-slug');
     expect(global.fetch).toHaveBeenCalledWith(
-      `${R2}/posts/some-slug.json`,
+      `${STATIC_URL}/posts/some-slug.json`,
       expect.objectContaining({ method: 'HEAD' })
     );
   });

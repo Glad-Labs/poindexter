@@ -10,6 +10,7 @@ import {
   cleanPostTitle,
   postExcerpt,
 } from '@/lib/posts';
+import { STATIC_URL } from '@/lib/static-url';
 
 // Time-based ISR backstop (1h). Primary refresh is on-demand
 // revalidateTag('posts') on publish; this floor self-heals the index if a
@@ -43,10 +44,6 @@ export const metadata = {
 };
 
 // Fetch posts from static JSON on R2/CDN — no API server needed
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
-
 async function getPosts() {
   try {
     const response = await fetch(`${STATIC_URL}/posts/index.json`, {

@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/nextjs';
 import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/site.config';
+import { STATIC_URL } from '@/lib/static-url';
 
 // Time-based ISR backstop (1h). On-demand revalidateTag('posts') on publish
 // is primary; this floor keeps the sitemap from going stale indefinitely if
@@ -29,10 +30,6 @@ interface Category {
 interface Tag {
   slug: string;
 }
-
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
 
 /**
  * Dynamic Sitemap Generation for Next.js 15

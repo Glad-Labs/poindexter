@@ -4,6 +4,7 @@ import {
   type APIRequestContext,
   type Page,
 } from '@playwright/test';
+import { STATIC_URL } from '../lib/static-url';
 
 /**
  * Tag archive page E2E coverage.
@@ -34,17 +35,16 @@ import {
 // posts/index.json. The same either-or shape in author.spec.ts was green while
 // every author page was broken (#3339).
 
-// The index is found the way lib/posts.ts finds it. The scheduled run sets no
-// override, so it reads the index production reads: on 2026-09-28 the live
-// /tag/ai-ml and /tag/indie-hacking listed exactly the posts it tags with
-// them. If you point a dev server at another bucket, export
-// NEXT_PUBLIC_STATIC_URL to this spec as well. Should this copy and the
-// page's ever disagree, the spec fails: either it cannot read the index, or
+// The index is found the way the page finds it. STATIC_URL comes from
+// lib/static-url.js, which lib/posts.ts reads too, so this spec holds no bucket
+// of its own. (It is not imported from lib/posts.ts, which pulls in
+// @sentry/nextjs.) The scheduled run sets no override, so it reads the index
+// production reads: on 2026-09-28 the live /tag/ai-ml and /tag/indie-hacking
+// listed exactly the posts it tags with them. If you point a dev server at
+// another bucket, export NEXT_PUBLIC_STATIC_URL to this spec as well. Should
+// the two ever disagree, the spec fails: either it cannot read the index, or
 // it picks a tag the page has no posts for. It cannot pass a broken page,
 // because what passes is still what the page shows.
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
 
 const UNKNOWN_TAG_SLUG = 'this-tag-definitely-does-not-exist-xyz123';
 

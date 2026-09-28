@@ -1,14 +1,11 @@
 import * as Sentry from '@sentry/nextjs';
+import { STATIC_URL } from './static-url';
 /**
  * Posts API Functions
  *
  * Reads from static JSON on R2/CDN — no API server needed.
  * The content pipeline pushes updated JSON on every publish.
  */
-
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
 
 export interface Post {
   id: string;

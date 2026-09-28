@@ -311,6 +311,7 @@ Next.js 16 app router. On-demand tag-based revalidation: cache tags are declared
 - ViewTracker beacon → Cloudflare Worker (`infrastructure/cloudflare/page-views-beacon/`) → CF Analytics Engine → `page_views` table (5-min aggregate sync via `services/jobs/sync_cloudflare_analytics.py`). The legacy same-origin `/api/page-views` Vercel route was deleted 2026-05-28 (it 404s by design now — Vercel functions can't reach the local Docker net); production sets `NEXT_PUBLIC_BEACON_URL` to the Worker.
 - Sitemap.xml (dynamic, 72+ URLs)
 - Google Search Console verified
+- **The R2 bucket is named in one file, `lib/static-url.js`** (`STATIC_URL`, plus `STATIC_ORIGIN` for the CSP `connect-src`, the `next/image` pattern and the podcast/video feed URLs). Pages, routes, `proxy.ts`, `next.config.js` and the e2e tag spec import it; nothing else may read `NEXT_PUBLIC_STATIC_URL` or spell the host, and `__tests__/static-url-single-source.test.js` fails on a second copy. It is plain ESM JS with no imports on purpose: `next.config.js` loads it with Node's own ESM loader (it cannot take a `.ts` file on every supported Node) and `proxy.ts` runs at the edge. Keep the literal `process.env.NEXT_PUBLIC_STATIC_URL` in it, because Next inlines `NEXT_PUBLIC_*` only where it is written out in full. Moving the bucket is one edit; see [`docs/architecture/static-export-pipeline.md`](docs/architecture/static-export-pipeline.md#how-the-site-finds-the-bucket).
 
 ### MCP Server (`mcp-server/`)
 

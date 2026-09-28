@@ -15,6 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { generateBlogPostingSchema } from './structured-data';
+import { STATIC_ORIGIN } from './static-url';
 
 const SITE = 'https://site.example';
 
@@ -40,8 +41,7 @@ function publicFileFor(url) {
 
 describe('generateBlogPostingSchema image URLs', () => {
   it('passes an absolute cover image URL through untouched', () => {
-    const r2 =
-      'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/images/featured/a.png';
+    const r2 = `${STATIC_ORIGIN}/images/featured/a.png`;
     expect(schemaFor(r2).image.url).toBe(r2);
     expect(schemaFor('http://cdn.example/b.jpg').image.url).toBe(
       'http://cdn.example/b.jpg'

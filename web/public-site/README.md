@@ -48,6 +48,7 @@ web/public-site/
 │   └── WebVitals.tsx            # Core Web Vitals → Sentry
 ├── lib/                         # Utilities
 │   ├── posts.ts                 # Static R2 post client + types (primary)
+│   ├── static-url.js            # The one place the R2 bucket is named (STATIC_URL, STATIC_ORIGIN)
 │   ├── seo.js                   # Metadata generation
 │   ├── structured-data.js       # JSON-LD generators
 │   ├── site.config.js           # Site name + URL
@@ -70,6 +71,8 @@ GET {STATIC_URL}/categories.json    → {categories: [...]}
 GET {STATIC_URL}/sitemap.json       → {urls: [...]}
 ```
 
+`STATIC_URL` is resolved once, in [`lib/static-url.js`](lib/static-url.js): `NEXT_PUBLIC_STATIC_URL` when set, otherwise the Glad Labs bucket. Every page, route handler, the sitemap, the feeds and the edge proxy (`proxy.ts`) import it. So does `next.config.js`, which takes the bucket's origin from it (`STATIC_ORIGIN`) for the CSP `connect-src` and the `next/image` remote pattern, and the podcast and video feed routes build their URLs from that same origin. Don't read the variable or spell the bucket's host anywhere else: `__tests__/static-url-single-source.test.js` fails if you do.
+
 Data flow:
 
 1. `generateStaticParams()` fetches post slugs at build time
@@ -86,6 +89,8 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 # R2 static export; defaults to the Glad Labs bucket when unset
 NEXT_PUBLIC_STATIC_URL=https://<bucket>.r2.dev/static
 ```
+
+To move the bucket, change `DEFAULT_STATIC_URL` in `lib/static-url.js`, or set `NEXT_PUBLIC_STATIC_URL` for the deploy. It is read at build time, so redeploy after changing it on Vercel. The CSP allow-list and the image pattern in `next.config.js` follow it, and nothing else on the site names the bucket.
 
 There is no backend URL. `NEXT_PUBLIC_API_BASE_URL` (and its older name `NEXT_PUBLIC_FASTAPI_URL`) used to be required for production builds; nothing reads it now.
 

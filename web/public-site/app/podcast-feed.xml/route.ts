@@ -10,25 +10,16 @@
  */
 
 import { NextResponse } from 'next/server';
+import { STATIC_ORIGIN } from '@/lib/static-url';
 
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
-
-function deriveFeedUrl(): string {
-  try {
-    const parsed = new URL(STATIC_URL);
-    return `${parsed.origin}/podcast/feed.xml`;
-  } catch {
-    return 'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/podcast/feed.xml';
-  }
-}
+// The backend publishes the feed beside `static/`, at the bucket's origin.
+const FEED_URL = `${STATIC_ORIGIN}/podcast/feed.xml`;
 
 export const revalidate = 3600;
 
 export async function GET() {
   try {
-    const response = await fetch(deriveFeedUrl(), {
+    const response = await fetch(FEED_URL, {
       next: { revalidate: 3600 },
     });
 

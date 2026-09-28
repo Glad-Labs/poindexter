@@ -13,10 +13,7 @@
 //     entries for markdown vs HTML consumers.
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
+import { STATIC_URL } from './lib/static-url';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
 

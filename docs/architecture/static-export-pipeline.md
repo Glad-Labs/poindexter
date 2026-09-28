@@ -3,7 +3,9 @@
 The public site (`web/public-site/`) reads its post listings and content
 **exclusively from R2** — there is no API call from Vercel back into the
 worker for routine reads. The `lib/posts.ts → fetchPostIndex` helper fetches
-`https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static/posts/index.json`
+`${STATIC_URL}/posts/index.json` (today
+`https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static/posts/index.json`,
+see [How the site finds the bucket](#how-the-site-finds-the-bucket))
 and uses Next.js tag-based caching (`{ tags: ['posts', 'post-index'] }`)
 that the worker invalidates on publish.
 
@@ -102,6 +104,43 @@ Reads from `app_settings` (category `general`):
 
 Legacy `cloudflare_r2_*` keys still resolve as a fallback (see
 `services/r2_upload_service.py:_storage`) but are deprecated.
+
+## How the site finds the bucket
+
+The site names the bucket in one file, `web/public-site/lib/static-url.js`, and
+every other file imports from it:
+
+- `STATIC_URL` is `NEXT_PUBLIC_STATIC_URL`, else the default (the Glad Labs
+  bucket's `static/` prefix). Every page, route handler, the sitemap, the RSS
+  feed and the edge proxy (`proxy.ts`) fetch `${STATIC_URL}/posts/index.json`
+  and its siblings from it.
+- `STATIC_ORIGIN` is that bucket's origin: scheme and host, no path.
+  `next.config.js` allows it in the CSP `connect-src` and as a `next/image`
+  remote pattern, and the podcast and video feed routes fetch
+  `/podcast/feed.xml` and `/video/feed.xml` from it. The backend publishes both
+  beside `static/`. When `NEXT_PUBLIC_STATIC_URL` is not an absolute http(s)
+  URL it falls back to the default bucket's origin.
+
+The worker's side of the same bucket is the `storage_*` settings above, and
+`storage_public_url` must name the same origin as the site's `STATIC_ORIGIN`.
+
+**Moving the bucket** takes one edit on the site: change `DEFAULT_STATIC_URL` in
+`lib/static-url.js`, or set `NEXT_PUBLIC_STATIC_URL` for the deploy (it is read
+at build time, so redeploy after changing it on Vercel). The CSP allow-list and
+the image pattern follow, because `next.config.js` reads the same module.
+Nothing else on the site names the bucket, and
+`__tests__/static-url-single-source.test.js` fails if something does.
+
+That guard exists because the site used to hold a copy of the fallback in every
+file that read the export, and `next.config.js` kept one for the CSP. A missed
+copy sent one surface to the old bucket with no error, and when the CSP
+allow-list and the fetch URL drifted apart, `/search` silently returned no
+results (Gitea #262).
+
+The worker and operator side still spell the bucket's host in a few defaults,
+outside the site: the operator overrides seed, the brain's R2 connectivity
+probe, and the DR, backfill and health-check scripts. Search `src` and
+`scripts` for the old host when you move.
 
 ## Operator runbook
 

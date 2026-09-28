@@ -17,6 +17,8 @@
 // louder, correct behaviour (CLAUDE.md "fail loud + notify"). If this ever
 // throws again, fix the hoisting rather than re-adding the catch.
 import { withSentryConfig } from '@sentry/nextjs';
+// With the extension: Node's ESM loader runs this file and does not add it.
+import { STATIC_ORIGIN } from './lib/static-url.js';
 
 // Derive safe origins for the CSP connect-src directive from env vars.
 // Uses URL().origin to strip paths and reject semicolons that could inject CSP directives.
@@ -29,25 +31,16 @@ import { withSentryConfig } from '@sentry/nextjs';
 // put its origin in connect-src, which on Vercel was a retired node's
 // tailnet name that no longer resolved.
 
-// Static JSON/image CDN (R2) — the search page and any other client-side
-// consumer of posts/index.json fetches from here. Without it in connect-src
-// the browser blocks the fetch and /search silently returns zero results
-// (Gitea #262).
+// Static JSON/image CDN (R2). Its origin is allowed in connect-src so that a
+// browser-side fetch of posts/index.json isn't blocked (without it /search
+// silently returned zero results, Gitea #262), and next/image may optimise the
+// images it holds (images.remotePatterns below).
 //
-// Mirrors the same fallback used by client code when NEXT_PUBLIC_STATIC_URL
-// isn't set (see app/page.js, app/search/page.jsx, lib/posts.ts) — otherwise
-// a missing Vercel env var silently re-breaks /search because the fetch URL
-// and the CSP allow-list drift apart.
-const STATIC_URL_FALLBACK =
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
-const cspStaticOrigin = (() => {
-  const raw = process.env.NEXT_PUBLIC_STATIC_URL || STATIC_URL_FALLBACK;
-  try {
-    return new URL(raw).origin;
-  } catch {
-    return '';
-  }
-})();
+// STATIC_ORIGIN comes from lib/static-url.js, the module every page, route and
+// the edge proxy takes its fetch URL from, so the allow-list and the fetch
+// target move together. While each held its own copy of the fallback the two
+// could drift apart, and when they did /search broke with no error.
+const staticBucket = new URL(STATIC_ORIGIN);
 
 // First-party page-view beacon (Cloudflare Worker). The browser blocks the
 // ViewTracker beacon unless the Worker's origin is in connect-src, so derive
@@ -111,9 +104,12 @@ const nextConfig = {
         hostname: 'images.pexels.com',
         pathname: '/**',
       },
+      // The static export bucket (lib/static-url.js). It holds the images as
+      // well as the JSON. The wildcard below covers any *.r2.dev bucket, but
+      // not a custom domain the bucket moves to.
       {
-        protocol: 'https',
-        hostname: 'pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev',
+        protocol: staticBucket.protocol.replace(':', ''),
+        hostname: staticBucket.hostname,
         pathname: '/**',
       },
       {
@@ -212,7 +208,7 @@ const nextConfig = {
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://giscus.app",
                 "img-src 'self' data: https:",
                 "font-src 'self' data: https://fonts.gstatic.com",
-                `connect-src 'self'${cspStaticOrigin ? ' ' + cspStaticOrigin : ''}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com https://ep1.adtrafficquality.google`,
+                `connect-src 'self' ${STATIC_ORIGIN}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com https://ep1.adtrafficquality.google`,
                 "frame-src 'self' https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net https://giscus.app https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com",
               ].join('; ') + ';',
           },

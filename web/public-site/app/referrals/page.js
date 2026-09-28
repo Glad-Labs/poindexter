@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/nextjs';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { AffiliateDisclosure } from '../../components/AffiliateDisclosure';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import { STATIC_URL } from '@/lib/static-url';
 
 // Time-based ISR backstop (1h) — see app/page.js and app/archive/[page]/page.tsx.
 // On-demand revalidateTag('referrals') from the poindexter CLI is primary;
@@ -15,10 +16,6 @@ export const metadata = {
     canonical: `${SITE_URL}/referrals`,
   },
 };
-
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
 
 async function fetchReferralsIndex() {
   const response = await fetch(`${STATIC_URL}/affiliate-referrals.json`, {

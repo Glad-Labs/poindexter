@@ -10,15 +10,12 @@
 import { NextResponse } from 'next/server';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 import { sortPostsNewestFirst, cleanPostTitle, postExcerpt } from '@/lib/posts';
+import { STATIC_URL } from '@/lib/static-url';
 
 // Time-based ISR backstop (1h), matching podcast-feed.xml / video-feed.xml.
 // On-demand revalidateTag('posts') on publish is primary; this floor
 // self-heals the feed if a publish path skips revalidate (poindexter#575).
 export const revalidate = 3600;
-
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
 
 interface Post {
   title: string;

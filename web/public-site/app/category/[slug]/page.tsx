@@ -6,10 +6,7 @@ import logger from '@/lib/logger';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { getAllPublishedPosts, postFeaturedImage } from '@/lib/posts';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
-
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
+import { STATIC_URL } from '@/lib/static-url';
 
 interface Post {
   id: string;
