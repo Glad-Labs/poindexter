@@ -20,8 +20,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from poindexter.brain import health_probes as hp
-from poindexter.brain import probe_schedule
+from poindexter.brain import probe_failure_state, probe_schedule
 from poindexter.brain import probe_severity as ps
+from poindexter.brain.probe_failure_state import ProbeFailureState
 from poindexter.brain.probe_schedule import ProbeSchedule
 
 
@@ -60,15 +61,10 @@ def _make_pool():
 
 @pytest.fixture(autouse=True)
 def _reset_module_state(monkeypatch):
-    # _created_issues was removed when the Gitea-issue auto-create helper
-    # was deleted (Gitea decommissioned 2026-04-30).
-    # A fresh probe schedule per test, as in a newly started brain.
+    # A fresh probe schedule, failure counts and self-heal cooldowns per test,
+    # as in a newly started brain.
     monkeypatch.setattr(probe_schedule, "schedule", ProbeSchedule())
-    hp._failure_counts.clear()
-    hp._last_remediation.clear()
-    yield
-    hp._failure_counts.clear()
-    hp._last_remediation.clear()
+    monkeypatch.setattr(probe_failure_state, "state", ProbeFailureState())
 
 
 @pytest.fixture(autouse=True)
@@ -350,7 +346,6 @@ class TestConditionalSuppressionAndCrash:
     """
 
     async def _run_with(self, probe_fn, *, probe_name, am_healthy):
-        hp._failure_counts.clear()
         pages: list[str] = []
         notices: list[str] = []
         with patch.dict(hp.PROBES, {probe_name: probe_fn}, clear=True), \

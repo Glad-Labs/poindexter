@@ -3,7 +3,8 @@ Health probes — exercise each service with real inputs to verify they work.
 
 Unlike basic HTTP checks, these probes send actual requests and validate responses.
 Each probe runs on its own schedule, tracked by last-run times that survive a
-brain restart (see probe_schedule.py).
+brain restart (see probe_schedule.py). Consecutive-failure counts and self-heal
+cooldowns survive one too (see probe_failure_state.py).
 Results are stored in brain_knowledge for trend analysis.
 
 Standalone: only depends on asyncpg + urllib (no FastAPI imports).
@@ -23,7 +24,12 @@ import urllib.request
 from datetime import UTC
 from typing import Any
 
-from poindexter.brain import cycle_stage, probe_schedule, probe_severity
+from poindexter.brain import (
+    cycle_stage,
+    probe_failure_state,
+    probe_schedule,
+    probe_severity,
+)
 from poindexter.brain.docker_utils import localize_url, resolve_url
 from poindexter.brain.secret_reader import read_app_setting as _read_app_setting
 
@@ -262,15 +268,6 @@ async def _sync_config_from_db(pool: Any) -> None:
             )
     except Exception as e:
         logger.warning("[PROBES] Failed to sync config from DB, using env defaults: %s", e)
-
-# Note: a previous version of this file had a `_create_gitea_issue` helper
-# that auto-filed Gitea tickets on 3-consecutive probe failures. Gitea was
-# decommissioned 2026-04-30 (see CLAUDE.md "Deployment" section); the
-# helper was removed in the same PR that wrapped these probes for async-
-# correctness. The `_created_issues` dedupe set used to live here too —
-# see `_failure_counts` below for the still-live consecutive-failure
-# tracking that drives notification escalation, which goes through the
-# brain's `notify_operator` (Telegram + Discord) instead now.
 
 # Probe schedules (seconds between runs)
 PROBE_SCHEDULES = {
@@ -1880,9 +1877,9 @@ PROBES = {
     "cadence_slo": probe_cadence_slo,
 }
 
-# Track consecutive failures for alerting
-_failure_counts: dict[str, int] = {}
-ALERT_AFTER_FAILURES = 3  # Alert on Telegram after 3 consecutive failures
+# A probe's failure notice goes out on its third failure in a row, at the
+# probe's severity. The counts are kept in probe_failure_state.
+ALERT_AFTER_FAILURES = 3
 
 # Probes whose alerts are now owned by Prometheus + Alertmanager
 # (Phase D cutover). They still RUN — their results land in brain_knowledge
@@ -1965,6 +1962,8 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
     """
     await _sync_config_from_db(pool)
     await probe_schedule.schedule.load(pool)
+    failure_state = probe_failure_state.state
+    await failure_state.load(pool)
     results = {}
     info = info_fn or notify_fn
     severity_overrides = await probe_severity.load_overrides(pool)
@@ -2044,8 +2043,8 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
         # Track failures and alert.
         # Probes in PROMETHEUS_COVERED_PROBES no longer Telegram-alert —
         # Prometheus + Alertmanager own human-visible alerts for those
-        # signals. We still track failure counts so remediation logic
-        # fires and Gitea issues get filed.
+        # signals. Their failures are still counted, so their self-heals
+        # still run.
         prom_covered = name in PROMETHEUS_COVERED_PROBES
         crashed = bool(result.get("crashed"))
         # Suppress brain-side notices ONLY when Prometheus/Alertmanager truly
@@ -2056,20 +2055,20 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
         suppress = prom_covered and am_healthy and not crashed
         if ok:
             if (
-                _failure_counts.get(name, 0) >= ALERT_AFTER_FAILURES
+                failure_state.failures.get(name, 0) >= ALERT_AFTER_FAILURES
                 and info
                 and not suppress
             ):
                 await _maybe_await(
                     info(f"✅ Probe '{name}' recovered: {result.get('detail', '')}")
                 )
-            _failure_counts[name] = 0
+            await failure_state.record_success(pool, name)
         else:
-            _failure_counts[name] = _failure_counts.get(name, 0) + 1
+            failures = await failure_state.record_failure(pool, name)
             logger.warning("[PROBES] %s %s (%d consecutive): %s",
                            name, "CRASHED" if crashed else "FAILED",
-                           _failure_counts[name], result.get("detail", ""))
-            if _failure_counts[name] == ALERT_AFTER_FAILURES:
+                           failures, result.get("detail", ""))
+            if failures == ALERT_AFTER_FAILURES:
                 detail = result.get('detail', 'unknown error')
                 if notify_fn and not suppress:
                     # Every failure-side notice — a plain failure, a crash,
@@ -2110,15 +2109,15 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
                             f"⚠️ Probe '{name}' failed {ALERT_AFTER_FAILURES}x "
                             f"({severity}): {detail}"
                         ))
-                # The Gitea-issue auto-create paper trail was removed when
-                # Gitea was decommissioned (2026-04-30). The notify_operator
-                # call above is now the only escalation; the brain's
-                # alert_dispatcher writes a row into alert_events for the
-                # broader monitoring view.
 
     # --- Self-healing: execute remediation actions for persistent failures ---
-    for name, count in _failure_counts.items():
-        if count >= ALERT_AFTER_FAILURES and name in REMEDIATIONS:
+    # Walks PROBES rather than the counts: a count read back from
+    # brain_knowledge can outlive a probe that has since been removed.
+    for name in PROBES:
+        if (
+            failure_state.failures.get(name, 0) >= ALERT_AFTER_FAILURES
+            and name in REMEDIATIONS
+        ):
             await _try_remediation(
                 name, results.get(name, {}), notify_fn, pool=pool, info_fn=info_fn,
             )
@@ -2135,9 +2134,9 @@ async def run_health_probes(pool, notify_fn=None, info_fn=None):
 # Self-healing: remediation actions
 # ---------------------------------------------------------------------------
 
-# Track remediation cooldowns (prevent restart loops)
-_last_remediation: dict[str, float] = {}
-REMEDIATION_COOLDOWN = 900  # 15 minutes between remediation attempts per probe
+# Minimum time between the starts of two remediation attempts for one probe
+# (prevents restart loops). The start times are kept in probe_failure_state.
+REMEDIATION_COOLDOWN = 900  # 15 minutes
 
 
 async def _call_agent_recovery(pool, service: str) -> tuple[bool, str]:
@@ -2206,8 +2205,8 @@ async def _try_remediation(
     back to ``notify_fn`` when none is given); a heal that failed pages
     through ``notify_fn``. See ``run_health_probes``.
     """
-    last = _last_remediation.get(probe_name, 0)
-    if (time.time() - last) < REMEDIATION_COOLDOWN:
+    failure_state = probe_failure_state.state
+    if not failure_state.remediation_due(probe_name, REMEDIATION_COOLDOWN):
         return  # Too soon since last attempt
 
     action = REMEDIATIONS.get(probe_name)
@@ -2216,6 +2215,10 @@ async def _try_remediation(
 
     logger.info("[SELF-HEAL] Attempting remediation for '%s': %s",
                 probe_name, action.get("description", "unknown"))
+    # The cooldown starts before the action does, so an attempt that never
+    # finishes still counts: the cycle watchdog can cancel the cycle during a
+    # container restart, and the brain itself can restart during one.
+    await failure_state.mark_remediation(pool, probe_name)
 
     ok, msg = False, "no action taken"
     action_type = action.get("type")
@@ -2231,8 +2234,6 @@ async def _try_remediation(
         msg = "; ".join(msgs)
     elif action_type == "recover_via_agent":
         ok, msg = await _call_agent_recovery(pool, action["service"])
-
-    _last_remediation[probe_name] = time.time()
 
     detail = result.get("detail", "")
     send = (info_fn or notify_fn) if ok else notify_fn

@@ -58,7 +58,8 @@ _UPSERT_SQL = """
 """
 
 
-def _parse(raw: str) -> float | None:
+def parse_timestamp(raw: str) -> float | None:
+    """Epoch seconds for an ISO-8601 value, read as UTC when it has no zone; None if unreadable."""
     try:
         parsed = datetime.fromisoformat(raw)
     except (TypeError, ValueError):
@@ -92,7 +93,7 @@ class ProbeSchedule:
         restored = 0
         for row in rows:
             entity, raw = row["entity"], row["value"]
-            ran_at = _parse(raw)
+            ran_at = parse_timestamp(raw)
             if not entity.startswith(ENTITY_PREFIX) or ran_at is None:
                 logger.warning(
                     "[PROBE_SCHEDULE] ignoring unreadable row %s=%r", entity, raw

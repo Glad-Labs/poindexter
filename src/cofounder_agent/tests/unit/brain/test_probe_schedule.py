@@ -23,7 +23,8 @@ import pytest
 from poindexter.brain import business_probes as bp
 from poindexter.brain import health_probes as hp
 from poindexter.brain import post_performance_probe as pp
-from poindexter.brain import probe_schedule
+from poindexter.brain import probe_failure_state, probe_schedule
+from poindexter.brain.probe_failure_state import ProbeFailureState
 from poindexter.brain.probe_schedule import ProbeSchedule
 from poindexter.services.topic_sources.knowledge import KnowledgeSource
 
@@ -276,7 +277,7 @@ class TestRestartDoesNotRerunProbes:
         assert pool.last_run_value("silent_alerter") == seeded
 
     async def test_health_probes_rerun_only_what_their_own_intervals_allow(self, monkeypatch):
-        monkeypatch.setattr(hp, "_failure_counts", {})
+        monkeypatch.setattr(probe_failure_state, "state", ProbeFailureState())
         ran: list[str] = []
 
         def _probe(name: str):

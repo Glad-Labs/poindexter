@@ -1110,15 +1110,100 @@ recovered from and a probe that never runs is silent:
 - A value that doesn't parse is ignored. One dated in the future counts as
   now, so it can delay a probe by one interval but never disable it.
 
-What still resets on a restart: `health_probes._failure_counts` (a probe
-pages after `ALERT_AFTER_FAILURES` consecutive failures) and
-`_last_remediation` (15 minutes between self-heals of one probe). After a
-restart a failing probe counts from zero again, and it now waits out its
-interval before its first run instead of running at once. A 6-hour probe that
-keeps failing therefore needs roughly 12 to 18 hours without a restart to
-reach three strikes. Probes on a 5-minute interval, which include the outage
-checks (`db_ping`, `worker_error_rate`, `public_site`), wait at most five
-minutes after a restart, so they are barely affected.
+## Failure counts and self-heal cooldowns survive a restart
+
+`health_probes.run_health_probes` sends a probe's failure notice on its third
+failure in a row (`ALERT_AFTER_FAILURES`) and runs a probe's self-heal at most
+once every 15 minutes (`REMEDIATION_COOLDOWN`). Each count and each self-heal's
+start time is written to `brain_knowledge`, and a new brain process reads them
+back on its first cycle (`poindexter/brain/probe_failure_state.py`). Three
+failures in a row now means three runs in a row, whether or not the brain
+restarted between them.
+
+Both used to live only in memory. Over the 30 days to 2026-09-28 (Loki,
+`container="poindexter-brain-daemon"`) the brain restarted 91 times, and 50
+failure streaks crossed a restart and started again from one. Leaving out
+`publish_rate`, whose notices Prometheus owns:
+
+- 8 of the 19 failure notices announced a streak a second time
+  (`pipeline_throughput` 5, `cadence_slo` 2, `approval_queue` 1).
+- 4 streaks of three or more failures were never announced: `traffic_anomaly`
+  (10 failed runs in four hours, each the first run after one of nine
+  restarts), `quality_trend` twice, and `worker_error_rate`.
+- 3 announced streaks ended with no recovery notice, because the process that
+  saw the probe pass had not announced the streak itself.
+
+Most of that window predates the schedule fix above, when a restart also ran
+every probe at once, so streaks built faster than they do now. The
+`worker_error_rate` streak was three runs in six minutes during a deploy. With
+schedules persisted, the same three failures take at least ten minutes.
+
+After a restart, a self-heal could also run again sooner than 15 minutes after
+the previous one.
+
+| Column      | Consecutive failures         | Last self-heal                          |
+| ----------- | ---------------------------- | --------------------------------------- |
+| `entity`    | `probe.<name>`               | `probe.<name>`                          |
+| `attribute` | `consecutive_failures`       | `last_remediation_at`                   |
+| `value`     | the count, `0` while passing | ISO-8601 UTC time the self-heal started |
+| `source`    | `probe_failure_state`        | `probe_failure_state`                   |
+
+Which probes are failing, and for how many runs?
+
+```sql
+SELECT entity, value::int AS consecutive_failures, updated_at
+  FROM brain_knowledge
+ WHERE source = 'probe_failure_state' AND attribute = 'consecutive_failures'
+   AND value <> '0'
+ ORDER BY value::int DESC;
+```
+
+To make a probe's next failure start a new streak, delete its
+`consecutive_failures` row, then restart the brain. Deleting its
+`last_remediation_at` row the same way lets a self-heal run before its
+cooldown ends. The running process keeps its own copy until it restarts, and
+writes the count back the next time it changes. This deletes both rows for one
+probe:
+
+```sql
+DELETE FROM brain_knowledge
+ WHERE entity = 'probe.worker_error_rate' AND source = 'probe_failure_state';
+```
+
+How the state is kept:
+
+- A count is written only when it changes: on each failure, and on the pass
+  that ends a streak. A passing probe writes nothing per run. A probe with no
+  row yet writes one `0` the first time it passes.
+- The count is per run, not per hour. A probe that failed three times before a
+  brain outage and fails again on its first run after continues at four: it
+  does not page a second time, and it sends a recovery notice when it passes.
+- A self-heal's time is written when it starts, before the container restart
+  or the Recovery Agent call. An attempt that never finishes still counts
+  toward the cooldown, whether the cycle watchdog cancelled the cycle
+  (`brain_cycle_timeout_seconds`, 240 s) or the brain restarted. The cooldown
+  now runs from the start of one attempt to the start of the next. That is
+  shorter than before by at most one attempt's length: a `docker restart` is
+  capped at 60 s.
+- A self-heal runs only for a probe in `health_probes.PROBES`, so a count left
+  behind by a removed probe can't restart anything.
+  `tests/unit/brain/test_probe_failure_state.py` also checks that every
+  `REMEDIATIONS` entry names a probe in `PROBES`.
+
+A database failure never stops a probe from running, paging or self-healing.
+It only costs the restart protection:
+
+- The table is read once per process. If that read fails, it is retried each
+  cycle. Until it succeeds, counts start from zero and no cooldown is known,
+  which was the behaviour before. When the read does succeed, a count this
+  process has already recorded wins over the row and is written back.
+- A failed count write logs a warning and is retried with the probe's next
+  result. A stale count matters: after a restart it could self-heal a service
+  that had recovered, or carry a new failure past the notice.
+- A failed self-heal time write logs a warning. It matters only if the brain
+  restarts before that cooldown ends.
+- A row that doesn't parse is ignored. A self-heal time in the future counts
+  as now.
 
 ## Container health watch — unhealthy is not exited
 

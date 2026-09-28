@@ -37,7 +37,8 @@ from poindexter.brain import brain_daemon as bd
 from poindexter.brain import business_probes as bp
 from poindexter.brain import health_probes as hp
 from poindexter.brain import post_performance_probe as ppp
-from poindexter.brain import probe_schedule
+from poindexter.brain import probe_failure_state, probe_schedule
+from poindexter.brain.probe_failure_state import ProbeFailureState
 from poindexter.brain.probe_schedule import ProbeSchedule
 
 OPS_URL = "https://discord.test/ops-webhook"
@@ -116,8 +117,6 @@ def _reset_brain_state() -> None:
     bd._prev_external_status.clear()
     bd._external_outage_paged.clear()
     bd._pipeline_states_announced.clear()
-    hp._failure_counts.clear()
-    hp._last_remediation.clear()
 
 
 @pytest.fixture
@@ -132,6 +131,7 @@ def channels(monkeypatch) -> Iterator[_Channels]:
     monkeypatch.setattr(bd, "_DAEMON_STARTED_AT", time.monotonic() - 10_000)
     monkeypatch.setattr(bd, "_last_openclaw_doctor", time.time())
     monkeypatch.setattr(probe_schedule, "schedule", ProbeSchedule())
+    monkeypatch.setattr(probe_failure_state, "state", ProbeFailureState())
     _reset_brain_state()
     yield recorder
     _reset_brain_state()
