@@ -3,8 +3,9 @@
 Uploads finished videos to short-form social platforms (TikTok, Instagram
 Reels) via Postiz.  The handler:
 
-1. Uploads the video asset to Postiz via ``/public/v1/uploads/url``
-2. Creates a post on the target platform via ``/public/v1/posts``
+1. Has Postiz fetch the video via ``/public/v1/upload-from-url``
+2. Creates a post on the target platform via ``/public/v1/posts``,
+   attaching the upload by its ``id`` and ``path`` (Postiz needs both)
 
 Payload shape::
 
@@ -86,7 +87,7 @@ async def postiz_video(
     api_key = await site_config.get_secret("postiz_api_key", "")
     client = PostizClient(base_url=base_url, api_key=api_key)
     try:
-        upload_id = await client.upload_from_url(media_url)
+        uploaded = await client.upload_media_from_url(media_url)
     except Exception as exc:
         logger.error(
             "[publishing.postiz_video] upload failed for %s on %s: %s",
@@ -112,7 +113,7 @@ async def postiz_video(
         content=title,
         platform_type=_PLATFORM_TYPE[platform],
         platform_settings=platform_settings,
-        upload_ids=[upload_id],
+        media=[uploaded],
     )
 
     return {

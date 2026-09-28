@@ -29,6 +29,12 @@ _PLATFORM_SETTING_DEFAULTS: dict[str, dict[str, Any]] = {
     "x": {"who_can_reply_post": "everyone"},
 }
 
+# Each entry of a post value's `image` array is a Postiz MediaDto: `id` AND
+# `path` are both @IsDefined, and `path` must pass ValidUrlPath +
+# ValidUrlExtension (checked in the v2.24.0 image, 2026-09-28). An id-only item
+# is rejected with a 400, so a media post needs what upload_media_from_url
+# returns, not just the upload id.
+
 
 class PostizClient:
     def __init__(self, base_url: str, api_key: str = "") -> None:
@@ -43,9 +49,16 @@ class PostizClient:
         content: str,
         platform_type: str,
         platform_settings: dict[str, Any],
-        upload_ids: list[str],
+        upload_ids: list[str] | None = None,
+        *,
+        media: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """Post to a social platform via Postiz.
+
+        ``media`` is a list of ``{"id", "path"}`` dicts as returned by
+        :meth:`upload_media_from_url` — the shape Postiz accepts. ``upload_ids``
+        is kept for existing callers; an id without its path fails Postiz's
+        MediaDto validation, so pass ``media`` for anything with an attachment.
 
         Returns {"success": bool, "post_id": str | None, "error": str | None}.
         Never raises — all errors become failure dicts.
@@ -57,7 +70,10 @@ class PostizClient:
             **platform_defaults,
             **platform_settings,
         }
-        images = [{"id": uid} for uid in upload_ids]
+        if media:
+            images = [{"id": m["id"], "path": m["path"]} for m in media]
+        else:
+            images = [{"id": uid} for uid in upload_ids or []]
         payload = {
             "type": "now",
             "date": now_iso,
@@ -121,26 +137,41 @@ class PostizClient:
             posts = data.get("posts", []) if isinstance(data, dict) else data
             return posts if isinstance(posts, list) else []
 
-    async def upload_from_url(self, video_url: str) -> str:
-        """Upload a video from a URL to Postiz and return the upload ID.
+    async def upload_media_from_url(self, media_url: str) -> dict[str, str]:
+        """Have Postiz fetch ``media_url`` into its media library.
 
-        Postiz fetches the URL server-side. Raises on failure (callers
-        mark draft failed and alert).
+        Returns ``{"id", "path"}`` — both are needed to attach the upload to a
+        post (see the MediaDto note above). Postiz fetches the URL server-side
+        and refuses internal or plain-HTTP URLs, so pass a public HTTPS URL.
+        Raises on failure (callers mark the draft failed and alert).
+
+        The route is ``/public/v1/upload-from-url``. This used to call
+        ``/public/v1/uploads/url``, which Postiz never served: a live check on
+        2026-09-28 got 404 there and 201 here, with a body of ``id``, ``name``,
+        ``path``, ``originalName``, ``thumbnail``, ``alt`` and ``status``.
         """
-        payload = {"url": video_url}
         async with httpx.AsyncClient() as http:
             resp = await http.post(
-                f"{self._base}/public/v1/uploads/url",
-                json=payload,
+                f"{self._base}/public/v1/upload-from-url",
+                json={"url": media_url},
                 headers=self._headers,
                 timeout=_UPLOAD_TIMEOUT,
             )
             resp.raise_for_status()
             data = resp.json()
-            upload_id = str(data.get("id", ""))
-            if not upload_id:
-                raise ValueError(f"Postiz upload returned no id: {data}")
-            return upload_id
+        upload_id = str(data.get("id") or "")
+        path = str(data.get("path") or "")
+        if not upload_id or not path:
+            raise ValueError(f"Postiz upload returned no id/path: {data}")
+        return {"id": upload_id, "path": path}
+
+    async def upload_from_url(self, video_url: str) -> str:
+        """Upload from a URL and return only the upload id.
+
+        Kept for existing callers. A post attachment needs the path as well,
+        so new code should use :meth:`upload_media_from_url`.
+        """
+        return (await self.upload_media_from_url(video_url))["id"]
 
 
 def _extract_post_id(data: Any) -> str | None:
