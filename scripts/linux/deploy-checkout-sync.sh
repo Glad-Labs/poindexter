@@ -26,7 +26,7 @@
 #      the ps1's brain-only rebuild — restarts/rebuilds are safe by design):
 #        src/cofounder_agent/poindexter/brain/**    -> brain-daemon
 #        src/cofounder_agent/pyproject.toml|poetry.lock
-#          |scripts/Dockerfile.worker               -> worker prefect-worker
+#          |src/cofounder_agent/Dockerfile.worker   -> worker prefect-worker pipeline-bot
 #        scripts/Dockerfile.gpu-exporter
 #          |scripts/nvidia-smi-exporter.py          -> gpu-exporter
 #          (the .py is bind-mounted, so a restart would suffice to reload it —
@@ -410,7 +410,15 @@ declare -A REBUILD_MAP=(
   # only image that bakes it: the worker bind-mounts src/cofounder_agent, and
   # auto-embed's own entry below already covers poindexter/.
   ['^src/cofounder_agent/poindexter/(brain/|__init__\.py$)']="brain-daemon"
-  ['^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$|^scripts/Dockerfile\.worker$']="worker prefect-worker"
+  # Every service built from Dockerfile.worker, not just the first two. They
+  # bind-mount src/cofounder_agent over the baked `COPY . .`, so source edits
+  # only need the restart below — but the poetry-installed dependency layer and
+  # the Dockerfile itself are baked. pipeline-bot was missing: every dependency
+  # bump left it on the old packages (verify-deploy-identity flagged it stale
+  # 2026-09-28, image a week older than its poetry.lock). The Dockerfile path
+  # also read scripts/Dockerfile.worker, which does not exist — the file lives
+  # in the build context — so a Dockerfile edit rebuilt none of the three.
+  ['^src/cofounder_agent/(pyproject\.toml|poetry\.lock|Dockerfile\.worker)$']="worker prefect-worker pipeline-bot"
   ['^scripts/Dockerfile\.gpu-exporter$|^scripts/nvidia-smi-exporter\.py$']="gpu-exporter"
   ['^scripts/Dockerfile\.voice-agent$']="voice-agent-livekit"
   # backup-offsite/ is a SIBLING of backup/, so '^scripts/backup/' never

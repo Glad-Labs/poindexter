@@ -37,6 +37,16 @@ COMPOSE = REPO / "docker-compose.local.yml"
 # compose), so no repo change can make them stale.
 _NO_REPO_SOURCE = {"voice-agent-livekit", "voice-agent-claude-code"}
 
+# Baked, profile-gated services deliberately left OUT of REBUILD_MAP. The
+# recreate step runs `up -d --force-recreate <rebuilt services>`, and naming a
+# profile-gated service on the command line starts it whatever profiles are
+# active — so an entry here would make every Dockerfile.worker dependency bump
+# START a container that is meant to be off. A stale image is the lesser harm
+# until that step learns to skip stopped services.
+# test_profile_gated_exemptions_are_still_profile_gated fails the moment one of
+# these stops being profile-gated, so the exemption cannot outlive its reason.
+_PROFILE_GATED_UNREBUILT = {"demo-recorder"}
+
 
 def _rebuild_map() -> dict[str, str]:
     """Parse the bash associative array into {regex: services}."""
@@ -48,8 +58,8 @@ def _rebuild_map() -> dict[str, str]:
     return out
 
 
-def _built_services() -> dict[str, tuple[str, str]]:
-    """{compose service: (build context, dockerfile)} for services with build:.
+def _service_stanzas() -> dict[str, str]:
+    """{compose service: its stanza text}.
 
     Boundaries come from the 2-space service keys rather than a fixed window —
     a window bleeds into the next service and mis-attributes its Dockerfile
@@ -58,9 +68,16 @@ def _built_services() -> dict[str, tuple[str, str]]:
     text = COMPOSE.read_text(encoding="utf-8")
     marks = [(m.group(1), m.start()) for m in
              re.finditer(r"^  ([a-z0-9][a-z0-9._-]*):\s*$", text, re.M)]
+    return {
+        name: text[start:marks[i + 1][1] if i + 1 < len(marks) else len(text)]
+        for i, (name, start) in enumerate(marks)
+    }
+
+
+def _built_services() -> dict[str, tuple[str, str]]:
+    """{compose service: (build context, dockerfile)} for services with build:."""
     out = {}
-    for i, (name, start) in enumerate(marks):
-        body = text[start:marks[i + 1][1] if i + 1 < len(marks) else len(text)]
+    for name, body in _service_stanzas().items():
         if not re.search(r"^\s*build:", body, re.M):
             continue
         ctx = re.search(r"^\s*context:\s*(\S+)", body, re.M)
@@ -70,16 +87,35 @@ def _built_services() -> dict[str, tuple[str, str]]:
     return out
 
 
+def _dockerfile(context: str, dockerfile: str) -> Path:
+    """The Dockerfile compose actually builds: `dockerfile:` is relative to the
+    build CONTEXT, not to scripts/.
+
+    The first version resolved a slash-less name under scripts/, which only
+    happened to be right for the sidecars whose context IS scripts/. For every
+    service built from src/cofounder_agent (worker, prefect-worker,
+    pipeline-bot, demo-recorder, brain-daemon) it named a file that does not
+    exist — and a missing Dockerfile read as "bakes nothing", so all five were
+    skipped by every check below while this test stayed green. pipeline-bot sat
+    a week behind its poetry.lock behind exactly that skip (2026-09-28).
+    """
+    return REPO / context / dockerfile if context else REPO / dockerfile
+
+
 def _copied_paths(context: str, dockerfile: str) -> list[str]:
     """Repo-relative sources a Dockerfile COPYs, resolved against its CONTEXT.
 
     The context is read from compose, never assumed: `Dockerfile.backup` sits
     in scripts/ but builds from the repo root, so prefixing "scripts/" invented
-    `scripts/scripts/backup/run.sh`.
+    `scripts/scripts/backup/run.sh`. A whole-context `COPY . .` comes back as
+    the context itself. A Dockerfile that cannot be found is a failure, never
+    an empty list — an empty list is how this test went blind.
     """
-    path = REPO / dockerfile if "/" in dockerfile else REPO / "scripts" / dockerfile
-    if not path.exists():
-        return []
+    path = _dockerfile(context, dockerfile)
+    assert path.exists(), (
+        f"{path.relative_to(REPO)} does not exist — compose resolves "
+        f"`dockerfile: {dockerfile}` against `context: {context or '.'}`"
+    )
     prefix = f"{context}/" if context else ""
     paths = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -87,8 +123,48 @@ def _copied_paths(context: str, dockerfile: str) -> list[str]:
             continue  # multi-stage donor is not repo source
         parts = [p for p in line.split() if not p.startswith("--")][1:]
         for srcpath in parts[:-1]:
-            paths.append(f"{prefix}{srcpath}".replace("//", "/"))
+            joined = f"{prefix}{srcpath}".replace("//", "/")
+            paths.append(joined[:-2] if joined.endswith("/.") else joined)
     return paths
+
+
+def _context_is_bind_mounted(service: str, context: str, dockerfile: str) -> bool:
+    """True when the service mounts its own build context over the Dockerfile's
+    WORKDIR — `src/cofounder_agent:/app` for the Dockerfile.worker services.
+
+    Then the baked whole-context `COPY . .` is shadowed at runtime and a source
+    edit needs only the restart deploy-sync already does. What stays baked is
+    everything a build step made from explicitly COPYed files — the poetry
+    dependency layer — plus the Dockerfile itself, and the checks below still
+    hold those to REBUILD_MAP. Derived from compose + the Dockerfile rather than
+    listed, so a service that drops its mount loses the allowance by itself.
+    """
+    workdirs = re.findall(r"^WORKDIR\s+(\S+)", _dockerfile(context, dockerfile)
+                          .read_text(encoding="utf-8"), re.M)
+    if not workdirs or not context:
+        return False
+    body = _service_stanzas()[service]
+    mounts = re.findall(r"^\s*-\s*(\S+?):(/\S+?)(?::ro|:rw)?\s*$", body, re.M)
+    return any(host.rstrip("/").endswith(f"/{context}") and target == workdirs[-1]
+               for host, target in mounts)
+
+
+def _baked_paths(service: str, context: str, dockerfile: str) -> list[str]:
+    """What the image bakes that a repo change can make stale: every COPY
+    source, minus a whole-context copy the service shadows with a bind mount."""
+    shadowed = _context_is_bind_mounted(service, context, dockerfile)
+    return [p for p in _copied_paths(context, dockerfile)
+            if not (shadowed and p == context)]
+
+
+def _checked_services() -> dict[str, tuple[str, str]]:
+    return {s: v for s, v in _built_services().items()
+            if s not in _NO_REPO_SOURCE and s not in _PROFILE_GATED_UNREBUILT}
+
+
+def _matched(service: str, path: str, rmap: dict) -> bool:
+    probe = path.rstrip("/") + ("/x" if (REPO / path).is_dir() else "")
+    return any(service in svcs and rx.search(probe) for rx, svcs in rmap.items())
 
 
 @pytest.mark.unit
@@ -100,20 +176,49 @@ def test_there_are_baked_services_to_check():
 
 
 @pytest.mark.unit
+def test_every_built_services_dockerfile_resolves():
+    """The blind spot itself: resolve each `dockerfile:` the way compose does.
+    A name that does not exist here was silently read as "bakes nothing"."""
+    missing = [f"{s}: {_dockerfile(ctx, df).relative_to(REPO)}"
+               for s, (ctx, df) in _built_services().items()
+               if not _dockerfile(ctx, df).exists()]
+    assert not missing, "Dockerfile(s) not found:\n  " + "\n  ".join(missing)
+
+
+@pytest.mark.unit
+def test_every_checked_service_bakes_something_from_this_repo():
+    """"Bakes nothing" must be a decision recorded in _NO_REPO_SOURCE, never
+    a fall-through: the fall-through is what hid five services."""
+    empty = [s for s, (ctx, df) in _checked_services().items()
+             if not _copied_paths(ctx, df)]
+    assert not empty, (
+        "service(s) whose Dockerfile COPYs nothing from this repo — list them in "
+        "_NO_REPO_SOURCE if that is really so:\n  " + "\n  ".join(empty)
+    )
+
+
+@pytest.mark.unit
+def test_the_worker_image_services_are_checked():
+    """Pin the population the old resolver skipped, so a future parser change
+    cannot quietly drop them from every check again."""
+    checked = _checked_services()
+    for service in ("worker", "prefect-worker", "pipeline-bot", "brain-daemon"):
+        assert service in checked, f"{service} fell out of the checked set"
+        ctx, df = checked[service]
+        assert _baked_paths(service, ctx, df), f"{service} reads as baking nothing"
+
+
+@pytest.mark.unit
 def test_every_baked_service_has_a_rebuild_entry():
     """The regression: a service that COPYs source but is never rebuilt runs
     stale forever, because compose-apply uses --no-build."""
     rmap = _rebuild_map()
     covered = {svc for services in rmap.values() for svc in services.split()}
     missing = []
-    for service, (ctx, df) in _built_services().items():
-        if service in _NO_REPO_SOURCE:
-            continue
-        copied = _copied_paths(ctx, df)
-        if not copied:
-            continue  # bakes nothing from this repo
+    for service, (ctx, df) in _checked_services().items():
+        baked = _baked_paths(service, ctx, df)
         if service not in covered:
-            missing.append(f"{service} (bakes {', '.join(copied[:3])})")
+            missing.append(f"{service} (bakes {', '.join(baked[:3])})")
     assert not missing, (
         "image-baked service(s) with no REBUILD_MAP entry — a merged change to "
         "their source would be live in the repo and DEAD in the container:\n  "
@@ -126,15 +231,40 @@ def test_each_baked_path_is_actually_matched_by_its_regex():
     """An entry naming the service is not enough — its regex must match the
     paths the Dockerfile actually COPYs, or the rebuild never triggers."""
     rmap = {re.compile(k): v.split() for k, v in _rebuild_map().items()}
-    unmatched = []
-    for service, (ctx, df) in _built_services().items():
-        if service in _NO_REPO_SOURCE:
-            continue
-        for copied in _copied_paths(ctx, df):
-            probe = copied.rstrip("/") + ("/x" if (REPO / copied).is_dir() else "")
-            if not any(service in svcs and rx.search(probe) for rx, svcs in rmap.items()):
-                unmatched.append(f"{service}: {copied}")
+    unmatched = [f"{service}: {path}"
+                 for service, (ctx, df) in _checked_services().items()
+                 for path in _baked_paths(service, ctx, df)
+                 if not _matched(service, path, rmap)]
     assert not unmatched, (
         "baked source path(s) not matched by their service's REBUILD_MAP "
         "regex — the entry exists but would never fire:\n  " + "\n  ".join(unmatched)
     )
+
+
+@pytest.mark.unit
+def test_each_baked_services_dockerfile_is_matched_by_its_regex():
+    """Editing the Dockerfile changes the image as surely as editing what it
+    COPYs. The worker-image entry named scripts/Dockerfile.worker — a path that
+    does not exist — so a Dockerfile.worker edit rebuilt none of its services."""
+    rmap = {re.compile(k): v.split() for k, v in _rebuild_map().items()}
+    unmatched = []
+    for service, (ctx, df) in _checked_services().items():
+        rel = str(_dockerfile(ctx, df).relative_to(REPO))
+        if not _matched(service, rel, rmap):
+            unmatched.append(f"{service}: {rel}")
+    assert not unmatched, (
+        "service Dockerfile(s) not matched by a REBUILD_MAP entry naming the "
+        "service:\n  " + "\n  ".join(unmatched)
+    )
+
+
+@pytest.mark.unit
+def test_profile_gated_exemptions_are_still_profile_gated():
+    """_PROFILE_GATED_UNREBUILT is justified only by `profiles:` — if one of
+    these becomes always-on, it needs a REBUILD_MAP entry, not an exemption."""
+    stanzas = _service_stanzas()
+    for service in _PROFILE_GATED_UNREBUILT:
+        assert service in _built_services(), f"{service} is no longer a built service"
+        assert re.search(r"^\s*profiles:", stanzas[service], re.M), (
+            f"{service} is no longer profile-gated — give it a REBUILD_MAP entry"
+        )
