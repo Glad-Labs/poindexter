@@ -9,11 +9,25 @@ from typing import Any
 
 import click
 
+from poindexter.services.settings_categories import resolve_category
+
 from ._api_client import WorkerClient
 
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+async def _fetch_existing_row(conn: Any, key: str) -> Any:
+    """The ``key`` + ``category`` of an existing ``app_settings`` row, or None.
+
+    One lookup shared by both ``settings set`` paths (plain and ``--secret``)
+    so each can tell an update from a create before it writes.
+    """
+    return await conn.fetchrow(
+        "SELECT key, category FROM app_settings WHERE key = $1",
+        key,
+    )
 
 
 def _split_category_prefix(key: str) -> tuple[str, str | None]:
@@ -289,8 +303,25 @@ def settings_get(key: str, json_output: bool, reveal: bool) -> None:
 @settings_group.command("set")
 @click.argument("key")
 @click.argument("value")
-@click.option("--category", default="general", show_default=True)
-@click.option("--description", default="", help="Optional human-readable description.")
+@click.option(
+    "--category",
+    default=None,
+    help="Category to file the setting under. Omit it and an existing row "
+         "keeps its category, while a brand-new row (--allow-new) is filed "
+         "under the category resolved from its key — the same answer the "
+         "boot seeder gives. An explicit value always wins. Category is "
+         "display-only and is re-derived from the key on the next worker "
+         "start, so a value the resolver disagrees with is a temporary "
+         "override.",
+)
+@click.option(
+    "--description",
+    default=None,
+    help="Human-readable description. Omit it and an existing row keeps its "
+         "description (a new row starts with none). Pass an empty string to "
+         "clear one (not with --secret, which always keeps an existing "
+         "description).",
+)
 @click.option(
     "--secret",
     "secret_flag",
@@ -299,10 +330,12 @@ def settings_get(key: str, json_output: bool, reveal: bool) -> None:
          "``is_secret=true``. Routes through ``plugins.secrets.set_secret`` "
          "— the same encrypted-write path the per-surface ``<surface> "
          "set-secret`` commands use. The plaintext is never echoed back. "
-         "Category defaults to ``secrets`` unless ``--category`` is given. "
-         "``--allow-new`` is implied (operator-provided credentials aren't "
-         "phantom-key-guarded). Read one back with ``settings get <key> "
-         "--reveal``.",
+         "A new secret is filed under ``secrets`` unless ``--category`` is "
+         "given; an existing row always keeps its category (``set_secret`` "
+         "never re-files one, and a differing ``--category`` prints a "
+         "warning). ``--allow-new`` is implied (operator-provided "
+         "credentials aren't phantom-key-guarded). Read one back with "
+         "``settings get <key> --reveal``.",
 )
 @click.option(
     "--allow-new",
@@ -317,8 +350,8 @@ def settings_get(key: str, json_output: bool, reveal: bool) -> None:
 def settings_set(
     key: str,
     value: str,
-    category: str,
-    description: str,
+    category: str | None,
+    description: str | None,
     secret_flag: bool,
     allow_new: bool,
 ) -> None:
@@ -345,6 +378,20 @@ def settings_set(
     bandaid (reject any key containing ``/``) was replaced 2026-05-28
     with proper UX: auto-strip the prefix AND reshape list output so
     the leftmost token is always the bare key.
+
+    Omitted-flag trap history (2026-09-28): ``--category`` used to default
+    to ``general`` and ``--description`` to ``""``. The upsert's
+    ``COALESCE(<new>, app_settings.<col>)`` was written to mean "keep the
+    row's own value unless the operator supplied one", but a click default
+    is never NULL, so it could never fall back — every ``settings set`` on
+    an existing key silently re-filed it under ``general`` (observed
+    2026-09-28: ``preview_base_url``, ``infrastructure`` → ``general``)
+    and, if the row had one, blanked its description. Both flags now
+    default to None, the write binds NULL when they are absent, and the
+    statement keeps the row's value. The category half heals on the next
+    worker boot (``seed_all_defaults`` re-derives every row's category from
+    its key); a blanked description never did. The tests pin the flag
+    defaults themselves and, against a real Postgres, the resulting row.
     """
     canonical_key, supplied_prefix = _split_category_prefix(key)
 
@@ -356,15 +403,14 @@ def settings_set(
         # keys; operator secrets are explicit credentials for known
         # integrations, so — like every other set_secret caller — we
         # upsert unconditionally and don't require ``--allow-new``.
-        ctx = click.get_current_context()
-        source = ctx.get_parameter_source("category")
-        resolved_category = (
-            "secrets"
-            if (source is not None and source.name == "DEFAULT")
-            else category
-        )
+        #
+        # The category here is the one a NEW row is filed under.
+        # ``set_secret``'s conflict clause never touches ``category``, so an
+        # existing row keeps its own whatever this holds — which is why the
+        # confirmation below reports the row's category, not this one.
+        new_row_category = category if category is not None else "secrets"
 
-        async def _upsert_secret() -> None:
+        async def _upsert_secret() -> Any:
             import asyncpg
 
             from poindexter.cli._bootstrap import ensure_secret_key, resolve_dsn
@@ -377,26 +423,48 @@ def settings_set(
             conn = await asyncpg.connect(resolve_dsn())
             try:
                 await ensure_pgcrypto(conn)
+                # Look before writing so the confirmation can say what the
+                # row actually holds.
+                existing_row = await _fetch_existing_row(conn, canonical_key)
                 await set_secret(
                     conn,
                     canonical_key,
                     value,
-                    description=description,
-                    category=resolved_category,
+                    description=description or "",
+                    category=new_row_category,
                 )
+                return existing_row
             finally:
                 await conn.close()
 
         try:
-            _run(_upsert_secret())
+            existing_row = _run(_upsert_secret())
         except Exception as e:
             click.echo(f"Error: {e}", err=True)
             sys.exit(1)
 
+        stored_category = (
+            (existing_row["category"] or "(none)")
+            if existing_row is not None
+            else new_row_category
+        )
+        if (
+            category is not None
+            and existing_row is not None
+            and category != stored_category
+        ):
+            click.secho(
+                f"warning: {canonical_key!r} already exists under category "
+                f"{stored_category!r}; --secret never re-files an existing "
+                f"row, so --category {category!r} was not applied",
+                fg="yellow",
+                err=True,
+            )
+
         # Deliberately do NOT echo the value — only confirm the write.
         click.secho(
             f"Stored (encrypted): {canonical_key} "
-            f"[category={resolved_category}, is_secret=true]",
+            f"[category={stored_category}, is_secret=true]",
             fg="green",
         )
         return
@@ -409,10 +477,7 @@ def settings_set(
         dsn = resolve_dsn()
         conn = await asyncpg.connect(dsn)
         try:
-            existing_row = await conn.fetchrow(
-                "SELECT key, category FROM app_settings WHERE key = $1",
-                canonical_key,
-            )
+            existing_row = await _fetch_existing_row(conn, canonical_key)
 
             # Case A: a slash was supplied AND the canonical row exists.
             # Auto-strip the prefix; warn if it disagrees with the
@@ -453,26 +518,50 @@ def settings_set(
             # --allow-new. Without the flag, fail loud so a typo
             # doesn't silently create a phantom row no consumer reads.
             if supplied_prefix is None and existing_row is None and not allow_new:
+                if category is not None:
+                    filed_under = f"category {category!r}"
+                else:
+                    filed_under = (
+                        f"category {resolve_category(canonical_key)!r} "
+                        f"(resolved from the key; pass `--category <name>` "
+                        f"to choose another)"
+                    )
                 click.echo(
                     f"Error: no setting named {canonical_key!r} found.\n"
                     f"\n"
                     f"If you genuinely want to create a new key, re-run "
-                    f"with `--allow-new` (and `--category {category}` if "
-                    f"you want a non-default category).",
+                    f"with `--allow-new`; it will be filed under "
+                    f"{filed_under}.",
                     err=True,
                 )
                 sys.exit(2)
 
             # Case D (regular case): bare key with existing row → update.
             # Or bare key + --allow-new + no existing row → create.
+            #
+            # One statement decides every combination, so nothing depends on
+            # the lookup above (which exists only for the guards):
+            #
+            #                | flag given | flag omitted (NULL)
+            #   new row      | the flag   | category: resolver's answer
+            #                |            | description: ''
+            #   existing row | the flag   | keeps the row's own value
+            #
+            # The DO UPDATE arms read the bound parameters ($3/$4), not
+            # EXCLUDED. EXCLUDED is the row proposed for insertion, and the
+            # new-row fallbacks in VALUES make its category/description
+            # non-NULL, so COALESCE(EXCLUDED.x, <existing>) could never reach
+            # <existing> -- the same dead end the old never-NULL click
+            # defaults produced. The ::text casts give each reused parameter
+            # one type.
             await conn.execute(
                 """
                 INSERT INTO app_settings (key, value, category, description, is_active)
-                VALUES ($1, $2, $3, $4, true)
+                VALUES ($1, $2, COALESCE($3::text, $5::text), COALESCE($4::text, ''), true)
                 ON CONFLICT (key) DO UPDATE SET
                     value       = EXCLUDED.value,
-                    category    = COALESCE(EXCLUDED.category, app_settings.category),
-                    description = COALESCE(EXCLUDED.description, app_settings.description),
+                    category    = COALESCE($3::text, app_settings.category),
+                    description = COALESCE($4::text, app_settings.description),
                     is_active   = true,
                     updated_at  = NOW()
                 """,
@@ -480,6 +569,7 @@ def settings_set(
                 value,
                 category,
                 description,
+                resolve_category(canonical_key),
             )
             return True
         finally:

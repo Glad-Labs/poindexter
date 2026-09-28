@@ -86,7 +86,7 @@ Semantic search across the memory store. Top-k cosine similarity.
 poindexter memory search "how do we handle hallucinations"
 poindexter memory search "retention policy" --min-similarity 0.7 --limit 10
 poindexter memory search "deploy" --source-table audit --writer brain
-poindexter memory search "topic" --json-output
+poindexter memory search "topic" --json
 ```
 
 Flags:
@@ -95,7 +95,7 @@ Flags:
 - `--source-table TEXT` — filter by source (`brain`, `audit`, `posts`, `memory`, `claude_sessions`, `issues`)
 - `--min-similarity FLOAT` — default 0.5
 - `--limit INT` — default 5
-- `--json-output` — machine-readable JSON
+- `--json` — machine-readable JSON
 
 ### `memory status`
 
@@ -103,7 +103,7 @@ Aggregate counts per `source_table` and per `writer`.
 
 ```bash
 poindexter memory status
-poindexter memory status --json-output
+poindexter memory status --json
 ```
 
 ### `memory store`
@@ -128,7 +128,7 @@ Flags:
 Print the raw 768-dim embedding vector for debugging.
 
 ```bash
-poindexter memory embed "hello world" --json-output
+poindexter memory embed "hello world" --json
 ```
 
 ### `memory backfill-posts`
@@ -151,7 +151,7 @@ Content pipeline task queue.
 ```bash
 poindexter tasks list                              # Most recent 20
 poindexter tasks list --status awaiting_approval   # Queue for review
-poindexter tasks list --limit 50 --json-output
+poindexter tasks list --limit 50 --json
 ```
 
 ### `tasks get <task_id>`
@@ -160,7 +160,7 @@ poindexter tasks list --limit 50 --json-output
 poindexter tasks get 842                # by numeric id
 poindexter tasks get 7038e408           # prefix match on UUID
 poindexter tasks get 842 --content      # include full post body
-poindexter tasks get 842 --json-output
+poindexter tasks get 842 --json
 ```
 
 ### `tasks create <topic>`
@@ -272,7 +272,7 @@ Two safety rails, shared with the AI path:
 ```bash
 poindexter posts list
 poindexter posts list --include-drafts --limit 50 --offset 100
-poindexter posts list --json-output
+poindexter posts list --json
 ```
 
 ### `posts search <query>`
@@ -280,7 +280,7 @@ poindexter posts list --json-output
 ```bash
 poindexter posts search "docker"                   # substring on title+content
 poindexter posts search "docker" --semantic        # pgvector similarity
-poindexter posts search "docker" --limit 10 --json-output
+poindexter posts search "docker" --limit 10 --json
 ```
 
 ### `posts get <slug>`
@@ -288,7 +288,7 @@ poindexter posts search "docker" --limit 10 --json-output
 ```bash
 poindexter posts get my-post-slug
 poindexter posts get my-post-slug --content        # include body
-poindexter posts get my-post-slug --json-output
+poindexter posts get my-post-slug --json
 ```
 
 ### `posts publish <post_id>` / `posts archive <post_id>` / `posts unpublish <post_id>`
@@ -329,10 +329,10 @@ Read and write `app_settings` — the DB-first config plane.
 
 ```bash
 poindexter settings list
-poindexter settings list --category qa              # filter by category
+poindexter settings list --category quality         # filter by category
 poindexter settings list --search threshold         # substring match
 poindexter settings list --include-inactive         # show disabled keys
-poindexter settings list --limit 100 --json-output
+poindexter settings list --limit 100 --json
 ```
 
 ### `settings get <key>`
@@ -352,16 +352,42 @@ poindexter settings get lemon_squeezy_webhook_secret --reveal   # decrypt for a 
 
 Upsert — creates if missing (with `--allow-new`), updates if present.
 
+`--category` and `--description` are written **only when you pass them**.
+A bare `settings set <key> <value>` changes the value (and re-activates a
+disabled row) and nothing else:
+
+|                         | flag passed                | flag omitted                                                                                        |
+| ----------------------- | -------------------------- | --------------------------------------------------------------------------------------------------- |
+| existing key            | overwrites the row's value | keeps the row's own value                                                                           |
+| new key (`--allow-new`) | uses it                    | category is resolved from the key (the same answer the boot seeder gives); description starts empty |
+
+`--description ""` clears a description (not with `--secret`, whose write
+always keeps an existing one); `--category general` files a key under
+`general` on purpose. Both used to be silently defaulted (`general` /
+empty), which re-filed every key you touched and blanked its description —
+see the history note in `settings_set`'s docstring.
+
+Category is display-only (it groups the console's settings sidebar), and
+the worker re-derives every row's category from its key on each start
+(`services/settings_categories.py`, applied by `seed_all_defaults`). So an
+explicit `--category` that the resolver disagrees with holds only until the
+next worker start. To file a key somewhere permanently, add an override or
+prefix rule to `settings_categories.py` instead.
+
 `--secret` stores the value **encrypted at rest** (pgcrypto) and flags the
 row `is_secret=true`, routing through the same path as the per-surface
-`<surface> set-secret` commands. The plaintext is never echoed back, the
-category defaults to `secrets` (override with `--category`), and
+`<surface> set-secret` commands. The plaintext is never echoed back, and
 `--allow-new` is implied (operator credentials aren't phantom-key-guarded).
-Read one back with `settings get <key> --reveal`.
+A **new** secret is filed under `secrets` unless you pass `--category`; an
+**existing** row always keeps its category (the encrypted write never
+re-files a row), and a differing `--category` prints a warning saying it
+was not applied. The confirmation line reports the category the row actually
+holds. Read one back with `settings get <key> --reveal`.
 
 ```bash
-poindexter settings set qa_final_score_threshold 75
-poindexter settings set qa_gate_weight 0 --category qa --description "Gates are veto-only, not scored"
+poindexter settings set qa_final_score_threshold 75          # value only; category + description untouched
+poindexter settings set qa_gate_weight 0 --category quality --description "Gates are veto-only, not scored"
+poindexter settings set qa_new_threshold 0.5 --allow-new     # new key, filed under 'quality' (resolved from `qa_`)
 
 # Encrypted secrets — generic app_settings keys with no dedicated surface row:
 poindexter settings set google_oauth_client_secret '<value>' --secret
@@ -389,7 +415,7 @@ Month-to-date spend vs. the configured monthly budget.
 
 ```bash
 poindexter costs budget
-poindexter costs budget --json-output
+poindexter costs budget --json
 ```
 
 ### `costs operational`
@@ -398,7 +424,7 @@ Task counts, worker state, websocket connections.
 
 ```bash
 poindexter costs operational
-poindexter costs operational --json-output
+poindexter costs operational --json
 ```
 
 ---
@@ -940,11 +966,11 @@ Everything else comes from `~/.poindexter/bootstrap.toml` and the
 
 ## JSON output mode
 
-Every list/search/get subcommand supports `--json-output`. Use it for
+Every list/search/get subcommand supports `--json`. Use it for
 piping into `jq` or building shell automation:
 
 ```bash
-poindexter tasks list --status rejected --json-output | jq '.[] | {id, score: .quality_score, error: .error_message}'
+poindexter tasks list --status rejected --json | jq '.[] | {id, score: .quality_score, error: .error_message}'
 ```
 
 Pretty-printed tables are the default for humans. JSON is for scripts.

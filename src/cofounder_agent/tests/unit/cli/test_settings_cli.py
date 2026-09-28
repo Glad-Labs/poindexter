@@ -15,6 +15,12 @@ key) was replaced with proper UX:
   - ``settings list`` renders ``key [category] = value`` so the
     leftmost copyable token is the canonical key.
 
+And the 2026-09-28 omitted-flag fix: ``--category`` / ``--description``
+default to None, so ``settings set`` on an existing key no longer re-files
+it under ``general`` or blanks its description, and a new row is filed
+under ``resolve_category(key)``. The row-level guarantee is pinned against
+a real Postgres in ``tests/integration_db/test_settings_cli_upsert.py``.
+
 Related regression: Glad-Labs/poindexter#253 (phantom row UPSERT) and
 the dev-diary publishing throttle that hid behind the silent failure.
 
@@ -215,6 +221,181 @@ class TestSettingsSetSlashHandling:
 
 
 # ---------------------------------------------------------------------------
+# settings set — omitted --category / --description (2026-09-28 trap)
+# ---------------------------------------------------------------------------
+#
+# ``--category`` defaulted to "general" and ``--description`` to "". The
+# upsert's ``COALESCE(<new>, app_settings.<col>)`` means "keep the row's own
+# value unless one was supplied", but a click default is never NULL, so the
+# COALESCE could never fall back: every ``settings set`` on an existing key
+# re-filed it under ``general`` (observed on ``preview_base_url``,
+# infrastructure -> general) and blanked its description.
+#
+# These unit tests pin what the CLI BINDS; they cannot run the COALESCE. The
+# row-level guarantee ("the row keeps its category") is pinned against a real
+# Postgres in tests/integration_db/test_settings_cli_upsert.py.
+
+# Bound-argument positions of the upsert: (sql, key, value, category,
+# description, new_row_category).
+_CATEGORY_ARG, _DESCRIPTION_ARG, _NEW_ROW_CATEGORY_ARG = 3, 4, 5
+
+
+@pytest.mark.unit
+class TestSettingsSetOmittedFlags:
+
+    def test_flags_default_to_none(self):
+        """The root cause, pinned structurally: a non-None default here
+        silently defeats the upsert's COALESCE again."""
+        params = {p.name: p for p in settings_group.commands["set"].params}
+        assert params["category"].default is None
+        assert params["description"].default is None
+
+    def test_existing_row_without_category_binds_null(self, runner):
+        """(1) No --category on an existing row → NULL bound, so the
+        statement's COALESCE keeps the row's own category (it used to bind
+        "general" and re-file the row)."""
+        ctx, conn = _patch_asyncpg_connect(existing_category="infrastructure")
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "preview_base_url", "https://preview.example"],
+            )
+
+        assert result.exit_code == 0, result.output
+        args = conn.execute.await_args.args
+        assert args[1] == "preview_base_url"
+        assert args[2] == "https://preview.example"
+        assert args[_CATEGORY_ARG] is None
+
+    def test_explicit_category_still_overrides(self, runner):
+        """(2) An explicit --category is bound as given, for an existing row."""
+        ctx, conn = _patch_asyncpg_connect(existing_category="infrastructure")
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "preview_base_url", "https://x.example", "--category", "quality"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert conn.execute.await_args.args[_CATEGORY_ARG] == "quality"
+
+    def test_explicit_general_is_honoured_not_mistaken_for_the_default(self, runner):
+        """The old default was the string "general", so an explicit
+        ``--category general`` and an omitted flag were indistinguishable.
+        They are different requests now."""
+        ctx, conn = _patch_asyncpg_connect(existing_category="infrastructure")
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "preview_base_url", "v", "--category", "general"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert conn.execute.await_args.args[_CATEGORY_ARG] == "general"
+
+    def test_allow_new_binds_the_resolvers_category_for_a_new_row(self, runner):
+        """(3) A new row (--allow-new, no --category) gets the category the
+        boot seeder would give it: NULL is bound for the flag and the
+        resolver's answer rides along as the new-row fallback."""
+        from poindexter.services.settings_categories import resolve_category
+
+        key = "qa_brand_new_threshold"
+        # Guard the test's own premise: the answer must not be the fallback.
+        assert resolve_category(key) == "quality"
+
+        ctx, conn = _patch_asyncpg_connect(existing_category=None)
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group, ["set", key, "0.5", "--allow-new"],
+            )
+
+        assert result.exit_code == 0, result.output
+        args = conn.execute.await_args.args
+        assert args[1] == key
+        assert args[_CATEGORY_ARG] is None
+        assert args[_NEW_ROW_CATEGORY_ARG] == "quality"
+
+    def test_allow_new_explicit_category_beats_the_resolver(self, runner):
+        ctx, conn = _patch_asyncpg_connect(existing_category=None)
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "qa_brand_new_threshold", "0.5", "--allow-new",
+                 "--category", "pipeline"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert conn.execute.await_args.args[_CATEGORY_ARG] == "pipeline"
+
+    def test_existing_row_without_description_binds_null(self, runner):
+        """The same trap on the next column: ``--description`` defaulted to
+        "", which COALESCE treats as a value, so every set blanked the
+        row's description."""
+        ctx, conn = _patch_asyncpg_connect(existing_category="infrastructure")
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group, ["set", "preview_base_url", "https://x.example"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert conn.execute.await_args.args[_DESCRIPTION_ARG] is None
+
+    def test_explicit_description_is_bound(self, runner):
+        ctx, conn = _patch_asyncpg_connect(existing_category="infrastructure")
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "preview_base_url", "v", "--description", "Where previews live"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert conn.execute.await_args.args[_DESCRIPTION_ARG] == "Where previews live"
+
+    def test_empty_description_is_a_deliberate_clear(self, runner):
+        """``--description ""`` is how an operator clears one. It has to
+        survive as "" (not collapse to None) or it would silently keep."""
+        ctx, conn = _patch_asyncpg_connect(existing_category="infrastructure")
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "preview_base_url", "v", "--description", ""],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert conn.execute.await_args.args[_DESCRIPTION_ARG] == ""
+
+    def test_missing_key_hint_names_the_resolved_category(self, runner):
+        """Case C's hint used to interpolate the click default. With a None
+        default that would print ``--category None``; it names the category
+        the new row would actually get instead."""
+        ctx, conn = _patch_asyncpg_connect(existing_category=None)
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group, ["set", "qa_typo_threshold", "1"],
+            )
+
+        assert result.exit_code == 2, result.output
+        assert "--allow-new" in result.output
+        assert "'quality'" in result.output
+        assert "resolved from the key" in result.output
+        assert "None" not in result.output
+        assert conn.execute.await_count == 0
+
+    def test_missing_key_hint_names_an_explicit_category(self, runner):
+        ctx, conn = _patch_asyncpg_connect(existing_category=None)
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "qa_typo_threshold", "1", "--category", "pipeline"],
+            )
+
+        assert result.exit_code == 2, result.output
+        assert "'pipeline'" in result.output
+        assert "resolved from the key" not in result.output
+        assert "None" not in result.output
+
+
+# ---------------------------------------------------------------------------
 # settings list — leftmost-token-is-canonical format
 # ---------------------------------------------------------------------------
 
@@ -291,16 +472,27 @@ class TestSettingsListFormat:
 # ---------------------------------------------------------------------------
 
 
-def _patch_asyncpg_connect_secret():
+def _patch_asyncpg_connect_secret(*, existing_category: str | None = None):
     """Patch ``asyncpg.connect`` for the ``--secret`` path.
 
     The secret path routes through ``plugins.secrets.set_secret``, which
     calls ``conn.fetchval`` (pgcrypto encrypt) then ``conn.execute`` (the
     upsert), preceded by ``ensure_pgcrypto``'s own ``conn.execute``. The
     mock returns a fake base64 ciphertext so we never need a real DB.
+
+    The CLI looks the row up first (``conn.fetchrow``) so its confirmation
+    can report the category the row actually holds. ``existing_category``
+    is that row's category; ``None`` means the key is new.
     """
     conn = MagicMock()
     conn.fetchval = AsyncMock(return_value="ZmFrZQ==")  # base64("fake")
+    conn.fetchrow = AsyncMock(
+        return_value=(
+            None
+            if existing_category is None
+            else {"key": "__set_by_test__", "category": existing_category}
+        ),
+    )
     conn.execute = AsyncMock(return_value="INSERT 0 1")
     conn.close = AsyncMock()
     return patch("asyncpg.connect", new=AsyncMock(return_value=conn)), conn
@@ -379,6 +571,99 @@ class TestSettingsSetSecret:
 
         assert result.exit_code == 0, result.output
         assert _find_insert_call(conn) is not None
+
+    # -- category reporting ------------------------------------------------
+    #
+    # ``set_secret``'s conflict clause never touches ``category``: it lands on
+    # a NEW row only. So the secret path does NOT share the plain path's
+    # re-filing bug -- but its confirmation used to print the category that
+    # was ASKED for, which for an existing row is not what the row holds.
+
+    def test_secret_on_existing_row_reports_the_rows_own_category(
+        self, runner, monkeypatch,
+    ):
+        """No --category on an existing row: the line reports the row's
+        category, not the ``secrets`` default that only a new row gets."""
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        ctx, _conn = _patch_asyncpg_connect_secret(existing_category="integrations")
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group, ["set", "resend_api_key", "v", "--secret"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "category=integrations" in result.output
+        assert "category=secrets" not in result.output
+        assert "warning" not in result.output.lower()
+
+    def test_secret_explicit_category_not_applied_to_existing_row_warns(
+        self, runner, monkeypatch,
+    ):
+        """An explicit --category that differs from an existing row's is
+        ignored by ``set_secret``; that must be said, not silently dropped."""
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        ctx, _conn = _patch_asyncpg_connect_secret(existing_category="integrations")
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "resend_api_key", "v", "--secret", "--category", "quality"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "warning" in result.output.lower()
+        assert "'integrations'" in result.output
+        assert "'quality'" in result.output
+        assert "not applied" in result.output
+        # The truthful line: the row still holds its own category.
+        assert "category=integrations" in result.output
+        assert "category=quality" not in result.output
+
+    def test_secret_explicit_category_matching_existing_row_is_quiet(
+        self, runner, monkeypatch,
+    ):
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        ctx, _conn = _patch_asyncpg_connect_secret(existing_category="integrations")
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "resend_api_key", "v", "--secret", "--category", "integrations"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "warning" not in result.output.lower()
+        assert "category=integrations" in result.output
+
+    def test_secret_new_row_reports_the_category_it_is_filed_under(
+        self, runner, monkeypatch,
+    ):
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        for extra, expected in (([], "secrets"), (["--category", "models"], "models")):
+            ctx, _conn = _patch_asyncpg_connect_secret(existing_category=None)
+            with _patch_resolve_dsn(), ctx:
+                result = runner.invoke(
+                    settings_group,
+                    ["set", "brand_new_token", "v", "--secret", *extra],
+                )
+
+            assert result.exit_code == 0, result.output
+            assert f"category={expected}" in result.output
+            assert "warning" not in result.output.lower()
+
+    def test_secret_without_description_hands_set_secret_an_empty_string(
+        self, runner, monkeypatch,
+    ):
+        """``--description`` is None when omitted; ``set_secret`` takes a str
+        (its NULLIF('') keeps an existing description), so None must not
+        leak through to it."""
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        ctx, conn = _patch_asyncpg_connect_secret()
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group, ["set", "some_token", "v", "--secret"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert _find_insert_call(conn).args[4] == ""
 
 
 # ---------------------------------------------------------------------------
