@@ -389,6 +389,36 @@ def test_every_file_the_tests_read_triggers_the_suite(repo_root: Path) -> None:
         )
 
 
+def test_every_test_file_test_backend_runs_triggers_the_suite(repo_root: Path) -> None:
+    """A step that runs a test tree does nothing for a PR that edits only a test in it.
+
+    The trees are read from the pytest steps (`_test_dirs`), not listed here. The
+    repo-root ``tests/`` tree is the one that needed this: its paths match neither
+    ``^src/cofounder_agent/`` nor ``^scripts/`` (``tests/scripts/test_image_bakeoff.py``
+    starts with ``tests/``), so before ``^tests/`` a PR touching only that file
+    skipped every pytest step, including the one that runs it.
+    """
+    pattern = _trigger_pattern(repo_root)
+    dirs = _test_dirs(repo_root)
+    tests = sorted(p for d in dirs for p in d.rglob("test_*.py") if "__pycache__" not in p.parts)
+    assert any(p.relative_to(repo_root).parts[0] == "tests" for p in tests), (
+        f"found no test file in the repo-root tests/ tree among the trees test-backend runs ({dirs}). "
+        "A check that scanned nothing has not passed."
+    )
+
+    rels = [p.relative_to(repo_root).as_posix() for p in tests]
+    missed = [rel for rel in rels if not pattern.search(rel)]
+    if missed:
+        listing = "\n  ".join(missed[:20])
+        pytest.fail(
+            "A PR that changes only these test files skips every pytest step in "
+            f"test-backend, including the one that runs them ({len(missed)} in all):\n  {listing}\n\n"
+            f"Add their tree to the detect-changes pattern in {'/'.join(WORKFLOW)} "
+            f"(currently {pattern.pattern!r}).",
+            pytrace=False,
+        )
+
+
 def test_every_root_the_suite_triggers_on_is_read_by_a_test(repo_root: Path) -> None:
     """The reverse direction, generalized over every SCOPE_ROOTS entry.
 

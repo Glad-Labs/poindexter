@@ -2,7 +2,13 @@
 
 Loaded via importlib so torch/diffusers/easyocr (lazy-imported inside the GPU
 functions) are never needed — these tests run with only Pillow + pytest.
+
+CI runs this file from the repo root (the "Unit tests — repo-root tests/scripts"
+step in .github/workflows/unit-tests.yml). Until 2026-09-28 nothing did, so the
+`revision` field BakeoffModel gained on 2026-07-17 left three of these tests red
+for 73 days with no check saying so.
 """
+import dataclasses
 import importlib.util
 import sys
 from pathlib import Path
@@ -21,11 +27,23 @@ _spec.loader.exec_module(bakeoff)
 # --- Task 2: roster + fair-fight resolver ---------------------------------
 
 
+def _roster_model(key):
+    """The real ROSTER entry for `key`.
+
+    Fixtures start from one and override only what a test is about, so they carry
+    what the script really populates (a full 40-char commit SHA in `revision`, a
+    real licence tier) and follow the dataclass when it gains a field. Typing the
+    constructor out by hand, positionally, is how `revision` slid every later
+    argument one place and broke three tests.
+    """
+    return next(m for m in bakeoff.ROSTER if m.key == key)
+
+
 def _model(mechanism, guidance=4.5):
-    return bakeoff.BakeoffModel(
-        key="x", repo="org/x", pipeline_cls="XPipeline", mechanism=mechanism,
-        steps=8, guidance=guidance, dtype="bfloat16", license_tier="apache",
-    )
+    # The same checkpoint family in each mechanism, so the steps and dtype a
+    # fixture carries are ones the script really uses.
+    base = _roster_model({"cfg": "chroma1_hd", "distilled": "chroma1_flash"}[mechanism])
+    return dataclasses.replace(base, mechanism=mechanism, guidance=guidance)
 
 
 def test_cfg_model_gets_negative_prompt_and_guidance():
@@ -108,8 +126,8 @@ def test_build_contact_sheet_writes_file(tmp_path):
 
 def test_summarize_ranks_by_text_chars_and_flags_vram():
     roster = [
-        bakeoff.BakeoffModel("a", "o/a", "P", "cfg", 8, 4.0, "bfloat16", "apache"),
-        bakeoff.BakeoffModel("b", "o/b", "P", "distilled", 8, 0.0, "bfloat16", "mit"),
+        dataclasses.replace(_roster_model("chroma1_hd"), key="a"),    # cfg, apache
+        dataclasses.replace(_roster_model("hidream_fast"), key="b"),  # distilled, mit
     ]
     records = [
         bakeoff.RunRecord("a", "p1", "a1.png", text_chars=2, latency_s=3.0, peak_vram_gb=10.0),

@@ -139,6 +139,8 @@ bash scripts/start-stack.sh up -d                                        # Full 
 # Python backend (equivalently: npm run test:python / test:python:integration)
 cd src/cofounder_agent && poetry run pytest tests/unit/ -q    # Unit tests
 cd src/cofounder_agent && poetry run pytest tests/integration/ -q  # Integration
+python -m pytest tests/ -q    # Repo-root tests/ (the bake-off harness): run from the repo root, in the backend env.
+                              # CI runs it as its own test-backend step (docs/operations/ci-deploy-chain.md)
 
 # JavaScript
 npm run test                  # Jest for public site

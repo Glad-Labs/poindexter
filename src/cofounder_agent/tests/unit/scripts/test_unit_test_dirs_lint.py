@@ -47,6 +47,12 @@ def _load():
 
 lint = _load()
 
+# The fake repos below hold only the primary tree (src/cofounder_agent/tests/unit),
+# so the tests of the scanner and of the exit-status model run against that suite
+# alone. The repo-root tree has its own tests further down, on fake repos that
+# have one.
+_PRIMARY = lint.SUITES[:1]
+
 
 # ---------------------------------------------------------------------------
 # A fake repo: tests/unit/{a,b}/ + one root-level file, and a workflow
@@ -85,7 +91,7 @@ _A_STEP = _step("a", "$PYTEST tests/unit/a/ -q -p no:cacheprovider $COV")
 
 
 def _run(tmp_path: Path, workflow: str, capsys) -> tuple[int, str]:
-    code = lint.main(_tree(tmp_path, workflow))
+    code = lint.main(_tree(tmp_path, workflow), _PRIMARY)
     return code, capsys.readouterr().out
 
 
@@ -465,7 +471,7 @@ def test_a_compact_sequence_and_folded_run_are_read(tmp_path, capsys):
 
 def test_a_workflow_with_no_pytest_steps_is_a_floor_failure(tmp_path, capsys):
     with pytest.raises(SystemExit) as exc:
-        lint.main(_tree(tmp_path, _workflow(_step("lint", "python scripts/ci/x.py"))))
+        lint.main(_tree(tmp_path, _workflow(_step("lint", "python scripts/ci/x.py"))), _PRIMARY)
 
     assert exc.value.code == 1
     assert "examined 0 pytest commands" in capsys.readouterr().err
@@ -476,7 +482,7 @@ def test_a_tests_root_with_no_test_files_is_a_floor_failure(tmp_path, capsys):
     (root / "src" / "cofounder_agent" / "tests" / "unit" / "test_root.py").unlink()
 
     with pytest.raises(SystemExit) as exc:
-        lint.main(root)
+        lint.main(root, _PRIMARY)
 
     assert exc.value.code == 1
     assert "examined 0 test_*.py files" in capsys.readouterr().err
@@ -487,10 +493,183 @@ def test_a_missing_workflow_is_a_floor_failure(tmp_path, capsys):
     (root / ".github" / "workflows" / "unit-tests.yml").unlink()
 
     with pytest.raises(SystemExit) as exc:
-        lint.main(root)
+        lint.main(root, _PRIMARY)
 
     assert exc.value.code == 1
     assert "workflow not found" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# The repo-root tests/ tree is held to the same rule
+# ---------------------------------------------------------------------------
+#
+# tests/scripts/test_image_bakeoff.py sat red from 2026-07-17 to 2026-09-28: no
+# step ran it, and this lint read only src/cofounder_agent/tests/unit.
+
+_B_STEP = _step("b", "$PYTEST tests/unit/b/ -q")
+
+
+def _root_suite():
+    """The lint's entry for the repo-root tree, or a failure saying it is gone."""
+    found = [suite for suite in lint.SUITES if suite.rel == lint.ROOT_TESTS_REL]
+    assert found, "unit_test_dirs_lint.SUITES no longer names the repo-root tests/ tree"
+    return found[0]
+
+
+def _from_repo_root(name: str, run: str) -> str:
+    """A step with no `working-directory`, so it runs from the repository root."""
+    return f"      - name: {name}\n        run: {run}\n"
+
+
+_ROOT_TREE_STEP = _from_repo_root("root tree", "$PYTEST tests/scripts/ -q")
+
+
+def _with_root_tree(tmp_path: Path, workflow: str, dirs=("scripts",)) -> Path:
+    """`_tree`, plus a repo-root ``tests/<dir>/test_<dir>.py`` for each of ``dirs``."""
+    root = _tree(tmp_path, workflow)
+    for d in dirs:
+        (root / "tests" / d).mkdir(parents=True)
+        (root / "tests" / d / f"test_{d}.py").write_text("def test_x():\n    pass\n")
+    return root
+
+
+def _run_both(tmp_path: Path, workflow: str, capsys, dirs=("scripts",)) -> tuple[int, str]:
+    """`lint.main` over both trees, the way the real repo is checked."""
+    code = lint.main(_with_root_tree(tmp_path, workflow, dirs))
+    return code, capsys.readouterr().out
+
+
+def test_a_repo_root_directory_no_step_names_is_reported_with_its_own_fix(tmp_path, capsys):
+    code, out = _run_both(tmp_path, _workflow(_A_STEP, _B_STEP, _ROOT_STEP), capsys)
+
+    assert code == 1
+    report, fix = out.split("Fix:")
+    assert "tests/scripts/" in report and "no pytest step names it" in report
+    assert "tests/unit/a/" not in report and "tests/unit/b/" not in report  # the other tree is fine
+    # The fix has the repo-root step's shape: no working-directory (it runs from the
+    # root, under the root pytest config) and no $COV (the nightly's coverage run
+    # measures nothing under tests/, so its fail-under floor would go red).
+    assert "- name: Unit tests — repo-root tests/scripts" in fix
+    assert "run: $PYTEST tests/scripts/ -q --tb=short -p no:cacheprovider" in fix
+    assert "working-directory" not in fix and "$COV" not in fix
+
+
+def test_both_trees_named_passes_and_each_is_reported(tmp_path, capsys):
+    code, out = _run_both(tmp_path, _workflow(_A_STEP, _B_STEP, _ROOT_STEP, _ROOT_TREE_STEP), capsys)
+
+    assert code == 0, out
+    assert "3 test file(s) under src/cofounder_agent/tests/unit" in out
+    assert "1 test file(s) under tests," in out
+
+
+def test_the_repo_root_tree_is_read_from_the_repo_root(tmp_path, capsys):
+    """From src/cofounder_agent, `tests/scripts/` is a different directory."""
+    base = (_A_STEP, _B_STEP, _ROOT_STEP)
+    wrong = _step("wrong dir", "$PYTEST tests/scripts/ -q")  # working-directory: src/cofounder_agent
+    right = _step("right dir", "$PYTEST ../../tests/scripts/ -q")
+
+    code, out = _run_both(tmp_path / "wrong", _workflow(*base, wrong), capsys)
+    assert code == 1 and "tests/scripts/" in out
+
+    code, out = _run_both(tmp_path / "right", _workflow(*base, right), capsys)
+    assert code == 0, out
+
+
+def test_a_root_level_file_in_the_repo_root_tree_needs_its_own_glob(tmp_path, capsys):
+    """A file directly under tests/ is not run by a step that names only tests/scripts/."""
+    workflow = _workflow(_A_STEP, _B_STEP, _ROOT_STEP, _ROOT_TREE_STEP)
+    root = _with_root_tree(tmp_path / "bare", workflow)
+    (root / "tests" / "test_top.py").write_text("def test_x():\n    pass\n")
+
+    assert lint.main(root) == 1
+    out = capsys.readouterr().out
+    assert "tests/test_*.py" in out and "no pytest step names it" in out
+
+    globbed = _workflow(_A_STEP, _B_STEP, _ROOT_STEP, _ROOT_TREE_STEP, _from_repo_root("top", "$PYTEST tests/test_*.py"))
+    root = _with_root_tree(tmp_path / "globbed", globbed)
+    (root / "tests" / "test_top.py").write_text("def test_x():\n    pass\n")
+
+    assert lint.main(root) == 0, capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("run", "why"),
+    [
+        ("$PYTEST tests/scripts/ -q || true", "`|| true` runs in its place"),
+        ("$PYTEST tests/scripts/ -q | tee pytest.log", "piped without pipefail"),
+    ],
+)
+def test_a_repo_root_step_that_discards_pytests_status_does_not_count(tmp_path, capsys, run, why):
+    workflow = _workflow(_A_STEP, _B_STEP, _ROOT_STEP, _from_repo_root("root tree", run))
+    code, out = _run_both(tmp_path, workflow, capsys)
+
+    assert code == 1, out
+    assert "tests/scripts/" in out and "discards pytest's exit status" in out and why in out
+
+
+@pytest.mark.parametrize("gate", ["continue-on-error: true", "if: false"])
+def test_a_repo_root_step_that_cannot_fail_the_job_does_not_count(tmp_path, capsys, gate):
+    soft = f"      - name: root tree soft\n        {gate}\n        run: $PYTEST tests/scripts/ -q\n"
+    code, out = _run_both(tmp_path, _workflow(_A_STEP, _B_STEP, _ROOT_STEP, soft), capsys)
+
+    assert code == 1
+    assert "tests/scripts/" in out and "cannot fail the job" in out and "root tree soft" in out
+
+
+def test_a_missing_repo_root_tree_is_a_floor_failure(tmp_path, capsys):
+    root = _tree(tmp_path, _workflow(_A_STEP, _B_STEP, _ROOT_STEP))  # no tests/ beside src/
+
+    with pytest.raises(SystemExit) as exc:
+        lint.main(root)
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "scan root does not exist" in err and str(root / "tests") in err
+
+
+def test_a_repo_root_tree_with_no_test_files_is_a_floor_failure(tmp_path, capsys):
+    root = _with_root_tree(tmp_path, _workflow(_A_STEP, _B_STEP, _ROOT_STEP), dirs=())
+    (root / "tests").mkdir()
+
+    with pytest.raises(SystemExit) as exc:
+        lint.main(root)
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "examined 0 test_*.py files" in err and str(root / "tests") in err
+
+
+def test_no_pytest_commands_at_all_is_a_floor_failure_naming_both_trees(tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        lint.main(_with_root_tree(tmp_path, _workflow(_step("lint", "python scripts/ci/x.py"))))
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "pytest commands naming a path under src/cofounder_agent/tests/unit or tests" in err
+
+
+@pytest.mark.parametrize("repo", ["/repo", "/work/tests/checkout"], ids=["plain", "tests part in the checkout path"])
+@pytest.mark.parametrize(
+    ("tree", "file", "group"),
+    [
+        ("src/cofounder_agent/tests/unit", "seo/test_x.py", "tests/unit/seo/"),
+        ("src/cofounder_agent/tests/unit", "test_x.py", "tests/unit/test_*.py"),
+        ("tests", "scripts/test_x.py", "tests/scripts/"),
+        ("tests", "test_x.py", "tests/test_*.py"),
+    ],
+)
+def test_a_group_is_spelled_the_way_a_step_names_it(repo, tree, file, group):
+    """From the tree's own `tests` part down, wherever the checkout lives."""
+    tests_root = Path(repo) / tree
+
+    assert lint._group(tests_root / file, tests_root) == group
+
+
+def test_the_lint_declares_both_trees():
+    """Guard the guard: a tree dropped from SUITES is silently un-guarded again."""
+    declared = {suite.rel for suite in lint.SUITES}
+
+    assert {lint.TESTS_ROOT_REL, lint.ROOT_TESTS_REL} <= declared
 
 
 # ---------------------------------------------------------------------------
@@ -526,9 +705,9 @@ def test_the_real_workflow_without_the_seo_step_reports_seo():
     assert [group for group, _reason in problems] == ["tests/unit/seo/"]
 
 
-def _real_problems(text: str) -> dict[tuple[str, str], list[Path]]:
+def _real_problems(text: str, suite=_PRIMARY[0]) -> dict[tuple[str, str], list[Path]]:
     root = _repo_root()
-    tests_root = root / lint.TESTS_ROOT_REL
+    tests_root = root / suite.rel
     return lint.uncovered(
         lint.discover_test_files(tests_root), lint.find_invocations(text, root, tests_root), tests_root
     )
@@ -546,6 +725,44 @@ def test_the_real_seo_step_made_soft_failing_reports_seo():
     assert "discards pytest's exit status" in next(iter(problems))[1]
 
 
+def test_the_real_workflow_without_the_repo_root_step_reports_it():
+    """The 2026-09-28 state, reconstructed: the repo-root tree on no step."""
+    text = _real_workflow().read_text(encoding="utf-8")
+    without = re.sub(r"\n      - name: Unit tests — repo-root tests/scripts\n(?:        .*\n)+", "\n", text)
+    assert without != text, "the repo-root step moved; update this test's pattern"
+
+    problems = _real_problems(without, _root_suite())
+
+    assert [group for group, _reason in problems] == ["tests/scripts/"]
+    assert "no pytest step names it" in next(iter(problems))[1]
+
+
+def test_the_real_repo_root_step_made_soft_failing_reports_it():
+    """The step still RUNS with `|| true`; it just can never go red."""
+    text = _real_workflow().read_text(encoding="utf-8")
+    run = "        run: $PYTEST tests/scripts/ -q --tb=short -p no:cacheprovider\n"
+    assert text.count(run) == 1, "the repo-root step changed shape; update this test's pattern"
+
+    soft = text.replace(run, run.replace("cacheprovider\n", "cacheprovider || true\n"))
+    problems = _real_problems(soft, _root_suite())
+
+    assert [group for group, _reason in problems] == ["tests/scripts/"]
+    assert "discards pytest's exit status" in next(iter(problems))[1]
+
+
+def test_the_real_repo_root_step_carries_no_coverage_flags():
+    """`$COV` is empty on every PR and set only on the nightly, so one here passes
+    every PR and then fails the nightly: its `--cov-fail-under=1` measures none of
+    the src/cofounder_agent packages (nothing under tests/ imports them) and reads
+    0%, with every test green. The step's own comment says so; this is the check."""
+    root = _repo_root()
+    text = _real_workflow().read_text(encoding="utf-8")
+    invocations = lint.find_invocations(text, root, root / lint.ROOT_TESTS_REL)
+
+    assert invocations, "no step runs the repo-root tests; the test above reports it"
+    assert [inv.step.name for inv in invocations if "$COV" in inv.step.run] == []
+
+
 def test_disabling_the_real_test_backend_job_reports_every_directory():
     """`if: false` on the job skips all of it, and a skipped job still satisfies
     the required `test-backend` check: every unit test would gate nothing."""
@@ -555,11 +772,14 @@ def test_disabling_the_real_test_backend_job_reports_every_directory():
     )
     assert disabled != text, "the test-backend job's `if:` moved; update this test's pattern"
 
-    tests_root = _repo_root() / lint.TESTS_ROOT_REL
-    every_group = {lint._group(p, tests_root) for p in lint.discover_test_files(tests_root)}
+    root = _repo_root()
+    every_group = {
+        lint._group(p, root / suite.rel) for suite in lint.SUITES for p in lint.discover_test_files(root / suite.rel)
+    }
+    reported = {group for suite in lint.SUITES for group, _reason in _real_problems(disabled, suite)}
 
-    assert {group for group, _reason in _real_problems(disabled)} == every_group
-    assert _real_problems(text) == {}
+    assert reported == every_group
+    assert [suite.rel for suite in lint.SUITES if _real_problems(text, suite)] == []
 
 
 def _yaml_steps(path: Path) -> list[tuple[str, dict, str]]:
@@ -610,3 +830,4 @@ def test_the_fix_snippet_matches_the_real_steps():
     text = _real_workflow().read_text(encoding="utf-8")
 
     assert lint._snippet("tests/unit/seo/") in text
+    assert lint._snippet("tests/scripts/", _root_suite()) in text

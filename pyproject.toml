@@ -5,16 +5,21 @@
 # "dev harness" lock was installed by nothing and only fed Dependabot.
 
 [tool.pytest.ini_options]
+# This config runs the repo-root tests/ tree (CI: the "Unit tests — repo-root
+# tests/scripts" step of .github/workflows/unit-tests.yml). Everything under
+# src/cofounder_agent/ is collected under that directory's own pytest config.
 testpaths = ["tests"]
 pythonpath = [".", "src/cofounder_agent"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# No `--load-dotenv`: it sat here from 2026-02 with no installed plugin
+# providing it, so pytest exited 4 ("unrecognized arguments") on every run from
+# the repo root, and the tests/ tree went unrun (and unfixed) for months.
 addopts = [
     "-v",
     "--tb=short",
     "--strict-markers",
-    "--load-dotenv",
 ]
 asyncio_mode = "auto"
 markers = [

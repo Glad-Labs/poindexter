@@ -117,6 +117,50 @@ aren't available in the worker container). See the `skipif`
 decorators in `test_database_service.py` and
 `test_sentry_integration.py`.
 
+## Which test trees CI runs
+
+`test-backend` runs pytest once per directory, from two trees.
+`scripts/ci/unit_test_dirs_lint.py` (a step of `test-backend`, and of
+`lint-main` on pushes to main) fails when a `test_*.py` in either is named by
+no pytest step that can fail the job:
+
+| Tree                                                                           | Its steps run from    | Pytest config                        | `$COV` |
+| ------------------------------------------------------------------------------ | --------------------- | ------------------------------------ | ------ |
+| `src/cofounder_agent/tests/unit/`                                              | `src/cofounder_agent` | `src/cofounder_agent/pyproject.toml` | yes    |
+| `tests/` at the repo root (today `tests/scripts/`, the image bake-off harness) | the repo root         | the root `pyproject.toml`            | no     |
+
+Run the root tree by hand with `python -m pytest tests/ -q` from the repo
+root, in any env that has pytest and Pillow (the backend poetry env does).
+
+Why the second tree is listed at all: nothing ran it from 2026-07-13, when it
+was added, until 2026-09-28, and three of its eleven tests were red from
+2026-07-17. `BakeoffModel` had gained a required `revision` field, and
+fixtures that built it positionally shifted every later argument by one. The
+lint read only the `src/cofounder_agent` tree, and running it by hand failed
+first: the root pytest config passed `--load-dotenv`, which no installed
+plugin provides, so pytest exited 4 (`unrecognized arguments`) before it
+collected a test. Three things now keep it honest:
+
+- **The lint holds both trees to one rule**, and a tree named in its `SUITES`
+  must exist and hold a test file (a lint that read nothing has not passed).
+  Adding a third tree means adding it to `SUITES` and giving it a step; a tree
+  the lint does not name is invisible to it. When a directory has no step, the
+  lint prints the step to paste.
+- **The root step carries no `$COV`.** `$COV` is empty on PRs and set on the
+  nightly, whose `--cov-fail-under=1` measures the `src/cofounder_agent`
+  packages. Nothing under `tests/` imports them, so the run reads 0% and fails
+  with every test green. A `$COV` there would pass every PR and fail the
+  nightly, so `test_unit_test_dirs_lint.py` pins its absence.
+- **`^tests/` is in the `detect-changes` pattern.** A path under the root tree
+  starts with `tests/`, so neither `^src/cofounder_agent/` nor `^scripts/`
+  matched it, and a PR that edited only a test there skipped every pytest
+  step. `test_ci_runs_when_its_inputs_change.py` derives the trees from the
+  pytest steps and fails when a test file in one of them would not trigger.
+
+Still outside this lint: `scripts/test_*.py`, `mcp-server-voice/tests/` and
+the pytest suites CI runs through other workflows (`mcp-server-tests.yml`,
+`integration-db.yml`, `benchmarks.yml`).
+
 ## Key files
 
 - `.github/workflows/unit-tests.yml` — backend pytest, exposed as the
@@ -124,7 +168,8 @@ decorators in `test_database_service.py` and
   required checks; a `detect-changes` step short-circuits the
   expensive pytest steps on docs-only changes while still reporting
   green (a required check must always report — see "CI minutes / cost
-  discipline" below). No deploy step.
+  discipline" below). No deploy step. Which test trees it runs, and the
+  lint that keeps that list complete: "Which test trees CI runs" above.
 - `.github/workflows/migrations-smoke.yml` — applies every migration
   against a clean Postgres + pgvector. Another branch-protection
   required check; fires on every PR + push to main.

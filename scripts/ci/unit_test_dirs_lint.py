@@ -8,22 +8,35 @@ The cost is that the list is kept by hand, and a directory nobody adds to it
 never runs in CI. Its tests cannot fail a PR: a real regression there is red
 on every local run and green on every CI run.
 
-That already happened twice. poindexter#641 found five directories (modules,
+That already happened three times. poindexter#641 found five directories (modules,
 poindexter, prompts, schemas, scripts) missing from the list in May 2026 and
 added them by hand. On 2026-09-25 three more were missing:
 ``tests/unit/seo`` (10 files), ``tests/unit/infrastructure`` (3) and
 ``tests/unit/console`` (1). A real failure was hiding in them: #4011 added a
 rule to ``pipeline_architect._validate_spec`` that also rejected the seeded
 ``seo_refresh`` graph, and ``test_seo_refresh_spec`` was the only test that
-noticed. This lint turns the hand-kept list into a checked one.
+noticed. The third was a whole tree rather than a directory: the repo-root
+``tests/`` (``tests/scripts/test_image_bakeoff.py``). No step named it and this
+lint only read ``src/cofounder_agent/tests/unit``, so three of its eleven tests
+sat red from 2026-07-17, when ``BakeoffModel`` gained a required ``revision``
+field, until 2026-09-28. Nobody ran it by hand either: the root pytest config
+passed ``--load-dotenv``, which no installed plugin provides, so pytest exited
+4 before collecting a test. This lint turns the hand-kept list into a checked one.
 
-The rule: every ``test_*.py`` under ``src/cofounder_agent/tests/unit`` (the
-``python_files`` pattern in ``pyproject.toml``) must sit at or under a path
-that a pytest command in the workflow names, resolved against that step's
-``working-directory``. A file counts as NOT run when the only command naming
-it excludes it (``--ignore`` / ``--ignore-glob`` / ``--deselect``), when the
-only step that runs it is ``continue-on-error`` or ``if: false`` (on the step
-or on its job), or when that step's script discards pytest's exit status.
+The rule: every ``test_*.py`` under a tree in ``SUITES`` (``src/cofounder_agent/
+tests/unit``, and the repo-root ``tests``; ``python_files`` in each pytest
+config) must sit at or under a path that a pytest command in the workflow
+names, resolved against that step's ``working-directory``. A file counts as
+NOT run when the only command naming it excludes it (``--ignore`` /
+``--ignore-glob`` / ``--deselect``), when the only step that runs it is
+``continue-on-error`` or ``if: false`` (on the step or on its job), or when
+that step's script discards pytest's exit status.
+
+A tree named in ``SUITES`` must exist and hold a test file: a lint that read
+nothing has not passed. Deleting the last test under one means deleting its
+entry there, and its workflow step, in the same change. A test tree that is
+NOT named there is invisible to this lint, so adding a new one to the repo
+means adding it to ``SUITES``.
 
 **Discarded exit status.** A step fails only when its script exits non-zero,
 so ``$PYTEST tests/unit/x/ || true`` runs every test and gates none of them.
@@ -64,7 +77,7 @@ import os
 import re
 import shlex
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -75,12 +88,30 @@ LINT = "unit_test_dirs_lint"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_REL = Path(".github") / "workflows" / "unit-tests.yml"
 TESTS_ROOT_REL = Path("src") / "cofounder_agent" / "tests" / "unit"
-# ``python_files`` in src/cofounder_agent/pyproject.toml.
+# The repo-root tree: its own pytest config (pyproject.toml, `testpaths`), run
+# from the repository root rather than from src/cofounder_agent.
+ROOT_TESTS_REL = Path("tests")
+# ``python_files`` in both pytest configs.
 TEST_FILE_GLOB = "test_*.py"
 
-# The working directory every pytest step uses today, and the one a fix
-# snippet should use.
-_SNIPPET_WORKDIR = "src/cofounder_agent"
+
+class Suite(NamedTuple):
+    """One tree of ``test_*.py`` files held to the rule.
+
+    The other fields say what a step for the tree looks like, so the fix this
+    lint prints pastes straight into the workflow.
+    """
+
+    rel: Path  # relative to the repository root
+    workdir: str  # the steps' `working-directory` ("" = the repository root)
+    cov: bool  # do its steps pass `$COV`? Coverage is measured from src/cofounder_agent only
+    step_name: str  # a step's name; `{leaf}` / `{group}` are the group's last part / whole spelling
+
+
+SUITES: tuple[Suite, ...] = (
+    Suite(TESTS_ROOT_REL, "src/cofounder_agent", True, "Unit tests — {leaf}"),
+    Suite(ROOT_TESTS_REL, "", False, "Unit tests — repo-root {group}"),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -652,10 +683,17 @@ def _excluded(path: Path, inv: Invocation) -> bool:
     )
 
 
+def _label(tests_root: Path) -> str:
+    """How a pytest step spells the tree: ``tests/unit`` for ``.../tests/unit``,
+    ``tests`` for the repo-root ``tests``. It runs from the last ``tests`` part down."""
+    parts = tests_root.parts
+    return "/".join(parts[len(parts) - 1 - parts[::-1].index("tests") :])
+
+
 def _group(path: Path, tests_root: Path) -> str:
-    """``tests/unit/<dir>/`` for a file in a subdirectory, the root-level glob otherwise."""
+    """``<tree>/<dir>/`` for a file in a subdirectory, the root-level glob otherwise."""
     rel = path.relative_to(tests_root)
-    base = tests_root.relative_to(tests_root.parents[1]).as_posix()  # tests/unit
+    base = _label(tests_root)  # tests/unit, or tests for the repo-root tree
     if len(rel.parts) == 1:
         return f"{base}/{TEST_FILE_GLOB}"
     return f"{base}/{rel.parts[0]}/"
@@ -686,62 +724,81 @@ def uncovered(test_files: list[Path], invocations: list[Invocation], tests_root:
     return problems
 
 
-def _snippet(group: str) -> str:
-    label = group.rstrip("/").rsplit("/", 1)[-1]
-    return (
-        f"      - name: Unit tests — {label}\n"
-        "        if: steps.changes.outputs.needs_tests == 'true'\n"
-        f"        working-directory: {_SNIPPET_WORKDIR}\n"
-        f"        run: $PYTEST {group} -q --tb=short -p no:cacheprovider $COV"
-    )
+def _snippet(group: str, suite: Suite = SUITES[0]) -> str:
+    """The step to paste into the workflow for ``group``, shaped like its neighbours."""
+    name = suite.step_name.format(leaf=group.rstrip("/").rsplit("/", 1)[-1], group=group.rstrip("/"))
+    lines = [f"      - name: {name}", "        if: steps.changes.outputs.needs_tests == 'true'"]
+    if suite.workdir:
+        lines.append(f"        working-directory: {suite.workdir}")
+    lines.append(f"        run: $PYTEST {group} -q --tb=short -p no:cacheprovider" + (" $COV" if suite.cov else ""))
+    return "\n".join(lines)
 
 
-def main(repo_root: Path = REPO_ROOT) -> int:
+def main(repo_root: Path = REPO_ROOT, suites: Sequence[Suite] = SUITES) -> int:
     workflow = repo_root / WORKFLOW_REL
-    tests_root = repo_root / TESTS_ROOT_REL
-
-    require_dir(tests_root, lint=LINT)
+    trees = [(suite, require_dir(repo_root / suite.rel, lint=LINT)) for suite in suites]
     if not workflow.is_file():
         raise ScanFloorError(
             f"{LINT}: workflow not found: {workflow}\n"
             "  The CI pytest steps live there. If the workflow moved, update "
             "WORKFLOW_REL; do not let this lint report clean without reading it."
         )
-    test_files = discover_test_files(tests_root)
-    require_scanned(len(test_files), lint=LINT, what=f"{TEST_FILE_GLOB} files", roots=(tests_root,))
-    invocations = find_invocations(workflow.read_text(encoding="utf-8"), repo_root, tests_root)
+    text = workflow.read_text(encoding="utf-8")
+
+    # (suite, its test files, the pytest commands naming a path under it, the files no gating step runs)
+    scanned: list[tuple[Suite, list[Path], list[Invocation], dict[tuple[str, str], list[Path]]]] = []
+    for suite, tests_root in trees:
+        test_files = discover_test_files(tests_root)
+        require_scanned(len(test_files), lint=LINT, what=f"{TEST_FILE_GLOB} files", roots=(tests_root,))
+        invocations = find_invocations(text, repo_root, tests_root)
+        scanned.append((suite, test_files, invocations, uncovered(test_files, invocations, tests_root)))
+    # Zero pytest commands anywhere means the scanner did not read the workflow. A tree
+    # with none of its own, beside trees that have some, is not a floor failure: its files
+    # are reported below with the step to add.
     require_scanned(
-        len(invocations), lint=LINT, what=f"pytest commands naming a path under {TESTS_ROOT_REL.as_posix()}",
+        sum(len(invocations) for _suite, _files, invocations, _found in scanned),
+        lint=LINT,
+        what="pytest commands naming a path under " + " or ".join(suite.rel.as_posix() for suite in suites),
         roots=(workflow,),
     )
 
-    problems = uncovered(test_files, invocations, tests_root)
-    if not problems:
-        steps = len({inv.step.line for inv in invocations if inv.gating})
-        print(
-            f"[unit-test-dirs] OK — {len(test_files)} test file(s) under {TESTS_ROOT_REL.as_posix()}, "
-            f"every one run by one of {steps} gating pytest step(s) in {WORKFLOW_REL.as_posix()}."
-        )
+    if not any(found for _suite, _files, _invocations, found in scanned):
+        for suite, test_files, invocations, _found in scanned:
+            steps = len({inv.step.line for inv in invocations if inv.gating})
+            print(
+                f"[unit-test-dirs] OK — {len(test_files)} test file(s) under {suite.rel.as_posix()}, "
+                f"every one run by one of {steps} gating pytest step(s) in {WORKFLOW_REL.as_posix()}."
+            )
         return 0
 
-    total = sum(len(files) for files in problems.values())
+    problems = [
+        (grp, reason, files, suite)
+        for suite, _files, _invocations, found in scanned
+        for (grp, reason), files in found.items()
+    ]
+    total = sum(len(files) for _grp, _reason, files, _suite in problems)
+    hit = " and ".join(suite.rel.as_posix() for suite, _files, _invocations, found in scanned if found)
     print(
-        f"[unit-test-dirs] FAIL — {total} test file(s) under {TESTS_ROOT_REL.as_posix()} run in no CI step that "
+        f"[unit-test-dirs] FAIL — {total} test file(s) under {hit} run in no CI step that "
         f"can fail, so they gate nothing ({WORKFLOW_REL.as_posix()}):\n"
     )
-    width = max(len(group) for group, _ in problems)
-    for (group, reason), files in sorted(problems.items()):
-        print(f"  {group:<{width}}  {len(files):>3} file(s) — {reason}")
+    width = max(len(grp) for grp, _reason, _files, _suite in problems)
+    for grp, reason, files, _suite in sorted(problems, key=lambda p: (p[0], p[1])):
+        print(f"  {grp:<{width}}  {len(files):>3} file(s) — {reason}")
     print(
         "\n  CI runs pytest once per directory, so a directory missing from that\n"
         "  list never runs: a regression in it is red locally and green in CI.\n"
-        "  tests/unit/seo hid a real failure this way (2026-09-25)."
+        "  tests/unit/seo hid a real failure this way (2026-09-25), and the repo-root\n"
+        "  tests/ tree sat red from 2026-07-17 to 2026-09-28."
     )
-    missing = sorted(group for group, reason in problems if reason == "no pytest step names it")
+    missing = sorted(
+        {(grp, suite) for grp, reason, _files, suite in problems if reason == "no pytest step names it"},
+        key=lambda item: item[0],
+    )
     if missing:
         print("\n  Fix: add a step to the test-backend job for each, e.g.\n")
-        print("\n\n".join(_snippet(group) for group in missing))
-    if any("discards pytest's exit status" in reason for _group_, reason in problems):
+        print("\n\n".join(_snippet(grp, suite) for grp, suite in missing))
+    if any("discards pytest's exit status" in reason for _grp, reason, _files, _suite in problems):
         print(
             "\n  Fix for a discarded status: let pytest's exit status end the step. Drop the\n"
             "  `|| ...` / `set +e` / `&`, give a pipe pipefail (`set -o pipefail` or\n"

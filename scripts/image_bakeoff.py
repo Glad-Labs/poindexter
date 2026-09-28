@@ -62,7 +62,7 @@ class BakeoffModel:
     steps: int
     guidance: float              # used only for CFG models
     dtype: str                   # "bfloat16" | "float16"
-    license_tier: str            # "apache" | "mit" | "community" | "custom"
+    license_tier: str            # "apache" | "mit" | "openrail" | "community" | "custom"
     gated: bool = False
     # SDXL-Lightning-style LoRA + trailing scheduler (mirrors the live server's
     # ModelConfig); None/False for everything else. A LoRA is a separate repo,
