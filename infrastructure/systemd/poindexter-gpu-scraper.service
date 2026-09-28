@@ -6,7 +6,7 @@
 # asyncpg + httpx (apt: python3-asyncpg python3-httpx).
 #
 # Runs from the DEPLOY CLONE (~/.poindexter/deploy/glad-labs-stack), not a
-# working checkout (Glad-Labs/glad-labs-stack#4188). The process reads its code
+# working checkout (stack#4188). The process reads its code
 # once, at start: gpu-scraper.py, and poindexter.brain.bootstrap from the same
 # tree, to resolve its DSN. Until 2026-09-28 it ran from the operator's working
 # checkout, so it ran whatever state that tree was in when it started (branch,
