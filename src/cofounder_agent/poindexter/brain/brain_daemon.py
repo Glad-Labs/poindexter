@@ -14,9 +14,12 @@ Functions:
   5. Can trigger restarts of other services
 
 Usage:
-    python brain/brain_daemon.py                # Run forever
-    python brain/brain_daemon.py --once         # Run one cycle and exit
-    pythonw brain/brain_daemon.py               # Run windowless (background)
+    python -m poindexter.brain.brain_daemon          # Run forever (the container's CMD)
+    python -m poindexter.brain.brain_daemon --once   # Run one cycle and exit
+
+Importing this module has no side effects. ``run()``, the process entry point,
+configures logging (``~/.content-pipeline/brain.log`` + stdout) and resolves the
+database URL, exiting 2 when none resolves; see ``configure_logging``.
 """
 
 import asyncio
@@ -38,6 +41,11 @@ import asyncpg
 
 from poindexter.brain import cycle_stage
 from poindexter.brain.alert_sync import sync_alert_rules
+
+# #198: the database URL resolves through the bootstrap helper, so
+# ~/.poindexter/bootstrap.toml or any of DATABASE_URL / LOCAL_DATABASE_URL /
+# POINDEXTER_MEMORY_DSN works. Called from ``run()``, never at import.
+from poindexter.brain.bootstrap import require_database_url
 from poindexter.brain.health_probes import run_health_probes
 
 # Brain-local secret reader — single source of truth for app_settings
@@ -655,28 +663,51 @@ async def _init_sentry(pool) -> bool:
         return False
 
 
-LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
-os.makedirs(LOG_DIR, exist_ok=True)
-LOG_FILE = os.path.join(LOG_DIR, "brain.log")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
 logger = logging.getLogger("brain")
 
-# Local brain DB — the daemon writes ALL data here (brain_knowledge, brain_decisions, etc.)
-# #198: resolve via bootstrap helper so ~/.poindexter/bootstrap.toml or any
-# of DATABASE_URL / LOCAL_DATABASE_URL / POINDEXTER_MEMORY_DSN works. If
-# none of those yield a value, require_database_url() notifies the operator
-# and exits cleanly.
-from poindexter.brain.bootstrap import require_database_url
+# Logging and the database URL are set up by run(), the process entry point,
+# not at import. Until 2026-09-28 they ran here, so every importer paid for
+# them: a test process got ~/.content-pipeline created in the developer's home
+# and a leaked brain.log handle (basicConfig ignores the handlers it is given
+# once pytest has put capture handlers on the root logger, so the FileHandler
+# was opened and dropped unclosed); the CI image smoke needed a dummy DSN to
+# import at all; and the second module instance that alert_dispatcher /
+# alert_sync import lazily while the daemon runs as __main__ (#344) re-ran
+# all of it.
+BRAIN_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 
-LOCAL_BRAIN_DB = require_database_url(source="brain_daemon")
+
+def brain_log_file() -> str:
+    """Path of the daemon's log file: ``~/<APP_LOG_DIR>/brain.log``.
+
+    ``APP_LOG_DIR`` defaults to ``.content-pipeline``. In the container the
+    daemon runs as root, so this is ``/root/.content-pipeline/brain.log``.
+    """
+    log_dir = os.path.join(
+        os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline")
+    )
+    return os.path.join(log_dir, "brain.log")
+
+
+def configure_logging() -> str:
+    """Send root logging to ``brain.log`` and stdout at INFO. Returns the log path.
+
+    Same format, file and stream the daemon has always used; ``docker logs``
+    reads the stdout copy. Only ``run()`` calls this. A process that merely
+    imports the module keeps its own logging configuration.
+    """
+    log_file = brain_log_file()
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format=BRAIN_LOG_FORMAT,
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+    return log_file
+
 
 # Telegram + Discord notification config — NOT cached at module level.
 #
@@ -3451,10 +3482,13 @@ async def run_cycle(pool):
                 len(all_issues), len(issues), len(ext_issues), len(probe_results), len(probe_failures))
 
 
-async def main():
+async def main(db_url: str):
+    """Run the daemon against ``db_url`` until shutdown (one cycle with --once).
+
+    ``run()`` resolves ``db_url`` and configures logging before calling this.
+    """
     one_shot = "--once" in sys.argv
 
-    db_url = LOCAL_BRAIN_DB
     if not db_url:
         logger.error("[BRAIN] No DATABASE_URL — cannot start")
         sys.exit(1)
@@ -3952,11 +3986,24 @@ async def main():
     logger.info("[BRAIN] Pool closed, exiting")
 
 
-if __name__ == "__main__":
+def run() -> None:
+    """Process entry point: what ``python -m poindexter.brain.brain_daemon`` runs.
+
+    Owns the two process-wide side effects the module used to perform at
+    import. Logging is configured first, so that when no database URL resolves,
+    the operator page ``require_database_url`` sends is logged to brain.log and
+    stdout before it exits 2, exactly as when both ran at import.
+    """
+    configure_logging()
+    db_url = require_database_url(source="brain_daemon")
     try:
-        asyncio.run(main())
+        asyncio.run(main(db_url))
     except KeyboardInterrupt:
         # silent-ok: Ctrl-C is an OPERATOR-INITIATED shutdown, not a failure —
         # the person who caused it is watching the terminal. info is the right
         # level; a warning would cry wolf on every intentional stop.
-        logging.getLogger("brain").info("[BRAIN] Interrupted, exiting")
+        logger.info("[BRAIN] Interrupted, exiting")
+
+
+if __name__ == "__main__":
+    run()

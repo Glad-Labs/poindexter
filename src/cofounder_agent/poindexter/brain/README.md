@@ -1,12 +1,35 @@
 # Brain Daemon
 
-**Last Updated:** 2026-07-11
+**Last Updated:** 2026-09-28
 
 The brain daemon is the always-on supervisor for a Poindexter install.
 It runs alongside the worker (`poindexter-brain-daemon` container)
 and is responsible for monitoring services, detecting drift in
 operator-facing surfaces, and firing Telegram/Discord alerts when
 something needs attention.
+
+## Startup and logging
+
+The container runs `python -m poindexter.brain.brain_daemon`, which calls
+`run()`. That entry point does the two process-wide things, in this order:
+
+1. `configure_logging()` sends root logging at INFO to stdout (what
+   `docker logs` and Loki read) and to `~/.content-pipeline/brain.log`
+   (`/root/.content-pipeline/brain.log` in the container, which runs as root).
+   `APP_LOG_DIR` renames the directory. The file lives in the container's
+   writable layer, so it survives a restart but starts fresh when the container
+   is recreated.
+2. `require_database_url()` resolves the DSN from `~/.poindexter/bootstrap.toml`,
+   then `DATABASE_URL` / `LOCAL_DATABASE_URL` / `POINDEXTER_MEMORY_DSN`. If none
+   resolves it pages the operator and exits 2. Logging is already up by then,
+   so the page also lands in both log sinks.
+
+Importing `brain_daemon` does neither. Until 2026-09-28 both ran at import, so
+a test process created `~/.content-pipeline` in the developer's home and leaked
+an open `brain.log` handle, and the CI image smoke needed a dummy DSN just to
+import the module. `tests/unit/brain/test_brain_daemon_import_side_effects.py`
+checks the import in a fresh interpreter: no root handler, no file opened for
+writing, no directory created, no DSN needed.
 
 ## What the daemon checks
 
