@@ -93,15 +93,14 @@ One gap to know about:
 
 **A Prometheus-covered probe pages through its covering rule.** While
 Alertmanager is healthy the brain says nothing about `db_ping`,
-`ollama_models`, `embeddings_freshness`, `cost_freshness` and
-`publish_rate`. The rules named for each in
-`health_probes.PROMETHEUS_COVERING_RULES` notify instead, and
-`tests/unit/brain/test_prometheus_covered_probes.py` fails if a covering
-rule is gone or if a probe classified `critical`/`error` is covered only by
-rules that don't page. The test exists because the two sides disagreed for
-five months: `PoindexterOllamaDown` was `warning` (Discord only) from
-2026-04-19 to 2026-09-28 while `ollama_models` was `critical`, so an
-unreachable Ollama never paged, while `OllamaNoModelsLoaded` ("up but
+`ollama_models`, `embeddings_freshness` and `publish_rate`. The rules
+named for each in `health_probes.PROMETHEUS_COVERING_RULES` notify instead,
+and `tests/unit/brain/test_prometheus_covered_probes.py` fails if a
+covering rule is gone or if a probe classified `critical`/`error` is covered
+only by rules that don't page. The test exists because the two sides
+disagreed for five months: `PoindexterOllamaDown` was `warning` (Discord
+only) from 2026-04-19 to 2026-09-28 while `ollama_models` was `critical`, so
+an unreachable Ollama never paged, while `OllamaNoModelsLoaded` ("up but
 empty") did.
 
 `PoindexterOllamaDown` is `critical` since 2026-09-28, still `for: 3m`,
@@ -141,6 +140,38 @@ run (3 minutes against 10 to 15), the same order as `PoindexterWorkerDown`
 and the worker restart. The [firefighter](#deterministic-firefighter-detect--act--verify--escalate)
 can't hold it for a restart-then-verify either: its action registry
 restarts containers, and Ollama is a host unit.
+
+**A covering rule has to fire in the probe's own failure condition, and no
+test can check that.** `cost_freshness` deferred to
+`DailySpendApproachingLimit`, `DailySpendOverBudget` and `MonthlySpendHigh`
+from 2026-04-19 to 2026-09-28. The probe fails when no inference has been
+cost-logged for `cost_freshness_max_age_hours` (default 24) and the
+approval-queue throttle doesn't explain it. The spend rules fire on spend
+level, which reads low in exactly that condition, so an inference drought,
+or LLM calls that stopped reaching `cost_logs`, reached no one while
+Alertmanager was up. None of the 67 alerting rules live on prod measures
+`cost_logs` freshness. Grafana's "Ollama Unresponsive" overlaps only while
+tasks are pending, and `ProbePipelineIdleJob` watches task creation, not
+inference. So the probe is out of the map and the brain reports it itself,
+as a warning (a Discord notice). Measured before lifting the suppression:
+
+- In 30 days of brain logs (8,644 `[PROBES]` lines to 2026-09-28)
+  `cost_freshness` never failed, while 12 other probes did, so the change
+  adds no notice at current behaviour.
+- Over 90 days of `cost_logs`, the longest inference gap with the brain
+  running was 10.0 h (2026-08-16). Every longer gap had the brain silent for
+  all but minutes of it: host or stack outages, including the only two over
+  24 h (73.8 h from 2026-07-20, 47.5 h from 2026-08-04). A brain that is down
+  reports nothing either way.
+
+The probe's expected-idle check reads the throttle's own limit now. A
+drought while the approval queue is full is back-pressure, and "full" was a
+hardcoded 3 while `pipeline_throttle.is_queue_full` reads
+`max_approval_queue` (5 on prod, 100 by default), so on prod 3 or 4 waiting
+tasks turned a real drought into "pipeline throttled". The probe reads
+`max_approval_queue` with the throttle's fallback and its 0-means-off rule,
+and `test_brain_health_probes.py` runs the throttle and the probe on the
+same values.
 
 Every probe is tunable through one JSON setting,
 `app_settings.brain_probe_severity_overrides` (for example

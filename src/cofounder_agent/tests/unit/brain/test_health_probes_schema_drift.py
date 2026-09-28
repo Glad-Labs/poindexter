@@ -29,6 +29,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from poindexter.brain.health_probes import (
+    probe_cost_freshness,
     probe_embeddings_freshness,
     probe_newsletter_health,
     probe_podcast_health,
@@ -75,6 +76,16 @@ def _baseline_columns(table: str) -> set[str]:
             continue
         columns.add(line.split()[0].strip('"'))
     return columns
+
+
+def _baseline_view_sql(view: str) -> str:
+    """Return the body of ``CREATE OR REPLACE VIEW public.<view>``."""
+    sql = _baseline_schema_path().read_text(encoding="utf-8")
+    match = re.search(
+        rf"CREATE OR REPLACE VIEW public\.{view} AS\n(.*?);\n", sql, re.DOTALL
+    )
+    assert match, f"view {view} not found in baseline schema"
+    return match.group(1)
 
 
 _SQL_NOISE = {
@@ -383,3 +394,70 @@ async def test_podcast_probe_column_drift_fails_loud():
     res = await probe_podcast_health(pool)
     assert res["ok"] is False
     assert "created_at" in res["detail"]
+
+
+# ---------------------------------------------------------------------------
+# probe_cost_freshness (2026-09-28)
+# ---------------------------------------------------------------------------
+#
+# Until 2026-09-28 this probe ran a second, unfiltered query whenever its
+# first one raised, a shim for migration 0061 adding cost_logs.cost_type
+# (2026-04-07). That shim caught ANY error, column drift included, and
+# answered with MAX(created_at) over every row, electricity rows written each
+# brain cycle among them, so a broken query read as fresh. The column has been
+# in the baseline since the 2026-05-08 squash; these pin what replaced the
+# shim. content_tasks is a view over pipeline_tasks, so its status column is
+# checked in the view definition rather than a CREATE TABLE.
+
+
+def _cost_freshness_recording_pool(last_inference, approval_queue=0):
+    """``fetch`` answers the app_settings read (empty → documented defaults),
+    ``fetchrow`` records SQL and returns the cost_logs aggregate."""
+    pool = MagicMock()
+    pool.recorded_sql = []
+    pool.fetch = AsyncMock(return_value=[])
+
+    async def _fetchrow(query, *args, **kwargs):  # noqa: ANN001, ARG001
+        pool.recorded_sql.append(query)
+        return {"last_inference": last_inference, "approval_queue": approval_queue}
+
+    pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_cost_freshness_probe_sql_matches_baseline_schema():
+    pool = _cost_freshness_recording_pool(datetime.now(UTC) - timedelta(hours=1))
+    await probe_cost_freshness(pool)
+    assert pool.recorded_sql, "probe issued no SQL"
+    assert re.search(r"\bpt\.status,", _baseline_view_sql("content_tasks")), (
+        "content_tasks no longer projects pipeline_tasks.status"
+    )
+    allowed = {"cost_logs", "content_tasks", "status"} | _baseline_columns("cost_logs")
+    for sql in pool.recorded_sql:
+        unknown = _column_identifiers(sql) - allowed
+        assert not unknown, (
+            f"SQL references identifiers absent from the baseline schema: "
+            f"{sorted(unknown)}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_cost_freshness_probe_missing_relation_reports_bootstrap_state():
+    pool = _raising_pool('relation "cost_logs" does not exist')
+    pool.fetch = AsyncMock(return_value=[])
+    res = await probe_cost_freshness(pool)
+    assert res["ok"] is True
+    assert "not created yet" in res["detail"]
+
+
+@pytest.mark.asyncio
+async def test_cost_freshness_probe_column_drift_fails_loud():
+    """The shim answered exactly this error with an unfiltered re-query and
+    reported fresh. It must fail with the real message, on one query."""
+    pool = _raising_pool('column "cost_type" does not exist')
+    pool.fetch = AsyncMock(return_value=[])
+    res = await probe_cost_freshness(pool)
+    assert res["ok"] is False
+    assert "cost_type" in res["detail"]
+    assert pool.fetchrow.await_count == 1

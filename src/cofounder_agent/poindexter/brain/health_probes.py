@@ -115,6 +115,26 @@ except ImportError:  # pragma: no cover - exercised in minimal dev envs
 PODCAST_STALE_DAYS_SETTING = "podcast_staleness_max_age_days"
 PODCAST_STALE_DAYS_DEFAULT = 14.0
 
+# cost_freshness — how long cost_logs may go without an inference row before
+# the probe reports STALE. Derived from observed gaps, not picked: over the 90
+# days to 2026-09-28 (cost_logs inference rows against brain_decisions), the
+# longest inference gap while the brain was running was 10.0h (2026-08-16).
+# Every longer gap had the brain silent for all but minutes of it — host or
+# stack outages, 73.8h from 2026-07-20 and 47.5h from 2026-08-04 among them —
+# and a brain that is down reports nothing either way. 24h clears the quiet
+# band with room. Re-derive from the same two tables before moving it.
+COST_FRESHNESS_MAX_AGE_SETTING = "cost_freshness_max_age_hours"
+COST_FRESHNESS_MAX_AGE_DEFAULT = 24.0
+
+# The approval-queue throttle's limit, read from the key the throttle itself
+# reads (services/pipeline_throttle.is_queue_full). The brain can't import the
+# worker's services (stdlib + asyncpg only), so the fallback the throttle uses
+# when the row is missing is mirrored by value here, and
+# test_brain_health_probes.py runs both on the same raw values so the two can't
+# drift apart. 0 or below turns the throttle off.
+MAX_APPROVAL_QUEUE_SETTING = "max_approval_queue"
+MAX_APPROVAL_QUEUE_FALLBACK = 3
+
 # Bootstrap defaults — overridden from app_settings on first probe run.
 # localize_url rewrites `localhost` to `host.docker.internal` when running
 # inside a container, so the same DB value works in both environments.
@@ -332,6 +352,18 @@ def _setting_float(val: str | None, default: float) -> float:
         return default
     try:
         return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def _setting_int(val: str | None, default: int) -> int:
+    # Same parse as SiteConfig.get_int (int() of the raw text, the default on
+    # anything else, "5.0" included), so a key the worker also reads through
+    # SiteConfig resolves to the same number in the brain.
+    if val is None or val == "":
+        return default
+    try:
+        return int(val)
     except (TypeError, ValueError):
         return default
 
@@ -1211,49 +1243,117 @@ async def probe_publish_rate(pool) -> dict:
 
 
 async def probe_cost_freshness(pool) -> dict:
-    """Probe: Alert if cost_logs haven't been written in 24 hours. Correlates with approval queue."""
+    """Probe: has any LLM inference been cost-logged recently?
+
+    Fails when ``cost_logs`` has had no inference row for
+    ``cost_freshness_max_age_hours`` (default 24) and the approval-queue
+    throttle doesn't explain it. Two different faults look like that:
+
+    * the pipeline has stopped calling LLMs (no tasks, a wedged flow), or
+    * it still calls them and the calls no longer reach ``cost_logs``, which
+      leaves the spend gauges, the Cost dashboard and cost_guard's daily cap
+      reading $0 of API spend.
+
+    The brain reports this probe itself, at its own severity (``warning``, a
+    Discord notice). It is not in ``PROMETHEUS_COVERING_RULES``: no Prometheus
+    rule measures cost_logs freshness, and the spend-level rules it deferred
+    to from 2026-04-19 to 2026-09-28 read low in exactly this condition, so
+    for those five months a drought reached no one while Alertmanager was up.
+
+    **Expected idle.** A full approval queue throttles the pipeline, so a
+    drought then is back-pressure, not a fault: the probe passes with
+    ``status='expected_idle'``. "Full" is the throttle's own test
+    (``services/pipeline_throttle.is_queue_full``): at least
+    ``max_approval_queue`` tasks awaiting approval, counted on the same view,
+    and never when the limit is 0 or below (throttle off). This was a
+    hardcoded 3 while the throttle read the setting (5 on prod, 100 by
+    default), so on prod 3 or 4 waiting tasks turned a real drought into
+    "approval queue full (3/3), pipeline throttled".
+
+    Only inference rows count (``cost_type`` NULL or ``'inference'``). The
+    electricity rows the brain writes every cycle would make any drought look
+    fresh, which is what the old fallback query did: when its first query
+    failed for any reason it re-read ``MAX(created_at)`` over every row. It
+    was a shim for migration 0061 adding ``cost_type`` (2026-04-07); the
+    column has been in ``0000_baseline`` since the 2026-05-08 squash, so any
+    error now fails the probe with the real message.
+    """
     try:
-        # Try with cost_type column; fall back if migration hasn't run yet
-        try:
-            row = await pool.fetchrow("""
-                SELECT
-                    (SELECT MAX(created_at) FROM cost_logs WHERE cost_type IS NULL OR cost_type = 'inference') as last_inference,
-                    (SELECT MAX(created_at) FROM cost_logs) as last_any,
-                    (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'awaiting_approval') as approval_queue
-            """)
-        except Exception:
-            row = await pool.fetchrow("""
-                SELECT
-                    (SELECT MAX(created_at) FROM cost_logs) as last_inference,
-                    (SELECT MAX(created_at) FROM cost_logs) as last_any,
-                    (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'awaiting_approval') as approval_queue
-            """)
-        if not row or not row["last_any"]:
-            return {"ok": True, "detail": "no cost_logs entries yet (pipeline idle)"}
+        rows = await pool.fetch(
+            "SELECT key, value FROM app_settings WHERE key = ANY($1::text[])",
+            [COST_FRESHNESS_MAX_AGE_SETTING, MAX_APPROVAL_QUEUE_SETTING],
+        )
+        settings = {r["key"]: r["value"] for r in rows}
+        max_age_hours = _setting_float(
+            settings.get(COST_FRESHNESS_MAX_AGE_SETTING),
+            COST_FRESHNESS_MAX_AGE_DEFAULT,
+        )
+        queue_limit = _setting_int(
+            settings.get(MAX_APPROVAL_QUEUE_SETTING), MAX_APPROVAL_QUEUE_FALLBACK,
+        )
+
+        row = await pool.fetchrow("""
+            SELECT
+                (SELECT MAX(created_at) FROM cost_logs
+                  WHERE cost_type IS NULL OR cost_type = 'inference') AS last_inference,
+                (SELECT COUNT(*) FROM content_tasks
+                  WHERE status = 'awaiting_approval') AS approval_queue
+        """)
+        last = row["last_inference"] if row else None
+        if last is None:
+            return {
+                "ok": True,
+                "status": "no_inference_yet",
+                "detail": "no inference rows in cost_logs yet (no LLM call logged)",
+            }
         from datetime import datetime
-        # Check inference costs specifically (electricity logs every 5 min)
-        last = row["last_inference"] or row["last_any"]
         if last.tzinfo is None:
             last = last.replace(tzinfo=UTC)
         age_hours = (datetime.now(UTC) - last).total_seconds() / 3600
-        approval_queue = row["approval_queue"] or 0
-        stale = age_hours > 24
-
-        # Correlate: if stale AND approval queue is full, explain the root cause
-        if stale and approval_queue >= 3:
-            return {
-                "ok": True,  # Not a real failure — root cause is approval queue
-                "status": "expected_idle",
-                "age_hours": round(age_hours, 1),
-                "approval_queue": approval_queue,
-                "detail": f"inference idle {age_hours:.0f}h — approval queue full ({approval_queue}/3), pipeline throttled",
-            }
-        return {
-            "ok": not stale,
+        approval_queue = int(row["approval_queue"] or 0)
+        measured = {
             "age_hours": round(age_hours, 1),
-            "detail": f"inference costs last entry {age_hours:.1f}h ago" + (" — STALE" if stale else ""),
+            "max_age_hours": max_age_hours,
+            "approval_queue": approval_queue,
+            "approval_queue_limit": queue_limit,
+        }
+        if age_hours <= max_age_hours:
+            return {
+                "ok": True,
+                **measured,
+                "detail": (
+                    f"inference costs last entry {age_hours:.1f}h ago "
+                    f"(threshold {max_age_hours:g}h)"
+                ),
+            }
+        if queue_limit > 0 and approval_queue >= queue_limit:
+            return {
+                "ok": True,  # back-pressure, not a fault
+                "status": "expected_idle",
+                **measured,
+                "detail": (
+                    f"inference idle {age_hours:.0f}h — approval queue full "
+                    f"({approval_queue}/{queue_limit}), pipeline throttled"
+                ),
+            }
+        queue = (
+            f"{approval_queue}/{queue_limit}"
+            if queue_limit > 0
+            else f"{approval_queue}, throttle off"
+        )
+        return {
+            "ok": False,
+            **measured,
+            "detail": (
+                f"no inference cost-logged for {age_hours:.1f}h (threshold "
+                f"{max_age_hours:g}h) — STALE. The approval queue ({queue}) "
+                "is not throttling the pipeline, so either nothing is calling "
+                "an LLM or the calls are not reaching cost_logs"
+            ),
         }
     except Exception as e:
+        if _is_missing_relation(e):
+            return {"ok": True, "detail": "cost_logs / content_tasks not created yet"}
         return {"ok": False, "detail": str(e)[:200]}
 
 
@@ -1896,17 +1996,25 @@ ALERT_AFTER_FAILURES = 3
 # the signal outright. PoindexterOllamaDown was warning (Discord only) from
 # 2026-04-19 to 2026-09-28 while ollama_models was critical.
 # tests/unit/brain/test_prometheus_covered_probes.py checks both.
+#
+# What no test can check is that a rule watches the same thing as the probe,
+# so a rule belongs here only if it fires in the probe's own failure
+# condition. A rule on a related number is worse than none: the brain goes
+# quiet and the rule stays quiet with it.
 PROMETHEUS_COVERING_RULES: dict[str, tuple[str, ...]] = {
     "db_ping": ("PoindexterPostgresDown",),
     "ollama_models": ("PoindexterOllamaDown",),
     "embeddings_freshness": ("EmbeddingsStale",),
-    # Spend-level rules. None of them fires on cost_logs going stale, which
-    # is what probe_cost_freshness checks.
-    "cost_freshness": (
-        "DailySpendApproachingLimit",
-        "DailySpendOverBudget",
-        "MonthlySpendHigh",
-    ),
+    # cost_freshness is deliberately absent. It fails when no inference has
+    # been cost-logged for cost_freshness_max_age_hours (24), and from
+    # 2026-04-19 to 2026-09-28 it deferred to DailySpendApproachingLimit,
+    # DailySpendOverBudget and MonthlySpendHigh. Those fire on spend LEVEL,
+    # which reads low in exactly that condition, and none of the 67 alerting
+    # rules live on prod (20 static, 47 DB-rendered; checked 2026-09-28)
+    # measures cost_logs freshness. Grafana's "Ollama Unresponsive" overlaps
+    # only while tasks are pending. So the brain reports it itself, as a
+    # warning (a Discord notice). Map it again only to a rule that fires on
+    # staleness.
     "publish_rate": ("NoPublishedPostsRecently",),
 }
 PROMETHEUS_COVERED_PROBES: frozenset[str] = frozenset(PROMETHEUS_COVERING_RULES)

@@ -16,6 +16,11 @@ The hand-off breaks in two ways, and both are checked against what ships:
 * a probe that ``probe_severity`` says pages is covered only by rules that
   don't.
 
+A third way can't be checked mechanically: a covering rule that watches
+something else. ``cost_freshness`` deferred to the spend-level rules from
+2026-04-19 to 2026-09-28, and they read low in exactly the condition the
+probe fails on. It is pinned out of the map by name below.
+
 "Ships" means the static alert files as written plus
 ``prometheus_rule_builder.DEFAULT_RULES``. An install can still override a
 DB-rendered rule (``app_settings`` ``prometheus.rule.<name>``) or a probe
@@ -123,6 +128,20 @@ def test_a_paging_probe_is_covered_by_a_paging_rule(probe, shipped_severity):
         "brain defers to those rules, so this failure would reach Discord "
         "only. Raise a covering rule to critical, or reclassify the probe."
     )
+
+
+@pytest.mark.unit
+def test_cost_freshness_is_reported_by_the_brain():
+    """``cost_freshness`` fails when no inference has been cost-logged for
+    ``cost_freshness_max_age_hours``. It deferred to
+    ``DailySpendApproachingLimit``, ``DailySpendOverBudget`` and
+    ``MonthlySpendHigh``, which fire on spend level. When inference stops being
+    logged, spend reads low, so those rules could not fire in the one
+    condition they were covering, and while Alertmanager was healthy a drought
+    reached no one. No shipped rule measures cost_logs freshness. Map the
+    probe again only alongside one that does."""
+    assert "cost_freshness" in hp.PROBES
+    assert "cost_freshness" not in hp.PROMETHEUS_COVERING_RULES
 
 
 @pytest.mark.unit

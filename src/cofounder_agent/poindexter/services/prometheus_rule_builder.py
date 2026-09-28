@@ -1820,10 +1820,13 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         ),
     },
     # --- Business / cost ---
-    # Cost alerts include an ``unless approval_queue_length > 0`` cross-check
-    # so they don't fire while the pipeline is throttling on pending human
-    # approvals (Gitea #238 — matches the retired cost_freshness probe's
-    # ``expected_idle`` logic).
+    # These watch spend LEVEL. None of them reports cost_logs going stale:
+    # when inference stops being logged, these gauges read low and nothing
+    # here can fire. The brain's cost_freshness probe (not retired) reports
+    # that itself; see health_probes.PROMETHEUS_COVERING_RULES.
+    # The daily rules' ``unless approval_queue_length > 0`` cross-check came
+    # from that probe's ``expected_idle`` check (Gitea #238), which is about
+    # a throttled pipeline going quiet, not about spend.
     "DailySpendApproachingLimit": {
         "enabled": True,
         "group": "poindexter-business",

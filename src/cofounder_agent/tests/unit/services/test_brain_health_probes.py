@@ -368,6 +368,20 @@ class TestConditionalSuppressionAndCrash:
         pages, notices = await self._run_with(fail, probe_name="db_ping", am_healthy=True)
         assert pages == [] and notices == []  # Prometheus/Alertmanager delivers it
 
+    async def test_cost_freshness_reports_itself_while_alertmanager_is_healthy(self):
+        # Until 2026-09-28 this failure was suppressed here, deferred to
+        # spend-level rules that read low in exactly this condition. It is
+        # warning-class, so it is a Discord notice, not a page.
+        async def stale(_pool):
+            return {"ok": False, "detail": "no inference cost-logged for 30.0h — STALE"}
+
+        pages, notices = await self._run_with(
+            stale, probe_name="cost_freshness", am_healthy=True,
+        )
+        assert pages == []
+        assert len(notices) == 1
+        assert "cost_freshness" in notices[0] and "STALE" in notices[0]
+
     @pytest.mark.parametrize(
         ("probe_name", "channel"),
         [("db_ping", "page"), ("publish_rate", "notice")],
@@ -1113,6 +1127,188 @@ class TestProbePodcastHealth:
         assert "updated_at" not in media_sql
         assert "pipeline_tasks" not in media_sql
         assert "ILIKE" not in media_sql.upper()
+
+
+def _cost_freshness_pool(*, age_hours, queue=0, settings=None):
+    """Pool for probe_cost_freshness: ``fetch`` answers the app_settings read,
+    ``fetchrow`` the cost_logs / approval-queue aggregate. ``age_hours=None``
+    means cost_logs holds no inference row at all."""
+    p = _make_pool()
+    p.fetch.return_value = [
+        {"key": key, "value": value} for key, value in (settings or {}).items()
+    ]
+    last = (
+        None if age_hours is None else datetime.now(UTC) - timedelta(hours=age_hours)
+    )
+    p.fetchrow.return_value = {"last_inference": last, "approval_queue": queue}
+    return p
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestProbeCostFreshness:
+    """probe_cost_freshness: is LLM inference still being cost-logged?
+
+    The brain reports this probe itself. From 2026-04-19 to 2026-09-28 it
+    deferred to spend-level Prometheus rules, which read low in exactly the
+    condition it fails on (test_prometheus_covered_probes.py keeps it out of
+    that map). These pin the settings-driven threshold, the expected-idle
+    check against the throttle's real limit (a hardcoded 3 while prod
+    throttled at 5), and that only an inference row can make it look fresh.
+    """
+
+    async def test_recent_inference_is_healthy(self):
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(age_hours=2))
+        assert r["ok"] is True
+        assert r["age_hours"] == pytest.approx(2.0, abs=0.1)
+        assert r["max_age_hours"] == 24.0
+        assert "STALE" not in r["detail"]
+
+    async def test_drought_with_room_in_the_queue_fails(self):
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(
+            age_hours=30, queue=1, settings={"max_approval_queue": "5"},
+        ))
+        assert r["ok"] is False
+        assert "STALE" in r["detail"]
+        assert "(1/5)" in r["detail"]
+
+    async def test_drought_with_a_full_queue_is_expected_idle(self):
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(
+            age_hours=30, queue=5, settings={"max_approval_queue": "5"},
+        ))
+        assert r["ok"] is True
+        assert r["status"] == "expected_idle"
+        assert "(5/5)" in r["detail"]
+
+    async def test_three_waiting_tasks_do_not_excuse_a_drought_at_prods_limit(self):
+        # The old hardcoded 3 reported "approval queue full (3/3), pipeline
+        # throttled" here, while the throttle (max_approval_queue=5 on prod)
+        # was not throttling anything.
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(
+            age_hours=30, queue=3, settings={"max_approval_queue": "5"},
+        ))
+        assert r["ok"] is False
+        assert r["approval_queue_limit"] == 5
+
+    async def test_throttle_off_never_excuses_a_drought(self):
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(
+            age_hours=30, queue=50, settings={"max_approval_queue": "0"},
+        ))
+        assert r["ok"] is False
+        assert "throttle off" in r["detail"]
+
+    async def test_missing_settings_rows_use_the_documented_defaults(self):
+        # A brain racing the seeder: 24h, and the throttle's own fallback
+        # limit when its row is missing.
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(age_hours=30, queue=3))
+        assert r["ok"] is True
+        assert r["status"] == "expected_idle"
+        assert r["max_age_hours"] == hp.COST_FRESHNESS_MAX_AGE_DEFAULT
+        assert r["approval_queue_limit"] == hp.MAX_APPROVAL_QUEUE_FALLBACK
+
+    @pytest.mark.parametrize(
+        ("threshold", "age_hours", "ok"),
+        [("6", 7, False), ("6", 5, True), ("48", 30, True), ("48", 50, False)],
+    )
+    async def test_the_threshold_is_a_setting(self, threshold, age_hours, ok):
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(
+            age_hours=age_hours, settings={"cost_freshness_max_age_hours": threshold},
+        ))
+        assert r["ok"] is ok
+        assert r["max_age_hours"] == float(threshold)
+
+    async def test_unparseable_threshold_falls_back_to_default(self):
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(
+            age_hours=2, settings={"cost_freshness_max_age_hours": "a day"},
+        ))
+        assert r["ok"] is True
+        assert r["max_age_hours"] == hp.COST_FRESHNESS_MAX_AGE_DEFAULT
+
+    async def test_no_inference_row_yet_is_ok(self):
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(age_hours=None))
+        assert r["ok"] is True
+        assert r["status"] == "no_inference_yet"
+
+    async def test_only_inference_rows_can_make_it_fresh(self):
+        # The brain writes an electricity row every cycle. An unfiltered
+        # MAX(created_at) would read any drought as minutes old.
+        p = _cost_freshness_pool(age_hours=2)
+        await hp.probe_cost_freshness(p)
+        sql = " ".join(p.fetchrow.await_args.args[0].split())
+        assert "FROM cost_logs WHERE cost_type IS NULL OR cost_type = 'inference'" in sql
+        assert sql.count("FROM cost_logs") == 1
+
+    async def test_a_query_error_fails_with_the_real_message(self):
+        # The old fallback re-ran MAX(created_at) over every cost_logs row on
+        # ANY error, electricity rows included, so a failing query read as
+        # fresh. One query, and its error is the result.
+        p = _cost_freshness_pool(age_hours=2)
+        p.fetchrow.side_effect = Exception("canceling statement due to statement timeout")
+        r = await hp.probe_cost_freshness(p)
+        assert r["ok"] is False
+        assert "statement timeout" in r["detail"]
+        assert p.fetchrow.await_count == 1
+
+    async def test_the_expected_idle_count_is_the_throttles_view(self):
+        p = _cost_freshness_pool(age_hours=2)
+        await hp.probe_cost_freshness(p)
+        sql = " ".join(p.fetchrow.await_args.args[0].split())
+        assert "FROM content_tasks WHERE status = 'awaiting_approval'" in sql
+
+
+@pytest.mark.unit
+def test_cost_freshness_default_is_the_seeded_default():
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
+
+    key = hp.COST_FRESHNESS_MAX_AGE_SETTING
+    assert float(DEFAULTS[key]) == hp.COST_FRESHNESS_MAX_AGE_DEFAULT
+    assert METADATA[key] == {"owner": "health_probes", "value_type": "float"}
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestCostFreshnessUsesTheThrottlesLimit:
+    """The probe's "expected idle" is a claim about the throttle: inference
+    is quiet because ``pipeline_throttle.is_queue_full`` says the approval
+    queue is full. The brain can't import the throttle, so it re-reads the
+    same key with the same fallback. This runs both on the same raw values
+    instead of trusting two hand-typed copies to agree, which also catches
+    either side renaming the key."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_throttle(self, monkeypatch):
+        from poindexter.services import pipeline_throttle
+
+        # SiteConfig.get falls back to this env var when the key is absent.
+        monkeypatch.delenv("MAX_APPROVAL_QUEUE", raising=False)
+        pipeline_throttle.reset_for_tests()
+        yield
+        pipeline_throttle.reset_for_tests()
+
+    @pytest.mark.parametrize(
+        "raw", [None, "", "5", "3", "100", "0", "-1", "abc", "5.0", " 7 "],
+    )
+    @pytest.mark.parametrize("queue", [0, 2, 3, 4, 5, 7, 100])
+    async def test_expected_idle_exactly_when_the_throttle_is_full(self, raw, queue):
+        from poindexter.services import pipeline_throttle
+        from poindexter.services.site_config import SiteConfig
+
+        throttle_pool = MagicMock()
+        throttle_pool.fetchrow = AsyncMock(return_value={"c": queue})
+        initial = {} if raw is None else {"max_approval_queue": raw}
+        full, _size, _limit = await pipeline_throttle.is_queue_full(
+            throttle_pool, site_config=SiteConfig(initial_config=initial),
+        )
+
+        r = await hp.probe_cost_freshness(_cost_freshness_pool(
+            age_hours=30, queue=queue, settings=initial,
+        ))
+
+        assert (r.get("status") == "expected_idle") is full, (
+            f"max_approval_queue={raw!r}, {queue} awaiting approval: the "
+            f"throttle says full={full}, the probe says {r}"
+        )
+        assert r["ok"] is full
 
 
 @pytest.mark.unit

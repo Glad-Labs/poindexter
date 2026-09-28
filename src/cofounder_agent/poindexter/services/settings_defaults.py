@@ -4017,6 +4017,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'cadence_slo_window_hours': '24',
     'cadence_slo_shortfall_ratio': '0.5',
 
+    # ----- Cost freshness probe (brain probe_cost_freshness) -----
+    # Hours cost_logs may go without an inference row before the brain reports
+    # STALE (a Discord notice; the brain owns this signal, no Prometheus rule
+    # covers it). Over the 90 days to 2026-09-28 the longest inference gap
+    # with the brain running was 10.0h; every longer one was a host or stack
+    # outage. Re-derive from cost_logs against brain_decisions before moving
+    # it. Its expected-idle check reads max_approval_queue, the throttle's
+    # own key.
+    'cost_freshness_max_age_hours': '24',
+
     # ----- Scheduler job-failure escalation (#302 / alert audit) -----
     # When a scheduled job returns ok=False or raises, the scheduler emits a
     # finding (most jobs) or directly notifies the operator (alert-delivery
@@ -6374,6 +6384,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'cadence_slo_expected_posts_per_day': {'owner': 'health_probes', 'value_type': 'integer'},
     'cadence_slo_shortfall_ratio': {'owner': 'health_probes', 'value_type': 'float'},
     'cadence_slo_window_hours': {'owner': 'health_probes', 'value_type': 'integer'},
+    'cost_freshness_max_age_hours': {'owner': 'health_probes', 'value_type': 'float'},
     'citation_reconcile_enabled': {'owner': 'content_reconcile_citations', 'value_type': 'boolean'},
     'citation_reconcile_llm_enabled': {'owner': 'content_llm_reconcile_citations', 'value_type': 'boolean'},
     'citation_reconcile_llm_max_content_chars': {'owner': 'content_llm_reconcile_citations', 'value_type': 'integer'},
