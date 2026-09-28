@@ -126,3 +126,21 @@ jobs:
 
       - name: Run migrations against empty database
         run: python scripts/ci/migrations_smoke.py
+
+      # The other real install order. `docker compose up` on an empty volume
+      # starts the brain before the worker (worker depends_on brain-daemon:
+      # service_healthy), and the brain seeds app_settings, creating the table
+      # itself, before any migration runs. That order crashed the baseline on
+      # every fresh compose install for months while the step above stayed
+      # green, because it only ever ran migrations first (poindexter#1097).
+      # Runs the brain's real boot seed on a second empty database, then every
+      # migration, then requires the schema to match the database the step
+      # above migrated, object for object.
+      - name: Run migrations after the brain's boot seed (compose-first order)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          createdb -h localhost -U postgres poindexter_test_brain_first
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/poindexter_test_brain_first \
+            python scripts/ci/migrations_smoke.py --brain-first \
+              --compare-schema-to postgres://postgres:postgres@localhost:5432/poindexter_test

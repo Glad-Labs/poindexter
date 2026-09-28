@@ -99,22 +99,48 @@ async def _missing_required_keys(conn: asyncpg.Connection) -> set[str]:
     return set(REQUIRED_KEYS) - present_with_value
 
 
+# The app_settings table exactly as ``0000_baseline.schema.sql`` declares it.
+# On a compose-first install the brain boots before the worker has run a single
+# migration, so this CREATE is the one that builds the table and the baseline's
+# own ``CREATE TABLE IF NOT EXISTS`` finds it already there. It used to create 8
+# of the 14 columns, and the baseline then died on ``idx_app_settings_is_active``
+# on every such install (poindexter#1097). Column entries are copied from the
+# dump verbatim. ``id`` is ``serial`` because the dump spells the same thing as a
+# separate sequence, default and owner. The primary key and unique key are the
+# ones the dump adds with ALTER TABLE, under the same names. Pinned to the dump by
+# tests/unit/brain/test_seed_loader_app_settings_ddl.py: after a squash that
+# changes app_settings, copy the new entries here.
+APP_SETTINGS_DDL = """
+CREATE TABLE IF NOT EXISTS app_settings (
+    id serial NOT NULL,
+    key character varying(255) NOT NULL,
+    value text DEFAULT ''::text NOT NULL,
+    category character varying(100) DEFAULT 'general'::character varying,
+    description text DEFAULT ''::text,
+    is_secret boolean DEFAULT false,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    is_active boolean DEFAULT true NOT NULL,
+    owner text,
+    value_type text,
+    deprecated boolean DEFAULT false NOT NULL,
+    superseded_by text,
+    last_read_at timestamp with time zone,
+    CONSTRAINT app_settings_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'boolean'::text, 'integer'::text, 'float'::text, 'url'::text, 'model'::text, 'csv'::text, 'json'::text, 'duration'::text]))),
+    CONSTRAINT app_settings_pkey PRIMARY KEY (id),
+    CONSTRAINT app_settings_key_key UNIQUE (key)
+)
+"""
+
+
 async def _ensure_app_settings_table(conn: asyncpg.Connection) -> None:
-    """Create app_settings if it doesn't exist. Matches seed-defaults.sql schema."""
-    await conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS app_settings (
-            id SERIAL PRIMARY KEY,
-            key VARCHAR(255) UNIQUE NOT NULL,
-            value TEXT DEFAULT '',
-            category VARCHAR(100) DEFAULT 'general',
-            description TEXT DEFAULT '',
-            is_secret BOOLEAN DEFAULT false,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        """
-    )
+    """Create app_settings, in the baseline's shape, if it doesn't exist yet.
+
+    A no-op on any install whose migrations already ran. It does not widen a
+    table an older brain created: the baseline migration converges that one
+    when the worker runs it.
+    """
+    await conn.execute(APP_SETTINGS_DDL)
 
 
 async def seed_app_settings(conn: asyncpg.Connection) -> dict[str, int]:

@@ -633,8 +633,22 @@ and `poindexter/brain/seed_app_settings.json` seeds 80. All three use `ON CONFLI
 NOTHING`, so **first writer wins**, and the order varies by install path:
 
 - `docker compose up` on an empty DB → the brain daemon seeds first (`worker`
-  declares `depends_on: brain-daemon: service_healthy`, and `seed_loader` does
-  its own `CREATE TABLE IF NOT EXISTS`), so **brain > baseline > `DEFAULTS`**.
+  declares `depends_on: brain-daemon: service_healthy`, and `seed_loader`
+  creates `app_settings` itself), so **brain > baseline > `DEFAULTS`**.
+  **Until 2026-09-28 this order never finished** (poindexter#1097). The brain
+  created 8 of the table's 14 columns, the baseline's `CREATE TABLE IF NOT
+  EXISTS` left that table as it was, and baseline statement #401
+  (`idx_app_settings_is_active`) failed. The baseline never recorded and the
+  worker restart-looped, on every fresh compose install since the first squash
+  (2026-05-08). That squash replaced the chain's `ALTER TABLE app_settings ADD
+  COLUMN IF NOT EXISTS` steps, which had widened the brain's table, with one
+  pg_dump `CREATE TABLE`. Now the brain creates the baseline's
+  exact shape (`seed_loader.APP_SETTINGS_DDL`, pinned to the dump by
+  `tests/unit/brain/test_seed_loader_app_settings_ddl.py`). The baseline also
+  converges a table it finds already present while nothing is migrated, which
+  heals a database an older brain image left behind. `migrations-smoke` runs
+  this order too (`--brain-first`) and compares its schema with the
+  migrations-first run, object for object.
 - `poindexter setup` → migrations + `seed_all_defaults` run before any
   container, so **baseline > `DEFAULTS`**, and the brain seed only fills keys
   still missing or empty.

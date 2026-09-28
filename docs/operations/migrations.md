@@ -24,6 +24,21 @@ migrations in Poindexter. If you are adding a migration, read sections
   no-ops and every seed `INSERT ... ON CONFLICT DO NOTHING` no-ops, leaving
   only the row recording the baseline as applied. New migrations use the
   timestamp convention.
+- **A table that exists before the baseline runs is converged, not skipped
+  (poindexter#1097).** On a compose-first install the brain seeds
+  `app_settings` before the worker has migrated anything, so the table already
+  exists when the baseline's `CREATE TABLE IF NOT EXISTS` reaches it. The
+  brain's table used to have 8 of the 14 columns, and baseline statement #401
+  (`idx_app_settings_is_active`) failed on every such install, from May until
+  2026-09-28. Now, while `schema_migrations` is still empty, the baseline adds
+  the declared columns and CHECK constraints an existing table lacks and
+  applies its declared `NOT NULL`s. It never drops, retypes, re-defaults or
+  rewrites anything: a NULL where `NOT NULL` is declared fails the run and names
+  the column. Once any migration is recorded it converges nothing, because a
+  missing column was then dropped on purpose, so prod never takes this path.
+  The brain creates the declared shape itself (`seed_loader.APP_SETTINGS_DDL`).
+  A squash that changes `app_settings` must update that copy too;
+  `tests/unit/brain/test_seed_loader_app_settings_ddl.py` fails until it does.
 - **A squash can't drop a column — so a destructive migration may have to
   survive until prod catches up.**
   A baseline only ever `CREATE TABLE IF NOT EXISTS`, which no-ops on installs
@@ -224,9 +239,25 @@ The smoke test asserts:
 - Each file has a corresponding `schema_migrations` row.
 - No orphan rows (a row for a file that doesn't exist).
 
-Tear down with `docker rm -f pg-test`. CI runs the same script
-against a fresh `pgvector/pgvector:pg16` service container on every
-PR — see `.github/workflows/migrations-smoke.yml`.
+That is the `poindexter setup` order. A compose-first install runs the brain's
+boot seed before any migration, so run that order too, on a second empty
+database, and compare it with the first:
+
+```bash
+docker exec pg-test createdb -U postgres poindexter_test_brain_first
+
+DATABASE_URL=postgres://postgres:postgres@localhost:15999/poindexter_test_brain_first \
+    python scripts/ci/migrations_smoke.py --brain-first \
+        --compare-schema-to postgres://postgres:postgres@localhost:15999/poindexter_test
+```
+
+`--compare-schema-to` fails on any difference between the two schemas:
+columns (with position, type, nullability and default), constraints, indexes,
+triggers, sequences, views, functions and types.
+
+Tear down with `docker rm -f pg-test`. CI runs both orders against a
+fresh `pgvector/pgvector:pg16` service container on every PR — see
+`.github/workflows/migrations-smoke.yml`.
 
 ### 5. Run the lint script
 
@@ -251,22 +282,24 @@ Lint catches:
 following on every worker startup:
 
 1. Ensures `schema_migrations (id, name, applied_at)` exists.
-2. Lists `services/migrations/*.py` excluding `__init__.py` and sorts
-   lexically by filename.
+2. Lists `services/migrations/*.py` excluding `__init__.py` and any
+   `_`-prefixed helper, and sorts lexically by filename.
 3. For each file: skip if filename is already in `schema_migrations`,
    otherwise `importlib.util` it and call `up(pool)` or
-   `run_migration(conn)`.
+   `run_migration(conn)`. The module is exec'd from its path and never
+   registered in `sys.modules`, so anything that looks its own module up there
+   raises at import. `@dataclass` does, which is why `0000_baseline.py` uses a
+   `NamedTuple`.
 4. Inserts the filename into `schema_migrations` ON success only.
-5. **Per-file failures do not halt the batch** — errors are logged
-   and the runner moves on. Returns `False` if any failure occurred.
+5. **The first failure halts the batch** (fail closed, #697): the runner logs
+   it and re-raises, and the worker's startup fails with it. The failed file is
+   not recorded, so the next start retries it.
 
-Implication: **a failing migration does not block subsequent ones.**
-This is intentional — a transient SQL error on a seed migration
-shouldn't prevent a critical schema migration further down the list
-from applying. The trade-off is that a migration that depends on a
-PRIOR migration's columns can fail silently if the prior migration
-errored. The CI smoke test catches that pattern (the row-count
-assertion would fail).
+Implication: **a failing migration blocks every migration after it, and the
+worker with it.** That is deliberate. Running later migrations against a
+schema an earlier one failed to build produces errors that point at the wrong
+file. It also means a baseline that cannot apply keeps the worker in a restart
+loop, as poindexter#1097 did on every compose-first fresh install.
 
 ---
 
