@@ -10,8 +10,10 @@ import { test, expect } from '@playwright/test';
  * - Assert main content area renders
  * - Posts list or empty state renders
  *
- * Note: Tag pages are dynamic — they fetch from the API. If the API returns no
- * posts for a tag, an empty state should render (not a 500 error).
+ * Note: a tag page filters the R2 static post index (lib/posts.ts
+ * getAllPublishedPosts), not the FastAPI API, so this spec needs no backend
+ * and has no gate that skips without one. See author.spec.ts for the gate it
+ * used to have. A tag with no posts renders an empty state, not a 500.
  */
 
 // Site tags are SLUGS (ai-ml, indie-hacking, devops) — bare 'ai' does not
@@ -20,23 +22,8 @@ import { test, expect } from '@playwright/test';
 // content drift ever empties it, the test degrades to the empty-state
 // assertion rather than failing.
 const KNOWN_TAG_SLUG = 'ai-ml';
-const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
 test.describe('Tag Archive Page', () => {
-  test.beforeAll(async ({ request }) => {
-    // Local-run gate only — see the twin comment in author.spec.ts. On an
-    // external target (SKIP_SERVER_START, e.g. the weekly scheduled run
-    // against production) the target serves the pages itself; gating on
-    // localhost:8000 skipped the whole spec there, and an unreachable target
-    // should fail loud instead.
-    if (process.env.SKIP_SERVER_START) return;
-    try {
-      const resp = await request.get(`${API_URL}/api/health`);
-      if (!resp.ok()) test.skip(true, 'Backend API unavailable');
-    } catch {
-      test.skip(true, 'Backend API unavailable');
-    }
-  });
   test('loads tag page without 500 error', async ({ page }) => {
     const response = await page.goto(`/tag/${KNOWN_TAG_SLUG}`);
     // Page may 404 if tag not found (via notFound()), but should never 500

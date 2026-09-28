@@ -11,10 +11,18 @@ import { test, expect, type Page } from '@playwright/test';
  * - Unknown author gracefully falls back to default profile
  * - The known author's page lists their posts; an unknown author's page
  *   shows the empty state instead (glad-labs-stack#3339)
+ *
+ * No backend needed, and no gate that skips without one. The page reads the
+ * R2 static export (lib/posts.ts: posts/index.json + authors.json), never the
+ * FastAPI API. A beforeAll here used to skip the whole spec unless
+ * localhost:8000/api/health answered. Nothing listens there on the operator
+ * PC (the API is on :8002), so a plain local run skipped all ten tests and
+ * exited 0. If the known author shows the empty state on a local run, check
+ * that R2 is reachable before suspecting #3339: the page catches a failed
+ * index fetch and renders the empty state.
  */
 
 const KNOWN_AUTHOR_ID = 'poindexter-ai';
-const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
 // The two states of the page's post list, matched on the markup it renders.
 // A post card is a brand <Card> (a div.gl-card), not an <article>, so a post
@@ -35,22 +43,6 @@ function articlesSection(page: Page) {
 }
 
 test.describe('Author Page', () => {
-  test.beforeAll(async ({ request }) => {
-    // The gate protects LOCAL runs only: a dev-server page render fetches from
-    // the backend per request, so a half-up local stack would fail every test
-    // here for the wrong reason. Against an external already-running target
-    // (SKIP_SERVER_START — the weekly scheduled run against production) the
-    // pages are served by that target itself and the operator backend is not
-    // publicly reachable, so gating on localhost:8000 skipped the entire spec
-    // on every scheduled fire. There, an unreachable TARGET should fail loud.
-    if (process.env.SKIP_SERVER_START) return;
-    try {
-      const resp = await request.get(`${API_URL}/api/health`);
-      if (!resp.ok()) test.skip(true, 'Backend API unavailable');
-    } catch {
-      test.skip(true, 'Backend API unavailable');
-    }
-  });
   test('loads known author page without error', async ({ page }) => {
     const response = await page.goto(`/author/${KNOWN_AUTHOR_ID}`);
     expect(response?.status()).not.toBe(500);

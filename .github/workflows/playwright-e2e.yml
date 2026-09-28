@@ -6,28 +6,43 @@
 # its own CI gate — jest-unit.yml, poindexter#1290 — so it is no longer
 # hook-only. JS lint remains hook-only; Vercel ignores both.)
 #
-# Scope (intentional): this job runs the FRONTEND-ONLY specs — the ones
-# that exercise statically-served Next.js pages and need no FastAPI
-# backend. The root playwright.config.ts auto-starts `npm run dev:public`
-# (Next.js on :3000) via its `webServer` block; its globalSetup pings the
-# backend health endpoint but TOLERATES it being down (warns + continues),
-# so a backend-less run is safe for these specs.
+# Two jobs, three lanes. The trigger picks the lane; a manual dispatch picks
+# it with the `lane` input, which defaults to public-surface:
 #
-# Frontend-only specs (verified: zero localhost:8000/8002 or /api/ calls):
+#   trigger                         frontend-e2e   backend-e2e
+#   push / pull_request             runs           skipped
+#   schedule (Mon 06:00 UTC)        skipped        public-surface lane
+#   dispatch, lane=public-surface   skipped        public-surface lane
+#   dispatch, lane=full             runs           full lane
+#
+# frontend-e2e runs the specs for statically-served Next.js pages against a
+# server it boots itself: the root playwright.config.ts `webServer` block
+# starts `npm run dev:public` (Next.js on :3000). Its globalSetup pings the
+# backend health endpoint but TOLERATES it being down (warns + continues).
+# Specs (verified: zero localhost:8000/8002 or /api/ calls):
 #   - web/public-site/e2e/about.spec.ts
 #   - web/public-site/e2e/legal.spec.ts
 #   - web/public-site/e2e/post-detail.spec.ts
 #
-# The backend-dependent specs (auth / author / task-workflow /
-# manual-publish-pipeline / workflow-capability / integration-tests /
-# fixtures-validation / tag) are STAGED behind a separate job that sets
-# SKIP_SERVER_START=true and points PLAYWRIGHT_TEST_BASE_URL at
-# www.gladlabs.io (production). The scheduled weekly run renders the two
-# PUBLIC-SURFACE specs (author + tag) against production — the API-dependent
-# specs can't reach the Tailnet-only backend from a hosted runner, so they
-# run only via workflow_dispatch against an operator stack (including the
-# write-heavy manual-publish-pipeline).
-# (glad-labs-stack#1291 — backend-e2e was never dispatched until this change.)
+# backend-e2e runs against a site that is already up (SKIP_SERVER_START=true,
+# so no local server is booted):
+#   * public-surface lane: author.spec.ts + tag.spec.ts against production
+#     (https://www.gladlabs.io), read-only. Those pages read the R2 static
+#     export, not the FastAPI backend, so a hosted runner can check them.
+#     To check a fix to either spec today instead of on the next Monday:
+#       gh workflow run playwright-e2e.yml --repo Glad-Labs/glad-labs-stack -f lane=public-surface
+#   * full lane: those two plus the six specs that call the FastAPI backend,
+#     including the write-heavy manual-publish-pipeline. The backend is
+#     Tailnet-only, so this lane is for an operator who has pointed the repo
+#     variables PLAYWRIGHT_TEST_BASE_URL / PLAYWRIGHT_API_URL at a stack this
+#     runner can reach. Its step comment says what it cannot do yet.
+#   (glad-labs-stack#1291 made backend-e2e run on a schedule.)
+#
+# A dispatched run does not clear the brain's scheduled_workflow_watch `stale`
+# finding, and should not: the probe counts event=schedule runs only, so that
+# a push or a dispatch can never stand in for a cron that stopped firing
+# (poindexter/brain/scheduled_workflow_watch.py). A public-surface dispatch
+# tells you a fix works. The finding clears on the next green scheduled run.
 #
 # Third-party actions are pinned by SHA (repo convention — see
 # unit-tests.yml / migrations-smoke.yml).
@@ -59,15 +74,31 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/playwright-e2e.yml'
-  # Weekly scheduled run: Monday 06:00 UTC — runs backend-e2e (read-only specs)
-  # against production (www.gladlabs.io). Not a PR gate; quality signal only.
-  # Fixes Glad-Labs/glad-labs-stack#1291.
+  # Weekly scheduled run: Monday 06:00 UTC — runs backend-e2e's public-surface
+  # lane (read-only specs) against production (www.gladlabs.io). Not a PR
+  # gate; quality signal only. Fixes Glad-Labs/glad-labs-stack#1291.
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:
+    inputs:
+      lane:
+        description: >-
+          public-surface = the weekly scheduled lane, now (author + tag specs
+          against www.gladlabs.io). full = all eight backend-e2e specs plus
+          frontend-e2e, against vars.PLAYWRIGHT_TEST_BASE_URL /
+          vars.PLAYWRIGHT_API_URL (needs a stack this runner can reach).
+        type: choice
+        default: public-surface
+        options:
+          - public-surface
+          - full
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # event_name keeps the triggers out of each other's queue. Push, schedule
+  # and dispatch all run on refs/heads/main, and a group holds one pending
+  # run: a push landing while a scheduled or dispatched run waited behind
+  # another would cancel it, even with cancel-in-progress off.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -76,10 +107,12 @@ permissions:
 jobs:
   frontend-e2e:
     name: Frontend-only Playwright specs
-    # Skip on the weekly scheduled run — that trigger exists only to fire
-    # backend-e2e (production read-only checks). Frontend specs need a built
-    # Next.js binary which is only warranted on push/PR/workflow_dispatch.
-    if: ${{ github.event_name != 'schedule' }}
+    # Runs on push / PR, and on a dispatch that asks for lane=full. Skipped on
+    # the weekly cron and on a public-surface dispatch, which exist to run
+    # backend-e2e's public-surface lane. A dispatch that re-runs that lane
+    # should be the same run the cron makes: no Next.js build, and no
+    # frontend failure turning the run red when the lane itself passed.
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lane == 'full') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -146,24 +179,9 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
-  # Backend-dependent specs — scheduled weekly + manual-dispatch.
-  #
-  # Scheduled run (Monday 06:00 UTC — glad-labs-stack#1291):
-  #   Runs the READ-ONLY backend-dependent specs against production
-  #   (https://www.gladlabs.io). SKIP_SERVER_START=true so no local Next.js
-  #   server is booted; the specs hit the live site directly. This is a
-  #   quality signal — NOT a PR gate.
-  #
-  #   Read-only specs safe to run against production (no task creation):
-  #     auth / author / integration-tests / fixtures-validation / tag
-  #
-  # workflow_dispatch:
-  #   Runs the FULL suite including write-heavy specs (task-workflow /
-  #   manual-publish-pipeline / workflow-capability). The operator is expected
-  #   to provide PLAYWRIGHT_TEST_BASE_URL / PLAYWRIGHT_API_URL pointing at a
-  #   reachable stack (e.g. Tailnet-accessible local worker). Write-heavy
-  #   specs use `Bearer dev-token` + DEVELOPMENT_MODE=true which are NOT
-  #   present on production, so they are excluded from the scheduled run.
+  # Specs against an already-running site — the weekly cron + manual dispatch.
+  # Never a PR gate; a quality signal. The two lanes are described in the
+  # header; E2E_LANE below picks one, and each lane's step sets its own target.
   # ---------------------------------------------------------------------------
   backend-e2e:
     name: Backend-dependent Playwright specs (scheduled + manual)
@@ -173,12 +191,11 @@ jobs:
 
     env:
       CI: 'true'
-      # Don't boot a local Next.js server — point at an already-running stack.
-      # For the scheduled run this is www.gladlabs.io (production).
+      # Don't boot a local Next.js server — point at an already-running site.
       SKIP_SERVER_START: 'true'
-      # Scheduled run: target production. workflow_dispatch: operator overrides
-      # via env inputs to point at a local/staging stack for write-heavy specs.
-      PLAYWRIGHT_TEST_BASE_URL: ${{ github.event_name == 'schedule' && 'https://www.gladlabs.io' || vars.PLAYWRIGHT_TEST_BASE_URL || 'https://www.gladlabs.io' }}
+      # Only a dispatch that asks for `full` gets the full lane. The cron, and
+      # a dispatch that asks for anything else (or nothing), run public-surface.
+      E2E_LANE: ${{ github.event_name == 'workflow_dispatch' && inputs.lane == 'full' && 'full' || 'public-surface' }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1 as of 2026-05-12
@@ -196,32 +213,46 @@ jobs:
       - name: Install Playwright browsers (chromium)
         run: npx playwright install --with-deps chromium
 
-      - name: Run public-surface specs against production (scheduled)
-        # Scheduled weekly run: renders the public prod surface
-        # (https://www.gladlabs.io) — author pages + tag archives, real prod
-        # data, no writes. ONLY these two specs are viable here: the backend
-        # API is Tailnet-only (never publicly exposed), so the API-dependent
-        # specs (auth / integration-tests / fixtures-validation) structurally
-        # cannot pass from a hosted runner — they sat in this list through 11
+      - name: Run public-surface specs against production (scheduled + lane=public-surface)
+        # The weekly cron's step, and the default dispatch's: one step, so a
+        # dispatch runs the cron's exact command against the cron's exact
+        # target. It renders the public prod surface (https://www.gladlabs.io)
+        # — author pages + tag archives, real prod data, no writes. The target
+        # is fixed here rather than read from vars, which only the full lane
+        # consults. ONLY these two specs are viable from a hosted runner: the
+        # backend API is Tailnet-only (never publicly exposed), so the
+        # API-dependent specs (auth / integration-tests / fixtures-validation)
+        # structurally cannot pass here — they sat in this list through 11
         # straight scheduled failures (2026-06-15 → 2026-08-24, 0 green ever)
-        # and still belong to the workflow_dispatch lane below, where the
-        # operator points PLAYWRIGHT_TEST_BASE_URL at a Tailnet stack. The
-        # specs' localhost API-health skip-gate is bypassed when
-        # SKIP_SERVER_START is set, so an unreachable production fails LOUD
-        # here instead of silently skipping 14 tests.
-        if: ${{ github.event_name == 'schedule' }}
+        # and belong to the full lane below. Neither spec has a skip-gate, so
+        # an unreachable production fails this step LOUD instead of skipping.
+        if: ${{ env.E2E_LANE == 'public-surface' }}
+        env:
+          PLAYWRIGHT_TEST_BASE_URL: https://www.gladlabs.io
         run: >
           npx playwright test
           --project=chromium
           web/public-site/e2e/author.spec.ts
           web/public-site/e2e/tag.spec.ts
 
-      - name: Run full backend-dependent specs (manual dispatch)
-        # workflow_dispatch: full suite including write-heavy specs. Operator
-        # should set PLAYWRIGHT_TEST_BASE_URL / PLAYWRIGHT_API_URL (or set
-        # vars.PLAYWRIGHT_TEST_BASE_URL in repo/org settings) to a local stack
-        # reachable on the Tailnet with DEVELOPMENT_MODE=true.
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+      - name: Run full backend-dependent specs (lane=full)
+        # Only a dispatch with lane=full. All eight specs, including the
+        # write-heavy ones (task-workflow / manual-publish-pipeline /
+        # workflow-capability), which authenticate as `Bearer dev-token` and
+        # so need a backend with DEVELOPMENT_MODE=true, never production.
+        # Point the repo variables PLAYWRIGHT_TEST_BASE_URL (the site) and
+        # PLAYWRIGHT_API_URL (the FastAPI backend) at a stack this runner can
+        # reach. Unset, as they are today, the site is production and the API
+        # http://localhost:8000; the one run of this lane (2026-06-11) failed.
+        # Known gap: only manual-publish-pipeline reads PLAYWRIGHT_API_URL.
+        # auth / task-workflow / workflow-capability, and integration-tests /
+        # fixtures-validation through fixtures.ts's APIClient, hardcode
+        # http://localhost:8000, so from a hosted runner they skip or fail
+        # whatever the variables say.
+        if: ${{ env.E2E_LANE == 'full' }}
+        env:
+          PLAYWRIGHT_TEST_BASE_URL: ${{ vars.PLAYWRIGHT_TEST_BASE_URL || 'https://www.gladlabs.io' }}
+          PLAYWRIGHT_API_URL: ${{ vars.PLAYWRIGHT_API_URL }}
         run: >
           npx playwright test
           --project=chromium
