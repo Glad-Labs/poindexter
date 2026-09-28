@@ -10,6 +10,9 @@ Covers the idempotency guarantee from Gitea #236:
 - Existing non-empty values are NOT overwritten.
 - Empty values ARE refilled from seed (protects against accidental
   blanks on boot-critical keys).
+
+Also pins that every REQUIRED_KEYS entry is one the real seed file can
+satisfy, so no boot reports a required key missing forever.
 """
 
 from __future__ import annotations
@@ -245,3 +248,29 @@ class TestMissingRequiredKeys:
         ]
         missing = await sl._missing_required_keys(conn)
         assert missing == set()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRequiredKeysAreSeeded:
+    async def test_a_seeded_table_has_no_required_key_missing(self):
+        """The seed is the only thing that fills a missing required key, so once
+        it has run, the next boot must find every required key present. A key
+        the seed doesn't ship with a value reads as missing on every boot:
+        ``qa_overall_score_threshold`` did from its retirement (#2281) until
+        2026-09-28. The rows come from the real seed file, so this can't drift
+        from what the brain actually writes."""
+        seeded = [
+            {"key": row["key"], "value": row["value"]} for row in sl.load_seed_file()
+        ]
+        conn = _make_conn()
+        # What ``WHERE key = ANY($1)`` returns from a table the seed just filled.
+        conn.fetch.return_value = [r for r in seeded if r["key"] in sl.REQUIRED_KEYS]
+
+        missing = await sl._missing_required_keys(conn)
+
+        assert not missing, (
+            f"REQUIRED_KEYS lists {sorted(missing)}, which seed_app_settings.json "
+            "doesn't ship with a non-empty value, so every brain boot would log "
+            "them as missing. Seed them there, or drop them from REQUIRED_KEYS."
+        )

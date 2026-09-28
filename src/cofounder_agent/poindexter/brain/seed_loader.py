@@ -15,6 +15,14 @@ never by this loader. Operator-specific model pins are applied separately by
 
 This module has no external dependencies beyond asyncpg; it runs inside the
 brain container which ships asyncpg in its image.
+
+It also creates `app_settings` when the table doesn't exist yet. On a fresh
+`docker compose up` that is the normal case: the brain boots before the worker
+has run a single migration, so the table this module creates is the one every
+migration then runs against, and it must be exactly the table
+`0000_baseline.schema.sql` declares (`APP_SETTINGS_DDL`). A narrower one
+restart-looped the worker on every compose-first install until 2026-09-28
+(poindexter#1097).
 """
 
 from __future__ import annotations
@@ -28,9 +36,14 @@ import asyncpg
 
 logger = logging.getLogger(__name__)
 
-# Settings the pipeline needs to even boot. If any of these is missing, the
-# seed is applied even if the table isn't strictly empty. Add to this list
-# only when something genuinely can't start without it.
+# Settings the pipeline needs to even boot. The seed runs in full on every boot
+# regardless (Gitea #236); this list only picks the boot log line, which names
+# any of these found missing or empty. Add to it only when something genuinely
+# can't start without the key, and only a key seed_app_settings.json ships with
+# a non-empty value. The seed can't supply any other, so the brain would report
+# it missing on every boot: qa_overall_score_threshold did exactly that from
+# its retirement (#2281, 2026-07-11) until 2026-09-28, and nothing ever read it.
+# Pinned by tests/unit/services/test_brain_seed_loader.py.
 REQUIRED_KEYS: frozenset[str] = frozenset({
     "site_name",
     "site_url",
@@ -39,7 +52,6 @@ REQUIRED_KEYS: frozenset[str] = frozenset({
     "pipeline_writer_model",
     "pipeline_critic_model",
     "pipeline_fallback_model",
-    "qa_overall_score_threshold",
     "require_human_approval",
 })
 

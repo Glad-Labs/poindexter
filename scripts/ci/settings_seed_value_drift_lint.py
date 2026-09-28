@@ -19,13 +19,19 @@ simply unreachable -- and which one loses depends on the install path:
 
   * ``docker compose up`` on an empty DB -> the brain daemon seeds first
     (``worker`` declares ``depends_on: brain-daemon: service_healthy``, and
-    ``seed_loader`` does its own ``CREATE TABLE IF NOT EXISTS``), so
-    **brain > baseline > settings_defaults**.
+    ``seed_loader`` creates ``app_settings`` itself), so
+    **brain > baseline > settings_defaults**. Until 2026-09-28 this order
+    never finished: the brain created 8 of the table's 14 columns, the
+    baseline failed on its first index over a missing one, and the worker
+    restart-looped (poindexter#1097).
   * ``poindexter setup`` -> migrations + ``seed_all_defaults`` run before any
     container, so **baseline > settings_defaults** and the brain seed no-ops.
 
 That made fresh-install values nondeterministic by container topology. This
-guard makes the sources agree, so the precedence stops mattering.
+guard makes the sources agree, so the precedence only still matters for the
+caps and quality bars in ``TIER_POLICY`` below: a compose-first install starts
+on the brain's free-tier values for those, a ``poindexter setup`` install on
+the reference ones.
 
 The rule
 ========

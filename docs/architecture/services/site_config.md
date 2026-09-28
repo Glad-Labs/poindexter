@@ -104,7 +104,17 @@ path:
 | `settings_defaults.py::DEFAULTS`          | ~734 | `seed_all_defaults`, every boot, after migrations                                                                  |
 
 On `docker compose up` against an empty DB the brain seeds first (`worker`
-declares `depends_on: brain-daemon: service_healthy`), giving the precedence
+declares `depends_on: brain-daemon: service_healthy`) and creates `app_settings`
+itself. Until 2026-09-28 that order never completed (poindexter#1097). The brain
+created 8 of the table's 14 columns, the baseline's `CREATE TABLE IF NOT EXISTS`
+kept that narrower table, and the baseline then failed on
+`idx_app_settings_is_active`, so the worker restart-looped on every
+compose-first install. The brain now creates the table the baseline declares,
+and the baseline widens one an older brain left behind. Both orders end with the
+same schema and the same keys (`migrations-smoke` runs both and compares them).
+They differ only in the free-tier caps and quality bars the value-drift lint's
+`TIER_POLICY` lists (`daily_post_limit`, `qa_final_score_threshold`, …), where
+the brain's value lands first and stays, giving the precedence
 `brain > baseline > DEFAULTS`. Via `poindexter setup`, migrations plus
 `seed_all_defaults` run before any container, so the brain seed no-ops and the
 order is `baseline > DEFAULTS`. Either way, for a key the baseline also seeds,
