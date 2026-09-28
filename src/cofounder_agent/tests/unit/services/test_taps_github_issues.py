@@ -117,7 +117,7 @@ class TestBuildSourceId:
     def test_same_number_across_repos_does_not_collide(self):
         """The exact defect in the legacy rows: bare issue number as key."""
         a = _build_source_id("Glad-Labs/poindexter", 185)
-        b = _build_source_id("Glad-Labs/glad-labs-stack", 185)
+        b = _build_source_id("Glad-Labs/poindexter", 185)
         assert a != b
 
 

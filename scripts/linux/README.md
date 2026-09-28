@@ -50,7 +50,7 @@ external access with `ufw`.
 against the **working checkout**, so in-process commands (`media
 approve/reject`, `settings`, `tasks`, …) ran whatever that tree held. On
 2026-09-28 it was 148 commits behind `main`, because nothing advances a
-checkout with uncommitted edits. Since Glad-Labs/glad-labs-stack#4156 the
+checkout with uncommitted edits. Since Glad-Labs/poindexter#4156 the
 command is a symlink to the deploy clone's `poindexter-cli.sh`. It runs
 `~/.poindexter/cli-venv`, whose package is editable-installed from the deploy
 clone, and keeps that venv's dependencies on the clone's lockfile. Install
