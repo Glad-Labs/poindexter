@@ -6,7 +6,7 @@ Glad-Labs/poindexter#340 (Phase 0 of brain-as-DECIDER):
     Grafana ─► Poindexter Webhook ─► alert_events (dispatched_at IS NULL)
               │                       │
               │   (worker, persist    │   (brain, this module,
-              │    only — does not    │    poll → notify_operator → mark)
+              │    only — does not    │    poll → brain notify → mark)
               │    dispatch)          ▼
               │                      Telegram (critical)
               │                      Discord  (warning/info)
@@ -43,7 +43,7 @@ other.
 
 Failure posture:
 
-- ``notify_operator`` raising → the row is marked
+- The notify call raising → the row is marked
   ``dispatched_at = NOW(), dispatch_result = 'error: <message>'``.
   We never retry inside this module — by the time we surface a
   failure to the row, the alert has been seen by the dispatcher and
@@ -52,30 +52,30 @@ Failure posture:
 - DB error during the poll → logged + swallowed; the loop continues.
   The brain's existing watchdog will detect a stuck cycle if poll
   errors persist.
-- The brain-side ``notify()`` returns ``True`` only when at least
-  one channel (Telegram or Discord) actually accepted the message.
-  This module's ``_adapter`` wraps that bool into a ``NotifyFailed``
-  exception so a downed Telegram + missing Discord webhook surfaces
-  as ``dispatch_result = 'error: notify returned False'`` rather
-  than a phantom ``'sent'`` (the bug Glad-Labs/poindexter#342
-  diagnosed: dispatcher claimed sent=N, operator got nothing).
-- The worker-side ``notify_operator`` (when reachable) is best-effort
-  and swallows transport errors internally — its success/failure
-  contract isn't a bool. Per-channel failures from that path show up
-  in the worker's own logs; the dispatcher records ``'sent'`` because
-  the call returned without raising.
+- The brain's ``notify()`` reports ``ok`` only when at least one
+  channel (Telegram or Discord) actually accepted the message.
+  This module's ``_adapter`` turns a send that reached nobody into a
+  ``NotifyFailed`` exception, so a downed Telegram + missing Discord
+  webhook surfaces as ``dispatch_result = 'error: brain.notify
+  reported no channel accepted the message ...'`` rather than a
+  phantom ``'sent'`` (the bug Glad-Labs/poindexter#342 diagnosed:
+  dispatcher claimed sent=N, operator got nothing).
 
-Imports kept cheap on purpose:
+One notifier, the brain's own:
 
-The brain's pyproject.toml is intentionally minimal (asyncpg, httpx,
-pyyaml — see ``brain/pyproject.toml``). The worker-side
-``services.integrations.operator_notify`` module pulls in a chunk of
-the FastAPI/cofounder closure, so importing it directly from the
-brain image (where ``services/`` isn't on the path) would fail.
-We import lazily inside the dispatch function and fall back to the
-brain's own ``notify`` helper (Telegram + Discord ops webhook) when
-the framework path isn't reachable. v1 acceptable per the issue
-discussion; cleanup tracked in #340.
+The brain ships as its own image with its own minimal dependencies
+(``poindexter/brain/pyproject.toml``) and copies only
+``poindexter/brain/``, so the worker's ``notify_operator`` does not
+exist where this module runs. Pages go out through ``brain_daemon``'s
+senders: ``notify`` (Telegram + Discord #ops) and ``send_discord`` (the
+Discord-only leg of ``_routed_notify``). ``brain_daemon`` imports this
+module, so they are reached lazily via ``_resolve_brain_daemon_module``.
+Until 2026-09-28 ``_resolve_notify_fn`` tried the worker's notifier
+first. That import failed on every call in the container, while unit
+tests run from the full tree resolved it, so they exercised a notifier
+production never used (Glad-Labs/poindexter#1095).
+``scripts/ci/brain_import_isolation_lint.py`` keeps worker imports out
+of the brain at any scope.
 """
 
 from __future__ import annotations
@@ -855,66 +855,58 @@ def _row_to_alert_dict(row: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Notify resolution — try worker-side framework first, fall back to the
-# brain's own Telegram/Discord helpers.
+# Notify resolution — the brain's own Telegram/Discord senders, reached
+# lazily through brain_daemon.
 # ---------------------------------------------------------------------------
 
 
 # Type for the notify callable: takes (message, *, critical) and returns
 # an awaitable that resolves to the brain.notify dict (with
-# ``telegram_message_id`` / ``discord_message_id`` keys) or ``None`` for
-# legacy (worker-side) notifiers that don't surface message ids. Defined
-# as a Callable so tests can inject their own without monkeypatching the
-# import path.
+# ``telegram_message_id`` / ``discord_message_id`` keys) or ``None`` when
+# the notifier surfaced no message ids (a test stub, or a notify that
+# returns a bool). Defined as a Callable so tests can inject their own
+# without monkeypatching the import path.
 NotifyFn = Callable[..., Awaitable[dict[str, Any] | None]]
 
 
-async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
-    """Return a coroutine notify function, or None if nothing is reachable.
+def _resolve_brain_daemon_module() -> Any | None:
+    """Return the ``poindexter.brain.brain_daemon`` module, or None if it won't import.
 
-    Order:
-    1. ``services.integrations.operator_notify.notify_operator`` — the
-       canonical worker-side dispatcher. Available when the brain runs
-       in-process with the worker (rare) or when the worker's source
-       tree is on the brain image's PYTHONPATH (acknowledged code
-       smell, see module docstring).
-    2. Brain's own ``brain.brain_daemon.notify`` — direct Telegram +
-       Discord ops webhook. Best-effort, has been the brain's
-       always-on path since day one.
-    3. None — neither path is reachable. Caller logs and marks the
-       row with the resolution failure so the operator sees it in
-       ``alert_events.dispatch_result``.
-
-    ``pool`` is forwarded to the brain.notify branch so the secrets it
-    lazily fetches (per Glad-Labs/poindexter#344) hit the same DB the
-    dispatcher polled. Tests can pass ``None`` and the adapter falls
-    back to the cross-instance pool registry inside ``brain.notify``.
+    The one way this module reaches the brain's senders (``notify``,
+    ``send_discord``, ``send_followup``). Imported lazily because
+    brain_daemon imports this module. The daemon runs as ``__main__``
+    (``python -m poindexter.brain.brain_daemon``), so in the container this
+    loads a second module object under the package name. That is harmless:
+    the senders read their secrets and the registered pool on every call
+    (Glad-Labs/poindexter#344).
     """
+    mod = sys.modules.get("poindexter.brain.brain_daemon")
+    if mod is not None:
+        return mod
     try:
-        from poindexter.services.integrations.operator_notify import (
-            notify_operator,  # type: ignore
-        )
-        return notify_operator
-    except Exception as e:  # noqa: BLE001 — narrow imports later
-        # silent-ok: expected — the worker's services/ tree is absent from
-        # the brain image, so this import normally fails and we fall back
-        # to brain.notify. Escalating would fire a warning on every poll.
-        logger.debug(
-            "[alert_dispatcher] worker notify_operator unavailable: %s "
-            "— falling back to brain.notify", e,
-        )
+        from poindexter.brain import brain_daemon as mod  # type: ignore
+        return mod
+    except ImportError:
+        return None
 
-    # The brain daemon imports this module and has its own notify()
-    # function. Both flat (`import brain_daemon`) and package-qualified
-    # (`from brain import brain_daemon`) imports are supported because
-    # the Dockerfile mirrors brain/ files into both /app and /app/brain/.
-    brain_daemon_mod = sys.modules.get("poindexter.brain.brain_daemon")
-    if brain_daemon_mod is None:
-        try:
-            from poindexter.brain import brain_daemon as brain_daemon_mod  # type: ignore
-        except ImportError:
-            brain_daemon_mod = None
 
+async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
+    """Return the brain's pager as a coroutine function, or None.
+
+    The pager is ``brain_daemon.notify`` (Telegram + the Discord ops
+    webhook), wrapped so a send that reached no channel raises
+    ``NotifyFailed``. ``None`` means brain_daemon won't import or has no
+    ``notify``; the caller then marks the polled rows with that failure so
+    the operator sees it in ``alert_events.dispatch_result``.
+
+    The worker's ``notify_operator`` is deliberately not a candidate: the
+    brain image does not ship it (see the module docstring).
+
+    ``pool`` is forwarded to ``notify`` so the secrets it reads per call
+    (Glad-Labs/poindexter#344) come from the DB the dispatcher polled. With
+    ``None``, ``notify`` falls back to the pool the daemon registered.
+    """
+    brain_daemon_mod = _resolve_brain_daemon_module()
     if brain_daemon_mod is not None and hasattr(brain_daemon_mod, "notify"):
         notify_callable = brain_daemon_mod.notify
 
@@ -922,7 +914,8 @@ async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
             # critical is a no-op for the brain helper — it always sends
             # to both Telegram and Discord ops. Severity is encoded in
             # the message header itself, which is enough for Matt to
-            # triage on his phone.
+            # triage on his phone. Severity routing is _routed_notify's
+            # job; this adapter is its both-channels path.
             del critical
             # Glad-Labs/poindexter#344: brain.notify is now async and
             # accepts ``pool=`` so it can lazy-fetch the Telegram +
@@ -933,9 +926,9 @@ async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
             #
             # #347 step 5: brain.notify now returns a dict carrying the
             # per-channel message ids so the firefighter follow-up can
-            # quote-reply the same Telegram thread. Legacy/worker-side
-            # notifiers and old test stubs may still return ``None`` or
-            # a ``bool`` — we normalise here.
+            # quote-reply the same Telegram thread. Test stubs (and the
+            # pre-#347 bool contract) may still return ``None`` or a
+            # ``bool`` — we normalise here.
             result = notify_callable(message, pool=pool) if pool is not None else notify_callable(message)
             if hasattr(result, "__await__"):
                 value = await result
@@ -1112,7 +1105,7 @@ async def poll_and_dispatch(
         # silent failure. Without this, rows would stay
         # ``dispatched_at IS NULL`` forever and the cycle would re-pick
         # them every 30s — an infinite log spam loop.
-        err = "error: no notify channel reachable (no worker, no brain.notify)"
+        err = "error: no notify channel reachable (brain_daemon.notify unavailable)"
         for row in rows:
             try:
                 await pool.execute(_MARK_ERROR_SQL, row["id"], err)
@@ -1939,24 +1932,6 @@ def _verify_page_router(
     return route
 
 
-def _resolve_brain_daemon_module() -> Any | None:
-    """Find the brain.brain_daemon module across the flat / package paths.
-
-    Identical resolution to ``_resolve_notify_fn`` -- pulled out so the
-    routing helper doesn't need to repeat the import dance. Returns
-    ``None`` when neither path resolves; callers fall back to the
-    legacy notify_fn in that case.
-    """
-    mod = sys.modules.get("poindexter.brain.brain_daemon")
-    if mod is not None:
-        return mod
-    try:
-        from poindexter.brain import brain_daemon as mod  # type: ignore
-        return mod
-    except ImportError:
-        return None
-
-
 async def _build_summary_payload(
     pool: Any,
     *,
@@ -2525,16 +2500,13 @@ async def _send_triage_followup(
     """
     if not diagnosis:
         return
-    brain_daemon_mod = sys.modules.get("poindexter.brain.brain_daemon")
+    brain_daemon_mod = _resolve_brain_daemon_module()
     if brain_daemon_mod is None:
-        try:
-            from poindexter.brain import brain_daemon as brain_daemon_mod  # type: ignore
-        except ImportError:
-            logger.warning(
-                "[alert_dispatcher] brain_daemon unavailable — "
-                "cannot send triage follow-up"
-            )
-            return
+        logger.warning(
+            "[alert_dispatcher] brain_daemon unavailable — "
+            "cannot send triage follow-up"
+        )
+        return
     send_followup = getattr(brain_daemon_mod, "send_followup", None)
     if send_followup is None:
         logger.warning(

@@ -26,9 +26,13 @@ building an ``AppContainer`` that nothing ever read. The import failed on every
 boot for four months, logging a warning that probes depending on the container
 would fail; no probe did. New code reaches the worker through the DB or HTTP.
 
-``TOLERATED_LAZY_IMPORTS`` names the legacy function-scope sites still
-standing. It only shrinks: nothing is added to it, and an entry whose function
-no longer imports worker code fails the lint until the entry is deleted.
+``TOLERATED_LAZY_IMPORTS`` held the function-scope sites that predate the
+all-scopes rule. The last one was retired 2026-09-28
+(Glad-Labs/poindexter#1095): ``alert_dispatcher._resolve_notify_fn`` tried the
+worker's ``notify_operator`` before the brain's own ``notify``, so in the image
+it failed on every call while tests run from the full tree resolved it. The
+list is empty and only shrinks: nothing is added to it, and an entry whose
+function no longer imports worker code fails the lint until it is deleted.
 Escape hatch for a deliberate exception: ``# brain-import-ok: <why>`` on the
 import's first line.
 
@@ -60,13 +64,8 @@ FORBIDDEN_ROOTS = (
 ESCAPE = "# brain-import-ok"
 
 # (path relative to the brain dir, enclosing function's qualname) -> why it is
-# still here. Shrink-only; see the module docstring.
-TOLERATED_LAZY_IMPORTS: dict[tuple[str, str], str] = {
-    ("alert_dispatcher.py", "_resolve_notify_fn"): (
-        "tries the worker's notify_operator before brain.notify; in the brain "
-        "image that import always fails, so brain.notify is what pages"
-    ),
-}
+# still here. Shrink-only, and empty since 2026-09-28; see the module docstring.
+TOLERATED_LAZY_IMPORTS: dict[tuple[str, str], str] = {}
 
 
 def _is_forbidden(module: str | None) -> bool:
@@ -180,8 +179,8 @@ def main() -> int:
         )
         return 1
     print(
-        f"brain_import_isolation_lint: OK — no worker imports outside the "
-        f"{len(TOLERATED_LAZY_IMPORTS)} tolerated legacy site(s) ({scanned} files)."
+        f"brain_import_isolation_lint: OK — no worker imports ({scanned} files, "
+        f"{len(TOLERATED_LAZY_IMPORTS)} tolerated legacy site(s))."
     )
     return 0
 

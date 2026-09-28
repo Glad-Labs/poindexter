@@ -3,8 +3,8 @@
 Covers the contract from Glad-Labs/poindexter#340 prep:
 
 1. Polls only undispatched rows (``WHERE dispatched_at IS NULL``).
-2. Calls ``notify_operator(message, critical=...)`` with the formatted
-   message + ``critical=True`` for ``severity=='critical'``.
+2. Calls the notifier (``notify_fn(message, critical=...)``) with the
+   formatted message + ``critical=True`` for ``severity=='critical'``.
 3. Marks each row ``dispatched_at = NOW(), dispatch_result = 'sent'`` on
    success.
 4. Marks each row ``dispatch_result = 'error: <msg>'`` when the notify
@@ -19,6 +19,7 @@ test_brain_daemon_auto_remediate.py).
 from __future__ import annotations
 
 import sys
+import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -83,6 +84,15 @@ def _make_pool(rows: list[dict]) -> MagicMock:
     pool.fetch = AsyncMock(return_value=rows)
     pool.execute = AsyncMock(return_value="OK")
     return pool
+
+
+def _stub_brain_daemon(monkeypatch, notify) -> MagicMock:
+    """Stand in for ``poindexter.brain.brain_daemon``, whose ``notify`` is
+    the pager ``_resolve_notify_fn`` wraps."""
+    fake_module = MagicMock()
+    fake_module.notify = notify
+    monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
+    return fake_module
 
 
 @pytest.mark.unit
@@ -161,7 +171,7 @@ class TestPollAndDispatch:
         assert notify.call_args.kwargs.get("critical") is False
 
     async def test_notify_failure_marks_row_with_error_and_continues(self):
-        """A raise from notify_operator must NOT crash the loop.
+        """A raise from the notifier must NOT crash the loop.
 
         The row gets marked ``dispatch_result = 'error: ...'`` and the
         next row in the batch is processed normally.
@@ -227,47 +237,36 @@ class TestPollAndDispatch:
         notify.assert_not_awaited()
         pool.execute.assert_not_awaited()
 
-    async def test_no_notify_channel_marks_rows_as_errored(self):
-        """If neither worker-side notify nor brain.notify is reachable,
-        the dispatcher marks every polled row with a clear error string
-        instead of leaving them undispatched (which would re-poll
-        forever)."""
+    async def test_no_notify_channel_marks_rows_as_errored(self, monkeypatch):
+        """If brain_daemon.notify is not reachable, the dispatcher marks
+        every polled row with a clear error string instead of leaving them
+        undispatched (which would re-poll forever).
+
+        The real resolver runs, against a brain_daemon with no ``notify``.
+        This test used to run it unstubbed first, which from the full tree
+        resolved the worker's notify_operator and handed it this critical
+        alert. It reached no channel only because the test process wires no
+        DB service or SiteConfig (Glad-Labs/poindexter#1095).
+        """
         rows = [_make_row(row_id=99)]
         pool = _make_pool(rows)
-
-        # Pass notify_fn=None AND patch the resolver to return None so
-        # the "no channel reachable" branch fires deterministically.
-        # #344: _resolve_notify_fn now accepts an optional pool kwarg.
-        async def _no_channel(pool=None):
-            return None
-
-        result = await ad.poll_and_dispatch(
-            pool,
-            notify_fn=None,
+        monkeypatch.setitem(
+            sys.modules, "poindexter.brain.brain_daemon",
+            types.ModuleType("poindexter.brain.brain_daemon"),
         )
-        # The resolver may find a real channel in some test environments
-        # (e.g. brain_daemon imported with a sync notify). The contract
-        # we care about is: when nothing is reachable, the row is
-        # marked, and we never re-poll the same row. Force the no-channel
-        # path explicitly via a patch in case the resolver picks up
-        # something stub-like.
-        if result["sent"] or (result["errors"] and "no notify channel" not in
-                              str(pool.execute.await_args_list)):
-            # Real channel resolved — re-run with explicit None override
-            # by patching _resolve_notify_fn.
-            pool.fetch = AsyncMock(return_value=rows)
-            pool.execute = AsyncMock(return_value="OK")
-            from unittest.mock import patch
-            with patch.object(ad, "_resolve_notify_fn", _no_channel):
-                result = await ad.poll_and_dispatch(pool, notify_fn=None)
+
+        result = await ad.poll_and_dispatch(pool, notify_fn=None)
 
         assert result["polled"] == 1
         assert result["errors"] == 1
         assert result["sent"] == 0
-        # The error-mark UPDATE was the call we made.
-        exec_call = pool.execute.await_args_list[-1]
-        sql, *args = exec_call.args
-        assert "UPDATE alert_events" in sql
+        alert_event_calls = [
+            c for c in pool.execute.await_args_list
+            if "UPDATE alert_events" in c.args[0]
+        ]
+        assert len(alert_event_calls) == 1
+        sql, *args = alert_event_calls[0].args
+        assert "dispatch_result = $2" in sql
         assert args[0] == 99
         assert "no notify channel" in args[1]
 
@@ -338,14 +337,7 @@ class TestBrainNotifyAdapter:
         path with zero new code; returning False would have required
         a second branch that mirrors the same UPDATE.
         """
-        # Stub a brain_daemon-shaped module with notify -> False.
-        fake_module = MagicMock()
-        fake_module.notify = MagicMock(return_value=False)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        # Force the worker-side notify_operator import to fail so the
-        # resolver falls through to the brain.notify branch.
-        monkeypatch.setitem(sys.modules, "poindexter.services.integrations.operator_notify", None)
+        fake_module = _stub_brain_daemon(monkeypatch, MagicMock(return_value=False))
 
         adapter = await ad._resolve_notify_fn()
         assert adapter is not None
@@ -362,11 +354,7 @@ class TestBrainNotifyAdapter:
 
         poll_and_dispatch then marks the row dispatch_result='sent'.
         """
-        fake_module = MagicMock()
-        fake_module.notify = MagicMock(return_value=True)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        monkeypatch.setitem(sys.modules, "poindexter.services.integrations.operator_notify", None)
+        fake_module = _stub_brain_daemon(monkeypatch, MagicMock(return_value=True))
 
         adapter = await ad._resolve_notify_fn()
         assert adapter is not None
@@ -380,14 +368,8 @@ class TestBrainNotifyAdapter:
         lazy-fetched against the right DB instead of falling through to
         the cross-instance registry (which may be unset under pytest).
         """
-        from unittest.mock import AsyncMock as _AsyncMock
-
-        fake_module = MagicMock()
         # Simulate the new async notify(message, *, pool=None).
-        fake_module.notify = _AsyncMock(return_value=True)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        monkeypatch.setitem(sys.modules, "poindexter.services.integrations.operator_notify", None)
+        fake_module = _stub_brain_daemon(monkeypatch, AsyncMock(return_value=True))
 
         sentinel_pool = MagicMock(name="sentinel_pool")
         adapter = await ad._resolve_notify_fn(pool=sentinel_pool)
@@ -402,13 +384,7 @@ class TestBrainNotifyAdapter:
         """#344: brain.notify is now an async function returning bool.
         Adapter must await it and still raise NotifyFailed on False.
         """
-        from unittest.mock import AsyncMock as _AsyncMock
-
-        fake_module = MagicMock()
-        fake_module.notify = _AsyncMock(return_value=False)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        monkeypatch.setitem(sys.modules, "poindexter.services.integrations.operator_notify", None)
+        _stub_brain_daemon(monkeypatch, AsyncMock(return_value=False))
 
         adapter = await ad._resolve_notify_fn()
         assert adapter is not None
@@ -424,16 +400,30 @@ class TestBrainNotifyAdapter:
         don't bother returning a value — don't suddenly start
         flagging every row as errored.
         """
-        fake_module = MagicMock()
-        fake_module.notify = MagicMock(return_value=None)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
-        monkeypatch.setitem(sys.modules, "poindexter.services.integrations.operator_notify", None)
+        _stub_brain_daemon(monkeypatch, MagicMock(return_value=None))
 
         adapter = await ad._resolve_notify_fn()
         assert adapter is not None
         # Should not raise.
         await adapter("test message")
+
+    async def test_resolves_the_brain_pager_even_where_the_worker_notifier_imports(
+        self, monkeypatch,
+    ):
+        """The worker's notify_operator is never a candidate, not even in this
+        process, where it imports. The brain image does not ship it, so a
+        resolver that preferred it gave tests a different pager than
+        production (Glad-Labs/poindexter#1095)."""
+        # Imports here, from the full tree, and never in the brain image.
+        from poindexter.services.integrations import operator_notify
+
+        fake_module = _stub_brain_daemon(monkeypatch, AsyncMock(return_value={"ok": True}))
+
+        adapter = await ad._resolve_notify_fn()
+        assert adapter is not None
+        assert adapter is not operator_notify.notify_operator
+        await adapter("test message", critical=True)
+        fake_module.notify.assert_awaited_once_with("test message")
 
     async def test_dispatcher_marks_error_when_notify_returns_false(
         self,

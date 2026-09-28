@@ -440,14 +440,13 @@ class _BrainSenders:
 
 
 def _install_brain_senders(monkeypatch):
-    """Page the way the brain does: the worker's notify_operator does not
-    import there, so the dispatcher falls back to brain_daemon's senders."""
+    """Page the way the brain does: through brain_daemon's senders, which is
+    what the dispatcher resolves when no notify_fn is injected."""
     senders = _BrainSenders()
     brain_daemon = types.ModuleType("poindexter.brain.brain_daemon")
     brain_daemon.notify = senders.notify
     brain_daemon.send_discord = senders.send_discord
     monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", brain_daemon)
-    monkeypatch.setitem(sys.modules, "poindexter.services.integrations.operator_notify", None)
     return senders
 
 

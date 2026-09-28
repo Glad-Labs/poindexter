@@ -38,7 +38,7 @@ Executor = Callable[[dict[str, Any], RemediationContext], Awaitable[ActionResult
 
 
 def _resolve_brain_daemon() -> Any | None:
-    """Find brain.brain_daemon across the flat / package import paths.
+    """Return the ``poindexter.brain.brain_daemon`` module, or None if it won't import.
 
     Mirrors alert_dispatcher._resolve_brain_daemon_module so the registry never
     hard-imports the daemon at module load (avoids import cycles + keeps the

@@ -711,15 +711,19 @@ def configure_logging() -> str:
 
 # Telegram + Discord notification config — NOT cached at module level.
 #
-# Glad-Labs/poindexter#344: the brain image's Dockerfile mirrors files
-# into both ``/app`` (flat layout) and ``/app/brain/`` (package layout)
-# so ``from brain.X import Y`` and ``from X import Y`` both resolve.
-# That import duality is fine for stateless helpers, but module-level
-# globals (``TELEGRAM_BOT_TOKEN = ""``) created TWO independent copies
-# of the secret cache — one per module instance — and ``_load_config_from_db``
-# only updated the instance it was called from. Whichever path the
-# alert_dispatcher used to reach ``send_telegram`` read the empty copy
-# and silently dropped every page.
+# Glad-Labs/poindexter#344: this module can be loaded twice in one
+# process. The daemon runs it as ``__main__`` (``python -m
+# poindexter.brain.brain_daemon``), and alert_dispatcher, alert_sync,
+# service_restart and the remediation registry import it lazily by its
+# package name, which loads a second module object. (At #344 the cause
+# was the image copying brain/ into both ``/app`` and ``/app/brain/``;
+# the image has had one package layout since poindexter#1046, and the
+# duplication outlived it.) That is fine for stateless helpers, but
+# module-level globals (``TELEGRAM_BOT_TOKEN = ""``) created TWO
+# independent copies of the secret cache — one per module instance — and
+# ``_load_config_from_db`` only updated the instance it was called from.
+# Whichever path the alert_dispatcher used to reach ``send_telegram`` read
+# the empty copy and silently dropped every page.
 #
 # Fix: ``send_telegram``/``send_discord`` re-fetch their secrets from
 # app_settings on every call via ``read_app_setting`` (which decrypts
@@ -1219,14 +1223,14 @@ def check_json_status(url: str, timeout: int = 10) -> tuple:
 
 # Cross-module-instance pool registry.
 #
-# The brain Docker image mirrors source files into both ``/app`` (flat)
-# and ``/app/brain/`` (package) so two import paths resolve. Module-level
-# variables on this file therefore live in TWO namespaces — see the
-# Glad-Labs/poindexter#344 fix for the gory details. ``sys.modules`` is
-# the only namespace guaranteed to be shared, so we stash the daemon's
-# pool on a sentinel ``ModuleType`` keyed there. Both module instances
-# look up the same key and read back the same pool, even when ``main()``
-# only ran on one of them.
+# The daemon runs this file as ``__main__`` while the brain modules that
+# reach it lazily import it by package name, so module-level variables
+# on this file live in TWO namespaces — see the notification-config note
+# above and the Glad-Labs/poindexter#344 fix for the gory details.
+# ``sys.modules`` is the only namespace guaranteed to be shared, so we
+# stash the daemon's pool on a sentinel ``ModuleType`` keyed there. Both
+# module instances look up the same key and read back the same pool, even
+# when ``main()`` only ran on one of them.
 _POOL_REGISTRY_KEY = "_brain_daemon_pool_registry"
 
 
@@ -1287,10 +1291,11 @@ async def send_telegram(
             lands under the raw alert in the operator's chat.
 
     History — #344: this function previously read a module-level
-    ``TELEGRAM_BOT_TOKEN`` global. The brain Docker image mirrors files
-    into both ``/app`` and ``/app/brain/`` so a process that imports
-    ``brain.brain_daemon`` AND has ``brain_daemon`` in ``sys.modules``
-    sees TWO module instances each with their own copy of the global.
+    ``TELEGRAM_BOT_TOKEN`` global. The brain process can hold TWO
+    instances of this module (then: the image copied brain/ into both
+    ``/app`` and ``/app/brain/``; now: the daemon runs as ``__main__``
+    while lazy importers load it by package name), each with its own
+    copy of the global.
     The fix is to re-read the secret from app_settings on every call
     via ``read_app_setting`` (one DB roundtrip per alert is negligible).
 

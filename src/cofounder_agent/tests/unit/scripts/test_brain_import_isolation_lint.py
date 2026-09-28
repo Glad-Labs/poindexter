@@ -81,13 +81,13 @@ def test_brain_imports_are_allowed_at_any_scope():
 def test_tolerated_function_is_excused_and_only_that_function():
     lint = _load()
     src = (
-        "def _resolve_notify_fn():\n"
+        "def _legacy_site():\n"
         "    from poindexter.services.integrations.operator_notify import notify_operator\n"
         "    return notify_operator\n"
         "def _other():\n"
         "    import poindexter.services.bootstrap\n"
     )
-    found = lint.scan_source(src, "x.py", frozenset({"_resolve_notify_fn"}))
+    found = lint.scan_source(src, "x.py", frozenset({"_legacy_site"}))
     assert [ln for ln, _ in found] == [5]
 
 
