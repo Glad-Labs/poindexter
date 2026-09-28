@@ -107,6 +107,13 @@ npm run lint         # ESLint
 npm run test         # Jest unit tests
 ```
 
+`next dev` and `next build` keep `tsconfig.json` in step with what Next needs
+(`moduleResolution: bundler`, `jsx: react-jsx`, the `.next/dev/types`
+include). The committed file already holds those values, so a run leaves it
+untouched. If `git status` shows it modified after a run, a Next upgrade
+changed its requirements: commit what Next wrote. `npx tsc --noEmit` type-checks
+without a build.
+
 ## Testing
 
 - **Unit tests:** Jest + React Testing Library (co-located `*.test.*` files and `__tests__/` dirs)
@@ -122,6 +129,12 @@ SKIP_SERVER_START=true npx playwright test --project=chromium
 Deployed to Vercel via CI. Next.js config uses `output: 'standalone'` for Docker compatibility.
 
 Security headers (HSTS, CSP, XSS protection) configured in `next.config.js`.
+
+The 30-day `immutable` `Cache-Control` on `/_next/static/*` is sent in
+production only. `next dev` serves those chunks under unhashed URLs, and an
+`immutable` header makes the browser keep the first bundle it saw across
+reloads, so edits look like they did nothing.
+`__tests__/next-config-headers.test.js` pins this.
 
 ## Resources
 

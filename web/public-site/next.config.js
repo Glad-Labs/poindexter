@@ -266,16 +266,26 @@ const nextConfig = {
           },
         ],
       },
-      // Cache assets for 30 days
-      {
-        source: '/_next/static/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=2592000, immutable',
-          },
-        ],
-      },
+      // Cache built assets for 30 days, in production only. `immutable` is
+      // right there because chunk URLs carry a content hash. `next dev` serves
+      // the same chunks under stable URLs (chunks/app/layout.js), so this
+      // header would make the browser keep the first bundle it saw across
+      // reloads and edits would look like they did nothing. Next warns about
+      // it at every dev start: it flags any Cache-Control set on a `/_next/`
+      // source. Left alone, dev answers `no-cache, must-revalidate` itself.
+      ...(process.env.NODE_ENV === 'production'
+        ? [
+            {
+              source: '/_next/static/:path*',
+              headers: [
+                {
+                  key: 'Cache-Control',
+                  value: 'public, max-age=2592000, immutable',
+                },
+              ],
+            },
+          ]
+        : []),
       // Don't cache HTML (always fresh)
       {
         source: '/:path((?!_next/static).*)',
@@ -371,12 +381,6 @@ const nextConfig = {
     NEXT_PUBLIC_GA_ID: process.env.NEXT_PUBLIC_GA_ID || 'G-NJMBCYNDWN',
     // Disable Next.js telemetry to prevent trace file generation
     NEXT_TELEMETRY_DISABLED: '1',
-  },
-
-  // ESLint configuration — run during Vercel builds so TS/TSX lint errors are caught
-  eslint: {
-    dirs: ['app', 'components', 'lib', 'styles'],
-    ignoreDuringBuilds: false,
   },
 
   // TypeScript configuration
