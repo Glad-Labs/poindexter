@@ -13,7 +13,7 @@ showed two approved.
 The fix adds a ``stage_only=True`` path to ``publish_post_from_task``
 that creates the posts row at ``status='approved'`` with
 ``published_at=NULL`` and skips every publish-only side effect
-(distribution recording, revalidation, social-queue, cloud sync,
+(distribution recording, revalidation, social-queue,
 post.published webhook). The approve_task handler now calls this
 path on approve-without-auto_publish.
 

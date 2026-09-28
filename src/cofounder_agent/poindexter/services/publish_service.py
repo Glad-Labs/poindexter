@@ -287,7 +287,7 @@ async def drain_background_tasks(timeout: float = 30.0) -> None:
     """Flush in-flight fire-and-forget publish tasks before pool teardown.
 
     The publish tail spawns its side effects fire-and-forget (newsletter,
-    search-engine ping, cloud sync) — safe in the
+    search-engine ping, pgvector embed) — safe in the
     long-lived worker, but a short-lived pool owner (the Prefect flow
     subprocess that builds+closes its own ``DatabaseService`` per run on
     the auto-publish path, or the CLI publish commands) reaches teardown
@@ -375,63 +375,6 @@ def _should_run_post_publish_hooks() -> bool:
     distribution-paths regression was fixed in commit ``5cd610666``.
     """
     return os.getenv("DEPLOYMENT_MODE", "coordinator").lower() == "worker"
-
-
-async def _sync_published_post(post_id: str) -> None:
-    """Push a newly published post to the cloud DB (non-blocking)."""
-    if not _should_run_post_publish_hooks():
-        return
-    try:
-        from poindexter.services.sync_service import SyncService
-
-        async with SyncService() as sync:
-            ok = await sync.push_post(post_id)
-            if ok:
-                logger.info("[SYNC] Pushed published post to cloud DB: %s", post_id)
-            else:
-                logger.warning("[SYNC] push_post returned False for post %s", post_id)
-                # 2026-05-12 fail-loud sweep: emit a finding so the
-                # operator sees persistent sync failures in the
-                # findings UI. Dedup_key keeps repeat-failures from
-                # spamming. The publish_status table is the canonical
-                # source of truth; this finding is the operator alert
-                # surface.
-                from poindexter.utils.findings import emit_finding
-                emit_finding(
-                    source="publish_service.sync_to_cloud",
-                    kind="cloud_sync_returned_false",
-                    severity="warn",
-                    title=f"Cloud DB sync returned False for post {post_id}",
-                    body=(
-                        f"SyncService.push_post({post_id}) returned False "
-                        "without raising. The post is published locally "
-                        "but may not be visible to the cloud read path. "
-                        "Check sync_service logs + the cloud DB "
-                        "connectivity."
-                    ),
-                    dedup_key="publish_sync_to_cloud_false",
-                )
-    except Exception as e:
-        logger.warning("[SYNC] Failed to sync published post (non-fatal): %s", e)
-        try:
-            from poindexter.utils.findings import emit_finding
-            emit_finding(
-                source="publish_service.sync_to_cloud",
-                kind="cloud_sync_exception",
-                severity="warn",
-                title=f"Cloud DB sync raised {type(e).__name__} for post {post_id}",
-                body=(
-                    f"Post {post_id} published locally but cloud sync "
-                    f"failed: {describe_exception(e)}. Recurring "
-                    "failures here mean the cloud read path is stale; "
-                    "investigate sync_service network + auth."
-                ),
-                dedup_key=f"publish_sync_exception_{type(e).__name__}",
-            )
-        except Exception:
-            # Never let the finding-emit path itself escalate — the
-            # warning log above is already the minimum signal.
-            pass
 
 
 async def _ping_search_engines(
@@ -1356,7 +1299,7 @@ async def _emit_publish_webhook(db_service, task_id: str, post_title: str) -> No
             logger.debug("[WEBHOOK] emit_finding unavailable", exc_info=True)
 
 
-def _queue_sync_and_embed(
+def _queue_embed(
     db_service,
     background_tasks,
     post_id: str,
@@ -1365,7 +1308,14 @@ def _queue_sync_and_embed(
     post_content: Any,
     site_config: "SiteConfig | None" = None,
 ) -> None:
-    """Phase 8 — queue cloud-DB sync + pgvector embed (no-op when hooks off)."""
+    """Phase 8 — queue the pgvector embed (no-op when hooks off).
+
+    This used to queue a cloud-DB push (``SyncService.push_post``) beside the
+    embed. Nothing has read a cloud copy since the hosted target was
+    decommissioned in April 2026, and on a stock stack both of the push's
+    pools resolved to the one local database, so it upserted each post over
+    itself. Removed in Glad-Labs/poindexter#1112.
+    """
     if not _should_run_post_publish_hooks():
         return
     post_dict = {
@@ -1375,17 +1325,13 @@ def _queue_sync_and_embed(
         "content": post_content,
     }
     if background_tasks:
-        background_tasks.add_task(_sync_published_post, post_id)
         background_tasks.add_task(_embed_published_post, db_service, post_dict, site_config)
     else:
-        _spawn_background(
-            _sync_published_post(post_id), name=f"sync_published_post({post_id})"
-        )
         _spawn_background(
             _embed_published_post(db_service, post_dict, site_config),
             name=f"embed_published_post({post_id})",
         )
-    logger.info("[publish_service] Queued sync + embed for post %s", post_id)
+    logger.info("[publish_service] Queued embed for post %s", post_id)
 
 
 # NOTE: ``_queue_social_distribution`` was removed 2026-06-29 along with the
@@ -1755,7 +1701,7 @@ async def publish_post_from_task(
     # from the approve_task handler that called us. We leave it there
     # (do NOT flip to 'published'), record the post_id back on the task
     # for later traceability, then return. Skipping the post-publish
-    # webhook/cloud-sync/distribution side-effects entirely — those
+    # webhook/distribution side-effects entirely — those
     # fire when scheduled_publisher promotes the staged row to
     # 'published'. See `feedback_human_approval`.
     if stage_only:
@@ -1794,9 +1740,9 @@ async def publish_post_from_task(
     await _emit_publish_webhook(db_service, task_id, post_title)
 
     # ---------------------------------------------------------------
-    # 8. Sync to cloud DB + embed in pgvector — phase 8
+    # 8. Embed in pgvector — phase 8
     # ---------------------------------------------------------------
-    _queue_sync_and_embed(
+    _queue_embed(
         db_service, background_tasks, post_id, post_title, seo_description, post_content,
         site_config=site_config,
     )

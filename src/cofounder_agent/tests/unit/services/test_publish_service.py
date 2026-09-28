@@ -1031,75 +1031,70 @@ class TestRevalidation:
 # Targets the 277 uncovered lines reported by:
 #   pytest --cov=services.publish_service ... → 48% baseline
 # Specifically:
-#   - 142-154: _sync_published_post local-only / failure handling
+#   - _queue_embed: the embed is the only background task Phase 8 schedules
+#     (the cloud sync it once queued beside it was removed)
 #   - 203-224: _embed_published_post happy path + provider-missing skip
 #   - 1066-1236: fire_post_distribution_hooks (entire function)
 
 
 # ---------------------------------------------------------------------------
-# _sync_published_post
+# _queue_embed
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestSyncPublishedPost:
-    """Cloud-DB sync after a publish — only fires on the local worker.
+class TestQueueEmbed:
+    """Phase 8 of the publish tail queues the pgvector embed, and only that.
 
-    Coverage target: lines 142-154 of services/publish_service.py.
+    ``_queue_embed`` used to schedule a cloud-DB push (``_sync_published_post``)
+    beside the embed. That push had no target: on a stock stack both of its
+    pools resolved to the one local database and it upserted each post over
+    itself. Glad-Labs/poindexter#1112 removed it, so the embed is the only
+    background task this helper may schedule.
     """
 
-    @pytest.mark.asyncio
+    _POST = ("post-xyz", "Title", "An excerpt", "body text")
+
     @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
-    async def test_skips_when_not_running_local(self, _hooks):
-        from poindexter.services.publish_service import _sync_published_post
-        # Should silently no-op — no exception, no work
-        await _sync_published_post("post-1")
+    def test_no_ops_when_hooks_are_off(self, _hooks):
+        from poindexter.services.publish_service import _queue_embed
+        background_tasks = MagicMock()
 
-    @pytest.mark.asyncio
+        with patch("poindexter.services.publish_service._spawn_background") as spawn:
+            _queue_embed(MagicMock(), background_tasks, *self._POST)
+
+        background_tasks.add_task.assert_not_called()
+        spawn.assert_not_called()
+
     @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
-    async def test_pushes_to_cloud_when_local(self, _hooks):
-        from poindexter.services.publish_service import _sync_published_post
-        sync_instance = AsyncMock()
-        sync_instance.push_post = AsyncMock(return_value=True)
-        sync_instance.__aenter__ = AsyncMock(return_value=sync_instance)
-        sync_instance.__aexit__ = AsyncMock(return_value=False)
+    def test_queues_only_the_embed_on_fastapi_background_tasks(self, _hooks):
+        from poindexter.services.publish_service import _embed_published_post, _queue_embed
+        db = MagicMock()
+        background_tasks = MagicMock()
 
-        sync_mod = MagicMock()
-        sync_mod.SyncService = MagicMock(return_value=sync_instance)
+        _queue_embed(db, background_tasks, *self._POST, site_config=_TEST_SC)
 
-        with patch.dict(sys.modules, {"poindexter.services.sync_service": sync_mod}):
-            await _sync_published_post("post-xyz")
+        background_tasks.add_task.assert_called_once()
+        func, *args = background_tasks.add_task.call_args.args
+        assert func is _embed_published_post
+        assert args == [
+            db,
+            {"id": "post-xyz", "title": "Title", "excerpt": "An excerpt", "content": "body text"},
+            _TEST_SC,
+        ]
 
-        sync_instance.push_post.assert_awaited_once_with("post-xyz")
-
-    @pytest.mark.asyncio
     @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
-    async def test_swallows_sync_exception(self, _hooks):
-        """Sync failure must NOT propagate — the post is already published locally."""
-        from poindexter.services.publish_service import _sync_published_post
+    def test_spawns_only_the_embed_without_background_tasks(self, _hooks):
+        from poindexter.services.publish_service import _queue_embed
 
-        sync_mod = MagicMock()
-        sync_mod.SyncService = MagicMock(side_effect=RuntimeError("cloud unreachable"))
+        with patch(
+            "poindexter.services.publish_service._embed_published_post", new_callable=MagicMock,
+        ) as embed, patch("poindexter.services.publish_service._spawn_background") as spawn:
+            _queue_embed(MagicMock(), None, *self._POST)
 
-        with patch.dict(sys.modules, {"poindexter.services.sync_service": sync_mod}):
-            # Must not raise
-            await _sync_published_post("post-fail")
-
-    @pytest.mark.asyncio
-    @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=True)
-    async def test_logs_warning_on_push_returns_false(self, _hooks):
-        """push_post returning False is logged but doesn't raise."""
-        from poindexter.services.publish_service import _sync_published_post
-        sync_instance = AsyncMock()
-        sync_instance.push_post = AsyncMock(return_value=False)
-        sync_instance.__aenter__ = AsyncMock(return_value=sync_instance)
-        sync_instance.__aexit__ = AsyncMock(return_value=False)
-
-        sync_mod = MagicMock()
-        sync_mod.SyncService = MagicMock(return_value=sync_instance)
-
-        with patch.dict(sys.modules, {"poindexter.services.sync_service": sync_mod}):
-            await _sync_published_post("post-fail")  # no raise
+        embed.assert_called_once()
+        spawn.assert_called_once()
+        assert spawn.call_args.kwargs["name"] == "embed_published_post(post-xyz)"
 
 
 # ---------------------------------------------------------------------------

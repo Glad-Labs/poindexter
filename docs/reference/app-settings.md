@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-09-28.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 674 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 670 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -41,7 +41,7 @@ The worker re-reads on every poll; no restart needed.
 - [experiments](#experiments) (3 keys)
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
-- [general](#general) (303 keys)
+- [general](#general) (299 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (2 keys)
@@ -316,10 +316,6 @@ The worker re-reads on every poll; no restart needed.
 | `findings.broken_link.delivery` | `discord` |  |  |
 | `findings.broken_link.fallback` | `log_only` |  |  |
 | `findings.broken_link.min_severity` | `warn` |  |  |
-| `findings.cloud_sync_returned_false.cooldown_minutes` | `360` |  |  |
-| `findings.cloud_sync_returned_false.delivery` | `discord` |  |  |
-| `findings.cloud_sync_returned_false.fallback` | `log_only` |  |  |
-| `findings.cloud_sync_returned_false.min_severity` | `warn` |  |  |
 | `findings.default.cooldown_minutes` | `1440` |  |  |
 | `findings.default.delivery` | `log_only` |  |  |
 | `findings.default.fallback` | `log_only` |  |  |

@@ -159,10 +159,6 @@ INSERT INTO app_settings (key, value, category, description, is_secret, is_activ
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.broken_link.delivery', 'discord', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.broken_link.fallback', 'log_only', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.broken_link.min_severity', 'warn', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
-INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.cloud_sync_returned_false.cooldown_minutes', '360', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
-INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.cloud_sync_returned_false.delivery', 'discord', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
-INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.cloud_sync_returned_false.fallback', 'log_only', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
-INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.cloud_sync_returned_false.min_severity', 'warn', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.default.cooldown_minutes', '1440', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.default.delivery', 'log_only', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('findings.default.fallback', 'log_only', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;

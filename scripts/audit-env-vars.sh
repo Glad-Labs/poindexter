@@ -19,7 +19,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ALLOWED='(DATABASE_URL|LOCAL_DATABASE_URL|POINDEXTER_MEMORY_DSN|DEPLOYMENT_MODE|ENVIRONMENT|OLLAMA_URL|OLLAMA_BASE_URL|LOG_[A-Z_]+|CLAUDE_PROJECTS_DIR|OTEL_[A-Z_]+|CLOUD_DATABASE_URL)'
+ALLOWED='(DATABASE_URL|LOCAL_DATABASE_URL|POINDEXTER_MEMORY_DSN|DEPLOYMENT_MODE|ENVIRONMENT|OLLAMA_URL|OLLAMA_BASE_URL|LOG_[A-Z_]+|CLAUDE_PROJECTS_DIR|OTEL_[A-Z_]+)'
 
 readers=$(grep -rn 'os\.getenv\|os\.environ' src/cofounder_agent/poindexter/services/ \
   --include='*.py' | grep -v __pycache__ | grep -Ev '^[^:]+:[0-9]+:[[:space:]]*#' || true)

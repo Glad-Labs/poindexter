@@ -377,10 +377,10 @@ def run_opportunistic_task():
 
 
 # NOTE: run_db_sync() previously ran bidirectional sync between local Postgres
-# and a Railway-hosted cloud copy. Railway has been decommissioned — the daemon
-# no longer has a remote target to sync with. The SyncService class is kept in
-# services/ for when a new cloud target is wired up (Neon, Supabase, etc.), but
-# the daemon no longer runs sync on its schedule.
+# and a Railway-hosted cloud copy. Railway has been decommissioned — there is no
+# remote target to sync with, and the SyncService class it drove was deleted
+# (Glad-Labs/poindexter#1112). A future hosted target belongs behind the
+# declarative publishing_adapters surface, not a hard-wired sync.
 
 
 def main():

@@ -22,7 +22,7 @@ promote and tail exits — fan out a list of fire-and-forget side
 effects.
 
 Side effects (each gated by feature toggles or local-mode checks):
-sync to cloud DB, embed into pgvector, cross-post to Dev.to, ISR
+embed into pgvector, cross-post to Dev.to, ISR
 revalidation on Vercel, static JSON export to R2, IndexNow + Google
 sitemap pings, newsletter blast, operator notification. Podcast/video
 generation, delivery to R2, and RSS feed rebuilds are NOT done here —
@@ -34,6 +34,16 @@ hook on the immediate-publish tail (`_upload_media_to_r2_bg`, "phase
 convention nothing in the pipeline had produced since the task-keyed
 delivery cutovers, and — being on the tail — was unreachable from the
 default flow besides.
+
+A cloud-DB push (`sync_service.SyncService.push_post`, "phase 8" beside
+the embed) was retired 2026-09-28 (Glad-Labs/poindexter#1112). No hosted
+copy has existed since the Railway target was decommissioned in April
+2026, and on a stock stack `CLOUD_DATABASE_URL` is unset and falls back
+to `DATABASE_URL`, so both of its pools opened on the one local database
+and it upserted each post over itself. Readers get a published post
+through the static JSON export to R2, not a second database. A future
+hosted target belongs behind the declarative `publishing_adapters`
+surface, not a hard-wired call from here.
 
 The pacing scheduler (`_calculate_scheduled_publish_time`) is opt-in
 via `honor_pacing=True`. Default is immediate publish because the
@@ -70,7 +80,7 @@ All from `app_settings` via `site_config`:
 Bootstrap-only env var:
 
 - `DEPLOYMENT_MODE` — `"worker"` flips on the local-mode side effects
-  (cloud sync, Dev.to cross-post, newsletter); `"coordinator"` (the
+  (pgvector embed, Dev.to cross-post, newsletter); `"coordinator"` (the
   default) skips them all. Read directly from the environment rather
   than via `site_config`, deliberately, so the check is consistent
   with how `main.py` decides which mode to start in. See

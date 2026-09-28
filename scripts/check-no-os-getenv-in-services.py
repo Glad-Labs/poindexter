@@ -49,11 +49,6 @@ ALLOWED_FILES: dict[str, str] = {
         "LOG_TO_FILE are read during module import, before anything else in the "
         "process can exist."
     ),
-    "services/sync_service.py": (
-        "Bootstrap: CLOUD_DATABASE_URL / LOCAL_DATABASE_URL module constants are "
-        "defined at import time for the cloud-sync service — same bootstrap "
-        "category as database_service."
-    ),
     "services/site_config.py": (
         "Core config module itself: site_config's internal env-var fallback for "
         "keys not yet in the DB (last-resort lookup). By definition cannot use "
@@ -64,9 +59,9 @@ ALLOWED_FILES: dict[str, str] = {
         "settings, same category as site_config."
     ),
     "services/publish_service.py": (
-        "_should_run_post_publish_hooks() reads LOCAL_DATABASE_URL as a "
-        "legitimate 'am I running in the local coordinator container?' signal "
-        "— not a config value, a mode flag."
+        "_should_run_post_publish_hooks() reads DEPLOYMENT_MODE as a "
+        "legitimate 'am I running as the worker?' signal — not a config "
+        "value, a mode flag."
     ),
     "services/validator_config.py": (
         "Bootstrap: _resolve_dsn() resolves DATABASE_URL / LOCAL_DATABASE_URL / "

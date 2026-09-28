@@ -4577,10 +4577,6 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.uncategorized_post_autofixed.delivery': 'log_only',
     'findings.broken_external_link_autofixed.delivery': 'log_only',
     'findings.broken_internal_link_autofixed.delivery': 'log_only',
-    'findings.cloud_sync_returned_false.delivery': 'discord',
-    'findings.cloud_sync_returned_false.fallback': 'log_only',
-    'findings.cloud_sync_returned_false.cooldown_minutes': '360',
-    'findings.cloud_sync_returned_false.min_severity': 'warn',
     # SEO Harvest Loop (#763) — routine operator notifications, NOT pages.
     # enqueue_seo_refreshes emits seo_refresh_queued when N refresh tasks are
     # parked at seo_refresh_gate awaiting per-post sign-off; measure_seo_refresh
@@ -6685,10 +6681,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.broken_link.delivery': {'value_type': 'string'},
     'findings.broken_link.fallback': {'value_type': 'string'},
     'findings.broken_link.min_severity': {'value_type': 'string'},
-    'findings.cloud_sync_returned_false.cooldown_minutes': {'value_type': 'integer'},
-    'findings.cloud_sync_returned_false.delivery': {'value_type': 'string'},
-    'findings.cloud_sync_returned_false.fallback': {'value_type': 'string'},
-    'findings.cloud_sync_returned_false.min_severity': {'value_type': 'string'},
     'findings.db_clock_skew.cooldown_minutes': {'value_type': 'integer'},
     'findings.db_clock_skew.delivery': {'value_type': 'string'},
     'findings.db_clock_skew.fallback': {'value_type': 'string'},

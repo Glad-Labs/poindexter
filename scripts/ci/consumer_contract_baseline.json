@@ -19,7 +19,6 @@
     "caption_failed",
     "caption_fidelity",
     "caption_unavailable",
-    "cloud_sync_exception",
     "cloudflare_beacon_unreachable",
     "codebase_seed_query_embed_failed",
     "comfyui_vram_squat",

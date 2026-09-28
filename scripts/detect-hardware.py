@@ -137,7 +137,7 @@ def main():
             import asyncpg
 
             async def write():
-                db_url = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")
+                db_url = os.getenv("DATABASE_URL", "")
                 conn = await asyncpg.connect(db_url)
                 settings = {
                     "gpu_model": gpu["name"],
