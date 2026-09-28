@@ -2844,11 +2844,24 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Image generation -----
     'image_gen_enabled': 'true',
-    # Worker in-process diffusers registry default (services/image_providers).
-    # The live render path is the image-gen HTTP server, which reads the separate
-    # 'image_generation_model' key (seeded in 0000_baseline.seeds.sql); both
-    # point at z_image_turbo as of the 2026-06-19 bake-off. #image-zimage-and-variety.
-    'image_model': 'z_image_turbo',
+    # The model the image-gen HTTP server (scripts/image-gen-server.py) renders.
+    # It must be a key of that server's REGISTRY (sdxl_lightning, sdxl_turbo,
+    # sdxl_base, z_image_turbo). Any other value leaves the server degraded
+    # ("unknown image model"): /generate answers 503 and the pipeline falls back
+    # to Pexels. It is the only image-model setting, and no request can
+    # override it. The worker reads it only to label gpu.lock("image_gen").
+    #
+    # sdxl_lightning matches the brain's free-tier seed, so a `poindexter setup`
+    # install and a `docker compose up` install start on the same model. The
+    # 2026-06-19 bake-off winner, z_image_turbo, needs ~13 GB of VRAM (per the
+    # server's REGISTRY), more than the low end of the consumer stack's
+    # 8-16 GB target. The Glad Labs operator overlay
+    # (services.operator_overrides) restores it on Matt's rig.
+    #
+    # From 2026-08-26 (#3366) to 2026-09-28 this read 'image_gen', copied from
+    # the worker's gpu-label fallback, which is not a REGISTRY name. Held to the
+    # REGISTRY by tests/unit/services/test_image_generation_model_seed.py.
+    'image_generation_model': 'sdxl_lightning',
     # Operator-supplied negative prompt overrides the built-in default.
     # Leave empty to keep "text, words, letters, watermark, face, person, ..."
     # (Ignored by guidance-distilled models like z_image_turbo, which run at
@@ -5730,8 +5743,6 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'image_search_query_temperature': '0.4',
     'image_search_query_timeout_seconds': '20',
     'image_ollama_client_timeout_seconds': '30',
-    # GPU-registry label for the image-gen slot (NOT an LLM model name).
-    'image_generation_model': 'image_gen',
     # Writer length window + retry budget (ai_content_generator.py).
     'content_gen_min_word_ratio': '0.9',
     'content_gen_max_word_ratio': '1.1',
@@ -6767,7 +6778,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_gen_render_attempts': {'value_type': 'integer'},
     'image_gen_retry_backoff_seconds': {'value_type': 'integer'},
     'image_gen_server_url': {'value_type': 'url'},
-    'image_model': {'value_type': 'model'},
+    'image_generation_model': {'value_type': 'model'},
     'image_negative_prompt': {'value_type': 'string'},
     'media_human_subjects': {'owner': 'media_policy', 'value_type': 'string'},
     'media_style_policy': {'owner': 'media_policy', 'value_type': 'string'},
@@ -7389,7 +7400,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_search_query_temperature': {'owner': 'image_service', 'value_type': 'float'},
     'image_search_query_timeout_seconds': {'owner': 'image_service', 'value_type': 'integer'},
     'image_ollama_client_timeout_seconds': {'owner': 'image_service', 'value_type': 'integer'},
-    'image_generation_model': {'owner': 'image_service', 'value_type': 'string'},
     'content_gen_min_word_ratio': {'owner': 'ai_content_generator', 'value_type': 'float'},
     'content_gen_max_word_ratio': {'owner': 'ai_content_generator', 'value_type': 'float'},
     'content_gen_max_refinement_attempts': {'owner': 'ai_content_generator', 'value_type': 'integer'},

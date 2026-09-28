@@ -174,6 +174,12 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     # redistribution of the original recording.
     "podcast_tts_engine": "chatterbox",
     "plugin.tts_provider.chatterbox.audio_prompt_path": "/app/voices/podcast-voice.wav",
+    # Image model (2026-06-19 bake-off, #image-zimage-and-variety): the
+    # image-gen server renders Z-Image-Turbo on this rig. The OSS seed and the
+    # brain's free-tier seed both ship sdxl_lightning, because z_image_turbo
+    # needs ~13 GB of VRAM. Prod already holds z_image_turbo, so this only
+    # fires after a settings reset or on a fresh operator install.
+    "image_generation_model": "z_image_turbo",
     # First-person QA bypass for the branded niche slugs. The OSS seed names
     # the generic starter-blog example; without this override a fresh operator
     # install would rename starter-blog -> glad-labs (below) and the QA rail

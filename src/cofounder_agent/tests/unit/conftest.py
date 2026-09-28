@@ -188,7 +188,7 @@ _SHARED_TEST_MODULES = (
     # ``services.image_service`` removed from _SHARED_TEST_MODULES 2026-05-29
     # (#272 Phase-2e); no module-level site_config attr to share. Tests
     # construct ``ImageService(site_config=...)`` / ``get_image_service(
-    # site_config=...)`` and pass ``site_config=`` to ``get_default_image_model``.
+    # site_config=...)`` directly.
     # ``services.content_router_service`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2f); no module-level site_config attr to share.
     # The content-router pipeline tests thread a stub directly into

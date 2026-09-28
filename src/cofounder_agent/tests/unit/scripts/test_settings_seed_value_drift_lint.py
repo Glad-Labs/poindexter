@@ -14,7 +14,9 @@ The rule under test:
 * ``settings_defaults.py::DEFAULTS`` and ``0000_baseline.seeds.sql`` are two
   encodings of the SAME thing (the reference default) and must agree exactly.
 * ``brain/seed_app_settings.json`` is a different thing (``_meta.tier == "free"``)
-  and may diverge — but only where declared in ``TIER_POLICY`` with a reason.
+  and may diverge from the reference default (the baseline's value, or
+  ``DEFAULTS``' where the baseline does not seed the key) — but only where
+  declared in ``TIER_POLICY`` with a reason.
 
 Synthetic-tree tests build their own three sources in ``tmp_path`` and repoint
 the module's path constants, so they assert the *rule* and stay green regardless
@@ -152,6 +154,58 @@ def test_stale_tier_policy_entry_fails(tmp_path, monkeypatch, capsys) -> None:
     cannot rot into a list of claims that stopped being true."""
     _point_at(monkeypatch, _write_tree(
         tmp_path, code={"a": "1"}, baseline={"a": "1"}, brain={"a": "1"}
+    ))
+    monkeypatch.setattr(LINT, "TIER_POLICY", {"a": "no longer true"})
+    assert LINT.main() == 1
+    assert "stale" in capsys.readouterr().out.lower()
+
+
+def test_brain_divergence_from_defaults_fails_when_baseline_lacks_the_key(
+    tmp_path, monkeypatch, capsys,
+) -> None:
+    """A key the baseline does not seed is compared with DEFAULTS instead.
+
+    The regression: image_generation_model was 'image_gen' in DEFAULTS and
+    'sdxl_lightning' in the brain seed, with no baseline row, so the old
+    brain-vs-baseline comparison never saw it and the two install paths
+    started on different values (one of them not a model at all).
+    """
+    _point_at(monkeypatch, _write_tree(
+        tmp_path,
+        code={"image_generation_model": "image_gen"},
+        baseline={},
+        brain={"image_generation_model": "sdxl_lightning"},
+    ))
+    monkeypatch.setattr(LINT, "TIER_POLICY", {})
+    assert LINT.main() == 1
+    out = capsys.readouterr().out
+    assert "image_generation_model" in out
+    assert "settings_defaults.py" in out and "'image_gen'" in out
+
+
+def test_brain_divergence_from_defaults_passes_when_declared(tmp_path, monkeypatch) -> None:
+    _point_at(monkeypatch, _write_tree(
+        tmp_path, code={"a": "1"}, baseline={}, brain={"a": "9"}
+    ))
+    monkeypatch.setattr(LINT, "TIER_POLICY", {"a": "free tier caps this lower"})
+    assert LINT.main() == 0
+
+
+def test_baseline_outranks_defaults_as_the_reference(tmp_path, monkeypatch) -> None:
+    """Where both seed a key the baseline is the reference the brain is held
+    to; their own disagreement is check 1's job and still fails there."""
+    _point_at(monkeypatch, _write_tree(
+        tmp_path, code={"a": "1"}, baseline={"a": "1"}, brain={"a": "1"}
+    ))
+    monkeypatch.setattr(LINT, "TIER_POLICY", {})
+    assert LINT.main() == 0
+
+
+def test_stale_tier_policy_entry_for_a_defaults_only_key_fails(
+    tmp_path, monkeypatch, capsys,
+) -> None:
+    _point_at(monkeypatch, _write_tree(
+        tmp_path, code={"a": "1"}, baseline={}, brain={"a": "1"}
     ))
     monkeypatch.setattr(LINT, "TIER_POLICY", {"a": "no longer true"})
     assert LINT.main() == 1

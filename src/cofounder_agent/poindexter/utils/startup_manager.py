@@ -45,8 +45,7 @@ _MODEL_SENTINELS = frozenset({"auto", "default", "none"})
 # `ollama_model_validation_skip_keys` rather than editing code.
 _NON_OLLAMA_MODEL_KEYS = frozenset({
     "gpu_model",                 # hardware description, e.g. "NVIDIA RTX 5090 (32GB VRAM)"
-    "image_model",               # image-gen server
-    "image_generation_model",    # image-gen server
+    "image_generation_model",    # image-gen server REGISTRY name, e.g. "z_image_turbo"
     "voice_agent_whisper_model",  # faster-whisper size, e.g. "medium"
     "voice_bridge_stt_model",    # faster-whisper size, e.g. "base.en"
 })

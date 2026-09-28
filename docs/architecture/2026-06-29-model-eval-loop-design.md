@@ -39,7 +39,7 @@ module.
 | --------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------- |
 | **1 — Deterministic** | computable, no judge        | `embed_model`, `niche_embedding_model`, `rag_rerank_model`, `voice_agent_whisper_model`           | recall@k / nDCG / MRR / WER      | reranker = stateless swap; embeddings = **re-embed migration**; STT = stateless |
 | **2 — Judge-based**   | LLM / vision judge          | writer (×7 gemma slots), critic, `qa_vision_model`×3, `structured_extraction_model`, utility LLMs | reuse existing QA rails as judge | live A/B via experiments framework                                              |
-| **3 — Perceptual**    | human-in-loop / specialized | `image_model`, `generative_video_model`, `podcast_tts_model`                                      | aesthetic/MOS — hardest          | human gate; lowest urgency (image/video just adopted)                           |
+| **3 — Perceptual**    | human-in-loop / specialized | `image_generation_model`, `generative_video_model`, `podcast_tts_model`                           | aesthetic/MOS — hardest          | human gate; lowest urgency (image/video just adopted)                           |
 
 **Why this seam:** a system that _promotes_ models is only as credible as its scorer. Wave 1
 metrics (recall@k, WER) are ground truth — a regression is unarguable. Wave 2/3 scores are
@@ -58,8 +58,10 @@ Current pins, grouped by wave:
   `qa_vision_model`/`qa_preview_vision_model`/`vision_alt_model`=`qwen3-vl:30b`,
   `structured_extraction_model`=`gemma-4-31B-it-qat`, `voice_agent_llm_model`=`glm-4.7-5090`,
   utility (`ops_triage_writer_model`=`llama3.2:3b`, `inline_image_prompt_model`=`llama3:latest`).
-- **Wave 3:** `image_model`=`z_image_turbo`, `generative_video_model`=`Wan2.2-TI2V-5B`,
-  `podcast_tts_model`=`Kokoro-82M` — image/video recently adopted, defer.
+- **Wave 3:** `image_generation_model`=`z_image_turbo`, `generative_video_model`=`Wan2.2-TI2V-5B`,
+  `podcast_tts_model`=`Kokoro-82M` — image/video recently adopted, defer. (This read
+  `image_model` until 2026-09-28. That key was the worker's dormant registry default and
+  never chose what the image-gen server renders; it was retired with the registry.)
 
 ## 4. Architecture — the loop
 

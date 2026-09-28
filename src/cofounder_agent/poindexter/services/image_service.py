@@ -18,8 +18,10 @@ Architecture:
   server's own diagnosis, where it gave one) instead of a bare ``False``
 - Automatic photographer attribution from Pexels
 
-Model names: defined canonically in ``services.image_providers._image_models``
-(``ImageModel`` / ``IMAGE_MODEL_REGISTRY``), imported + re-exported here.
+Model choice: the image-gen server's ``REGISTRY`` is the only list of models
+that can render, and ``app_settings.image_generation_model`` picks one. The
+worker keeps no model registry of its own. ``ImageModel`` survives here only as
+the type of the deprecated, ignored ``model=`` parameter.
 
 Cost: $0/month (Pexels free tier; generation on the local GPU)
 """
@@ -27,28 +29,22 @@ Cost: $0/month (Pexels free tier; generation on the local GPU)
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any
 
 import httpx
 
 from poindexter.services import live_activity
-from poindexter.services.image_providers._image_models import (
-    IMAGE_MODEL_REGISTRY,
-    ImageModel,
-    ImageModelConfig,  # noqa: F401 — re-exported for back-compat (callers/tests import from here)
-    get_default_image_model,  # noqa: F401 — re-exported for back-compat (callers/tests import from here)
-)
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
 from poindexter.utils.exception_format import describe_exception
 
 # SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
-# ``set_site_config`` setter were removed. Injection is mandatory —
-# ``ImageService`` takes a required ``site_config=`` ctor kwarg and
-# ``get_default_image_model`` takes a required ``site_config=`` keyword.
-# Callers thread the run-bound instance (the ``get_image_service(site_config=...)``
-# factory, pipeline stages via ``context.get("site_config")``, jobs/providers
-# via ``config["_site_config"]``).
+# ``set_site_config`` setter were removed. Injection is mandatory:
+# ``ImageService`` takes a required ``site_config=`` ctor kwarg. Callers thread
+# the run-bound instance (the ``get_image_service(site_config=...)`` factory,
+# pipeline stages via ``context.get("site_config")``, jobs/providers via
+# ``config["_site_config"]``).
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
@@ -108,26 +104,28 @@ def _server_error_detail(resp: Any) -> str:
 logger = get_logger(__name__)
 
 
-# =============================================================================
-# IMAGE MODEL REGISTRY
-# =============================================================================
-#
-# ``ImageModel`` / ``ImageModelConfig`` / ``IMAGE_MODEL_REGISTRY`` /
-# ``get_default_image_model`` are imported from
-# ``services.image_providers._image_models`` (see the import block above) and
-# re-exported here for backward compatibility (existing callers + test patches
-# keep working). That module is the SINGLE SOURCE OF TRUTH — it carries the
-# ``Z_IMAGE_TURBO`` member the live HTTP image-gen server actually renders
-# (scripts/image-gen-server.py), which this file's own copy never had.
-#
-# History: this file used to define a parallel, STALE copy of all four (only
-# sdxl_base / sdxl_lightning / flux_schnell — no ``z_image_turbo``). On every
-# live path ``get_default_image_model`` read the seeded prod default
-# ``image_model='z_image_turbo'``, missed it in the 3-member enum, hit
-# ``ValueError`` and logged "Unknown IMAGE_MODEL 'z_image_turbo', falling back
-# to sdxl_lightning" — returning the WRONG model (verified in Loki 2026-07-11).
-# Consolidating onto the canonical registry resolves the value. See the scope
-# note in tests/unit/services/test_inline_defaults_match_seed.py.
+class ImageModel(str, Enum):
+    """Deprecated: the type of the ignored ``model=`` parameter, nothing more.
+
+    The image-gen server (``scripts/image-gen-server.py``) renders the model
+    that ``app_settings.image_generation_model`` names, one of the server's own
+    ``REGISTRY`` keys, and no request can choose another. These members named
+    what the worker's in-process diffusers path could load. That path, and the
+    registry, default resolver and ``image_model`` setting that described it,
+    were removed on 2026-09-28. A member here says nothing about what the server
+    can render: ``flux_schnell`` is not in its REGISTRY, and ``sdxl_turbo`` is
+    but has no member.
+
+    Kept unchanged so a caller passing ``model=ImageModel.X`` still imports and
+    runs. ``generate_image_result`` logs a WARNING and renders the configured
+    model. The parameter and this enum stay for at least one minor release
+    after the first one that ships that warning.
+    """
+
+    SDXL_BASE = "sdxl_base"
+    SDXL_LIGHTNING = "sdxl_lightning"
+    FLUX_SCHNELL = "flux_schnell"
+    Z_IMAGE_TURBO = "z_image_turbo"
 
 
 @dataclass(frozen=True)
@@ -628,7 +626,8 @@ class ImageService:
         """Generate an image. ``True`` on success — the long-standing contract.
 
         Thin wrapper over :meth:`generate_image_result`; call that instead when
-        you need to tell the operator WHY a render failed.
+        you need to tell the operator WHY a render failed. ``model`` is
+        deprecated and ignored (see :class:`ImageModel`).
         """
         outcome = await self.generate_image_result(
             prompt,
@@ -686,7 +685,19 @@ class ImageService:
         console SYSTEM PULSE instead of being invisible. Liveness-only — a
         single blocking render exposes no mid-progress, so we never fabricate
         a pct (``feedback_no_dummy_data``).
+
+        ``model`` is deprecated and ignored. The server renders
+        ``app_settings.image_generation_model`` and takes no per-request model,
+        so a caller that sets it gets a WARNING here, before the GPU wait,
+        rather than a silently different model.
         """
+        if model is not None:
+            logger.warning(
+                "ImageService: model=%s is deprecated and ignored; the image-gen "
+                "server renders app_settings.image_generation_model and takes no "
+                "per-request model. Drop the argument: it goes in a later release.",
+                getattr(model, "value", model),
+            )
         from poindexter.services.gpu_admission import GpuBusyError
         from poindexter.services.gpu_scheduler import (
             GpuLockTimeoutError,
@@ -726,7 +737,6 @@ class ImageService:
                         num_inference_steps=num_inference_steps,
                         guidance_scale=guidance_scale,
                         task_id=task_id,
-                        model=model,
                     )
             except (GpuBusyError, GpuLockTimeoutError) as exc:
                 # Capacity, not breakage. Returned rather than raised so the
@@ -750,7 +760,6 @@ class ImageService:
         num_inference_steps: int | None = None,
         guidance_scale: float | None = None,
         task_id: str | None = None,
-        model: ImageModel | None = None,
     ) -> ImageGenOutcome:
         """
         Render one image on the image-gen HTTP server and write it to ``output_path``.
@@ -775,22 +784,16 @@ class ImageService:
             task_id: Sent to the server, which stamps it on its
                 ``image_ocr_gate_result`` audit row — the same field the
                 pipeline's own render paths send.
-            model: Accepted for backward compatibility and ignored, with a
-                warning when set. The server renders the model named by
-                ``app_settings.image_generation_model``; a request cannot
-                choose another.
+
+        The model is not a parameter: the server renders
+        ``app_settings.image_generation_model``. The public entry points accept
+        a deprecated ``model=`` and warn; it never reaches this method.
 
         Returns:
             An :class:`ImageGenOutcome` — ``ok`` plus, on failure, the reason
             token and the underlying detail (the image-gen server's own error
             body, where it gave one).
         """
-        if model is not None:
-            logger.warning(
-                "ImageService: model=%s ignored — the image-gen server renders "
-                "app_settings.image_generation_model and takes no per-request model",
-                getattr(model, "value", model),
-            )
         _sc = self._site_config
         # Addressed by its compose service DNS name so the request never
         # traverses the flaky host-published-port proxy.
@@ -943,23 +946,6 @@ class ImageService:
             "image-gen image generated via host server in %s: %s", render_time, output_path,
         )
         return ImageGenOutcome(True)
-
-    # =========================================================================
-    # MODEL INTROSPECTION
-    # =========================================================================
-
-    @staticmethod
-    def list_available_models() -> dict[str, dict[str, Any]]:
-        """Return metadata for all registered image models."""
-        return {
-            m.value: {
-                "display_name": c.display_name,
-                "default_steps": c.default_steps,
-                "vram_gb": c.vram_gb,
-                "notes": c.notes,
-            }
-            for m, c in IMAGE_MODEL_REGISTRY.items()
-        }
 
     # =========================================================================
     # UTILITY METHODS

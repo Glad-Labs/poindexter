@@ -8,30 +8,32 @@ httpx), generate_image_markdown, cache helpers, and factory. The GPU-lock
 wrapper around the render is covered in test_image_service_vram_guard.py.
 """
 
+import inspect
 import logging
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from poindexter.services import gpu_scheduler as gpu_scheduler_mod
+from poindexter.services import image_service as image_service_mod
+from poindexter.services.gpu_admission import GpuBusyError
 from poindexter.services.image_service import (
-    IMAGE_MODEL_REGISTRY,
     FeaturedImageMetadata,
+    ImageGenOutcome,
     ImageModel,
-    ImageModelConfig,
     ImageService,
-    get_default_image_model,
     get_image_service,
 )
 from poindexter.services.site_config import SiteConfig
-from tests.unit._nonempty import nonempty
 
 # SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
-# ``set_site_config`` were removed; ``ImageService`` / ``get_image_service`` /
-# ``get_default_image_model`` all take a required ``site_config=``. Tests
-# build a fresh env-backed instance (mirrors the old module-default behaviour,
-# which read env via ``SiteConfig().get``).
+# ``set_site_config`` were removed; ``ImageService`` / ``get_image_service``
+# take a required ``site_config=``. Tests build a fresh env-backed instance
+# (mirrors the old module-default behaviour, which read env via
+# ``SiteConfig().get``).
 
 
 def _test_sc() -> SiteConfig:
@@ -402,27 +404,24 @@ class TestGetImageServiceFactory:
 
 
 # ---------------------------------------------------------------------------
-# ImageModel enum
+# ImageModel enum: deprecated, kept only as the type of the ignored model=
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestImageModelEnum:
-    def test_has_four_members(self):
-        assert len(ImageModel) == 4
+    """``ImageModel`` outlived the worker's model registry for one reason: a
+    caller passing ``model=ImageModel.X`` must keep importing and running
+    through the deprecation window. So its members stay exactly as they were;
+    removing or renaming one breaks such a caller at import time."""
 
-    def test_sdxl_base_value(self):
-        assert ImageModel.SDXL_BASE.value == "sdxl_base"
-
-    def test_sdxl_lightning_value(self):
-        assert ImageModel.SDXL_LIGHTNING.value == "sdxl_lightning"
-
-    def test_flux_schnell_value(self):
-        assert ImageModel.FLUX_SCHNELL.value == "flux_schnell"
-
-    def test_z_image_turbo_value(self):
-        # The live default (HTTP image-gen server) — absent from the old stale copy.
-        assert ImageModel.Z_IMAGE_TURBO.value == "z_image_turbo"
+    def test_members_are_unchanged(self):
+        assert {m.name: m.value for m in ImageModel} == {
+            "SDXL_BASE": "sdxl_base",
+            "SDXL_LIGHTNING": "sdxl_lightning",
+            "FLUX_SCHNELL": "flux_schnell",
+            "Z_IMAGE_TURBO": "z_image_turbo",
+        }
 
     def test_is_str_enum(self):
         # ImageModel inherits from str, so members are valid strings
@@ -438,182 +437,34 @@ class TestImageModelEnum:
             ImageModel("nonexistent_model")
 
 
-# ---------------------------------------------------------------------------
-# ImageModelConfig dataclass
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
-class TestImageModelConfig:
-    def test_frozen_cannot_mutate(self):
-        cfg = ImageModelConfig(
-            model_id="test/model",
-            display_name="Test",
-            default_steps=10,
-            default_guidance_scale=7.0,
-            pipeline_class="diffusers.SomePipeline",
+class TestRetiredModelRegistry:
+    """The worker's image-model registry described the retired in-process
+    diffusers path and had no production reader. It is gone, and so is the
+    default resolver for the retired ``image_model`` setting. The image-gen
+    server's REGISTRY (scripts/image-gen-server.py) is the only model list."""
+
+    @pytest.mark.parametrize(
+        "name",
+        ["IMAGE_MODEL_REGISTRY", "ImageModelConfig", "get_default_image_model"],
+    )
+    def test_registry_names_are_gone_from_image_service(self, name):
+        assert not hasattr(image_service_mod, name), (
+            f"image_service.{name} is back. The worker renders nothing itself, "
+            "so a worker-side model registry can only drift from the server's "
+            "REGISTRY. The last one listed flux_schnell, which the server "
+            "cannot render, and lacked the server's sdxl_turbo."
         )
-        with pytest.raises(AttributeError):
-            cfg.model_id = "other/model"  # type: ignore[misc]
 
-    def test_default_optional_fields(self):
-        cfg = ImageModelConfig(
-            model_id="test/model",
-            display_name="Test",
-            default_steps=10,
-            default_guidance_scale=7.0,
-            pipeline_class="diffusers.SomePipeline",
-        )
-        assert cfg.lora_repo is None
-        assert cfg.lora_weight_name is None
-        assert cfg.scheduler_override is None
-        assert cfg.scheduler_kwargs is None
-        assert cfg.torch_dtype_str == "float16"
-        assert cfg.vram_gb == 6.0
-        assert cfg.notes == ""
+    def test_list_available_models_is_gone(self):
+        assert not hasattr(ImageService, "list_available_models")
 
-    def test_explicit_fields_stored(self):
-        cfg = ImageModelConfig(
-            model_id="org/model-name",
-            display_name="My Model",
-            default_steps=30,
-            default_guidance_scale=7.5,
-            pipeline_class="diffusers.StableDiffusionXLPipeline",
-            lora_repo="ByteDance/SDXL-Lightning",
-            lora_weight_name="weights.safetensors",
-            scheduler_override="EulerDiscreteScheduler",
-            scheduler_kwargs={"timestep_spacing": "trailing"},
-            torch_dtype_str="bfloat16",
-            vram_gb=12.0,
-            notes="Test note",
-        )
-        assert cfg.model_id == "org/model-name"
-        assert cfg.display_name == "My Model"
-        assert cfg.default_steps == 30
-        assert cfg.default_guidance_scale == 7.5
-        assert cfg.lora_repo == "ByteDance/SDXL-Lightning"
-        assert cfg.scheduler_kwargs == {"timestep_spacing": "trailing"}
-        assert cfg.torch_dtype_str == "bfloat16"
-        assert cfg.vram_gb == 12.0
+    def test_registry_module_is_gone(self):
+        import importlib.util
 
-
-# ---------------------------------------------------------------------------
-# IMAGE_MODEL_REGISTRY
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestImageModelRegistry:
-    def test_contains_all_four_models(self):
-        assert set(IMAGE_MODEL_REGISTRY.keys()) == {
-            ImageModel.SDXL_BASE,
-            ImageModel.SDXL_LIGHTNING,
-            ImageModel.FLUX_SCHNELL,
-            ImageModel.Z_IMAGE_TURBO,
-        }
-
-    def test_all_entries_are_image_model_config(self):
-        for model, cfg in nonempty(IMAGE_MODEL_REGISTRY.items(), "IMAGE_MODEL_REGISTRY.items()"):
-            assert isinstance(cfg, ImageModelConfig), f"{model} value is not ImageModelConfig"
-
-    def test_all_entries_have_required_fields(self):
-        for model, cfg in nonempty(IMAGE_MODEL_REGISTRY.items(), "IMAGE_MODEL_REGISTRY.items()"):
-            assert cfg.model_id, f"{model} missing model_id"
-            assert cfg.display_name, f"{model} missing display_name"
-            assert cfg.default_steps > 0, f"{model} has non-positive default_steps"
-            assert cfg.default_guidance_scale >= 0, f"{model} has negative guidance_scale"
-            assert cfg.pipeline_class.startswith(
-                "diffusers."
-            ), f"{model} pipeline_class should start with 'diffusers.'"
-            assert cfg.vram_gb > 0, f"{model} has non-positive vram_gb"
-
-    def test_sdxl_base_config(self):
-        cfg = IMAGE_MODEL_REGISTRY[ImageModel.SDXL_BASE]
-        assert cfg.model_id == "stabilityai/stable-diffusion-xl-base-1.0"
-        assert cfg.default_steps == 30
-        assert cfg.lora_repo is None
-
-    def test_sdxl_lightning_config(self):
-        cfg = IMAGE_MODEL_REGISTRY[ImageModel.SDXL_LIGHTNING]
-        assert cfg.lora_repo == "ByteDance/SDXL-Lightning"
-        assert cfg.lora_weight_name is not None
-        assert cfg.scheduler_override == "EulerDiscreteScheduler"
-        assert cfg.default_steps == 4
-        assert cfg.default_guidance_scale == 0.0
-
-    def test_flux_schnell_config(self):
-        cfg = IMAGE_MODEL_REGISTRY[ImageModel.FLUX_SCHNELL]
-        assert cfg.model_id == "black-forest-labs/FLUX.1-schnell"
-        assert cfg.torch_dtype_str == "bfloat16"
-        assert cfg.vram_gb == 12.0
-        assert cfg.pipeline_class == "diffusers.FluxPipeline"
-
-    def test_z_image_turbo_config(self):
-        # The live-default model, now reachable via the canonical registry.
-        cfg = IMAGE_MODEL_REGISTRY[ImageModel.Z_IMAGE_TURBO]
-        assert cfg.model_id == "Tongyi-MAI/Z-Image-Turbo"
-        assert cfg.default_steps == 9
-        assert cfg.default_guidance_scale == 0.0
-        assert cfg.torch_dtype_str == "bfloat16"
-        assert cfg.vram_gb == 13.0
-
-
-# ---------------------------------------------------------------------------
-# get_default_image_model(site_config=_test_sc())
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetDefaultImageModel:
-    def test_returns_z_image_turbo_when_env_not_set(self, monkeypatch):
-        # Canonical default tracks settings_defaults.DEFAULTS['image_model'].
-        monkeypatch.delenv("IMAGE_MODEL", raising=False)
-        result = get_default_image_model(site_config=_test_sc())
-        assert result is ImageModel.Z_IMAGE_TURBO
-
-    def test_returns_sdxl_base_from_env(self, monkeypatch):
-        monkeypatch.setenv("IMAGE_MODEL", "sdxl_base")
-        result = get_default_image_model(site_config=_test_sc())
-        assert result is ImageModel.SDXL_BASE
-
-    def test_returns_flux_schnell_from_env(self, monkeypatch):
-        monkeypatch.setenv("IMAGE_MODEL", "flux_schnell")
-        result = get_default_image_model(site_config=_test_sc())
-        assert result is ImageModel.FLUX_SCHNELL
-
-    def test_returns_sdxl_lightning_from_env(self, monkeypatch):
-        monkeypatch.setenv("IMAGE_MODEL", "sdxl_lightning")
-        result = get_default_image_model(site_config=_test_sc())
-        assert result is ImageModel.SDXL_LIGHTNING
-
-    def test_falls_back_on_invalid_env(self, monkeypatch):
-        monkeypatch.setenv("IMAGE_MODEL", "nonexistent_model_xyz")
-        result = get_default_image_model(site_config=_test_sc())
-        assert result is ImageModel.Z_IMAGE_TURBO
-
-    def test_falls_back_on_empty_string_env(self, monkeypatch):
-        monkeypatch.setenv("IMAGE_MODEL", "")
-        result = get_default_image_model(site_config=_test_sc())
-        assert result is ImageModel.Z_IMAGE_TURBO
-
-    def test_resolves_z_image_turbo_without_unknown_warning(self, monkeypatch, caplog):
-        """Regression: the prod ``app_settings.image_model`` value ``z_image_turbo``
-        must resolve to a real ``ImageModel`` member.
-
-        The stale local copy of this enum had no ``Z_IMAGE_TURBO`` member, so
-        ``ImageModel("z_image_turbo")`` hit ``ValueError`` → logged
-        ``"Unknown IMAGE_MODEL 'z_image_turbo', falling back to sdxl_lightning"``
-        and returned the WRONG model on every live path (verified in Loki
-        2026-07-11). Consolidating onto the canonical registry
-        (``services.image_providers._image_models``) makes the value resolve.
-        """
-        monkeypatch.setenv("IMAGE_MODEL", "z_image_turbo")
-        with caplog.at_level(logging.WARNING):
-            result = get_default_image_model(site_config=_test_sc())
-        # Value compare (not ``is ImageModel.Z_IMAGE_TURBO``) so the assertion
-        # fails cleanly against the stale 3-member enum instead of AttributeError.
-        assert result.value == "z_image_turbo"
-        assert "Unknown IMAGE_MODEL" not in caplog.text
+        assert importlib.util.find_spec(
+            "poindexter.services.image_providers._image_models"
+        ) is None
 
 
 # ---------------------------------------------------------------------------
@@ -844,21 +695,99 @@ class TestGenerateImage:
         assert body["guidance_scale"] == 0.0
         assert body["task_id"] == "task-123"
 
-    @pytest.mark.asyncio
-    async def test_model_argument_is_ignored_with_a_warning(self, tmp_path, caplog):
-        """The server renders app_settings.image_generation_model and takes no
-        per-request model, so ``model=`` cannot be honoured. It is accepted for
-        backward compatibility and says so instead of being silently dropped."""
-        client = _client(post=_response(200, "image/png", content=b"\x89PNG"))
 
-        with caplog.at_level(logging.WARNING):
-            outcome = await _render(
-                client, str(tmp_path / "x.png"), model=ImageModel.FLUX_SCHNELL,
+# ---------------------------------------------------------------------------
+# model= — deprecated, accepted, ignored, and said so
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def _noop_gpu_lock(*_a, **_kw):
+    yield
+
+
+@asynccontextmanager
+async def _busy_gpu_lock(*_a, **_kw):
+    raise GpuBusyError("eta_exceeds_budget", 412.0)
+    yield  # pragma: no cover — unreachable, keeps this a generator
+
+
+class TestDeprecatedModelArgument:
+    """The server renders app_settings.image_generation_model and takes no
+    per-request model, so ``model=`` cannot be honoured. The public entry points
+    keep accepting it through the deprecation window and say so, instead of
+    either breaking the caller or dropping the argument silently."""
+
+    @pytest.mark.asyncio
+    async def test_warns_and_renders_the_configured_model(self, caplog):
+        svc = ImageService(site_config=_test_sc())
+        impl = AsyncMock(return_value=ImageGenOutcome(True))
+        with patch.object(gpu_scheduler_mod, "gpu", SimpleNamespace(lock=_noop_gpu_lock)), \
+                patch.object(ImageService, "_generate_image_impl", impl), \
+                caplog.at_level(logging.WARNING):
+            outcome = await svc.generate_image_result(
+                "a cat", "/tmp/x.png", model=ImageModel.FLUX_SCHNELL,
             )
 
         assert outcome.ok is True
-        assert "model" not in client.post.await_args.kwargs["json"]
-        assert "flux_schnell ignored" in caplog.text
+        impl.assert_awaited_once()
+        assert "model" not in impl.await_args.kwargs, (
+            "model= reached the renderer; the server cannot take it"
+        )
+        assert "model=flux_schnell is deprecated and ignored" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_bool_wrapper_warns_too(self, caplog):
+        svc = ImageService(site_config=_test_sc())
+        with patch.object(gpu_scheduler_mod, "gpu", SimpleNamespace(lock=_noop_gpu_lock)), \
+                patch.object(
+                    ImageService, "_generate_image_impl",
+                    AsyncMock(return_value=ImageGenOutcome(True)),
+                ), caplog.at_level(logging.WARNING):
+            ok = await svc.generate_image("a cat", "/tmp/x.png", model=ImageModel.SDXL_BASE)
+
+        assert ok is True
+        assert "model=sdxl_base is deprecated and ignored" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_warns_before_the_gpu_wait(self, caplog):
+        """A caller refused the GPU still learns its argument does nothing."""
+        svc = ImageService(site_config=_test_sc())
+        impl = AsyncMock(return_value=ImageGenOutcome(True))
+        with patch.object(gpu_scheduler_mod, "gpu", SimpleNamespace(lock=_busy_gpu_lock)), \
+                patch.object(ImageService, "_generate_image_impl", impl), \
+                caplog.at_level(logging.WARNING):
+            outcome = await svc.generate_image_result(
+                "a cat", "/tmp/x.png", model=ImageModel.Z_IMAGE_TURBO,
+            )
+
+        assert outcome.reason == "gpu_busy"
+        impl.assert_not_awaited()
+        assert "model=z_image_turbo is deprecated and ignored" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_no_warning_without_the_argument(self, caplog):
+        svc = ImageService(site_config=_test_sc())
+        with patch.object(gpu_scheduler_mod, "gpu", SimpleNamespace(lock=_noop_gpu_lock)), \
+                patch.object(
+                    ImageService, "_generate_image_impl",
+                    AsyncMock(return_value=ImageGenOutcome(True)),
+                ), caplog.at_level(logging.WARNING):
+            await svc.generate_image_result("a cat", "/tmp/x.png")
+
+        assert "deprecated" not in caplog.text
+
+    def test_public_signatures_still_accept_model(self):
+        """Backward compatibility: removing the parameter breaks every caller
+        that passes it, which is the deprecation window's whole point."""
+        for method in (ImageService.generate_image, ImageService.generate_image_result):
+            param = inspect.signature(method).parameters.get("model")
+            assert param is not None, f"{method.__name__} lost its model= parameter"
+            assert param.default is None
+
+    def test_renderer_takes_no_model(self):
+        """The private render path never sees a model: the server picks it."""
+        assert "model" not in inspect.signature(ImageService._generate_image_impl).parameters
 
 
 # ---------------------------------------------------------------------------
@@ -1028,25 +957,3 @@ class TestPexelsResolutionViaSiteConfigDI:
             assert svc.pexels_available is True
             assert svc.pexels_api_key == "stress-test-key-381"
             assert svc.pexels_headers == {"Authorization": "stress-test-key-381"}
-
-
-# ---------------------------------------------------------------------------
-# list_available_models
-# ---------------------------------------------------------------------------
-
-
-class TestModelIntrospection:
-    def test_list_available_models_returns_dict_with_all_registered(self):
-        models = ImageService.list_available_models()
-        assert isinstance(models, dict)
-        # Every model from the canonical registry (now includes z_image_turbo)
-        for m in IMAGE_MODEL_REGISTRY:
-            assert m.value in models
-
-    def test_list_available_models_entries_have_metadata(self):
-        models = ImageService.list_available_models()
-        for _value, meta in nonempty(models.items(), "models.items()"):
-            assert "display_name" in meta
-            assert "default_steps" in meta
-            assert "vram_gb" in meta
-            assert "notes" in meta

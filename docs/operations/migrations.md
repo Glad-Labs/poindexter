@@ -313,7 +313,11 @@ DB.
    `ON CONFLICT DO NOTHING`, so a copy left in any one re-inserts the row
    after the migration deletes it. `scripts/ci/settings_seed_drift_lint.py`
    fails CI when a source still carries a key a migration deletes. It checks
-   `DEFAULTS` too since 2026-09-28.
+   `DEFAULTS` too since 2026-09-28. Three more places name keys and no lint
+   reads them, so check them by hand: the `settings_categories.py` override
+   map, `scripts/settings_defaults_extract.json` (the #379 extract), and
+   hand-kept key lists in code such as `StartupManager`'s
+   `_NON_OLLAMA_MODEL_KEYS`.
 3. **DELETE by a literal key list, never a pattern.** A `LIKE` sweep takes
    out live keys that share the name, as `rate_limit_%` would:
 
@@ -337,8 +341,11 @@ DB.
    seed source and that no module reads it, and it keeps a floor of live
    look-alike keys a sweep must not touch. Precedents:
    `test_drop_orphan_short_video_post_publish_delay.py` (a key seeded by the
-   baseline) and `test_drop_orphan_rate_limit_video_generate.py` (a key seeded
-   only by `DEFAULTS`), both in `tests/unit/services/migrations/`.
+   baseline), `test_drop_orphan_rate_limit_video_generate.py` (a key seeded
+   only by `DEFAULTS`) and `test_drop_orphan_image_model.py` (a key whose live
+   twin, `image_generation_model`, shares its prefix; it scans for the key as
+   a quoted literal, so prose that names the retired key is not a reader), all
+   in `tests/unit/services/migrations/`.
 
 ### Add a column safely
 

@@ -137,8 +137,13 @@ app = FastAPI(title="image-gen Server", version="2.0")
 
 # ============================================================================
 # MODEL REGISTRY
-# Mirrors src/cofounder_agent/poindexter/services/image_service.py IMAGE_MODEL_REGISTRY.
-# Keep these in sync — both reference the same friendly names.
+# The only image-model registry in the stack. app_settings.image_generation_model
+# must name one of these keys: anything else leaves the server degraded
+# ("unknown image model"). The worker keeps no copy. Its IMAGE_MODEL_REGISTRY
+# described the retired in-process diffusers path and was deleted 2026-09-28,
+# with the image_model setting that pointed into it. Every seed of
+# image_generation_model is held to these keys by
+# src/cofounder_agent/tests/unit/services/test_image_generation_model_seed.py.
 # ============================================================================
 
 @dataclass(frozen=True)

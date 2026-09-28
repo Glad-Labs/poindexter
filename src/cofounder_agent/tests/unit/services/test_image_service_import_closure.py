@@ -1,9 +1,11 @@
 """Importing image_service must not try to import torch or its ML neighbours.
 
-``services/image_providers/_image_models.py`` used to probe torch, diffusers
-and xformers at module level (``try: import torch`` plus two ``find_spec``
-calls). Those probes served the worker's in-process diffusers path, which could
-never run: the worker image installs no diffusers. Nothing read the names they
+The worker's image-model registry module
+(``poindexter.services.image_providers._image_models``, deleted 2026-09-28 with
+the registry itself) used to probe torch, diffusers and xformers at module
+level (``try: import torch`` plus two ``find_spec`` calls). Those probes
+served the worker's in-process diffusers path, which could never run: the
+worker image installs no diffusers. Nothing read the names they
 bound, but the torch import was real. The worker image carries CPU torch for
 sentence-transformers, so every process that imported image_service paid for
 it. Measured in the worker image on 2026-09-28, the import took 0.9 s and

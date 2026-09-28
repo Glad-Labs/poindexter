@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-09-28.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 675 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 674 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -41,7 +41,7 @@ The worker re-reads on every poll; no restart needed.
 - [experiments](#experiments) (3 keys)
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
-- [general](#general) (304 keys)
+- [general](#general) (303 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (2 keys)
@@ -370,7 +370,6 @@ The worker re-reads on every poll; no restart needed.
 | `host_home` | `` |  | Host home directory for Docker volume mounts |
 | `image_gen_enabled` | `true` |  | Master toggle for the image-gen featured/inline image pipeline. When false, source_featured_image skips the image-gen... |
 | `image_gen_server_url` | `http://image-gen-server:9836` |  | Image generation server URL (compose service DNS — resolvable container-to-container over the shared network; never a... |
-| `image_model` | `z_image_turbo` |  | Default image generation model (legacy) |
 | `indexnow_ping_url` | `https://api.indexnow.org/indexnow` |  | Auto-seeded by services.settings_defaults (#379) |
 | `internal_api_base_url` | `http://localhost:8002` |  | Base URL for the internal worker API (used for self-calls like the podcast feed regen) |
 | `media_approval_discord_notify_enabled` | `true` |  | Master switch — when true, a Discord ops ping fires when a newly-generated podcast/video/short lands in media_approva... |

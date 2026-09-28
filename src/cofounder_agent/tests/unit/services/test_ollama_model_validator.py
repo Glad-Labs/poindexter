@@ -456,7 +456,7 @@ class TestOllamaValueClassification:
             skip_keys=_NON_OLLAMA_MODEL_KEYS,
         )
         assert not _is_ollama_model_value(
-            "image_model", "z_image_turbo", skip_keys=_NON_OLLAMA_MODEL_KEYS,
+            "image_generation_model", "z_image_turbo", skip_keys=_NON_OLLAMA_MODEL_KEYS,
         )
 
     def test_unknown_bare_keys_are_still_checked(self):
@@ -541,7 +541,7 @@ class TestValidatorNoiseSuppression:
         notify = await _run_validator(
             model_rows=[
                 {"key": "gpu_model", "value": "NVIDIA RTX 5090 (32GB VRAM)"},
-                {"key": "image_model", "value": "z_image_turbo"},
+                {"key": "image_generation_model", "value": "z_image_turbo"},
                 {"key": "generative_video_model", "value": "Wan-AI/Wan2.2-TI2V-5B"},
                 {"key": "podcast_tts_model", "value": "speaches-ai/Kokoro-82M-v1.0-ONNX"},
                 {"key": "rag_rerank_model", "value": "cross-encoder/ms-marco-MiniLM-L-6-v2"},

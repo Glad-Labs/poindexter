@@ -92,11 +92,14 @@ def test_image_render_params_are_db_seeded():
     """Every image render/prompt knob must be a seeded app_setting so it's
     tunable without a code edit and never a silent inline fallback. Guards
     against accidental removal. #image-zimage-and-variety."""
-    # image_generation_model is seeded in 0000_baseline.seeds.sql (not DEFAULTS),
-    # so it's excluded here; everything else lives in settings_defaults.
+    # image_generation_model is seeded by DEFAULTS and the brain seed, not by
+    # 0000_baseline.seeds.sql (the Phase F squash dropped its baseline row).
+    # test_image_generation_model_seed.py also holds its value to the
+    # image-gen server's REGISTRY.
     from poindexter.services.settings_defaults import DEFAULTS
 
     for key in (
+        "image_generation_model",
         "image_prompt_temperature",
         "image_prompt_max_tokens",
         "image_prompt_timeout_seconds",

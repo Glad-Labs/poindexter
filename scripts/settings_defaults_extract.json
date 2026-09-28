@@ -577,24 +577,6 @@
       "receiver": "site_config"
     },
     {
-      "key": "image_model",
-      "value": "sdxl_lightning",
-      "value_type": "str",
-      "getter": "get",
-      "file": "src\\cofounder_agent\\services\\image_providers\\_image_models.py",
-      "line": 149,
-      "receiver": "site_config"
-    },
-    {
-      "key": "image_model",
-      "value": "sdxl_lightning",
-      "value_type": "str",
-      "getter": "get",
-      "file": "src\\cofounder_agent\\services\\image_service.py",
-      "line": 158,
-      "receiver": "site_config"
-    },
-    {
       "key": "image_negative_prompt",
       "value": "",
       "value_type": "str",
@@ -3348,15 +3330,6 @@
       "getter": "get",
       "file": "src\\cofounder_agent\\services\\video_service.py",
       "line": 313,
-      "receiver": "site_config"
-    },
-    "image_model": {
-      "key": "image_model",
-      "value": "sdxl_lightning",
-      "value_type": "str",
-      "getter": "get",
-      "file": "src\\cofounder_agent\\services\\image_service.py",
-      "line": 158,
       "receiver": "site_config"
     },
     "image_negative_prompt": {

@@ -36,8 +36,16 @@ The rule
   so there is no escape hatch for this half.
 * ``brain/seed_app_settings.json`` is **a different thing**: its ``_meta``
   declares ``"tier": "free"``, and its lower limits are the free/paid product
-  boundary, not drift. It may diverge from the baseline -- but only where
-  declared in ``TIER_POLICY`` below, with a reason.
+  boundary, not drift. It may diverge from the reference default -- but only
+  where declared in ``TIER_POLICY`` below, with a reason.
+
+The reference default for a key is the baseline's value where the baseline
+seeds it, and ``DEFAULTS``' value otherwise. Comparing the brain seed with the
+baseline alone missed every key the baseline does not carry.
+``image_generation_model`` was seeded ``'image_gen'`` by ``DEFAULTS`` and
+``'sdxl_lightning'`` by the brain from 2026-08-26 to 2026-09-28, so a
+``poindexter setup`` install and a ``docker compose up`` install started on
+different values, and ``'image_gen'`` is not a model the image-gen server knows.
 
 Comparison is **exact-string**, deliberately. Normalising JSON or floats would
 let ``300`` vs ``300.0`` and whitespace-only drift persist, which is exactly the
@@ -170,11 +178,16 @@ def main() -> int:
         k for k in set(code) & set(baseline) if code[k] != baseline[k]
     )
 
-    # 2. brain <-> baseline: may differ only where declared.
+    # The reference default per key: the baseline's value where it seeds the
+    # key, else DEFAULTS'. Check 1 holds the two equal wherever both seed a
+    # key, so the precedence only decides keys one of them lacks.
+    reference = {**code, **baseline}
+
+    # 2. brain <-> reference: may differ only where declared.
     brain_drift = sorted(
         k
-        for k in set(brain) & set(baseline)
-        if brain[k] != baseline[k] and k not in TIER_POLICY
+        for k in set(brain) & set(reference)
+        if brain[k] != reference[k] and k not in TIER_POLICY
     )
 
     # 3. TIER_POLICY entries that no longer describe a real divergence. Without
@@ -183,13 +196,15 @@ def main() -> int:
     stale = sorted(
         k
         for k in TIER_POLICY
-        if k not in (set(brain) & set(baseline)) or brain.get(k) == baseline.get(k)
+        if k not in (set(brain) & set(reference)) or brain.get(k) == reference.get(k)
     )
 
     if not (code_drift or brain_drift or stale):
         overlap = len(set(code) & set(baseline))
+        brain_checked = len(set(brain) & set(reference))
         print(
             f"settings-seed-value-drift: OK ({overlap} code/baseline keys agree, "
+            f"{brain_checked} brain-seed keys checked, "
             f"{len(TIER_POLICY)} declared free-tier divergence(s))"
         )
         return 0
@@ -214,17 +229,18 @@ def main() -> int:
     if brain_drift:
         print(
             f"  {len(brain_drift)} key(s): brain/seed_app_settings.json disagrees "
-            "with the baseline and is not declared."
+            "with the reference default and is not declared."
         )
         print(
             "  The brain seed is the free tier (_meta.tier=free) and MAY differ — "
             "but say so: add a TIER_POLICY entry with a reason. If the divergence "
-            "is not deliberate, fix the brain seed instead.\n"
+            "is not deliberate, fix whichever side is wrong.\n"
         )
         for k in brain_drift:
+            ref_source = "baseline.seeds.sql  " if k in baseline else "settings_defaults.py"
             print(f"    - {k}")
-            print(f"        brain (free tier)  : {brain[k]!r}")
-            print(f"        baseline.seeds.sql : {baseline[k]!r}")
+            print(f"        brain (free tier)    : {brain[k]!r}")
+            print(f"        {ref_source} : {reference[k]!r}")
         print()
 
     if stale:
