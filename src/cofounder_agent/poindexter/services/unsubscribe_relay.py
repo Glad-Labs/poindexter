@@ -35,7 +35,7 @@ from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
-#: Mirrors ``routes/newsletter_routes._mint_unsubscribe_token`` —
+#: Mirrors ``services/newsletter_audience.mint_unsubscribe_token`` —
 #: ``secrets.token_urlsafe(32)`` is exactly 43 base64url characters.
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 

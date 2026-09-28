@@ -1609,6 +1609,266 @@
       ]
     },
     {
+      "id": 59,
+      "type": "stat",
+      "title": "Signup capture — daily canary",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Latest ProbeNewsletterSignupJob result. The canary signs a Resend test inbox up through the public signup endpoint and checks, with the worker's key, that it reached the segment the worker pulls (resend_audience_id). NOT CAPTURED means every real signup is failing the same way; the newsletter_signup_capture_broken finding names the cause. 'Canary off' = newsletter_signup_canary_url is empty. Run it now: poindexter newsletter canary. See docs/architecture/newsletter-signup-capture.md.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 124
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "✓ Captured",
+                  "color": "cyan",
+                  "index": 0
+                },
+                "0": {
+                  "text": "✕ Not captured",
+                  "color": "orange",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "noValue": "Canary off"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN (details->'metrics'->>'healthy')::boolean THEN 1 ELSE 0 END AS \"Canary\" FROM audit_log WHERE event_type = 'job_run' AND source = 'probe_newsletter_signup' ORDER BY timestamp DESC LIMIT 1;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 60,
+      "type": "stat",
+      "title": "Last canary run",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "When the signup canary last ran (it runs every 24h once newsletter_signup_canary_url is set). Older than a day with the canary on means the job is not firing.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 124
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "never"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (EXTRACT(EPOCH FROM max(timestamp)) * 1000)::bigint AS \"Last run\" FROM audit_log WHERE event_type = 'job_run' AND source = 'probe_newsletter_signup';",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 61,
+      "type": "stat",
+      "title": "Subscribers pulled from Resend (30d)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "New newsletter_subscribers rows created by SyncNewsletterAudienceJob in the last 30 days. The public signup form captures into a Resend segment (the site cannot reach the worker); this job pulls it into the owned table every 15 minutes.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 124
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "cyan",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM((details->'metrics'->>'imported')::int), 0)::int AS \"Pulled\" FROM audit_log WHERE event_type = 'job_run' AND source = 'sync_newsletter_audience' AND timestamp > now() - interval '30 days';",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 62,
+      "type": "table",
+      "title": "Signup pipeline — canary runs and pulls that changed something",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Every signup-canary run, plus every segment pull that imported a subscriber, applied a Resend-side opt-out or hit an error (quiet pulls every 15 min are left out). kept unsubscribed = contacts active in Resend whose owned row is unsubscribed: the owned opt-out wins and the pull never re-subscribes them.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 128
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "true": {
+                  "text": "✓",
+                  "color": "cyan",
+                  "index": 0
+                },
+                "false": {
+                  "text": "✕",
+                  "color": "orange",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS \"time\", CASE source WHEN 'probe_newsletter_signup' THEN 'canary' ELSE 'pull' END AS \"job\", (details->>'ok')::boolean AS \"ok\", (details->'metrics'->>'contacts_seen')::int AS \"contacts\", (details->'metrics'->>'imported')::int AS \"imported\", (details->'metrics'->>'unsubscribes_applied')::int AS \"opt-outs applied\", (details->'metrics'->>'opted_out_kept')::int AS \"kept unsubscribed\", (details->'metrics'->>'http_status')::int AS \"canary HTTP\", (details->'metrics'->>'in_segment')::boolean AS \"in segment\", (details->'metrics'->>'errors')::int AS \"errors\" FROM audit_log WHERE event_type = 'job_run' AND (source = 'probe_newsletter_signup' OR (source = 'sync_newsletter_audience' AND ((details->>'changes_made')::int > 0 OR (details->'metrics'->>'errors')::int > 0))) ORDER BY timestamp DESC LIMIT 20;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "id": 37,
       "type": "row",
       "collapsed": false,
@@ -1617,7 +1877,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 124
+        "y": 135
       },
       "panels": []
     },
@@ -1642,7 +1902,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 125
+        "y": 136
       },
       "id": 38,
       "options": {
@@ -1679,7 +1939,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 135
+        "y": 146
       },
       "panels": []
     },
@@ -1696,7 +1956,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 136
+        "y": 147
       },
       "fieldConfig": {
         "defaults": {
@@ -1761,7 +2021,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 136
+        "y": 147
       },
       "fieldConfig": {
         "defaults": {
@@ -1826,7 +2086,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 144
+        "y": 155
       },
       "fieldConfig": {
         "defaults": {
@@ -1872,7 +2132,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 154
+        "y": 165
       },
       "panels": []
     },
@@ -1889,7 +2149,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 155
+        "y": 166
       },
       "fieldConfig": {
         "defaults": {
@@ -1957,7 +2217,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 163
+        "y": 174
       },
       "panels": []
     },
@@ -2012,7 +2272,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 164
+        "y": 175
       },
       "id": 46,
       "options": {
@@ -2046,7 +2306,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 175
+        "y": 186
       },
       "id": 47,
       "panels": [],
@@ -2079,7 +2339,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 176
+        "y": 187
       },
       "id": 48,
       "options": {
@@ -2134,7 +2394,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 176
+        "y": 187
       },
       "id": 49,
       "options": {
@@ -2197,7 +2457,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 176
+        "y": 187
       },
       "id": 50,
       "options": {
@@ -2260,7 +2520,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 176
+        "y": 187
       },
       "id": 51,
       "options": {
@@ -2323,7 +2583,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 176
+        "y": 187
       },
       "id": 52,
       "options": {
@@ -2378,7 +2638,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 176
+        "y": 187
       },
       "id": 53,
       "options": {
@@ -2437,7 +2697,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 180
+        "y": 191
       },
       "id": 54,
       "options": {
@@ -2500,7 +2760,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 180
+        "y": 191
       },
       "id": 55,
       "options": {
@@ -2559,7 +2819,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 180
+        "y": 191
       },
       "id": 56,
       "options": {
@@ -2618,7 +2878,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 180
+        "y": 191
       },
       "id": 57,
       "options": {

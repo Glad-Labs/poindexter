@@ -865,6 +865,24 @@ def get_core_samples() -> dict[str, list[Any]]:
             "poindexter.services.jobs.apply_unsubscribe_requests",
             "ApplyUnsubscribeRequestsJob",
         ),
+        # SyncNewsletterAudienceJob — the owned copy's producer. The public
+        # signup form captures into a Resend segment (the site cannot reach
+        # the worker); this pulls it into newsletter_subscribers outbound-only.
+        # No-op until resend_audience_id is set.
+        (
+            "jobs",
+            "poindexter.services.jobs.sync_newsletter_audience",
+            "SyncNewsletterAudienceJob",
+        ),
+        # ProbeNewsletterSignupJob — daily end-to-end canary through the
+        # public signup endpoint. The only detector that can tell "nobody
+        # signed up" from "signups are broken". Off until
+        # newsletter_signup_canary_url is set.
+        (
+            "jobs",
+            "poindexter.services.jobs.probe_newsletter_signup",
+            "ProbeNewsletterSignupJob",
+        ),
         ("jobs", "poindexter.services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
         ("jobs", "poindexter.services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing

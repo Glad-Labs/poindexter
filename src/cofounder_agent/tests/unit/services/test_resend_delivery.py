@@ -74,8 +74,12 @@ class FakeDb:
 
 
 class FakeSiteConfig:
-    def __init__(self, key: str = "re_test_key"):
+    def __init__(self, key: str = "re_test_key", values: dict[str, str] | None = None):
         self._key = key
+        self._values = values or {}
+
+    def get(self, name: str, default: str = "") -> str:
+        return self._values.get(name, default)
 
     async def get_secret(self, name: str, default: str = "") -> str:
         return self._key if name == "resend_api_key" else default
@@ -210,6 +214,25 @@ async def test_pagination_follows_has_more():
     outcome = await poll_delivery_state(db, FakeSiteConfig(), transport=t)
     assert outcome.emails_seen == 2
     assert {e["provider_message_id"] for e in db.events} == {"e1", "e2"}
+
+
+async def test_signup_canary_mail_is_not_recorded():
+    """The daily signup canary receives a welcome email. Recording it would
+    keep subscriber_events fresh on the canary alone, and the freshness probe
+    watching this table would read a dead newsletter as healthy."""
+    db = FakeDb()
+    sc = FakeSiteConfig(values={
+        "newsletter_signup_canary_email": "delivered+signup-canary@resend.dev",
+    })
+    t = transport_for(page(
+        email("e1", to="Delivered+Signup-Canary@resend.dev", subject="Welcome"),
+        email("e2", to="reader@example.com"),
+    ))
+    outcome = await poll_delivery_state(db, sc, transport=t)
+    assert outcome.skipped_canary == 1
+    assert outcome.rows_written == 1
+    assert [e["email"] for e in db.events] == ["reader@example.com"]
+    assert outcome.as_metrics()["skipped_canary"] == 1
 
 
 def test_recorded_events_excludes_pre_delivery_states():

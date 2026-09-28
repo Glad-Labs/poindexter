@@ -3698,6 +3698,32 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # bulk-sender one-click) and it is what shipped in every email between
     # #252 and 2026-09-23; the warning exists so it cannot go quiet again.
     'newsletter_unsubscribe_relay_url': '',
+    # Signup capture (services/newsletter_audience.py). The public signup form
+    # writes into a Resend segment, because the site (Vercel) cannot reach the
+    # worker; SyncNewsletterAudienceJob pulls the segment into
+    # newsletter_subscribers every 15 min. resend_audience_id is that segment's
+    # id (Resend renamed audiences to segments; the id is the same value).
+    # Empty on OSS: a baked-in id would point a fresh install's sync at
+    # another tenant's segment. The operator overlay restores its own.
+    'resend_audience_id': '',
+    # Page cap for the segment pull, 100 contacts per page. Hitting it is
+    # reported (never silently truncated): raise it when the list outgrows it.
+    'newsletter_audience_sync_max_pages': '50',
+    # Daily end-to-end signup canary (ProbeNewsletterSignupJob). Empty = off.
+    # Point it at the site's signup endpoint (e.g.
+    # https://<site>/api/newsletter/subscribe) to prove every day that a
+    # signup reaches the segment the worker syncs. Each run sends one welcome
+    # email to the canary address below, which is why it is opt-in. Two silent
+    # outages of this path (a send-only key; a funnel host that stopped
+    # resolving) are what it exists to catch.
+    'newsletter_signup_canary_url': '',
+    # One of Resend's own test inboxes: accepts mail, never a real reader, no
+    # domain-reputation cost. The sync and the delivery poll both skip it.
+    'newsletter_signup_canary_email': 'delivered+signup-canary@resend.dev',
+    # POSTs per run before the canary counts the endpoint as broken, and the
+    # wait between them. One retry absorbs a cold start or a provider blip.
+    'newsletter_signup_canary_attempts': '2',
+    'newsletter_signup_canary_retry_seconds': '30',
     'smtp_host': '',
     'smtp_port': '587',
     'smtp_use_tls': 'true',
@@ -4179,6 +4205,22 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.unsubscribe_relay_poll_failed.fallback': 'discord',
     'findings.unsubscribe_relay_poll_failed.cooldown_minutes': '180',
     'findings.unsubscribe_relay_poll_failed.min_severity': 'warning',
+    # newsletter_audience_sync_failed: signups are still captured in the
+    # Resend segment, but they are not reaching newsletter_subscribers, so
+    # new readers are not mailed until it clears. Informs, does not page.
+    'findings.newsletter_audience_sync_failed.delivery': 'discord',
+    'findings.newsletter_audience_sync_failed.fallback': 'discord',
+    'findings.newsletter_audience_sync_failed.cooldown_minutes': '180',
+    'findings.newsletter_audience_sync_failed.min_severity': 'warning',
+    # newsletter_signup_capture_broken: the daily canary could not sign up
+    # through the public form, so every real signup is failing too. Discord
+    # rather than Telegram (nothing breaks further overnight), cooled to the
+    # canary's own daily cadence. This path failed silently twice before the
+    # canary existed; a declared policy keeps it from failing silently again.
+    'findings.newsletter_signup_capture_broken.delivery': 'discord',
+    'findings.newsletter_signup_capture_broken.fallback': 'discord',
+    'findings.newsletter_signup_capture_broken.cooldown_minutes': '1440',
+    'findings.newsletter_signup_capture_broken.min_severity': 'warning',
     # retention_backlog: advisory. A policy that runs clean but does not drain
     # is a slow leak, not an outage — Discord, not a page.
     'findings.retention_backlog.delivery': 'discord',
@@ -6951,6 +6993,14 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'newsletter_enabled': {'value_type': 'boolean'},
     'newsletter_from_name': {'owner': 'newsletter_service'},
     'newsletter_provider': {'owner': 'newsletter_service', 'value_type': 'string'},
+    'resend_audience_id': {'owner': 'newsletter_audience', 'value_type': 'string'},
+    'newsletter_audience_sync_max_pages': {'owner': 'newsletter_audience', 'value_type': 'integer'},
+    # probe_* owner: the operator-URL probe treats this URL as the canary's
+    # TARGET, not an operator surface — a POST-only route would 405 its HEAD.
+    'newsletter_signup_canary_url': {'owner': 'probe_newsletter_signup', 'value_type': 'url'},
+    'newsletter_signup_canary_email': {'owner': 'probe_newsletter_signup', 'value_type': 'string'},
+    'newsletter_signup_canary_attempts': {'owner': 'probe_newsletter_signup', 'value_type': 'integer'},
+    'newsletter_signup_canary_retry_seconds': {'owner': 'probe_newsletter_signup', 'value_type': 'integer'},
     'niche_batch_expires_days': {'owner': 'topic_batch_service', 'value_type': 'integer'},
     'topic_source_rank_weights': {'owner': 'topic_batch_service', 'value_type': 'csv'},
     'topic_demand_wiki_enabled': {'owner': 'entity_demand', 'value_type': 'boolean'},

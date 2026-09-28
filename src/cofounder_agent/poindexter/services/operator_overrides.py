@@ -117,6 +117,12 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     "company_founded_date": "2025-09-25",
     # Distribution brand + operator accounts/infra (generic/empty on OSS).
     "newsletter_from_name": "Glad Labs",
+    # The Resend segment ("General") the public signup form writes into and
+    # SyncNewsletterAudienceJob pulls from. Blanked in the public seeds: a
+    # baked-in id would point every fresh OSS install's sync at this tenant's
+    # segment. Must equal RESEND_AUDIENCE_ID in the site's Vercel env — the
+    # daily signup canary (newsletter_signup_canary_url) checks exactly that.
+    "resend_audience_id": "33b1580d-cfda-4428-9890-d52f443b023b",
     "podcast_name": "Glad Labs Podcast",
     # Narration-voice credit (2026-07-11): the podcast's voice is cloned from a
     # Spoken Wikipedia reference clip narrated by JRennocks

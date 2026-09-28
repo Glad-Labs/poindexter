@@ -28,6 +28,7 @@ from .media import media_group
 from .memory import memory_group
 from .migrate import migrate_group
 from .model_eval import model_eval_group
+from .newsletter import newsletter_group
 from .personas import personas_group
 from .pipeline import pipeline_group
 from .posts import post_group, posts_group
@@ -115,6 +116,7 @@ main.add_command(logs_command, name="logs")
 main.add_command(costs_group, name="costs")
 main.add_command(vercel_group, name="vercel")
 main.add_command(pro_group, name="pro")
+main.add_command(newsletter_group, name="newsletter")
 main.add_command(skills_group, name="skills")
 main.add_command(topics_group, name="topics")
 main.add_command(experiments_group, name="experiments")

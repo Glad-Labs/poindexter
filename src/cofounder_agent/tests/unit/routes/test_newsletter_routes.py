@@ -380,68 +380,45 @@ class TestGetSubscriberCount:
 
 
 # ---------------------------------------------------------------------------
-# _sync_to_resend_audience — best-effort Resend audience mirror (broadcasts)
+# Resend segment mirror + token mint — delegated to services.newsletter_audience
+# (the mirror's own behaviour is tested in tests/unit/services/test_newsletter_audience.py)
 # ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_audience_sync_skips_when_unconfigured():
-    """No resend_audience_id -> no Resend call, never touches the key."""
-    from poindexter.routes.newsletter_routes import _sync_to_resend_audience
-
-    sc = MagicMock()
-    sc.get = MagicMock(return_value="")  # resend_audience_id unset
-    sc.get_secret = AsyncMock(return_value="")
-    await _sync_to_resend_audience(sc, email="a@b.com", first_name=None, last_name=None)
-    sc.get_secret.assert_not_awaited()  # returned before reading the key
 
 
-@pytest.mark.asyncio
-async def test_audience_sync_never_raises_on_error(monkeypatch):
-    """A Resend/network failure must NOT bubble up and fail the signup."""
+@pytest.mark.unit
+def test_subscribe_mirrors_the_signup_into_the_segment(monkeypatch):
+    """A direct API signup is copied into the Resend segment so Resend-side
+    tooling sees every subscriber. The route only delegates."""
     from poindexter.routes import newsletter_routes as nr
 
-    sc = MagicMock()
-    sc.get = MagicMock(return_value="aud-123")
-    sc.get_secret = AsyncMock(return_value="re_key")
+    calls: list[dict] = []
 
-    class _Boom:
-        async def __aenter__(self):
-            raise RuntimeError("network down")
+    async def fake_mirror(site_config, **kw):
+        calls.append(kw)
 
-        async def __aexit__(self, *a):
-            return False
+    monkeypatch.setattr(nr, "mirror_signup_to_segment", fake_mirror)
+    pool = _make_pool_mock(fetchrow_return=None, fetchval_return=7)
+    client = TestClient(_build_app(_make_db(pool)))
+    resp = client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
+    assert resp.status_code == 200
+    assert calls == [
+        {"email": "test@example.com", "first_name": "Test", "last_name": "User"}
+    ]
 
-    monkeypatch.setattr(nr.httpx, "AsyncClient", lambda *a, **k: _Boom())
-    await nr._sync_to_resend_audience(sc, email="a@b.com", first_name="A", last_name=None)
 
-
-@pytest.mark.asyncio
-async def test_audience_sync_posts_contact_when_configured(monkeypatch):
-    """Configured -> POSTs the contact to the right audience with a browser UA."""
+@pytest.mark.unit
+def test_subscribe_mints_through_the_shared_token_function(monkeypatch):
+    """The route and the segment sync mint through one function, so every
+    row carries the 43-char token shape the unsubscribe relay validates."""
     from poindexter.routes import newsletter_routes as nr
 
-    sc = MagicMock()
-    sc.get = MagicMock(return_value="aud-123")
-    sc.get_secret = AsyncMock(return_value="re_key")
-    captured: dict = {}
+    monkeypatch.setattr(nr, "mint_unsubscribe_token", lambda: "T" * 43)
 
-    class _Resp:
-        status_code = 201
-        text = ""
+    async def no_mirror(site_config, **kw):
+        return None
 
-    class _Client:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def post(self, url, headers=None, json=None):
-            captured.update(url=url, headers=headers, json=json)
-            return _Resp()
-
-    monkeypatch.setattr(nr.httpx, "AsyncClient", lambda *a, **k: _Client())
-    await nr._sync_to_resend_audience(sc, email="a@b.com", first_name="A", last_name="B")
-    assert "aud-123/contacts" in captured["url"]
-    assert captured["json"]["email"] == "a@b.com"
-    assert captured["json"]["first_name"] == "A"
-    assert "Mozilla" in captured["headers"]["User-Agent"]
+    monkeypatch.setattr(nr, "mirror_signup_to_segment", no_mirror)
+    pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
+    client = TestClient(_build_app(_make_db(pool)))
+    client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
+    assert pool.fetchval.await_args.args[10] == "T" * 43

@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/poindexter/services/newsletter_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_newsletter_service.py`
-**Last reviewed:** 2026-04-30
+**Last reviewed:** 2026-09-28
 
 ## What it does
 
@@ -23,8 +23,20 @@ for delivery tracking. The whole operation is fire-and-forget from
 `publish_service`'s point of view; failures don't block the publish.
 
 The HTML body is a minimal, inlined-CSS template with the post title,
-excerpt, a CTA button, and a List-Unsubscribe link. Personalization
+excerpt, a CTA button, and a per-subscriber unsubscribe link. Personalization
 is limited to first-name greeting if the subscriber row has it.
+
+## Where subscribers come from
+
+`newsletter_subscribers` has two producers:
+
+- **The public signup form.** The site is served from Vercel and cannot reach
+  this worker (no public ingress), so its route captures each signup into a
+  Resend segment, and `SyncNewsletterAudienceJob` pulls the segment into this
+  table every 15 minutes. A daily canary checks that path end to end. See
+  [newsletter-signup-capture.md](../newsletter-signup-capture.md).
+- **`POST /api/newsletter/subscribe`** on the worker, for direct API callers.
+  It writes the row and mirrors it into the same Resend segment.
 
 ## Public API
 
@@ -50,23 +62,20 @@ are private.
 - **Provider config is gated.** Resend without an API key, or SMTP
   without a host, returns early with the matching
   `skipped_reason` — no half-attempts that would partial-fail.
-- **`smtp_password` and `resend_api_key` are read via `get_secret`
-  vs `get`.** In the baseline schema, `smtp_password` is flagged
-  `is_secret=true`, which means it's filtered out of the in-memory
-  `SiteConfig` cache and MUST be fetched via the async
-  `get_secret()` path. The current code uses `get_secret` for
-  `smtp_password` but **plain `get` for `resend_api_key`** — see
-  Status callout below.
+- **`smtp_password` and `resend_api_key` are read via `get_secret`.**
+  Both are `is_secret=true` rows, which are filtered out of the in-memory
+  `SiteConfig` cache and MUST be fetched via the async `get_secret()` path.
 - **Subscriber filter:** `unsubscribed_at IS NULL AND verified = TRUE`,
   ordered by `id` for determinism.
 - **`site_url` is required.** `_site_url()` calls
   `site_config.require("site_url")`, which raises `RuntimeError` if
   unset. The HTML body would otherwise contain broken `/posts/...`
   links — the loud failure is intentional.
-- **List-Unsubscribe header on SMTP only.** The SMTP path adds
-  `List-Unsubscribe: <{site_url}/newsletter/unsubscribe>`. The
-  Resend path does NOT — it relies on Resend's account-level
-  unsubscribe handling.
+- **Every email carries a per-subscriber unsubscribe link** pointing at
+  the unsubscribe relay (`newsletter_unsubscribe_relay_url`, a Cloudflare
+  Worker; see `infrastructure/cloudflare/unsubscribe-relay/README.md`).
+  `ApplyUnsubscribeRequestsJob` drains its queue into this table. The SMTP
+  path also sends it as `List-Unsubscribe` with one-click POST.
 - **Per-recipient send is sequential.** Inside each batch, sends are
   awaited one at a time. There's no concurrency within a batch — if
   you have 5,000 subscribers and a 2s SMTP latency, the whole job
@@ -75,25 +84,6 @@ are private.
 - **Logging swallows DB errors.** `_log_send` catches and logs at
   DEBUG — a failed `campaign_email_logs` insert never aborts the
   send loop.
-
-## Status: secret-flag inconsistency
-
-`smtp_password` is fetched via `get_secret` (correct, post-migration
-0121). `resend_api_key` is fetched via plain `get`, which means it
-must NOT be flagged `is_secret=true` in `app_settings` or
-`SiteConfig` will filter it out of the cache and the value will
-silently be empty. Check the row's `is_secret` value before assuming
-Resend will work:
-
-```sql
-SELECT key, value <> '' AS has_value, is_secret
-FROM app_settings
-WHERE key = 'resend_api_key';
-```
-
-If `is_secret=true`, either flip it to `false` or update
-`newsletter_service._cfg()` to use `await site_config.get_secret(...)`
-for the Resend key the same way it does for SMTP.
 
 ## Configuration
 
@@ -105,8 +95,8 @@ All from `app_settings` via `services.site_config`:
 - `newsletter_from_email` (required when enabled) — sender address.
 - `newsletter_from_name` (default empty) — display name for the
   From: header.
-- `resend_api_key` (required when provider is Resend) — Resend API
-  key. See Status callout — must NOT be `is_secret=true` today.
+- `resend_api_key` (required when provider is Resend, `is_secret=true`) —
+  Resend API key.
 - `smtp_host` (required when provider is SMTP) — SMTP server host.
 - `smtp_port` (default `587`) — SMTP port.
 - `smtp_user` (default empty) — SMTP auth user, optional.
@@ -116,8 +106,10 @@ All from `app_settings` via `services.site_config`:
 - `newsletter_batch_size` (default `50`) — emails per batch.
 - `newsletter_batch_delay_seconds` (default `2`) — sleep between
   batches.
-- `site_url` (required, fail-loud) — used for `/posts/<slug>` and
-  `/newsletter/unsubscribe` URLs.
+- `site_url` (required, fail-loud) — used for `/posts/<slug>` URLs.
+- `newsletter_unsubscribe_relay_url` — the unsubscribe relay. While unset,
+  sends carry the legacy `{site_url}/newsletter/unsubscribe` link, which
+  404s, and each send raises `newsletter_unsubscribe_unconfigured`.
 - `company_name`, `site_name` — used in the HTML body header and
   footer text.
 
@@ -175,7 +167,7 @@ All from `app_settings` via `services.site_config`:
   poindexter settings set newsletter_enabled true
   poindexter settings set newsletter_from_email "newsletter@example.com"
   poindexter settings set newsletter_from_name "Glad Labs"
-  poindexter settings set resend_api_key "re_..."  # check is_secret flag!
+  poindexter settings set resend_api_key "re_..." --secret
   ```
 - **Switch to SMTP:**
   ```bash

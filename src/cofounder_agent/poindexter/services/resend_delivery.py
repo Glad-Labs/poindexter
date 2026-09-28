@@ -21,6 +21,12 @@ Idempotency is structural: one row per ``(provider_message_id, event_type)``
 against ``ux_subscriber_events_provider_event``, so a re-poll writes nothing
 and a message that later transitions (delivered -> complained) adds a row
 rather than mutating one. The ledger stays append-only.
+
+Mail to the signup canary (``newsletter_signup_canary_email``) is skipped.
+The canary signs up once a day and the site sends it a welcome email; were
+those recorded, ``subscriber_events`` would stay fresh on the canary alone,
+and the webhook-freshness probe that watches this table would read a dead
+newsletter as healthy.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from typing import Any
 
 import httpx
 
+from poindexter.services.newsletter_audience import canary_email
 from poindexter.services.site_config import SiteConfig
 from poindexter.utils.exception_format import describe_exception
 
@@ -55,6 +62,7 @@ class PollOutcome:
     emails_seen: int = 0
     rows_written: int = 0
     skipped_non_terminal: int = 0
+    skipped_canary: int = 0
     unknown_recipients: int = 0
     errors: list[str] = field(default_factory=list)
 
@@ -63,6 +71,7 @@ class PollOutcome:
             "emails_seen": self.emails_seen,
             "rows_written": self.rows_written,
             "skipped_non_terminal": self.skipped_non_terminal,
+            "skipped_canary": self.skipped_canary,
             "unknown_recipients": self.unknown_recipients,
             "errors": len(self.errors),
         }
@@ -177,9 +186,13 @@ async def poll_delivery_state(
         records = await _fetch_emails(client, api_key)
 
     outcome.emails_seen = len(records)
+    canary = canary_email(site_config)
     async with pool.acquire() as conn:
         for record in records:
             try:
+                if canary and (_first_recipient(record) or "").lower() == canary:
+                    outcome.skipped_canary += 1
+                    continue
                 last_event = str(record.get("last_event") or "").lower()
                 if last_event not in RECORDED_EVENTS:
                     outcome.skipped_non_terminal += 1

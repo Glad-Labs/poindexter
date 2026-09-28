@@ -247,8 +247,8 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
 | **Media**       | `GET /images/generated/{filename}`        | public | Serve a generated image-gen / Pexels image                      |
 | Media           | `GET /api/podcast/episodes/{task_id}.mp3` | public | Stream the podcast MP3 a pipeline task rendered                 |
 | Media           | `POST /api/podcast/generate/{post_id}`    | bearer | Render an episode for a published post (hand-written posts)     |
-| **Subscribers** | `GET /api/newsletter/subscribers/count`   | public | Total opted-in newsletter subscribers                           |
-| Subscribers     | `POST /api/newsletter/subscribe`          | public | Double opt-in newsletter signup (captcha recommended)           |
+| **Subscribers** | `GET /api/newsletter/subscribers/count`   | bearer | Total opted-in newsletter subscribers                           |
+| Subscribers     | `POST /api/newsletter/subscribe`          | public | Direct signup, no double opt-in (site signups sync via Resend)  |
 | Subscribers     | `POST /api/newsletter/unsubscribe`        | public | One-click unsubscribe by token                                  |
 | **Feeds**       | `GET /api/podcast/feed.xml`               | public | Podcast RSS feed (Apple/Spotify compatible)                     |
 | Feeds           | `GET /api/video/feed.xml`                 | public | Video RSS feed; each enclosure is the approved video in storage |

@@ -34,6 +34,7 @@ consolidated reference.
 | `costs`       | Pipeline spending and operational metrics                                                                              |
 | `vercel`      | Vercel deployment status via the REST API                                                                              |
 | `pro`         | Operate the Pro delivery chain — subscription status, reconcile sync, GitHub access link/unlink                        |
+| `newsletter`  | Newsletter signup path — pull the Resend signup segment into `newsletter_subscribers`, run the signup canary           |
 | `schedule`    | Scheduled-publish queue (batch/list/show/shift/clear/at) + publish-approval gate (approve/reject/pending/show-pending) |
 | `topics`      | Topic-decision approval queue (list/show/approve/reject/propose)                                                       |
 | `gates`       | HITL pipeline gates — approve/reject/pending/show + list/set toggles                                                   |
@@ -466,6 +467,44 @@ Revokes repo access and detaches the GitHub account.
 
 ```bash
 poindexter pro unlink 8f3a
+```
+
+---
+
+## `newsletter`
+
+Operate the newsletter signup path. The public site's form captures each
+signup into a Resend segment (the site cannot reach the worker, which has no
+public ingress), and `SyncNewsletterAudienceJob` pulls that segment into
+`newsletter_subscribers` every 15 minutes. These commands run the same
+service functions now. Design and opt-out rules:
+[newsletter-signup-capture.md](../architecture/newsletter-signup-capture.md).
+
+### `newsletter sync`
+
+Pulls the segment named by `resend_audience_id` now. New contacts become
+subscribers, opt-outs made in Resend are applied, and an address unsubscribed
+here is never re-subscribed. `--dry-run` reports what would change and writes
+nothing; run it before a backfill. Exits non-zero on any error.
+
+```bash
+poindexter newsletter sync --dry-run
+poindexter newsletter sync
+poindexter newsletter sync --json
+```
+
+### `newsletter canary`
+
+Signs a Resend test inbox up through the public signup endpoint, checks with
+the worker's key that it reached the segment the worker pulls, then deletes
+it. Each run sends one welcome email to the test inbox. Without `--url` it
+uses `newsletter_signup_canary_url`, which also switches on the daily
+`ProbeNewsletterSignupJob`. Exits non-zero, naming the cause, when the signup
+is not captured.
+
+```bash
+poindexter newsletter canary --url https://<site>/api/newsletter/subscribe
+poindexter newsletter canary --json
 ```
 
 ---
