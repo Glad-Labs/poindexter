@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,9 @@ _FAKE_START_STACK = """#!/usr/bin/env bash
 echo "start-stack $*" >> "${EVENTS_FILE:-/dev/null}"
 action="${1:-}"
 if [ "$action" = "up" ]; then
+  case "$*" in
+    *--force-recreate*) [ -n "${FORCE_RECREATE_EXIT:-}" ] && exit "$FORCE_RECREATE_EXIT" ;;
+  esac
   n=0
   [ -f "$UP_COUNT_FILE" ] && n="$(cat "$UP_COUNT_FILE")"
   n=$((n + 1)); echo "$n" > "$UP_COUNT_FILE"
@@ -98,7 +102,7 @@ exit 0
 """
 
 
-def _build_rig(tmp_path: Path) -> dict:
+def _build_rig(tmp_path: Path, extra_files: dict[str, str] | None = None) -> dict:
     home = tmp_path / "home"
     (home / ".poindexter").mkdir(parents=True)
     bin_dir = tmp_path / "bin"
@@ -130,6 +134,10 @@ def _build_rig(tmp_path: Path) -> dict:
     svc = seed / "src" / "cofounder_agent" / "poindexter" / "services"
     svc.mkdir(parents=True)
     (svc / "foo.py").write_text("X = 1\n", encoding="utf-8")
+    for rel, body in (extra_files or {}).items():
+        f = seed / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(body, encoding="utf-8")
     _git(seed, "add", "-A")
     _git(seed, "commit", "-q", "-m", "A")
     _git(seed, "remote", "add", "origin", str(origin))
@@ -156,8 +164,11 @@ def _build_rig(tmp_path: Path) -> dict:
     }
 
 
-def _advance_origin(rig: dict) -> str:
-    p = rig["seed"] / "src" / "cofounder_agent" / "poindexter" / "services" / "foo.py"
+def _advance_origin(rig: dict, rel: str = "src/cofounder_agent/poindexter/services/foo.py") -> str:
+    """Commit a change to ``rel`` and push it. The default path maps to the
+    auto-embed rebuild; ``poindexter/brain/...`` adds brain-daemon."""
+    p = rig["seed"] / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("X = 2\n", encoding="utf-8")
     _git(rig["seed"], "add", "-A")
     _git(rig["seed"], "commit", "-q", "-m", "B")
@@ -215,30 +226,19 @@ def _ups(rig: dict) -> list[str]:
 
 
 def _force_recreates(rig: dict) -> list[str]:
-    """Step 6a-bis: recreate the services this pass rebuilt.
-
-    `docker compose up -d` does not recreate a container whose image was
-    rebuilt under the same tag (it keys on the service config hash, not the
-    image ID), so without this every baked-image deploy was a no-op.
-    """
+    """Step 6a-bis: the force-recreate of rebuilt services compose-apply left
+    on the previous image (normally none)."""
     return [e for e in _events(rig) if e.startswith("start-stack up") and "--force-recreate" in e]
 
 
 class TestRecreateRebuilt:
-    """Step 6a-bis — the pass must put the images it built into service.
+    """Step 6a-bis when it cannot compare images: recreate every rebuilt service.
 
-    `docker compose up -d` does NOT recreate a container whose image was
-    rebuilt under the SAME tag when the service definition is unchanged:
-    compose keys recreate on the service config hash, not the resolved image
-    ID. Verified by --dry-run on the live stack 2026-09-22 — five just-rebuilt
-    services all reported `Running`, and the same five under --force-recreate
-    reported `Recreate`.
-
-    Without this step the 09:10 pass that day rebuilt eight images, recreated
-    three, and logged "Pipeline now running <sha> ... health gate: healthy"
-    while five kept serving the previous image. The gate passed because it
-    checked the OLD containers, which were healthy. It is the root cause of the
-    brain daemon running stale code after a merge.
+    This rig's clone has no ``deploy_health_gate.py``, so the recreate check has
+    no plan and must fall back to what the step did unconditionally before
+    2026-09-28 — a same-tag rebuild must never silently keep the old image.
+    (``TestRecreateCheck`` below covers the normal path, where the plan exists
+    and compose-apply has already recreated whatever changed.)
     """
 
     def test_rebuilt_services_are_force_recreated(self, tmp_path):
@@ -247,8 +247,8 @@ class TestRecreateRebuilt:
         _run_sync(rig)
         recreates = _force_recreates(rig)
         assert recreates, (
-            "a pass that rebuilt images must force-recreate them — plain "
-            "`up -d` leaves a same-tag image change alone"
+            "without a recreate plan, a pass that rebuilt images must "
+            "force-recreate them — unknown is recreated, never assumed current"
         )
         assert "--no-deps" in recreates[0], (
             "scope it: a blanket --force-recreate bounces the whole stack"
@@ -260,6 +260,321 @@ class TestRecreateRebuilt:
         _advance_origin(rig)
         _run_sync(rig)
         assert len(_ups(rig)) == 1
+
+
+# docker, answering from a JSON scenario:
+#   {"containers": {service: <docker inspect doc>},
+#    "tags": {image ref: {"index": <image ID>, "manifest": <platform manifest>}}}
+# enough for the real deploy_health_gate.py (recreate-plan, snapshot, verify).
+_FAKE_DOCKER_PY = r"""#!/usr/bin/env python3
+import json, os, sys
+
+args = sys.argv[1:]
+with open(os.environ["EVENTS_FILE"], "a", encoding="utf-8") as fh:
+    fh.write("docker " + " ".join(args) + "\n")
+with open(os.environ["FAKE_DOCKER_SCENARIO"], encoding="utf-8") as fh:
+    scenario = json.load(fh)
+containers = scenario.get("containers", {})
+
+
+def positional(rest):
+    out, skip = [], False
+    for a in rest:
+        if skip:
+            skip = False
+        elif a in ("--platform", "--format", "--filter", "-f"):
+            skip = True
+        elif not a.startswith("-"):
+            out.append(a)
+    return out
+
+
+if args[:2] == ["ps", "-a"]:
+    for a in args:
+        if a.startswith("label=com.docker.compose.service="):
+            doc = containers.get(a.split("=", 2)[2])
+            if doc:
+                print(doc["Name"].lstrip("/"))
+    sys.exit(0)
+if args[:1] == ["inspect"]:
+    wanted = positional(args[1:])[0]
+    for doc in containers.values():
+        if doc["Name"].lstrip("/") == wanted:
+            print(json.dumps([doc]))
+            sys.exit(0)
+    sys.exit(1)
+if args[:2] == ["image", "inspect"]:
+    ref = positional(args[2:])[0]
+    tag = scenario.get("tags", {}).get(ref)
+    if not tag:
+        print("Error response from daemon: No such image: " + ref, file=sys.stderr)
+        sys.exit(1)
+    print(tag["manifest"] if "--platform" in args else tag["index"])
+    sys.exit(0)
+if args[:1] == ["container"]:
+    sys.exit(1)  # the bounce loop finds nothing to restart; not under test here
+sys.exit(0)
+"""
+
+_M1 = "sha256:" + "1" * 64  # the manifest before the rebuild
+_M2 = "sha256:" + "2" * 64  # after a rebuild that changed the image
+_NOW_OR_LATER = "2099-01-01T00:00:00Z"  # created during this pass, i.e. by compose-apply
+_BEFORE_THE_PASS = "2026-09-20T08:00:00Z"
+
+
+def _doc(
+    name: str,
+    ref: str,
+    *,
+    manifest: str,
+    created: str,
+    status: str = "running",
+    started: str | None = None,
+) -> dict:
+    return {
+        "Name": f"/{name}",
+        "State": {
+            "Status": status,
+            "Running": status == "running",
+            "Restarting": False,
+            "StartedAt": started or created,
+            "Health": {"Status": "healthy"},
+        },
+        "Created": created,
+        "RestartCount": 0,
+        "Config": {"Image": ref, "Healthcheck": {"Test": ["CMD", "true"]}},
+        "Image": "sha256:" + "f" * 64,  # the index digest: different every build, never compared
+        "ImageManifestDescriptor": {
+            "digest": manifest,
+            "platform": {"os": "linux", "architecture": "amd64"},
+        },
+    }
+
+
+class TestRecreateCheck:
+    """Step 6a-bis with the real ``recreate-plan`` in the clone.
+
+    compose-apply recreates a container whenever its rebuilt image's content
+    changed (it compares platform manifests), so the check normally recreates
+    nothing. Before 2026-09-28 the step force-recreated every rebuilt service
+    unconditionally, which started each one compose had just recreated a
+    second time — every brain deploy bounced the brain twice.
+    """
+
+    def _rig(self, tmp_path: Path, scenario: dict, gate_source: str | None = None) -> dict:
+        gate = (
+            gate_source
+            if gate_source is not None
+            else (_repo_root() / "scripts" / "linux" / "deploy_health_gate.py").read_text(
+                encoding="utf-8"
+            )
+        )
+        rig = _build_rig(tmp_path, extra_files={"scripts/linux/deploy_health_gate.py": gate})
+        for name, body in (
+            ("docker", _FAKE_DOCKER_PY),
+            # The gate needs 3.9+; the self-hosted runners' /usr/bin/python3 is
+            # 3.8. Production runs the host's python3 (3.12).
+            ("python3", f'#!/bin/sh\nexec "{sys.executable}" "$@"\n'),
+        ):
+            f = rig["bin"] / name
+            f.write_text(body, encoding="utf-8")
+            f.chmod(0o755)
+        rig["scenario"] = tmp_path / "scenario.json"
+        rig["scenario"].write_text(json.dumps(scenario), encoding="utf-8")
+        return rig
+
+    def _sync(self, rig: dict, **env: str) -> subprocess.CompletedProcess:
+        return _run_sync(rig, FAKE_DOCKER_SCENARIO=str(rig["scenario"]), **env)
+
+    @staticmethod
+    def _log(rig: dict) -> str:
+        return (rig["home"] / ".poindexter" / "deploy-checkout-sync.log").read_text(
+            encoding="utf-8"
+        )
+
+    def test_what_compose_apply_already_recreated_is_not_recreated_again(self, tmp_path):
+        """The 2026-09-27 deploy of 49d4052c7, minus the second bounce: the
+        brain was recreated by compose-apply (new manifest, created during the
+        pass) and auto-embed's rebuild changed nothing. Neither is touched."""
+        rig = self._rig(
+            tmp_path,
+            {
+                "containers": {
+                    "brain-daemon": _doc(
+                        "poindexter-brain-daemon",
+                        "glad-labs-website-brain-daemon",
+                        manifest=_M2,
+                        created=_NOW_OR_LATER,
+                    ),
+                    "auto-embed": _doc(
+                        "poindexter-auto-embed",
+                        "glad-labs-website-auto-embed",
+                        manifest=_M1,
+                        created=_BEFORE_THE_PASS,
+                    ),
+                },
+                "tags": {
+                    "glad-labs-website-brain-daemon": {
+                        "index": "sha256:new-index",
+                        "manifest": _M2,
+                    },
+                    "glad-labs-website-auto-embed": {"index": "sha256:new-index", "manifest": _M1},
+                },
+            },
+        )
+        _advance_origin(rig, "src/cofounder_agent/poindexter/brain/probe.py")
+        proc = self._sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert _force_recreates(rig) == [], (
+            "a service already on its new image must not start twice"
+        )
+        log = self._log(rig)
+        assert (
+            "not recreating brain-daemon: compose-apply already recreated poindexter-brain-daemon"
+            in log
+        )
+        assert "not recreating auto-embed: poindexter-auto-embed already runs" in log
+        st = _status(rig)
+        assert st["result"] == "deployed"
+        assert "rebuilt: auto-embed brain-daemon" in st["detail"]
+        assert "recreated after compose-apply" not in st["detail"]
+        assert "health gate: all healthy (auto-embed brain-daemon)" in log, "still gated"
+
+    def test_a_service_compose_left_on_the_old_image_is_recreated_alone(self, tmp_path):
+        """The guarantee from 2026-09-22 survives: a same-tag rebuild never
+        silently keeps the old image — and only that service is touched."""
+        rig = self._rig(
+            tmp_path,
+            {
+                "containers": {
+                    "brain-daemon": _doc(
+                        "poindexter-brain-daemon",
+                        "glad-labs-website-brain-daemon",
+                        manifest=_M1,
+                        created=_BEFORE_THE_PASS,
+                    ),
+                    "auto-embed": _doc(
+                        "poindexter-auto-embed",
+                        "glad-labs-website-auto-embed",
+                        manifest=_M2,
+                        created=_NOW_OR_LATER,
+                    ),
+                },
+                "tags": {
+                    "glad-labs-website-brain-daemon": {
+                        "index": "sha256:new-index",
+                        "manifest": _M2,
+                    },
+                    "glad-labs-website-auto-embed": {"index": "sha256:new-index", "manifest": _M2},
+                },
+            },
+        )
+        _advance_origin(rig, "src/cofounder_agent/poindexter/brain/probe.py")
+        self._sync(rig)
+        assert _force_recreates(rig) == [
+            "start-stack up -d --no-build --no-deps --force-recreate brain-daemon"
+        ]
+        assert (
+            "[WARN]   recreating brain-daemon: poindexter-brain-daemon runs 111111111111"
+            in self._log(rig)
+        )
+        st = _status(rig)
+        assert st["result"] == "deployed"
+        assert "recreated after compose-apply: brain-daemon" in st["detail"], (
+            "a repair here means compose did not do its job — it must show in the status, not only the log"
+        )
+
+    def test_a_parked_service_is_neither_recreated_nor_gated(self, tmp_path):
+        """voice-agent-livekit sits `exited` with its profile off. Naming it in
+        `up --force-recreate` enables the profile and starts it; gating it would
+        read `exited` as a broken image and roll it back."""
+        rig = self._rig(
+            tmp_path,
+            {
+                "containers": {
+                    "voice-agent-livekit": _doc(
+                        "poindexter-voice-agent-livekit",
+                        "glad-labs-website-voice-agent-livekit",
+                        manifest=_M1,
+                        created="2026-07-26T11:00:00Z",
+                        status="exited",
+                        started="2026-07-31T14:45:35.05520044Z",
+                    ),
+                },
+                "tags": {
+                    "glad-labs-website-voice-agent-livekit": {
+                        "index": "sha256:new-index",
+                        "manifest": _M2,
+                    }
+                },
+            },
+        )
+        _advance_origin(rig, "scripts/Dockerfile.voice-agent")
+        proc = self._sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert not [
+            e for e in _events(rig) if e.startswith("start-stack up") and "voice-agent-livekit" in e
+        ]
+        assert not [e for e in _events(rig) if e.startswith("docker tag")], (
+            "no rollback of a parked service"
+        )
+        assert not [
+            line
+            for line in self._log(rig).splitlines()
+            if "health gate" in line and "voice-agent-livekit" in line
+        ]
+        st = _status(rig)
+        assert st["result"] == "deployed" and "left parked: voice-agent-livekit" in st["detail"]
+
+    def test_a_failed_recreate_withholds_the_marker(self, tmp_path):
+        """Otherwise the pass records `deployed` over a service still on the
+        old image, and the next pass has nothing left to retry."""
+        rig = self._rig(
+            tmp_path,
+            {
+                "containers": {
+                    "brain-daemon": _doc(
+                        "poindexter-brain-daemon",
+                        "glad-labs-website-brain-daemon",
+                        manifest=_M1,
+                        created=_BEFORE_THE_PASS,
+                    ),
+                    "auto-embed": _doc(
+                        "poindexter-auto-embed",
+                        "glad-labs-website-auto-embed",
+                        manifest=_M2,
+                        created=_NOW_OR_LATER,
+                    ),
+                },
+                "tags": {
+                    "glad-labs-website-brain-daemon": {
+                        "index": "sha256:new-index",
+                        "manifest": _M2,
+                    },
+                    "glad-labs-website-auto-embed": {"index": "sha256:new-index", "manifest": _M2},
+                },
+            },
+        )
+        head = _advance_origin(rig, "src/cofounder_agent/poindexter/brain/probe.py")
+        proc = self._sync(rig, FORCE_RECREATE_EXIT="1")
+        assert proc.returncode == 1
+        st = _status(rig)
+        assert st["result"] == "error" and "recreate-rebuilt" in st["detail"]
+        marker = rig["home"] / ".poindexter" / "deploy-last-restarted-sha"
+        assert marker.read_text(encoding="utf-8").strip() != head
+
+    def test_a_plan_that_cannot_run_recreates_every_rebuilt_service(self, tmp_path):
+        """Fail-safe in one direction: no plan means the pre-2026-09-28
+        behaviour, never "assume current"."""
+        rig = self._rig(
+            tmp_path, {"containers": {}, "tags": {}}, gate_source="import sys\nsys.exit(3)\n"
+        )
+        _advance_origin(rig, "src/cofounder_agent/poindexter/brain/probe.py")
+        self._sync(rig)
+        assert _force_recreates(rig) == [
+            "start-stack up -d --no-build --no-deps --force-recreate auto-embed brain-daemon"
+        ]
+        assert "recreate check: could not compare images" in self._log(rig)
 
 
 class TestApplyRetry:

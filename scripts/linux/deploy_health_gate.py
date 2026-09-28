@@ -3,11 +3,20 @@
 
 Stdlib only — runs on the host under systemd with the system python3, no venv.
 
-Two subcommands, both driven by the deploy sync:
+Three subcommands, all driven by the deploy sync:
 
     snapshot --services a b …       -> JSON {service: {container, image_ref, image_id}}
         Taken BEFORE an image rebuild: the running container's image id is
         the rollback target.
+
+    recreate-plan --since EPOCH --services a b …   (step 6a-bis)
+        -> one ``<action>\\t<service>\\t<reason>`` line per service. Taken
+        AFTER compose-apply: which rebuilt services does compose still leave
+        on the previous image? ``recreate`` (content differs, or it cannot be
+        told — recreate to be safe), ``skip`` (already running what its image
+        ref names, usually because compose-apply just recreated it), or
+        ``parked`` (stopped before this deploy, or no container at all —
+        recreating it would start it). See ``plan_recreate``.
 
     verify --snapshot pre.json --services a b … [--rollback] [--timeout N]
         Taken AFTER compose-apply. Polls each service's (new) container until
@@ -41,10 +50,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 DEFAULT_TIMEOUT = 300
@@ -136,6 +147,9 @@ def inspect(container: str, run: Runner = _run) -> dict[str, Any] | None:
         return None
     c = body[0]
     state = c.get("State") or {}
+    # The platform manifest the container was created from. Present under the
+    # containerd image store only; see image_identity() for why it matters.
+    descriptor = c.get("ImageManifestDescriptor") or {}
     return {
         "status": str(state.get("Status") or ""),
         "restarting": bool(state.get("Restarting")),
@@ -143,10 +157,44 @@ def inspect(container: str, run: Runner = _run) -> dict[str, Any] | None:
         "health": (state.get("Health") or {}).get("Status"),
         "has_healthcheck": bool((c.get("Config") or {}).get("Healthcheck")),
         "started_at": state.get("StartedAt"),
+        "created": str(c.get("Created") or ""),
         "exit_code": state.get("ExitCode"),
         "image_ref": str((c.get("Config") or {}).get("Image") or ""),
         "image_id": str(c.get("Image") or ""),
+        "manifest_digest": str(descriptor.get("digest") or ""),
+        "platform": _platform(descriptor.get("platform")),
     }
+
+
+def _platform(p: Any) -> str:
+    """``os/architecture[/variant]`` from an OCI platform object, "" if absent."""
+    if not isinstance(p, dict) or not p.get("os") or not p.get("architecture"):
+        return ""
+    return "/".join(str(x) for x in (p["os"], p["architecture"], p.get("variant")) if x)
+
+
+def _epoch(stamp: Any) -> float | None:
+    """A docker timestamp (``2026-09-27T21:40:36.123456789Z``) as epoch seconds.
+
+    docker emits nanoseconds and a ``Z``; ``datetime.fromisoformat`` before
+    Python 3.11 takes neither, so both are normalised first. None when the
+    stamp is missing or unparseable — callers must then decline to judge.
+    """
+    text = str(stamp or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    match = re.match(r"^(.*\.\d{1,6})\d*([+-]\d{2}:\d{2})?$", text)
+    if match:
+        text = match.group(1) + (match.group(2) or "")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.timestamp()
 
 
 def log_tail(container: str, run: Runner = _run, lines: int = LOG_TAIL) -> str:
@@ -166,6 +214,142 @@ def snapshot(services: list[str], run: Runner = _run) -> dict[str, dict[str, str
             "image_id": (info or {}).get("image_id", ""),
         }
     return out
+
+
+# ---------------------------------------------------------------------------
+# image identity: is a container running what its image ref names NOW?
+# ---------------------------------------------------------------------------
+
+def _short(digest: str) -> str:
+    return digest.split(":")[-1][:12] if digest else "?"
+
+
+def image_identity(container: str, run: Runner = _run, info: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Compare the image content ``container`` runs with what its image ref names now.
+
+    Compared on the PLATFORM MANIFEST digest, not on ``docker inspect .Image``
+    vs ``docker image inspect .Id``. Under the containerd image store (this
+    host, Docker 29) an image ID is the digest of an OCI index that also holds
+    the build's attestation manifest, and that is minted fresh on EVERY build:
+    two builds of an unchanged Dockerfile get two IDs around one identical
+    platform manifest (measured 2026-09-28). Comparing IDs therefore reads
+    every no-op rebuild as "rebuilt and never recreated" — the false positive
+    that had five services reported stale on 2026-09-22 and led to a
+    force-recreate of every rebuilt service on every deploy. The platform
+    manifest changes exactly when the image content does, and compose records
+    the same digest in its ``com.docker.compose.image`` label: ``up -d``
+    recreates a container when it differs and leaves a no-op rebuild alone
+    (compose 5.5.1, dry-run and real run alike).
+
+    The running side comes from the container's own ``ImageManifestDescriptor``
+    because the image it was created from does not survive a same-tag rebuild
+    on this store: ``docker image inspect <old id>`` answers "No such image"
+    while the container is still running it. Without a descriptor (the classic
+    store) ``.Image`` / ``.Id`` are compared as before.
+
+    Returns ``{"same", "running", "tagged", "image_ref", "why"}``. ``same`` is
+    None when it cannot be decided, and callers must treat that as unknown,
+    never as a match.
+    """
+    out: dict[str, Any] = {"same": None, "running": "", "tagged": "", "image_ref": "", "why": ""}
+    info = info if info is not None else inspect(container, run)
+    if info is None:
+        out["why"] = f"docker inspect {container} failed"
+        return out
+    ref = out["image_ref"] = info["image_ref"]
+    if not ref:
+        out["why"] = f"{container} records no image ref"
+        return out
+    if info["manifest_digest"]:
+        if not info["platform"]:
+            out["why"] = f"{container}'s manifest descriptor names no platform"
+            return out
+        out["running"] = info["manifest_digest"]
+        argv = ["docker", "image", "inspect", "--platform", info["platform"], ref, "--format", "{{.Id}}"]
+    else:
+        out["running"] = info["image_id"]
+        argv = ["docker", "image", "inspect", ref, "--format", "{{.Id}}"]
+    if not out["running"]:
+        out["why"] = f"{container} records no image"
+        return out
+    rc, stdout, err = run(argv)
+    out["tagged"] = stdout.strip() if rc == 0 else ""
+    if not out["tagged"]:
+        detail = (err.strip().splitlines() or ["no digest returned"])[0]
+        out["why"] = f"{' '.join(argv[:3])} {ref}: {detail}"[:200]
+        return out
+    out["same"] = out["running"] == out["tagged"]
+    return out
+
+
+RECREATE, SKIP, PARKED = "recreate", "skip", "parked"
+
+
+def plan_recreate(service: str, *, since: float | None = None, run: Runner = _run) -> tuple[str, str]:
+    """Step 6a-bis: after compose-apply, does ``service`` still need a force-recreate?
+
+    ``since`` is when compose-apply began (epoch seconds). Returns
+    ``(action, reason)``:
+
+    ``skip``      the container already runs the content its image ref names.
+                  Almost always because compose-apply just recreated it — it
+                  does that whenever a rebuilt image's content changed — or
+                  because the rebuild changed nothing the image contains. A
+                  force-recreate here was the second restart of every rebuilt
+                  service (the brain started twice per brain deploy from
+                  2026-09-22 to 09-28).
+    ``recreate``  it runs different content (compose left it on the previous
+                  image), or the comparison could not be made. Unknown is
+                  recreated on purpose: a needless restart is cheaper than
+                  stale code that looks healthy.
+    ``parked``    no container at all, or one that is stopped and was not
+                  started by this deploy — a service whose compose profile is
+                  off (voice), since ``up -d`` creates and starts every service
+                  in an active profile. Naming it in ``up --force-recreate``
+                  enables its profile and starts it, which is how a Dockerfile
+                  change would have un-parked voice. Nothing runs a stale image
+                  here, and compose recreates it from the fresh one when the
+                  profile comes back.
+    """
+    rc, out, err = run(["docker", "ps", "-a", "--filter", f"label=com.docker.compose.service={service}",
+                        "--format", "{{.Names}}"])
+    if rc != 0:
+        return RECREATE, f"could not list its container ({(err.strip() or 'docker ps failed')[:120]}); recreating to be safe"
+    names = [n.strip() for n in out.splitlines() if n.strip()]
+    if not names:
+        return PARKED, "no container (its compose profile is off); a named recreate would create and start it"
+    if len(names) > 1:
+        # Another compose project with the same service name. Judging the wrong
+        # container could skip a stale one, so don't pick.
+        return RECREATE, f"{len(names)} containers carry this service's label ({', '.join(names[:3])}); recreating to be safe"
+    container = names[0]
+    info = inspect(container, run)
+    if info is None:
+        return RECREATE, f"could not inspect {container}; recreating to be safe"
+    started = _epoch(info["started_at"])
+    if info["status"] in ("exited", "dead") and since is not None and started is not None and started < since:
+        return PARKED, (f"{container} is {info['status']} and this deploy did not start it (parked); "
+                        "a named recreate would start it")
+    ident = image_identity(container, run, info=info)
+    if ident["same"] is True:
+        created = _epoch(info["created"])
+        if since is not None and created is not None and created >= since:
+            return SKIP, f"compose-apply already recreated {container} onto the rebuilt image ({_short(ident['running'])})"
+        return SKIP, (f"{container} already runs what {ident['image_ref']} names ({_short(ident['running'])}); "
+                      "the rebuild changed nothing in the image")
+    if ident["same"] is False:
+        return RECREATE, (f"{container} runs {_short(ident['running'])} but {ident['image_ref']} now names "
+                          f"{_short(ident['tagged'])}; compose-apply left it on the previous image")
+    return RECREATE, f"could not compare images ({ident['why']}); recreating to be safe"
+
+
+def recreate_plan(services: list[str], *, since: float | None = None, run: Runner = _run) -> list[tuple[str, str, str]]:
+    """``[(action, service, reason), …]`` in the order given — one line each for the shell."""
+    plan: list[tuple[str, str, str]] = []
+    for svc in services:
+        action, reason = plan_recreate(svc, since=since, run=run)
+        plan.append((action, svc, reason))
+    return plan
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +485,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("snapshot")
     s.add_argument("--services", nargs="+", required=True)
+    rp = sub.add_parser("recreate-plan")
+    rp.add_argument("--services", nargs="+", required=True)
+    rp.add_argument("--since", type=float, default=None, help="epoch seconds when compose-apply began")
     v = sub.add_parser("verify")
     v.add_argument("--services", nargs="+", required=True)
     v.add_argument("--snapshot", default="")
@@ -313,6 +500,12 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.cmd == "snapshot":
         print(json.dumps(snapshot(args.services)))
+        return 0
+    if args.cmd == "recreate-plan":
+        # Tab-separated so the shell can `read` it without a JSON parser; a
+        # reason can never smuggle in a field or a line of its own.
+        for action, svc, reason in recreate_plan(args.services, since=args.since):
+            print(f"{action}\t{svc}\t{' '.join(reason.split())}")
         return 0
     snap: dict[str, dict[str, str]] = {}
     if args.snapshot and os.path.isfile(args.snapshot):

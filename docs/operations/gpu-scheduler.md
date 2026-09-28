@@ -322,21 +322,25 @@ from the nvidia-smi exporter (`scripts/nvidia-smi-exporter.py`, container
 `poindexter-gpu-exporter`), and the economics row above needs its
 `nvidia_gpu_info` series. The exporter is baked into its image. When
 `scripts/nvidia-smi-exporter.py` or `scripts/Dockerfile.gpu-exporter` changes,
-`deploy-checkout-sync` rebuilds and force-recreates it. To do it by hand, run
-from the deploy checkout (`start-stack.sh` supplies the bootstrap secrets the
-compose file needs):
+`deploy-checkout-sync` rebuilds it and its compose-apply recreates the container
+onto the new image. To do it by hand, run from the deploy checkout
+(`start-stack.sh` supplies the bootstrap secrets the compose file needs):
 
 ```bash
 bash scripts/start-stack.sh build gpu-exporter
 ```
 
 ```bash
-bash scripts/start-stack.sh up -d --no-deps --force-recreate gpu-exporter
+bash scripts/start-stack.sh up -d --no-deps gpu-exporter
 ```
 
-`up -d` alone keeps the old container after a same-tag rebuild. Until the
-rebuilt exporter serves the metric, the credit reads 0.0 and admission simply
-never grants on eviction — conservative, not broken.
+`up -d` recreates the container when the rebuilt image's content differs from
+what it runs (compose compares platform manifest digests), and leaves it
+alone when the rebuild changed nothing. Add `--force-recreate` when the
+recreate itself is the point — re-injecting NVIDIA device nodes after a card
+was added, with no image change. Until the rebuilt exporter serves the metric,
+the credit reads 0.0 and admission simply never grants on eviction —
+conservative, not broken.
 
 ## Multi-instance Ollama and never-unload pins (poindexter#997)
 

@@ -59,6 +59,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ci"))
 from dockerfile_copy_closure_lint import collect_images  # noqa: E402
 
+# The deploy sync's step 6a-bis decides "does this container still need a
+# recreate" with the same function, so the two can never disagree about it.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from deploy_health_gate import image_identity  # noqa: E402
+
 TOOL = "verify-deploy-identity"
 COMPOSE_FILES = ("docker-compose.local.yml", "docker-compose.consumer.yml")
 # Files whose change means the IMAGE is stale even when code is bind-mounted.
@@ -299,21 +304,28 @@ def check(repo: Path, svc: Service) -> dict:
             return result
 
         # Identity in the literal sense, and strictly better than any timestamp:
-        # is the container running the image its tag currently names? A rebuild
-        # that is never recreated leaves the container on a SUPERSEDED image —
-        # often one that no longer exists locally. Timestamps cannot see this
-        # (the container can be newer than the image it runs), and it is exactly
-        # what happened on 2026-09-22: a deploy pass rebuilt brain-daemon and
-        # image-gen-server, failed before recreating them, and this check
-        # reported "every running container matches the checkout".
-        running_image = sh("docker", "inspect", svc.container, "--format", "{{.Image}}")
-        tag = sh("docker", "inspect", svc.container, "--format", "{{.Config.Image}}")
-        tagged_image = sh("docker", "image", "inspect", tag, "--format", "{{.Id}}") if tag else ""
-        if running_image and tagged_image and running_image != tagged_image:
+        # is the container running the image content its tag currently names? A
+        # rebuild that is never recreated leaves the container on a SUPERSEDED
+        # image — one that, under the containerd image store, no longer exists
+        # locally at all. Timestamps cannot see this (the container can be newer
+        # than the image it runs), and it is exactly what happened on
+        # 2026-09-22: a deploy pass rebuilt brain-daemon and image-gen-server,
+        # failed before recreating them, and this check reported "every running
+        # container matches the checkout".
+        #
+        # Compared on the platform manifest, not the image ID. The ID changes on
+        # every build even when nothing in the image did (see image_identity),
+        # so the ID comparison flagged every no-op rebuild as `needs-recreate`
+        # — five of them on 2026-09-22, which is what convinced the deploy to
+        # force-recreate every rebuilt service and start the brain twice per
+        # brain deploy. When the digests cannot be compared this says nothing
+        # and the timestamp check below still runs.
+        ident = image_identity(svc.container)
+        if ident["same"] is False:
             result["status"] = "needs-recreate"
             result["notes"].append(
-                f"running image {running_image[7:19]} but {tag} now names "
-                f"{tagged_image[7:19]} — the image was rebuilt and this container "
+                f"running image {ident['running'][7:19]} but {ident['image_ref']} now names "
+                f"{ident['tagged'][7:19]} — the image was rebuilt and this container "
                 f"never recreated; `up -d --no-deps {svc.name}`"
             )
             return result

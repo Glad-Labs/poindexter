@@ -222,62 +222,91 @@ def test_the_dockerfile_is_an_input_to_its_own_image(mod, tmp_path, monkeypatch)
     )
 
 
-def test_a_container_on_a_superseded_image_needs_recreate(mod, tmp_path, monkeypatch):
-    """Rebuild-without-recreate leaves the container on an image the tag no
-    longer names — often one that no longer exists locally.
+_RUNNING_CONTAINER = {
+    "{{.State.Running}}": "true",
+    "{{.State.StartedAt}}": "2026-09-22T12:00:00Z",
+    "{{.Created}}": "2026-09-22T12:00:00Z",
+    "{{json .Mounts}}": "[]",
+}
 
-    Timestamps cannot see this: the container can be NEWER than the image it is
-    running. On 2026-09-22 a deploy pass rebuilt brain-daemon and never
-    recreated it, and this check reported the stack fully current.
-    """
-    responses = {
-        "{{.State.Running}}": "true",
-        "{{.Image}}": "sha256:aaaaaaaaaaaaold",
-        "{{.Config.Image}}": "glad-labs-website-thing",
-        "{{.Id}}": "sha256:bbbbbbbbbbbbnew",
-        "{{.State.StartedAt}}": "2026-09-22T12:00:00Z",
-        "{{json .Mounts}}": "[]",
-    }
 
+def _fake_sh(responses):
     def fake_sh(*args):
         for key, value in responses.items():
             if key in args:
                 return value
         return ""
 
-    monkeypatch.setattr(mod, "sh", fake_sh)
+    return fake_sh
+
+
+def _identity(same, running="sha256:aaaaaaaaaaaarunning", tagged="sha256:bbbbbbbbbbbbtagged"):
+    return lambda container: {
+        "same": same,
+        "running": running,
+        "tagged": tagged,
+        "image_ref": "glad-labs-website-thing",
+        "why": "" if same is not None else "docker image inspect failed",
+    }
+
+
+def test_a_container_on_a_superseded_image_needs_recreate(mod, tmp_path, monkeypatch):
+    """Rebuild-without-recreate leaves the container on an image the tag no
+    longer names — one that, under the containerd image store, no longer
+    exists locally at all.
+
+    Timestamps cannot see this: the container can be NEWER than the image it is
+    running. On 2026-09-22 a deploy pass rebuilt brain-daemon and never
+    recreated it, and this check reported the stack fully current.
+    """
+    monkeypatch.setattr(mod, "sh", _fake_sh(_RUNNING_CONTAINER))
+    monkeypatch.setattr(mod, "image_identity", _identity(False))
     df = tmp_path / "Dockerfile"
     df.write_text("FROM python\n")
     svc = mod.Service("thing", "poindexter-thing", df, [])
     out = mod.check(tmp_path, svc)
 
     assert out["status"] == "needs-recreate"
-    assert "never recreated" in " ".join(out["notes"])
+    notes = " ".join(out["notes"])
+    assert "never recreated" in notes
+    assert "aaaaaaaaaaaa" in notes and "bbbbbbbbbbbb" in notes, "name both images"
 
 
-def test_matching_image_ids_are_not_flagged(mod, tmp_path, monkeypatch):
-    """The complement: a container on the image its tag names is not disturbed."""
-    same = "sha256:ccccccccccccsame"
-    responses = {
-        "{{.State.Running}}": "true",
-        "{{.Image}}": same,
-        "{{.Config.Image}}": "glad-labs-website-thing",
-        "{{.Id}}": same,
-        "{{.State.StartedAt}}": "2026-09-22T12:00:00Z",
-        "{{.Created}}": "2026-09-22T12:00:00Z",
-        "{{json .Mounts}}": "[]",
-    }
-
-    def fake_sh(*args):
-        for key, value in responses.items():
-            if key in args:
-                return value
-        return ""
-
-    monkeypatch.setattr(mod, "sh", fake_sh)
+def test_matching_image_content_is_not_flagged(mod, tmp_path, monkeypatch):
+    """The complement: a container on the content its tag names is not disturbed."""
+    monkeypatch.setattr(mod, "sh", _fake_sh(_RUNNING_CONTAINER))
+    monkeypatch.setattr(mod, "image_identity", _identity(True, tagged="sha256:aaaaaaaaaaaarunning"))
     monkeypatch.setattr(mod, "collect_images", lambda repo: [])
     monkeypatch.setattr(mod, "last_change", lambda repo, files: "")
     df = tmp_path / "Dockerfile"
     df.write_text("FROM python\n")
     out = mod.check(tmp_path, mod.Service("thing", "poindexter-thing", df, []))
     assert out["status"] == "current"
+
+
+def test_an_undecidable_comparison_is_not_a_verdict(mod, tmp_path, monkeypatch):
+    """Unknown is neither stale nor current: the check stays silent on identity
+    and the timestamp check still gets its say."""
+    monkeypatch.setattr(mod, "sh", _fake_sh(_RUNNING_CONTAINER))
+    monkeypatch.setattr(mod, "image_identity", _identity(None, running="", tagged=""))
+    monkeypatch.setattr(mod, "collect_images", lambda repo: [])
+    monkeypatch.setattr(mod, "last_change", lambda repo, files: "2026-09-22T13:00:00Z")
+    df = tmp_path / "Dockerfile"
+    df.write_text("FROM python\n")
+    out = mod.check(tmp_path, mod.Service("thing", "poindexter-thing", df, []))
+    assert out["status"] == "stale-image", (
+        "identity undecided must fall through to the timestamp check"
+    )
+
+
+def test_identity_is_the_same_function_the_deploy_recreate_check_uses(mod):
+    """Two comparisons of the same question drift apart silently.
+
+    The 2026-09-22 false positive lived in this tool's own copy of the image
+    comparison (IDs, which change on every build), and the deploy acted on it
+    by force-recreating every rebuilt service. Step 6a-bis and this check now
+    share deploy_health_gate.image_identity, so they cannot disagree about
+    whether a container needs a recreate.
+    """
+    assert mod.image_identity.__module__ == "deploy_health_gate"
+    assert mod.image_identity.__name__ == "image_identity"

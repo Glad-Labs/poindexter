@@ -580,6 +580,34 @@ auto-deploy too. `deploy-worker.ps1` remains the tool for an _immediate_ deploy
 elsewhere (which need `docker compose build`) and for `poindexter-prefect-worker`
 bootstrap-level changes.
 
+**A rebuilt image goes into service once, by compose-apply.** `up -d`
+recreates a container whose rebuilt image has different content — compose
+compares the platform manifest digest it recorded on the container
+(`com.docker.compose.image`) with the one the tag now names — and leaves the
+container running when the rebuild changed nothing. The sync's step 6a-bis then
+checks every rebuilt service with the same comparison
+(`scripts/linux/deploy_health_gate.py recreate-plan`, logged as
+`not recreating <svc>: compose-apply already recreated …`) and force-recreates
+only a service compose left on the previous image: normally none. A repair
+shows in the status file as `recreated after compose-apply: <svc>`, and a
+failed one withholds the marker so the next pass retries.
+
+Do not judge this by image IDs. Under the containerd image store every build
+mints a new ID, because the OCI index it names carries a fresh attestation
+manifest, around an unchanged platform manifest; an ID comparison calls every
+no-op rebuild stale. That false positive made step 6a-bis force-recreate every
+rebuilt service from 2026-09-22 to 09-28, so each one compose had just recreated
+started a second time about a minute later — two brain restarts per brain
+deploy. `verify_deploy_identity.py` (step 6d) uses the same comparison as
+6a-bis, so the two cannot disagree.
+
+A rebuilt service that is stopped and was not started by the pass belongs to a
+parked compose profile (voice). It is neither recreated, because naming it in
+`up --force-recreate` enables its profile and starts it, nor health-gated,
+because the gate would read `exited` as a broken image. The status file says
+`left parked: <svc>`, and compose recreates it from the fresh image when the
+profile comes back.
+
 **Overlapping restarts coalesce instead of stacking.** The sync skips its
 bounce for any container whose current process already started _after_ the
 pass's `git reset` (bind-mounted code ⇒ it is already running the new tree), so

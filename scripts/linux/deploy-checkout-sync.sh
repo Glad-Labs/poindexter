@@ -38,19 +38,37 @@
 #        scripts/Dockerfile.backup|scripts/backup/**-> backup-daily backup-hourly backup-offsite
 #      (diff-uncomputable -> defensive brain-daemon rebuild, same as the ps1)
 #   6. compose-apply: clone's `start-stack.sh up -d --no-build` — recreates
-#      services whose compose STANZA changed; no-op for code-only merges.
-#      NOT for a freshly-built image: compose keys recreate on the service
-#      config hash, not the resolved image ID, so an image rebuilt under the
-#      same tag leaves the container alone (verified by --dry-run 2026-09-22 —
-#      five just-rebuilt services all reported `Running`). Step 6a-bis below
-#      force-recreates what this pass rebuilt; without it every baked-image
-#      deploy was silently a no-op. Attempted TWICE: recreating a service that others
+#      services whose compose STANZA changed, AND every service whose freshly
+#      built image has different CONTENT: compose compares the platform
+#      manifest digest it recorded on the container (`com.docker.compose.image`)
+#      with the one the tag now names. A rebuild that changed nothing mints a
+#      new image ID but the same manifest, and compose rightly leaves that
+#      container running. Verified 2026-09-28 on a throwaway project (dry-run
+#      and real run agree), and in this log: across all 46 passes with a
+#      rebuild from 09-23 to 09-28, every service compose left alone was a
+#      failed or no-op build. The 09-22 belief that compose never recreates a
+#      same-tag rebuild was a false positive from comparing image IDs (see
+#      6a-bis). Attempted TWICE: recreating a service that others
 #      `depends_on: service_healthy` can lose a race against its own recreate
 #      ("No such container: <id>"), which strands the dependents CREATED and
 #      never started. That failure also never stamps the new config-hash, so
 #      the next pass re-runs the same recreate and loses the same race — a
 #      10-minute loop that kept worker+grafana down (2026-08-27). The second
 #      attempt sees the dependency already recreated and healthy.
+#   6a-bis. recreate check (only after a successful compose-apply): for each
+#      service this pass rebuilt, compare the platform manifest its container
+#      runs with the one its image ref names (`deploy_health_gate.py
+#      recreate-plan`) and force-recreate only the ones compose-apply left on
+#      the previous image. Normally none: this is the check that compose did
+#      its job, and the repair if it did not. Until 2026-09-28 it
+#      force-recreated EVERY rebuilt service, so each one compose had just
+#      recreated started twice (16 of 48 brain starts in a week came 72-138 s
+#      after the one before — an ~80 s monitoring gap each, which also reset
+#      the brain's in-memory failure counts and alert cooldowns). A service
+#      that is stopped and was not started by this pass — a parked compose
+#      profile (voice) — is neither recreated nor health-gated: naming it in
+#      `up --force-recreate` enables its profile and starts it. Anything it
+#      cannot compare is recreated; a failed recreate withholds the marker.
 #   6b. stranded sweep: start any project container left in `created` state.
 #      `created` = never started, which is only ever an interrupted recreate —
 #      a deliberately-stopped service (parked voice-agent) is `exited`, so this
@@ -432,11 +450,13 @@ declare -A REBUILD_MAP=(
   ['^scripts/(Dockerfile\.rife|rife-server\.py)$']="rife-server"
   ['^scripts/Dockerfile\.chatterbox$|^scripts/tts_sidecars/']="chatterbox"
   ['^scripts/(Dockerfile\.comfyui|comfyui-extra-model-paths\.yaml)$']="comfyui"
-  # auto-embed bakes a hand-picked SUBSET of the backend tree into a minimal
-  # image (short pip list, no poetry deps). It cannot bind-mount the tree the
-  # worker does: adding a single COPY once let three LLM providers register
-  # whose SDKs the image lacks, and every embedding store failed. So it is
-  # baked on purpose — and therefore must rebuild when that subset changes.
+  # auto-embed bakes the whole poindexter/ package (one COPY since
+  # poindexter#1046) into a minimal image (short pip list, no poetry deps). It
+  # cannot bind-mount the tree the worker does: adding a single COPY once let
+  # three LLM providers register whose SDKs the image lacks, and every
+  # embedding store failed. So it is baked on purpose — and therefore must
+  # rebuild when poindexter/ changes, which is most backend merges; compose
+  # recreates it each time because its image content genuinely changed.
   ['^scripts/(Dockerfile\.auto-embed|auto-embed\.py)$|^src/cofounder_agent/poindexter/']="auto-embed"
 )
 rebuild_services=""; diff_ok=0
@@ -512,6 +532,10 @@ fi
 # dependency is already recreated and healthy by then), which is exactly what
 # the 10-minutes-later retry was accomplishing, minus the outage in between.
 apply_failed=0
+# The recreate check (6a-bis) uses this to tell "compose-apply recreated it"
+# from "it was already running that image", and "parked before this pass" from
+# "started by this pass and then died".
+apply_started_epoch="$(date -u +%s)"
 for attempt in 1 2; do
   [ "$attempt" = "2" ] && log "Retrying compose-apply once (transient dependency race)..." WARN
   log "Applying compose from clone: start-stack.sh up -d --no-build (attempt $attempt/2)"
@@ -525,30 +549,74 @@ done
 [ "$apply_failed" = "1" ] && \
   log "compose-apply failed twice; continuing to container restarts — marker withheld, retries next cycle." ERROR
 
-# ---- recreate what we rebuilt (step 6a-bis, 2026-09-22) --------------------
-# `up -d` does NOT recreate a container whose image was rebuilt under the SAME
-# tag when the service definition is unchanged: compose keys the decision on the
-# service config hash, not the resolved image ID. Verified with `--dry-run` on
-# this stack — five services whose images had just been rebuilt all reported
-# `Running` (up-to-date), and the same services under `--force-recreate`
-# reported `Recreate`.
+# ---- recreate check: is every rebuilt service on its new image? (6a-bis) ----
+# compose-apply above already recreates a container whose rebuilt image has
+# different content — it compares the platform manifest digest it recorded on
+# the container with the one the tag now names — and leaves one alone when the
+# rebuild changed nothing. This step checks that it did, per service, with the
+# same comparison, and force-recreates only what is still on the previous
+# image: normally nothing.
 #
-# So every baked-image deploy was a no-op unless the compose definition happened
-# to change too. On 2026-09-22 this pass rebuilt eight images, recreated three,
-# and logged "Pipeline now running <sha>" while five services kept serving the
-# previous image — healthy, green in `docker ps`, and wrong. It is the root
-# cause of the brain daemon running stale code after a merge.
+# History, because the wrong version of this cost a restart per deploy. On
+# 2026-09-22 the identity check (step 6d) reported five just-rebuilt services
+# as "rebuilt and never recreated", and a `--dry-run` showed compose leaving
+# them `Running`. The conclusion drawn — compose never recreates a same-tag
+# rebuild — was wrong: under the containerd image store every build mints a
+# new image ID (the OCI index carries a fresh attestation manifest) around an
+# unchanged platform manifest, so those five were no-op rebuilds that compose
+# correctly left alone, and the ID comparison was the false positive. The step
+# written from it force-recreated EVERY rebuilt service, so each one compose
+# had just recreated started a second time about a minute later: 16 of 48
+# brain starts from 09-20 to 09-27 came 72-138 s after the previous one. The
+# 09-27 deploy of 49d4052c7 shows it plainly: `Container poindexter-brain-daemon
+# Recreate` in step 6, then a second recreate here.
 #
-# Scoped to the services THIS pass rebuilt. A blanket --force-recreate would
-# bounce the whole stack every deploy.
+# Parked services are left alone: a container that is stopped and was not
+# started by this pass belongs to a compose profile that is off (voice), and
+# naming it in `up --force-recreate` enables that profile and starts it. They
+# are also kept out of the health gate below, which would read "exited" as a
+# failed deploy.
+#
+# Fail-safe in one direction only: a service the plan cannot account for is
+# recreated, exactly as before. A failed recreate withholds the marker so the
+# next pass retries — the service would otherwise sit on the old image with
+# the pass recorded as deployed.
+recreate_now=""; recreate_failed=0; parked_services=""
 if [ -n "$rebuild_services" ] && [ "$apply_failed" = "0" ]; then
-  log "Recreating rebuilt services (compose leaves same-tag image changes alone): $rebuild_services"
-  # shellcheck disable=SC2086
-  if bash "$DEPLOY_DIR/scripts/start-stack.sh" up -d --no-build --no-deps \
-       --force-recreate $rebuild_services >>"$LOG_FILE" 2>&1; then
-    log "  recreated: $rebuild_services"
-  else
-    log "force-recreate of rebuilt services failed; they are still on the previous image" ERROR
+  plan=""
+  if [ -f "$HEALTH_GATE" ]; then
+    # shellcheck disable=SC2086
+    if ! plan="$(python3 "$HEALTH_GATE" recreate-plan --since "$apply_started_epoch" \
+                   --services $rebuild_services 2>>"$LOG_FILE")"; then
+      log "recreate check: could not compare images; recreating every rebuilt service to be safe" WARN
+      plan=""
+    fi
+  fi
+  for svc in $rebuild_services; do
+    action=""; why=""
+    while IFS=$'\t' read -r p_action p_svc p_why; do
+      if [ "$p_svc" = "$svc" ]; then action="$p_action"; why="$p_why"; break; fi
+    done <<<"$plan"
+    case "$action" in
+      skip)
+        log "  not recreating $svc: $why" ;;
+      parked)
+        parked_services="${parked_services:+$parked_services }$svc"
+        log "  not recreating $svc: $why" ;;
+      *)
+        recreate_now="${recreate_now:+$recreate_now }$svc"
+        log "  recreating $svc: ${why:-no image comparison available; recreating to be safe}" WARN ;;
+    esac
+  done
+  if [ -n "$recreate_now" ]; then
+    # shellcheck disable=SC2086
+    if bash "$DEPLOY_DIR/scripts/start-stack.sh" up -d --no-build --no-deps \
+         --force-recreate $recreate_now >>"$LOG_FILE" 2>&1; then
+      log "  recreated: $recreate_now"
+    else
+      recreate_failed=1
+      log "force-recreate of $recreate_now failed; still on the previous image — marker withheld, retries next cycle." ERROR
+    fi
   fi
 fi
 
@@ -637,7 +705,14 @@ done < <(bash "$DEPLOY_DIR/scripts/start-stack.sh" ps --status=created --format 
 gate_result=""; gate_rolled_back=""
 if [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ] && { [ -n "$rebuild_services" ] || [ -n "$restarted" ]; }; then
   gate_units=""
-  [ "$build_failed" = "0" ] && gate_units="$rebuild_services"
+  if [ "$build_failed" = "0" ]; then
+    # Parked services (6a-bis) are not meant to be running; gating them would
+    # read "exited" as a broken image and roll it back.
+    for svc in $rebuild_services; do
+      case " $parked_services " in *" $svc "*) continue ;; esac
+      gate_units="${gate_units:+$gate_units }$svc"
+    done
+  fi
   for c in $(echo "$restarted" | tr ',' ' '); do gate_units="${gate_units:+$gate_units }container:$c"; done
   if [ -n "$gate_units" ]; then
     gate_args=(verify --sha "$head_sha" --stack-cmd "bash $DEPLOY_DIR/scripts/start-stack.sh")
@@ -778,10 +853,14 @@ elif [ "$mcp_changed" = "1" ]; then
 fi
 
 # ---- outcome (step independence: marker only on a fully-clean pass) --------
-if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$restart_failed" = "0" ] && [ "$stranded_failed" = "0" ] && [ "$mcp_failed" = "0" ]; then
+if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$recreate_failed" = "0" ] && [ "$restart_failed" = "0" ] && [ "$stranded_failed" = "0" ] && [ "$mcp_failed" = "0" ]; then
   printf '%s' "$head_sha" > "$MARKER_FILE"
   detail=""
   [ -n "$rebuild_services" ] && detail="rebuilt: $rebuild_services"
+  # Normally empty: compose-apply recreates what changed. Non-empty means it
+  # left something on the previous image and this pass had to repair it.
+  [ -n "$recreate_now" ] && detail="${detail:+$detail; }recreated after compose-apply: $recreate_now"
+  [ -n "$parked_services" ] && detail="${detail:+$detail; }left parked: $parked_services"
   [ -n "$skipped" ] && detail="${detail:+$detail; }skipped already-fresh: $skipped"
   [ "$bounce_skipped" = "1" ] && detail="${detail:+$detail; }restarts skipped: containers already on $short_head"
   # Surface the recovery in the status file even on a clean pass — a sweep that
@@ -796,6 +875,7 @@ else
   steps=""
   [ "$build_failed" = "1" ] && steps="${steps}image-rebuild "
   [ "$apply_failed" = "1" ] && steps="${steps}compose-apply "
+  [ "$recreate_failed" = "1" ] && steps="${steps}recreate-rebuilt "
   [ "$restart_failed" = "1" ] && steps="${steps}container-restart "
   [ "$stranded_failed" = "1" ] && steps="${steps}stranded-start "
   [ "$mcp_failed" = "1" ] && steps="${steps}mcp-connector "

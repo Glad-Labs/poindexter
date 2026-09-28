@@ -37,15 +37,23 @@ COMPOSE = REPO / "docker-compose.local.yml"
 # compose), so no repo change can make them stale.
 _NO_REPO_SOURCE = {"voice-agent-livekit", "voice-agent-claude-code"}
 
-# Baked, profile-gated services deliberately left OUT of REBUILD_MAP. The
-# recreate step runs `up -d --force-recreate <rebuilt services>`, and naming a
-# profile-gated service on the command line starts it whatever profiles are
-# active — so an entry here would make every Dockerfile.worker dependency bump
-# START a container that is meant to be off. A stale image is the lesser harm
-# until that step learns to skip stopped services.
-# test_profile_gated_exemptions_are_still_profile_gated fails the moment one of
-# these stops being profile-gated, so the exemption cannot outlive its reason.
-_PROFILE_GATED_UNREBUILT = {"demo-recorder"}
+# Built services that need no entry of their own because they run ANOTHER
+# service's image: rebuilding the owner re-tags the image they start from.
+# demo-recorder is a `compose run --rm` one-shot declaring
+# `image: ${COMPOSE_PROJECT_NAME}-worker` — the worker's own tag — so the
+# worker entry already refreshes it, and naming it too would build that one tag
+# twice in the same pass.
+#
+# (It was first exempted for a different reason: the recreate step named every
+# rebuilt service in `up -d --force-recreate`, and naming a profile-gated
+# service starts it whatever profiles are active. Since 2026-09-28 that step
+# leaves stopped and absent services alone — pinned by
+# TestRecreateCheck.test_a_parked_service_is_neither_recreated_nor_gated in
+# test_deploy_checkout_sync_apply.py — so profiles no longer decide this.)
+# test_image_sharing_exemptions_still_share_a_rebuilt_image fails the moment
+# one of these stops sharing its owner's image, so the exemption cannot outlive
+# its reason.
+_SHARES_A_REBUILT_IMAGE = {"demo-recorder": "worker"}
 
 
 def _rebuild_map() -> dict[str, str]:
@@ -159,7 +167,7 @@ def _baked_paths(service: str, context: str, dockerfile: str) -> list[str]:
 
 def _checked_services() -> dict[str, tuple[str, str]]:
     return {s: v for s, v in _built_services().items()
-            if s not in _NO_REPO_SOURCE and s not in _PROFILE_GATED_UNREBUILT}
+            if s not in _NO_REPO_SOURCE and s not in _SHARES_A_REBUILT_IMAGE}
 
 
 def _matched(service: str, path: str, rmap: dict) -> bool:
@@ -258,13 +266,26 @@ def test_each_baked_services_dockerfile_is_matched_by_its_regex():
     )
 
 
+def _image_tag(service: str, stanzas: dict[str, str]) -> str:
+    """The image tag compose uses for ``service``: its own `image:`, else the
+    default `<project>-<service>`, with the project name normalised."""
+    m = re.search(r"^    image:\s*(\S+)", stanzas[service], re.M)
+    ref = m.group(1) if m else f"${{COMPOSE_PROJECT_NAME}}-{service}"
+    return re.sub(r"\$\{COMPOSE_PROJECT_NAME(?::-[^}]*)?\}", "<project>", ref)
+
+
 @pytest.mark.unit
-def test_profile_gated_exemptions_are_still_profile_gated():
-    """_PROFILE_GATED_UNREBUILT is justified only by `profiles:` — if one of
-    these becomes always-on, it needs a REBUILD_MAP entry, not an exemption."""
+def test_image_sharing_exemptions_still_share_a_rebuilt_image():
+    """_SHARES_A_REBUILT_IMAGE is justified only by running the owner's image —
+    if one of these gets an image of its own, rebuilding the owner no longer
+    refreshes it and it needs a REBUILD_MAP entry, not an exemption."""
     stanzas = _service_stanzas()
-    for service in _PROFILE_GATED_UNREBUILT:
+    covered = {svc for services in _rebuild_map().values() for svc in services.split()}
+    for service, owner in _SHARES_A_REBUILT_IMAGE.items():
         assert service in _built_services(), f"{service} is no longer a built service"
-        assert re.search(r"^\s*profiles:", stanzas[service], re.M), (
-            f"{service} is no longer profile-gated — give it a REBUILD_MAP entry"
+        assert owner in covered, f"{owner} lost its REBUILD_MAP entry, so nothing refreshes {service}"
+        assert _image_tag(service, stanzas) == _image_tag(owner, stanzas), (
+            f"{service} no longer runs {owner}'s image "
+            f"({_image_tag(service, stanzas)} vs {_image_tag(owner, stanzas)}) — "
+            f"give it a REBUILD_MAP entry"
         )
