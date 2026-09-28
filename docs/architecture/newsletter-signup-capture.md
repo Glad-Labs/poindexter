@@ -163,9 +163,16 @@ subscription, which nothing did. Submitting the form is the consent to the
 newsletter, so there is no separate tick. Add a form field only together with
 the code that stores and reads it.
 
-The worker's `POST /api/newsletter/subscribe` still accepts `company`,
-`interest_categories` and `marketing_consent` from direct API callers and
-stores them in `newsletter_subscribers`. Nothing reads them there either.
+The worker's `POST /api/newsletter/subscribe` now stores what the pull stores:
+the address, first and last name, the verified flag and an unsubscribe token.
+Until 2026-09-28 it also stored `company`, `interest_categories` and
+`marketing_consent` from direct API callers, plus the caller's IP address and
+user-agent. The last two described a proxy hop or a server-side fetch, not the
+subscriber. Nothing read any of the five, and migration `20260928_184647`
+dropped their columns (Glad-Labs/poindexter#1109). A caller that still sends
+the three request fields gets its signup, plus a `Deprecation: true` header
+that names what was ignored. See the
+[API reference](../api/index.mdx#newsletter-signup-payload).
 
 ## Operating it
 

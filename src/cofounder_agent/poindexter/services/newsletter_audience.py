@@ -437,9 +437,10 @@ async def _apply_contact(
         outcome.imported += 1
         return
 
-    # Same row shape as a direct signup through the worker route: verified on
-    # signup, no double opt-in, a fresh unsubscribe credential. ip_address and
-    # user_agent stay NULL; the worker never saw the visitor's request.
+    # Same row shape as a direct signup through the worker route: the address
+    # and name, verified on signup (no double opt-in), and a fresh unsubscribe
+    # credential. Nothing about the visitor's request is kept, and the worker
+    # never saw it anyway.
     result = await conn.execute(
         """
         INSERT INTO newsletter_subscribers

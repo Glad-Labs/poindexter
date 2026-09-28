@@ -38,6 +38,18 @@ is limited to first-name greeting if the subscriber row has it.
 - **`POST /api/newsletter/subscribe`** on the worker, for direct API callers.
   It writes the row and mirrors it into the same Resend segment.
 
+Both producers store the same fields: the address, first and last name,
+`subscribed_at`, the verified flag and a per-subscriber unsubscribe token.
+Neither records the caller's IP address or user-agent. The worker route used
+to store both, but they described whatever called it (a proxy hop or a
+server-side fetch), not the subscriber. `company`, `interest_categories` and
+`marketing_consent` were retired on 2026-09-28 because nothing read them. The
+send path never checked `marketing_consent`: signing up is the consent.
+Migration `20260928_184647` dropped all five columns
+(Glad-Labs/poindexter#1109). The route still accepts the three request fields
+from older callers and ignores them; see the
+[API reference](../../api/index.mdx#newsletter-signup-payload).
+
 ## Public API
 
 - `await send_post_newsletter(pool, title, excerpt, slug) -> dict` —

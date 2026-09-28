@@ -2,7 +2,8 @@
 Unit tests for routes/newsletter_routes.py.
 
 Tests cover:
-- POST /api/newsletter/subscribe       — subscribe_to_newsletter
+- POST /api/newsletter/subscribe       — subscribe_to_newsletter, including the
+  retired request fields (accepted, ignored, answered with a Deprecation header)
 - POST /api/newsletter/unsubscribe     — unsubscribe_from_newsletter
 - GET  /api/newsletter/subscribers/count — get_subscriber_count
 
@@ -10,6 +11,8 @@ DB calls (db.pool.fetchrow / fetchval / execute) are mocked.
 Rate limiter is bypassed in tests.
 """
 
+import logging
+import re
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -65,8 +68,36 @@ VALID_SUBSCRIBE_PAYLOAD = {
     "email": "test@example.com",
     "first_name": "Test",
     "last_name": "User",
+}
+
+#: The request shape older callers (and the public site before 2026-09-28) sent.
+OLD_SUBSCRIBE_PAYLOAD = {
+    **VALID_SUBSCRIBE_PAYLOAD,
+    "company": "Acme Corp",
+    "interest_categories": ["AI", "Technology"],
     "marketing_consent": True,
 }
+
+#: Exactly what a subscribe INSERT may write (Glad-Labs/poindexter#1109).
+STORED_COLUMNS = ["email", "first_name", "last_name", "verified", "unsubscribe_token"]
+
+
+def _inserted_row(pool) -> dict:
+    """The subscribe INSERT as ``{column: value}``, read from the SQL's column list.
+
+    Keyed by column name rather than argument position, so the assertions
+    follow the statement when a column is added or removed.
+    """
+    sql, *args = pool.fetchval.await_args.args
+    columns = re.search(r"INSERT INTO newsletter_subscribers\s*\(([^)]*)\)", sql)
+    values = re.search(r"VALUES\s*\(([^)]*)\)", sql)
+    assert columns and values, sql
+    names = [c.strip() for c in columns.group(1).split(",")]
+    placeholders = [v.strip() for v in values.group(1).split(",")]
+    # The zip below is only sound when VALUES binds $1..$n in column order.
+    assert placeholders == [f"${i}" for i in range(1, len(names) + 1)], placeholders
+    assert len(args) == len(names), (names, args)
+    return dict(zip(names, args, strict=True))
 
 
 # ---------------------------------------------------------------------------
@@ -108,13 +139,6 @@ class TestSubscribeToNewsletter:
         # Must NOT include the email address in the message
         assert VALID_SUBSCRIBE_PAYLOAD["email"] not in data.get("message", "")
 
-    def test_with_interest_categories(self):
-        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=10)
-        client = TestClient(_build_app(_make_db(pool)))
-        payload = {**VALID_SUBSCRIBE_PAYLOAD, "interest_categories": ["AI", "Technology"]}
-        resp = client.post("/api/newsletter/subscribe", json=payload)
-        assert resp.status_code == 200
-
     def test_db_error_returns_500(self):
         pool = _make_pool_mock()
         pool.fetchrow = AsyncMock(side_effect=RuntimeError("DB failure"))
@@ -143,6 +167,141 @@ class TestSubscribeToNewsletter:
             json={"email": "minimal@example.com"},
         )
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Retired request fields: company / interest_categories / marketing_consent
+# (Glad-Labs/poindexter#1109). Accepted so older callers keep working, never
+# stored, and answered with a Deprecation header.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRetiredSubscribeFields:
+    def test_old_payload_still_subscribes(self):
+        """An older caller that still sends the retired fields gets its signup,
+        not a 422."""
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=42)
+        client = TestClient(_build_app(_make_db(pool)))
+        resp = client.post("/api/newsletter/subscribe", json=OLD_SUBSCRIBE_PAYLOAD)
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        assert resp.json()["subscriber_id"] == 42
+
+    def test_old_payload_gets_the_deprecation_headers(self):
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=42)
+        client = TestClient(_build_app(_make_db(pool)))
+        resp = client.post("/api/newsletter/subscribe", json=OLD_SUBSCRIBE_PAYLOAD)
+        assert resp.headers["Deprecation"] == "true"
+        warning = resp.headers["Warning"]
+        assert warning.startswith('299 - "')
+        assert (
+            "Ignored retired field(s): company, interest_categories, marketing_consent." in warning
+        )
+
+    def test_old_payload_values_are_not_stored(self):
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=42)
+        client = TestClient(_build_app(_make_db(pool)))
+        client.post("/api/newsletter/subscribe", json=OLD_SUBSCRIBE_PAYLOAD)
+        row = _inserted_row(pool)
+        assert sorted(row) == sorted(STORED_COLUMNS)
+        assert row["email"] == "test@example.com"
+        assert (row["first_name"], row["last_name"]) == ("Test", "User")
+        assert row["verified"] is True
+        assert "Acme Corp" not in row.values()
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("company", "Acme Corp"),
+            ("company", None),
+            ("interest_categories", ["AI"]),
+            ("interest_categories", []),
+            ("marketing_consent", True),
+            ("marketing_consent", False),
+        ],
+    )
+    def test_any_retired_field_alone_is_flagged(self, field, value):
+        """Presence is the old shape whatever the value: an explicit null or
+        false still comes from a caller that has not been updated."""
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
+        client = TestClient(_build_app(_make_db(pool)))
+        resp = client.post(
+            "/api/newsletter/subscribe", json={**VALID_SUBSCRIBE_PAYLOAD, field: value}
+        )
+        assert resp.status_code == 200
+        assert resp.headers["Deprecation"] == "true"
+        assert f"Ignored retired field(s): {field}." in resp.headers["Warning"]
+        assert sorted(_inserted_row(pool)) == sorted(STORED_COLUMNS)
+
+    def test_current_payload_gets_no_deprecation_headers(self):
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
+        client = TestClient(_build_app(_make_db(pool)))
+        resp = client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
+        assert resp.status_code == 200
+        assert "Deprecation" not in resp.headers
+        assert "Warning" not in resp.headers
+
+    def test_already_subscribed_reply_carries_the_signal_too(self):
+        """The anti-enumeration early reply still answers the old shape. The
+        header depends only on the request, so it reveals nothing about
+        whether the address was already subscribed."""
+        pool = _make_pool_mock(fetchrow_return={"id": 99, "unsubscribed_at": None})
+        client = TestClient(_build_app(_make_db(pool)))
+        resp = client.post("/api/newsletter/subscribe", json=OLD_SUBSCRIBE_PAYLOAD)
+        assert resp.status_code == 200
+        assert resp.headers["Deprecation"] == "true"
+        pool.fetchval.assert_not_called()
+
+    def test_old_payload_logs_a_warning_naming_the_fields(self, caplog):
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
+        client = TestClient(_build_app(_make_db(pool)))
+        with caplog.at_level(logging.WARNING):
+            client.post("/api/newsletter/subscribe", json=OLD_SUBSCRIBE_PAYLOAD)
+        # get_logger() renders through structlog, so match substrings only.
+        warned = [
+            r
+            for r in caplog.records
+            if r.levelname == "WARNING" and "ignored retired field(s)" in r.message
+        ]
+        assert len(warned) == 1
+        assert "company, interest_categories, marketing_consent" in warned[0].message
+        # The subscriber's address stays out of the line.
+        assert "test@example.com" not in warned[0].message
+
+    def test_current_payload_logs_no_deprecation_warning(self, caplog):
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
+        client = TestClient(_build_app(_make_db(pool)))
+        with caplog.at_level(logging.WARNING):
+            client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
+        assert not [r for r in caplog.records if "retired field" in r.message]
+
+    def test_openapi_marks_the_retired_fields_deprecated(self):
+        """Swagger and client codegen read the schema, not the headers."""
+        schemas = _build_app().openapi()["components"]["schemas"]
+        props = schemas["NewsletterSubscribeRequest"]["properties"]
+        for name in ("company", "interest_categories", "marketing_consent"):
+            assert props[name].get("deprecated") is True, name
+        for name in ("email", "first_name", "last_name"):
+            assert not props[name].get("deprecated"), name
+
+
+@pytest.mark.unit
+def test_subscribe_does_not_record_the_callers_ip_or_user_agent():
+    """They describe whatever called the route, never the subscriber, and
+    nothing read them (Glad-Labs/poindexter#1109)."""
+    pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
+    client = TestClient(_build_app(_make_db(pool)))
+    client.post(
+        "/api/newsletter/subscribe",
+        json=VALID_SUBSCRIBE_PAYLOAD,
+        headers={"User-Agent": "caller-agent/1.0"},
+    )
+    row = _inserted_row(pool)
+    assert "ip_address" not in row
+    assert "user_agent" not in row
+    assert "caller-agent/1.0" not in row.values()
+    assert "testclient" not in row.values()  # TestClient's request.client.host
 
 
 # ---------------------------------------------------------------------------
@@ -301,11 +460,7 @@ class TestSubscribeMintsToken:
         pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
         client = TestClient(_build_app(_make_db(pool)))
         client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
-        args = pool.fetchval.await_args.args
-        # The 10th positional arg (after the SQL) is the token. Counting:
-        # email, first_name, last_name, company, interest, ip, user_agent,
-        # marketing_consent, verified, unsubscribe_token = positions 1..10.
-        token = args[10]
+        token = _inserted_row(pool)["unsubscribe_token"]
         assert isinstance(token, str)
         assert len(token) >= 32, f"token too short: {len(token)} chars"
         # base64url alphabet only — no padding, no slashes, no plus signs.
@@ -421,4 +576,4 @@ def test_subscribe_mints_through_the_shared_token_function(monkeypatch):
     pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
     client = TestClient(_build_app(_make_db(pool)))
     client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
-    assert pool.fetchval.await_args.args[10] == "T" * 43
+    assert _inserted_row(pool)["unsubscribe_token"] == "T" * 43

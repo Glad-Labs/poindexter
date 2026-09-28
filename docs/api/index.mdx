@@ -248,7 +248,7 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
 | Media           | `GET /api/podcast/episodes/{task_id}.mp3` | public | Stream the podcast MP3 a pipeline task rendered                 |
 | Media           | `POST /api/podcast/generate/{post_id}`    | bearer | Render an episode for a published post (hand-written posts)     |
 | **Subscribers** | `GET /api/newsletter/subscribers/count`   | bearer | Total opted-in newsletter subscribers                           |
-| Subscribers     | `POST /api/newsletter/subscribe`          | public | Direct signup, no double opt-in (site signups sync via Resend)  |
+| Subscribers     | `POST /api/newsletter/subscribe`          | public | Email and name only, no double opt-in; site signups use Resend  |
 | Subscribers     | `POST /api/newsletter/unsubscribe`        | public | One-click unsubscribe by token                                  |
 | **Feeds**       | `GET /api/podcast/feed.xml`               | public | Podcast RSS feed (Apple/Spotify compatible)                     |
 | Feeds           | `GET /api/video/feed.xml`                 | public | Video RSS feed; each enclosure is the approved video in storage |
@@ -281,6 +281,29 @@ A preview reports a podcast or long-form video as ready once one is
 rendered for the post or its source task. It plays one only after it is
 approved and published to object storage: the same file the RSS feed
 serves.
+
+### Newsletter signup payload
+
+`POST /api/newsletter/subscribe` takes `email` plus optional `first_name`
+and `last_name`. It stores those, a verified flag and a fresh unsubscribe
+token, and mirrors the signup into the Resend segment when one is
+configured. It does not record the caller's IP address or user-agent. The
+public site does not call it: site signups go to Resend, and the worker
+pulls them from there.
+
+`company`, `interest_categories` and `marketing_consent` were retired on
+2026-09-28. Nothing read them, so the worker no longer stores them and
+their columns are gone. A request that still sends any of them succeeds as
+before. The fields are ignored, the OpenAPI schema marks them `deprecated`,
+and the response carries two headers:
+
+```http
+Deprecation: true
+Warning: 299 - "Ignored retired field(s): company, marketing_consent. Send only email, first_name and last_name."
+```
+
+The warning names only the retired fields that were actually sent. Drop
+them from the caller to clear it.
 
 ### Webhook and preview-token security
 
