@@ -2,6 +2,66 @@
 
 ## Unreleased
 
+## [0.150.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.149.1...v0.150.0) (2026-09-28)
+
+
+### Features
+
+* **firefighter:** restart_host_service, so PoindexterOllamaDown self-heals before it pages ([#4158](https://github.com/Glad-Labs/glad-labs-stack/issues/4158)) ([d03f8ce](https://github.com/Glad-Labs/glad-labs-stack/commit/d03f8cefaa98f0e341084540d6c6998cf9dc8ed6))
+* **research:** wire ResearchQualityService into the live research path ([#4140](https://github.com/Glad-Labs/glad-labs-stack/issues/4140)) ([8029606](https://github.com/Glad-Labs/glad-labs-stack/commit/802960696416a098af9344c50564a445dc7fc88e))
+* **storefront:** make the field guide a Pro perk with a free waitlist ([#4115](https://github.com/Glad-Labs/glad-labs-stack/issues/4115)) ([9fb81ef](https://github.com/Glad-Labs/glad-labs-stack/commit/9fb81effc92de296d86fdf40fd7c0833fa03a0da))
+
+
+### Bug Fixes
+
+* **alerts:** daily spend rules fire on spend alone, not muted by the approval queue ([#4168](https://github.com/Glad-Labs/glad-labs-stack/issues/4168)) ([e807798](https://github.com/Glad-Labs/glad-labs-stack/commit/e80779842d252601373286ec1dea22ce45e2c50c))
+* **alerts:** page on PoindexterOllamaDown (critical), measured first ([#4139](https://github.com/Glad-Labs/glad-labs-stack/issues/4139)) ([1c03ac3](https://github.com/Glad-Labs/glad-labs-stack/commit/1c03ac3338e534f4c1c6a32079b9ca86c678ea3f))
+* **brain:** close two gaps found verifying the scheduled-CI watchdog in prod ([#4112](https://github.com/Glad-Labs/glad-labs-stack/issues/4112)) ([4c3a6a3](https://github.com/Glad-Labs/glad-labs-stack/commit/4c3a6a39444efdb126d286db2f17bb2b8569776f))
+* **brain:** container_health_watch reads the summaries it is actually given ([#4167](https://github.com/Glad-Labs/glad-labs-stack/issues/4167)) ([224b264](https://github.com/Glad-Labs/glad-labs-stack/commit/224b264674b0c74c85163a5d266f1e23373cc312))
+* **brain:** cost_freshness reports its own staleness, not via spend rules ([#4150](https://github.com/Glad-Labs/glad-labs-stack/issues/4150)) ([4c5d90e](https://github.com/Glad-Labs/glad-labs-stack/commit/4c5d90e909c756a7508148184ededde585c8fd52))
+* **brain:** count every probe's failure in the cycle-end tally ([#4143](https://github.com/Glad-Labs/glad-labs-stack/issues/4143)) ([f6bd1b8](https://github.com/Glad-Labs/glad-labs-stack/commit/f6bd1b89c50ef5e91f881a2c158e90c747f995a1))
+* **brain:** drop the AppContainer seam the brain image could never build ([#4155](https://github.com/Glad-Labs/glad-labs-stack/issues/4155)) ([a5a31c8](https://github.com/Glad-Labs/glad-labs-stack/commit/a5a31c8d889271b3e1f247216307c53ffc84926a))
+* **brain:** give every probe a page/notice severity, most default off ([#4110](https://github.com/Glad-Labs/glad-labs-stack/issues/4110)) ([74221a5](https://github.com/Glad-Labs/glad-labs-stack/commit/74221a5a0ab133f23987b4b581d4bccbbeb9f331))
+* **brain:** page only through the brain's own notifier ([#4171](https://github.com/Glad-Labs/glad-labs-stack/issues/4171)) ([1aaa830](https://github.com/Glad-Labs/glad-labs-stack/commit/1aaa8303dc15101d0b56d9b6dd2d05c7f69dd1cc))
+* **brain:** page when scheduled_workflows is set but unusable ([#4151](https://github.com/Glad-Labs/glad-labs-stack/issues/4151)) ([81fe582](https://github.com/Glad-Labs/glad-labs-stack/commit/81fe582b3eee0ba7d49cc8222bad4dd238073c7a))
+* **brain:** persist probe failure counts and self-heal cooldowns across restarts ([#4149](https://github.com/Glad-Labs/glad-labs-stack/issues/4149)) ([d976cba](https://github.com/Glad-Labs/glad-labs-stack/commit/d976cbacac42a5326f47573e9cf9978fcdb18d83))
+* **brain:** persist probe last-run times so a restart doesn't re-fire every probe ([#4116](https://github.com/Glad-Labs/glad-labs-stack/issues/4116)) ([49d4052](https://github.com/Glad-Labs/glad-labs-stack/commit/49d4052c712b1522fea78b5bc5a326103aa66bc1))
+* **brain:** restart containers through one shared helper with the DB timeout ([#4164](https://github.com/Glad-Labs/glad-labs-stack/issues/4164)) ([1beb65e](https://github.com/Glad-Labs/glad-labs-stack/commit/1beb65ee47050a033ce0e6b27e03a6841c8c3ff8))
+* **brain:** stop unit tests paging the real operator notifier ([#4084](https://github.com/Glad-Labs/glad-labs-stack/issues/4084)) ([3d2d0cb](https://github.com/Glad-Labs/glad-labs-stack/commit/3d2d0cbfb81783ba53880c339220af2d0df955e7))
+* **ci:** phantom-read lint fails on stale baseline and allowlist entries ([#4109](https://github.com/Glad-Labs/glad-labs-stack/issues/4109)) ([f458cdb](https://github.com/Glad-Labs/glad-labs-stack/commit/f458cdbddc6d937c67710cd87f28065e5b551c1e))
+* **ci:** recover runs already queued for dead self-hosted runners ([#4106](https://github.com/Glad-Labs/glad-labs-stack/issues/4106)) ([81e8fe9](https://github.com/Glad-Labs/glad-labs-stack/commit/81e8fe9229e854536f9c079086409cfc22001c7b))
+* **cli:** run the host poindexter CLI from the deploy clone, not the working checkout ([#4163](https://github.com/Glad-Labs/glad-labs-stack/issues/4163)) ([2d8005f](https://github.com/Glad-Labs/glad-labs-stack/commit/2d8005f6e74edf4d8af285bf411d561e90e451d1))
+* **deploy:** never name, recreate or gate a rebuilt service that is not running ([#4169](https://github.com/Glad-Labs/glad-labs-stack/issues/4169)) ([cd3615f](https://github.com/Glad-Labs/glad-labs-stack/commit/cd3615fd7063a616db6d5c27987ed9ec6b21c01e))
+* **deploy:** rebuild every Dockerfile.worker service, and see them in the coverage test ([#4144](https://github.com/Glad-Labs/glad-labs-stack/issues/4144)) ([20c57a2](https://github.com/Glad-Labs/glad-labs-stack/commit/20c57a282268d2d727f2bd1f9eb0ca26ffb0571d))
+* **deploy:** recreate only what compose-apply left on the old image (6a-bis) ([#4153](https://github.com/Glad-Labs/glad-labs-stack/issues/4153)) ([ef5ca00](https://github.com/Glad-Labs/glad-labs-stack/commit/ef5ca0099de7893d86677b9e7e901aff1c9b1757))
+* **deploy:** skip the bounce for containers already on the tree, reset or not ([#4160](https://github.com/Glad-Labs/glad-labs-stack/issues/4160)) ([b1bc2c1](https://github.com/Glad-Labs/glad-labs-stack/commit/b1bc2c1301eeeb335fcceb9268bfd32ca16b956d))
+* **e2e:** author spec finds post cards, and requires them for the known author ([#4159](https://github.com/Glad-Labs/glad-labs-stack/issues/4159)) ([0b8aaae](https://github.com/Glad-Labs/glad-labs-stack/commit/0b8aaaed93198c504c054456c74ce73ef33d425c))
+* **gpu:** a VRAM-squat finding states what the verifier saw, not a verdict ([#4107](https://github.com/Glad-Labs/glad-labs-stack/issues/4107)) ([ad572b0](https://github.com/Glad-Labs/glad-labs-stack/commit/ad572b06842018e43a6691e1ee980dce4eb25e4b))
+* **gpu:** report a fall in free VRAM as a fall, not "freed -20.6 GB" ([#4141](https://github.com/Glad-Labs/glad-labs-stack/issues/4141)) ([d269af2](https://github.com/Glad-Labs/glad-labs-stack/commit/d269af2fbb1326db41ab8f6f353beb663b1aabf4))
+* **image-service:** stop image_service importing torch, and finish removing the diffusers fallback ([#4157](https://github.com/Glad-Labs/glad-labs-stack/issues/4157)) ([52cbaae](https://github.com/Glad-Labs/glad-labs-stack/commit/52cbaae656fd6034b172746b68e008daa724c06b))
+* **media:** confirm a delivered podcast is gone with the bucket, not the public URL ([#4138](https://github.com/Glad-Labs/glad-labs-stack/issues/4138)) ([bc51889](https://github.com/Glad-Labs/glad-labs-stack/commit/bc51889546440f0758795c061f39ffa20d8ef873))
+* **media:** extend feed shrink guard to event-driven rebuilds ([#4108](https://github.com/Glad-Labs/glad-labs-stack/issues/4108)) ([7608a69](https://github.com/Glad-Labs/glad-labs-stack/commit/7608a6921b6761f81aec4450b0dbdbc4a2138c1a))
+* **media:** put approved videos in the bucket so the video feed's enclosures resolve ([#4117](https://github.com/Glad-Labs/glad-labs-stack/issues/4117)) ([6358fd5](https://github.com/Glad-Labs/glad-labs-stack/commit/6358fd57957aa1982d61466d5f11ad225d317a49))
+* **media:** read preview media from media_assets; drop the post-keyed podcast list ([#4161](https://github.com/Glad-Labs/glad-labs-stack/issues/4161)) ([82d0065](https://github.com/Glad-Labs/glad-labs-stack/commit/82d0065e1fe64ed85cd0005c0e7ab4815ba903a8))
+* **media:** rebuild the RSS feed when a decision rejects an approved item ([#4148](https://github.com/Glad-Labs/glad-labs-stack/issues/4148)) ([4802ce7](https://github.com/Glad-Labs/glad-labs-stack/commit/4802ce7ea3f132eb9bf47f2e52556c4efb90fb0d))
+* **media:** refuse to publish a feed route's non-2xx body as its RSS feed ([#4082](https://github.com/Glad-Labs/glad-labs-stack/issues/4082)) ([d0bb00e](https://github.com/Glad-Labs/glad-labs-stack/commit/d0bb00ea15438a87c12453450f5b5344e1a0c18e))
+* **postiz:** pin postiz-app v2.24.0 to stop the mastra_ai_spans column-slot leak ([#4166](https://github.com/Glad-Labs/glad-labs-stack/issues/4166)) ([ef99a80](https://github.com/Glad-Labs/glad-labs-stack/commit/ef99a806988e573879c09e6ae65374641b8a5f3c))
+* **pro:** make every Pro description match what ships; stage a story-first launch ([#4102](https://github.com/Glad-Labs/glad-labs-stack/issues/4102)) ([07ca0c1](https://github.com/Glad-Labs/glad-labs-stack/commit/07ca0c16d280c04ac75400cbdc191b2425762b9c))
+* **qa:** an attribution subject can't cross a sentence break or be a pronoun ([#4076](https://github.com/Glad-Labs/glad-labs-stack/issues/4076)) ([6689a4a](https://github.com/Glad-Labs/glad-labs-stack/commit/6689a4ab982784d37f0a3cdcfbdbe35652bb2755))
+* **qa:** self_claim's self-reference gate accepts plural system nouns ([#4075](https://github.com/Glad-Labs/glad-labs-stack/issues/4075)) ([0f7b3fb](https://github.com/Glad-Labs/glad-labs-stack/commit/0f7b3fb67b5fea9d657850f717d19983f71b7d50))
+* **research:** curate research_tier2_domains: drop user-content platforms, add authoritative .org hosts ([#4152](https://github.com/Glad-Labs/glad-labs-stack/issues/4152)) ([286d985](https://github.com/Glad-Labs/glad-labs-stack/commit/286d985da645461a70eacb78d7da5f0d9c3ab25a))
+* **settings:** only code reads stamp last_read_at, and every process flushes them ([#4165](https://github.com/Glad-Labs/glad-labs-stack/issues/4165)) ([632df21](https://github.com/Glad-Labs/glad-labs-stack/commit/632df214bba723c0e91fc48756bd98c78f93291f))
+* **settings:** retire the orphaned rate_limit_video_generate_per_ip setting ([#4154](https://github.com/Glad-Labs/glad-labs-stack/issues/4154)) ([af165be](https://github.com/Glad-Labs/glad-labs-stack/commit/af165be1f35e333a9f3df056b3d118a3214eb72c))
+* **settings:** seed the four research_*_weight scoring tunables ([#4113](https://github.com/Glad-Labs/glad-labs-stack/issues/4113)) ([058e783](https://github.com/Glad-Labs/glad-labs-stack/commit/058e783d3672ad8bf129a1249bedd137b5de8108))
+* **settings:** stamp last_read_at for settings read inside Prefect flow runs ([#756](https://github.com/Glad-Labs/glad-labs-stack/issues/756)) ([#4136](https://github.com/Glad-Labs/glad-labs-stack/issues/4136)) ([e8f976a](https://github.com/Glad-Labs/glad-labs-stack/commit/e8f976aba62ae425502c22e88a9b6e102ae44b85))
+* **video:** remove the /api/video/episodes routes broken since the task-keyed cutover ([#4137](https://github.com/Glad-Labs/glad-labs-stack/issues/4137)) ([bc7f042](https://github.com/Glad-Labs/glad-labs-stack/commit/bc7f042a7430ce5f8b512e07c4f1de80ad262319))
+
+
+### Code Refactoring
+
+* **llm:** retire the vestigial ollama/ prefix strips, and say why the rest stay ([#4162](https://github.com/Glad-Labs/glad-labs-stack/issues/4162)) ([5ee6e01](https://github.com/Glad-Labs/glad-labs-stack/commit/5ee6e018ea45ce4ac9dcccfb58540c06ed96dfef))
+* **publish:** retire the dead 11e media-upload tail ([#4086](https://github.com/Glad-Labs/glad-labs-stack/issues/4086)) ([e26fe42](https://github.com/Glad-Labs/glad-labs-stack/commit/e26fe42085339e93b436c9487ce31e3399246361))
+
 ## [0.149.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.149.0...v0.149.1) (2026-09-27)
 
 
