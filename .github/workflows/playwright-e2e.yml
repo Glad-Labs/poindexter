@@ -22,6 +22,8 @@
 # Specs (verified: zero localhost:8000/8002 or /api/ calls):
 #   - web/public-site/e2e/about.spec.ts
 #   - web/public-site/e2e/legal.spec.ts
+#   - web/public-site/e2e/newsletter-modal.spec.ts (opens the signup modal,
+#     never submits it)
 #   - web/public-site/e2e/post-detail.spec.ts
 #
 # backend-e2e runs against a site that is already up (SKIP_SERVER_START=true,
@@ -159,6 +161,7 @@ jobs:
           --project=chromium
           web/public-site/e2e/about.spec.ts
           web/public-site/e2e/legal.spec.ts
+          web/public-site/e2e/newsletter-modal.spec.ts
           web/public-site/e2e/post-detail.spec.ts
 
       - name: Upload Playwright report

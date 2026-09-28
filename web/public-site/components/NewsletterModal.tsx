@@ -2,11 +2,22 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { useState, useRef, useEffect, ChangeEvent, FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { Button, Eyebrow } from '@glad-labs/brand';
-import { SITE_NAME } from '@/lib/site.config';
+
+// Only what the signup keeps and something reads: the site's route stores an
+// email and a first/last name as a Resend contact. The form used to ask for
+// company, interests and a marketing-consent tick as well; nothing downstream
+// read them, so they were dropped (data minimisation). Add a field only
+// together with the code that stores and uses it.
+interface SubscribePayload {
+  email: string;
+  first_name: string;
+  last_name: string;
+}
 
 // Subscribe via local Vercel serverless function (no backend dependency)
-async function subscribeToNewsletter(data: Record<string, unknown>) {
+async function subscribeToNewsletter(data: SubscribePayload) {
   const response = await fetch('/api/newsletter/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -28,10 +39,9 @@ interface FormData {
   email: string;
   firstName: string;
   lastName: string;
-  company: string;
-  interestCategories: string[];
-  marketingConsent: boolean;
 }
+
+const EMPTY_FORM: FormData = { email: '', firstName: '', lastName: '' };
 
 interface Message {
   type: '' | 'success' | 'error';
@@ -52,14 +62,7 @@ const INPUT_STYLE: React.CSSProperties = {
 const LABEL_CLASS = 'gl-mono gl-mono--upper block mb-1.5';
 
 const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
-  const [formData, setFormData] = useState<FormData>({
-    email: '',
-    firstName: '',
-    lastName: '',
-    company: '',
-    interestCategories: [],
-    marketingConsent: false,
-  });
+  const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
 
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<Message>({ type: '', text: '' });
@@ -69,6 +72,11 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
   // trigger in the footer) — focus is returned here on close (issue #978a),
   // mirroring CookieConsentBanner.
   const triggerRef = useRef<HTMLElement | null>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
+  // Set when a submission starts from the submit button: disabling that
+  // button for the request drops focus to <body>, so it is handed back once
+  // the button is enabled again.
+  const restoreSubmitFocusRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -145,30 +153,18 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
     };
   }, [isOpen, onClose]);
 
-  const interestOptions = [
-    'AI',
-    'Technology',
-    'Automation',
-    'Business',
-    'Hardware',
-    'Gaming',
-  ];
+  // A keyboard user who submitted from the button stays on it: the browser
+  // moved focus to <body> when the button was disabled, which drops their
+  // place in the dialog. The live region still announces the outcome.
+  useEffect(() => {
+    if (isLoading || !restoreSubmitFocusRef.current) return;
+    restoreSubmitFocusRef.current = false;
+    if (document.activeElement === document.body) submitRef.current?.focus();
+  }, [isLoading]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
-  };
-
-  const handleCategoryToggle = (category: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      interestCategories: prev.interestCategories.includes(category)
-        ? prev.interestCategories.filter((c) => c !== category)
-        : [...prev.interestCategories, category],
-    }));
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -179,6 +175,8 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
       return;
     }
 
+    restoreSubmitFocusRef.current =
+      document.activeElement === submitRef.current;
     setIsLoading(true);
     setMessage({ type: '', text: '' });
 
@@ -187,9 +185,6 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
         email: formData.email,
         first_name: formData.firstName,
         last_name: formData.lastName,
-        company: formData.company,
-        interest_categories: formData.interestCategories,
-        marketing_consent: formData.marketingConsent,
       });
 
       if (!result.success) {
@@ -202,14 +197,7 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
       });
 
       timeoutRef.current = setTimeout(() => {
-        setFormData({
-          email: '',
-          firstName: '',
-          lastName: '',
-          company: '',
-          interestCategories: [],
-          marketingConsent: false,
-        });
+        setFormData(EMPTY_FORM);
         onClose();
       }, 2000);
     } catch (error) {
@@ -226,11 +214,20 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
 
   if (!isOpen) return null;
 
-  return (
-    <>
-      {/* Overlay */}
+  // Portaled to <body>. The effect above inerts every other child of <body>;
+  // rendered in place, inside the footer, it left the footer's links and
+  // buttons reachable behind the open dialog. The wrapper keeps the overlay
+  // and the dialog in one subtree, so the overlay is not inerted with the
+  // page (an inert overlay would stop taking the clicks that close it).
+  return createPortal(
+    <div>
+      {/* Overlay. z-[60], like the cookie preferences dialog, so the modal
+          sits above the z-50 header and cookie banner (both inert while it
+          is open). At z-40/z-50 the banner, later in the DOM, painted over
+          the dialog on a small phone: the submit button sat behind the
+          banner's buttons, and a tap on them went through to the form. */}
       <div
-        className="fixed inset-0 z-40"
+        className="fixed inset-0 z-[60]"
         onClick={onClose}
         aria-hidden="true"
         style={{
@@ -239,14 +236,17 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
         }}
       />
 
-      {/* Modal — zero-radius E3 surface with cyan left tick */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Modal — zero-radius E3 surface with cyan left tick. This centring
+          layer covers the viewport, so it lets clicks through
+          (pointer-events-none) to the overlay's close handler; only the
+          dialog takes them. */}
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-none">
         <div
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="newsletter-dialog-title"
-          className="gl-tick-left w-full max-w-lg max-h-[85vh] overflow-y-auto"
+          className="gl-tick-left pointer-events-auto w-full max-w-lg max-h-[85vh] overflow-y-auto"
           style={{
             background: 'var(--gl-surface)',
             border: '1px solid var(--gl-hairline-strong)',
@@ -379,80 +379,13 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                 </div>
               </div>
 
-              {/* Company */}
-              <div>
-                <label htmlFor="newsletter-company" className={LABEL_CLASS}>
-                  Company
-                </label>
-                <input
-                  id="newsletter-company"
-                  type="text"
-                  name="company"
-                  value={formData.company}
-                  onChange={handleInputChange}
-                  placeholder="Glad Labs"
-                  className={INPUT_CLASS}
-                  style={INPUT_STYLE}
-                />
-              </div>
-
-              {/* Interest Categories */}
-              <div>
-                <span className={LABEL_CLASS}>Interests</span>
-                <div className="grid grid-cols-2 gap-2">
-                  {interestOptions.map((category) => {
-                    const checked =
-                      formData.interestCategories.includes(category);
-                    return (
-                      <label
-                        key={category}
-                        className="gl-focus-ring flex items-center gap-2 cursor-pointer px-2 py-1.5 transition-colors"
-                        style={{
-                          border: `1px solid ${
-                            checked
-                              ? 'var(--gl-cyan-border)'
-                              : 'var(--gl-hairline)'
-                          }`,
-                          background: checked
-                            ? 'var(--gl-cyan-bg)'
-                            : 'transparent',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => handleCategoryToggle(category)}
-                          className="w-4 h-4 cursor-pointer accent-[color:var(--gl-cyan)]"
-                          style={{ accentColor: 'var(--gl-cyan)' }}
-                        />
-                        <span className="gl-mono gl-mono--upper text-xs">
-                          {category}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Marketing Consent */}
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="marketingConsent"
-                  checked={formData.marketingConsent}
-                  onChange={handleInputChange}
-                  className="w-4 h-4 mt-0.5 cursor-pointer"
-                  style={{ accentColor: 'var(--gl-cyan)' }}
-                />
-                <span className="gl-body gl-body--sm text-[color:var(--gl-text-muted)]">
-                  I agree to receive marketing emails and campaign updates from{' '}
-                  {SITE_NAME}.
-                </span>
-              </label>
+              {/* No consent checkbox: submitting this form IS the consent to
+                  these updates, and a separate tick changed nothing. */}
 
               {/* Submit */}
               <div className="pt-2">
                 <Button
+                  ref={submitRef}
                   type="submit"
                   variant="primary"
                   disabled={isLoading}
@@ -468,15 +401,19 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
               <p className="gl-mono gl-mono--upper gl-mono--label text-center mt-3">
                 We respect your privacy · Unsubscribe any time
               </p>
+              {/* Say what is kept, and only that. This line used to claim the
+                  visitor's IP and user-agent were stored with the
+                  subscription; nothing has stored them since the form began
+                  posting through the site's own route (2026-04). */}
               <p className="gl-mono gl-mono--label text-center mt-1">
-                Your IP address and user-agent are collected with your
-                subscription for security and fraud prevention purposes.
+                We use your email and name for these updates and nothing else.
               </p>
             </form>
           </div>
         </div>
       </div>
-    </>
+    </div>,
+    document.body
   );
 };
 

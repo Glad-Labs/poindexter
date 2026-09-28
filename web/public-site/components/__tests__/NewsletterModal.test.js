@@ -4,13 +4,17 @@
  * Covers:
  * - Renders nothing when isOpen=false
  * - Renders modal when isOpen=true
+ * - Asks for, and sends, only email + first/last name (no company,
+ *   interests or marketing-consent tick: nothing downstream read them)
+ * - The privacy line says what is kept and claims nothing more
  * - Close button calls onClose
  * - Overlay click calls onClose
  * - Email required validation
- * - Category toggle
  * - Successful submission
  * - Error on API failure
  * - Loading state during submission
+ * - a11y: dialog semantics, live regions, label associations, focus trap,
+ *   inert background, focus restore, and focus after submitting
  */
 
 import {
@@ -75,26 +79,48 @@ describe('NewsletterModal visibility', () => {
     ).toBeInTheDocument();
   });
 
-  test('renders all interest category checkboxes', () => {
+  // Pins the whole field set: a new field fails this until someone adds the
+  // code that stores and reads it (data minimisation).
+  test('asks only for email and first/last name', () => {
     render(<NewsletterModal {...DEFAULT_PROPS} />);
-    const categories = [
-      'AI',
-      'Technology',
-      'Automation',
-      'Business',
-      'Hardware',
-      'Gaming',
-    ];
-    categories.forEach((cat) => {
-      expect(screen.getByText(cat)).toBeInTheDocument();
-    });
+    const fields = Array.from(
+      document.querySelectorAll('form input, form select, form textarea')
+    ).map((el) => el.id);
+    expect(fields).toEqual([
+      'newsletter-email',
+      'newsletter-first-name',
+      'newsletter-last-name',
+    ]);
   });
 
-  test('renders marketing consent checkbox', () => {
+  test('does not ask for company, interests or marketing consent', () => {
+    render(<NewsletterModal {...DEFAULT_PROPS} />);
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.queryByLabelText(/company/i)).toBeNull();
+    expect(screen.queryByText(/interests/i)).toBeNull();
+    expect(screen.queryByText(/marketing emails/i)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Privacy line
+// ---------------------------------------------------------------------------
+
+describe('NewsletterModal privacy line', () => {
+  test('says what the signup keeps', () => {
     render(<NewsletterModal {...DEFAULT_PROPS} />);
     expect(
-      screen.getByText(/I agree to receive marketing emails/i)
+      screen.getByText(
+        'We use your email and name for these updates and nothing else.'
+      )
     ).toBeInTheDocument();
+  });
+
+  test('does not claim to collect the IP address or user-agent', () => {
+    // It used to, and nothing stored either one with a subscription.
+    render(<NewsletterModal {...DEFAULT_PROPS} />);
+    expect(screen.queryByText(/IP address/i)).toBeNull();
+    expect(screen.queryByText(/user-agent/i)).toBeNull();
   });
 });
 
@@ -113,10 +139,21 @@ describe('NewsletterModal close behavior', () => {
   test('overlay click calls onClose', () => {
     const onClose = jest.fn();
     render(<NewsletterModal isOpen={true} onClose={onClose} />);
-    // The overlay is aria-hidden div before the modal container
-    const overlay = document.querySelector('[aria-hidden="true"]');
+    // The overlay sits just before the layer that centres the dialog. (A
+    // browser only delivers a click to it because that layer is
+    // pointer-events-none; e2e/newsletter-modal.spec.ts checks that part.)
+    const overlay =
+      screen.getByRole('dialog').parentElement.previousElementSibling;
+    expect(overlay).toHaveAttribute('aria-hidden', 'true');
     fireEvent.click(overlay);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test('a click inside the dialog does not close it', () => {
+    const onClose = jest.fn();
+    render(<NewsletterModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Stay in the loop.'));
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 
@@ -146,30 +183,6 @@ describe('NewsletterModal validation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Category toggle
-// ---------------------------------------------------------------------------
-
-describe('NewsletterModal category toggle', () => {
-  test('clicking category checkbox toggles it', () => {
-    render(<NewsletterModal {...DEFAULT_PROPS} />);
-    const aiLabel = screen.getByText('AI').closest('label');
-    const checkbox = aiLabel.querySelector('input[type="checkbox"]');
-    expect(checkbox.checked).toBe(false);
-    fireEvent.click(checkbox);
-    expect(checkbox.checked).toBe(true);
-  });
-
-  test('clicking same category twice untoggles it', () => {
-    render(<NewsletterModal {...DEFAULT_PROPS} />);
-    const aiLabel = screen.getByText('AI').closest('label');
-    const checkbox = aiLabel.querySelector('input[type="checkbox"]');
-    fireEvent.click(checkbox);
-    fireEvent.click(checkbox);
-    expect(checkbox.checked).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Submission — success
 // ---------------------------------------------------------------------------
 
@@ -193,7 +206,7 @@ describe('NewsletterModal submission success', () => {
     });
   });
 
-  test('calls fetch with form data', async () => {
+  test('sends only email and first/last name', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({ success: true }),
@@ -219,13 +232,14 @@ describe('NewsletterModal submission success', () => {
           body: expect.any(String),
         })
       );
+      // Exact match, not objectContaining: an extra key in the payload is
+      // exactly the regression this guards against.
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body).toEqual(
-        expect.objectContaining({
-          email: 'user@test.com',
-          first_name: 'Alice',
-        })
-      );
+      expect(body).toEqual({
+        email: 'user@test.com',
+        first_name: 'Alice',
+        last_name: '',
+      });
     });
   });
 
@@ -427,7 +441,11 @@ describe('NewsletterModal — a11y: status message live region (issue #779)', ()
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
+    // The success path leaves the 2 s close timer pending; it sets state, so
+    // flush it inside act() or React warns about an unwrapped update.
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     jest.useRealTimers();
   });
 
@@ -532,10 +550,148 @@ describe('NewsletterModal — a11y: form field label associations (issue #781)',
     const label = screen.getByText('Last Name').closest('label');
     expect(label).toHaveAttribute('for', 'newsletter-last-name');
   });
+});
 
-  it('Company label has htmlFor="newsletter-company"', () => {
+// ---------------------------------------------------------------------------
+// a11y — issues #762 / #978a: focus trap, inert background, focus restore
+// ---------------------------------------------------------------------------
+
+describe('NewsletterModal — a11y: focus trap and background (issues #762, #978a)', () => {
+  const closeButton = () => screen.getByLabelText('Close modal');
+  const submitButton = () =>
+    screen.getByRole('button', { name: /Get updates/i });
+
+  // Page content outside the modal; removed even when an assertion fails, so
+  // a stray inert node can't leak into later tests.
+  let added = [];
+  const addToPage = (el) => {
+    document.body.appendChild(el);
+    added.push(el);
+    return el;
+  };
+  afterEach(() => {
+    added.forEach((el) => el.remove());
+    added = [];
+  });
+
+  it('focuses the first control, Close, when it opens', () => {
     render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
-    const label = screen.getByText('Company').closest('label');
-    expect(label).toHaveAttribute('for', 'newsletter-company');
+    expect(closeButton()).toHaveFocus();
+  });
+
+  it('Tab on the last control wraps to the first', () => {
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    submitButton().focus();
+    fireEvent.keyDown(submitButton(), { key: 'Tab' });
+    expect(closeButton()).toHaveFocus();
+  });
+
+  it('Shift+Tab on the first control wraps to the last', () => {
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    fireEvent.keyDown(closeButton(), { key: 'Tab', shiftKey: true });
+    expect(submitButton()).toHaveFocus();
+  });
+
+  it('makes the page behind it inert while open, and restores it on close', () => {
+    const page = addToPage(document.createElement('main'));
+    const onClose = jest.fn();
+    const { rerender } = render(
+      <NewsletterModal isOpen={true} onClose={onClose} />
+    );
+
+    expect(page).toHaveAttribute('inert');
+    expect(page).toHaveAttribute('aria-hidden', 'true');
+
+    rerender(<NewsletterModal isOpen={false} onClose={onClose} />);
+    expect(page).not.toHaveAttribute('inert');
+    expect(page).not.toHaveAttribute('aria-hidden');
+  });
+
+  it('inerts the part of the page it is rendered from, e.g. the footer', () => {
+    // The site renders this modal inside <footer>. Rendered in place, the
+    // footer held the dialog, so it was the one part of the page left
+    // reachable; the modal is portaled to <body> so it is inerted too.
+    render(
+      <footer>
+        <a href="/about">About</a>
+        <NewsletterModal isOpen={true} onClose={jest.fn()} />
+      </footer>
+    );
+    const link = screen.getByText('About');
+    expect(link.closest('[inert]')).not.toBeNull();
+    expect(link.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByRole('dialog').closest('footer')).toBeNull();
+  });
+
+  it('returns focus to the element that opened it', () => {
+    const trigger = addToPage(document.createElement('button'));
+    trigger.focus();
+    const onClose = jest.fn();
+    const { rerender } = render(
+      <NewsletterModal isOpen={true} onClose={onClose} />
+    );
+    expect(trigger).not.toHaveFocus();
+
+    rerender(<NewsletterModal isOpen={false} onClose={onClose} />);
+    expect(trigger).toHaveFocus();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a11y — focus after submitting from the button
+// ---------------------------------------------------------------------------
+
+describe('NewsletterModal — a11y: focus after submitting', () => {
+  // A browser moves focus to <body> when the focused submit button is
+  // disabled for the request. jsdom leaves it on the button (and its blur()
+  // ignores a disabled element), so these tests move it to <body> by focusing
+  // a throwaway element and removing it. Without that step they would pass
+  // with no fix at all.
+  const dropFocusToBody = () => {
+    const tmp = document.createElement('input');
+    document.body.appendChild(tmp);
+    tmp.focus();
+    tmp.remove();
+  };
+
+  const startSubmitFromButton = () => {
+    let resolveFetch;
+    mockFetch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        })
+    );
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), {
+      target: { value: 'kb@example.com', name: 'email', type: 'email' },
+    });
+    // Same DOM node throughout; its label reads "Subscribing…" mid-request.
+    const submit = screen.getByRole('button', { name: /Get updates/i });
+    submit.focus();
+    fireEvent.click(submit);
+    expect(submit).toBeDisabled();
+    dropFocusToBody();
+    expect(document.body).toHaveFocus();
+    const finish = () =>
+      act(async () => {
+        resolveFetch({ ok: false, json: async () => ({ detail: 'fail' }) });
+      });
+    return { submit, finish };
+  };
+
+  it('hands focus back to the submit button when the request settles', async () => {
+    const { submit, finish } = startSubmitFromButton();
+    await finish();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(submit).toHaveFocus();
+  });
+
+  it('does not take focus back from wherever the user moved it', async () => {
+    const { finish } = startSubmitFromButton();
+    const email = screen.getByPlaceholderText('you@example.com');
+    email.focus();
+    await finish();
+    expect(email).toHaveFocus();
   });
 });

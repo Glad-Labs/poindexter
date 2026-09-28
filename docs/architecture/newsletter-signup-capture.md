@@ -13,7 +13,7 @@ served from Vercel. The worker is local-first and has **no public ingress**, so
 the site cannot write that table. This page is how the signup gets there anyway,
 and how we know it still does.
 
-```
+```text
 browser ──POST──▶ site route /api/newsletter/subscribe
                       │  Resend POST /contacts   (segment = RESEND_AUDIENCE_ID)
                       ▼
@@ -155,10 +155,17 @@ with `poindexter newsletter canary --url https://<site>/api/newsletter/subscribe
 | Vercel env     | `RESEND_API_KEY`                                                              | Site's key. Needs contact write access, not the send-only kind                                  |
 | Vercel env     | `RESEND_AUDIENCE_ID`                                                          | **Must equal** `resend_audience_id`. The canary checks exactly this                             |
 
-The site keeps only email and first/last name. A Resend contact carries no
-other fields, and nothing downstream reads company, interests or the
-marketing-consent flag. The signup form still asks for them; that is a
-follow-up.
+The site keeps only email and first/last name, and the signup form asks for
+nothing more. Until 2026-09-28 it also asked for company, interests and a
+marketing-consent tick, which nothing downstream read. Its small print also
+claimed the visitor's IP address and user-agent were stored with the
+subscription, which nothing did. Submitting the form is the consent to the
+newsletter, so there is no separate tick. Add a form field only together with
+the code that stores and reads it.
+
+The worker's `POST /api/newsletter/subscribe` still accepts `company`,
+`interest_categories` and `marketing_consent` from direct API callers and
+stores them in `newsletter_subscribers`. Nothing reads them there either.
 
 ## Operating it
 
