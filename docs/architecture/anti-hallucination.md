@@ -481,6 +481,24 @@ substantiated source rather than a bare link.
   web tier sends the writer back to model knowledge — the ungrounded output this
   whole layer exists to prevent.
 
+- **`ResearchQualityService.filter_and_score`** — what survives the fetch gate is
+  then filtered, deduplicated and ranked before it is rendered. A result whose
+  snippet is under `research_min_snippet_length` / `research_min_snippet_words` is
+  dropped. In the stored corpora those were Telegram channel previews, cookie
+  banners and an aggregator's "Visit the post for more." stub, each offered to
+  the writer as a citation. Near-duplicate snippets collapse to the
+  highest-scoring copy: the same paper as arXiv html + abs + a Hugging Face
+  papers page, or a publisher PDF + article + RePEc, had been reaching the
+  writer two or three times. That padded both the prompt and the corpus the
+  faithfulness rails score against. Survivors are ordered by domain credibility,
+  snippet quality, recency and uniqueness, blended with DuckDuckGo's own order so
+  that the search order holds unless a more credible host sits right behind. The service sat unwired from
+  Glad-Labs/poindexter#367 until 2026-09-28, which is why glad-labs-stack#3965's
+  dedup fix had no effect until then. If the filter rejects every readable
+  source, a `research_web_sources_all_filtered` finding fires. Full detail and
+  the replay numbers are in
+  [services/research-and-web-research.md](services/research-and-web-research.md).
+
 > The `web_research_extract_failed` finding this depends on was keyed
 > `dedup_key="web_research_extract_failed"` — a bare literal, so the
 > dispatcher's fingerprint dedup collapsed every extract failure (any query, any

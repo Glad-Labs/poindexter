@@ -10,7 +10,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from poindexter.services.research_service import KNOWN_REFERENCES, ResearchService
+from poindexter.services.research_quality_service import (
+    ResearchQualityService,
+    ScoredSource,
+)
+from poindexter.services.research_service import (
+    KNOWN_REFERENCES,
+    ResearchService,
+    research_topic,
+)
 from poindexter.services.site_config import SiteConfig
 from tests.unit._nonempty import nonempty
 
@@ -18,6 +26,23 @@ from tests.unit._nonempty import nonempty
 # keyword-required ``site_config``. Tests pass this empty instance — the
 # known-references / max-sources reads fall back to defaults on it.
 _SC = SiteConfig()
+
+# build_context runs every web tier through ResearchQualityService, which drops
+# a result whose snippet is under 50 characters or 10 words — as DuckDuckGo's
+# never are for a real page. Fixtures that expect a source to REACH the writer
+# use these realistic, mutually distinct snippets.
+_SNIPPET_A = (
+    "Recent findings on FastAPI deployment, measured across twelve production "
+    "services over the last quarter of operation."
+)
+_SNIPPET_B = (
+    "A benchmark of consumer GPUs running 4K workloads, with sustained frame "
+    "rates averaged over thirty separate runs."
+)
+_SNIPPET_C = (
+    "Saga patterns coordinate distributed transactions with compensating "
+    "actions, checkpoints and explicit rollback steps."
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -198,7 +223,7 @@ class TestBuildContext:
             {
                 "title": "Fresh Article",
                 "url": "https://blog.example.com/fresh",
-                "snippet": "Recent findings on the topic",
+                "snippet": _SNIPPET_A,
                 "content": "Extracted body text from the fetched page.",
             },
         ]
@@ -228,20 +253,26 @@ class TestBuildContext:
 
     @pytest.mark.asyncio
     async def test_snippet_truncated_to_100_chars(self, service, mock_pool):
-        long_snippet = "A" * 200
+        # This used to pass with nothing checked: its result had no content,
+        # so the fetch gate dropped it, no line matched, and the assertion in
+        # the if-branch never ran. It now needs content (a fetched page) and a
+        # snippet the quality filter keeps, and it asserts the line exists.
+        long_snippet = " ".join(["benchmark"] * 40)  # 399 chars, 40 words
         web_results = [
-            {"title": "Long", "url": "https://example.com", "snippet": long_snippet},
+            {
+                "title": "Long",
+                "url": "https://example.com",
+                "snippet": long_snippet,
+                "content": "Extracted body text from the fetched page.",
+            },
         ]
         with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=web_results):
             context = await service.build_context("FastAPI guide")
-        # The snippet in the context should be truncated
-        # Find the line with the web result
-        for line in nonempty(context.split("\n"), "context.split('\n')"):
-
-            if "Long" in line and "example.com" in line:
-                # After the ): should be at most 100 chars of snippet
-                snippet_part = line.split("): ")[1] if "): " in line else ""
-                assert len(snippet_part) <= 100
+        (line,) = [
+            ln for ln in context.split("\n") if ln.startswith("- [Long](https://example.com)")
+        ]
+        snippet_part = line.split("): ", 1)[1]
+        assert snippet_part == long_snippet[:100]
 
     @pytest.mark.asyncio
     async def test_category_parameter_accepted(self, service, mock_pool):
@@ -317,7 +348,7 @@ class TestBuildContextSourceText:
             {
                 "title": "GPU Benchmark",
                 "url": "https://example.com/bench",
-                "snippet": "short teaser",
+                "snippet": _SNIPPET_B,
                 "content": "The RTX 5090 sustained 142 fps at 4K Ultra in our 30-run average.",
             },
         ]
@@ -332,7 +363,7 @@ class TestBuildContextSourceText:
         sc = SiteConfig(initial_config={"research_web_content_chars_per_source": "50"})
         svc = ResearchService(pool=mock_pool, site_config=sc)
         web_results = [
-            {"title": "T", "url": "https://e.com", "snippet": "s", "content": "X" * 500},
+            {"title": "T", "url": "https://e.com", "snippet": _SNIPPET_A, "content": "X" * 500},
         ]
         with patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=web_results):
             context = await svc.build_context("topic")
@@ -357,7 +388,7 @@ class TestBuildContextSourceText:
         sc = SiteConfig(initial_config={"research_extract_web_content": "false"})
         svc = ResearchService(pool=mock_pool, site_config=sc)
         web_results = [
-            {"title": "T", "url": "https://e.com", "snippet": "teaser", "content": ""},
+            {"title": "T", "url": "https://e.com", "snippet": _SNIPPET_A, "content": ""},
         ]
         with patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=web_results):
             context = await svc.build_context("topic")
@@ -388,13 +419,13 @@ class TestBuildContextUnfetchableSources:
             {
                 "title": "Live Source",
                 "url": "https://live.example/ok",
-                "snippet": "teaser",
+                "snippet": _SNIPPET_A,
                 "content": "A real extracted paragraph with a number: 142.",
             },
             {
                 "title": "GitHub - deleted/repo: This repository...",
                 "url": "https://github.com/deleted/repo",
-                "snippet": "saga patterns, checkpoint/rollback",
+                "snippet": _SNIPPET_C,
                 "content": "",  # fetch failed — 404
             },
         ]
@@ -464,6 +495,194 @@ class TestBuildContextUnfetchableSources:
 
 
 # ---------------------------------------------------------------------------
+# build_context — the web tier is filtered, deduplicated and ranked
+# ---------------------------------------------------------------------------
+
+# One arXiv paper as DuckDuckGo returned it three times in a stored corpus.
+_PAPER_SNIPPET = (
+    "6 days ago · We prune attention heads after training and then recover the "
+    "lost accuracy with a short distillation pass against the unpruned teacher "
+    "model, measured on four benchmarks."
+)
+
+
+def _web(url: str, snippet: str, content: str = "Extracted page text.") -> dict:
+    return {"title": url.rsplit("/", 1)[-1], "url": url, "snippet": snippet, "content": content}
+
+
+def _web_urls(context: str) -> list[str]:
+    """URLs listed under RECENT WEB SOURCES, in rendered order."""
+    section = context.split("RECENT WEB SOURCES (cite if relevant):\n", 1)[1]
+    section = section.split("\n\n", 1)[0]
+    return [
+        line.split("](", 1)[1].split("):", 1)[0]
+        for line in section.split("\n")
+        if line.startswith("- [")
+    ]
+
+
+class TestBuildContextQualityFilter:
+    """build_context hands every readable web result to ResearchQualityService.
+
+    Measured before wiring, over the 181 web tiers stored on prod
+    (2026-06-23 -> 09-26): the same work reached the writer two or three times
+    (arXiv html + abs + a Hugging Face papers page; a Springer PDF + article +
+    RePEc; one post syndicated to LinkedIn or Substack), and thin-snippet pages
+    (a Telegram channel preview, cookie banners, a YouTube footer) were offered
+    as citations.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_same_work_from_three_hosts_is_listed_once(self, service):
+        results = [
+            _web("https://huggingface.co/papers/2608.20953", _PAPER_SNIPPET),
+            _web("https://arxiv.org/html/2608.20953v1", _PAPER_SNIPPET),
+            _web("https://arxiv.org/abs/2608.20953v1", _PAPER_SNIPPET),
+            _web("https://blog.example.com/fastapi", _SNIPPET_A),
+        ]
+        with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=results):
+            context = await service.build_context("quantization healing")
+        urls = _web_urls(context)
+        assert urls.count("https://arxiv.org/html/2608.20953v1") == 1
+        assert "https://arxiv.org/abs/2608.20953v1" not in urls
+        assert "https://huggingface.co/papers/2608.20953" not in urls
+        assert len(urls) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_thin_snippet_source_is_not_offered_as_a_citation(self, service):
+        results = [
+            _web(
+                "https://t.me/examplechan",
+                "You can view and join @examplechan right away.",
+                content="Download / Example Channel / 2 368 subscribers / View in Telegram",
+            ),
+            _web("https://blog.example.com/fastapi", _SNIPPET_A),
+        ]
+        with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=results):
+            context = await service.build_context("fastapi deployment")
+        assert "t.me/examplechan" not in context
+        assert _web_urls(context) == ["https://blog.example.com/fastapi"]
+
+    @pytest.mark.asyncio
+    async def test_sources_are_rendered_in_ranked_order(self, service):
+        """Search order holds except where a more credible host sits right
+        behind: the .edu at #2 takes the first slot, the rest keep their
+        DuckDuckGo order."""
+        snippets = [
+            _SNIPPET_A,
+            _SNIPPET_B,
+            _SNIPPET_C,
+            "PostgreSQL vacuum reclaims dead tuples and keeps transaction identifiers "
+            "from wrapping around on busy tables.",
+            "WebAssembly runs sandboxed bytecode in browsers at near-native speed for "
+            "compute heavy code paths.",
+        ]
+        urls = [
+            "https://a.example.com/x",
+            "https://cs.stanford.edu/research",
+            "https://c.example.com/x",
+            "https://d.example.com/x",
+            "https://e.example.com/x",
+        ]
+        results = [_web(u, s) for u, s in zip(urls, snippets, strict=True)]
+        with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=results):
+            context = await service.build_context("quarterly roadmap planning")
+        assert _web_urls(context) == [urls[1], urls[0], *urls[2:]]
+
+    @pytest.mark.asyncio
+    async def test_the_readable_copy_of_a_duplicate_survives(self, service):
+        """The fetch gate runs first. Were dedup first, the more credible
+        arxiv.org copy would win it and then be dropped as unfetchable, losing
+        the paper entirely."""
+        results = [
+            _web("https://arxiv.org/abs/2608.20953v1", _PAPER_SNIPPET, content=""),
+            _web("https://huggingface.co/papers/2608.20953", _PAPER_SNIPPET),
+        ]
+        with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=results):
+            context = await service.build_context("quantization healing")
+        assert _web_urls(context) == ["https://huggingface.co/papers/2608.20953"]
+
+    @pytest.mark.asyncio
+    async def test_the_topic_is_the_relevance_query(self, service):
+        scorer = MagicMock(spec=ResearchQualityService)
+        scorer.filter_and_score.return_value = []
+        svc = ResearchService(pool=None, site_config=_SC, research_quality=scorer)
+        with patch.object(
+            svc, "_web_search", new_callable=AsyncMock,
+            return_value=[_web("https://a.example/x", _SNIPPET_A)],
+        ), patch("poindexter.utils.findings.emit_finding"):
+            await svc.build_context("fastapi deployment")
+        (results,), kwargs = scorer.filter_and_score.call_args
+        assert kwargs == {"query": "fastapi deployment"}
+        assert [r["url"] for r in results] == ["https://a.example/x"]
+
+    @pytest.mark.asyncio
+    async def test_an_injected_scorer_decides_what_is_rendered(self):
+        kept = ScoredSource(
+            title="Kept", url="https://kept.example/x", snippet=_SNIPPET_A,
+            domain="kept.example", domain_credibility=0.5, snippet_quality=0.5,
+            recency_score=0.7, uniqueness_score=1.0, overall_score=0.6,
+            content="Carried page text.",
+        )
+        scorer = MagicMock(spec=ResearchQualityService)
+        scorer.filter_and_score.return_value = [kept]
+        svc = ResearchService(pool=None, site_config=_SC, research_quality=scorer)
+        with patch.object(
+            svc, "_web_search", new_callable=AsyncMock,
+            return_value=[_web("https://dropped.example/y", _SNIPPET_B)],
+        ):
+            context = await svc.build_context("quantum entanglement overview")
+        assert _web_urls(context) == ["https://kept.example/x"]
+        assert "  Source text: Carried page text." in context
+        assert "dropped.example" not in context
+
+    @pytest.mark.asyncio
+    async def test_warns_when_the_filter_rejects_every_readable_source(self, service):
+        results = [
+            _web("https://t.me/examplechan", "You can view and join @examplechan right away."),
+            _web("https://x.example/post", "Visit the post for more."),
+        ]
+        with (
+            patch.object(service, "_web_search", new_callable=AsyncMock, return_value=results),
+            patch("poindexter.utils.findings.emit_finding") as emit,
+        ):
+            context = await service.build_context("fastapi deployment")
+        assert "RECENT WEB SOURCES" not in context
+        emit.assert_called_once()
+        assert emit.call_args.kwargs["kind"] == "research_web_sources_all_filtered"
+        assert emit.call_args.kwargs["severity"] == "warn"
+
+    @pytest.mark.asyncio
+    async def test_summary_log_counts_what_reached_the_writer(self, service):
+        results = [
+            _web("https://arxiv.org/html/2608.20953v1", _PAPER_SNIPPET),
+            _web("https://arxiv.org/abs/2608.20953v1", _PAPER_SNIPPET),
+            _web("https://blog.example.com/fastapi", _SNIPPET_A),
+        ]
+        with (
+            patch.object(service, "_web_search", new_callable=AsyncMock, return_value=results),
+            patch("poindexter.services.research_service.logger") as log,
+        ):
+            await service.build_context("quantization healing")
+        summary = [c for c in log.info.call_args_list if "Built context" in c.args[0]]
+        assert summary and summary[-1].args[-1] == 2  # 3 found, 1 a duplicate
+
+    @pytest.mark.asyncio
+    async def test_the_two_pass_research_topic_path_is_filtered_too(self):
+        """research_topic fills the two_pass writer's [EXTERNAL_NEEDED] markers
+        through build_context, so its web tier gets the same treatment."""
+        results = [
+            _web("https://arxiv.org/html/2608.20953v1", _PAPER_SNIPPET),
+            _web("https://huggingface.co/papers/2608.20953", _PAPER_SNIPPET),
+        ]
+        with patch.object(
+            ResearchService, "_web_search", new_callable=AsyncMock, return_value=results,
+        ):
+            context = await research_topic("quantization healing", site_config=_SC)
+        assert _web_urls(context) == ["https://arxiv.org/html/2608.20953v1"]
+
+
+# ---------------------------------------------------------------------------
 # Constructor
 # ---------------------------------------------------------------------------
 
@@ -480,6 +699,17 @@ class TestConstructor:
         svc = ResearchService(site_config=_SC)
         assert svc.pool is None
         assert svc.settings is None
+
+    def test_builds_its_quality_scorer_from_the_injected_site_config(self):
+        sc = SiteConfig(initial_config={"research_min_snippet_words": "33"})
+        svc = ResearchService(site_config=sc)
+        assert isinstance(svc._research_quality, ResearchQualityService)
+        assert svc._research_quality.min_snippet_words == 33
+
+    def test_accepts_an_injected_quality_scorer(self):
+        scorer = ResearchQualityService(site_config=_SC)
+        svc = ResearchService(site_config=_SC, research_quality=scorer)
+        assert svc._research_quality is scorer
 
 
 # ---------------------------------------------------------------------------

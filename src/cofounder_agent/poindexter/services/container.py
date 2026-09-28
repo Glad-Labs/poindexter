@@ -324,12 +324,18 @@ class AppContainer:
 
         Reads the ``research_*_weight`` scoring tunables +
         ``research_min_snippet_length`` / ``research_min_snippet_words`` /
-        ``research_dedup_similarity_threshold`` + the
-        ``research_tier1_domains`` / ``research_tier2_domains`` overrides
-        from ``SiteConfig`` at construction. Only tests construct it today:
-        ``research_service`` never has, and its one production caller (the
-        content_agent research agent) was deleted in poindexter#367. This
-        property is the seam a re-wired caller should use.
+        ``research_dedup_similarity_threshold`` /
+        ``research_recency_fresh_days`` / ``research_recency_recent_days`` +
+        the ``research_tier1_domains`` / ``research_tier2_domains`` overrides
+        from ``SiteConfig`` on every call, so this cached instance never goes
+        stale. ``ResearchService`` builds its own per-instance scorer from the
+        SiteConfig it is handed (caller-bridge) and runs every web tier through
+        it in ``build_context``. That covers both production paths: the
+        canonical_blog writer's ``research_context`` and the two_pass writer's
+        ``research_topic`` lookups. This property is the canonical wiring seam
+        for container-aware callers + tests. Unwired from Glad-Labs/poindexter#367
+        (which deleted its only caller, the content_agent research agent)
+        until 2026-09-28.
 
         ``WebhookDeliveryService`` migrated in the same batch but needs a
         runtime ``pool`` the container can't supply at build time, so it has

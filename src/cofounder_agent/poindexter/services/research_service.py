@@ -5,14 +5,15 @@ Provides real links, documentation references, and verified facts that get
 injected into the generation prompt. Content generated with research context
 produces posts with real citations instead of fabricated ones.
 
-Sources (in priority order):
+Sources, rendered in this order:
 1. Known reference database (official docs, always valid)
-2. Serper web search (when API key available)
-3. Existing published posts (internal linking)
+2. Existing published posts (internal linking)
+3. DuckDuckGo web search, page text extracted, then filtered, deduplicated and
+   ranked by ``ResearchQualityService``
 
 Usage:
     from poindexter.services.research_service import ResearchService
-    research = ResearchService(pool)
+    research = ResearchService(pool, site_config=site_config)
     context = await research.build_context("FastAPI and PostgreSQL")
     # context is a formatted string ready for the generation prompt
 """
@@ -20,6 +21,7 @@ Usage:
 import re
 
 from poindexter.services.logger_config import get_logger
+from poindexter.services.research_quality_service import ResearchQualityService
 from poindexter.services.site_config import SiteConfig
 from poindexter.utils.exception_format import describe_exception
 
@@ -183,12 +185,25 @@ KNOWN_REFERENCES = _DEFAULT_KNOWN_REFERENCES
 class ResearchService:
     """Builds research context for content generation."""
 
-    def __init__(self, pool=None, settings_service=None, *, site_config: SiteConfig):
+    def __init__(
+        self,
+        pool=None,
+        settings_service=None,
+        *,
+        site_config: SiteConfig,
+        research_quality: ResearchQualityService | None = None,
+    ):
         self.pool = pool
         self.settings = settings_service
         # DI (#272 Phase-2b): ``site_config`` is keyword-required — the
         # module no longer carries a lifespan-bound global to fall back to.
         self._site_config = site_config
+        # Filters, dedups and ranks the web tier. Built from the injected
+        # SiteConfig unless one is handed in (caller-bridge, like WebResearcher
+        # in _web_search); it reads its tunables on every call either way.
+        self._research_quality = research_quality or ResearchQualityService(
+            site_config=site_config
+        )
 
     async def build_context(
         self,
@@ -200,7 +215,7 @@ class ResearchService:
         Returns a formatted string with:
         - Relevant documentation links
         - Existing published posts for internal linking
-        - Web search results (if Serper key available)
+        - DuckDuckGo web sources we could read, ranked by ResearchQualityService
         """
         sections = []
 
@@ -224,16 +239,14 @@ class ResearchService:
         web_results = await self._web_search(topic)
         # Counted for the summary log below: what actually reached the corpus,
         # not what search returned. Those diverge once unfetchable results are
-        # dropped, and the log claiming "5 web" for a corpus holding 4 is how a
-        # thinning research tier stays invisible.
+        # dropped and the quality filter has run, and the log claiming "5 web"
+        # for a corpus holding 4 is how a thinning research tier stays
+        # invisible.
         web_citable_count = 0
         if web_results:
-            try:
-                content_budget = self._site_config.get_int(
-                    "research_web_content_chars_per_source", 600
-                )
-            except Exception:
-                content_budget = 600
+            content_budget = self._site_config.get_int(
+                "research_web_content_chars_per_source", 600
+            )
             # A result whose page we could NOT fetch has no extracted content
             # (WebResearcher.search keeps it with content="" — see its
             # web_research_extract_failed finding). Listing it here anyway told
@@ -265,8 +278,16 @@ class ResearchService:
                 if require_fetched and not content:
                     dropped.append(result.get("url") or "?")
                 else:
-                    citable.append((result, content))
-            web_citable_count = len(citable)
+                    citable.append({**result, "content": content})
+
+            # Of what we could read: drop thin-snippet results, collapse the
+            # same work served from several hosts (arXiv html + abs + a Hugging
+            # Face papers page; a publisher PDF + its article + RePEc), and
+            # order the rest by credibility / snippet quality / recency /
+            # uniqueness. It runs AFTER the fetch filter so a duplicate cluster
+            # can never keep an unreadable copy over the readable one.
+            ranked = self._research_quality.filter_and_score(citable, query=topic)
+            web_citable_count = len(ranked)
 
             if dropped:
                 # WARNING, not DEBUG: this is the operator-actionable half of a
@@ -280,18 +301,50 @@ class ResearchService:
                     len(dropped), topic[:40], dropped,
                 )
 
-            if citable:
+            if ranked:
                 web_lines = ["RECENT WEB SOURCES (cite if relevant):"]
-                for result, content in citable:
-                    snippet = result.get("snippet", "")[:100]
-                    web_lines.append(f"- [{result['title']}]({result['url']}): {snippet}")
+                for source in ranked:
+                    web_lines.append(
+                        f"- [{source.title}]({source.url}): {source.snippet[:100]}"
+                    )
                     # Inject the extracted page text (when _web_search fetched it
                     # via WebResearcher.search) so the writer has real sourced
                     # facts/numbers to cite — bounded by
                     # research_web_content_chars_per_source to keep the prompt lean.
-                    if content and content_budget > 0:
-                        web_lines.append(f"  Source text: {content[:content_budget]}")
+                    if source.content and content_budget > 0:
+                        web_lines.append(
+                            f"  Source text: {source.content[:content_budget]}"
+                        )
                 sections.append("\n".join(web_lines))
+            elif citable:
+                # We could read these sources, but the quality filter rejected
+                # every one: dedup always keeps one copy, so each had a snippet
+                # under research_min_snippet_length / _words. The writer loses
+                # its web tier exactly as in the all-unfetchable case below, but
+                # this cause is ours to tune, so it is a warning.
+                from poindexter.utils.findings import emit_finding
+
+                citable_urls = [r.get("url") or "?" for r in citable]
+                emit_finding(
+                    source="research_service",
+                    kind="research_web_sources_all_filtered",
+                    title=(
+                        f"Quality filter removed all {len(citable)} readable web "
+                        f"source(s) for topic {topic[:50]!r}"
+                    ),
+                    body=(
+                        "ResearchQualityService.filter_and_score kept none of "
+                        f"the readable web results ({citable_urls}): every "
+                        "snippet was below research_min_snippet_length / "
+                        "research_min_snippet_words. The writer gets no web "
+                        "tier for this topic and will fall back on model "
+                        "knowledge. If this recurs across topics, those two "
+                        "settings are too strict for what the search provider "
+                        "returns."
+                    ),
+                    severity="warn",
+                    dedup_key=f"research_web_sources_all_filtered:{topic[:50]}",
+                )
             elif dropped:
                 # Every web source failed to fetch. Say so loudly rather than
                 # silently handing the writer a corpus with no web tier — the

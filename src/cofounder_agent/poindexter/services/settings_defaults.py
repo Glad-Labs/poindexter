@@ -4276,6 +4276,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.podcast_persist_failed.fallback': 'log_only',
     'findings.podcast_persist_failed.cooldown_minutes': '120',
     'findings.podcast_persist_failed.min_severity': 'warn',
+    # ResearchQualityService rejected every web source we could read, so the
+    # draft is written with no web tier. Our own snippet thresholds cause it
+    # (dedup always keeps one copy), so it is tunable: Discord, and a daily
+    # per-kind cooldown, because too-strict thresholds would fire it for every
+    # topic until fixed.
+    'findings.research_web_sources_all_filtered.delivery': 'discord',
+    'findings.research_web_sources_all_filtered.fallback': 'log_only',
+    'findings.research_web_sources_all_filtered.cooldown_minutes': '1440',
+    'findings.research_web_sources_all_filtered.min_severity': 'warn',
 
     # A YouTube upload we recorded as published is no longer on the channel
     # (youtube_metadata_sync demoted the row to status='deleted'). Routine
@@ -5740,7 +5749,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'research_min_snippet_length': '50',
     'research_min_snippet_words': '10',
     'research_dedup_similarity_threshold': '0.7',
-    'research_tier1_domains': 'edu,gov,ac.uk,org',
+    # 'org' dropped 2026-09-28 (open registration is no credibility signal);
+    # migration 20260928_130429_drop_org_from_research_tier1_domains.py
+    # rewrites a prod row still at the old default.
+    'research_tier1_domains': 'edu,gov,ac.uk',
     'research_tier2_domains': (
         'medium.com,dev.to,github.com,stackoverflow.com,wikipedia.org,'
         'arxiv.org,research.google.com,aws.amazon.com,cloud.google.com,'
@@ -5754,6 +5766,24 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'research_snippet_quality_weight': '0.3',
     'research_recency_weight': '0.2',
     'research_uniqueness_weight': '0.1',
+    # The search engine's own order, added 2026-09-28 when the service was
+    # wired into research_service (same f-string read, so the same caveat).
+    # overall_score became the weighted AVERAGE of five components, so the
+    # four above keep their seeded values and the weights no longer need to
+    # sum to 1. 0.4 was chosen on the replay of 181 stored web tiers and a live
+    # check of 19 topics: with no rank signal the ranker replaced DuckDuckGo's
+    # first result in 102 and 13 of them, four in five on weak signals. At 0.4
+    # a tier-1 (.edu / .gov) host right behind can pass a result, a tier-2 host
+    # alone cannot (its promotions were a coin flip in the evidence), and
+    # several signals together can.
+    'research_search_rank_weight': '0.4',
+    # Recency windows (days) for that weight, applied to the date DuckDuckGo
+    # leads a snippet with: up to fresh_days old scores 0.9, up to recent_days
+    # 0.8, older 0.6, undated 0.7. Added 2026-09-28 when the service was wired
+    # into research_service; they replace an hour/day/week/month substring
+    # match that scored every absolute date ("Mar 15, 2024") as old.
+    'research_recency_fresh_days': '7',
+    'research_recency_recent_days': '365',
     # qa.audio rail thresholds (qa_audio.py) — dotted namespace matches the
     # `media.*` config convention used elsewhere for media-pipeline knobs.
     'media.qa.audio.max_silence_s': '3.0',
@@ -6489,6 +6519,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.podcast_persist_failed.delivery': {'value_type': 'string'},
     'findings.podcast_persist_failed.fallback': {'value_type': 'string'},
     'findings.podcast_persist_failed.min_severity': {'value_type': 'string'},
+    'findings.research_web_sources_all_filtered.cooldown_minutes': {'value_type': 'integer'},
+    'findings.research_web_sources_all_filtered.delivery': {'value_type': 'string'},
+    'findings.research_web_sources_all_filtered.fallback': {'value_type': 'string'},
+    'findings.research_web_sources_all_filtered.min_severity': {'value_type': 'string'},
     'findings.broken_link.delivery': {'value_type': 'string'},
     'findings.broken_link.fallback': {'value_type': 'string'},
     'findings.broken_link.min_severity': {'value_type': 'string'},
@@ -7347,6 +7381,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'research_snippet_quality_weight': {'owner': 'research_quality_service', 'value_type': 'float'},
     'research_recency_weight': {'owner': 'research_quality_service', 'value_type': 'float'},
     'research_uniqueness_weight': {'owner': 'research_quality_service', 'value_type': 'float'},
+    'research_search_rank_weight': {'owner': 'research_quality_service', 'value_type': 'float'},
+    'research_recency_fresh_days': {'owner': 'research_quality_service', 'value_type': 'integer'},
+    'research_recency_recent_days': {'owner': 'research_quality_service', 'value_type': 'integer'},
     'media.qa.audio.max_silence_s': {'owner': 'qa_audio', 'value_type': 'float'},
     'media.qa.audio.min_mean_volume_db': {'owner': 'qa_audio', 'value_type': 'float'},
     'media.qa.audio.max_volume_clip_db': {'owner': 'qa_audio', 'value_type': 'float'},

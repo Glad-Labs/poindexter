@@ -202,7 +202,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `remediation_rules_service.py` | CRUD over the firefighter ``remediation_rules`` table. |
 | `render_vram.py` | Live free-VRAM read for the render GPU (``pipeline_gpu_index``) via Prometheus. |
 | `research_context.py` | Build RAG (retrieval-augmented generation) context for a new draft. |
-| `research_quality_service.py` | Research Quality Service |
+| `research_quality_service.py` | Research Quality Service — filter, dedup and rank a tier of web-search results. |
 | `research_service.py` | Research Service — builds factual context for content generation. |
 | `resend_delivery.py` | Resend delivery-state poll — what happened to the mail we sent. |
 | `retention_janitor.py` | Retention janitor — legacy background loop, now a noop executor. |
