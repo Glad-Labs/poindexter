@@ -113,11 +113,13 @@
 #      live rebuilt service (6a-bis) is watched until it is healthy — a parked
 #      one is not, since its rollback would start it; a container that comes up
 #      `restarting`/`exited`/`unhealthy` is ROLLED BACK onto the image it ran
-#      before the rebuild (snapshot taken before `build`), a critical alert
-#      carries its last log lines, and the sha is recorded in
-#      deploy-rolled-back-sha so the same broken build is not retried every
-#      10 minutes — the fix must merge as a new commit. Bounced bind-mount
-#      containers are watched too (page only; their rollback is a code revert).
+#      before the rebuild (tagged <repository>:rollback-<service> by the
+#      snapshot taken before `build`, since the build itself deletes the old
+#      image record), a critical alert carries its last log lines, and the sha
+#      is recorded in deploy-rolled-back-sha so the same broken build is not
+#      retried every 10 minutes — the fix must merge as a new commit. Bounced
+#      bind-mount containers are watched too (page only; their rollback is a
+#      code revert).
 #      Chatterbox restarted 507 times behind "Pipeline now running …" before
 #      this existed. Settings: deploy_health_gate_seconds,
 #      deploy_health_gate_settle_seconds, deploy_rollback_on_unhealthy;
@@ -839,8 +841,25 @@ for svc in $rebuild_services; do state_before[$svc]="$(service_state "$svc")"; d
 
 gate_pre_ok=0
 if [ -n "$rebuild_services" ] && [ "$NO_GATE" = "0" ] && [ -f "$HEALTH_GATE" ]; then
+  # The snapshot TAGS each running image as <repository>:rollback-<service>.
+  # Recording its id is not enough: under the containerd image store the build
+  # below deletes the old image record as it moves the tag, even while the
+  # container still runs it, so a rollback to an id "restores" nothing. Until
+  # 2026-09-28 that is all the snapshot did, and every rollback would have
+  # failed on "No such image" — unnoticed, because none ever fired. So the
+  # snapshot's per-service notes (its stderr: what a failed gate could roll
+  # back to) are logged on EVERY pass, and one that cannot roll a service back
+  # is a WARN, before the build rather than at the moment a rollback is needed.
   # shellcheck disable=SC2086
-  if python3 "$HEALTH_GATE" snapshot --services $rebuild_services > "$GATE_SNAPSHOT_FILE" 2>>"$LOG_FILE"; then gate_pre_ok=1; else log "health gate: snapshot failed; rollback unavailable this pass" WARN; fi
+  snap_notes="$(python3 "$HEALTH_GATE" snapshot --services $rebuild_services 2>&1 >"$GATE_SNAPSHOT_FILE")" && gate_pre_ok=1
+  while IFS= read -r note; do
+    case "$note" in
+      "") ;;
+      "no rollback image for "*) log "health gate: $note" WARN ;;
+      *) log "health gate: $note" ;;
+    esac
+  done <<<"$snap_notes"
+  [ "$gate_pre_ok" = "1" ] || log "health gate: snapshot failed; rollback unavailable this pass" WARN
 fi
 if [ -n "$rebuild_services" ]; then
   log "Build inputs changed in $last_short..$short_head; rebuilding: $rebuild_services"

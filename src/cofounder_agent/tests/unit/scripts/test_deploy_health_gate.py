@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -99,22 +100,6 @@ def test_no_healthcheck_service_needs_the_settle_window():
     assert v == "healthy" and clock.t >= 30
 
 
-def test_restart_loop_rolls_back_to_the_previous_image_and_pages_critical():
-    mod = _load()
-    fake = FakeDocker([_inspect_json(status="restarting", restarting=True, restarts=3, health="unhealthy"),
-                       _inspect_json(health="healthy", image_id="sha256:old")])
-    res, fake = _verify(mod, fake, ["x"])
-    assert res["x"]["verdict"].startswith("failed:restarting") and res["x"]["rolled_back"] is True
-    assert res["x"]["after_rollback"] == "healthy" and mod.exit_code(res) == 2
-    assert fake.tags() == [["docker", "tag", "sha256:old", "glad-labs-website-x"]]
-    assert fake.ups() and fake.ups()[0][-1] == "x" and "--force-recreate" in fake.ups()[0]
-    alerts = fake.alerts()
-    assert len(alerts) == 1
-    cmd = " ".join(alerts[0])
-    assert "sev=critical" in cmd and "rolled back" in cmd and "ModuleNotFoundError" in cmd and "fp=deploy_health_gate:x:abc123def" in cmd
-    assert ":'sev'" in alerts[0][-1] and "critical" not in alerts[0][-1]  # values never spliced into the SQL text
-
-
 def test_rollback_disabled_pages_but_leaves_the_image():
     mod = _load()
     fake = FakeDocker([_inspect_json(health="unhealthy")])
@@ -149,6 +134,17 @@ def test_missing_snapshot_means_no_rollback_but_still_a_page():
     assert fake.tags() == [] and "rollback FAILED" in " ".join(fake.alerts()[0])
 
 
+def test_a_snapshot_without_a_rollback_image_is_never_rolled_back_by_id():
+    """The pre-2026-09-28 snapshot shape: an image id and nothing holding it.
+    Re-tagging that id is what could never work on this store; it is not a
+    fallback."""
+    mod = _load()
+    fake = FakeDocker([_inspect_json(status="exited")])
+    res, fake = _verify(mod, fake, ["x"])  # the default snap: image_id only
+    assert res["x"]["rolled_back"] is False and "no previous image was preserved" in res["x"]["rollback_note"]
+    assert fake.tags() == [] and fake.ups() == []
+
+
 def test_verdict_table():
     mod = _load()
     def info(**kw):
@@ -167,13 +163,6 @@ def test_settings_fall_back_when_psql_is_unavailable():
     assert mod.read_int_setting("deploy_health_gate_seconds", 300, run=lambda argv: (1, "", "down")) == 300
     assert mod.read_bool_setting("deploy_rollback_on_unhealthy", True, run=lambda argv: (0, "false\n", "")) is False
     assert mod.read_int_setting("k", 7, run=lambda argv: (0, "not-an-int\n", "")) == 7
-
-
-def test_snapshot_records_the_running_image_id():
-    mod = _load()
-    fake = FakeDocker([_inspect_json(image_id="sha256:running")])
-    snap = mod.snapshot(["x"], run=fake)
-    assert snap == {"x": {"container": "poindexter-x", "image_ref": "glad-labs-website-x", "image_id": "sha256:running"}}
 
 
 @pytest.mark.parametrize("results,code", [({"a": {"verdict": "healthy", "rolled_back": False}}, 0),
@@ -500,3 +489,444 @@ def test_inspect_exposes_what_the_recreate_check_needs():
     assert info["created"] == "2026-09-27T21:40:35.901234567Z" and info["image_ref"] == REF
     bare = mod.inspect("c", lambda argv: (0, _container(manifest=None), ""))
     assert bare["manifest_digest"] == "" and bare["platform"] == ""
+
+
+# ── the rollback image survives the rebuild (2026-09-28) ──────────────────
+#
+# Every rollback from 2026-09-13 to 09-28 would have failed. The snapshot
+# recorded the running container's image id, and under the containerd image
+# store a same-tag rebuild deletes that image record as it moves the tag, even
+# while the container still runs it, so `docker tag <that id> <ref>` answered
+# "No such image". FakeDocker above answers every `docker tag` with success,
+# which is how these tests stayed green; StoreDocker models the store as it was
+# measured on this host (Docker 29.8, compose 5.5.1, a throwaway project).
+
+V3_MANIFEST = "sha256:" + "3" * 64
+LIVE_REF = "glad-labs-website-x"
+ROLLBACK_REF = "glad-labs-website-x:rollback-x"
+STACK = ["bash", "start-stack.sh"]
+
+
+def _tagged(ref: str) -> str:
+    """docker's normalisation: a ref with no tag is ``:latest``."""
+    name = ref.split("@", 1)[0]
+    return name if name.rfind(":") > name.rfind("/") else f"{name}:latest"
+
+
+class StoreDocker:
+    """docker + compose for one service ``x``, over a model of the containerd image store.
+
+    As measured: a build mints a new image ID every time and DELETES the record
+    it moves the tag off when no other tag names it, even while a container
+    runs it (the classic store keeps it, untagged). ``docker tag`` over an
+    existing tag keeps the image it moved off, untagged. ``docker image rm``
+    refuses an image a container uses and an id that several tags name, and
+    removing by id an image with one tag left removes that tag too.
+    ``up --force-recreate`` recreates the container from what the ref names.
+    """
+
+    def __init__(self, *, containerd: bool = True):
+        self.containerd = containerd
+        self.images: dict[str, str] = {}   # image id -> platform manifest (its content)
+        self.tags: dict[str, str] = {}     # normalised tag -> image id
+        self.running: dict | None = None   # {"image_id", "manifest"} of poindexter-x
+        self.other_users: set[str] = set()  # image ids other containers still use
+        self.broken: set[str] = set()      # manifests whose containers crash-loop
+        self.recreate_from: str | None = None  # a compose that ignores the re-tag
+        self.up_rc, self.up_err = 0, ""
+        self.calls: list[list[str]] = []
+        self._builds = 0
+
+    # -- the world, as the test drives it ------------------------------------
+    def build(self, manifest: str, *, broken: bool = False) -> str:
+        self._builds += 1
+        new = f"sha256:{self._builds:04x}" + "e" * 60
+        self.images[new] = manifest
+        old = self.tags.get(_tagged(LIVE_REF))
+        self.tags[_tagged(LIVE_REF)] = new
+        if self.containerd and old and old not in self.tags.values():
+            del self.images[old]  # even while a container still runs it
+        if broken:
+            self.broken.add(manifest)
+        return new
+
+    def up(self) -> None:
+        image_id = self.recreate_from or self.tags[_tagged(LIVE_REF)]
+        self.running = {"image_id": image_id, "manifest": self.images[image_id]}
+
+    # -- the docker CLI -------------------------------------------------------
+    def _resolve(self, name: str) -> str | None:
+        if name.startswith("sha256:"):
+            return name if name in self.images else None
+        return self.tags.get(_tagged(name))
+
+    def _names(self, image_id: str) -> list[str]:
+        return sorted(t for t, i in self.tags.items() if i == image_id)
+
+    def _used(self, image_id: str) -> bool:
+        return image_id in self.other_users or bool(self.running and self.running["image_id"] == image_id)
+
+    @staticmethod
+    def _no_such(name: str):
+        return 1, "", f"Error response from daemon: No such image: {name}"
+
+    def __call__(self, argv):
+        self.calls.append(argv)
+        if argv[:3] == ["docker", "ps", "-a"]:
+            ours = "label=com.docker.compose.service=x" in argv and self.running
+            return 0, "poindexter-x\n" if ours else "", ""
+        if argv[:2] == ["docker", "inspect"]:
+            return (0, self._container(), "") if self.running else (1, "", "Error: No such object")
+        if argv[:3] == ["docker", "image", "inspect"]:
+            return self._image_inspect(argv[3:])
+        if argv[:3] == ["docker", "image", "rm"]:
+            return self._rm(argv[3])
+        if argv[:2] == ["docker", "tag"]:
+            image_id = self._resolve(argv[2])
+            if image_id is None:
+                return self._no_such(argv[2])
+            self.tags[_tagged(argv[3])] = image_id  # what it named before stays, untagged
+            return 0, "", ""
+        if argv[:2] == ["docker", "logs"]:
+            return 0, "Traceback\nModuleNotFoundError: No module named '_voice_paths'\n", ""
+        if argv[:2] == ["docker", "exec"]:
+            return 0, "", ""
+        if argv[:len(STACK)] == STACK and "up" in argv:
+            if self.up_rc:
+                return self.up_rc, "", self.up_err
+            self.up()
+            return 0, "", ""
+        return 1, "", f"unexpected {argv}"
+
+    def _container(self) -> str:
+        manifest = self.running["manifest"]
+        bad = manifest in self.broken
+        doc = {
+            "Name": "/poindexter-x",
+            "State": {"Status": "restarting" if bad else "running", "Restarting": bad, "ExitCode": 1 if bad else 0,
+                      "StartedAt": "2026-09-28T17:00:00Z", "Health": {"Status": "unhealthy" if bad else "healthy"}},
+            "Created": "2026-09-28T17:00:00Z",
+            "RestartCount": 3 if bad else 0,
+            "Config": {"Image": LIVE_REF, "Healthcheck": {"Test": ["CMD", "true"]}},
+            "Image": self.running["image_id"],
+        }
+        if self.containerd:
+            doc["ImageManifestDescriptor"] = {"digest": manifest, "platform": {"os": "linux", "architecture": "amd64"}}
+        return json.dumps([doc])
+
+    def _image_inspect(self, rest: list[str]):
+        platform = fmt = name = None
+        args = iter(rest)
+        for a in args:
+            if a == "--platform":
+                platform = next(args)
+            elif a == "--format":
+                fmt = next(args)
+            else:
+                name = a
+        image_id = self._resolve(name)
+        if image_id is None:
+            return self._no_such(name)
+        if fmt == "{{json .RepoTags}}":
+            return 0, json.dumps(self._names(image_id)) + "\n", ""
+        if platform:
+            return 0, self.images[image_id] + "\n", ""
+        return 0, image_id + "\n", ""
+
+    def _rm(self, name: str):
+        if name.startswith("sha256:"):
+            if name not in self.images:
+                return self._no_such(name)
+            names = self._names(name)
+            if self._used(name):
+                return 1, "", f"Error response from daemon: conflict: unable to delete {name[7:19]} (cannot be forced) - image is being used by running container"
+            if len(names) > 1:
+                return 1, "", f"Error response from daemon: conflict: unable to delete {name[7:19]} (must be forced) - image is referenced in multiple repositories"
+            for tag in names:
+                del self.tags[tag]
+            del self.images[name]
+            return 0, f"Deleted: {name}\n", ""
+        image_id = self.tags.get(_tagged(name))
+        if image_id is None:
+            return self._no_such(name)
+        if len(self._names(image_id)) == 1 and self._used(image_id):
+            return 1, "", f"Error response from daemon: conflict: unable to delete {name} (must be forced) - container 922bd4867a1a is using its referenced image {image_id[7:19]}"
+        del self.tags[_tagged(name)]
+        if image_id not in self.tags.values():
+            del self.images[image_id]
+        return 0, f"Untagged: {_tagged(name)}\n", ""
+
+    def live_retags(self) -> list[list[str]]:
+        """``docker tag`` calls that point the LIVE ref somewhere — a rollback."""
+        return [a for a in self.calls if a[:2] == ["docker", "tag"] and _tagged(a[3]) == _tagged(LIVE_REF)]
+
+    def alerts(self) -> list[list[str]]:
+        return [a for a in self.calls if a[:2] == ["docker", "exec"] and any("alert_events" in x for x in a)]
+
+
+def _v1_running(store: StoreDocker | None = None) -> StoreDocker:
+    store = store if store is not None else StoreDocker()
+    store.build(V1_MANIFEST)
+    store.up()
+    return store
+
+
+def _deploy(mod, store: StoreDocker, manifest: str, *, broken: bool = False, rollback: bool = True):
+    """One deploy pass as the sync runs it: snapshot, build, compose-apply, gate."""
+    snap = mod.snapshot(["x"], run=store)
+    store.build(manifest, broken=broken)
+    store.up()
+    clock = Clock()
+    res = mod.verify(["x"], snap, sha="abc123def", timeout=300, settle=30, do_rollback=rollback,
+                     stack_cmd=STACK, run=store, clock=clock, sleep=clock.sleep)
+    return snap, res
+
+
+def test_the_store_model_deletes_the_image_a_rebuild_moves_off():
+    """Positive control. If the fake stops reproducing the host, every rollback
+    test below passes whatever the code does, which is how FakeDocker hid this."""
+    store = _v1_running()
+    old = store.running["image_id"]
+    store.build(V2_MANIFEST)
+    assert store.running["image_id"] == old, "the container still runs it"
+    assert store(["docker", "image", "inspect", old, "--format", "{{.Id}}"])[0] == 1
+    rc, _, err = store(["docker", "tag", old, LIVE_REF])
+    assert rc == 1 and "No such image" in err
+
+
+def test_a_broken_build_is_rolled_back_onto_the_image_it_replaced():
+    """The chatterbox shape (2026-09-13) end to end: snapshot, a rebuild that
+    deletes the running image's record, compose-apply onto the broken build,
+    gate. Every rollback before this fix died on `docker tag <snapshot id>`."""
+    mod = _load()
+    store = _v1_running()
+    snap = mod.snapshot(["x"], run=store)
+    store.build(V2_MANIFEST, broken=True)
+    store.up()
+    assert store._names(snap["x"]["image_id"]) == [ROLLBACK_REF], (
+        "after the build, the rollback tag is the only thing keeping the pre-rebuild image"
+    )
+    clock = Clock()
+    res = mod.verify(["x"], snap, sha="abc123def", timeout=300, settle=30, do_rollback=True,
+                     stack_cmd=STACK, run=store, clock=clock, sleep=clock.sleep)
+    r = res["x"]
+    assert r["verdict"].startswith("failed:restarting") and r["rolled_back"] is True, r
+    assert r["after_rollback"] == "healthy" and mod.exit_code(res) == 2
+    assert store.running["manifest"] == V1_MANIFEST, "back on what it ran before the rebuild"
+    assert store.live_retags() == [["docker", "tag", ROLLBACK_REF, LIVE_REF]]
+    assert [a for a in store.calls if "up" in a] == [[*STACK, "up", "-d", "--no-build", "--force-recreate", "x"]]
+    assert len(store.alerts()) == 1
+    cmd = " ".join(store.alerts()[0])
+    assert "sev=critical" in cmd and "rolled back" in cmd and "ModuleNotFoundError" in cmd
+    assert "fp=deploy_health_gate:x:abc123def" in cmd
+    assert ":'sev'" in store.alerts()[0][-1] and "critical" not in store.alerts()[0][-1]  # values never spliced into the SQL
+
+
+def test_the_containers_own_image_already_gone_is_preserved_through_the_ref():
+    """The usual state on this host: an earlier rebuild that changed nothing
+    minted a new image ID, compose rightly left the container on the old one,
+    and that record was gone before this snapshot. The ref names the same
+    content, so that is what is kept."""
+    mod = _load()
+    store = _v1_running()
+    store.build(V1_MANIFEST)  # a no-op rebuild; compose leaves the container alone
+    assert store._resolve(store.running["image_id"]) is None
+    snap, res = _deploy(mod, store, V2_MANIFEST, broken=True)
+    assert snap["x"]["rollback_ref"] == ROLLBACK_REF
+    assert "via glad-labs-website-x, which names the same content" in snap["x"]["rollback_note"]
+    assert res["x"]["rolled_back"] is True and store.running["manifest"] == V1_MANIFEST
+
+
+def test_when_no_image_holds_what_it_runs_nothing_is_preserved_and_the_page_says_so():
+    """A build compose-apply never applied: the container runs V1, whose record
+    that build deleted, and the ref names V2. There is nothing to roll back to,
+    and rolling back to V2 would be a lie; say so instead."""
+    mod = _load()
+    store = _v1_running()
+    store.build(V2_MANIFEST)  # built, never applied
+    snap, res = _deploy(mod, store, V3_MANIFEST, broken=True)
+    assert snap["x"]["rollback_ref"] == ""
+    assert "no image holds that any more" in snap["x"]["rollback_note"]
+    [note] = mod.snapshot_notes(snap)
+    assert note.startswith(mod.NO_ROLLBACK_NOTE + "x: ") and "page without rolling it back" in note
+    assert "Error response from daemon" not in note and not re.search(r"[0-9a-f]{64}", note), "one readable line"
+    r = res["x"]
+    assert r["rolled_back"] is False and "no previous image was preserved before the rebuild" in r["rollback_note"]
+    assert store.live_retags() == [] and store.running["manifest"] == V3_MANIFEST
+    assert "rollback FAILED" in " ".join(store.alerts()[0])
+
+
+def test_one_rollback_image_per_service_and_nothing_accumulates():
+    """The tag moves every snapshot, and the image it held is deleted rather
+    than left behind: `docker tag` over a tag keeps the old image untagged
+    (measured), so without the release every deploy would leave one."""
+    mod = _load()
+    store = _v1_running()
+    v4 = "sha256:" + "4" * 64
+    for before, after in ((V1_MANIFEST, V2_MANIFEST), (V2_MANIFEST, V3_MANIFEST), (V3_MANIFEST, v4)):
+        _, res = _deploy(mod, store, after)
+        assert res["x"]["verdict"] == "healthy" and store.running["manifest"] == after
+        assert sorted(store.tags) == sorted([_tagged(LIVE_REF), ROLLBACK_REF])
+        assert store.images[store.tags[ROLLBACK_REF]] == before, "it holds the image this deploy replaced"
+        assert len(store.images) == 2, f"the live image and one rollback image, nothing else: {store.images}"
+
+
+def test_the_release_never_deletes_an_image_still_named_or_still_used():
+    """`docker image rm <id>` on an image with one tag left removes that tag,
+    and after a rollback whose recreate failed that tag is the live one. Only
+    an image nothing names is deleted, and never by force."""
+    mod = _load()
+    store = StoreDocker()
+    kept = store.build(V1_MANIFEST)
+    store.tags[ROLLBACK_REF] = kept
+    running = store.build(V2_MANIFEST)
+    store.tags[_tagged(LIVE_REF)] = kept  # the rollback re-tagged; its recreate never happened
+    store.running = {"image_id": running, "manifest": V2_MANIFEST}
+    ref, _ = mod.preserve("x", "poindexter-x", mod.inspect("poindexter-x", store), run=store)
+    assert ref == ROLLBACK_REF and store.tags[ROLLBACK_REF] == running
+    assert store.tags[_tagged(LIVE_REF)] == kept and kept in store.images, "the live tag and its image survive"
+
+    store = StoreDocker()
+    used = store.build(V1_MANIFEST)
+    store.tags[ROLLBACK_REF] = used
+    store.build(V2_MANIFEST)
+    store.up()
+    store.other_users.add(used)  # e.g. a stopped one-off still on it
+    mod.preserve("x", "poindexter-x", mod.inspect("poindexter-x", store), run=store)
+    assert used in store.images, "an image a container uses is never removed"
+    rms = [a for a in store.calls if a[:3] == ["docker", "image", "rm"]]
+    assert rms and not [a for a in rms if "-f" in a or "--force" in a]
+
+
+@pytest.mark.parametrize("tamper,why", [
+    (lambda s: s(["docker", "image", "rm", ROLLBACK_REF]), f"the rollback image {ROLLBACK_REF} is gone"),
+    (lambda s: s(["docker", "tag", LIVE_REF, ROLLBACK_REF]), "now names 5a387e7d1229, not the preserved bc853ed87891"),
+], ids=["pruned", "re-pointed"])
+def test_a_rollback_image_that_no_longer_holds_the_snapshot_is_not_used(tamper, why):
+    """`docker image prune -a` between the snapshot and the gate removes the
+    tag; a tag re-pointed by hand names something else. Re-tagging from either
+    would put an unknown image live, so the rollback refuses and says why."""
+    mod = _load()
+    store = _v1_running()
+    snap = mod.snapshot(["x"], run=store)
+    store.build(V2_MANIFEST, broken=True)
+    store.up()
+    tamper(store)
+    ok, note = mod.rollback("x", snap["x"], STACK, run=store)
+    assert ok is False and why in note
+    assert store.live_retags() == [] and not [a for a in store.calls if "up" in a]
+
+
+def test_a_rollback_counts_only_when_the_new_container_runs_the_preserved_image():
+    """A recreate that did not land on the re-tagged image (here compose is
+    pinned to the broken build) has rolled nothing back, whatever `up` returned."""
+    mod = _load()
+    store = _v1_running()
+    snap = mod.snapshot(["x"], run=store)
+    store.recreate_from = store.build(V2_MANIFEST, broken=True)
+    store.up()
+    ok, note = mod.rollback("x", snap["x"], STACK, run=store)
+    assert ok is False and "runs 5a387e7d1229, not the preserved bc853ed87891" in note
+
+
+def test_a_failed_recreate_reports_composes_error_not_its_progress():
+    """compose writes progress to stderr too; the first line of it names nothing."""
+    mod = _load()
+    store = _v1_running()
+    snap = mod.snapshot(["x"], run=store)
+    store.build(V2_MANIFEST, broken=True)
+    store.up()
+    store.up_rc, store.up_err = 1, (" Container poindexter-x  Recreate\n Container poindexter-x  Recreated\n"
+                                    "Error response from daemon: driver failed programming external connectivity\n")
+    ok, note = mod.rollback("x", snap["x"], STACK, run=store)
+    assert ok is False and note.endswith("the recreate failed: driver failed programming external connectivity")
+
+
+def test_the_classic_store_preserves_and_restores_by_image_id():
+    """No manifest descriptor: the image ID is the content key, and a rebuild
+    leaves the old image untagged instead of deleting it."""
+    mod = _load()
+    store = _v1_running(StoreDocker(containerd=False))
+    v1 = store.running["image_id"]
+    snap, res = _deploy(mod, store, V2_MANIFEST, broken=True)
+    assert snap["x"]["manifest_digest"] == "" and snap["x"]["rollback_ref"] == ROLLBACK_REF
+    assert snap["x"]["rollback_note"].startswith("image ")
+    assert res["x"]["rolled_back"] is True and store.running["image_id"] == v1
+    assert not [a for a in store.calls if "--platform" in a], "no platform manifests to ask for"
+
+
+def test_snapshot_records_what_runs_and_the_tag_that_keeps_it():
+    mod = _load()
+    store = _v1_running()
+    snap = mod.snapshot(["x", "parked"], run=store)
+    assert snap["x"] == {
+        "container": "poindexter-x", "image_ref": LIVE_REF, "image_id": store.running["image_id"],
+        "manifest_digest": V1_MANIFEST, "platform": "linux/amd64",
+        "rollback_ref": ROLLBACK_REF, "rollback_note": "manifest bc853ed87891, the image it was created from",
+    }
+    assert snap["parked"]["container"] == "" and snap["parked"]["rollback_ref"] == ""
+    assert mod.snapshot_notes(snap) == [
+        f"rollback image for x: {ROLLBACK_REF} (manifest bc853ed87891, the image it was created from)",
+        "nothing to preserve for parked: no container",
+    ]
+
+
+def test_a_stopped_container_without_a_rollback_image_says_it_is_stopped():
+    """Parked voice sits exited on an image no tag names any more. Its note
+    must not read like a live service at risk."""
+    mod = _load()
+    store = _v1_running()
+    store.build(V2_MANIFEST)
+    doc = json.loads(store._container())
+    doc[0]["State"].update({"Status": "exited", "Restarting": False})
+    snap = mod.snapshot(["x"], run=lambda argv: (0, json.dumps(doc), "") if argv[:2] == ["docker", "inspect"] else store(argv))
+    assert snap["x"]["rollback_ref"] == ""
+    assert snap["x"]["rollback_note"].endswith("(poindexter-x is exited; gated only if this pass starts it)")
+
+
+@pytest.mark.parametrize("image_ref,expected", [
+    ("glad-labs-website-x", "glad-labs-website-x:rollback-x"),
+    ("poindexter-backup:latest", "poindexter-backup:rollback-x"),
+    ("localhost:5000/team/app:1.2", "localhost:5000/team/app:rollback-x"),
+    ("localhost:5000/team/app", "localhost:5000/team/app:rollback-x"),
+    ("app@sha256:" + "a" * 64, "app:rollback-x"),
+    ("sha256:" + "a" * 64, ""),
+    ("a" * 64, ""),
+    ("", ""),
+])
+def test_rollback_ref_for(image_ref, expected):
+    assert _load().rollback_ref_for(image_ref, "x") == expected
+
+
+def test_services_sharing_an_image_ref_each_keep_their_own_rollback_image():
+    """backup-daily / -hourly / -offsite all run poindexter-backup, and need
+    not all run the same build when the snapshot is taken."""
+    mod = _load()
+    assert [mod.rollback_ref_for("poindexter-backup:latest", s) for s in ("backup-daily", "backup-hourly")] == [
+        "poindexter-backup:rollback-backup-daily", "poindexter-backup:rollback-backup-hourly"]
+
+
+def test_snapshot_cli_prints_the_json_on_stdout_and_the_notes_on_stderr(monkeypatch, capsys):
+    """The deploy sync writes stdout to the file the verify half reads, and
+    logs stderr one line per note."""
+    mod = _load()
+    snap = {"x": {"container": "c", "rollback_ref": "r:rollback-x", "rollback_note": "manifest abc,\nthe image"},
+            "y": {"container": "", "rollback_ref": "", "rollback_note": "no container"}}
+    monkeypatch.setattr(mod, "snapshot", lambda services: snap)
+    assert mod.main(["snapshot", "--services", "x", "y"]) == 0
+    out, err = capsys.readouterr()
+    assert json.loads(out) == snap
+    assert err.splitlines() == ["rollback image for x: r:rollback-x (manifest abc, the image)",
+                                "nothing to preserve for y: no container"]
+
+
+def test_a_page_without_a_rollback_says_how_to_put_the_preserved_image_back():
+    """deploy_rollback_on_unhealthy=false pages instead of rolling back; the
+    page carries the two commands that do it by hand."""
+    mod = _load()
+    fake = FakeDocker([_inspect_json(health="unhealthy")])
+    snap = {"x": {"container": "poindexter-x", "image_ref": LIVE_REF, "rollback_ref": ROLLBACK_REF,
+                  "manifest_digest": V1_MANIFEST, "platform": "linux/amd64"}}
+    _, fake = _verify(mod, fake, ["x"], rollback=False, snap=snap)
+    body = " ".join(fake.alerts()[0])
+    assert f"docker tag {ROLLBACK_REF} {LIVE_REF} && bash start-stack.sh up -d --no-build --force-recreate x" in body

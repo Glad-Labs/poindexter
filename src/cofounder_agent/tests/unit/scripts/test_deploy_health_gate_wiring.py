@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -25,6 +26,19 @@ def test_snapshot_is_taken_before_the_rebuild_and_verify_runs_after_apply():
     apply_ = text.index('start-stack.sh" up -d --no-build')
     verify = text.index('"$HEALTH_GATE" "${gate_args[@]}"')
     assert snap < build < apply_ < verify
+
+
+def test_the_snapshot_notes_are_logged_and_a_missing_rollback_image_warns():
+    """The snapshot's stdout is the JSON the verify half reads; its stderr is
+    one note per service, logged every pass. The WARN pattern must be the
+    gate's own prefix, or a service that cannot be rolled back logs as INFO."""
+    spec = importlib.util.spec_from_file_location("deploy_health_gate", GATE)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    text = _text()
+    assert '--services $rebuild_services 2>&1 >"$GATE_SNAPSHOT_FILE")" && gate_pre_ok=1' in text
+    assert f'"{mod.NO_ROLLBACK_NOTE}"*) log "health gate: $note" WARN ;;' in text
 
 
 def test_rollback_marker_blocks_a_rebuild_of_the_same_sha():

@@ -333,7 +333,27 @@ if args[:2] == ["image", "inspect"]:
     if not tag:
         print("Error response from daemon: No such image: " + ref, file=sys.stderr)
         sys.exit(1)
-    print(tag["manifest"] if "--platform" in args else tag["index"])
+    if "{{json .RepoTags}}" in args:
+        print(json.dumps(sorted(t for t, v in scenario["tags"].items() if v == tag)))
+    else:
+        print(tag["manifest"] if "--platform" in args else tag["index"])
+    sys.exit(0)
+if args[:1] == ["tag"]:
+    # Persisted, so the snapshot's rollback tag can be read back. A container's
+    # own image id resolves only under "own_images_exist": on the host a rebuild
+    # deletes it (see test_deploy_health_gate.py's StoreDocker).
+    src, dst = positional(args[1:])[:2]
+    tags = scenario.setdefault("tags", {})
+    entry = tags.get(src)
+    if entry is None and scenario.get("own_images_exist"):
+        entry = next(({"index": d["Image"], "manifest": d["ImageManifestDescriptor"]["digest"]}
+                      for d in containers.values() if d["Image"] == src), None)
+    if entry is None:
+        print("Error response from daemon: No such image: " + src, file=sys.stderr)
+        sys.exit(1)
+    tags[dst] = entry
+    with open(os.environ["FAKE_DOCKER_SCENARIO"], "w", encoding="utf-8") as fh:
+        json.dump(scenario, fh)
     sys.exit(0)
 if args[:1] == ["container"]:
     sys.exit(1)  # the bounce loop finds nothing to restart; not under test here
@@ -539,19 +559,82 @@ class TestRecreateCheck:
         assert not [
             e for e in _events(rig) if e.startswith("start-stack up") and "voice-agent-livekit" in e
         ]
-        assert not [e for e in _events(rig) if e.startswith("docker tag")], (
-            "no rollback of a parked service"
-        )
+        # The snapshot may tag <repo>:rollback-<svc> (that is preserving, taken
+        # before the build); a rollback re-tags the LIVE ref.
+        assert not [
+            e
+            for e in _events(rig)
+            if e.startswith("docker tag ")
+            and e.split()[-1] == "glad-labs-website-voice-agent-livekit"
+        ], "no rollback of a parked service"
+        # Only the snapshot's note may name it; the gate itself never watches it.
         assert not [
             line
             for line in self._log(rig).splitlines()
-            if "health gate" in line and "voice-agent-livekit" in line
+            if "health gate" in line
+            and "voice-agent-livekit" in line
+            and "for voice-agent-livekit:" not in line
         ]
         st = _status(rig)
         # voice-agent-claude-code builds the same Dockerfile and has no
         # container at all: parked too.
         assert st["result"] == "deployed"
         assert "left parked: voice-agent-claude-code voice-agent-livekit" in st["detail"]
+
+    def test_every_pass_logs_what_each_rebuilt_service_could_roll_back_to(self, tmp_path):
+        """The rollback path went unexercised from 2026-09-13 to 09-28, and every
+        rollback in that time would have failed ("No such image"); nothing said
+        so because none fired. The snapshot now keeps each running image under
+        <repo>:rollback-<svc> before the build and the pass logs, per service,
+        whether it could: a service it cannot roll back is a WARN up front, not
+        a surprise at the moment of a failed deploy."""
+        rig = self._rig(
+            tmp_path,
+            {
+                "containers": {
+                    # its own image id is gone (a no-op rebuild earlier), but the
+                    # ref names the same content: preserved through the ref
+                    "brain-daemon": _doc(
+                        "poindexter-brain-daemon",
+                        "glad-labs-website-brain-daemon",
+                        manifest=_M1,
+                        created=_BEFORE_THE_PASS,
+                    ),
+                    # runs M1, the ref names M2, no image holds M1: nothing to keep
+                    "auto-embed": _doc(
+                        "poindexter-auto-embed",
+                        "glad-labs-website-auto-embed",
+                        manifest=_M1,
+                        created=_BEFORE_THE_PASS,
+                    ),
+                },
+                "tags": {
+                    "glad-labs-website-brain-daemon": {"index": "sha256:new-index", "manifest": _M1},
+                    "glad-labs-website-auto-embed": {"index": "sha256:new-index", "manifest": _M2},
+                },
+            },
+        )
+        _advance_origin(rig, "src/cofounder_agent/poindexter/brain/probe.py")
+        proc = self._sync(rig)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        log = self._log(rig)
+        assert (
+            "[INFO] health gate: rollback image for brain-daemon: "
+            "glad-labs-website-brain-daemon:rollback-brain-daemon (manifest 111111111111, "
+            "via glad-labs-website-brain-daemon, which names the same content)"
+        ) in log
+        assert "[WARN] health gate: no rollback image for auto-embed: " in log
+        assert "snapshot failed" not in log
+        assert (
+            "docker tag glad-labs-website-brain-daemon glad-labs-website-brain-daemon:rollback-brain-daemon"
+            in _events(rig)
+        )
+        snap = json.loads(
+            (rig["home"] / ".poindexter" / "deploy-gate-snapshot.json").read_text(encoding="utf-8")
+        )
+        assert snap["brain-daemon"]["rollback_ref"] == "glad-labs-website-brain-daemon:rollback-brain-daemon"
+        assert snap["auto-embed"]["rollback_ref"] == ""
+        assert "health gate: all healthy (auto-embed brain-daemon)" in log
 
     def test_a_failed_recreate_withholds_the_marker(self, tmp_path):
         """Otherwise the pass records `deployed` over a service still on the

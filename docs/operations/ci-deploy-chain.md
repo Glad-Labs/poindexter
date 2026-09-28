@@ -1190,19 +1190,25 @@ Since 2026-09-13 the deploy sync does not walk away from an image it rebuilt.
 `scripts/linux/deploy_health_gate.py` (stdlib, system `python3`) runs in two
 halves around the rebuild:
 
-1. **snapshot** — before `start-stack.sh build`, record each rebuilt service's
-   running container, image ref and image id (`~/.poindexter/deploy-gate-snapshot.json`).
-2. **verify** — after compose-apply (and after the bind-mount bounce), poll each
+1. **snapshot**: before `start-stack.sh build`, record each rebuilt service's
+   running container, image ref, image id and platform manifest, and **tag the
+   image it runs as `<repository>:rollback-<service>`**. The snapshot file
+   (`~/.poindexter/deploy-gate-snapshot.json`) records that tag as
+   `rollback_ref`.
+2. **verify**: after compose-apply (and after the bind-mount bounce), poll each
    unit until it is `healthy` (or, for services without a healthcheck, `running`
-   for `deploy_health_gate_settle_seconds`). A definitive failure —
-   `restarting`, `exited`/`dead`, `unhealthy`, or a `RestartCount` of 2+ on the
-   fresh container — triggers, for rebuilt services with a snapshot and
-   `deploy_rollback_on_unhealthy=true`: `docker tag <old id> <image ref>` and a
-   `--force-recreate` of that one service, so the container is back on the
-   image it ran before. Either way a **critical** `alert_events` row carries
-   the failed container's last 20 log lines (the traceback), so the page names
-   the cause. A timeout without a verdict pages **warning** and does not roll
-   back — a slow worker start is not a broken image.
+   for `deploy_health_gate_settle_seconds`). A definitive failure triggers the
+   rollback. That means `restarting`, `exited`/`dead`, `unhealthy`, or a
+   `RestartCount` of 2+ on the fresh container, and it applies to rebuilt
+   services with a rollback image when `deploy_rollback_on_unhealthy=true`.
+   The gate checks the rollback tag still names what the snapshot saw, runs
+   `docker tag <repository>:rollback-<service> <image ref>` and a
+   `--force-recreate` of that one service, then checks the new container runs
+   exactly the preserved platform manifest. Only then does it count as rolled
+   back. Either way a **critical** `alert_events` row carries the failed
+   container's last 20 log lines (the traceback), so the page names the cause.
+   A timeout without a verdict pages **warning** and does not roll back. A slow
+   worker start is not a broken image.
 
 A rolled-back service's sha is written to `~/.poindexter/deploy-rolled-back-sha`
 and that service is **not rebuilt again at that sha**; the fix must merge as a
@@ -1218,6 +1224,60 @@ Why: the sync rebuilt `chatterbox` on a merged change, recreated it, logged
 "Pipeline now running …", and the container died on `ModuleNotFoundError` 507
 times over eight hours. Nothing between "build succeeded" and "a downstream
 probe noticed" had looked at the container.
+
+**Why the rollback target is a tag, not an image id.** Until 2026-09-28 the
+snapshot recorded the running image's id and the rollback re-tagged that id.
+On this host that never worked. Docker 29 with the containerd image store
+deletes the old image record as the build moves the tag, even while a container
+still runs it, so `docker image inspect <old id>` and `docker tag <old id> …`
+answer "No such image". Every rollback from 09-13 to 09-28 would have failed
+with `rollback FAILED (docker tag failed: … No such image …)` and left the
+broken image in service. Nothing noticed, because none fired (`grep "ROLLED
+BACK"` over the deploy logs finds nothing), and the unit tests' fake answered
+every `docker tag` with success. A tag taken before the build keeps the record,
+and with it the content, through the build. This was measured on a throwaway
+compose project, and the fix was verified there end to end: a broken build
+rolled back, and the container ran the pre-build content again.
+
+How the snapshot picks what to keep:
+
+- The source is the image the container was created from, when that record
+  still exists. Often it does not, even before this build. A rebuild that
+  changed nothing mints a new image id around the same platform manifest,
+  compose rightly leaves the container on the old one, and that record is
+  gone. The image ref then names the same content, so it is tagged instead.
+- The new tag is read back and recorded only if it names exactly the platform
+  manifest the container runs. If no image holds that content any more (a build
+  that compose-apply never applied), there is no rollback image. The gate then
+  pages without rolling back rather than restoring something else.
+- **Every pass logs one line per rebuilt service** saying what a failed gate
+  could roll back to. A service it cannot roll back logs
+  `[WARN] health gate: no rollback image for <svc>: <why>`, before the build
+  rather than at the moment a rollback is needed.
+- There is **one tag per service**, and every snapshot moves it. `docker tag`
+  over an existing tag leaves the old image behind untagged, so the snapshot
+  then deletes the image the tag held before. It does this only when no tag
+  names that image and no container uses it, and never with force. Nothing
+  accumulates. Each service keeps at most one previous image, until its next
+  rebuild. The tag is per service rather than per image because services share
+  image refs (`backup-daily`/`-hourly`/`-offsite` all run `poindexter-backup`)
+  and need not all run the same build.
+- A rollback leaves the failed build as an untagged (dangling) image, in case
+  you want to inspect it. `docker image prune` removes it.
+
+**Rolling a baked image back by hand** (for example after a problem the gate's
+window did not catch, or when `deploy_rollback_on_unhealthy=false`). A page
+that leaves a rebuilt service on the broken build (rollback disabled or failed,
+or no verdict in time) prints these commands with the names filled in:
+
+```bash
+# what each rebuilt service ran before its last rebuild
+docker image ls --filter 'reference=*:rollback-*'
+docker tag glad-labs-website-brain-daemon:rollback-brain-daemon glad-labs-website-brain-daemon
+bash ~/.poindexter/deploy/glad-labs-stack/scripts/start-stack.sh up -d --no-build --force-recreate brain-daemon
+```
+
+The next rebuild of that service (a new commit) moves it forward again.
 
 ## Fast rollback (pin deploy clone to a known-good SHA)
 

@@ -5,9 +5,17 @@ Stdlib only — runs on the host under systemd with the system python3, no venv.
 
 Three subcommands, all driven by the deploy sync:
 
-    snapshot --services a b …       -> JSON {service: {container, image_ref, image_id}}
-        Taken BEFORE an image rebuild: the running container's image id is
-        the rollback target.
+    snapshot --services a b …       -> JSON {service: {container, image_ref, image_id,
+                                          manifest_digest, platform, rollback_ref, rollback_note}}
+        Taken BEFORE an image rebuild. Each service's running image is TAGGED
+        as ``<repository>:rollback-<service>`` (``rollback_ref``), and that tag
+        is the rollback target. Recording the image id is not enough: under
+        the containerd image store the rebuild deletes the old image record as
+        it moves the tag, even while a container still runs it, so an id
+        restored after the build names nothing. One tag per service, moved by
+        every snapshot; the image it held before is deleted once nothing names
+        or uses it. See ``preserve``. One line per service on stderr says what
+        a failed gate could roll back to.
 
     recreate-plan --since EPOCH --services a b …   (step 6a-bis)
         -> one ``<action>\\t<service>\\t<reason>`` line per service. Taken
@@ -23,10 +31,11 @@ Three subcommands, all driven by the deploy sync:
         it is healthy, or until it shows a definitive failure signal:
         ``restarting``, ``exited``/``dead``, health ``unhealthy``, or a
         ``RestartCount`` of 2+ on a container that was just created. On
-        failure with ``--rollback`` and a snapshot image id, the previous
-        image is re-tagged over the compose image ref and the service is
-        recreated onto it; a critical alert_events row carries the
-        container's last log lines either way.
+        failure with ``--rollback`` and a preserved rollback image, that
+        image is re-tagged over the compose image ref, the service is
+        recreated onto it, and the new container must be running exactly the
+        preserved content before the rollback counts; a critical alert_events
+        row carries the container's last log lines either way.
 
 Why this exists (2026-09-13): the deploy sync rebuilt the chatterbox image on
 a merged change, recreated the container, logged "Pipeline now running …",
@@ -211,25 +220,48 @@ def log_tail(container: str, run: Runner = _run, lines: int = LOG_TAIL) -> str:
     return text[-2500:] if text else "(no log output)"
 
 
-def snapshot(services: list[str], run: Runner = _run) -> dict[str, dict[str, str]]:
-    out: dict[str, dict[str, str]] = {}
-    for svc in services:
-        container = find_container(svc, run)
-        info = inspect(container, run) if container else None
-        out[svc] = {
-            "container": container or "",
-            "image_ref": (info or {}).get("image_ref", ""),
-            "image_id": (info or {}).get("image_id", ""),
-        }
-    return out
-
-
 # ---------------------------------------------------------------------------
 # image identity: is a container running what its image ref names NOW?
 # ---------------------------------------------------------------------------
 
 def _short(digest: str) -> str:
     return digest.split(":")[-1][:12] if digest else "?"
+
+
+def _tidy(line: str) -> str:
+    """A docker error, readable in one log line: no daemon preamble, digests shortened."""
+    line = line.strip().removeprefix("Error response from daemon: ")
+    return re.sub(r"sha256:([0-9a-f]{12})[0-9a-f]{52}", r"sha256:\1", line)[:200]
+
+
+def _first_line(err: str, fallback: str = "no detail") -> str:
+    return _tidy((err.strip().splitlines() or [fallback])[0])
+
+
+def _last_line(err: str) -> str:
+    """compose writes progress to stderr too; its error is the last line, not the first."""
+    return _tidy((err.strip().splitlines() or ["no detail"])[-1])
+
+
+def _content(rec: dict[str, Any]) -> tuple[str, str]:
+    """``(what it runs, platform)`` for an ``inspect()`` result or a snapshot entry.
+
+    Under the containerd image store that is the platform manifest digest, and
+    a ref is resolved with ``--platform`` to compare against it. On the classic
+    store (no manifest descriptor) it is the image ID, and the platform is "".
+    See image_identity() for why the image ID is useless on this host.
+    """
+    if rec.get("manifest_digest"):
+        return str(rec["manifest_digest"]), str(rec.get("platform") or "")
+    return str(rec.get("image_id") or ""), ""
+
+
+def _names(ref: str, platform: str, run: Runner = _run) -> tuple[str, str]:
+    """``(digest, error)`` for what ``ref`` names now, in _content() terms."""
+    argv = ["docker", "image", "inspect", *(["--platform", platform] if platform else []), ref, "--format", "{{.Id}}"]
+    rc, out, err = run(argv)
+    digest = out.strip() if rc == 0 else ""
+    return digest, "" if digest else _first_line(err, "no digest returned")
 
 
 def image_identity(container: str, run: Runner = _run, info: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -268,26 +300,186 @@ def image_identity(container: str, run: Runner = _run, info: dict[str, Any] | No
     if not ref:
         out["why"] = f"{container} records no image ref"
         return out
-    if info["manifest_digest"]:
-        if not info["platform"]:
-            out["why"] = f"{container}'s manifest descriptor names no platform"
-            return out
-        out["running"] = info["manifest_digest"]
-        argv = ["docker", "image", "inspect", "--platform", info["platform"], ref, "--format", "{{.Id}}"]
-    else:
-        out["running"] = info["image_id"]
-        argv = ["docker", "image", "inspect", ref, "--format", "{{.Id}}"]
-    if not out["running"]:
+    running, platform = _content(info)
+    if info["manifest_digest"] and not platform:
+        out["why"] = f"{container}'s manifest descriptor names no platform"
+        return out
+    out["running"] = running
+    if not running:
         out["why"] = f"{container} records no image"
         return out
-    rc, stdout, err = run(argv)
-    out["tagged"] = stdout.strip() if rc == 0 else ""
+    out["tagged"], err = _names(ref, platform, run)
     if not out["tagged"]:
-        detail = (err.strip().splitlines() or ["no digest returned"])[0]
-        out["why"] = f"{' '.join(argv[:3])} {ref}: {detail}"[:200]
+        out["why"] = f"docker image inspect {ref}: {err}"[:200]
         return out
-    out["same"] = out["running"] == out["tagged"]
+    out["same"] = running == out["tagged"]
     return out
+
+
+# ---------------------------------------------------------------------------
+# rollback image: keep what runs now through the rebuild (snapshot)
+# ---------------------------------------------------------------------------
+
+ROLLBACK_TAG_PREFIX = "rollback-"
+# The deploy sync logs a snapshot note that starts with this at WARN: a
+# service with a container that a failed gate could not roll back.
+NO_ROLLBACK_NOTE = "no rollback image for "
+
+
+def _repository(image_ref: str) -> str:
+    """``image_ref`` without its tag or digest; "" when it is an image ID.
+
+    ``host:5000/team/app:1.2`` -> ``host:5000/team/app``. A colon is a tag
+    separator only after the last slash; before it, it is a registry port.
+    """
+    ref = image_ref.split("@", 1)[0]
+    if not ref or ref.startswith("sha256:") or re.fullmatch(r"[0-9a-f]{64}", ref):
+        return ""
+    colon, slash = ref.rfind(":"), ref.rfind("/")
+    return ref[:colon] if colon > slash else ref
+
+
+def rollback_ref_for(image_ref: str, service: str) -> str:
+    """The tag that holds ``service``'s pre-rebuild image: ``<repository>:rollback-<service>``.
+
+    One fixed tag per service, so each snapshot MOVES it rather than adding
+    another (and ``preserve`` deletes the image it held before once nothing
+    names it): nothing accumulates. Named per service rather than per image
+    because services share image refs (backup-daily / -hourly / -offsite all
+    run ``poindexter-backup``) and need not all run the same image when the
+    snapshot is taken. "" when the ref has no repository to tag under.
+    """
+    repo = _repository(image_ref)
+    return f"{repo}:{ROLLBACK_TAG_PREFIX}{service}" if repo else ""
+
+
+def _confirm(target: str, running: str, platform: str, how: str, run: Runner) -> tuple[str, str]:
+    """Read ``target`` back: it counts only if it names exactly what the container runs."""
+    held, err = _names(target, platform, run)
+    if held != running:
+        return "", f"tagged {target}, but it names {_short(held) if held else err}, not the running {_short(running)}"
+    return target, f"{'manifest' if platform else 'image'} {_short(running)}, {how}"
+
+
+def _release(previous: str, run: Runner) -> None:
+    """Delete ``previous``, the image the rollback tag held before this snapshot moved it, if it is now unnamed.
+
+    ``docker tag`` over an existing tag does not delete the image the tag
+    named: the daemon keeps it as an untagged (dangling) image. Left there,
+    every snapshot would leave the one before's rollback image behind, one per
+    service per rebuild. It is deleted only when no tag names it any more,
+    because ``docker image rm <id>`` on an image with one tag left removes
+    that tag, and the tag could be the service's live one. Never forced, so an
+    image a container still uses stays.
+    """
+    rc, out, _ = run(["docker", "image", "inspect", previous, "--format", "{{json .RepoTags}}"])
+    if rc == 0 and out.strip() in ("[]", "null"):
+        run(["docker", "image", "rm", previous])
+
+
+def preserve(service: str, container: str, info: dict[str, Any], run: Runner = _run) -> tuple[str, str]:
+    """Tag the image ``container`` runs as ``rollback_ref_for()``. Returns ``(rollback_ref, note)``.
+
+    ``rollback_ref`` is "" when nothing could be preserved, and ``note`` says
+    why; otherwise ``note`` says what the tag holds.
+
+    The tag is what keeps the image through the rebuild. Under the containerd
+    image store (this host, Docker 29) a same-tag rebuild deletes the
+    superseded image record the moment the tag moves, even while a container
+    still runs it: ``docker image inspect <old id>`` and ``docker tag <old id>
+    …`` both answer "No such image" (measured 2026-09-28). An image id recorded
+    here and restored after the build therefore names nothing, which is how
+    every rollback from 2026-09-13 to 09-28 would have failed, unnoticed
+    because none fired. A tag taken BEFORE the build holds the record, and
+    with it the content, through the build.
+
+    The source is the image the container was created from, when that record
+    still exists. Often it already does not: a rebuild that changed nothing
+    mints a new image ID around the same platform manifest, compose rightly
+    leaves the container on the old one, and that record is gone. The image
+    ref then names the same content, and is tagged instead. Either way the tag
+    is read back, and it is recorded only if it names exactly what the
+    container runs. A container whose content no image names any more has no
+    rollback image: that is reported, never papered over with a different one.
+
+    Once the tag has moved, the image it held from the snapshot before is
+    released (``_release``), so one rollback image per service is all that is
+    ever kept.
+    """
+    target = rollback_ref_for(info["image_ref"], service)
+    if not target:
+        return "", f"{container}'s image ref ({info['image_ref'] or 'none'}) has no repository to tag under"
+    running, platform = _content(info)
+    if not running:
+        return "", f"{container} records no image"
+    if info["manifest_digest"] and not platform:
+        return "", f"{container}'s manifest descriptor names no platform"
+    previous, _ = _names(target, "", run)  # the image ID an earlier snapshot preserved, if any
+    kept, note = _tag_running(container, info, target, running, platform, run)
+    if kept and previous:
+        _release(previous, run)
+    return kept, note
+
+
+def _tag_running(container: str, info: dict[str, Any], target: str, running: str, platform: str,
+                 run: Runner) -> tuple[str, str]:
+    """Point ``target`` at the image ``container`` runs: its own image, else a ref naming the same content."""
+    gone = ""
+    if info["image_id"]:
+        rc, _, err = run(["docker", "tag", info["image_id"], target])
+        if rc == 0:
+            return _confirm(target, running, platform, "the image it was created from", run)
+        gone = f"its image {_short(info['image_id'])} is gone ({_first_line(err)}); "
+    tagged, err = _names(info["image_ref"], platform, run)
+    if tagged != running:
+        now = f"now names {_short(tagged)}" if tagged else f"cannot be read ({err})"
+        return "", (f"{gone}{info['image_ref']} {now}, not the {_short(running)} {container} runs, "
+                    "and no image holds that any more")
+    rc, _, err = run(["docker", "tag", info["image_ref"], target])
+    if rc != 0:
+        return "", f"{gone}docker tag {info['image_ref']} {target} failed: {_first_line(err)}"
+    return _confirm(target, running, platform, f"via {info['image_ref']}, which names the same content", run)
+
+
+def snapshot(services: list[str], run: Runner = _run) -> dict[str, dict[str, str]]:
+    """What each service runs before the rebuild, with that image preserved (``preserve``)."""
+    out: dict[str, dict[str, str]] = {}
+    for svc in services:
+        container = find_container(svc, run)
+        info = inspect(container, run) if container else None
+        entry = {
+            "container": container or "",
+            "image_ref": str((info or {}).get("image_ref", "")),
+            "image_id": str((info or {}).get("image_id", "")),
+            "manifest_digest": str((info or {}).get("manifest_digest", "")),
+            "platform": str((info or {}).get("platform", "")),
+            "rollback_ref": "",
+            "rollback_note": "no container",
+        }
+        if container and info is None:
+            entry["rollback_note"] = f"docker inspect {container} failed"
+        elif container and info is not None:
+            entry["rollback_ref"], entry["rollback_note"] = preserve(svc, container, info, run)
+            if not entry["rollback_ref"] and info["status"] != "running":
+                # A parked service (voice) is never gated; a game-mode-parked
+                # sidecar is, once compose-apply starts it.
+                entry["rollback_note"] += f" ({container} is {info['status'] or 'not running'}; gated only if this pass starts it)"
+        out[svc] = entry
+    return out
+
+
+def snapshot_notes(snap: dict[str, dict[str, str]]) -> list[str]:
+    """One line per service for the deploy log: what a failed gate could roll back to."""
+    lines = []
+    for svc, entry in snap.items():
+        if entry.get("rollback_ref"):
+            lines.append(f"rollback image for {svc}: {entry['rollback_ref']} ({entry.get('rollback_note', '')})")
+        elif not entry.get("container"):
+            lines.append(f"nothing to preserve for {svc}: no container")
+        else:
+            lines.append(f"{NO_ROLLBACK_NOTE}{svc}: {entry.get('rollback_note') or 'not preserved'}; "
+                         "a failed gate will page without rolling it back")
+    return lines
 
 
 RECREATE, SKIP, PARKED = "recreate", "skip", "parked"
@@ -409,17 +601,46 @@ def wait_for(
 
 
 def rollback(service: str, snap: dict[str, str], stack_cmd: list[str], run: Runner = _run) -> tuple[bool, str]:
-    """Re-tag the previous image over the compose ref and recreate the service onto it."""
-    image_id, image_ref = snap.get("image_id", ""), snap.get("image_ref", "")
-    if not image_id or not image_ref:
-        return False, "no previous image recorded in the snapshot"
-    rc, _, err = run(["docker", "tag", image_id, image_ref])
+    """Re-tag the preserved rollback image over the compose ref, recreate the service onto it, and prove it.
+
+    The source is the tag the snapshot preserved (``rollback_ref``), never the
+    bare image id: under the containerd store the rebuild deleted that record.
+    Before anything is re-tagged, the preserved tag must still name what the
+    snapshot saw running (an operator's ``docker image prune -a`` removes
+    it). After the recreate, the new container must run exactly that content,
+    or the rollback has not happened, whatever the commands returned.
+    """
+    image_ref, target = snap.get("image_ref", ""), snap.get("rollback_ref", "")
+    held, platform = _content(snap)
+    if not image_ref or not target or not held:
+        why = snap.get("rollback_note") or "the snapshot recorded none"
+        return False, f"no previous image was preserved before the rebuild ({why})"
+    now, err = _names(target, platform, run)
+    if now != held:
+        state = f"now names {_short(now)}, not the preserved {_short(held)}" if now else f"is gone ({err})"
+        return False, f"the rollback image {target} {state}"
+    rc, _, err = run(["docker", "tag", target, image_ref])
     if rc != 0:
-        return False, f"docker tag failed: {err.strip()[:200]}"
+        return False, f"docker tag {target} {image_ref} failed: {_first_line(err)}"
     rc, _, err = run([*stack_cmd, "up", "-d", "--no-build", "--force-recreate", service])
     if rc != 0:
-        return False, f"recreate failed: {err.strip()[:200]}"
-    return True, f"re-tagged {image_ref} -> {image_id[:19]} and recreated"
+        return False, f"re-tagged {image_ref} from {target}, but the recreate failed: {_last_line(err)}"
+    container = find_container(service, run)
+    info = inspect(container, run) if container else None
+    runs = _content(info)[0] if info else ""
+    if runs != held:
+        return False, (f"re-tagged {image_ref} from {target} and recreated, but {container or service} "
+                       f"runs {_short(runs)}, not the preserved {_short(held)}")
+    return True, f"re-tagged {image_ref} from {target} and recreated; {container} runs {_short(held)} again"
+
+
+def restore_hint(service: str, snap: dict[str, str], stack_cmd: list[str]) -> str:
+    """The commands that put ``service`` back on its preserved image by hand; "" without one."""
+    target, image_ref = snap.get("rollback_ref", ""), snap.get("image_ref", "")
+    if not target or not image_ref:
+        return ""
+    return (f" The image it ran before the rebuild was preserved as `{target}`; to put it back by hand: "
+            f"`docker tag {target} {image_ref} && {' '.join(stack_cmd)} up -d --no-build --force-recreate {service}`.")
 
 
 def write_alert(*, service: str, sha: str, severity: str, title: str, body: str, run: Runner = _run) -> None:
@@ -446,6 +667,7 @@ def verify(
             results[svc] = entry
             continue
         tail = log_tail(container, run) if container else "(container not found)"
+        hint = restore_hint(svc, snap.get(svc, {}), stack_cmd)
         if v.startswith("failed") and do_rollback and not svc.startswith(CONTAINER_PREFIX):
             ok, note = rollback(svc, snap.get(svc, {}), stack_cmd, run)
             entry["rolled_back"] = ok
@@ -459,7 +681,7 @@ def verify(
                 body=(
                     f"The deploy sync rebuilt and recreated `{svc}` at {sha[:9]} and the new container failed its "
                     f"health gate ({v}). " + (f"Rolled back: {note}. The fix must merge as a new commit; this sha will not be "
-                    f"rebuilt again for this service." if ok else f"Rollback failed: {note}. The service is DOWN.")
+                    f"rebuilt again for this service." if ok else f"Rollback failed: {note}. The service is DOWN.{hint}")
                     + f"\n\nLast {LOG_TAIL} log lines of the failed container:\n```\n{tail}\n```"
                 ), run=run,
             )
@@ -473,6 +695,7 @@ def verify(
                     + ("Rollback is disabled (deploy_rollback_on_unhealthy=false) or this is a bind-mount service; "
                        "the fix is a code revert or a pinned deploy clone." if v.startswith("failed")
                        else "It may still be starting; if the next cycle does not clear this, treat it as down.")
+                    + hint
                     + f"\n\nLast {LOG_TAIL} log lines:\n```\n{tail}\n```"
                 ), run=run,
             )
@@ -507,7 +730,11 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("--stack-cmd", default="", help="command prefix that runs docker compose for the stack")
     args = ap.parse_args(argv)
     if args.cmd == "snapshot":
-        print(json.dumps(snapshot(args.services)))
+        snap = snapshot(args.services)
+        print(json.dumps(snap))
+        # stdout is the JSON the verify half reads; these go to the deploy log.
+        for line in snapshot_notes(snap):
+            print(" ".join(line.split()), file=sys.stderr)
         return 0
     if args.cmd == "recreate-plan":
         # Tab-separated so the shell can `read` it without a JSON parser; a
