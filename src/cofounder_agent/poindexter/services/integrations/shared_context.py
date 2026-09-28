@@ -51,8 +51,9 @@ _site_config: Any | None = None
 def set_database_service(db_service: Any) -> None:
     """Register the process-wide DatabaseService reference.
 
-    Called once from ``main.py`` after ``startup_manager.initialize_all_services()``
-    returns the DB service. Idempotent — re-setting overwrites the
+    Called by ``StartupManager`` in the worker lifespan as soon as the pool
+    is open and migrations have run, so operator alerts raised by later
+    startup steps can be delivered. Idempotent — re-setting overwrites the
     previous ref (useful in tests).
     """
     global _db_service

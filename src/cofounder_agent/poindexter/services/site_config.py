@@ -27,10 +27,12 @@ Usage in code:
     site_config.require("site_url")         # raises if unset
 
 Startup:
-    main.py's lifespan constructs ONE SiteConfig, calls ``await
-    sc.load(pool)``, then hands it to ``build_container(pool,
-    site_config=sc)`` so ``app.state.container.site_config`` IS that
-    same instance (reached by routes via ``get_site_config_dependency``).
+    main.py constructs ONE SiteConfig and passes it to its lifespan's
+    ``StartupManager``, which calls ``await sc.load(pool)`` right after
+    migrations, before any startup step reads a setting. The lifespan then
+    hands it to ``build_container(pool, site_config=sc)`` so
+    ``app.state.container.site_config`` IS that same instance (reached by
+    routes via ``get_site_config_dependency``).
     The scheduled ``reload_site_config`` job refreshes that object in
     place, so runtime ``settings set`` changes propagate without a
     restart.

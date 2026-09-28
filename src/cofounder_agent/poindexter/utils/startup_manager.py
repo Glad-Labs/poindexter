@@ -3,8 +3,9 @@ Startup Manager - Orchestrates application initialization and shutdown
 
 Handles all startup and shutdown operations for Poindexter (the AI cofounder pipeline):
 - Database initialization (PostgreSQL + asyncpg)
-- Cache setup (Redis)
 - Migrations + module migrations
+- Settings load (app_settings into the injected SiteConfig, before any step reads it)
+- Cache setup (Redis)
 - Retention janitor
 - Route service registration
 - Graceful shutdown
@@ -17,11 +18,13 @@ Task dispatch lives in the Prefect server at ``http://localhost:4200``
 
 import asyncio
 import os
+from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
+from poindexter.services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
@@ -40,8 +43,9 @@ logger = get_logger(__name__)
 _MODEL_SENTINELS = frozenset({"auto", "default", "none"})
 
 # Bare (no-slash) values whose key addresses a non-Ollama backend. A slash-ed
-# value is classified structurally by its provider prefix instead, so only
-# these ambiguous bare ones need naming. Operators extend this via
+# value is classified structurally by its provider prefix instead, and a
+# HuggingFace revision pin by `_hf_revision_pinned_keys`, so only the remaining
+# ambiguous bare ones need naming. Operators extend this via
 # `ollama_model_validation_skip_keys` rather than editing code.
 _NON_OLLAMA_MODEL_KEYS = frozenset({
     "gpu_model",                 # hardware description, e.g. "NVIDIA RTX 5090 (32GB VRAM)"
@@ -57,6 +61,26 @@ _NON_OLLAMA_MODEL_KEYS = frozenset({
 # Structural like the slash rule above, so a new ComfyUI checkpoint key stops
 # needing a code change to avoid a false MISSING every boot.
 _CHECKPOINT_SUFFIXES = (".safetensors", ".ckpt", ".gguf", ".pt", ".pth", ".bin")
+
+# HuggingFace weight pins (poindexter#879). A `<key>_revision` row pins the
+# model named in `<key>` to a Hub commit SHA, and '' means "track upstream
+# main", so the row's existence is the signal, not its value. Ollama addresses
+# models as `name:tag` and has no revisions, so a pinned key names a Hub model
+# loaded by sentence-transformers or a cross-encoder. Nothing else about a bare
+# Hub name gives it away: `all-MiniLM-L6-v2` (topic_dedup_embedding_model)
+# reads like any Ollama tag, and Ollama's library has an `all-minilm` of its
+# own. That key was reported MISSING on every boot until this rule. Derived
+# from the table, so the next pinned key needs no code change.
+_REVISION_SUFFIX = "_revision"
+
+
+def _hf_revision_pinned_keys(keys: Iterable[str]) -> frozenset[str]:
+    """The ``*_model`` keys a ``*_model_revision`` row pins to a Hub commit."""
+    return frozenset(
+        key[: -len(_REVISION_SUFFIX)]
+        for key in keys
+        if key.endswith("_model" + _REVISION_SUFFIX)
+    )
 
 
 def _ollama_name_variants(name: str) -> set[str]:
@@ -76,10 +100,16 @@ def _ollama_name_variants(name: str) -> set[str]:
     return {name, f"{name}:latest"}
 
 
-def _is_ollama_model_value(key: str, value: str, *, skip_keys: frozenset[str]) -> bool:
+def _is_ollama_model_value(
+    key: str,
+    value: str,
+    *,
+    skip_keys: frozenset[str],
+    hf_pinned_keys: frozenset[str] = frozenset(),
+) -> bool:
     """True when ``value`` is an Ollama model this validator should check.
 
-    Three rules, cheapest first:
+    Five rules, cheapest first:
 
     1. Sentinels (``auto``) select a model at runtime; there is nothing to look up.
     2. A value containing ``/`` declares its own namespace. ``ollama/…`` is
@@ -90,7 +120,9 @@ def _is_ollama_model_value(key: str, value: str, *, skip_keys: frozenset[str]) -
        recognise the providers someone had already been bitten by.
     3. A value ending in a weights-file suffix is a checkpoint file on a
        sidecar's disk, not an Ollama tag (see ``_CHECKPOINT_SUFFIXES``).
-    4. Bare values are ambiguous by inspection, so the KEY decides.
+    4. A bare value under a key with a HuggingFace revision pin names a Hub
+       model (see ``_hf_revision_pinned_keys``).
+    5. Other bare values are ambiguous by inspection, so the KEY decides.
     """
     raw = (value or "").strip()
     if not raw or raw.lower() in _MODEL_SENTINELS:
@@ -99,23 +131,37 @@ def _is_ollama_model_value(key: str, value: str, *, skip_keys: frozenset[str]) -
         return raw.lower().startswith("ollama/")
     if raw.lower().endswith(_CHECKPOINT_SUFFIXES):
         return False
+    if key in hf_pinned_keys:
+        return False
     return key not in skip_keys
 
 
 class StartupManager:
     """Manages all startup and shutdown operations for the FastAPI application"""
 
-    def __init__(self, site_config=None):
+    def __init__(self, *, site_config: SiteConfig):
         """Initialize startup manager with empty service references.
 
         Args:
-            site_config: SiteConfig instance — threaded from main.py lifespan
-                into every sub-service that needs DB-backed config at startup
-                (Redis cache, retention janitor). Phase H (GH#95)
-                dropped the transitional module-singleton imports in favour
-                of this single construction site. Defaults to None so any
-                test that constructs StartupManager() bare still works.
+            site_config: The SiteConfig every startup step reads: main.py's
+                lifespan instance, threaded into each sub-service that needs
+                DB-backed config at startup (database pool, Redis cache, model
+                validator, retention janitor). ``initialize_all_services()``
+                loads it from app_settings once migrations have run
+                (``_load_site_config``), so it is the ONE instance the load
+                must reach. Required: the old ``None`` default made each step
+                build its own env-fallback SiteConfig, which no load could
+                touch.
+
+        Raises:
+            TypeError: if ``site_config`` is missing.
         """
+        if site_config is None:
+            raise TypeError(
+                "StartupManager requires a site_config kwarg: the SiteConfig "
+                "every startup step reads, loaded from app_settings by "
+                "initialize_all_services()."
+            )
         self._site_config = site_config
         self.database_service: Any = None
         self.redis_cache: Any = None
@@ -256,6 +302,12 @@ class StartupManager:
             # Step 2: Run migrations
             await self._run_migrations()
 
+            # Step 2a: Load app_settings into the SiteConfig every later step
+            # reads, and publish it with the DB service for notify_operator.
+            # Must stay ahead of the first step that reads a setting.
+            await self._load_site_config()
+            self._publish_integrations_context()
+
             # Step 2b: Self-heal any fully-unstamped active graph_def rows
             # (poindexter#755). graph_def *reseed* migrations write the raw
             # spec with no per-node contract fingerprints (to stay importable
@@ -314,10 +366,13 @@ class StartupManager:
                 from poindexter.services.retention_janitor import RetentionJanitor
                 if self.database_service and self.database_service.pool:
                     _janitor = RetentionJanitor(site_config=self._site_config)
-                    asyncio.create_task(
+                    # Held like the pool monitor so shutdown cancels it.
+                    janitor_task = asyncio.create_task(
                         _janitor.run_forever(self.database_service.pool),
                         name="retention_janitor",
                     )
+                    self._background_tasks.add(janitor_task)
+                    janitor_task.add_done_callback(self._background_tasks.discard)
                     logger.info("[retention_janitor] Started background loop")
             except Exception as rj_err:
                 logger.warning(
@@ -366,16 +421,14 @@ class StartupManager:
 
             config = get_config()
             # #272 Phase-2g: DatabaseService takes a REQUIRED site_config.
-            # Pass the lifespan-bound instance threaded into this manager —
-            # it's still empty here (loaded in-place later by
-            # ``site_config.load(pool)`` in main.py's lifespan), so the
-            # pool-size reads in ``initialize()`` use defaults exactly as
-            # before. A bare-boot path with no injected SiteConfig falls
-            # back to a fresh env-fallback instance.
-            from poindexter.services.site_config import SiteConfig
+            # Pass the instance threaded into this manager. It is not loaded
+            # yet: loading needs this pool, and ``_load_site_config`` runs
+            # once migrations have settled app_settings. So
+            # ``initialize()`` pre-reads its pool-size keys over a direct
+            # connection instead of asking the SiteConfig.
             self.database_service = DatabaseService(
                 local_database_url=config.local_database_url,
-                site_config=self._site_config or SiteConfig(),
+                site_config=self._site_config,
             )
 
             for attempt in range(1, max_attempts + 1):
@@ -634,6 +687,59 @@ class StartupManager:
         except Exception as e:
             logger.warning(f"   [WARNING] JWT blocklist init failed: {e!s}", exc_info=True)
 
+    async def _load_site_config(self) -> None:
+        """Load ``app_settings`` into the injected SiteConfig (step 2a).
+
+        Every later step reads settings through ``self._site_config``: Redis
+        (``redis_enabled``, and the ``redis_url`` secret, which ``get_secret``
+        can only query once ``load`` has handed the SiteConfig its pool), the
+        Ollama model validator and the retention janitor. Until 2026-09-28
+        main.py loaded it only after this whole method returned, so those reads
+        resolved from env vars and code defaults while ``SiteConfig.get``
+        stamped ``last_read_at`` as if the stored value had been used. Prod
+        stored 'true' for the (since retired) image-gen warmup switch for three
+        months while every boot logged the warmup as skipped.
+
+        Runs after migrations, not as soon as the pool opens: migrations, the
+        defaults seeder and the operator overlay all write ``app_settings`` in
+        step 2, and a fresh database has no such table before it. Nothing in
+        steps 1-2 reads the SiteConfig; ``DatabaseService.initialize`` pre-reads
+        its own pool-size keys.
+
+        A failed load keeps the env fallbacks and warns (inside
+        ``SiteConfig.load``). The lifespan's ``build_container`` re-queries
+        ``app_settings`` and fails loud if it is still unreadable.
+        """
+        pool = self.database_service.pool if self.database_service else None
+        if pool is None:
+            logger.warning(
+                "[startup] No DB pool: startup settings resolve from env vars "
+                "and code defaults"
+            )
+            return
+        await self._site_config.load(pool)
+
+    def _publish_integrations_context(self) -> None:
+        """Publish the DB service and SiteConfig for ``notify_operator``.
+
+        ``notify_operator`` finds both through
+        ``services.integrations.shared_context``. main.py published them only
+        after ``initialize_all_services()`` returned, so a page raised by a
+        startup step (the model validator's missing-model, suspect-template
+        and Ollama-unreachable alerts) found neither and was dropped at DEBUG:
+        the validator logged its finding and alerted no one. main.py's
+        ``wire_site_config_modules`` later publishes the same SiteConfig again.
+        """
+        if not (self.database_service and self.database_service.pool):
+            return
+        from poindexter.services.integrations.shared_context import (
+            set_database_service,
+            set_site_config,
+        )
+
+        set_database_service(self.database_service)
+        set_site_config(self._site_config)
+
     async def _ensure_active_graph_defs_stamped(self) -> None:
         """Baseline-stamp any active graph_def a reseed migration left fully
         unstamped (poindexter#755).
@@ -688,17 +794,14 @@ class StartupManager:
 
         Constructed via :meth:`RedisCache.create` with the injected
         SiteConfig (2026-05-28 DI migration — RedisCache no longer reads
-        a module-level singleton). If the StartupManager was instantiated
-        without a SiteConfig (early-boot / bare-test path), build a fresh
-        env-fallback instance so create() still gets a valid dependency.
+        a module-level singleton), which step 2a has already loaded, so
+        ``redis_enabled`` and the ``redis_url`` secret come from app_settings.
         """
         logger.info("  [INFO] Initializing Redis cache for query optimization...")
         try:
             from poindexter.services.redis_cache import RedisCache
-            from poindexter.services.site_config import SiteConfig
 
-            sc = self._site_config if self._site_config is not None else SiteConfig()
-            self.redis_cache = await RedisCache.create(site_config=sc)
+            self.redis_cache = await RedisCache.create(site_config=self._site_config)
             if self.redis_cache._enabled:
                 logger.info(
                     "   [OK] Redis cache initialized (query performance optimization enabled)"
@@ -766,11 +869,15 @@ class StartupManager:
         Measured 2026-07-29, the un-filtered check reported 16 missing models
         of which **15 were false positives**, burying the one real finding
         (an uninstalled ``ollama/``-prefixed voice model). Four filters keep
-        the warning worth reading — see ``_is_ollama_model_value``, the
+        the warning worth reading — see ``_is_ollama_model_value`` (which
+        also reads the HuggingFace revision pins the query fetches), the
         ``ESCAPE`` on the key query, the ``:latest`` normalization in
         ``_ollama_name_variants``, and the de-duplication of both report lists.
 
-        Gated by ``ollama_model_validation_enabled`` (default ``true``).
+        Gated by ``ollama_model_validation_enabled`` (default ``true``); a
+        new non-Ollama bare key is exempted through
+        ``ollama_model_validation_skip_keys``. Both are read from the
+        SiteConfig step 2a loaded, so their stored values apply at boot.
         Never hard-fails -- startup continues even when Ollama is unreachable.
 
         Root cause for which this was added: a writer model setting (then
@@ -782,10 +889,6 @@ class StartupManager:
         Glad-Labs/glad-labs-stack#1284.
         """
         sc = self._site_config
-        if sc is None:
-            logger.debug("[model_validator] No SiteConfig -- skipping")
-            return
-
         enabled = sc.get("ollama_model_validation_enabled", "true")
         if enabled.lower() not in ("true", "1", "yes"):
             logger.debug("[model_validator] Disabled via ollama_model_validation_enabled")
@@ -805,18 +908,23 @@ class StartupManager:
                 # the unescaped '%_model' also matched `.model` keys —
                 # dragging in sidecar settings like
                 # plugin.tts_provider.chatterbox.model that Ollama was never
-                # going to have installed.
+                # going to have installed. The `*_model_revision` rows come
+                # back empty or not: a revision pin is what marks its model
+                # key as a HuggingFace Hub model (`_hf_revision_pinned_keys`).
                 rows = await conn.fetch(
                     r"SELECT key, value FROM app_settings"
-                    r" WHERE key LIKE '%\_model' ESCAPE '\'"
-                    r" AND value IS NOT NULL AND value != ''"
+                    r" WHERE (key LIKE '%\_model' ESCAPE '\'"
+                    r"        AND value IS NOT NULL AND value != '')"
+                    r"    OR key LIKE '%\_model\_revision' ESCAPE '\'"
                     r" ORDER BY key"
                 )
         except Exception as db_err:
             logger.warning("[model_validator] DB query failed: %s", db_err)
             return
 
-        if not rows:
+        hf_pinned = _hf_revision_pinned_keys(row["key"] for row in rows)
+        model_rows = [row for row in rows if not row["key"].endswith(_REVISION_SUFFIX)]
+        if not model_rows:
             logger.debug("[model_validator] No *_model keys found")
             return
 
@@ -832,10 +940,12 @@ class StartupManager:
 
         # key -> raw value (may include ollama/ prefix)
         configured: dict[str, str] = {
-            row["key"]: row["value"] for row in rows
-            if _is_ollama_model_value(row["key"], row["value"], skip_keys=skip_keys)
+            row["key"]: row["value"] for row in model_rows
+            if _is_ollama_model_value(
+                row["key"], row["value"], skip_keys=skip_keys, hf_pinned_keys=hf_pinned,
+            )
         }
-        skipped = len(rows) - len(configured)
+        skipped = len(model_rows) - len(configured)
         logger.debug(
             "[model_validator] %d model key(s) to validate (%d non-Ollama skipped)",
             len(configured), skipped,

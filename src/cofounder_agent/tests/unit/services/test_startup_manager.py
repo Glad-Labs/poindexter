@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from poindexter.services.site_config import SiteConfig
 from poindexter.utils.startup_manager import StartupManager
 
 # ---------------------------------------------------------------------------
@@ -20,7 +21,7 @@ from poindexter.utils.startup_manager import StartupManager
 
 
 def _make_manager() -> StartupManager:
-    return StartupManager()
+    return StartupManager(site_config=SiteConfig())
 
 
 # ---------------------------------------------------------------------------

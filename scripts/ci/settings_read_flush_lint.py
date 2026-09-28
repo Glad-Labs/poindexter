@@ -133,7 +133,10 @@ _WORKER = (
 # one-off script or a parked service gets the same treatment as the worker.
 ALLOWLIST: dict[str, str] = {
     # --- flushed, but from somewhere this lint can't follow ---
-    "src/cofounder_agent/main.py::<module>": _WORKER,
+    # main.py's module-level SiteConfig() is loaded by the lifespan's
+    # StartupManager (utils/startup_manager.py::_load_site_config), which
+    # receives it injected, so it is not a construction site; the lifespan's
+    # build_container() call is.
     "src/cofounder_agent/main.py::lifespan": _WORKER,
     "src/cofounder_agent/poindexter/cli/_bootstrap.py::cli_site_config": (
         "records into the process-wide settings_read_sink (read_recorder), "

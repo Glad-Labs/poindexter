@@ -11,9 +11,11 @@ Every service that used to call `os.getenv()` now reads through a
 `SiteConfig` instance: route handlers receive it via FastAPI
 `Depends(get_site_config_dependency)`, services accept it in
 `__init__`, pipeline stages pull it from `context["site_config"]`,
-plugins/taps/sources from `config["_site_config"]`. The instance is
-constructed once in `main.py` lifespan, populated from `app_settings`
-at startup, and attached to `app.state.site_config`.
+plugins/taps/sources from `config["_site_config"]`. The worker's
+instance is constructed once in `main.py`, loaded from `app_settings` by
+the lifespan's `StartupManager` right after migrations (before any
+startup step reads a setting), and shared as
+`app.state.container.site_config`.
 
 Non-secret settings are loaded into an in-memory dict at startup so
 `get()` is sync. Secrets (rows with `is_secret=true`) are deliberately
@@ -165,6 +167,16 @@ The only env vars `SiteConfig` itself touches:
 - **`load()` query fails** — caught, logged as warning, returns `0`.
   Cache stays empty. Recover by calling `reload(pool)` once the DB
   is back.
+- **A read before `load()`** — resolves from env vars and code defaults,
+  yet `get()` still records the key for `last_read_at`. The stored value
+  looks used and isn't. The worker's `StartupManager._load_site_config`
+  runs right after migrations, ahead of every startup step that reads a
+  setting. Until 2026-09-28 the load ran in `main.py`'s lifespan after all
+  of startup, so every startup read hit this: a stored
+  `enable_image_gen_warmup='true'` did nothing for three months, and the
+  Ollama model validator never saw `ollama_model_validation_skip_keys`.
+  When a stored setting seems to have no effect, check where it is read
+  relative to the load.
 - **`require()` on unset key** — raises
   `RuntimeError("Required setting '<key>' is not configured. Set it
 in app_settings table or as env var <KEY>.")`. This is the "fail

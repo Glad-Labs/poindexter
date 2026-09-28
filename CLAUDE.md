@@ -344,8 +344,12 @@ then `sys.exit(2)`.
 
 **Everything else lives in `app_settings` (~685 active keys).** Code accesses
 settings through a `SiteConfig` instance that is dependency-injected
-(Phase H, GH#95). `main.py` constructs the canonical instance, loads it
-from the DB at startup, and attaches it to `app.state.site_config`.
+(Phase H, GH#95). `main.py` constructs the canonical instance; its lifespan's
+`StartupManager` loads it from the DB right after migrations, before any
+startup step reads a setting, and `build_container` shares it as
+`app.state.container.site_config`. A read before that load resolves from env
+vars and code defaults but still stamps `last_read_at` (until 2026-09-28 every
+startup step read that way).
 
 Get a reference to the instance through the appropriate DI seam:
 

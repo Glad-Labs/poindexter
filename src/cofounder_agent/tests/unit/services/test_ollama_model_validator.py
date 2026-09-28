@@ -380,22 +380,6 @@ class TestValidationDisabled:
         conn.fetch.assert_not_called()
         notify_mock.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_no_site_config_skips_silently(self):
-        """Without a SiteConfig, the validator returns early without error."""
-        pool, conn = _make_pool_rows([])
-        manager = StartupManager(site_config=None)
-
-        notify_mock = AsyncMock()
-        with patch(
-            "poindexter.services.integrations.operator_notify.notify_operator",
-            new=notify_mock,
-        ):
-            await manager._validate_ollama_model_settings(pool)
-
-        conn.fetch.assert_not_called()
-        notify_mock.assert_not_called()
-
 
 # ---------------------------------------------------------------------------
 # Non-Ollama filtering (Glad-Labs/poindexter#941)
@@ -495,6 +479,17 @@ class TestOllamaValueClassification:
                 key, value, skip_keys=frozenset()
             ), f"{key}={value} should be classified as a checkpoint file"
 
+    def test_hf_revision_pinned_bare_value_is_skipped(self):
+        """``all-MiniLM-L6-v2`` reads like any Ollama tag; only the key's
+        HuggingFace revision pin says it is a sentence-transformers model."""
+        from poindexter.utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
+
+        assert not _is_ollama_model_value(
+            "topic_dedup_embedding_model", "all-MiniLM-L6-v2",
+            skip_keys=_NON_OLLAMA_MODEL_KEYS,
+            hf_pinned_keys=frozenset({"topic_dedup_embedding_model"}),
+        )
+
     def test_checkpoint_rule_does_not_widen_to_tag_lookalikes(self):
         """An Ollama tag that merely CONTAINS a dot (`llama3.2:3b`,
         `qwen2.5-coder:14b`) must still be validated — only a terminal
@@ -505,6 +500,27 @@ class TestOllamaValueClassification:
             assert _is_ollama_model_value(
                 "some_writer_model", value, skip_keys=frozenset()
             ), f"{value} should still be validated"
+
+
+@pytest.mark.unit
+class TestHfRevisionPins:
+    """A ``<key>_revision`` row pins ``<key>`` to a HuggingFace Hub commit
+    (poindexter#879). Ollama models have tags, never revisions."""
+
+    def test_a_revision_row_pins_its_model_key(self):
+        from poindexter.utils.startup_manager import _hf_revision_pinned_keys
+
+        assert _hf_revision_pinned_keys([
+            "pipeline_writer_model",
+            "rag_rerank_model_revision",
+            "topic_dedup_embedding_model",
+            "topic_dedup_embedding_model_revision",
+        ]) == {"rag_rerank_model", "topic_dedup_embedding_model"}
+
+    def test_only_a_model_key_can_be_pinned(self):
+        from poindexter.utils.startup_manager import _hf_revision_pinned_keys
+
+        assert _hf_revision_pinned_keys(["graph_def_revision", "prompt_revision"]) == frozenset()
 
 
 @pytest.mark.unit
@@ -577,6 +593,58 @@ class TestValidatorNoiseSuppression:
         msg = notify.call_args[0][0]
         assert "gemma-4-E2B-Q2:latest" in msg
         assert "NVIDIA" not in msg, "hardware string must not appear as a model"
+
+    @pytest.mark.asyncio
+    async def test_hf_pinned_model_is_not_reported_missing(self):
+        """Prod's last false positive, replayed. The query returns the pin
+        row beside the model row; neither may be reported as a missing Ollama
+        model (the pin's SHA least of all)."""
+        notify = await _run_validator(
+            model_rows=[
+                {"key": "topic_dedup_embedding_model", "value": "all-MiniLM-L6-v2"},
+                {
+                    "key": "topic_dedup_embedding_model_revision",
+                    "value": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+                },
+                {"key": "embed_model", "value": "nomic-embed-text"},
+            ],
+            tags_data={"models": [{"name": "nomic-embed-text:latest"}]},
+            show_data={"template": _GOOD_TEMPLATE},
+        )
+        notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_an_empty_revision_pin_still_marks_a_hub_model(self):
+        """'' tracks upstream main: still a Hub model. The row's existence is
+        the signal, and a real Ollama miss beside it still reports."""
+        notify = await _run_validator(
+            model_rows=[
+                {"key": "topic_dedup_embedding_model", "value": "all-MiniLM-L6-v2"},
+                {"key": "topic_dedup_embedding_model_revision", "value": ""},
+                {"key": "voice_agent_llm_model", "value": "ollama/gemma-4-E2B-Q2:latest"},
+            ],
+            tags_data={"models": [{"name": "llama3.2:3b"}]},
+        )
+        notify.assert_called_once()
+        msg = notify.call_args[0][0]
+        assert "gemma-4-E2B-Q2:latest" in msg
+        assert "all-MiniLM-L6-v2" not in msg
+
+    @pytest.mark.asyncio
+    async def test_operator_skip_list_setting_exempts_its_keys(self):
+        """``ollama_model_validation_skip_keys`` is a comma-separated list;
+        whitespace and a trailing comma are tolerated."""
+        notify = await _run_validator(
+            model_rows=[
+                {"key": "sidecar_a_model", "value": "weights-a"},
+                {"key": "sidecar_b_model", "value": "weights-b"},
+            ],
+            tags_data={"models": []},
+            site_config_overrides={
+                "ollama_model_validation_skip_keys": " sidecar_a_model , sidecar_b_model ,",
+            },
+        )
+        notify.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_one_model_across_many_keys_reports_once(self):

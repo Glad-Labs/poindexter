@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
+from poindexter.services.site_config import SiteConfig
 from poindexter.utils.startup_manager import StartupManager
 
 # ---------------------------------------------------------------------------
@@ -88,7 +89,7 @@ class TestScanSyntaxErrors:
 
 class TestCheckModuleSyntax:
     def _make_manager(self):
-        return StartupManager(site_config=None)
+        return StartupManager(site_config=SiteConfig())
 
     def test_exits_1_when_conflict_markers_present(self, tmp_path, operator_pages):
         (tmp_path / "conflicted.py").write_text("<<<<<<< HEAD\n")

@@ -23,9 +23,14 @@ All tests are pure — zero DB, LLM, or network calls.
 import asyncio
 import os
 import sys
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from poindexter.services.site_config import SiteConfig
+from tests.unit._nonempty import nonempty
 
 # ---------------------------------------------------------------------------
 # Helper: build a StartupManager with sys.modules pre-populated so imports
@@ -39,7 +44,7 @@ def _make_manager():
     sys.modules.pop("poindexter.utils.startup_manager", None)
     from poindexter.utils.startup_manager import StartupManager
 
-    return StartupManager()
+    return StartupManager(site_config=SiteConfig())
 
 
 def _run(coro):
@@ -64,6 +69,14 @@ class TestInit:
         assert mgr.database_service is None
         assert mgr.redis_cache is None
         assert mgr.startup_error is None
+
+    def test_site_config_is_required(self):
+        """The old ``None`` default let each step build its own env-fallback
+        SiteConfig, which the settings load could never reach."""
+        from poindexter.utils.startup_manager import StartupManager
+
+        with pytest.raises(TypeError, match="site_config"):
+            StartupManager(site_config=None)
 
 
 # ---------------------------------------------------------------------------
@@ -725,16 +738,20 @@ class TestInitializeAllServices:
         mgr._validate_secrets = MagicMock(side_effect=lambda: call_order.append("validate"))
         mgr._initialize_database = AsyncMock(side_effect=lambda: call_order.append("db"))
         mgr._run_migrations = AsyncMock(side_effect=lambda: call_order.append("migrations"))
+        mgr._load_site_config = AsyncMock(side_effect=lambda: call_order.append("load_settings"))
         mgr._setup_redis_cache = AsyncMock(side_effect=lambda: call_order.append("redis"))
         mgr._verify_connections = AsyncMock(side_effect=lambda: call_order.append("verify"))
         mgr._log_startup_summary = MagicMock()
 
         _run(mgr.initialize_all_services())
 
+        # The settings load sits between migrations (which write app_settings)
+        # and the first step that reads a setting (Redis).
         assert call_order == [
             "validate",
             "db",
             "migrations",
+            "load_settings",
             "redis",
             "verify",
         ]
@@ -760,3 +777,324 @@ class TestInitializeAllServices:
         assert "graphdef_stamp" in call_order
         assert call_order.index("migrations") < call_order.index("graphdef_stamp")
         assert call_order.index("graphdef_stamp") < call_order.index("redis")
+
+
+# ---------------------------------------------------------------------------
+# Boot seam — every startup step reads app_settings, not env vars + defaults
+# ---------------------------------------------------------------------------
+
+
+class _RecordingSiteConfig(SiteConfig):
+    """A real SiteConfig that notes, for each read, whether ``load()`` had run."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reads: list[tuple[str, bool]] = []
+
+    def get(self, key: str, default: str = "") -> str:
+        self.reads.append((key, self.is_loaded))
+        return super().get(key, default)
+
+    def require(self, key: str) -> str:
+        self.reads.append((key, self.is_loaded))
+        return super().require(key)
+
+    async def get_secret(self, key: str, default: str = "") -> str:
+        self.reads.append((key, self.is_loaded))
+        return await super().get_secret(key, default)
+
+
+class _FakeConn:
+    """An acquired connection, answering the queries boot sends through one."""
+
+    def __init__(self, settings: dict[str, str]) -> None:
+        self._settings = settings
+
+    async def fetch(self, sql: str, *args: Any) -> list[dict[str, str]]:
+        # The model validator's query: every non-empty ``*_model`` row.
+        return [
+            {"key": key, "value": value}
+            for key, value in sorted(self._settings.items())
+            if key.endswith("_model") and value
+        ]
+
+    async def fetchrow(self, sql: str, *args: Any) -> None:
+        return None  # plugins.secrets.get_secret: this table holds no secrets
+
+
+class _Acquire:
+    def __init__(self, conn: _FakeConn) -> None:
+        self._conn = conn
+
+    async def __aenter__(self) -> _FakeConn:
+        return self._conn
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
+class _FakePool:
+    """An asyncpg pool over one in-memory ``app_settings`` table."""
+
+    def __init__(self, settings: dict[str, str]) -> None:
+        self._settings = settings
+
+    async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
+        # SiteConfig.load: every non-secret row.
+        return [
+            {"key": key, "value": value, "deprecated": False, "superseded_by": None}
+            for key, value in self._settings.items()
+        ]
+
+    def acquire(self) -> _Acquire:
+        return _Acquire(_FakeConn(self._settings))
+
+
+class _FakeDatabaseService:
+    def __init__(self, pool: _FakePool) -> None:
+        self.pool = pool
+
+    async def initialize(self) -> None:
+        return None
+
+    async def health_check(self) -> dict[str, str]:
+        return {"status": "healthy"}
+
+    async def close(self) -> None:
+        return None
+
+
+class _FakePoolHealth:
+    def __init__(self, pool: Any) -> None:
+        self.pool = pool
+
+    async def auto_health_check(self) -> None:
+        return None
+
+
+class _FakeOllama:
+    """Stands in for the shared httpx client and records where requests went."""
+
+    def __init__(self, installed: list[str]) -> None:
+        self.urls: list[str] = []
+        self._installed = installed
+
+    async def get(self, url: str, **kwargs: Any) -> MagicMock:
+        self.urls.append(url)
+        resp = MagicMock()
+        resp.json.return_value = {"models": [{"name": name} for name in self._installed]}
+        return resp
+
+    async def post(self, url: str, **kwargs: Any) -> MagicMock:
+        self.urls.append(url)
+        resp = MagicMock()
+        resp.json.return_value = {"template": "<|im_start|>user\n{{ .Prompt }}"}
+        return resp
+
+
+# The stored values boot reads. None of them is what an env var or a code
+# default would supply, so a step that acts on one can only have read it from
+# app_settings.
+_DB_SETTINGS = {
+    "ollama_base_url": "http://ollama-from-db:11434",
+    "ollama_model_validation_skip_keys": "sidecar_weights_model",
+    "redis_enabled": "false",
+    "retention_janitor_interval_hours": "12",
+    "pipeline_writer_model": "ollama/writer:latest",
+    # Not an Ollama model; only the stored skip list above says so.
+    "sidecar_weights_model": "sidecar-weights-v2",
+}
+
+
+async def _boot(monkeypatch, settings: dict[str, str], notify: AsyncMock | None = None):
+    """Run the real ``initialize_all_services()`` against ``settings``.
+
+    Only the boundaries are faked: the asyncpg pool, the migration runner and
+    seeders, Redis's client and Ollama's HTTP API. Every step that reads a
+    setting runs for real. Two steps that read none are stubbed: the syntax
+    scan (it compiles the whole ``modules/`` tree) and the graph_def self-heal
+    (it imports the pipeline stack). The caller cancels the background tasks.
+    """
+    import poindexter.plugins.registry as registry
+    import poindexter.services.database_service as database_service
+    import poindexter.services.jwt_blocklist_service as jwt_blocklist_service
+    import poindexter.services.migrations as migrations
+    import poindexter.services.redis_cache as redis_cache
+    import poindexter.services.settings_defaults as settings_defaults
+    import poindexter.utils.connection_health as connection_health
+    from poindexter.services.integrations import operator_notify, shared_context
+    from poindexter.utils.startup_manager import StartupManager
+
+    pool = _FakePool(dict(settings))
+    fake_db = _FakeDatabaseService(pool)
+    monkeypatch.setattr(database_service, "DatabaseService", lambda **kwargs: fake_db)
+    monkeypatch.setattr(connection_health, "ConnectionPoolHealth", _FakePoolHealth)
+    monkeypatch.setattr(migrations, "run_migrations", AsyncMock(return_value=True))
+    for seeder in ("seed_all_defaults", "apply_operator_overrides", "seed_operator_subreddit_profiles"):
+        monkeypatch.setattr(settings_defaults, seeder, AsyncMock(return_value=0))
+    monkeypatch.setattr(registry, "get_modules", lambda: [])
+    monkeypatch.setattr(
+        jwt_blocklist_service,
+        "jwt_blocklist",
+        MagicMock(initialize=AsyncMock(), cleanup=AsyncMock()),
+    )
+    from_url = AsyncMock(side_effect=ConnectionError("no Redis in unit tests"))
+    monkeypatch.setattr(redis_cache, "aioredis", MagicMock(from_url=from_url))
+    ollama = _FakeOllama(installed=["writer:latest"])
+    monkeypatch.setattr(operator_notify, "http_client", ollama)
+    notify = notify or AsyncMock()
+    monkeypatch.setattr(operator_notify, "notify_operator", notify)
+    # Startup publishes the DB service and SiteConfig for notify_operator;
+    # setattr restores whatever was there before this test.
+    monkeypatch.setattr(shared_context, "_db_service", shared_context._db_service)
+    monkeypatch.setattr(shared_context, "_site_config", shared_context._site_config)
+
+    sc = _RecordingSiteConfig()
+    mgr = StartupManager(site_config=sc)
+    mgr._check_module_syntax = MagicMock()
+    mgr._ensure_active_graph_defs_stamped = AsyncMock()
+
+    await mgr.initialize_all_services()
+    await asyncio.sleep(0)  # let the retention janitor's first cycle run
+
+    return SimpleNamespace(mgr=mgr, sc=sc, fake_db=fake_db, ollama=ollama, notify=notify, from_url=from_url)
+
+
+@pytest.fixture
+async def booted(monkeypatch):
+    boot = await _boot(monkeypatch, _DB_SETTINGS)
+    yield boot
+    await boot.mgr._cancel_background_tasks()
+
+
+@pytest.mark.unit
+class TestBootReadsStoredSettings:
+    """The ordering bug verified on prod 2026-09-28.
+
+    ``main.py`` loaded the SiteConfig only after ``initialize_all_services()``
+    returned, so every setting read during startup resolved from env vars and
+    code defaults. ``SiteConfig.get`` still stamped ``last_read_at``, so the
+    keys looked live while their stored values did nothing: prod's
+    ``enable_image_gen_warmup='true'`` never ran the warmup, and the Ollama
+    model validator could not see ``ollama_model_validation_skip_keys``, the
+    remedy its own comment prescribes for a false MISSING line.
+    """
+
+    async def test_no_step_reads_a_setting_before_the_load(self, booted):
+        reads = list(nonempty(booted.sc.reads, "settings read during startup"))
+        early = sorted({key for key, loaded in reads if not loaded})
+        assert early == [], f"read before app_settings was loaded: {early}"
+
+    async def test_every_setting_reading_step_ran(self, booted):
+        """Guards the test above against passing because a step stopped
+        running: each of these keys is read by a different step."""
+        read = {key for key, _ in booted.sc.reads}
+        assert {
+            "redis_url",
+            "redis_enabled",
+            "ollama_base_url",
+            "ollama_model_validation_skip_keys",
+            "retention_janitor_interval_hours",
+        } <= read
+
+    async def test_validator_uses_the_stored_base_url(self, booted):
+        assert booted.ollama.urls[0] == "http://ollama-from-db:11434/api/tags"
+
+    async def test_validator_honours_the_stored_skip_list(self, booted):
+        """``sidecar_weights_model`` is missing from Ollama, and only the
+        stored skip list exempts it. Read pre-load, the list was empty and
+        the key was reported MISSING on every boot."""
+        booted.notify.assert_not_called()
+
+    async def test_redis_honours_the_stored_switch(self, booted):
+        """Prod stores ``redis_enabled=false``. Read pre-load it defaulted to
+        true, and every boot tried ``redis://localhost:6379/0``."""
+        booted.from_url.assert_not_called()
+        assert booted.mgr.redis_cache._enabled is False
+
+    async def test_a_startup_alert_reaches_a_wired_notifier(self, monkeypatch):
+        """``notify_operator`` resolves the DB service and SiteConfig through
+        ``shared_context``. main.py registered them only after startup
+        returned, so the validator's alert found neither and was dropped at
+        DEBUG on every boot."""
+        from poindexter.services.integrations import shared_context
+
+        seen: dict[str, Any] = {}
+
+        async def _capture(message: str, **kwargs: Any) -> None:
+            seen["db"] = shared_context.get_database_service()
+            seen["site_config"] = shared_context.get_site_config()
+
+        settings = {**_DB_SETTINGS, "voice_llm_model": "ollama/not-installed:latest"}
+        boot = await _boot(monkeypatch, settings, notify=AsyncMock(side_effect=_capture))
+        try:
+            boot.notify.assert_called_once()
+            assert "not-installed:latest" in boot.notify.call_args.args[0]
+            assert seen["db"] is boot.fake_db
+            assert seen["site_config"] is boot.sc
+        finally:
+            await boot.mgr._cancel_background_tasks()
+
+    async def test_shutdown_cancels_the_retention_janitor(self, booted):
+        janitor = [t for t in booted.mgr._background_tasks if t.get_name() == "retention_janitor"]
+        assert len(janitor) == 1
+
+        await booted.mgr.shutdown()
+
+        assert janitor[0].cancelled()
+
+
+@pytest.mark.unit
+class TestLoadSiteConfig:
+    async def test_loads_the_injected_instance_from_the_pool(self):
+        from poindexter.utils.startup_manager import StartupManager
+
+        sc = SiteConfig()
+        mgr = StartupManager(site_config=sc)
+        mgr.database_service = _FakeDatabaseService(_FakePool({"site_name": "Stored Name"}))
+
+        await mgr._load_site_config()
+
+        assert sc.is_loaded
+        assert sc.get("site_name") == "Stored Name"
+
+    async def test_no_pool_keeps_the_env_fallbacks(self):
+        from poindexter.utils.startup_manager import StartupManager
+
+        sc = SiteConfig()
+        mgr = StartupManager(site_config=sc)
+
+        await mgr._load_site_config()  # no database_service: must not raise
+
+        assert not sc.is_loaded
+
+
+@pytest.mark.unit
+class TestPublishIntegrationsContext:
+    def test_publishes_the_db_service_and_site_config(self, monkeypatch):
+        from poindexter.services.integrations import shared_context
+        from poindexter.utils.startup_manager import StartupManager
+
+        monkeypatch.setattr(shared_context, "_db_service", None)
+        monkeypatch.setattr(shared_context, "_site_config", None)
+        sc = SiteConfig()
+        mgr = StartupManager(site_config=sc)
+        mgr.database_service = _FakeDatabaseService(_FakePool({}))
+
+        mgr._publish_integrations_context()
+
+        assert shared_context.get_database_service() is mgr.database_service
+        assert shared_context.get_site_config() is sc
+
+    def test_publishes_nothing_without_a_pool(self, monkeypatch):
+        from poindexter.services.integrations import shared_context
+        from poindexter.utils.startup_manager import StartupManager
+
+        monkeypatch.setattr(shared_context, "_db_service", None)
+        monkeypatch.setattr(shared_context, "_site_config", None)
+        mgr = StartupManager(site_config=SiteConfig())
+
+        mgr._publish_integrations_context()
+
+        assert shared_context.get_database_service() is None
+        assert shared_context.get_site_config() is None

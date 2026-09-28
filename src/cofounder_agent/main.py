@@ -105,14 +105,13 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info("[LIFESPAN] task dispatch: prefect (http://localhost:4200)")
         logger.debug("[LIFESPAN] ✅ All services injected into app.state")
 
-        # Register the DatabaseService with the integrations framework so
-        # legacy helper functions (revalidation_service.trigger_nextjs_revalidation,
-        # operator_notify._legacy_discord_webhook fallback) can
-        # opportunistically route through outbound_dispatcher.deliver()
-        # when the corresponding webhook_endpoints row is enabled.
-        from poindexter.services.integrations.shared_context import set_database_service
-        set_database_service(services["database"])
-        logger.debug("[LIFESPAN] integrations.shared_context registered")
+        # The DatabaseService is already registered with the integrations
+        # framework (services.integrations.shared_context), so helpers like
+        # revalidation_service.trigger_nextjs_revalidation and the
+        # notify_operator fallback route through outbound_dispatcher.deliver().
+        # StartupManager does it right after migrations, so its own steps'
+        # operator alerts are delivered too (they were dropped until
+        # 2026-09-28, when this registration happened here).
 
         # Capability system removed (dead code, no consumers)
 
@@ -174,20 +173,17 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.warning(f"[LIFESPAN] Settings service failed (non-critical): {e}", exc_info=True)
             app.state.settings_service = None
 
-        # Load site config from DB (identity, settings — replaces env vars).
-        # ``_site_cfg`` is the canonical instance: build_container (below)
-        # reuses it as ``app.state.container.site_config`` — the seam routes
-        # + stages reach via Depends() — and the scheduler reloads it in
-        # place, so one object is shared process-wide (the legacy parallel
+        # ``_site_cfg`` (identity, settings — replaces env vars) is already
+        # loaded from app_settings: StartupManager loads it right after
+        # migrations, so the startup steps above read stored values. Until
+        # 2026-09-28 the load happened here, after them, and every startup
+        # read resolved from env vars and code defaults. ``_site_cfg`` is the
+        # canonical instance: build_container (below) re-queries app_settings
+        # into it (failing loud if the table is unreadable) and reuses it as
+        # ``app.state.container.site_config`` — the seam routes + stages
+        # reach via Depends() — and the scheduler reloads it in place, so one
+        # object is shared process-wide (the legacy parallel
         # ``app.state.site_config`` attribute was retired, #272).
-        try:
-            db_pool = services["database"].pool
-            loaded = await _site_cfg.load(db_pool)
-            logger.info("[LIFESPAN] Site config loaded: %d settings from DB", loaded)
-        except Exception as e:
-            logger.warning("[LIFESPAN] Site config load failed (using env fallbacks): %s", e)
-            # _site_cfg keeps env/defaults for missed keys until the DB is
-            # reachable; build_container re-probes it below.
 
         # GH#330: wire the lifespan-bound SiteConfig into every module
         # that exposes a set_site_config() setter. Each module owns its
@@ -860,10 +856,10 @@ _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
 _is_production = config.environment == "production"
 
 # Phase H step 5 (GH#95): construct a fresh SiteConfig instance locally.
-# Pre-lifespan reads come from env/defaults; lifespan calls `.load(pool)`
-# on this same instance to pull DB values and then hands it to
-# ``build_container(pool, site_config=_site_cfg)`` so it becomes
-# ``app.state.container.site_config`` — the seam routes reach via DI.
+# Pre-lifespan reads come from env/defaults; in the lifespan, StartupManager
+# loads DB values into this same instance right after migrations, and it is
+# then handed to ``build_container(pool, site_config=_site_cfg)`` so it
+# becomes ``app.state.container.site_config`` — the seam routes reach via DI.
 from poindexter.services.site_config import SiteConfig  # noqa: E402
 
 _site_cfg = SiteConfig()
@@ -926,7 +922,7 @@ setup_telemetry(app, _site_cfg)
 # app_settings.enable_pyroscope). LGTM+P stack, GH #75.
 #
 # Module-level call only sees env defaults — the canonical wiring runs
-# in lifespan after _site_cfg.load(pool) (Glad-Labs/poindexter#406).
+# in lifespan once _site_cfg is loaded (Glad-Labs/poindexter#406).
 # Kept here only so the agent can configure pre-lifespan if the
 # environment already has enable_pyroscope=true; otherwise the lifespan
 # pass overrides with the DB-loaded values.
@@ -954,8 +950,9 @@ except Exception as _e:
 
 # ===== MIDDLEWARE CONFIGURATION =====
 # Register all middleware (centralized in utils.middleware_config). Uses
-# main.py's local _site_cfg — the same instance the lifespan loads via
-# `_site_cfg.load(pool)` and shares as `app.state.container.site_config`.
+# main.py's local _site_cfg — the same instance the lifespan's
+# StartupManager loads from app_settings and build_container shares as
+# `app.state.container.site_config`.
 middleware_config = MiddlewareConfig()
 middleware_config.register_all_middleware(app, site_config=_site_cfg)
 
