@@ -43,9 +43,10 @@ Content pipeline:
   ``status`` label — the dashboard was reading ``archived`` (23)
   instead of ``published`` (91+))
 - ``poindexter_approval_queue_length`` — gauge, rows in
-  ``content_tasks`` with ``status = 'awaiting_approval'`` (Gitea #238
-  — used as the ``unless`` cross-check against cost alerts so they
-  don't fire while the pipeline is throttling on pending approvals)
+  ``content_tasks`` with ``status = 'awaiting_approval'``, re-read every
+  scrape (Gitea #238). The daily spend rules used it as an ``unless``
+  guard until 2026-09-28; no shipped rule reads it now, and it stays for
+  operator-authored rules and dashboards that do
 - ``poindexter_unapplied_migrations_count`` — gauge, count of ``.py``
   files in ``services/migrations/`` not yet recorded in
   ``schema_migrations`` (GH-227 — catches the "container updated but
@@ -278,6 +279,11 @@ POSTS_PUBLISHED = Gauge(
     "Posts with status='published' (the live count rendered on gladlabs.io)",
 )
 
+# No shipped rule reads this since 2026-09-28, when the daily spend rules
+# dropped their ``unless poindexter_approval_queue_length > 0`` guard (a
+# waiting approval never made spend less real). Kept because an operator's
+# own prometheus.rule.* override or dashboard may reference it, and removing
+# a series turns an ``unless`` on it into a silent no-op.
 APPROVAL_QUEUE_LENGTH = Gauge(
     "poindexter_approval_queue_length",
     "Content tasks currently in status='awaiting_approval' (pipeline throttle signal)",

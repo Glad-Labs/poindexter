@@ -163,6 +163,41 @@ class TestBrainDbSizeRule:
         assert "absent(" not in rule["expr"]
 
 
+class TestDailySpendRules:
+    """The daily spend rules watch spend and nothing else.
+
+    Until 2026-09-28 both ended in ``unless poindexter_approval_queue_length
+    > 0``, a check copied in Gitea #238 from the brain's cost_freshness probe,
+    where it explains a quiet pipeline. On a spend rule it muted the alert
+    whenever a task awaited approval: 72% of the 15 days to 2026-09-28, and
+    on 2026-07-14, the one day total spend crossed the $4 warning line.
+    """
+
+    RULES = ("DailySpendApproachingLimit", "DailySpendOverBudget")
+
+    @pytest.mark.parametrize("name", RULES)
+    def test_no_approval_queue_guard(self, name):
+        expr = rb.DEFAULT_RULES[name]["expr"]
+        assert "approval_queue" not in expr
+        assert "unless" not in expr
+
+    @pytest.mark.parametrize(
+        ("name", "threshold"),
+        [
+            ("DailySpendApproachingLimit", "daily_spend_warning_usd"),
+            ("DailySpendOverBudget", "daily_spend_critical_usd"),
+        ],
+    )
+    def test_renders_as_a_plain_spend_threshold(self, name, threshold):
+        out = rb.render_yaml(dict(rb.DEFAULT_THRESHOLDS), {name: rb.DEFAULT_RULES[name]})
+        value = rb.DEFAULT_THRESHOLDS[threshold]
+        assert f'expr: "poindexter_daily_spend_usd > {value}"' in out
+
+    def test_the_critical_line_still_pages(self):
+        assert rb.DEFAULT_RULES["DailySpendOverBudget"]["severity"] == "critical"
+        assert rb.DEFAULT_RULES["DailySpendApproachingLimit"]["severity"] == "warning"
+
+
 class TestContainerMemoryRule:
     """Per-container memory ceiling (2026-07-02 observability review): the
     langfuse-clickhouse 15 GB spikes and the cadvisor VM-OOM cascade

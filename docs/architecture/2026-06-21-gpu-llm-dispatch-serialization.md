@@ -104,8 +104,10 @@ _installed_ models, which a VRAM eviction never empties). Under render load that
 didn't answer in time" — already owned by the static `PoindexterOllamaDown`
 (`reachable == 0`).
 
-Fix: guard the expr with `unless poindexter_ollama_reachable == 0` (mirrors the
-existing `unless approval_queue_length > 0` cost-alert idiom). Timeouts route to
+Fix: guard the expr with `unless poindexter_ollama_reachable == 0` (the same
+shape as the `unless approval_queue_length > 0` guard the daily spend rules
+carried then; that one was removed 2026-09-28 because a waiting approval never
+made spend any less real). Timeouts route to
 the reachability alert; only the genuine up-but-empty case (`reachable=1,
 count=0`) still fires the dedicated critical.
 

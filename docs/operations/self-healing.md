@@ -178,6 +178,14 @@ tasks turned a real drought into "pipeline throttled". The probe reads
 and `test_brain_health_probes.py` runs the throttle and the probe on the
 same values.
 
+The mix-up also ran the other way. Gitea #238 copied that approval-queue
+check onto `DailySpendApproachingLimit` and `DailySpendOverBudget` as
+`unless poindexter_approval_queue_length > 0`, which muted both whenever a
+task awaited approval: 72% of the 15 days to 2026-09-28. On 2026-07-14, the
+one day total spend crossed the $4 warning line ($4.11 from 22:33 UTC), at
+least three tasks were waiting and no alert arrived. Both rules fire on
+spend alone since 2026-09-28.
+
 Every probe is tunable through one JSON setting,
 `app_settings.brain_probe_severity_overrides` (for example
 `{"worker_error_rate": "warning", "cadence_slo": "critical"}`), read each

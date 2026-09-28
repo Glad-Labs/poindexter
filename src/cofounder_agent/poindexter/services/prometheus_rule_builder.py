@@ -1824,17 +1824,19 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
     # when inference stops being logged, these gauges read low and nothing
     # here can fire. The brain's cost_freshness probe (not retired) reports
     # that itself; see health_probes.PROMETHEUS_COVERING_RULES.
-    # The daily rules' ``unless approval_queue_length > 0`` cross-check came
-    # from that probe's ``expected_idle`` check (Gitea #238), which is about
-    # a throttled pipeline going quiet, not about spend.
+    #
+    # No approval-queue guard. Until 2026-09-28 both daily rules ended in
+    # ``unless poindexter_approval_queue_length > 0``, copied in Gitea #238
+    # from cost_freshness's expected-idle check. That check explains a quiet
+    # pipeline; a task awaiting approval doesn't make money spent any less
+    # spent. The queue was non-empty 72% of the 15 days to 2026-09-28, and on
+    # the one day total spend crossed the warning line (2026-07-14, $4.11
+    # from 22:33 UTC) tasks were waiting and no alert arrived.
     "DailySpendApproachingLimit": {
         "enabled": True,
         "group": "poindexter-business",
         "interval": "1m",
-        "expr": (
-            "poindexter_daily_spend_usd > {threshold.daily_spend_warning_usd} "
-            "unless poindexter_approval_queue_length > 0"
-        ),
+        "expr": "poindexter_daily_spend_usd > {threshold.daily_spend_warning_usd}",
         "for": "5m",
         "severity": "warning",
         "category": "business",
@@ -1855,10 +1857,7 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "enabled": True,
         "group": "poindexter-business",
         "interval": "1m",
-        "expr": (
-            "poindexter_daily_spend_usd > {threshold.daily_spend_critical_usd} "
-            "unless poindexter_approval_queue_length > 0"
-        ),
+        "expr": "poindexter_daily_spend_usd > {threshold.daily_spend_critical_usd}",
         "for": "2m",
         "severity": "critical",
         "category": "business",
