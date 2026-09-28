@@ -9,6 +9,8 @@ inspect/restart happy + sad paths). Here we cover the gaps:
   ``_container_map`` is wired the way the brain's health probes expect.
 * ``FileNotFoundError`` when the Docker CLI isn't in the brain
   container — should notify with a CLI-specific message, NOT swallow.
+  (The docker calls themselves run in ``docker_utils.restart_container``,
+  so ``subprocess.run`` is stubbed on that module.)
 * Generic exception while running ``docker inspect`` / ``docker
   restart`` — should notify with the restart-failed message instead
   of bubbling to the cycle loop.
@@ -52,6 +54,7 @@ pytestmark = [
 ]
 
 from poindexter.brain import brain_daemon as bd  # noqa: E402
+from poindexter.brain import docker_utils  # noqa: E402
 
 
 @pytest.fixture
@@ -104,7 +107,7 @@ async def test_container_aliases_resolve_to_correct_container(
 
     with patch.object(bd, "IS_DOCKER", True), \
          patch.object(
-             bd.subprocess, "run",
+             docker_utils.subprocess, "run",
              side_effect=[inspect_hit, restart_ok],
          ) as run_mock:
         await bd.restart_service(service_name, pool=None)
@@ -137,7 +140,7 @@ async def test_docker_cli_missing_in_container_notifies_with_specific_message(
     """
     with patch.object(bd, "IS_DOCKER", True), \
          patch.object(
-             bd.subprocess, "run",
+             docker_utils.subprocess, "run",
              side_effect=FileNotFoundError("docker not on PATH"),
          ):
         await bd.restart_service("worker", pool=None)
@@ -153,13 +156,13 @@ async def test_generic_exception_during_docker_call_notifies_and_does_not_raise(
 ):
     """If subprocess.run blows up with something other than
     FileNotFoundError (e.g. ``TimeoutExpired``, a permission error
-    triggering ``OSError``), the handler should fall through to the
-    catch-all and notify — NOT propagate. The brain runs on a 5-min
-    cycle and a raise would tank the whole monitor pass.
+    triggering ``OSError``), ``docker_utils.restart_container`` returns it
+    as an error and ``restart_service`` notifies — NOT propagate. The brain
+    runs on a 5-min cycle and a raise would tank the whole monitor pass.
     """
     boom = RuntimeError("docker socket unavailable")
     with patch.object(bd, "IS_DOCKER", True), \
-         patch.object(bd.subprocess, "run", side_effect=boom):
+         patch.object(docker_utils.subprocess, "run", side_effect=boom):
         await bd.restart_service("worker", pool=None)
 
     # A heal that failed pages, never just a notice.
@@ -267,7 +270,7 @@ async def test_inspect_uses_state_status_format(mock_notify, mock_notice):
 
     with patch.object(bd, "IS_DOCKER", True), \
          patch.object(
-             bd.subprocess, "run",
+             docker_utils.subprocess, "run",
              side_effect=[inspect_hit, restart_ok],
          ) as run_mock:
         await bd.restart_service("worker", pool=None)

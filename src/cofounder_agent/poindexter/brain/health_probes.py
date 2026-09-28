@@ -17,7 +17,6 @@ import logging
 import os
 import platform
 import shutil
-import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -26,6 +25,7 @@ from typing import Any
 
 from poindexter.brain import (
     cycle_stage,
+    docker_utils,
     probe_failure_state,
     probe_schedule,
     probe_severity,
@@ -2313,18 +2313,10 @@ async def _call_agent_recovery(pool, service: str, *, timeout: float = 15.0) -> 
         return False, f"{type(exc).__name__}: {exc}"
 
 
-def _restart_container(container_name: str) -> tuple[bool, str]:
-    """Restart a Docker container. Returns (success, message)."""
-    try:
-        result = subprocess.run(
-            ["docker", "restart", container_name],
-            capture_output=True, text=True, timeout=60,
-        )
-        if result.returncode == 0:
-            return True, f"Restarted {container_name}"
-        return False, f"docker restart failed: {result.stderr[:200]}"
-    except Exception as e:
-        return False, f"restart error: {str(e)[:200]}"
+# The brain's shared ``docker restart`` implementation (inspect pre-check,
+# app_settings.brain_docker_restart_timeout_seconds, off the event loop),
+# bound under the name the self-heal below calls so tests can stub it here.
+_restart_container = docker_utils.restart_container
 
 
 async def _try_remediation(
@@ -2335,6 +2327,14 @@ async def _try_remediation(
     A heal that worked is reported through ``info_fn`` (a notice, falling
     back to ``notify_fn`` when none is given); a heal that failed pages
     through ``notify_fn``. See ``run_health_probes``.
+
+    A container restart whose target is missing (``docker compose up
+    --force-recreate`` leaves the name unbound for a second or two) did
+    nothing, so it sends nothing. Its cooldown has already started, which
+    also keeps the next attempt off the container that was just recreated:
+    an error-rate probe can still be counting failures from before it. The
+    probe's failure has already been reported, and a container that stays
+    missing is ``compose_drift_probe``'s to report.
     """
     failure_state = probe_failure_state.state
     if not failure_state.remediation_due(probe_name, REMEDIATION_COOLDOWN):
@@ -2354,15 +2354,21 @@ async def _try_remediation(
     ok, msg = False, "no action taken"
     action_type = action.get("type")
 
-    if action_type == "restart_container":
-        ok, msg = await asyncio.to_thread(_restart_container, action["container"])
-    elif action_type == "restart_multiple":
-        msgs = []
-        for container in action["containers"]:
-            c_ok, c_msg = await asyncio.to_thread(_restart_container, container)
-            msgs.append(c_msg)
-            ok = ok or c_ok
-        msg = "; ".join(msgs)
+    if action_type in ("restart_container", "restart_multiple"):
+        containers = (
+            [action["container"]] if action_type == "restart_container"
+            else list(action["containers"])
+        )
+        outcomes = [await _restart_container(c, pool=pool) for c in containers]
+        if all(o.status == docker_utils.RESTART_MISSING for o in outcomes):
+            logger.info(
+                "[SELF-HEAL] Skipped remediation for '%s': %s — nothing restarted; "
+                "the next attempt waits out the cooldown",
+                probe_name, "; ".join(o.detail for o in outcomes),
+            )
+            return
+        ok = any(o.ok for o in outcomes)
+        msg = "; ".join(o.detail for o in outcomes)
     elif action_type == "recover_via_agent":
         ok, msg = await _call_agent_recovery(pool, action["service"])
 

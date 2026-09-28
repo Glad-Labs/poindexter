@@ -39,7 +39,7 @@ from typing import Literal
 # Standalone — no imports from the FastAPI codebase
 import asyncpg
 
-from poindexter.brain import cycle_stage
+from poindexter.brain import cycle_stage, docker_utils
 from poindexter.brain.alert_sync import sync_alert_rules
 
 # #198: the database URL resolves through the bootstrap helper, so
@@ -1039,13 +1039,10 @@ BRAIN_BOOT_GRACE_SECONDS_DEFAULT = 120
 # of when the degradation was first seen, for transition notices.
 _degraded_since: dict[str, float] = {}
 
-# ``docker restart`` subprocess timeout. The worker takes ~30-45 s to stop
-# (graceful uvicorn drain) + start, so the old hardcoded 30 s expired on
-# every worker restart: dockerd finished the restart anyway, but the brain
-# paged a misleading "Restart failed: ... timed out" alert each time
-# (observed in both 2026-08-15 incidents). DB-tunable via
-# app_settings.brain_docker_restart_timeout_seconds.
-BRAIN_DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS = 90
+# The ``docker restart`` timeout (app_settings.brain_docker_restart_timeout_seconds,
+# default 90 s) lives with the shared restart implementation that
+# restart_service and docker_restart_container call:
+# ``docker_utils.restart_container``.
 
 CYCLE_SECONDS = 300  # 5 minutes between full cycles
 
@@ -1670,39 +1667,28 @@ async def send_followup(
 
 
 async def docker_restart_container(container: str, *, pool=None) -> tuple[bool, str]:
-    """Docker-restart a named container. Inspect-then-restart to avoid racing a
-    mid-recreate window (the same guard restart_service uses). Returns
-    (ok, detail). Silent on success — the firefighter engine records the
-    outcome to audit_log; this helper does NOT page.
+    """Docker-restart a named container. Returns (ok, detail).
+
+    Used by the firefighter's ``restart_container`` action and by console
+    restart requests (``service_restart``). Silent either way: those callers
+    record the outcome to audit_log, and the firefighter engine decides
+    whether it pages. This helper never notifies.
 
     Distinct from restart_service (which maps a handful of *logical* names to
     containers and notifies): the firefighter needs to restart an *arbitrary*
-    container named in a remediation_rules row.
+    container named in a remediation_rules row. Both go through
+    ``docker_utils.restart_container``, so both inspect before restarting (a
+    container missing mid-recreate comes back ``(False, "... not found
+    (likely mid-recreate)")``), both wait
+    ``app_settings.brain_docker_restart_timeout_seconds`` (read via ``pool``),
+    and neither blocks the event loop.
     """
-    del pool  # reserved for future settings-driven behavior; unused today
     if not IS_DOCKER:
         return (False, "not running in docker; no container-restart path")
-    try:
-        inspect = await asyncio.to_thread(
-            subprocess.run,
-            ["docker", "inspect", "--format", "{{.State.Status}}", container],
-            capture_output=True, text=True, timeout=10,
-        )
-        if inspect.returncode != 0:
-            return (False, f"container {container} not found (likely mid-recreate)")
-        result = await asyncio.to_thread(
-            subprocess.run,
-            ["docker", "restart", container],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode == 0:
-            logger.info("[BRAIN] firefighter docker-restarted container %s", container)
-            return (True, f"restarted {container}")
-        return (False, f"docker restart failed for {container}: {result.stderr[:200]}")
-    except FileNotFoundError:
-        return (False, "docker CLI not available in brain container")
-    except Exception as e:  # noqa: BLE001
-        return (False, f"docker restart error for {container}: {e}"[:200])
+    outcome = await docker_utils.restart_container(container, pool=pool)
+    if outcome.ok:
+        logger.info("[BRAIN] firefighter docker-restarted container %s", container)
+    return (outcome.ok, outcome.detail)
 
 
 async def restart_service(name: str, *, pool=None):
@@ -1718,64 +1704,45 @@ async def restart_service(name: str, *, pool=None):
         }
         container = _container_map.get(name)
         if container:
-            try:
-                # Pre-check container existence. ``docker compose up
-                # --force-recreate`` runs stop → rm → run sequentially and
-                # leaves the container name unbound for ~1-2 seconds; a
-                # health probe firing in that window would otherwise
-                # ``docker restart`` against a missing container, the
-                # operator gets a noisy "No such container" notification,
-                # and the next cycle (≤5 min later) sees the recreated
-                # container as healthy. Treat absence as transient and
-                # skip the alert — if the container is genuinely gone the
-                # next cycle will see the same state and the upstream
-                # health probe (not this restart helper) is the right
-                # surface to escalate it.
-                inspect = await asyncio.to_thread(
-                    subprocess.run,
-                    ["docker", "inspect", "--format", "{{.State.Status}}", container],
-                    capture_output=True, text=True, timeout=10,
+            # docker_utils.restart_container inspects before it restarts,
+            # waits app_settings.brain_docker_restart_timeout_seconds (the
+            # worker's stop grace alone is 75 s), runs both docker calls off
+            # the event loop, and never raises. What each outcome means for
+            # the operator is decided here.
+            outcome = await docker_utils.restart_container(container, pool=pool)
+            if outcome.status == docker_utils.RESTART_MISSING:
+                # ``docker compose up --force-recreate`` runs stop → rm → run
+                # and leaves the container name unbound for ~1-2 seconds; a
+                # health probe firing in that window would otherwise page a
+                # noisy "No such container", and the next cycle (≤5 min
+                # later) sees the recreated container as healthy. Treat
+                # absence as transient and skip the alert — if the container
+                # is genuinely gone the next cycle will see the same state
+                # and the upstream health probe (not this restart helper) is
+                # the right surface to escalate it.
+                logger.info(
+                    "[BRAIN] container %s not found (likely mid-recreate) — "
+                    "skipping auto-restart this cycle", container,
                 )
-                if inspect.returncode != 0:
-                    logger.info(
-                        "[BRAIN] container %s not found (likely mid-recreate) — "
-                        "skipping auto-restart this cycle", container,
-                    )
-                    return
-
-                # The worker needs ~30-45 s for a graceful stop + start,
-                # so a 30 s subprocess timeout expired on every worker
-                # restart and paged "Restart failed" while dockerd was
-                # completing the restart fine. Default 90 s covers the
-                # observed worst case with headroom.
-                restart_timeout = BRAIN_DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
-                if pool is not None:
-                    restart_timeout = await _setting_int(
-                        pool,
-                        "brain_docker_restart_timeout_seconds",
-                        BRAIN_DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS,
-                    )
-                result = await asyncio.to_thread(
-                    subprocess.run,
-                    ["docker", "restart", container],
-                    capture_output=True, text=True, timeout=restart_timeout,
-                )
-                if result.returncode == 0:
-                    logger.info("[BRAIN] Docker-restarted container %s", container)
-                    # A heal that worked is a notice, not a page ("self-heal
-                    # before paging", docs/operations/self-healing.md). Every
-                    # failure branch below still pages: the service is down
-                    # and the brain could not bring it back.
-                    await notify_discord_ops(f"Auto-restarted {container}", pool=pool)
-                else:
-                    logger.warning("[BRAIN] Docker restart failed for %s: %s", container, result.stderr[:100])
-                    await notify(f"Failed to restart {container}: {result.stderr[:100]}", pool=pool)
-            except FileNotFoundError:
+            elif outcome.ok:
+                logger.info("[BRAIN] Docker-restarted container %s", container)
+                # A heal that worked is a notice, not a page ("self-heal
+                # before paging", docs/operations/self-healing.md). Every
+                # failure branch below still pages: the service is down
+                # and the brain could not bring it back.
+                await notify_discord_ops(f"Auto-restarted {container}", pool=pool)
+            elif outcome.status == docker_utils.RESTART_FAILED:
+                logger.warning("[BRAIN] Docker restart failed for %s: %s", container, outcome.stderr[:100])
+                await notify(f"Failed to restart {container}: {outcome.stderr[:100]}", pool=pool)
+            elif outcome.status == docker_utils.RESTART_NO_DOCKER_CLI:
                 logger.warning("[BRAIN] Docker CLI not available in container — install docker-cli or mount the binary")
                 await notify(f"Service {name} is down. Docker CLI not found in brain container.", pool=pool)
-            except Exception as e:
-                logger.warning("[BRAIN] Docker restart error for %s: %s", name, e)
-                await notify(f"Service {name} is down. Restart failed: {e}", pool=pool)
+            else:
+                # Timed out (dockerd may still finish it), or docker could
+                # not be reached / raised.
+                reason = outcome.error or outcome.detail
+                logger.warning("[BRAIN] Docker restart error for %s: %s", name, reason)
+                await notify(f"Service {name} is down. Restart failed: {reason}", pool=pool)
         else:
             await notify(f"Service {name} is down — no container mapping for auto-restart.", pool=pool)
         return

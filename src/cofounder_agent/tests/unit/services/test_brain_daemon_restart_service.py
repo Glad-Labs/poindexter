@@ -7,9 +7,15 @@ container is briefly absent during a ``docker compose up
 name unbound for ~1-2 seconds).
 
 The fix: ``docker inspect <name>`` is run as a cheap pre-check;
-exit != 0 → log + return without restarting or notifying. Real
+"no such container" → log + return without restarting or notifying. Real
 "container is broken and needs a kick" calls still hit the
 ``docker restart`` path because ``inspect`` succeeds.
+
+Both docker calls now happen in the brain's one restart implementation,
+``docker_utils.restart_container`` (shared with the firefighter and
+health_probes' self-heal), so ``subprocess.run`` is stubbed there. These
+tests pin what ``restart_service`` does with each outcome: a notice, a
+page, or a quiet skip.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from poindexter.brain import brain_daemon as bd  # noqa: E402
+from poindexter.brain import docker_utils  # noqa: E402
 
 pytestmark = pytest.mark.asyncio
 
@@ -74,7 +81,7 @@ async def test_missing_container_skips_restart_and_notify(mock_notify, mock_noti
     )
 
     with patch.object(bd, "IS_DOCKER", True), \
-         patch.object(bd.subprocess, "run", return_value=inspect_miss) as run_mock:
+         patch.object(docker_utils.subprocess, "run", return_value=inspect_miss) as run_mock:
         await bd.restart_service("worker", pool=None)
 
     # Only the inspect call should have run — restart was skipped.
@@ -99,7 +106,7 @@ async def test_existing_container_proceeds_with_restart(mock_notify, mock_notice
 
     with patch.object(bd, "IS_DOCKER", True), \
          patch.object(
-             bd.subprocess, "run",
+             docker_utils.subprocess, "run",
              side_effect=[inspect_hit, restart_ok],
          ) as run_mock:
         await bd.restart_service("worker", pool=None)
@@ -125,7 +132,7 @@ async def test_unknown_service_name_notifies_no_mapping(mock_notify):
     operator knows the brain noticed but can't auto-fix.
     """
     with patch.object(bd, "IS_DOCKER", True), \
-         patch.object(bd.subprocess, "run") as run_mock:
+         patch.object(docker_utils.subprocess, "run") as run_mock:
         await bd.restart_service("redis", pool=None)
 
     # No docker calls at all when the name doesn't map.
@@ -148,7 +155,7 @@ async def test_restart_failure_notifies_operator(mock_notify, mock_notice):
 
     with patch.object(bd, "IS_DOCKER", True), \
          patch.object(
-             bd.subprocess, "run",
+             docker_utils.subprocess, "run",
              side_effect=[inspect_hit, restart_fail],
          ):
         await bd.restart_service("worker", pool=None)
@@ -168,7 +175,7 @@ async def test_docker_cli_missing_notifies_install_hint(mock_notify, mock_notice
     stack trace.
     """
     with patch.object(bd, "IS_DOCKER", True), \
-         patch.object(bd.subprocess, "run", side_effect=FileNotFoundError):
+         patch.object(docker_utils.subprocess, "run", side_effect=FileNotFoundError):
         await bd.restart_service("worker", pool=None)
 
     mock_notify.assert_called_once()
@@ -181,13 +188,14 @@ async def test_docker_cli_missing_notifies_install_hint(mock_notify, mock_notice
 
 
 async def test_inspect_timeout_notifies_generic_failure(mock_notify, mock_notice):
-    """``subprocess.TimeoutExpired`` (Docker daemon hung) falls through
-    to the generic ``except Exception`` arm — operator gets notified so
-    the brain doesn't silently swallow the hang.
+    """``subprocess.TimeoutExpired`` on the inspect (Docker daemon hung)
+    comes back from ``docker_utils.restart_container`` as an error, never
+    a raise — operator gets notified so the brain doesn't silently swallow
+    the hang.
     """
-    timeout_exc = bd.subprocess.TimeoutExpired(cmd="docker inspect", timeout=10)
+    timeout_exc = docker_utils.subprocess.TimeoutExpired(cmd="docker inspect", timeout=10)
     with patch.object(bd, "IS_DOCKER", True), \
-         patch.object(bd.subprocess, "run", side_effect=timeout_exc):
+         patch.object(docker_utils.subprocess, "run", side_effect=timeout_exc):
         await bd.restart_service("worker", pool=None)
 
     mock_notify.assert_called_once()
@@ -208,7 +216,7 @@ async def test_api_alias_maps_to_worker_container(mock_notify, mock_notice):
 
     with patch.object(bd, "IS_DOCKER", True), \
          patch.object(
-             bd.subprocess, "run",
+             docker_utils.subprocess, "run",
              side_effect=[inspect_hit, restart_ok],
          ) as run_mock:
         await bd.restart_service("api", pool=None)
@@ -230,7 +238,7 @@ async def test_image_gen_server_alias_maps_to_image_gen_container(mock_notify, m
 
     with patch.object(bd, "IS_DOCKER", True), \
          patch.object(
-             bd.subprocess, "run",
+             docker_utils.subprocess, "run",
              side_effect=[inspect_hit, restart_ok],
          ) as run_mock:
         await bd.restart_service("image-gen-server", pool=None)
@@ -256,7 +264,7 @@ async def test_inspect_command_uses_state_status_format(mock_notify, mock_notice
 
     with patch.object(bd, "IS_DOCKER", True), \
          patch.object(
-             bd.subprocess, "run",
+             docker_utils.subprocess, "run",
              side_effect=[inspect_hit, restart_ok],
          ) as run_mock:
         await bd.restart_service("worker", pool=None)
@@ -265,23 +273,23 @@ async def test_inspect_command_uses_state_status_format(mock_notify, mock_notice
     assert "--format" in inspect_args
     assert "{{.State.Status}}" in inspect_args
     # And the timeouts are asymmetric — inspect is cheap, restart slow.
-    # The restart timeout must exceed the worker's graceful stop+start
-    # (~30-45 s): the old hardcoded 30 s expired on every worker restart
-    # and paged a misleading "Restart failed" while dockerd completed
-    # the restart fine (2026-08-15 api-down investigation).
+    # ``docker restart`` waits out the container's stop grace period (the
+    # worker's is 75 s) before it kills and starts it: the old hardcoded
+    # 30 s paged a misleading "Restart failed" while dockerd completed the
+    # restart fine (2026-08-15 api-down investigation).
     inspect_kwargs = run_mock.call_args_list[0].kwargs
     restart_kwargs = run_mock.call_args_list[1].kwargs
     assert inspect_kwargs.get("timeout") == 10
     assert (
         restart_kwargs.get("timeout")
-        == bd.BRAIN_DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
+        == docker_utils.DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
         == 90
     )
     # Sanity: the format pre-check still drives a real notice on success.
     mock_notice.assert_called_once()
 
 
-async def test_restart_timeout_is_db_tunable(mock_notify):
+async def test_restart_timeout_is_db_tunable(mock_notify, mock_notice):
     """With a pool available, the docker-restart subprocess timeout comes
     from ``app_settings.brain_docker_restart_timeout_seconds``."""
     inspect_hit = _inspect_result(returncode=0, stdout="running\n")
@@ -291,12 +299,59 @@ async def test_restart_timeout_is_db_tunable(mock_notify):
 
     with patch.object(bd, "IS_DOCKER", True), \
          patch.object(
-             bd.subprocess, "run",
+             docker_utils.subprocess, "run",
              side_effect=[inspect_hit, restart_ok],
          ) as run_mock:
         await bd.restart_service("worker", pool=pool)
 
     assert run_mock.call_args_list[1].kwargs.get("timeout") == 120
+
+
+async def test_timed_out_restart_pages_and_says_dockerd_may_finish(mock_notify, mock_notice):
+    """A restart that outlives ``brain_docker_restart_timeout_seconds`` still
+    pages (the brain could not confirm the service came back), but the page
+    says dockerd may still complete it rather than a bare ``Command ...
+    timed out`` that reads as if the restart itself failed."""
+    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    timeout_exc = docker_utils.subprocess.TimeoutExpired(
+        cmd=["docker", "restart", "poindexter-worker"], timeout=90,
+    )
+
+    with patch.object(bd, "IS_DOCKER", True), \
+         patch.object(
+             docker_utils.subprocess, "run",
+             side_effect=[inspect_hit, timeout_exc],
+         ):
+        await bd.restart_service("worker", pool=None)
+
+    mock_notify.assert_called_once()
+    mock_notice.assert_not_called()
+    msg = mock_notify.call_args.args[0]
+    assert msg.startswith("Service worker is down. Restart failed: ")
+    assert "did not return within 90s" in msg
+    assert "may still complete it" in msg
+
+
+async def test_unreachable_docker_daemon_pages_instead_of_skipping(mock_notify, mock_notice):
+    """Only "no such container" is a recreate window. A dead docker socket
+    also makes ``docker inspect`` exit 1, and the old pre-check read any
+    non-zero exit as absence: the heal was skipped with an INFO log saying
+    the container was mid-recreate."""
+    inspect_fail = _inspect_result(
+        returncode=1,
+        stderr="failed to connect to the docker API at unix:///var/run/docker.sock\n",
+    )
+
+    with patch.object(bd, "IS_DOCKER", True), \
+         patch.object(docker_utils.subprocess, "run", return_value=inspect_fail) as run_mock:
+        await bd.restart_service("worker", pool=None)
+
+    assert run_mock.call_count == 1  # no restart attempted
+    mock_notify.assert_called_once()
+    mock_notice.assert_not_called()
+    msg = mock_notify.call_args.args[0]
+    assert "Restart failed" in msg
+    assert "failed to connect to the docker API" in msg
 
 
 async def test_host_worker_without_restart_script_notifies(mock_notify):

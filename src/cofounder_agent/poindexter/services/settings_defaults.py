@@ -3977,11 +3977,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # DOWN probe result is alerted but NOT counted toward auto-restart — the
     # brain's first cycle after a container recreate can fail on its own DNS.
     'brain_boot_grace_seconds': '120',
-    # Subprocess timeout (seconds) for the brain's `docker restart` heal.
-    # The worker needs ~30-45 s for a graceful stop + start; the old
-    # hardcoded 30 s expired on every worker restart and paged a
-    # misleading "Restart failed" while dockerd completed the restart
-    # anyway. (2026-08-15)
+    # Subprocess timeout (seconds) for every brain `docker restart` that goes
+    # through poindexter/brain/docker_utils.restart_container: the monitor's
+    # restart_service heal, the firefighter + console restarts, and the
+    # health_probes self-heal. `docker restart` waits out the container's
+    # stop_grace_period (the worker's is 75 s) before it kills and starts it;
+    # a hardcoded 30 s under that paged a misleading "Restart failed" while
+    # dockerd completed the restart anyway. (2026-08-15; all three paths
+    # share it since 2026-09-28)
     'brain_docker_restart_timeout_seconds': '90',
 
     # ----- Migration-drift in-flight guard (poindexter/brain/migration_drift_probe.py, #228) -----

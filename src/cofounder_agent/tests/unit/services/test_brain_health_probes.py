@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from poindexter.brain import docker_utils, probe_failure_state, probe_schedule
 from poindexter.brain import health_probes as hp
-from poindexter.brain import probe_failure_state, probe_schedule
 from poindexter.brain import probe_severity as ps
 from poindexter.brain.probe_failure_state import ProbeFailureState
 from poindexter.brain.probe_schedule import ProbeSchedule
@@ -188,27 +188,139 @@ class TestStuckProbe:
         assert r.get("ok") is True
 
 
+def _restart_outcome(
+    ok: bool, detail: str, *, status: str | None = None, container: str = "poindexter-grafana",
+) -> docker_utils.ContainerRestart:
+    """What a stubbed ``docker_utils.restart_container`` returns."""
+    if status is None:
+        status = docker_utils.RESTART_OK if ok else docker_utils.RESTART_FAILED
+    return docker_utils.ContainerRestart(container, status, detail, 90)
+
+
 @pytest.mark.unit
-class TestRestartContainer:
-    def test_success_returns_ok(self):
-        fake = MagicMock(returncode=0, stderr="")
-        with patch("subprocess.run", return_value=fake):
-            flag, msg = hp._restart_container("svc")
-        assert flag is True
-        assert "svc" in msg
+def test_the_self_heal_restarts_through_the_shared_helper():
+    assert hp._restart_container is docker_utils.restart_container
 
-    def test_failure_returns_not_ok(self):
-        fake = MagicMock(returncode=1, stderr="No such container")
-        with patch("subprocess.run", return_value=fake):
-            flag, msg = hp._restart_container("svc")
-        assert flag is False
-        assert "failed" in msg.lower()
 
-    def test_subprocess_exception_returns_not_ok(self):
-        with patch("subprocess.run", side_effect=FileNotFoundError("docker missing")):
-            flag, msg = hp._restart_container("svc")
-        assert flag is False
-        assert "error" in msg
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestSelfHealRestart:
+    """The REMEDIATIONS container restarts go through the brain's one
+    ``docker restart`` implementation (``docker_utils.restart_container``,
+    tested in ``tests/unit/brain/test_docker_utils_restart.py``). Before it,
+    this self-heal ran its own: a hardcoded 60 s timeout, under the worker's
+    75 s stop grace, and no inspect pre-check. These pin what
+    ``_try_remediation`` does with each outcome."""
+
+    async def test_the_pool_is_passed_so_the_timeout_knob_applies(self):
+        pool = _make_pool()
+        restart = AsyncMock(return_value=_restart_outcome(True, "restarted poindexter-grafana"))
+
+        with patch.object(hp, "_restart_container", new=restart):
+            await hp._try_remediation(
+                "grafana_datasources", {"detail": "datasource broken"}, MagicMock(), pool=pool,
+            )
+
+        restart.assert_awaited_once_with("poindexter-grafana", pool=pool)
+
+    async def test_real_helper_inspects_first_and_waits_the_db_timeout(self):
+        """End to end through ``docker_utils`` with only ``subprocess.run``
+        faked: inspect, then restart on the knob's timeout (was 60 s)."""
+        pool = _make_pool()
+        pool.fetchval = AsyncMock(return_value="120")
+        run = MagicMock(side_effect=[
+            MagicMock(returncode=0, stdout="running\n", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ])
+        notices: list[str] = []
+
+        with patch.object(docker_utils.subprocess, "run", run):
+            await hp._try_remediation(
+                "grafana_datasources", {"detail": "datasource broken"},
+                MagicMock(), pool=pool, info_fn=notices.append,
+            )
+
+        argvs = [c.args[0] for c in run.call_args_list]
+        assert argvs[0][:2] == ["docker", "inspect"]
+        assert argvs[1] == ["docker", "restart", "poindexter-grafana"]
+        assert run.call_args_list[1].kwargs["timeout"] == 120
+        assert len(notices) == 1 and "restarted poindexter-grafana" in notices[0]
+
+    async def test_missing_container_sends_nothing_but_keeps_its_cooldown(self):
+        """Mid-recreate there is nothing to restart and nothing to report.
+        The cooldown stamped before the attempt still stands, so the next
+        attempt waits it out instead of landing on the container that was
+        just recreated."""
+        pages: list[str] = []
+        notices: list[str] = []
+        restart = AsyncMock(return_value=_restart_outcome(
+            False, "container poindexter-grafana not found (likely mid-recreate)",
+            status=docker_utils.RESTART_MISSING,
+        ))
+
+        with patch.object(hp, "_restart_container", new=restart):
+            for _ in range(2):
+                await hp._try_remediation(
+                    "grafana_datasources", {"detail": "datasource broken"},
+                    pages.append, pool=_make_pool(), info_fn=notices.append,
+                )
+
+        assert pages == [] and notices == []
+        assert restart.await_count == 1
+        assert not probe_failure_state.state.remediation_due(
+            "grafana_datasources", hp.REMEDIATION_COOLDOWN,
+        )
+
+    async def test_a_restart_that_timed_out_pages(self):
+        pages: list[str] = []
+        notices: list[str] = []
+        detail = (
+            "docker restart poindexter-worker did not return within 90s "
+            "(app_settings.brain_docker_restart_timeout_seconds); dockerd may still complete it"
+        )
+        restart = AsyncMock(return_value=_restart_outcome(
+            False, detail, status=docker_utils.RESTART_TIMED_OUT, container="poindexter-worker",
+        ))
+
+        with patch.object(hp, "_restart_container", new=restart):
+            await hp._try_remediation(
+                "worker_error_rate", {"detail": "100% errors"},
+                pages.append, pool=_make_pool(), info_fn=notices.append,
+            )
+
+        assert notices == []
+        assert len(pages) == 1
+        assert pages[0].startswith("⚠️ Self-heal 'worker_error_rate': docker restart poindexter-worker did not return")
+
+    @pytest.mark.parametrize(
+        ("statuses", "expected"),
+        [
+            ((docker_utils.RESTART_OK, docker_utils.RESTART_MISSING), "notice"),
+            ((docker_utils.RESTART_FAILED, docker_utils.RESTART_MISSING), "page"),
+            ((docker_utils.RESTART_MISSING, docker_utils.RESTART_MISSING), "nothing"),
+        ],
+    )
+    async def test_restart_multiple_reports_every_container(self, statuses, expected):
+        pages: list[str] = []
+        notices: list[str] = []
+        outcomes = [
+            _restart_outcome(st == docker_utils.RESTART_OK, f"{c}: {st}", status=st, container=c)
+            for c, st in zip(("a", "b"), statuses, strict=True)
+        ]
+        action = {"type": "restart_multiple", "containers": ["a", "b"], "description": "both"}
+
+        with patch.dict(hp.REMEDIATIONS, {"multi_probe": action}, clear=True), \
+                patch.object(hp, "_restart_container", new=AsyncMock(side_effect=outcomes)):
+            await hp._try_remediation(
+                "multi_probe", {"detail": "x"}, pages.append, pool=_make_pool(), info_fn=notices.append,
+            )
+
+        if expected == "nothing":
+            assert pages == [] and notices == []
+        else:
+            sent, other = (notices, pages) if expected == "notice" else (pages, notices)
+            assert other == []
+            assert len(sent) == 1 and f"a: {statuses[0]}; b: {statuses[1]}" in sent[0]
 
 
 # TestCreateGiteaIssue removed 2026-05-03 alongside the underlying
@@ -507,7 +619,8 @@ class TestNoticesThatMustNotPage:
         pages: list[str] = []
         notices: list[str] = []
 
-        with patch.object(hp, "_restart_container", return_value=(heal_ok, "restarted grafana")):
+        restart = AsyncMock(return_value=_restart_outcome(heal_ok, "restarted grafana"))
+        with patch.object(hp, "_restart_container", new=restart):
             await hp._try_remediation(
                 "grafana_datasources", {"detail": "datasource broken"},
                 pages.append, pool=_make_pool(), info_fn=notices.append,
@@ -521,7 +634,8 @@ class TestNoticesThatMustNotPage:
     async def test_self_heal_success_without_info_fn_falls_back_to_notify_fn(self):
         pages: list[str] = []
 
-        with patch.object(hp, "_restart_container", return_value=(True, "restarted grafana")):
+        restart = AsyncMock(return_value=_restart_outcome(True, "restarted grafana"))
+        with patch.object(hp, "_restart_container", new=restart):
             await hp._try_remediation(
                 "grafana_datasources", {"detail": "datasource broken"},
                 pages.append, pool=_make_pool(),

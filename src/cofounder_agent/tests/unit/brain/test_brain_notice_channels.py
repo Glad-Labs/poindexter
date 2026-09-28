@@ -35,6 +35,7 @@ import pytest
 from poindexter.brain import alert_sync as asx
 from poindexter.brain import brain_daemon as bd
 from poindexter.brain import business_probes as bp
+from poindexter.brain import docker_utils as du
 from poindexter.brain import health_probes as hp
 from poindexter.brain import post_performance_probe as ppp
 from poindexter.brain import probe_failure_state, probe_schedule
@@ -223,7 +224,7 @@ class TestRestartService:
     async def test_successful_restart_is_a_notice(self, channels, monkeypatch):
         monkeypatch.setattr(bd, "IS_DOCKER", True)
         run = MagicMock(side_effect=[_completed(0, "running\n"), _completed(0)])
-        monkeypatch.setattr(bd.subprocess, "run", run)
+        monkeypatch.setattr(du.subprocess, "run", run)
 
         await bd.restart_service("worker", pool=None)
 
@@ -251,7 +252,7 @@ class TestRestartService:
         needle,
     ):
         monkeypatch.setattr(bd, "IS_DOCKER", True)
-        monkeypatch.setattr(bd.subprocess, "run", MagicMock(side_effect=run_effect))
+        monkeypatch.setattr(du.subprocess, "run", MagicMock(side_effect=run_effect))
 
         await bd.restart_service(name, pool=None)
 
@@ -491,6 +492,17 @@ def test_run_cycle_hands_every_probe_runner_notify_for_pages_and_the_notice_send
 
 
 @pytest.mark.unit
+def _outcome(heal: tuple[bool, str] | du.ContainerRestart) -> du.ContainerRestart:
+    """What the stubbed ``docker_utils.restart_container`` returns. A heal
+    given as ``(ok, detail)`` becomes a restarted or failed outcome."""
+    if isinstance(heal, du.ContainerRestart):
+        return heal
+    ok, detail = heal
+    return du.ContainerRestart(
+        "poindexter-grafana", du.RESTART_OK if ok else du.RESTART_FAILED, detail, 90,
+    )
+
+
 @pytest.mark.asyncio
 class TestHealthProbeNotices:
     """``run_health_probes`` wired as ``run_cycle`` wires it.
@@ -505,7 +517,11 @@ class TestHealthProbeNotices:
     """
 
     async def _cycle(
-        self, probe_result: dict, *, heal: tuple[bool, str], probe_name="grafana_datasources",
+        self,
+        probe_result: dict,
+        *,
+        heal: tuple[bool, str] | du.ContainerRestart,
+        probe_name="grafana_datasources",
     ) -> None:
         async def probe(_pool):
             return probe_result
@@ -520,7 +536,7 @@ class TestHealthProbeNotices:
             patch.object(hp, "_is_due", return_value=True),
             patch.object(hp, "ALERT_AFTER_FAILURES", 1),
             patch.object(hp, "_alertmanager_healthy", new=AsyncMock(return_value=False)),
-            patch.object(hp, "_restart_container", return_value=heal),
+            patch.object(hp, "_restart_container", new=AsyncMock(return_value=_outcome(heal))),
         ):
             await hp.run_health_probes(pool, notify_fn=bd.notify, info_fn=bd.notify_discord_ops)
 
@@ -542,6 +558,21 @@ class TestHealthProbeNotices:
         )
 
         assert channels.reached("Self-heal 'grafana_datasources': docker restart failed") == PAGE
+
+    async def test_a_restart_aimed_at_a_missing_container_sends_nothing(self, channels):
+        """A container missing mid-recreate was not restarted, so there is no
+        self-heal to report either way; the probe's own failure notice still
+        goes out. Before the shared restart helper, health_probes had no
+        inspect pre-check and paged "No such container" here."""
+        missing = du.ContainerRestart(
+            "poindexter-grafana", du.RESTART_MISSING,
+            "container poindexter-grafana not found (likely mid-recreate)", 90,
+        )
+
+        await self._cycle({"ok": False, "detail": "Pyroscope: HTTP Error 400"}, heal=missing)
+
+        assert channels.reached("Probe 'grafana_datasources' failed") == NOTICE
+        assert channels.count("Self-heal") == 0
 
     async def test_a_critical_probes_own_failure_still_pages(self, channels):
         """worker_error_rate is one of the small set probe_severity

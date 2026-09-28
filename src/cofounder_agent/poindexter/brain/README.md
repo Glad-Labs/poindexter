@@ -98,12 +98,23 @@ brain's own stale detector.
 
 The rule: **inside an `async def`, never call a blocking primitive directly.**
 
-| Blocking work                        | Do this instead                                |
-| ------------------------------------ | ---------------------------------------------- |
-| `subprocess.run(...)` (docker/git/…) | `await asyncio.to_thread(subprocess.run, ...)` |
-| a sync helper that shells out        | `await asyncio.to_thread(helper, ...)`         |
-| a `urllib` / `requests` call         | `await asyncio.to_thread(fetch, ...)`          |
-| a retry / recovery wait              | `await asyncio.sleep(seconds)`                 |
+| Blocking work                        | Do this instead                                         |
+| ------------------------------------ | ------------------------------------------------------- |
+| `docker restart <container>`         | `await docker_utils.restart_container(name, pool=pool)` |
+| `subprocess.run(...)` (docker/git/…) | `await asyncio.to_thread(subprocess.run, ...)`          |
+| a sync helper that shells out        | `await asyncio.to_thread(helper, ...)`                  |
+| a `urllib` / `requests` call         | `await asyncio.to_thread(fetch, ...)`                   |
+| a retry / recovery wait              | `await asyncio.sleep(seconds)`                          |
+
+`docker_utils.restart_container` is the brain's shared `docker restart`: it runs
+`docker inspect` first (a container missing mid-recreate comes back
+`RESTART_MISSING`, not restarted), waits
+`app_settings.brain_docker_restart_timeout_seconds` (the worker's stop grace
+alone is 75 s), and returns a `ContainerRestart` instead of raising. What an
+outcome means (a notice, a page, silence) stays with the caller. A ratchet in
+`tests/unit/brain/test_docker_utils_restart.py` fails on any new module that
+shells out `docker restart` itself; the seven probe-owned restarts that predate
+the helper are listed there until they move over.
 
 For an injectable wait seam (`sleep_fn`), default it to `asyncio.sleep` and
 `await` it — mirror `alert_dispatcher.py`, not the pre-2026-07 watch probes that
@@ -288,6 +299,6 @@ named `poindexter.brain.probes`.
 | `bootstrap.py`           | Brain bootstrap / first-boot setup                                 |
 | `seed_loader.py`         | Loads `seed_app_settings.json` defaults on first boot              |
 | `seed_app_settings.json` | Default `app_settings` rows shipped with the brain daemon          |
-| `docker_utils.py`        | Helpers for inspecting / restarting compose containers             |
+| `docker_utils.py`        | URL localizing + `restart_container`, the shared docker restart    |
 | `Dockerfile`             | Container image for `poindexter-brain-daemon`                      |
 | `hallucination-check/`   | Reference data (PyPI top-500, stdlib modules, Ollama models, etc.) |

@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from poindexter.brain import docker_utils as du
 from poindexter.brain import health_probes as hp
 from poindexter.brain import probe_failure_state as pfs
 from poindexter.brain import probe_schedule
@@ -95,6 +96,11 @@ class _Pool:
 
 def _ago(**delta: float) -> str:
     return (datetime.now(UTC) - timedelta(**delta)).isoformat()
+
+
+def _restarted(container: str) -> du.ContainerRestart:
+    """What ``docker_utils.restart_container`` returns for a restart that worked."""
+    return du.ContainerRestart(container, du.RESTART_OK, f"restarted {container}", 90)
 
 
 @pytest.fixture(autouse=True)
@@ -340,7 +346,7 @@ class TestRestartKeepsTheStreak:
 
     async def test_the_self_heal_cooldown_survives_a_restart(self, restart):
         pool = _Pool()
-        restart_container = MagicMock(return_value=(True, "Restarted poindexter-worker"))
+        restart_container = AsyncMock(return_value=_restarted("poindexter-worker"))
 
         with patch.object(hp, "_restart_container", restart_container):
             for _ in range(3):
@@ -368,9 +374,11 @@ class TestRestartKeepsTheStreak:
         pool = _Pool()
         release = threading.Event()
 
-        def slow_restart(_container: str) -> tuple[bool, str]:
-            release.wait(10)
-            return True, "Restarted poindexter-worker"
+        async def slow_restart(container: str, *, pool: Any = None) -> du.ContainerRestart:
+            # The real helper runs docker in a worker thread, which a
+            # cancelled await leaves running; so does this.
+            await asyncio.to_thread(release.wait, 10)
+            return _restarted(container)
 
         try:
             with (
@@ -394,7 +402,7 @@ class TestRestartKeepsTheStreak:
         """A count left stale would come back after a restart and heal a
         service that had already recovered."""
         pool = _Pool()
-        restart_container = MagicMock(return_value=(True, "Restarted poindexter-worker"))
+        restart_container = AsyncMock(return_value=_restarted("poindexter-worker"))
 
         with patch.object(hp, "_restart_container", restart_container):
             for _ in range(3):
@@ -416,7 +424,7 @@ class TestRestartKeepsTheStreak:
     async def test_a_count_left_by_a_removed_probe_heals_nothing(self):
         pool = _Pool()
         pool.seed("grafana_datasources", pfs.FAILURES, "5")
-        restart_container = MagicMock(return_value=(True, "Restarted poindexter-grafana"))
+        restart_container = AsyncMock(return_value=_restarted("poindexter-grafana"))
 
         with patch.object(hp, "_restart_container", restart_container):
             await _cycle(pool, "db_ping", ok=True)
@@ -427,14 +435,14 @@ class TestRestartKeepsTheStreak:
         pool = _Pool()
         pool.down = True
         pages: list[str] = []
-        restart_container = MagicMock(return_value=(True, "Restarted poindexter-worker"))
+        restart_container = AsyncMock(return_value=_restarted("poindexter-worker"))
 
         with patch.object(hp, "_restart_container", restart_container):
             for _ in range(3):
                 await _cycle(pool, "worker_error_rate", ok=False, notify=pages.append)
 
         assert "🔴 Probe 'worker_error_rate' failed 3x: down" in pages
-        restart_container.assert_called_once_with("poindexter-worker")
+        restart_container.assert_called_once_with("poindexter-worker", pool=pool)
 
 
 @pytest.mark.unit

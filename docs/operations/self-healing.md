@@ -404,7 +404,7 @@ three, each wrapping a primitive the brain already owns:
 
 | `action_name`          | Params                    | Does                                                                                                                                                                                                                                                                                                                                      |
 | ---------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `restart_container`    | `{"container": "<name>"}` | `docker restart <name>` (inspect-then-restart) via `brain_daemon.docker_restart_container`. Refuses the restart denylist — see Safety guardrails.                                                                                                                                                                                         |
+| `restart_container`    | `{"container": "<name>"}` | `docker restart <name>` (inspect-then-restart, `brain_docker_restart_timeout_seconds`) via `brain_daemon.docker_restart_container`. Refuses the restart denylist — see Safety guardrails.                                                                                                                                                 |
 | `restart_host_service` | `{"service": "ollama"}`   | Restarts an allowlisted host systemd unit through the host Recovery Agent (`ollama` is `ollama-primary.service`), the same POST the probe path makes. Only after the brain has asked the service itself and got no answer. **Rules-only**: never offered to the LLM long-tail. See [Host services](#host-services--restart_host_service). |
 | `run_auto_remediate`   | _(none)_                  | Re-runs `brain_daemon.auto_remediate` — the stuck-`in_progress` / stale-`awaiting_approval` `pipeline_tasks` sweep.                                                                                                                                                                                                                       |
 
@@ -1221,9 +1221,45 @@ twice in one night, cancelling an in-flight media render):
   missing, the call raised, or the service has no container mapping.
 
 Related knob: `brain_docker_restart_timeout_seconds` (default 90) bounds the
-`docker restart` subprocess. The old hardcoded 30 s was shorter than the
-worker's graceful stop (~30-45 s), so every worker heal paged a misleading
-"Restart failed: timed out" while dockerd completed the restart fine.
+`docker restart` subprocess on every path that goes through the brain's
+shared restart implementation, `docker_utils.restart_container`
+(`poindexter/brain/docker_utils.py`):
+
+- `restart_service`, this monitor's heal;
+- `docker_restart_container`, the firefighter's `restart_container` action
+  and console restart requests (see [The action registry](#the-action-registry));
+- the `health_probes` `REMEDIATIONS` self-heal (`worker_error_rate`,
+  `stuck_tasks` and `public_site` restart the worker; `grafana_datasources`
+  restarts Grafana).
+
+`docker restart` waits out the container's `stop_grace_period` before it
+kills and starts it, and the worker's is 75 s, so the timeout must exceed the
+longest grace of anything these paths restart. The old hardcoded 30 s here
+was shorter than the worker's graceful stop (~30-45 s), so every worker heal
+paged a misleading "Restart failed: timed out" while dockerd completed the
+restart fine (2026-08-15). The knob fixed `restart_service` only: until the
+shared helper (2026-09-28) the firefighter and console path still waited a
+hardcoded 30 s and the self-heal 60 s, both under the worker's grace. A
+restart that does outlive the timeout still fails, and says so: "did not
+return within Ns … dockerd may still complete it".
+
+The helper runs the `docker inspect` pre-check for all three. Only docker's
+own "no such container" counts as the compose recreate window:
+`restart_service` and the self-heal then skip quietly (the self-heal's
+cooldown, stamped before the attempt, still stands, which keeps its next
+attempt off the freshly recreated container), and the firefighter gets
+`(False, "container … not found (likely mid-recreate)")`. A docker daemon the
+brain cannot reach fails the inspect too. `restart_service` used to skip that
+as "mid-recreate"; now it pages as a failed restart.
+
+Not on the helper yet: seven probe-owned restarts with their own timeouts —
+`migration_drift_probe` (the worker, hardcoded 30 s), `backup_watcher`,
+`auto_embed_watch`, `offsite_backup_watch` and `docker_port_forward_probe`
+(30 s), `postiz_queue_watch` and `ram_recycle_common` (60 s). All but
+`migration_drift_probe` restart sidecars on docker's default 10 s grace. The
+ratchet in `tests/unit/brain/test_docker_utils_restart.py` fails if a brain
+module adds its own `docker restart`, or if one of these seven moves onto the
+helper without leaving the list.
 
 ## Liveness probes
 
@@ -1377,7 +1413,8 @@ How the state is kept:
   (`brain_cycle_timeout_seconds`, 240 s) or the brain restarted. The cooldown
   now runs from the start of one attempt to the start of the next. That is
   shorter than before by at most one attempt's length: a `docker restart` is
-  capped at 60 s.
+  capped at `brain_docker_restart_timeout_seconds` (90 s), after a `docker
+inspect` capped at 10 s.
 - A self-heal runs only for a probe in `health_probes.PROBES`, so a count left
   behind by a removed probe can't restart anything.
   `tests/unit/brain/test_probe_failure_state.py` also checks that every
@@ -1851,7 +1888,7 @@ full incident write-up.
 | Setting                                                       | Default                                    | Meaning                                                                                                                                                                                           |
 | ------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `brain_restart_consecutive_failures`                          | `2`                                        | Consecutive hard-down monitor cycles before `monitor_services` auto-restarts a local service (degraded never restarts).                                                                           |
-| `brain_docker_restart_timeout_seconds`                        | `90`                                       | Subprocess timeout for the brain's `docker restart` heal — must exceed the worker's graceful stop+start (~30-45 s).                                                                               |
+| `brain_docker_restart_timeout_seconds`                        | `90`                                       | Timeout for every `docker restart` via `docker_utils.restart_container` (monitor, firefighter, console, self-heal). Must exceed the longest `stop_grace_period` it restarts (worker: 75 s).       |
 | `compose_drift_host_recover_enabled`                          | `true`                                     | Auto-heal compose drift via the host agent.                                                                                                                                                       |
 | `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                                                                                        |
 | `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                                                                                                   |
