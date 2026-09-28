@@ -3056,7 +3056,10 @@ services:
       retries: 5
 
   postiz-temporal:
-    image: temporalio/auto-setup:latest
+    # Pinned rather than :latest: auto-setup runs Temporal's schema updates on
+    # start, so a floating tag is an unreviewed migration. 1.29.3 is the image
+    # the Postiz stack was verified against (Glad-Labs/poindexter#1091).
+    image: temporalio/auto-setup:1.29.3
     container_name: poindexter-postiz-temporal
     profiles: ["postiz"]
     restart: unless-stopped
@@ -3066,6 +3069,14 @@ services:
       POSTGRES_USER: postiz
       POSTGRES_PWD: "${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD}"
       POSTGRES_SEEDS: postiz-db
+      # Otherwise auto-setup registers demo search attributes on a new
+      # namespace, two of them Text (CustomStringField, CustomTextField). SQL
+      # visibility allows a namespace only 3 Text attributes, which leaves no
+      # room for the two Postiz registers at boot (organizationId, postId), and
+      # the backend then dies with "cannot have more than 3 search attribute
+      # of type Text". Upstream's compose avoids it with Elasticsearch
+      # visibility; skipping the demo attributes avoids it here.
+      SKIP_ADD_CUSTOM_SEARCH_ATTRIBUTES: "true"
     depends_on:
       postiz-db:
         condition: service_healthy
@@ -3077,7 +3088,17 @@ services:
       start_period: 30s
 
   postiz:
-    image: ghcr.io/gitroomhq/postiz-app:latest
+    # Pinned rather than :latest, and v2.24.0 is the floor
+    # (Glad-Labs/poindexter#1091). Before it, the bundled Mastra re-added 22
+    # columns to mastra_ai_spans at every backend boot, and the entrypoint's
+    # `prisma db push --accept-data-loss` dropped them at the next container
+    # start. Postgres never reuses a dropped column's slot, so every restart
+    # spent 22 of the table's 1600 and the backend stopped booting after ~72
+    # restarts. Before moving this tag, run
+    # `python scripts/postiz_upgrade_check.py <image>`, which fails when the new
+    # image's Prisma models and Mastra schemas disagree again. Runbook:
+    # docs/operations/postiz.md.
+    image: ghcr.io/gitroomhq/postiz-app:v2.24.0
     container_name: poindexter-postiz
     profiles: ["postiz"]
     restart: unless-stopped

@@ -73,6 +73,7 @@
               "docs/operations/voice-bridge",
               "docs/operations/voice-stt-tts",
               "docs/operations/speaches-kokoro-gpu",
+              "docs/operations/postiz",
               "docs/operations/niche-topic-discovery-operator-guide",
               "docs/operations/youtube-thumbnails"
             ]
