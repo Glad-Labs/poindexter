@@ -3805,9 +3805,9 @@ class GPUScheduler:
                 return
             if after_gb >= below_free_gb:
                 logger.info(
-                    "[GPU] %s freed only %.1f GB but the render GPU has %.1f GB free "
-                    "(>= %.1f GB) — nothing to reclaim from it, no restart",
-                    service, freed, after_gb, below_free_gb,
+                    "[GPU] %s hard unload: render GPU free VRAM %.1f -> %.1f GB, "
+                    "at or above %.1f GB — nothing to reclaim from it, no restart",
+                    service, before_gb, after_gb, below_free_gb,
                 )
                 return
 
@@ -3826,11 +3826,26 @@ class GPUScheduler:
             )
         else:
             before_text = "unread" if before_gb is None else f"{before_gb:.1f} GB"
-            what_happened = (
-                f"{service}'s hard unload freed {freed:.1f} GB (render GPU free "
-                f"VRAM {before_text} -> {after_gb:.1f} GB), under the "
-                f"{min_freed:.1f} GB floor"
-            )
+            if freed <= -min_freed:
+                # Free VRAM FELL during the settle: another load landed on the
+                # card, so the unload's own effect cannot be measured. Worded
+                # as a fall because "freed -20.6 GB" (what the finding said on
+                # 2026-09-28, 30.0 -> 9.3 GB) reads as an arithmetic slip.
+                # The brain's footprint check then decides; it skipped that one.
+                what_happened = (
+                    f"render GPU free VRAM fell {-freed:.1f} GB ({before_text} "
+                    f"-> {after_gb:.1f} GB) while {service}'s hard unload "
+                    f"settled, so another load landed on the card and what the "
+                    f"unload itself freed cannot be measured"
+                )
+            else:
+                # A dip smaller than the floor is noise (desktop transients):
+                # "freed 0.0 GB", never "-0.0 GB".
+                what_happened = (
+                    f"{service}'s hard unload freed {max(freed, 0.0):.1f} GB "
+                    f"(render GPU free VRAM {before_text} -> {after_gb:.1f} GB), "
+                    f"under the {min_freed:.1f} GB floor"
+                )
         squat_extra = {
             "service": service,
             "container": container,
@@ -3855,9 +3870,9 @@ class GPUScheduler:
         last = _LAST_RESTART_REQUEST.get(container)
         if last is not None and (now - last) < cooldown_min * 60:
             logger.info(
-                "[GPU] %s still squatting (%.1f GB freed) but a restart was "
-                "requested %.0fs ago — within the %.0f-minute cooldown",
-                service, freed, now - last, cooldown_min,
+                "[GPU] %s — a restart of %s was already requested %.0fs ago, "
+                "within the %.0f-minute cooldown",
+                what_happened, container, now - last, cooldown_min,
             )
             return
 
@@ -3870,16 +3885,16 @@ class GPUScheduler:
             age_s = await seconds_since_last_request(pool, container)
             if age_s is not None and age_s < cooldown_min * 60:
                 logger.info(
-                    "[GPU] %s still squatting (%.1f GB freed) but a restart was "
-                    "queued %.0fs ago by another pass — within the %.0f-minute cooldown",
-                    service, freed, age_s, cooldown_min,
+                    "[GPU] %s — a restart of %s was already queued %.0fs ago by "
+                    "another pass, within the %.0f-minute cooldown",
+                    what_happened, container, age_s, cooldown_min,
                 )
                 return
         if pool is None:
             logger.warning(
-                "[GPU] %s freed only %.1f GB and a restart is warranted, but "
-                "no DB pool is registered — cannot queue it",
-                service, freed,
+                "[GPU] %s — a restart of %s is warranted, but no DB pool is "
+                "registered to queue it",
+                what_happened, container,
             )
             # This is the case a human matters for: the card is short and the
             # self-heal could NOT engage. Warn-level (Discord) — the queued
@@ -3922,9 +3937,9 @@ class GPUScheduler:
         )
         _LAST_RESTART_REQUEST[container] = now
         logger.warning(
-            "[GPU] %s hard unload freed only %.1f GB (floor %.1f) — queued "
-            "restart of %s (%s)",
-            service, freed, min_freed, container, row.get("id"),
+            "[GPU] %s — queued a restart of %s (%s); the brain checks its "
+            "footprint before acting",
+            what_happened, container, row.get("id"),
         )
         try:
             from poindexter.utils.findings import emit_finding

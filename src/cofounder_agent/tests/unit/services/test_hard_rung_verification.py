@@ -239,6 +239,83 @@ class TestVerifierRespectsTheDecline:
         assert "`detail`" in kw["body"]
         assert "squat is real" not in text
 
+    async def test_a_fall_in_free_vram_is_reported_as_a_fall(self):
+        """2026-09-28 13:06 UTC: free VRAM went 30.0 -> 9.3 GB during ComfyUI's
+        settle because another load landed on the card, and the finding read
+        "comfyui's hard unload freed -20.6 GB". The unload's own effect cannot
+        be measured through someone else's load, so say what was seen."""
+        s = _sched()
+        log = MagicMock()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=9.3)), \
+             patch("asyncio.sleep", new=AsyncMock()), \
+             patch("poindexter.services.service_restart_requests.create_restart_request",
+                   AsyncMock(return_value={"id": "r1"})), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request",
+                   AsyncMock(return_value=None)), \
+             patch("poindexter.services.gpu_scheduler.logger", log), \
+             patch("poindexter.utils.findings.emit_finding") as finding:
+            await s._verify_reclaim_or_restart(
+                service="comfyui", container="poindexter-comfyui",
+                before_gb=30.0, declined=False,
+            )
+        kw = finding.call_args.kwargs
+        assert "free VRAM fell 20.7 GB (30.0 GB -> 9.3 GB)" in kw["body"]
+        assert "another load landed on the card" in kw["body"]
+        assert "freed -" not in kw["body"]
+        # The data keeps its sign; only the words change.
+        assert kw["extra"]["freed_gb"] == -20.7
+        logged = " ".join(str(c) for c in log.warning.call_args_list)
+        assert "fell 20.7 GB" in logged
+        assert "freed -" not in logged and "freed only" not in logged
+
+    async def test_a_dip_inside_the_noise_reads_as_nothing_freed(self):
+        """A dip smaller than the floor is desktop noise: "freed 0.0 GB", never
+        the "-0.0 GB freed" some findings printed."""
+        s = _sched()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=5.96)), \
+             patch("asyncio.sleep", new=AsyncMock()), \
+             patch("poindexter.services.service_restart_requests.create_restart_request",
+                   AsyncMock(return_value={"id": "r1"})), \
+             patch("poindexter.services.service_restart_requests.seconds_since_last_request",
+                   AsyncMock(return_value=None)), \
+             patch("poindexter.utils.findings.emit_finding") as finding:
+            await s._verify_reclaim_or_restart(
+                service="wan", container="poindexter-wan-server",
+                before_gb=6.0, declined=False,
+            )
+        body = finding.call_args.kwargs["body"]
+        assert "wan's hard unload freed 0.0 GB (render GPU free VRAM 6.0 GB -> 6.0 GB)" in body
+        assert "-0.0" not in body
+        assert "fell" not in body
+
+    async def test_the_cooldown_log_states_the_observation_not_a_squat(self):
+        """The cooldown logs said "<sidecar> still squatting (-20.6 GB freed)":
+        a verdict the verifier cannot make, around a negative it should not
+        print."""
+        import time as _time
+
+        s = _sched()
+        gs._LAST_RESTART_REQUEST["poindexter-wan-server"] = _time.monotonic()
+        log = MagicMock()
+        created = AsyncMock()
+        with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
+             patch("poindexter.services.gpu_scheduler._container_pool", return_value=MagicMock()), \
+             patch.object(s, "_render_free_vram_gb", AsyncMock(return_value=5.9)), \
+             patch("poindexter.services.service_restart_requests.create_restart_request", created), \
+             patch("poindexter.services.gpu_scheduler.logger", log):
+            await s._verify_reclaim_or_restart(
+                service="wan", container="poindexter-wan-server",
+                before_gb=5.9, declined=True,
+            )
+        created.assert_not_awaited()
+        logged = " ".join(str(c) for c in log.info.call_args_list)
+        assert "already requested" in logged
+        assert "still squatting" not in logged
+
     async def test_the_unqueued_finding_states_the_observation_too(self):
         s = _sched()
         with patch("poindexter.services.gpu_scheduler._sc", return_value=_SC()), \
