@@ -5,6 +5,35 @@
 # Prefect starvation fix, the 2026-07-02 step-independence bug, the redundancy
 # guard). Runs every 10 min via infrastructure/systemd/poindexter-deploy-sync.timer.
 #
+# Where this file runs from (stack#4172). The unit execs the INSTALLED launcher,
+# ~/.poindexter/deploy-sync/deploy-sync-launcher.sh (a copy of
+# scripts/linux/deploy-sync-launcher.sh, outside every git tree), and the
+# launcher runs THIS file as committed in the deploy clone. It stages the file
+# to a copy first, so step 4's reset never changes the bytes that are running.
+# A merged change here therefore runs on the next fire, with no pull anywhere.
+#
+# A broken merge still can't brick the syncer that would deliver its fix. The
+# launcher keeps the last copy that completed a clean pass as
+# ~/.poindexter/deploy-sync/last-known-good.sh. When the merged copy fails
+# `bash -n`, or dies or hangs before it has moved this clone to origin/main,
+# the launcher runs that copy instead, in the same fire. It fetches and resets
+# onto whatever fixed the merged copy, and the fixed copy is promoted on its
+# first clean pass. A deferral, or a failure after the clone moved, never
+# triggers the fallback. The full rules are in the launcher's header.
+#
+# DEPLOY_SYNC_DRIVER tells this file which copy it is: merged, last-known-good,
+# or unset for a direct run (a test, an operator, or a host that never
+# installed the launcher). It goes into every status write and heartbeat, and
+# the brain's deploy_sync probe raises deploy_sync_driver_fallback when a pass
+# ran the last-known-good copy.
+#
+# Until 2026-09-28 the unit ran this file out of the operator's working
+# checkout. Only run-session.sh's ff-only pre-flight ever advanced that tree,
+# and it skips a dirty one; it skipped 34 runs in a row. The checkout sat 148
+# commits behind, with #3984, #4001, #4085 and #4144 merged and not running.
+# #4001 and #4085 are the guards that stop a deploy from bouncing the worker
+# through a media render.
+#
 # One pass:
 #   1. git fetch (always safe — never touches the working tree)
 #   2. behind-check: 0 commits behind -> no-op (fail-safe parse: junk = behind)
@@ -144,14 +173,15 @@
 #      failure), no-change passes included: that is how a failed sync heals.
 #      On a deploy pass it runs LAST, after the marker and status are written.
 #      A lockfile change rebuilds the worker images AND needs this sync, and
-#      the unit kills the whole pass at TimeoutStartSec, so running it any
-#      earlier could cost the marker and trigger a second round of rebuilds and
-#      force-recreates. Its timeout, SYNC_CLI_VENV_TIMEOUT_SEC (300s), plus the
-#      longest pass seen (~400s) stays inside the unit's 900s. A failure never
-#      withholds the marker: PyPI being unreachable is not a failed container
-#      deploy. It amends the status detail instead, and the launcher retries on
-#      the operator's next command. A host that never installed the host CLI
-#      has no venv: the script exits 3 and the step is silent.
+#      the deploy-sync launcher kills the whole pass at SYNC_DRIVER_TIMEOUT_SEC
+#      (900s), so running it any earlier could cost the marker and trigger a
+#      second round of rebuilds and force-recreates. Its timeout,
+#      SYNC_CLI_VENV_TIMEOUT_SEC (300s), plus the longest pass seen (~400s)
+#      stays inside those 900s. A failure never withholds the marker: PyPI
+#      being unreachable is not a failed container deploy. It amends the status
+#      detail instead, and the CLI launcher retries on the operator's next
+#      command. A host that never installed the host CLI has no venv: the
+#      script exits 3 and the step is silent.
 #
 # Marker  : ~/.poindexter/deploy-last-restarted-sha   (outside the clone; a fully clean pass)
 #           ~/.poindexter/deploy-last-bounced-sha     (tree the app containers were last restarted onto)
@@ -188,12 +218,21 @@ APPLY_RETRY_SETTLE_SEC="${SYNC_APPLY_RETRY_SETTLE_SEC:-15}"
 # doesn't include ~/.local/bin, so we probe the standard install dirs).
 MCP_UNIT="${SYNC_MCP_UNIT:-poindexter-mcp-http.service}"
 # Host CLI environment (step 10). The script is read from the CLONE, like the
-# health gate, so its logic deploys itself; only these call sites ride the
-# operator checkout. CLI_ENV_NOTE carries a failure into write_status.
+# health gate. CLI_ENV_NOTE carries a failure into write_status.
 CLI_VENV_SYNC="$DEPLOY_DIR/scripts/linux/cli-venv-sync.sh"
 CLI_VENV_TIMEOUT_SEC="${SYNC_CLI_VENV_TIMEOUT_SEC:-300}"
 CLI_ENV_NOTE=""
 STATUS_AMEND=0
+# Which copy of this file is running, set by the deploy-sync launcher (see
+# "Where this file runs from" above); unset means a direct run. Kind and commit
+# are sanitised because both land in a $$-quoted SQL literal in
+# emit_run_heartbeat. The note is the launcher's reason for a fallback, and
+# write_status appends it to the detail like CLI_ENV_NOTE.
+DRIVER_KIND="$(printf '%s' "${DEPLOY_SYNC_DRIVER:-direct}" | tr -cd 'a-z-')"
+DRIVER_KIND="${DRIVER_KIND:-direct}"
+DRIVER_COMMIT="$(printf '%s' "${DEPLOY_SYNC_DRIVER_COMMIT:-}" | tr -cd '0-9a-f')"
+DRIVER_NOTE="${DEPLOY_SYNC_DRIVER_NOTE:-}"
+DEPLOY_SYNC_LAUNCHER="${POINDEXTER_DEPLOY_SYNC_HOME:-$HOME/.poindexter/deploy-sync}/deploy-sync-launcher.sh"
 
 POINDEXTER_HOME="$HOME/.poindexter"
 LOG_FILE="$POINDEXTER_HOME/deploy-checkout-sync.log"
@@ -220,6 +259,12 @@ for arg in "$@"; do
       [ -f "$STATUS_FILE" ] && { echo "  --- last status ---"; cat "$STATUS_FILE"; echo; }
       [ -f "$LOG_FILE" ] && { echo "  --- last 15 log lines ---"; tail -15 "$LOG_FILE"; }
       [ -f "$CLI_VENV_SYNC" ] && { echo "  --- host CLI env ---"; bash "$CLI_VENV_SYNC" --status 2>&1 | sed 's/^/  /'; }
+      echo "  --- deploy driver ---"
+      if [ -f "$DEPLOY_SYNC_LAUNCHER" ]; then
+        bash "$DEPLOY_SYNC_LAUNCHER" --report 2>&1 | sed 's/^/  /'
+      else
+        echo "  no launcher at $DEPLOY_SYNC_LAUNCHER: the unit runs this file straight from a checkout, which only changes when that checkout does. Install it: bash $DEPLOY_DIR/scripts/linux/install-deploy-sync.sh"
+      fi
       exit 0 ;;
     --no-restart) NO_RESTART=1 ;;
     --no-flow-check) NO_FLOW_CHECK=1 ;;
@@ -236,12 +281,14 @@ log() { # log <msg> [LEVEL]
 
 write_status() { # write_status <result> <head> <prev> <restarted-csv> <detail>
   # Step 10 never changes the result; a failure there rides along in the detail.
+  # So does the launcher's reason for running the last-known-good copy.
   local detail="${5:-}"
+  [ -n "${DRIVER_NOTE:-}" ] && detail="${detail:+$detail; }$DRIVER_NOTE"
   [ -n "${CLI_ENV_NOTE:-}" ] && detail="${detail:+$detail; }$CLI_ENV_NOTE"
-  printf '{"timestamp":"%s","result":"%s","head":"%s","previousHead":"%s","restarted":[%s],"detail":"%s","host":"%s"}\n' \
+  printf '{"timestamp":"%s","result":"%s","head":"%s","previousHead":"%s","restarted":[%s],"detail":"%s","driver":"%s","driverCommit":"%s","host":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" \
     "$(echo "${4:-}" | sed 's/[^,]\+/"&"/g')" \
-    "$(echo "$detail" | tr '"' "'")" "$(hostname)" > "$STATUS_FILE" 2>/dev/null || true
+    "$(echo "$detail" | tr '"' "'")" "$DRIVER_KIND" "$DRIVER_COMMIT" "$(hostname)" > "$STATUS_FILE" 2>/dev/null || true
   # One heartbeat per pass: step 10's late amendment rewrites only the file.
   [ "$STATUS_AMEND" = "1" ] || emit_run_heartbeat "$1" "$2" "$3" "${4:-}" "$detail"
 }
@@ -274,7 +321,9 @@ emit_run_heartbeat() { # emit_run_heartbeat <result> <head> <prev> <restarted-cs
              jsonb_build_object('result', \$\$${result}\$\$,
                                 'head', \$\$${head}\$\$,
                                 'detail', \$\$${detail}\$\$,
-                                'host', \$\$$(hostname)\$\$),
+                                'host', \$\$$(hostname)\$\$,
+                                'driver', \$\$${DRIVER_KIND}\$\$,
+                                'driver_commit', \$\$${DRIVER_COMMIT}\$\$),
              CASE WHEN \$\$${result}\$\$ = 'error' THEN 'warning' ELSE 'info' END)" \
     >/dev/null 2>&1 || true
 }
@@ -290,7 +339,7 @@ if ! git -C "$DEPLOY_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-log "Syncing $DEPLOY_DIR to $SOURCE_REMOTE/$SYNC_BRANCH ..."
+log "Syncing $DEPLOY_DIR to $SOURCE_REMOTE/$SYNC_BRANCH (driver: $DRIVER_KIND${DRIVER_COMMIT:+ from ${DRIVER_COMMIT:0:9}}) ..."
 if ! git -C "$DEPLOY_DIR" fetch "$SOURCE_REMOTE" "$SYNC_BRANCH" --prune >>"$LOG_FILE" 2>&1; then
   log "fetch failed" ERROR; write_status error "" "" "" "git fetch failed"; exit 1
 fi
@@ -1048,8 +1097,9 @@ fi
 
 # ---- host CLI environment (step 10) ---------------------------------------
 # Last, once the pass is recorded: this step can neither delay a container step
-# nor cost the marker if the unit's TimeoutStartSec cuts it short. A pass with a
-# failed step (exit 1 above) leaves it to the next pass and to the launcher.
+# nor cost the marker if the deploy-sync launcher's per-run timeout cuts it
+# short. A pass with a failed step (exit 1 above) leaves it to the next pass and
+# to the CLI launcher.
 sync_host_cli_env
 if [ -n "$CLI_ENV_NOTE" ]; then
   STATUS_AMEND=1

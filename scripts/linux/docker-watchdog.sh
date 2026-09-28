@@ -5,6 +5,11 @@
 # If the engine is down, restart it; if the stack isn't up, bring it up.
 # Intended to run every ~5 min via a systemd timer.
 #
+# The unit runs THIS file out of the deploy clone (stack#4172), so a merged
+# change here runs on the first fire after a deploy pass lands it. Before that
+# it ran the operator's working checkout, which only changes when that
+# checkout is pulled.
+#
 # Two properties below are load-bearing and were both learned the hard way on
 # 2026-08-27. Read the comments before simplifying either.
 set -euo pipefail

@@ -4122,6 +4122,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.deploy_sync_failing.fallback': 'discord',
     'findings.deploy_sync_failing.cooldown_minutes': '120',
     'findings.deploy_sync_failing.min_severity': 'warning',
+    # deploy_sync_driver_fallback: the deploy path still moves, but on the
+    # last-known-good copy of the driver, because the merged copy cannot sync
+    # on this host (scripts/linux/deploy-sync-launcher.sh, stack#4172). It
+    # repeats every pass until a fix merges, so it informs rather than pages.
+    'findings.deploy_sync_driver_fallback.delivery': 'discord',
+    'findings.deploy_sync_driver_fallback.fallback': 'discord',
+    'findings.deploy_sync_driver_fallback.cooldown_minutes': '120',
+    'findings.deploy_sync_driver_fallback.min_severity': 'warning',
     # resend_delivery_poll_failed: the newsletter still SENDS when this
     # fires — only the receipt feed is down, so it informs rather than
     # pages. Its predecessor (the unreachable webhook) failed silently for

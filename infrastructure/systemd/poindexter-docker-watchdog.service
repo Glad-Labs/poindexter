@@ -2,9 +2,22 @@
 # Windows→Pop!_OS migration). Runs scripts/linux/docker-watchdog.sh every
 # ~5 min via the paired .timer: engine down → restart docker; worker
 # unhealthy → start-stack.sh up -d. No-ops (exit 0) when healthy.
-# Operators: set User= and the ExecStart path to your login + checkout
-# (ships with a generic `poindexter` / /home/poindexter). The user needs
-# the docker group + passwordless sudo for `systemctl restart docker`.
+#
+# Runs from the DEPLOY CLONE (~/.poindexter/deploy/glad-labs-stack), not a
+# working checkout (stack#4172). deploy-checkout-sync.sh keeps the clone on
+# origin/main and every fire reads the script fresh, so a merged watchdog fix
+# runs within one deploy pass. It needs no last-known-good copy of its own,
+# because it does not deploy itself: the deploy sync delivers its fixes, and
+# that sync is the part protected against a broken merge. Until 2026-09-28 this
+# ran the operator's working checkout, which only changes when that checkout
+# is pulled.
+#
+# Install or refresh with scripts/linux/install-deploy-sync.sh, which renders
+# User= and ExecStart= onto the host (this repo copy ships a generic
+# `poindexter` / /home/poindexter placeholder). No deploy clone on this host?
+# Point ExecStart at your checkout's scripts/linux/docker-watchdog.sh instead.
+# The user needs the docker group + passwordless sudo for
+# `systemctl restart docker`.
 [Unit]
 Description=Poindexter docker/stack liveness watchdog
 After=docker.service network-online.target
@@ -12,4 +25,4 @@ After=docker.service network-online.target
 [Service]
 Type=oneshot
 User=poindexter
-ExecStart=/home/poindexter/glad-labs-website/scripts/linux/docker-watchdog.sh
+ExecStart=/home/poindexter/.poindexter/deploy/glad-labs-stack/scripts/linux/docker-watchdog.sh

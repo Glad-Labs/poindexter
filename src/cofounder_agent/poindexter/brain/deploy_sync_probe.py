@@ -26,6 +26,19 @@ out an in-flight Prefect run rather than restarting a busy worker) is a
 HEALTHY outcome, not an error. It counts as liveness and never as a failure;
 treating deferral as breakage would page on the mechanism working.
 
+A third condition sits between the two (Glad-Labs/glad-labs-stack#4172):
+
+* **fallback** — the newest heartbeat came from the LAST-KNOWN-GOOD copy of
+  ``deploy-checkout-sync.sh``, not the merged one. The deploy-sync launcher
+  (``scripts/linux/deploy-sync-launcher.sh``) runs that copy only when the
+  merged driver cannot be used: it fails ``bash -n``, is missing, or died
+  before moving the deploy clone to origin/main. The path is still moving, so
+  this is no outage, but merged driver code is not running, and nothing else
+  would say so: the fallback pass reports ``deployed`` like any other.
+  ``warning``. The fallback repeats every pass until a fixed driver merges, so
+  a single occurrence is worth one message, and it clears by itself when the
+  fix's first clean pass is promoted.
+
 Why the heartbeat is in the DB rather than read from the status file: the
 status JSON lives at the ``~/.poindexter`` root, and the brain container
 mounts only subdirectories of it. Exposing the root to read one file would
@@ -58,8 +71,15 @@ DEFAULT_ERROR_STREAK = 3
 # Dot-free so `findings.<kind>.delivery` attaches as one settings key.
 FINDING_KIND_STALE = "deploy_sync_stale"
 FINDING_KIND_FAILING = "deploy_sync_failing"
+FINDING_KIND_FALLBACK = "deploy_sync_driver_fallback"
 
 HEARTBEAT_EVENT = "deploy_sync_run"
+
+# The heartbeat's `driver` field, set by scripts/linux/deploy-sync-launcher.sh:
+# `merged` (the deploy clone's copy), `last-known-good` (the fallback), or
+# `direct` (run without the launcher). Heartbeats from before the launcher
+# carry no field at all, which reads as "not a fallback".
+FALLBACK_DRIVER = "last-known-good"
 
 # Outcomes the sync script writes that mean "ran and did its job". Anything
 # else it writes is `error`. Kept as an explicit allowlist rather than
@@ -229,8 +249,69 @@ async def run_deploy_sync_probe(pool: Any) -> dict[str, Any]:
         )
         return summary
 
-    # Fresh, but is it actually succeeding? Only an unbroken streak counts:
-    # one bad run between good ones is the retry working, not a failure.
+    # Fresh, but did the pass run MERGED driver code? The launcher runs the
+    # last-known-good copy only when the merged one cannot be used, and that
+    # pass reports its own result like any other, so this field is the only
+    # place the fallback shows.
+    driver = str(latest.get("driver") or "")
+    if driver:
+        summary["driver"] = driver
+    if driver == FALLBACK_DRIVER:
+        detail = str(latest.get("detail") or "")
+        driver_commit = str(latest.get("driver_commit") or "")
+        summary["ok"] = False
+        summary["status"] = "fallback"
+        summary["detail"] = (
+            "the last deploy-sync pass ran the last-known-good driver, "
+            "not the merged one"
+        )
+        if result == "error":
+            state = (
+                "The fallback pass failed too, so the deploy path is stalled "
+                "as well: expect deploy_sync_failing if it persists."
+            )
+        else:
+            state = (
+                "The deploy path is still moving, so merged commits still "
+                "reach the stack. What is not running is merged DRIVER code."
+            )
+        await _emit_finding(
+            pool,
+            kind=FINDING_KIND_FALLBACK,
+            severity="warning",
+            title=(
+                "Deploy driver fallback: the last deploy-sync pass ran the "
+                "last-known-good copy, not merged main"
+            ),
+            body=(
+                f"The newest `{HEARTBEAT_EVENT}` heartbeat on {host} came from "
+                f"the last-known-good copy of deploy-checkout-sync.sh"
+                f"{f' (from {driver_commit[:9]})' if driver_commit else ''}, "
+                f"not the copy merged on main. The deploy-sync launcher runs "
+                f"that copy only when the merged driver cannot be used: it "
+                f"fails `bash -n`, is missing from the deploy clone, or died "
+                f"before moving the clone to origin/main.\n\n"
+                f"The launcher's reason, with the pass's own detail: "
+                f"{detail or '(none recorded)'}\n\n"
+                f"This pass reported `{result}`. {state} The fallback repeats "
+                f"every pass until a fixed driver merges; that driver's first "
+                f"clean pass is promoted automatically, and this stops.\n\n"
+                f"Look at `grep -F '[launcher]' "
+                f"~/.poindexter/deploy-checkout-sync.log | tail` and "
+                f"`bash ~/.poindexter/deploy-sync/deploy-sync-launcher.sh "
+                f"--report`."
+            ),
+            extra={
+                "driver": driver,
+                "driver_commit": driver_commit,
+                "last_result": result,
+                "detail": detail,
+                "host": host,
+            },
+        )
+
+    # Is it actually succeeding? Only an unbroken streak counts: one bad run
+    # between good ones is the retry working, not a failure.
     errored = [r for r in rows if str(_details_of(r).get("result")) == "error"]
     if len(rows) >= streak_n and len(errored) == len(rows) == streak_n:
         details_list = [str(_details_of(r).get("detail") or "") for r in rows]
@@ -262,7 +343,8 @@ async def run_deploy_sync_probe(pool: Any) -> dict[str, Any]:
         )
         return summary
 
-    summary["detail"] = (
-        f"deploy-sync ran {age_minutes:.0f}m ago with result={result}"
-    )
+    if summary["status"] == "fresh":
+        summary["detail"] = (
+            f"deploy-sync ran {age_minutes:.0f}m ago with result={result}"
+        )
     return summary

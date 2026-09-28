@@ -747,16 +747,18 @@ Deploying the canary itself requires a brain image rebuild
 
 ## The ops-session wrapper is a third deploy surface
 
-"Deployed" means five surfaces across three trees on this host, each with its
-own sync mechanism:
+"Deployed" means several surfaces across three trees on this host, each with
+its own sync mechanism:
 
-| Surface                                           | Tree                                                                              | Synced by                                                                                                                                   |
-| ------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Public site                                       | Vercel build of `glad-labs-stack`                                                 | Vercel, on push to `main`                                                                                                                   |
-| Worker / brain / pipeline containers              | `~/.poindexter/deploy/glad-labs-stack`                                            | `deploy-checkout-sync.sh` (10-min timer; `reset --hard` + `clean -fd`)                                                                      |
-| claude.ai phone connector (`poindexter-mcp-http`) | `~/.poindexter/deploy/glad-labs-stack` (`mcp-server/` + its in-clone `.venv`)     | same `deploy-checkout-sync.sh` pass (2026-08-16): unit restart on `mcp-server/**`, `uv sync` on lockfile change                             |
-| Host `poindexter` CLI                             | `~/.poindexter/deploy/glad-labs-stack`, via the editable `~/.poindexter/cli-venv` | code: nothing to sync (each call imports the clone); deps: `poetry sync` on lockfile change, by the launcher and the same pass (2026-09-28) |
-| Ops-session wrapper + shared payload              | `~/glad-labs-website` (the working checkout)                                      | `run-session.sh`'s own ff-only pre-flight (2026-08-15)                                                                                      |
+| Surface                                              | Tree                                                                                                       | Synced by                                                                                                                                   |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public site                                          | Vercel build of `glad-labs-stack`                                                                          | Vercel, on push to `main`                                                                                                                   |
+| Worker / brain / pipeline containers                 | `~/.poindexter/deploy/glad-labs-stack`                                                                     | `deploy-checkout-sync.sh` (10-min timer; `reset --hard` + `clean -fd`)                                                                      |
+| claude.ai phone connector (`poindexter-mcp-http`)    | `~/.poindexter/deploy/glad-labs-stack` (`mcp-server/` + its in-clone `.venv`)                              | same `deploy-checkout-sync.sh` pass (2026-08-16): unit restart on `mcp-server/**`, `uv sync` on lockfile change                             |
+| Host `poindexter` CLI                                | `~/.poindexter/deploy/glad-labs-stack`, via the editable `~/.poindexter/cli-venv`                          | code: nothing to sync (each call imports the clone); deps: `poetry sync` on lockfile change, by the launcher and the same pass (2026-09-28) |
+| Ops-session wrapper + shared payload                 | `~/glad-labs-website` (the working checkout)                                                               | `run-session.sh`'s own ff-only pre-flight (2026-08-15)                                                                                      |
+| The deploy driver itself (`deploy-checkout-sync.sh`) | `~/.poindexter/deploy/glad-labs-stack`, run through the installed launcher in `~/.poindexter/deploy-sync/` | itself: every fire runs the clone's committed copy, with a last-known-good copy for a broken merge (2026-09-28)                             |
+| Docker watchdog (`docker-watchdog.sh`)               | `~/.poindexter/deploy/glad-labs-stack`                                                                     | the deploy pass; the timer reads the clone's current copy every fire (2026-09-28)                                                           |
 
 The ops-session row was the gap: the systemd session units exec `run-session.sh`
 out of the **working checkout**, and until 2026-08-15 nothing auto-updated it —
@@ -916,11 +918,152 @@ The working checkout's own poetry venv is untouched. It is still the one to run
 tests with, and its `bin/poindexter` still runs the working tree's CLI when that
 is what you want.
 
-**Activation caveat.** Step 10's call sites live in `deploy-checkout-sync.sh`.
-The unit runs that script out of the working checkout on purpose (see the unit
-file: a broken merge must not brick the syncer that would fix it), so the
-pre-warm starts only once that checkout has been fast-forwarded. The launcher's
-own `--ensure` does not wait for that; it covers the gap.
+**Step 10's call sites deploy themselves too.** They live in
+`deploy-checkout-sync.sh`, which the unit ran out of the working checkout until
+the next section's change, so the pre-warm first had to wait for that checkout
+to be fast-forwarded. The driver now runs from the deploy clone like everything
+else here. The CLI launcher's own `--ensure` never depended on either.
+
+## The deploy driver runs the deploy clone, with a last-known-good fallback
+
+`deploy-checkout-sync.sh` keeps every other surface above current, and until
+2026-09-28 it was the one that went stale itself (Glad-Labs/glad-labs-stack#4172).
+`poindexter-deploy-sync.service` ran it out of the operator's **working
+checkout**. The unit said that was deliberate, so a broken merge could not
+brick the syncer that would fix it. But the only thing that ever advanced that
+tree was `run-session.sh`'s ff-only pre-flight, which correctly skips a dirty
+checkout. It logged `checkout sync skipped: … has uncommitted tracked changes`
+on 34 ops-session runs in a row. On 2026-09-28 the checkout was 148 commits
+behind, and four merged driver fixes were not running: #4144 (rebuild every
+`Dockerfile.worker` service), #3984 (`start-stack.sh` stdout is data), and
+#4001 and #4085, the guards that stop a deploy from bouncing the worker through
+a media render. The driver changed 21 times in the 30 days to 2026-09-28, so
+the lag was never a rare case.
+
+Running it straight from the deploy clone would have been the obvious fix, and
+the unit's concern was real. The driver is what moves the clone. A merged driver
+that dies before its `git fetch` and `reset` would never receive the commit that
+fixes it, and the deploy path would stop until someone reset the clone by hand.
+
+**How it works now.**
+
+- The unit execs `~/.poindexter/deploy-sync/deploy-sync-launcher.sh`, an
+  **installed copy** of `scripts/linux/deploy-sync-launcher.sh`, outside every
+  git tree. It is a copy and never a symlink, because it is the one piece a
+  merge must not be able to break.
+- Each fire, the launcher stages the deploy clone's **committed** driver
+  (`HEAD:scripts/linux/deploy-checkout-sync.sh`) into
+  `~/.poindexter/deploy-sync/candidate.sh` and runs that. It stages the file so
+  the pass's own `reset --hard` never changes the bytes being executed, and so
+  a promotion keeps exactly the bytes that ran. A merged driver change therefore
+  runs on the next fire, with no pull anywhere.
+- It keeps `~/.poindexter/deploy-sync/last-known-good.sh`, the last copy that
+  completed a clean pass, with its provenance in `last-known-good.meta`. When
+  the merged copy is identical, which is the steady state, there is one run and
+  nothing to judge. When it differs, the launcher judges the run by what it did
+  to the clone, not by what it reported. The run "reached origin" if it fetched
+  during its run (`FETCH_HEAD` rewritten and naming a commit; a failed fetch
+  empties it) and the clone's `HEAD` is what it fetched.
+
+| The merged copy…                                             | What happens                                                                                                                                                                                  |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| exits 0 and reached origin                                   | **promoted**: its staged bytes become the last-known-good copy                                                                                                                                |
+| exits 0, fetched, but left the clone behind                  | a **deferral** (busy stack). Trusted, judged again next fire                                                                                                                                  |
+| fails after reaching origin (e.g. an image rebuild failed)   | no promotion and **no fallback**: the clone is current, so a fix still arrives                                                                                                                |
+| fails `bash -n`, is missing, or dies or hangs before syncing | if origin answers (`git ls-remote`), the **last-known-good copy runs in the same fire**. It fetches and resets onto whatever fixed the merged copy, which is promoted on its first clean pass |
+| fails before syncing while origin does not answer            | no fallback, because neither copy could reach it. The next fire retries                                                                                                                       |
+
+Every driver run gets `SYNC_DRIVER_TIMEOUT_SEC` (900 s, the unit's old per-pass
+budget), so a hang is killed and judged like any other failure. The unit's
+`TimeoutStartSec` is 1920 s, enough for a fire that runs both copies.
+
+**It is never silent.** The launcher passes `DEPLOY_SYNC_DRIVER` (`merged` or
+`last-known-good`; unset means a direct run, `direct`), the source commit, and
+its reason for a fallback. The driver writes them into
+`deploy-checkout-sync.status.json` (`driver`, `driverCommit`, and the reason in
+`detail`) and into its `deploy_sync_run` heartbeat. The brain's `deploy_sync`
+probe raises **`deploy_sync_driver_fallback`** (warning, Discord) whenever the
+newest heartbeat came from the last-known-good copy. That matters because a
+fallback pass reports `deployed` like any other: a quiet fallback would be the
+original failure again, with merged driver code not running and nothing saying
+so. The launcher's own decisions go into `deploy-checkout-sync.log` tagged
+`[launcher]`.
+
+**Why these rules.**
+
+- **A deferral never triggers the fallback.** The merged driver's busy guard is
+  the newer one. Falling back would let an older guard reset the clone and
+  bounce the worker through a render the newer guard saw, which is exactly what
+  #4001 and #4085 exist to stop.
+- **Promotion needs evidence that the run fetched.** Otherwise a merged driver
+  that exits 0 immediately would be promoted whenever the clone happened to be
+  current already, and the fallback would then be a copy that does nothing.
+- **The bytes that ran are promoted, not the clone's copy after the pass.** The
+  pass may reset the clone onto a newer driver, and that one has not run yet.
+- **No quarantine.** A merged copy that failed is tried again every fire rather
+  than skipped until it changes. A transient failure (a git lock, a blip) must
+  not strand a good driver behind the old one, and a copy that is really broken
+  usually fails fast.
+- **The seed is the driver this host already ran.** `install-deploy-sync.sh`
+  seeds the last-known-good copy from the unit's previous `ExecStart` and
+  never from the clone, because a fallback identical to the copy being judged
+  could rescue nothing.
+
+**Not covered, so nobody over-trusts it.**
+
+- A merged driver that exits 0 without ever moving the clone (a busy guard that
+  is always busy, a skipped reset) looks exactly like a deferral from the
+  launcher. The brain's `branch_drift_probe` pages when the clone falls behind
+  origin/main.
+- The launcher itself does not self-update. That is deliberate: it is the
+  bootstrap. When the clone's copy differs, every pass logs
+  `launcher out of date` and adds it to the status detail, and `--report` says
+  so. Re-run the installer, as for the unit files.
+- It is no harder to tamper with than what the driver already ran. The
+  worker, pipeline-bot and prefect-worker containers mount the whole
+  `~/.poindexter` read-write at `/root/.poindexter` (a legacy mount). That
+  covers `deploy-sync/`, and it has always covered the deploy clone, whose
+  `start-stack.sh`, health gate and identity check the driver executes on
+  every pass. Narrowing that mount is a separate change.
+
+**The other host units.** The docker watchdog moved to the deploy clone in the
+same change. Its timer reads the script on every fire, so a merged fix runs
+after one deploy pass. It needs no last-known-good copy because it does not
+deploy itself: the deploy sync delivers its fixes, and that sync is the part
+protected against a broken merge. It also gained its first tests
+(`test_docker_watchdog.py`). These units still run the working checkout:
+
+| Unit                                                                | Why, and what it would take                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `poindexter-session@` (ops sessions)                                | By design; see the previous section. It is stale while the tree is dirty.                                                                                                                                                                              |
+| `poindexter-gpu-scraper` (daemon)                                   | A long-running process reads its code once, at start, so a launcher buys it nothing. It needs the deploy pass to restart host daemons whose files changed, which the recovery agent (already on the clone, but never restarted on a change) needs too. |
+| `ollama-primary`, `ollama-vision`, `poindexter-dr-backup{,-hourly}` | Not yet audited for the same move.                                                                                                                                                                                                                     |
+
+**Install and operate.**
+
+```bash
+# one-time, and again after any change to the launcher or either unit template
+bash ~/.poindexter/deploy/glad-labs-stack/scripts/linux/install-deploy-sync.sh
+# which copy runs, what the last-known-good copy is, recent launcher decisions
+bash ~/.poindexter/deploy-sync/deploy-sync-launcher.sh --report
+# the driver's --status, which includes that report
+bash ~/.poindexter/deploy-sync/deploy-sync-launcher.sh --status
+```
+
+The installer copies the launcher, seeds the last-known-good copy, renders both
+units (`User=` and `ExecStart=`; the repo templates ship generic
+`/home/poindexter` paths), reloads and restarts both timers, then runs one pass
+through the launcher and prints its report (`--no-start` skips the pass). Run
+it as your login: it calls `sudo` itself for `/etc/systemd/system`.
+
+To back out, point the unit's `ExecStart` at a checkout's driver again. The
+driver behaves the same when run directly (its status says `driver: direct`):
+
+```bash
+sudo sed -i "s|^ExecStart=.*|ExecStart=$HOME/glad-labs-website/scripts/linux/deploy-checkout-sync.sh|" \
+  /etc/systemd/system/poindexter-deploy-sync.service
+sudo systemctl daemon-reload
+```
 
 ## Automatic rollback: the post-deploy health gate
 
@@ -985,21 +1128,26 @@ git -C ~/.poindexter/deploy/glad-labs-stack rev-parse --short HEAD
 the clone and restarting the containers immediately loads the old code without
 any CI run. The claude.ai connector runs from the same clone — if the bad
 change touched `mcp-server/`, also
-`sudo systemctl restart poindexter-mcp-http` after pinning. The 10-minute `deploy-checkout-sync.ps1` task will try to advance
-the clone again on its next cycle — stop the scheduled task while the incident
-is live:
+`sudo systemctl restart poindexter-mcp-http` after pinning. The 10-minute
+deploy sync will try to advance the clone again on its next fire. Its launcher
+runs the pinned commit's driver, which fetches and resets straight back to
+origin/main, so stop the timer while the incident is live:
 
-```powershell
+```bash
 # Suspend automated sync while you're pinned
-Disable-ScheduledTask -TaskName 'Poindexter-DeployCheckoutSync'
+sudo systemctl stop poindexter-deploy-sync.timer
 
 # Re-enable once the revert commit has merged and you're ready to roll forward
-Enable-ScheduledTask -TaskName 'Poindexter-DeployCheckoutSync'
+sudo systemctl start poindexter-deploy-sync.timer
 ```
 
+On the retired Windows host the same step was
+`Disable-ScheduledTask -TaskName 'Poindexter-DeployCheckoutSync'`, and
+`Enable-ScheduledTask` to resume.
+
 **Follow-up:** file a `git revert` PR as the durable fix. Re-enable the
-scheduled task only after the revert has merged and CI is green — otherwise
-the sync will overwrite your pin on the next cycle.
+timer only after the revert has merged and CI is green — otherwise the sync
+will overwrite your pin on the next cycle.
 
 > **poindexter-prefect-worker** is not pinned by `docker restart`. Each Prefect
 > flow spawns a fresh subprocess that re-imports `/app`; to pin the Prefect

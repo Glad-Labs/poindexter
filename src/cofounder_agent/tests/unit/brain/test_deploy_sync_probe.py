@@ -18,23 +18,30 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from poindexter.brain import deploy_sync_probe
 from poindexter.brain.deploy_sync_probe import (
     DEFAULT_ERROR_STREAK,
     DEFAULT_MAX_AGE_MINUTES,
+    FALLBACK_DRIVER,
     FINDING_KIND_FAILING,
+    FINDING_KIND_FALLBACK,
     FINDING_KIND_STALE,
     HEARTBEAT_EVENT,
     run_deploy_sync_probe,
 )
+from tests.unit._nonempty import nonempty
 
 
-def _row(*, age_minutes: float, result: str = "deployed", detail: str = ""):
+def _row(*, age_minutes: float, result: str = "deployed", detail: str = "",
+         driver: str | None = None, driver_commit: str = ""):
+    details = {"result": result, "head": "abc1234", "detail": detail, "host": "pop-os"}
+    if driver is not None:  # heartbeats from before the launcher carry no driver
+        details["driver"] = driver
+        details["driver_commit"] = driver_commit
     return {
         "timestamp": None,
         "age_minutes": age_minutes,
-        "details": json.dumps(
-            {"result": result, "head": "abc1234", "detail": detail, "host": "pop-os"}
-        ),
+        "details": json.dumps(details),
     }
 
 
@@ -189,12 +196,89 @@ async def test_no_pool_is_survivable():
     assert summary["status"] == "no_pool"
 
 
+def _finding_kinds() -> list[str]:
+    """Every FINDING_KIND_* the probe declares — derived, never hand-listed, so
+    a new kind cannot slip past the checks below."""
+    return [v for k, v in vars(deploy_sync_probe).items() if k.startswith("FINDING_KIND_")]
+
+
 @pytest.mark.asyncio
 async def test_findings_use_dot_free_kinds():
     """`findings.<kind>.delivery` is one app_settings key, so a dot in the
     kind would silently split the policy lookup."""
-    for kind in (FINDING_KIND_STALE, FINDING_KIND_FAILING):
+    for kind in nonempty(_finding_kinds(), "FINDING_KIND_*"):
         assert "." not in kind
+
+
+def test_every_finding_kind_has_a_declared_delivery_policy():
+    """`findings.default` is inert, so an undeclared kind routes by the
+    dispatcher's default severity matrix rather than a decision."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    for kind in nonempty(_finding_kinds(), "FINDING_KIND_*"):
+        for field in ("delivery", "fallback", "cooldown_minutes", "min_severity"):
+            assert f"findings.{kind}.{field}" in DEFAULTS, f"findings.{kind}.{field}"
+
+
+# ---- the deploy driver fallback (stack#4172) ----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_pass_on_the_last_known_good_driver_warns():
+    """The fallback pass reports `deployed` like any other; the driver field is
+    the only place it shows, so the probe is what makes it visible."""
+    note = ("fallback: the merged driver from 1a2b3c4d5 fails bash -n (line 9: syntax error); "
+            "this pass ran the last-known-good driver from 9f8e7d6c5")
+    pool = _pool(rows=[_row(age_minutes=3.0, detail=note, driver=FALLBACK_DRIVER,
+                            driver_commit="9f8e7d6c5b4a")])
+    summary = await run_deploy_sync_probe(pool)
+    assert summary["ok"] is False
+    assert summary["status"] == "fallback"
+    (finding, severity), = _findings(pool)
+    assert severity == "warning"
+    assert finding["kind"] == FINDING_KIND_FALLBACK
+    assert "fails bash -n" in finding["body"], "the launcher's reason reaches the operator"
+    assert "9f8e7d6c5" in finding["body"]
+    assert "still moving" in finding["body"]
+    assert "--report" in finding["body"]
+    assert finding["extra"]["driver"] == FALLBACK_DRIVER
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("driver", ["merged", "direct", None])
+async def test_merged_direct_and_pre_launcher_heartbeats_are_not_fallbacks(driver):
+    pool = _pool(rows=[_row(age_minutes=3.0, driver=driver)])
+    summary = await run_deploy_sync_probe(pool)
+    assert summary["ok"] is True
+    assert summary["status"] == "fresh"
+    assert _findings(pool) == []
+
+
+@pytest.mark.asyncio
+async def test_a_failed_fallback_pass_says_the_path_is_stalled():
+    pool = _pool(rows=[_row(age_minutes=3.0, result="error", driver=FALLBACK_DRIVER)])
+    await run_deploy_sync_probe(pool)
+    (finding, _), = _findings(pool)
+    assert finding["kind"] == FINDING_KIND_FALLBACK
+    assert "stalled" in finding["body"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_and_an_error_streak_are_both_reported():
+    rows = [_row(age_minutes=2.0, result="error", driver=FALLBACK_DRIVER)] * DEFAULT_ERROR_STREAK
+    pool = _pool(rows=rows)
+    summary = await run_deploy_sync_probe(pool)
+    assert summary["status"] == "failing"
+    assert sorted(f["kind"] for f, _ in _findings(pool)) == sorted([FINDING_KIND_FAILING, FINDING_KIND_FALLBACK])
+
+
+@pytest.mark.asyncio
+async def test_a_stale_path_pages_stale_only():
+    """Stale is the outage; which copy ran last is beside the point."""
+    pool = _pool(rows=[_row(age_minutes=45.0, driver=FALLBACK_DRIVER)])
+    summary = await run_deploy_sync_probe(pool)
+    assert summary["status"] == "stale"
+    assert [f["kind"] for f, _ in _findings(pool)] == [FINDING_KIND_STALE]
 
 
 def test_defaults_match_the_ten_minute_timer():

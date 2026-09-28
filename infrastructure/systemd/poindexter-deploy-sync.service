@@ -2,10 +2,14 @@
 # and bounce/rebuild the containers whose code changed (Linux port of the
 # Windows Poindexter-DeployCheckoutSync task; scripts/linux/deploy-checkout-sync.sh
 # carries the full design notes). Fired every 10 min by the paired .timer.
-# Operators: set User= to your login (ships generic `poindexter`); the script
-# resolves the clone from POINDEXTER_DEPLOY_ROOT (default
-# ~/.poindexter/deploy/glad-labs-stack — create it with
-# scripts/setup-deploy-checkout.sh). User needs the docker group.
+#
+# Install or refresh with scripts/linux/install-deploy-sync.sh. It renders
+# User= and ExecStart= onto the host (this repo copy ships a generic
+# `poindexter` / /home/poindexter placeholder) and installs the launcher
+# ExecStart names. The installed render never updates on its own, so re-run the
+# installer after editing this file. The script resolves the clone from
+# POINDEXTER_DEPLOY_ROOT (default ~/.poindexter/deploy/glad-labs-stack; create
+# it with scripts/setup-deploy-checkout.sh). The user needs the docker group.
 [Unit]
 Description=Poindexter deploy-checkout sync (origin/main -> running stack)
 After=network-online.target docker.service
@@ -14,9 +18,18 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=poindexter
-# The script runs from the OPERATOR checkout (same as the Windows task) and
-# syncs the dedicated deploy clone; the clone is the reset target, never the
-# script source — so a broken merge can't brick the syncer that would fix it.
-ExecStart=/home/poindexter/glad-labs-website/scripts/linux/deploy-checkout-sync.sh
-# the pass includes a bounded Prefect flow-gap wait + possible image rebuilds
-TimeoutStartSec=900
+# ExecStart is the INSTALLED launcher, a copy under ~/.poindexter/deploy-sync
+# outside every git tree, and never a checkout's driver. Each fire it runs the
+# deploy clone's committed deploy-checkout-sync.sh, so merged driver code runs
+# within one timer period. When the merged copy fails `bash -n`, or dies before
+# it has moved the clone to origin/main, the launcher runs the last copy that
+# completed a clean pass instead. That keeps a broken merge from bricking the
+# syncer that would fix it (the rules are in scripts/linux/deploy-sync-launcher.sh).
+# Until 2026-09-28 this line ran the driver out of the operator's working
+# checkout, which sat 148 commits behind with four merged driver fixes not
+# running.
+ExecStart=/home/poindexter/.poindexter/deploy-sync/deploy-sync-launcher.sh
+# The launcher gives each driver run SYNC_DRIVER_TIMEOUT_SEC (900 s, this
+# unit's old per-pass budget), and a fire that falls back runs two. This leaves
+# room for both runs plus the launcher's own git calls.
+TimeoutStartSec=1920
