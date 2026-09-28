@@ -154,6 +154,21 @@ The cost of failing is one ``--update-baseline`` run (or deleting one
 near-empty, so that cost stays small, and the fix is named in the failure
 message.
 
+The public mirror
+------------------
+This lint ships to the public mirror and runs there for real, on a tree the
+sync has already stripped of the operator-private files. So every ``ALLOWLIST``
+key needs a literal reader in a file that SHIPS. A key read only by a stripped
+file has no reader on the mirror, and its entry fails there as stale. The same
+goes for a baseline entry keyed by a stripped file, and either entry names
+that file in public. ``claude_projects_dir`` did both, which held the mirror's
+unit-tests job red until 2026-09-28. It was a real tunable (a public tap reads
+it through a non-literal key) and is seeded now. If a key is ever genuinely
+read only by operator-private code, do not list it here. Teach this lint to
+take the exemption from the reader's own source, the way bandit honours
+``# nosec``. The source repository's simulated-mirror check runs this lint on
+the stripped tree before merge and catches both cases.
+
 What this lint deliberately does NOT catch
 --------------------------------------------
 * Keys built from an f-string or other non-literal expression at the call
@@ -250,13 +265,6 @@ ALLOWLIST: dict[str, str] = {
     "crawler_contact_url": (
         "utils/crawler_ua.py's own docstring: unseeded on purpose so OSS "
         "forks never ship the source operator's contact URL as a default"
-    ),
-    # --- operator-only path override in a file the public mirror never ships
-    # (see PRIVATE_OVERLAY_FILES in bandit_lint.py for the same file). ---
-    "claude_projects_dir": (
-        "operator-only filesystem path override in "
-        "services/taps/claude_code_sessions.py (mirror-stripped private "
-        "overlay file); empty means auto-detect, no universal default exists"
     ),
     # --- bootstrap credential, resolved before any app_settings row is
     # reachable (brain.bootstrap.resolve_database_url / DATABASE_URL env). ---

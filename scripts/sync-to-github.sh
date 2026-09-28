@@ -217,6 +217,7 @@ git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc_guard.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py 2>/dev/null || true
+git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_ci_lints_on_public_mirror_tree.py 2>/dev/null || true  # runs THIS script against a local remote to build the mirror, then runs the mirror's lint steps on the result; it needs this script, which the mirror does not carry
 
 # === Operator-specific files (Glad Labs internal, not customer-facing) ===
 git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full local stack with pgAdmin, image-gen, etc.

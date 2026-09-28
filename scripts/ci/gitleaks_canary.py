@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# mirror-tree-exempt: needs the gitleaks binary its workflow downloads first
 """Positive control for the gitleaks secret-scan gate.
 
 A scanner that finds nothing looks exactly like a scanner that CAN find

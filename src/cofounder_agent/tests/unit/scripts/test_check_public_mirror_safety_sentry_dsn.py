@@ -3,7 +3,7 @@
 Pins the 2026-07-17 audit finding: ``0000_baseline.seeds.sql`` seeded the
 operator's real GlitchTip DSN into the PUBLIC baseline. It survived the
 squash's secret filter because the row is ``is_secret=false``, and
-``sync-to-github.sh`` does not strip ``baseline.seeds.sql`` — so the DSN
+``sync-to-github.sh`` does not strip ``0000_baseline.seeds.sql`` — so the DSN
 shipped to Glad-Labs/poindexter verbatim.
 
 The DSN's host was compose-internal (``glitchtip-web``), so this was not a

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # scan-floor-exempt: applies migrations against a live DB, not a tree scan
+# mirror-tree-exempt: needs the live Postgres its workflow starts as a service
 """CI smoke-test: apply every migration to a fresh database (issue #229).
 
 Spins up an asyncpg pool against ``DATABASE_URL`` (typically a throwaway

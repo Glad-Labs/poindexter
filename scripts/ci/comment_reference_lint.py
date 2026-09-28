@@ -22,6 +22,31 @@ rather than a thorough one that gets muted:
 Same doctrine as ``bandit_lint`` / ``semgrep_lint``: grandfather what is here
 today, block net-new, file nothing. The ratchet only shrinks.
 
+Public mirror
+-------------
+The public mirror is this repository minus the operator-private files the sync
+strips, and its CI runs this lint on that tree. A comment here may cite one of
+those files. On the mirror the citation resolves to nothing and reads as dead,
+though the file is alive in the source repository. The tree cannot tell a
+stripped file from a deleted one, and a list of the stripped files shipped in
+this lint would disclose them. That false positive held the mirror's
+unit-tests job red from 2026-09-20 to 2026-09-28.
+
+So on the mirror (``lib_public_mirror.on_public_mirror``) a reference to a path
+absent from the tree is counted, not failed. Nothing is lost. The mirror
+differs from the source only by the stripped files, so a reference that fails
+there and passes here points at one of them. The source repository's run gates
+every merge and has already checked each reference against the full tree.
+
+Two rules keep stripped names out of the public tree:
+
+* ``--update-baseline`` refuses on the mirror. A baseline written from the
+  stripped tree would record every stripped file a comment cites, in a file
+  the mirror ships.
+* No baseline entry may be keyed by a stripped FILE, since the key names it.
+  Fix a dead reference inside a stripped file rather than baselining it. The
+  source repository's simulated-mirror check fails on such an entry.
+
     python scripts/ci/comment_reference_lint.py
     python scripts/ci/comment_reference_lint.py --update-baseline
 """
@@ -36,6 +61,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_public_mirror import on_public_mirror  # noqa: E402
 from lib_scan_floor import require_dir, require_scanned  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -157,7 +183,15 @@ def main() -> int:
     ap.add_argument("--update-baseline", action="store_true")
     a = ap.parse_args()
 
+    mirror = on_public_mirror()
     require_dir(SCAN_ROOT, lint="comment_reference_lint")
+    if a.update_baseline and mirror:
+        print("comment-reference-lint: refusing --update-baseline on the public "
+              "mirror. This tree lacks the files the sync strips, so every "
+              "comment citing one would enter the baseline and name that file "
+              "in a file the mirror ships. Re-baseline in the source repository.",
+              file=sys.stderr)
+        return 2
     findings, scanned = scan()
     total = sum(sum(v.values()) for v in findings.values())
 
@@ -187,6 +221,24 @@ def main() -> int:
     require_scanned(scanned, lint="comment_reference_lint",
                     what="python files", roots=(SCAN_ROOT,))
 
+    # Print FOUND and BASELINED separately. They are not the same number and
+    # can legitimately differ — a tree sitting below its baseline is clean but
+    # not yet locked in. Collapsing them into one figure is what made a stale
+    # bandit baseline entry invisible during the 2026-08-28 CI audit (the same
+    # doctrine as semgrep_lint.py).
+    baselined = sum(sum(v.values()) for v in baseline.values())
+
+    if regressions and mirror:
+        # Counted, never listed: the list would be an index of the files the
+        # sync strips, printed into the public repository's CI log.
+        print(f"comment-reference-lint: public mirror — {len(regressions)} "
+              f"reference(s) to paths absent from this tree not gated. The sync "
+              f"strips operator files before publishing, so a comment here can "
+              f"cite a file that exists only in the source repository, whose own "
+              f"run checks every reference against the full tree ({total} found "
+              f"/ {baselined} baselined across {scanned} python files scanned).")
+        return 0
+
     if regressions:
         print("DEAD FILE REFERENCES IN COMMENTS (not in baseline):")
         print("\n".join(regressions))
@@ -194,15 +246,14 @@ def main() -> int:
               "sends the next reader somewhere the codebase abandoned. Fix the "
               "path, drop the reference, or — if the file genuinely moved and "
               "the comment is still right — re-run with --update-baseline.")
+        print("\n(On a checkout of the public mirror, comments citing files the "
+              "sync strips land here too. The mirror's CI tolerates them; see "
+              "scripts/ci/lib_public_mirror.py.)")
         return 1
 
-    # Print FOUND and BASELINED separately. They are not the same number and
-    # can legitimately differ — a tree sitting below its baseline is clean but
-    # not yet locked in. Collapsing them into one figure is what made a stale
-    # bandit baseline entry invisible during the 2026-08-28 CI audit (the same
-    # doctrine as semgrep_lint.py).
-    baselined = sum(sum(v.values()) for v in baseline.values())
-    tail = "" if total == baselined else "  <- re-baseline to lock the win in"
+    # Not on the mirror: re-baselining is refused there (see main's guard).
+    tail = ("" if total == baselined or mirror
+            else "  <- re-baseline to lock the win in")
     print(f"comment-reference-lint: clean — no new dead references "
           f"({total} found / {baselined} baselined across {scanned} python "
           f"files scanned; ratchet only shrinks).{tail}")

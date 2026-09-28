@@ -5305,6 +5305,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # late-by-a-whole-cycle is the surprising failure.
     'tap_interval_grace_seconds': '300',
 
+    # Where the Claude Code projects tree lives, for the taps that ingest it
+    # (services/taps/memory.py among them). Empty means `~/.claude/projects`
+    # under the running user's home, which is also what every reader falls
+    # back to, so this empty default changes nothing. Set it when the tree is
+    # mounted somewhere else (a container, another user's home). Unseeded until
+    # 2026-09-28, excused by an ALLOWLIST entry in
+    # scripts/ci/settings_phantom_read_lint.py that took the key for an
+    # operator-only override. The memory tap reads it too, through a
+    # non-literal key the lint cannot see.
+    'claude_projects_dir': '',
+
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',
 
@@ -7350,6 +7361,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tap_run_timeout_seconds': {'owner': 'runner', 'value_type': 'integer'},
     'tap_interval_enforcement_enabled': {'owner': 'runner', 'value_type': 'boolean'},
     'tap_interval_grace_seconds': {'owner': 'runner', 'value_type': 'integer'},
+    'claude_projects_dir': {'owner': 'memory_tap', 'value_type': 'string'},
     'tap_zero_yield_finding_enabled': {'owner': 'runner', 'value_type': 'boolean'},
     'tap_failure_finding_enabled': {'owner': 'tap_runner', 'value_type': 'boolean'},
     'tap_failure_alert_after_consecutive': {

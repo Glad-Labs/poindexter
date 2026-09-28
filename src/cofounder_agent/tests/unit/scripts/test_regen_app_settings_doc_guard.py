@@ -10,7 +10,7 @@ private values out.
 Two things conspired to make that the DEFAULT outcome locally, which is why
 both are pinned here:
 
-1. ``brain.bootstrap.resolve_database_url`` ranks ``bootstrap.toml`` ABOVE
+1. ``brain.bootstrap.resolve_database_url`` ranks ``~/.poindexter/bootstrap.toml`` ABOVE
    ``DATABASE_URL``. That order is right for runtime entry points — an env var
    should not silently redirect production — but it means every real install
    has a bootstrap.toml that beats an explicitly exported ``DATABASE_URL``. A

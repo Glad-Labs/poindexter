@@ -130,6 +130,16 @@ def test_electricity_rate_kwh_default_present():
     assert DEFAULTS["electricity_rate_kwh"] == "0.16"
 
 
+def test_claude_projects_dir_seeded_empty_meaning_auto_detect():
+    # Every reader falls back to ~/.claude/projects when this is empty, so the
+    # empty seed changes no behaviour. A non-empty default would aim every
+    # fresh install at one machine's path. An absent one left the key a phantom
+    # read, excused by a lint allowlist entry that named a mirror-stripped file.
+    from poindexter.services.settings_defaults import DEFAULTS, METADATA
+    assert DEFAULTS["claude_projects_dir"] == ""
+    assert METADATA["claude_projects_dir"]["value_type"] == "string"
+
+
 def test_vram_budget_defaults_present():
     """The VRAM budget guard reads four DB-tunable knobs: total VRAM, the
     desktop reserve carved out so the WDDM compositor never starves, the KV

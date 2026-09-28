@@ -50,6 +50,7 @@ _OVERRIDES: dict[str, str] = {
     "structured_extraction_model": "models",
     "embed_model": "models",
     "embed_num_gpu": "models",
+    "claude_projects_dir": "integrations",
     "use_ollama": "models",
     "use_prefect_orchestration": "pipeline",
     "trace_recent_limit": "observability",

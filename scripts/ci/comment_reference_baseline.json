@@ -172,12 +172,6 @@
     "src/cofounder_agent/tests/unit/scripts/test_adapter_purity_lint.py": {
       "connect_utils.py": 1
     },
-    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_sentry_dsn.py": {
-      "baseline.seeds.sql": 1
-    },
-    "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc_guard.py": {
-      "bootstrap.toml": 1
-    },
     "src/cofounder_agent/tests/unit/services/migrations/test_baseline_seeds_no_orphaned_webhook_handlers.py": {
       "services/integrations/webhook_dispatcher.py": 1
     },

@@ -233,6 +233,10 @@ _STRIP_FILES = (
     # now blocks this class at PR time.
     "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc_guard.py",
     "src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py",
+    # Added 2026-09-28: rebuilds the mirror by running sync-to-github.sh against a
+    # local remote, then runs the mirror's lint steps on the result. It drives
+    # a script the mirror does not carry, so it can only run here.
+    "src/cofounder_agent/tests/unit/scripts/test_ci_lints_on_public_mirror_tree.py",
     # Dashboards are not feature-gated for Poindexter Pro — Pro is a wholly
     # separate, out-of-tree private repo (Glad-Labs/poindexter-pro) that ships
     # a refreshed COPY of a curated board set; see the dashboard-strip block

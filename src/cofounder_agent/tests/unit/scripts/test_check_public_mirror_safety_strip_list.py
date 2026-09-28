@@ -116,6 +116,7 @@ _MIRROR_TOOLING_STRIP = (
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_strip_list.py",
     "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py",
     "src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py",
+    "src/cofounder_agent/tests/unit/scripts/test_ci_lints_on_public_mirror_tree.py",
 )
 
 # Directory holding the leak guard's own test siblings. Derived rather than

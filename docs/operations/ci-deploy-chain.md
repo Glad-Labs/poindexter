@@ -529,6 +529,47 @@ permanently stale. Public-side CI (test-backend, migrations-smoke,
 mcp-server-tests, Mintlify Deployment, link-rot) still has to pass on
 the resulting commit.
 
+### The mirror runs every lint step for real, on the stripped tree
+
+On the mirror, `unit-tests` degrades pytest to `--collect-only` (the
+`$PYTEST` env in `unit-tests.yml`). Every `python scripts/ci/<lint>.py` step
+still runs for real, against a tree the sync has already stripped. A lint
+whose verdict depends on which files exist can therefore disagree with itself
+between the two repositories. Nothing gates on the mirror's result, so a red
+run there just stays red. That happened from 2026-09-20 to 2026-09-28.
+`comment_reference_lint` read every comment citing a stripped file as a dead
+reference. `settings_phantom_read_lint` read an allowlist entry whose only
+reader is stripped as stale. The first failing step ended the job, so none of
+the lint steps after it ran on the mirror in that time.
+
+Three rules came out of it:
+
+- **A lint that must behave differently on the mirror asks
+  `scripts/ci/lib_public_mirror.py`.** It compares `GITHUB_REPOSITORY` with
+  the mirror's name. That is the only repository name the sync's `org/name`
+  byte rewrite leaves unchanged; a check against the source repository's name
+  is inverted by it. A local run is strict. `comment_reference_lint` uses it
+  to count, not fail, references to paths absent from the mirror's tree, and
+  refuses `--update-baseline` there.
+- **No lint may ship a stripped file's name.** That rules out allowlist
+  entries, baseline keys and reason strings alike, because the name is the
+  disclosure. Fix the finding in the stripped file, or make the stripped
+  file comply; do not list it.
+- **The source repository simulates the mirror before merge.** A stack-only
+  unit test (the sync strips it) copies the tracked tree into a scratch
+  repository and runs `scripts/sync-to-github.sh` there, with a local bare
+  repository as its `github` remote. It then runs every lint step the
+  post-sync workflows would run on the mirror. It fails if any of them fails,
+  or if a `scripts/ci/*.json` baseline names a stripped file. A job guarded by
+  `github.repository != 'Glad-Labs/poindexter'` is skipped there, as Actions
+  skips it. A script that cannot run from a plain checkout (a live Postgres, a
+  downloaded binary) declares `# mirror-tree-exempt: <reason>` in its own
+  source. The test runs in `test-backend`'s scripts step, a required check,
+  so a change that would turn the mirror red cannot merge green.
+
+To reproduce one lint's mirror behaviour locally, run it with
+`GITHUB_REPOSITORY=Glad-Labs/poindexter` set.
+
 ### When the mirror sync fails, it files ONE issue and closes it itself
 
 The sync workflow opens a GitHub issue on `glad-labs-stack` when it goes

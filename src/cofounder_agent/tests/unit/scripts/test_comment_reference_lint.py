@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -14,23 +15,43 @@ REPO = next(p for p in Path(__file__).resolve().parents
 LINT = REPO / "scripts" / "ci" / "comment_reference_lint.py"
 BASELINE = REPO / "scripts" / "ci" / "comment_reference_baseline.json"
 
-def _run(cwd: Path, script: Path | None = None):
+# What Actions sets on the public mirror's jobs. Assembled, not spelled, so the
+# mirror sync's org/name rewrite can never turn one into the other in this file.
+MIRROR_ENV = {"GITHUB_REPOSITORY": "Glad-Labs/" + "poindexter"}
+SOURCE_ENV = {"GITHUB_REPOSITORY": "Glad-Labs/" + "glad-labs-stack"}
+
+def _run(cwd: Path, script: Path | None = None, env: dict[str, str] | None = None,
+         args: tuple[str, ...] = ()):
     """Run the lint. ``script`` matters: the lint resolves its scan root from
     its OWN __file__, not from cwd, so a test on a throwaway tree must execute
     the COPY inside that tree — running the real one with a different cwd
-    proves nothing."""
-    return subprocess.run([sys.executable, str(script or LINT)], cwd=str(cwd),
-                          capture_output=True, text=True)
+    proves nothing.
+
+    Strict unless ``env`` says otherwise: an inherited GITHUB_REPOSITORY would
+    switch the lint into its public-mirror mode behind the test's back."""
+    run_env = {k: v for k, v in os.environ.items() if k != "GITHUB_REPOSITORY"}
+    run_env.update(env or {})
+    return subprocess.run([sys.executable, str(script or LINT), *args], cwd=str(cwd),
+                          capture_output=True, text=True, env=run_env)
 
 def _copy_lint(root: Path) -> Path:
-    """Copy the lint and its floor guard into ``root/scripts/ci``; return the
-    copy. Its repo root, scan root and baseline all resolve from its own
+    """Copy the lint and the helpers it imports into ``root/scripts/ci``; return
+    the copy. Its repo root, scan root and baseline all resolve from its own
     __file__, so running the copy examines ``root`` and never the checkout."""
     ci = root / "scripts" / "ci"
     ci.mkdir(parents=True)
-    for name in ("comment_reference_lint.py", "lib_scan_floor.py"):
+    for name in ("comment_reference_lint.py", "lib_scan_floor.py", "lib_public_mirror.py"):
         (ci / name).write_bytes((REPO / "scripts" / "ci" / name).read_bytes())
     return ci / "comment_reference_lint.py"
+
+def _tree_citing(root: Path, comment: str) -> Path:
+    """A one-module tree whose only comment is ``comment``, with an empty baseline."""
+    lint = _copy_lint(root)
+    (lint.parent / BASELINE.name).write_text('{"files": {}}\n', encoding="utf-8")
+    module = root / "src/cofounder_agent/poindexter/services/settings_categories.py"
+    module.parent.mkdir(parents=True)
+    module.write_text(comment, encoding="utf-8")
+    return lint
 
 def test_repo_is_clean_against_its_baseline():
     r = _run(REPO)
@@ -84,11 +105,54 @@ def test_ignores_placeholders_and_urls(tmp_path):
     assert lint.is_reference("services/settings_categories.py")
 
 def test_scan_floor_refuses_an_empty_tree(tmp_path):
-    """A lint that scanned nothing has not passed."""
-    r = _run(tmp_path, script=_copy_lint(tmp_path))
-    assert r.returncode != 0, "an empty tree must not report clean"
-    out = (r.stdout + r.stderr).lower()   # the floor guard writes to stderr
-    assert "refusing" in out or "does not exist" in out, out[:300]
+    """A lint that scanned nothing has not passed, on the mirror as anywhere."""
+    lint = _copy_lint(tmp_path)
+    for env in (None, MIRROR_ENV):
+        r = _run(tmp_path, script=lint, env=env)
+        assert r.returncode != 0, f"an empty tree must not report clean (env={env})"
+        out = (r.stdout + r.stderr).lower()   # the floor guard writes to stderr
+        assert "refusing" in out or "does not exist" in out, out[:300]
+
+def test_public_mirror_counts_absent_paths_instead_of_failing(tmp_path):
+    """The mirror is this tree minus the files the sync strips, so a comment
+    citing one points at nothing there while the file is alive in the source
+    repository. That held the mirror's unit-tests job red for eight days.
+
+    The same citation must fail a local run and the source repository's CI,
+    and pass on the mirror, COUNTED but not LISTED. A list would be an index of
+    the stripped files, printed into the public repository's CI log."""
+    lint = _tree_citing(tmp_path, "# See ``services/only_in_the_source_repo.py``.\n")
+
+    for env in (None, SOURCE_ENV):
+        r = _run(tmp_path, script=lint, env=env)
+        assert r.returncode == 1, f"must fail outside the mirror (env={env}):\n{r.stdout}"
+        assert "only_in_the_source_repo.py" in r.stdout
+
+    r = _run(tmp_path, script=lint, env=MIRROR_ENV)
+    assert r.returncode == 0, f"must pass on the mirror:\n{r.stdout}\n{r.stderr}"
+    assert "public mirror" in r.stdout
+    assert "1 reference(s) to paths absent from this tree" in r.stdout
+    assert "only_in_the_source_repo" not in r.stdout + r.stderr, (
+        "the mirror's log must not list what the sync stripped")
+
+def test_public_mirror_still_passes_a_live_reference_cleanly(tmp_path):
+    """Mirror mode only changes what happens to ABSENT paths."""
+    lint = _tree_citing(tmp_path, "# See ``services/settings_categories.py``.\n")
+    r = _run(tmp_path, script=lint, env=MIRROR_ENV)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "clean" in r.stdout and "public mirror" not in r.stdout
+
+def test_public_mirror_refuses_to_write_a_baseline(tmp_path):
+    """A baseline written from the stripped tree would record every stripped
+    file a comment cites, in a file that ships to the public mirror."""
+    lint = _tree_citing(tmp_path, "# See ``services/only_in_the_source_repo.py``.\n")
+    baseline = lint.parent / BASELINE.name
+    before = baseline.read_text(encoding="utf-8")
+
+    r = _run(tmp_path, script=lint, env=MIRROR_ENV, args=("--update-baseline",))
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "refusing" in r.stderr
+    assert baseline.read_text(encoding="utf-8") == before, "the baseline must not be touched"
 
 def test_shrunk_baseline_passes_and_reports_found_and_baselined_separately(tmp_path):
     """A baseline allowing a reference the tree no longer has must stay clean.
